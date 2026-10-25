@@ -193,9 +193,16 @@ async function measure(threads: number, owl: boolean) {
  * once an update in a call that is counted, so copies read 3 per update on Owl, from 2, and 3.07 on stable, from 2.13. The
  * budgets are 3.5 copies on both, and 0.5 objects per thread on Owl and 1.5 on stable.
  */
+/*
+ * October 25, 2026 (#925, step 4): the workspace reads the provider switch's thread changes, so nothing reads the switch's
+ * activity snapshot and the switch no longer builds it for each update, with its copy of every provider's status. Copies
+ * read 2.07 per update on Owl, from 3, and 2.13 on stable, from 3.07, and objects per thread per update fall from 0.11 to
+ * 0.04 on Owl and from 1.06 to 0.99 on stable, which is mostly the workspace's one save. The budgets are 2.5 copies on
+ * both, and 0.25 objects per thread on Owl; stable's stays at 1.5, since how many saves fall in a stream moves it.
+ */
 const BUDGET = {
-  Owl: { copiesPerUpdate: 3.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 0.5, parsesPerUpdate: 5 },
-  stable: { copiesPerUpdate: 3.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 1.5, parsesPerUpdate: 5 },
+  Owl: { copiesPerUpdate: 2.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 0.25, parsesPerUpdate: 5 },
+  stable: { copiesPerUpdate: 2.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 1.5, parsesPerUpdate: 5 },
 } as const
 
 describe.each([['Owl', true], ['stable', false]] as const)('what one streaming update copies on %s', (track, owl) => {

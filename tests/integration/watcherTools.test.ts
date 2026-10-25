@@ -2022,8 +2022,10 @@ function pullRequestNews(f: Awaited<ReturnType<typeof fixture>>, threadId: strin
   const url = 'https://github.com/synthetic/project/pull/5'
   const links = [{ url, number: 5, title: 'Synthetic pull request', state: 'open' as const, draft: false, source: 'linked' as const, linkedAt: new Date().toISOString() }]
   // The workspace's record holds a thread's links, so a later snapshot keeps them; the coordinator's copy shows them now.
-  const record = (f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: typeof links }[] } } }).state.snapshot
-  record.threads.find(thread => thread.id === threadId)!.pullRequests = structuredClone(links)
+  // Marked as the workspace marks every thread it changes (#925), so its next publication reads the record again.
+  const host = f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: typeof links }[] } }; touch(id: string): void }
+  host.state.snapshot.threads.find(thread => thread.id === threadId)!.pullRequests = structuredClone(links)
+  host.touch(threadId)
   showLinks(f, threadId, links)
   return { url, read: { url, head: 'synthetic-head', observedAt: new Date().toISOString(), availability: 'available' as const, checks: 'failed' as const, checkCount: 1 } }
 }
@@ -2150,8 +2152,9 @@ it('gives the merge queue and each watched thread’s open pull requests from li
   const pr = (number: number, state: 'open' | 'merged', draft = false) => ({ url: `https://github.com/synthetic/project/pull/${number}`, number,
     title: 'Synthetic pull request', state, draft, source: 'linked' as const, linkedAt: new Date().toISOString() })
   const link = (threadId: string, links: ReturnType<typeof pr>[]) => {
-    const record = (f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: typeof links }[] } } }).state.snapshot
-    record.threads.find(thread => thread.id === threadId)!.pullRequests = structuredClone(links)
+    const host = f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: typeof links }[] } }; touch(id: string): void }
+    host.state.snapshot.threads.find(thread => thread.id === threadId)!.pullRequests = structuredClone(links)
+    host.touch(threadId)
     showLinks(f, threadId, links)
   }
   link(first.target.threadId, [pr(5, 'open'), pr(6, 'open', true)])
@@ -2186,11 +2189,13 @@ it('pages the merge queue with the watched threads, a hundred to a page, leaving
     if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
     targets.push(started.target.threadId)
   }
-  const record = (f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: unknown[] }[] } } }).state.snapshot
+  const host = f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: unknown[] }[] } }; touch(id: string): void }
+  const record = host.state.snapshot
   targets.forEach((threadId, at) => {
     const links = Array.from({ length: 20 }, (_, index) => ({ url: `https://github.com/synthetic/project/pull/${at * 20 + index + 1}`, number: at * 20 + index + 1,
       title: 'Synthetic pull request', state: 'open' as const, draft: false, source: 'linked' as const, linkedAt: new Date().toISOString() }))
     record.threads.find(thread => thread.id === threadId)!.pullRequests = structuredClone(links)
+    host.touch(threadId)
     showLinks(f, threadId, links)
   })
   for (let number = 1; number <= 120; number++) f.service.pullRequestObserved({ url: `https://github.com/synthetic/project/pull/${number}`, head: `synthetic-head-${number}`,

@@ -43,12 +43,12 @@ import type { OwnerScale } from '../fixtures/ownerScale'
 const KINDS = ['copies', 'copiedObjects', 'wholeStateCopies', 'wholeCopyThreads', 'wholeCopyObjects', 'unsharedPublications', 'routerShellBuilds',
   'coordinatorShellBuilds', 'threadVisits', 'watcherRecordCopies', 'watcherRecordObjects', 'watcherRecordComparisons', 'unwatchedThreadPasses', 'ownerLookups',
   'stringifies', 'providerIdParses', 'schemaErrors', 'watcherRoomBuilds', 'watcherRoomRecords', 'threadRecordsTouched', 'adapterChangeRecords',
-  'wrapperChangeRecords', 'switchChangeRecords'] as const
+  'wrapperChangeRecords', 'switchChangeRecords', 'workspaceChangeRecords', 'creationReads'] as const
 type Kind = typeof KINDS[number]
 type Counts = Record<Kind, number>
 
 const counter = vi.hoisted(() => ({ measuring: false, wholeThreads: Number.POSITIVE_INFINITY, record: undefined as (() => unknown) | undefined,
-  tally: {} as Record<string, number>, sites: {} as Record<string, Record<string, number>> }))
+  tally: {} as Record<string, number>, sites: {} as Record<string, Record<string, number>>, accepting: 0 }))
 /**
  * With `SOTTO_WORK_SITES=1`, where each serialization, each thread visit and each copied object came from: the nearest
  * frame in `src/`. It is slow, and is for finding what grew; a failure then names the places whose counts grew most.
@@ -70,7 +70,8 @@ const bump = vi.hoisted(() => (kind: string, by = 1, at?: string): void => {
  * the snapshot it handed on, since each of them builds a new record for every thread or reads each against its last
  * (#925). The layers are the adapter's activity view with its copy, the identity wrapper, the provider switch, the
  * workspace's accept, the host stamp and the workspace's activity publication. A layer that passes on thread changes
- * counts the records it upserted and the threads it removed instead.
+ * counts the records it upserted and the threads it removed instead; the workspace's accept, the threads it took in; the
+ * host stamp, the threads it stamped; and the publication, the threads it read again.
  */
 const touched = vi.hoisted(() => (layer: string, snapshot: { threads?: unknown } | undefined): void => {
   if (Array.isArray(snapshot?.threads)) bump('threadRecordsTouched', snapshot.threads.length, layer)
@@ -118,12 +119,16 @@ vi.mock('../../src/main/agents/cloneHostSnapshot', async importOriginal => {
       const copy = original.copyOver(values, previous, shared, seal); copied(values, copy, previous); return copy
     } }
 })
-// The host stamp the workspace's accept puts on every thread (`touched`).
+// The host stamp the workspace's accept puts on every thread it takes in (`touched`): all of them for a whole snapshot,
+// one at a time for the threads a change named (#925).
 vi.mock('../../src/main/agents/hostIdentity', async importOriginal => {
   const original = await importOriginal<typeof import('../../src/main/agents/hostIdentity')>()
   return { ...original, stampHostSnapshot: (snapshot: Parameters<typeof original.stampHostSnapshot>[0], hostId: string) => {
     touched('host stamp', snapshot)
     return original.stampHostSnapshot(snapshot, hostId)
+  }, stampHostThread: (thread: Parameters<typeof original.stampHostThread>[0], hostId: string) => {
+    bump('threadRecordsTouched', 1, 'host stamp')
+    return original.stampHostThread(thread, hostId)
   } }
 })
 // The provider switch keeps an activity subscription's publication as it is and copies anything else: a snapshot that
@@ -227,7 +232,8 @@ async function count(pipeline: OwnerScalePipeline, work: () => Promise<void>): P
     await pass(SETTLE_MS)
   } finally { counter.measuring = false; visits.threadVisits.on = false }
   return { counts: { ...zero(), ...counter.tally, ownerLookups: pipeline.ownerLookups(), threadVisits: visits.threadVisits.count, watcherRoomRecords: pipeline.watcherRoomRecords(),
-    adapterChangeRecords: pipeline.adapterChangeRecords(), wrapperChangeRecords: pipeline.wrapperChangeRecords(), switchChangeRecords: pipeline.switchChangeRecords() } as Counts,
+    adapterChangeRecords: pipeline.adapterChangeRecords(), wrapperChangeRecords: pipeline.wrapperChangeRecords(), switchChangeRecords: pipeline.switchChangeRecords(),
+    workspaceChangeRecords: pipeline.workspaceChangeRecords() } as Counts,
     broadcasts: pipeline.broadcasts(), sites: counter.sites }
 }
 
@@ -247,7 +253,9 @@ function uncounted<T>(work: () => T): T {
 /** Builds main on `track` at `shape` of the owner's world and counts each scenario. */
 async function measure(track: OwnerScaleTrack, shape: OwnerScale): Promise<Measured> {
   const root = await mkdtemp(join(tmpdir(), 'sotto-owner-scale-')); roots.push(root)
-  const pipeline = await until(ownerScalePipeline(root, shape, 3, track, { uncounted, touched: (layer, records) => bump('threadRecordsTouched', records, layer) }))
+  const pipeline = await until(ownerScalePipeline(root, shape, 3, track, { uncounted, touched: (layer, records) => bump('threadRecordsTouched', records, layer),
+    // A creation read while the workspace takes in an update; a save serializing every creation is not one.
+    creationRead: () => { if (counter.accepting) bump('creationReads') } }))
   counter.wholeThreads = Math.min(pipeline.counts.threads, pipeline.counts.remoteThreads)
   counter.record = () => pipeline.control.watcherRecordView()
   // Watcher's wake-up pass runs at most every 250 ms while threads stream. Here it runs on every update, as it does when
@@ -327,6 +335,8 @@ const NAMES: Record<Kind, string> = {
   adapterChangeRecords: 'thread records and removals the adapter\'s thread changes carried (#925)',
   wrapperChangeRecords: 'thread records and removals the identity wrapper\'s thread changes carried (#925)',
   switchChangeRecords: 'thread records and removals the provider switch\'s thread changes carried (#925)',
+  workspaceChangeRecords: 'thread records and removals the workspace\'s thread changes carried (#925)',
+  creationReads: 'reads of a thread\'s creation while the workspace took in an update (#925 review: a walk of every creation for each thread merged)',
 }
 const SCENARIOS = {
   '1 streaming': 'one thread streaming, per update',
@@ -344,7 +354,16 @@ type Scenario = keyof typeof SCENARIOS
  * thread reads, copies and serializes each one; every other count is held flat there too.
  */
 const SLACK = { ratio: 1.1, plus: 2 } as const
-const PER_THREAD: ReadonlySet<Kind> = new Set(['copies', 'copiedObjects', 'wholeCopyThreads', 'wholeCopyObjects', 'threadVisits', 'stringifies', 'threadRecordsTouched'])
+/**
+ * `workspaceChangeRecords` is here because a read hands the workspace a copy of every activity list, and a thread whose
+ * records are in the store (every tenth thread here, ADR-0016's #918 amendment) has them read back from it and let go
+ * again after the next save, once for the read and once for the publication taken in whole after it. Each of those is a
+ * record that changed, so the read before a send, and the connection the fixture makes between the streams, change that
+ * many records. The publication worked out from every thread before #925 found exactly those records changed too; the
+ * workspace's thread changes only name them (October 25, 2026, #925 step 4).
+ */
+const PER_THREAD: ReadonlySet<Kind> = new Set(['copies', 'copiedObjects', 'wholeCopyThreads', 'wholeCopyObjects', 'threadVisits', 'stringifies', 'threadRecordsTouched',
+  'workspaceChangeRecords', 'creationReads'])
 
 /**
  * Work that still grows with the history today (#1248), each with what it grows by along the history today, to a
@@ -484,23 +503,56 @@ const known = (track: OwnerScaleTrack, scenario: Scenario, kind: Kind) => KNOWN_
  * messages and every other thread's summary, and a thread read for a subscriber that keeps history from events is the
  * activity view. A read no longer differs from the activity records in every thread, which made every send look like a
  * change to all of them.
+ *
+ * October 25, 2026 (#925, step 4): the workspace takes in the provider switch's thread changes, merging only the threads
+ * they name and the threads its own commands changed, and builds its activity publication from a thread map, reading
+ * again only the threads marked since the last. Nothing in main reads the switch's activity snapshot any more, so the
+ * switch no longer builds it on each update, and the fixture's own subscriber to the switch's changes went: the
+ * workspace's subscription is shadowed and counted instead, the switch now counting the records its changes carry. One
+ * count is added, the records and removals the workspace's own thread changes carry (`workspaceChangeRecords`), which
+ * nothing in main reads until the coordinator does in step 5; building them is counted as main's work, and only the
+ * fixture's subscriber is left out. It follows the threads with stored activity a read brings back, so it may grow in
+ * proportion to the threads (`PER_THREAD`); it is budgeted at today's count exactly. The workspace's accept counts the
+ * threads it took in, the host stamp the threads it stamped and the publication the threads it read again. Measured
+ * against the revision before, on Owl at the owner's scale:
+ * - `threadRecordsTouched` falls from 889 to 10.77 per streamed update on one thread and from 4,299 to 2,103 per send
+ *   (stable 939 to 11.58, and 4,286 to 2,097), and from 1,012 to 4 per answer-draft save. On three threads it falls from
+ *   899 to 80.62: the connection the fixture makes between the two streams is a read, so the first publication after
+ *   it is taken in whole (212 for the accept and as many stamped) and worked out from every thread (251). The same holds
+ *   for the read before every send, which is most of what is left there.
+ * - Copies fall from 2.69 to 1.85 per streamed update on one thread, 6.62 to 5.85 on three and 96 to 94 per send
+ *   (stable 3.08 to 2.17, 6.69 to 5.92 and 95 to 93), and copied objects from 19.62 to 6.92, 114 to 102 and 34,094 to
+ *   34,064 (stable 287.5 to 273.75, 360 to 348 and 40,221 to 40,191).
+ * Every count lowered has its budget lowered to the new count with the usual room, or exactly for #925's and #1248's.
+ * Nothing else moved, and no budget rises.
+ *
+ * October 25, 2026 (#925 step 4, review): every thread on this computer was made in Sotto, so the fixture now gives each
+ * the started creation the workspace keeps for as long as the thread, newest last, as the owner's are. One count is
+ * added, the reads of a creation's thread while the workspace takes in an update (`creationReads`). An accept looked up
+ * each merged thread's creation by walking them all, which this branch's step 4 left on every update: with the walk,
+ * 442 reads per streamed update on one thread and 66,997 per send at the owner's scale on Owl, growing about sixteen
+ * times for four times the threads, which this test now fails. The creations are indexed by thread: 2.69 per streamed
+ * update and 525 per send, in proportion to the threads, as a whole accept reads each thread once (`PER_THREAD`), and
+ * budgeted at today's count exactly. One budget rises, Owl's copied objects per send, from 34,064 to 34,314: the read
+ * before each send has always copied the project aliases and creations to tell whether it changed anything
+ * (`refreshThread`), and the fixture held no creations for it to copy until now. No code here changed to cause it.
  */
 const BUDGET: Record<OwnerScaleTrack, Record<Scenario, Counts>> = {
   owl: {
-    '1 streaming': { copies: 7.54, copiedObjects: 21.59, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 4784.62, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 61.15, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 0.42, watcherRoomRecords: 0, threadRecordsTouched: 889, adapterChangeRecords: 0.85, wrapperChangeRecords: 0.85, switchChangeRecords: 0.85 },
-    '3 streaming': { copies: 11.68, copiedObjects: 125.49, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 4972.92, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 84.77, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 0.51, watcherRoomRecords: 0, threadRecordsTouched: 899.46, adapterChangeRecords: 2.54, wrapperChangeRecords: 2.54, switchChangeRecords: 2.54 },
-    saveAnswerDraft: { copies: 9.9, copiedObjects: 57.2, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 3, coordinatorShellBuilds: 3, threadVisits: 15_593, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 5, stringifies: 961, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 2.2, watcherRoomRecords: 0, threadRecordsTouched: 1012, adapterChangeRecords: 0, wrapperChangeRecords: 0, switchChangeRecords: 0 },
-    typeInComposer: { copies: 12.1, copiedObjects: 10_702, wholeStateCopies: 5, wholeCopyThreads: 879, wholeCopyObjects: 8558, unsharedPublications: 0, routerShellBuilds: 5, coordinatorShellBuilds: 7, threadVisits: 12_148, watcherRecordCopies: 3, watcherRecordObjects: 2898, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 2, stringifies: 172, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 2.2, watcherRoomRecords: 0, threadRecordsTouched: 0, adapterChangeRecords: 0, wrapperChangeRecords: 0, switchChangeRecords: 0 },
-    openThread: { copies: 23.1, copiedObjects: 21_619, wholeStateCopies: 11, wholeCopyThreads: 1846, wholeCopyObjects: 20_545.8, unsharedPublications: 0, routerShellBuilds: 7, coordinatorShellBuilds: 10, threadVisits: 14_490, watcherRecordCopies: 3, watcherRecordObjects: 2898, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 3, stringifies: 193, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 2.2, watcherRoomRecords: 0, threadRecordsTouched: 0, adapterChangeRecords: 0, wrapperChangeRecords: 0, switchChangeRecords: 0 },
-    send: { copies: 127.6, copiedObjects: 34_094, wholeStateCopies: 11, wholeCopyThreads: 2544.3, wholeCopyObjects: 26647.5, unsharedPublications: 0, routerShellBuilds: 8, coordinatorShellBuilds: 14, threadVisits: 35_117, watcherRecordCopies: 7, watcherRecordObjects: 8694, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 3, stringifies: 2561, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 3.3, watcherRoomRecords: 0, threadRecordsTouched: 4299, adapterChangeRecords: 2, wrapperChangeRecords: 2, switchChangeRecords: 2 },
+    '1 streaming': { copies: 2.04, copiedObjects: 7.61, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 4784.62, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 61.15, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 0.42, watcherRoomRecords: 0, threadRecordsTouched: 10.77, adapterChangeRecords: 0.85, wrapperChangeRecords: 0.85, switchChangeRecords: 0.85, workspaceChangeRecords: 0.92, creationReads: 2.69 },
+    '3 streaming': { copies: 6.44, copiedObjects: 111.69, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 4972.92, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 84.77, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 0.51, watcherRoomRecords: 0, threadRecordsTouched: 80.62, adapterChangeRecords: 2.54, wrapperChangeRecords: 2.54, switchChangeRecords: 2.54, workspaceChangeRecords: 6.46, creationReads: 23.38 },
+    saveAnswerDraft: { copies: 9.9, copiedObjects: 57.2, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 3, coordinatorShellBuilds: 3, threadVisits: 15_593, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 5, stringifies: 961, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 2.2, watcherRoomRecords: 0, threadRecordsTouched: 4, adapterChangeRecords: 0, wrapperChangeRecords: 0, switchChangeRecords: 0, workspaceChangeRecords: 4, creationReads: 0 },
+    typeInComposer: { copies: 12.1, copiedObjects: 10_702, wholeStateCopies: 5, wholeCopyThreads: 879, wholeCopyObjects: 8558, unsharedPublications: 0, routerShellBuilds: 5, coordinatorShellBuilds: 7, threadVisits: 12_148, watcherRecordCopies: 3, watcherRecordObjects: 2898, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 2, stringifies: 172, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 2.2, watcherRoomRecords: 0, threadRecordsTouched: 0, adapterChangeRecords: 0, wrapperChangeRecords: 0, switchChangeRecords: 0, workspaceChangeRecords: 0, creationReads: 0 },
+    openThread: { copies: 23.1, copiedObjects: 21_619, wholeStateCopies: 11, wholeCopyThreads: 1846, wholeCopyObjects: 20545.8, unsharedPublications: 0, routerShellBuilds: 7, coordinatorShellBuilds: 10, threadVisits: 14_490, watcherRecordCopies: 3, watcherRecordObjects: 2898, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 3, stringifies: 193, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 2.2, watcherRoomRecords: 0, threadRecordsTouched: 0, adapterChangeRecords: 0, wrapperChangeRecords: 0, switchChangeRecords: 0, workspaceChangeRecords: 0, creationReads: 0 },
+    send: { copies: 103.4, copiedObjects: 34_314, wholeStateCopies: 11, wholeCopyThreads: 2544.3, wholeCopyObjects: 26647.5, unsharedPublications: 0, routerShellBuilds: 8, coordinatorShellBuilds: 14, threadVisits: 35_117, watcherRecordCopies: 7, watcherRecordObjects: 8694, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 3, stringifies: 2561, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 3.3, watcherRoomRecords: 0, threadRecordsTouched: 2103, adapterChangeRecords: 2, wrapperChangeRecords: 2, switchChangeRecords: 2, workspaceChangeRecords: 54, creationReads: 525 },
   },
   stable: {
-    '1 streaming': { copies: 8.34, copiedObjects: 316.25, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 3327.58, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 13.02, providerIdParses: 5, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0, threadRecordsTouched: 939.33, adapterChangeRecords: 0.92, wrapperChangeRecords: 0.92, switchChangeRecords: 0.92 },
-    '3 streaming': { copies: 11.76, copiedObjects: 396.51, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 3383.46, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 26.32, providerIdParses: 5, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0, threadRecordsTouched: 896.77, adapterChangeRecords: 2.54, wrapperChangeRecords: 2.54, switchChangeRecords: 2.54 },
-    saveAnswerDraft: { copies: 14.3, copiedObjects: 14_149.3, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 3, coordinatorShellBuilds: 3, threadVisits: 8926, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 5, stringifies: 824, providerIdParses: 9, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0, threadRecordsTouched: 1008, adapterChangeRecords: 0, wrapperChangeRecords: 0, switchChangeRecords: 0 },
-    typeInComposer: { copies: 11, copiedObjects: 10_811.9, wholeStateCopies: 6, wholeCopyThreads: 1153, wholeCopyObjects: 10_794.3, unsharedPublications: 0, routerShellBuilds: 5, coordinatorShellBuilds: 8, threadVisits: 9855, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 2, stringifies: 20, providerIdParses: 18, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0, threadRecordsTouched: 0, adapterChangeRecords: 0, wrapperChangeRecords: 0, switchChangeRecords: 0 },
-    openThread: { copies: 22, copiedObjects: 22_766.7, wholeStateCopies: 13, wholeCopyThreads: 2117, wholeCopyObjects: 22_741.4, unsharedPublications: 0, routerShellBuilds: 7, coordinatorShellBuilds: 11, threadVisits: 13_172, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 3, stringifies: 31, providerIdParses: 27, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0, threadRecordsTouched: 0, adapterChangeRecords: 0, wrapperChangeRecords: 0, switchChangeRecords: 0 },
-    send: { copies: 125.4, copiedObjects: 44243.1, wholeStateCopies: 12.1, wholeCopyThreads: 2813.8, wholeCopyObjects: 28846.4, unsharedPublications: 0, routerShellBuilds: 8, coordinatorShellBuilds: 15, threadVisits: 24_944, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 3, stringifies: 1885, providerIdParses: 31, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0, threadRecordsTouched: 4286, adapterChangeRecords: 2, wrapperChangeRecords: 2, switchChangeRecords: 2 },
+    '1 streaming': { copies: 2.39, copiedObjects: 301.12, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 3327.58, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 13.02, providerIdParses: 5, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0, threadRecordsTouched: 11.58, adapterChangeRecords: 0.92, wrapperChangeRecords: 0.92, switchChangeRecords: 0.92, workspaceChangeRecords: 1, creationReads: 2.92 },
+    '3 streaming': { copies: 6.51, copiedObjects: 382.89, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 3383.46, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 26.32, providerIdParses: 5, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0, threadRecordsTouched: 80.15, adapterChangeRecords: 2.54, wrapperChangeRecords: 2.54, switchChangeRecords: 2.54, workspaceChangeRecords: 6.46, creationReads: 23.38 },
+    saveAnswerDraft: { copies: 14.3, copiedObjects: 14149.3, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 3, coordinatorShellBuilds: 3, threadVisits: 8926, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 5, stringifies: 824, providerIdParses: 9, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0, threadRecordsTouched: 4, adapterChangeRecords: 0, wrapperChangeRecords: 0, switchChangeRecords: 0, workspaceChangeRecords: 4, creationReads: 0 },
+    typeInComposer: { copies: 11, copiedObjects: 10811.9, wholeStateCopies: 6, wholeCopyThreads: 1153, wholeCopyObjects: 10794.3, unsharedPublications: 0, routerShellBuilds: 5, coordinatorShellBuilds: 8, threadVisits: 9855, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 2, stringifies: 20, providerIdParses: 18, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0, threadRecordsTouched: 0, adapterChangeRecords: 0, wrapperChangeRecords: 0, switchChangeRecords: 0, workspaceChangeRecords: 0, creationReads: 0 },
+    openThread: { copies: 22, copiedObjects: 22766.7, wholeStateCopies: 13, wholeCopyThreads: 2117, wholeCopyObjects: 22741.4, unsharedPublications: 0, routerShellBuilds: 7, coordinatorShellBuilds: 11, threadVisits: 13_172, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 3, stringifies: 31, providerIdParses: 27, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0, threadRecordsTouched: 0, adapterChangeRecords: 0, wrapperChangeRecords: 0, switchChangeRecords: 0, workspaceChangeRecords: 0, creationReads: 0 },
+    send: { copies: 102.3, copiedObjects: 44210.1, wholeStateCopies: 12.1, wholeCopyThreads: 2813.8, wholeCopyObjects: 28846.4, unsharedPublications: 0, routerShellBuilds: 8, coordinatorShellBuilds: 15, threadVisits: 24_944, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 3, stringifies: 1885, providerIdParses: 31, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0, threadRecordsTouched: 2097, adapterChangeRecords: 2, wrapperChangeRecords: 2, switchChangeRecords: 2, workspaceChangeRecords: 54, creationReads: 525 },
   },
 }
 
@@ -521,10 +573,11 @@ const proto = { control: AgentControl.prototype as unknown as { shellOf(shareThr
   subscribers: ActivitySubscribers.prototype,
   wrapper: SottoThreadHost.prototype as unknown as { mapSnapshot(snapshot: AgentHostSnapshot): AgentHostSnapshot },
   providerSwitch: ConfiguredProviderHost.prototype as unknown as { aggregate(): AgentHostSnapshot },
-  workspace: WorkspaceHost.prototype as unknown as { accept(snapshot: AgentHostSnapshot): void; activityPublication(): AgentHostSnapshot } }
+  workspace: WorkspaceHost.prototype as unknown as { accept(snapshot: AgentHostSnapshot, fromPublication?: boolean): void
+    acceptThreads(changes: unknown): { handled: number; opening: boolean }; refreshPublished(): number } }
 const native = { shellOf: proto.control.shellOf, shownSnapshot: proto.control.shownSnapshot, build: proto.router.build, state: proto.watcher.state,
   publish: proto.subscribers.publish, mapSnapshot: proto.wrapper.mapSnapshot, aggregate: proto.providerSwitch.aggregate, accept: proto.workspace.accept,
-  activityPublication: proto.workspace.activityPublication }
+  acceptThreads: proto.workspace.acceptThreads, refreshPublished: proto.workspace.refreshPublished }
 let schemaError: ((issue: never) => unknown) | undefined
 
 beforeAll(async () => {
@@ -555,7 +608,8 @@ beforeAll(async () => {
   proto.watcher.state = function (this: WatcherService) { bump('watcherRoomBuilds'); return native.state.call(this) }
   // Each layer between the adapter and the coordinator, where it hands on its threads (#925).
   for (const [layer, method] of [['ActivitySubscribers.publish', native.publish], ['SottoThreadHost.mapSnapshot', native.mapSnapshot],
-    ['ConfiguredProviderHost.aggregate', native.aggregate], ['WorkspaceHost.accept', native.accept], ['WorkspaceHost.activityPublication', native.activityPublication]] as const) {
+    ['ConfiguredProviderHost.aggregate', native.aggregate], ['WorkspaceHost.accept', native.accept], ['WorkspaceHost.acceptThreads', native.acceptThreads],
+    ['WorkspaceHost.refreshPublished', native.refreshPublished]] as const) {
     if (typeof method !== 'function') throw new Error(`${layer} is gone; count the thread records that layer touches for an update another way.`)
   }
   // A detached publication is the provider switch's aggregate, counted where it is built; any other is an adapter's view.
@@ -564,10 +618,19 @@ beforeAll(async () => {
   }
   proto.wrapper.mapSnapshot = function (this: unknown, snapshot: AgentHostSnapshot) { const mapped = native.mapSnapshot.call(this, snapshot); touched('identity wrapper', mapped); return mapped }
   proto.providerSwitch.aggregate = function (this: unknown) { const snapshot = native.aggregate.call(this); touched('provider switch', snapshot); return snapshot }
-  proto.workspace.accept = function (this: { state: { snapshot: AgentHostSnapshot } }, snapshot: AgentHostSnapshot) {
-    native.accept.call(this, snapshot); touched('workspace accept', this.state.snapshot)
+  proto.workspace.accept = function (this: { state: { snapshot: AgentHostSnapshot } }, snapshot: AgentHostSnapshot, fromPublication?: boolean) {
+    counter.accepting++
+    try { native.accept.call(this, snapshot, fromPublication) } finally { counter.accepting-- }
+    touched('workspace accept', this.state.snapshot)
   }
-  proto.workspace.activityPublication = function (this: unknown) { const snapshot = native.activityPublication.call(this); touched('workspace publication', snapshot); return snapshot }
+  proto.workspace.acceptThreads = function (this: unknown, changes: unknown) {
+    counter.accepting++
+    let result: { handled: number; opening: boolean }
+    try { result = native.acceptThreads.call(this, changes) } finally { counter.accepting-- }
+    bump('threadRecordsTouched', result.handled, 'workspace accept'); return result
+  }
+  // The publication counts the threads it read again, none when nothing was marked, which still names the layer as run.
+  proto.workspace.refreshPublished = function (this: unknown) { const read = native.refreshPublished.call(this); bump('threadRecordsTouched', read, 'workspace publication'); return read }
   schemaError = z.config().customError as typeof schemaError
   z.config({ customError: issue => { bump('schemaErrors'); return schemaError?.(issue as never) as string | undefined } })
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'] })
@@ -584,7 +647,7 @@ afterAll(async () => {
   visits.threadVisits.visited = undefined
   proto.control.shellOf = native.shellOf; proto.control.shownSnapshot = native.shownSnapshot; proto.router.build = native.build; proto.watcher.state = native.state
   proto.subscribers.publish = native.publish; proto.wrapper.mapSnapshot = native.mapSnapshot; proto.providerSwitch.aggregate = native.aggregate
-  proto.workspace.accept = native.accept; proto.workspace.activityPublication = native.activityPublication
+  proto.workspace.accept = native.accept; proto.workspace.acceptThreads = native.acceptThreads; proto.workspace.refreshPublished = native.refreshPublished
   z.config({ customError: schemaError as never })
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 })
 })
@@ -599,8 +662,8 @@ function grewAt(kind: Kind, small: Sites | undefined, large: Sites | undefined):
 }
 /** The layers `touched` counts, and which of them each scenario must run: a hook that stops running would read as no work. */
 const LAYERS = ['adapter', 'identity wrapper', 'provider switch', 'workspace accept', 'host stamp', 'workspace publication'] as const
-/** The layers that still publish only snapshots, which the verifying mode shadows through the shim. */
-const SHADOWED = ['provider switch', 'workspace accept', 'workspace publication'] as const
+/** The workspace's accepted state and its activity publication, which the verifying mode also shadows through the shim. */
+const SHADOWED = ['workspace accept', 'workspace publication'] as const
 const LAYERS_RUN: Record<Scenario, readonly string[]> = { '1 streaming': LAYERS, '3 streaming': LAYERS, send: LAYERS,
   saveAnswerDraft: ['workspace publication'], typeInComposer: [], openThread: [] }
 const WHERE = SITES ? '' : ' Run it with SOTTO_WORK_SITES=1 to see where the serializations, thread visits and copied objects that grew come from.'
@@ -617,7 +680,7 @@ describe.each(TRACKS)('main\'s work at the owner\'s scale on %s (#1232)', track 
     for (const [shape, { threadChanges }] of Object.entries(measured[track])) {
       expect.soft(threadChanges.drift, `On ${track} at ${shape}, a thread map came to differ from its layer's whole snapshot.`).toEqual([])
       // The adapter's own thread changes, as well as what the shim works out from each layer's snapshots.
-      for (const layer of [...SHADOWED, 'adapter changes', 'identity wrapper changes', 'provider switch changes', 'provider switch slot']) {
+      for (const layer of [...SHADOWED, 'adapter changes', 'identity wrapper changes', 'provider switch changes', 'provider switch slot', 'workspace changes']) {
         expect.soft(threadChanges.checked[layer] ?? 0, `On ${track} at ${shape}, the ${layer}'s thread map checked no change.`).toBeGreaterThan(0)
       }
     }
