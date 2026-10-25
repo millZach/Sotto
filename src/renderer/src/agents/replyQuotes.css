@@ -1,0 +1,22 @@
+/* Add to prompt over words selected in an agent's reply (ADR-0129; Owl only): one small button above the selection,
+   variant A of docs/prototypes/reply-quote-prototype.html. The quotes it adds wait on the composer as review-chip
+   chips (reviewComments.css). */
+
+.reply-quote-pop {
+  position: absolute; z-index: 5; display: inline-flex; align-items: center; padding: 3px;
+  border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-surface-elevated); box-shadow: 0 8px 22px var(--tt-shadow-color);
+}
+.reply-quote-pop[hidden] { display: none; }
+.reply-quote-pop__add {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer;
+}
+.reply-quote-pop__add:hover { background: var(--tt-hover-strong); }
+.reply-quote-pop__add svg { flex: none; color: var(--tt-text-muted); }
+.reply-quote-pop__add kbd { color: var(--tt-text-muted); font: inherit; font-size: 12px; }
+.reply-quote-pop__note { max-width: 300px; margin: 0; padding: 4px 8px; color: var(--tt-text-2); font-size: 12.5px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .reply-quote-pop { animation: reply-quote-arrive 140ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+}
+@keyframes reply-quote-arrive { from { opacity: 0; transform: translateY(3px); } }

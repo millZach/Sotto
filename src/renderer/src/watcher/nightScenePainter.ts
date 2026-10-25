@@ -1,6 +1,6 @@
 import {
-  clamp, gridFor, groundAt, inkAt, layoutScene, lerp, limbY, OWL_GAP, owlRoom, placeStars, quietAt, rampGlyph, RIPPLE_GLYPHS, rippleAt, rippleReach, runningRipples, seeded,
-  smooth, starStrength, twinkleStep, WHIRL_GLYPHS,
+  clamp, COLUMN_QUIET, gridFor, groundAt, inkAt, inLane, inMargin, layoutScene, lerp, limbY, OWL_GAP, owlRoom, placeStars, quietAt, rampGlyph,
+  RIPPLE_GLYPHS, rippleAt, rippleReach, runningRipples, seeded, smooth, starStrength, twinkleStep, WHIRL_GLYPHS,
   type Grid, type Limb, type Moon, type OwlPose, type OwlStage, type Ripple, type RippleEffect, type SceneInk, type SceneLayout, type SceneMeasure, type Spot, type Star, type Tree,
 } from './nightScene'
 import { glowStep, owlGlyphs, pileLabel, spriteCells, type ThreadOwlPose } from './owlFamily'
@@ -12,7 +12,8 @@ import { glowStep, owlGlyphs, pileLabel, spriteCells, type ThreadOwlPose } from 
  * is then drawn as the glyph for its density. The landscape's glyphs are drawn once per size and theme and kept. A frame
  * copies them, clears the cells under the owls, and redraws only the stars, the whirlpool and the cells a ripple
  * reaches; the owls are drawn on their own canvas. A frame whose picture would not change is not painted at all.
- * Nothing is ever drawn in the column between the margins.
+ * Between the margins the sky and the hills show at the column's share, still whatever the words over them do, with no
+ * glyph stronger than the words written over it allow (`SceneInk.column`). Trees, owls and ripples stay in the margins.
  */
 
 /** Field pixels per glyph cell, a side. */
@@ -304,7 +305,11 @@ export class NightScenePainter {
   private font = ''
   private land = new Float32Array(0)
   private landAccent = new Float32Array(0)
+  /** Each cell's share of the scene: quietAt, for the theme's column strength. */
   private quiet = new Float32Array(0)
+  /** Cells in a margin, the only ones a ripple or the whirlpool reaches, and the only ones past the column's ink ceiling. */
+  private marginCells = new Uint8Array(0)
+  private light = false
   /** Cells an owl may be drawn in: the margins, below the header, clear of words. */
   private owlCells = new Uint8Array(0)
   private noise = new Float32Array(0)
@@ -343,16 +348,19 @@ export class NightScenePainter {
     this.cleared = new Uint8Array(cells); this.touched = new Uint8Array(cells)
     const N = seeded(99)
     this.noise = new Float32Array(cells); for (let i = 0; i < cells; i++) this.noise[i] = N()
-    this.quiet = new Float32Array(cells); this.owlCells = new Uint8Array(cells)
+    this.quiet = new Float32Array(cells); this.owlCells = new Uint8Array(cells); this.marginCells = new Uint8Array(cells)
     for (let r = 0; r < grid.rows; r++) for (let c = 0; c < grid.cols; c++) {
       const x = (c + 0.5) * grid.cw, y = (r + 0.5) * grid.ch, i = r * grid.cols + c
-      this.quiet[i] = quietAt(layout, x, y)
-      this.owlCells[i] = owlRoom(layout, x) && y > layout.header && !layout.words.some(box => x >= box.x - 4 && x <= box.x + box.w + 4 && y >= box.y - 4 && y <= box.y + box.h + 4) ? 1 : 0
+      // The scrubber's lane takes the column's ink ceiling, and no owl, ripple or glow is drawn in it.
+      const lane = inLane(layout, x, y)
+      this.marginCells[i] = inMargin(layout, x) && !lane ? 1 : 0
+      this.owlCells[i] = owlRoom(layout, x) && !lane && y > layout.header && !layout.words.some(box => x >= box.x - 4 && x <= box.x + box.w + 4 && y >= box.y - 4 && y <= box.y + box.h + 4) ? 1 : 0
     }
     this.stars = layout.mode === 'trees' ? placeStars(layout, grid, this.land) : []
     this.starAt = new Int32Array(cells).fill(-1)
     this.stars.forEach((star, index) => { this.starAt[star.i] = index })
     this.layout = layout; this.grid = grid; this.dpr = dpr
+    this.baseQuiet()
     this.owlBox = null
     this.painted = ''
     for (const canvas of [this.back, this.front, this.glyphs]) { canvas.width = Math.round(measure.width * dpr); canvas.height = Math.round(measure.height * dpr) }
@@ -365,17 +373,28 @@ export class NightScenePainter {
     this.ink = ink
     this.font = `${GLYPH_PX}px ${fontFamily}`
     this.painted = ''
+    if (ink.light !== this.light) { this.light = ink.light; this.baseQuiet() }
     this.paintGlyphs()
+  }
+
+  /** Every cell's share, for the theme's column strength. */
+  private baseQuiet(): void {
+    const layout = this.layout
+    if (layout === null) return
+    const { cols, rows, cw, ch } = this.grid, strength = this.light ? COLUMN_QUIET.light : COLUMN_QUIET.dark
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) this.quiet[r * cols + c] = quietAt(layout, (c + 0.5) * cw, (r + 0.5) * ch, strength)
   }
 
   get ready(): boolean { return this.layout !== null && this.ink !== null }
 
-  /** Forgets the layout, so nothing is drawn until the room can be measured again, and clears both canvases. */
+  /**
+   * Forgets the layout, so nothing is drawn until the room can be measured again. The canvases keep the last frame drawn:
+   * the scene never blinks, and the next layout draws over it in the frame it is made.
+   */
   invalidate(): void {
     this.layout = null
     this.owlBox = null
     this.painted = ''
-    for (const canvas of [this.back, this.front]) context(canvas)?.clearRect(0, 0, canvas.width, canvas.height)
   }
 
   /** The perched thread owls' boxes in the pane, for their buttons. */
@@ -392,18 +411,27 @@ export class NightScenePainter {
     })
   }
 
-  /** The landscape's glyphs, kept: every cell dense enough to show, in its own ink, quiet toward the column and under words. */
-  private paintGlyphs(): void {
+  /**
+   * The landscape's glyphs, kept: every cell dense enough to show, in its own ink, quiet in the column and around still words.
+   * Given rows and columns, only that block is cleared and drawn again, clipped to it so its neighbours keep every pixel.
+   */
+  private paintGlyphs(r0 = 0, r1 = this.grid.rows, c0 = 0, c1 = this.grid.cols): void {
     const ctx = context(this.glyphs)
     if (ctx === null || this.layout === null || this.ink === null) return
-    const { cols, rows, cw, ch } = this.grid
-    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, this.glyphs.width, this.glyphs.height)
-    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0)
+    const { cols, rows, cw, ch } = this.grid, dpr = this.dpr
+    const x0 = Math.round(c0 * cw * dpr), x1 = Math.round(c1 * cw * dpr), y0 = Math.round(r0 * ch * dpr), y1 = Math.round(r1 * ch * dpr)
+    ctx.save()
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.beginPath(); ctx.rect(x0, y0, x1 - x0, y1 - y0); ctx.clip()
+    ctx.clearRect(x0, y0, x1 - x0, y1 - y0)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     this.textStyle(ctx)
-    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    // A glyph may reach a pixel past its cell, so the cells around the block are drawn too, clipped to it.
+    for (let r = Math.max(0, r0 - 1); r < Math.min(rows, r1 + 1); r++) for (let c = Math.max(0, c0 - 1); c < Math.min(cols, c1 + 1); c++) {
       const i = r * cols + c
       this.cell(ctx, i, i, 0, -1, (c + 0.5) * cw, (r + 0.5) * ch)
     }
+    ctx.restore()
   }
 
   private textStyle(ctx: CanvasRenderingContext2D): void {
@@ -417,17 +445,20 @@ export class NightScenePainter {
   private cell(ctx: CanvasRenderingContext2D, i: number, j: number, ring: number, star: number, x: number, y: number): boolean {
     const ink = this.ink!
     const q = this.quiet[i]!
-    // In the column and under words nothing is drawn, not even a star or a ripple.
+    // Under still words nothing is drawn, not even a star or a ripple.
     if (q === 0) return false
+    // In the column, where the conversation's words pass over it, no glyph is stronger than they allow.
+    const cap = this.marginCells[i] ? 1 : ink.column.ink, accentCap = this.marginCells[i] ? 1 : ink.column.accent
+    const tone = (accent: boolean, strength: number): string => accent ? inkAt(ink.accent, Math.min(accentCap, strength)) : inkAt(ink.ink, Math.min(cap, strength))
     const d = this.land[j]! * q
     ring = Math.min(1, ring) * (0.5 + 0.5 * q)
     if (d < 0.1 && ring < 0.08 && star <= 0) return false
-    if (ring > d + 0.05) { ctx.fillStyle = inkAt(ink.accent, 0.18 + 0.6 * ring); ctx.fillText(RIPPLE_GLYPHS[Math.min(3, Math.floor(ring * 4))]!, x, y); return true }
+    if (ring > d + 0.05) { ctx.fillStyle = tone(true, 0.18 + 0.6 * ring); ctx.fillText(RIPPLE_GLYPHS[Math.min(3, Math.floor(ring * 4))]!, x, y); return true }
     const st = this.starAt[i]! >= 0 ? this.stars[this.starAt[i]!]! : null
     const accent = this.landAccent[j]! > 0.3 || st?.accent === true
-    if (star > d) { ctx.fillStyle = inkAt(accent ? ink.accent : ink.ink, 0.15 + 0.6 * star); ctx.fillText(star > 0.7 ? '*' : star > 0.45 ? '+' : '·', x, y); return true }
+    if (star > d) { ctx.fillStyle = tone(accent, 0.15 + 0.6 * star); ctx.fillText(star > 0.7 ? '*' : star > 0.45 ? '+' : '·', x, y); return true }
     const dd = clamp(d + (this.noise[j]! - 0.5) * 0.1 + ring * 0.3, 0, 1)
-    ctx.fillStyle = inkAt(accent ? ink.accent : ink.ink, (0.1 + 0.5 * dd) * (accent ? 1.25 : 1)); ctx.fillText(rampGlyph(dd), x, y)
+    ctx.fillStyle = tone(accent, (0.1 + 0.5 * dd) * (accent ? 1.25 : 1)); ctx.fillText(rampGlyph(dd), x, y)
     return true
   }
 
@@ -498,7 +529,8 @@ export class NightScenePainter {
       const r0 = clamp(Math.floor((ripple.y - reach) / ch), 0, rows), r1 = clamp(Math.ceil((ripple.y + reach) / ch), 0, rows)
       for (let r = r0; r < r1; r++) for (let c = c0; c < c1; c++) {
         const i = r * cols + c
-        if (this.touched[i] || this.cleared[i] || this.quiet[i] === 0) continue
+        // Ripples stay in the margins: neither the ring nor the bend reaches the column.
+        if (this.touched[i] || this.cleared[i] || this.quiet[i] === 0 || !this.marginCells[i]) continue
         const x = (c + 0.5) * cw, y = (r + 0.5) * ch
         const effect = rippleAt(x, y, ripples, t, still, this.effect)
         const sc = c - Math.round(effect.dx), sr = r - Math.round(effect.dy)
@@ -527,7 +559,7 @@ export class NightScenePainter {
       for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
         const i = r * cols + c
         const dx = (c + 0.5) * cw - m.x, dy = (r + 0.5) * ch - m.y, d = Math.hypot(dx, dy)
-        if (d > R || this.quiet[i] === 0 || this.cleared[i]) continue
+        if (d > R || this.quiet[i] === 0 || this.cleared[i] || !this.marginCells[i]) continue
         const v = 0.5 + 0.5 * Math.sin(3 * Math.atan2(dy, dx) + d * 0.22 - t * 7)
         const a = w * (1 - d / R * 0.7) * (0.4 + 0.6 * v)
         back.clearRect(c * cw, r * ch, cw, ch)

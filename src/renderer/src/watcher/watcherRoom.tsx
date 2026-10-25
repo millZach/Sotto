@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import { parseHostEntityKey } from '../../../shared/clientIdentity'
 import type { WatcherThreadTarget } from '../../../shared/watcher'
-import { isWatchedRow, type WatcherBridge, type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherMergeTurnsRead, type WatcherRoomResult, type WatcherRoomState } from '../../../shared/watcherRoom'
+import { isWatchedRow, newerWatcherRoom, type WatcherBridge, type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherMergeTurnsRead, type WatcherRoomResult, type WatcherRoomState } from '../../../shared/watcherRoom'
 import { useOptionalAgents } from '../agents/AgentContext'
 import { useWatcherEnabled } from '../state/watcherFeature'
 import { firstMessage, useFirstMessageDelivery } from './watcherFirstMessage'
@@ -131,10 +131,8 @@ export function watchedTargets(room: WatcherRoomState): WatcherThreadTarget[] {
   return watchedRows(room).map(entry => entry.target)
 }
 
-/** The newer of two projections; an answer to `get` can arrive after a change main published later. */
-function newer(current: WatcherRoomState | null, next: WatcherRoomState): WatcherRoomState {
-  return current !== null && Date.parse(current.observedAt) > Date.parse(next.observedAt) ? current : next
-}
+/** The newer of two projections; an answer to `get` or a command can arrive after a change main published later. */
+const newer = newerWatcherRoom
 
 /**
  * Reads Watcher's projection from main while the Watcher gate is on, and nothing at all while it is off: no

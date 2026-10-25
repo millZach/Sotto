@@ -55,6 +55,8 @@ export interface DelegationCoordinator {
   /** Why a thread's own queue or sends hold its next prompt, when they do; a held queue refuses a brief at admission. */
   pendingThreadWorkReason?(threadId: string): string | null
   hasUserDraft(threadId: string): boolean
+  /** Restores a settled thread a brief is queued for, as new work does; nothing when it is not settled. */
+  reopenSettledForWork?(threadId: string): Promise<void>
   refreshDelegationObservation(): void
   deliverWakeUp(threadId: string, news: DelegationNews, options: { readonly tool: boolean }): Promise<void>
 }
@@ -921,7 +923,11 @@ export class DelegationService {
     this.queuedBriefs.set(record.id, brief)
     const snapshot = this.snapshot(), thread = snapshot.threads.find(item => item.id === record.delegatedThreadId)
     if (thread && this.free(thread, snapshot)) await this.dispatch(record.id)
-    else this.options.control.refreshDelegationObservation()
+    else {
+      // Queued work restores a settled thread now, not once it goes; its send restores it then if this could not.
+      if (thread) await this.options.control.reopenSettledForWork?.(thread.id).catch(() => undefined)
+      this.options.control.refreshDelegationObservation()
+    }
   }
   /** Whether a delegated thread can take a brief now: idle, connected, asking nothing and holding nothing of the user's. */
   private free(thread: AgentThread, snapshot: AgentHostSnapshot): boolean {

@@ -74,4 +74,22 @@ describe('Sotto Owl for Mac workflow signing (ADR-0093)', () => {
   it('keeps a Mac Owl only when its receipt says it is signed, notarized and stapled', () => {
     expect(steps[index('Name the files the receipt lists')].run).toContain('signed, notarized and stapled')
   })
+  it('builds the matching Mac host archive with every Owl, after the keychain is gone and the app is kept (#1314)', () => {
+    const host = index('Package and verify the Mac host archive')
+    const keep = index('Retain the Mac host archive')
+    expect(steps[host].run).toBe('npm run package:host:owl -- --version "$VERSION" --source "$SOURCE"')
+    expect(steps[host].env).toEqual({ COPYFILE_DISABLE: '1' })
+    expect(steps[host].if).toBeUndefined()
+    expect(index('Remove the signing keychain and notary key')).toBeLessThan(host)
+    expect(index('Retain the Mac Owl files')).toBeLessThan(host)
+    expect(keep).toBe(host + 1)
+    // Its own artifact: the Mac Owl folder must hold only the files its receipt lists.
+    expect(steps[keep].with.name).toBe('sotto-owl-mac-host-${{ inputs.version }}')
+    expect(steps[keep].with.name).not.toBe(steps[index('Retain the Mac Owl files')].with.name)
+    expect(steps[keep].with.path.trim().split('\n')).toEqual([
+      'release/Sotto-host-${{ inputs.version }}-darwin-arm64.tar.gz',
+      'release/Sotto-host-${{ inputs.version }}-darwin-arm64.tar.gz.sha256',
+    ])
+    expect(steps[keep].with['if-no-files-found']).toBe('error')
+  })
 })

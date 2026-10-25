@@ -380,7 +380,7 @@ it('stops a server with its whole process tree, so a tool it started does not ou
 
 it.each([
   ['stable, with Muse held', undefined, 'Choose a Codex, Claude Code or Grok Build model for Watcher.'],
-  ['Owl, with nothing held', new Set<ProviderId>(), 'Choose a Codex, Claude Code, Grok Build or Muse model for Watcher.'],
+  ['Owl, with nothing held', new Set<ProviderId>(), 'Choose a Codex, Claude Code, Grok Build, Muse or Cursor model for Watcher.'],
 ] as const)('refuses Watcher in words before any OpenCode process starts, naming Watcher’s providers on %s', async (_run, heldProviders, choose) => {
   const f = await opencodeFixture(undefined, undefined, {}, heldProviders ? { heldProviders } : {})
   try {
@@ -396,7 +396,9 @@ it.each([
   } finally { await f.cleanup() }
 })
 
-it('ends the tools of a server that exits by itself, since a tool it started outlives it', { timeout: 60_000 }, async () => {
+// On Windows the tool is found by reading the process table once the server has gone, which Sotto gives up to a minute on
+// a loaded machine (#1354). That real read is part of what is tested, so the deadline leaves room for all of it.
+it('ends the tools of a server that exits by itself, since a tool it started outlives it', { timeout: 120_000 }, async () => {
   const { f, id } = await open()
   let child: number | undefined
   try {
@@ -408,6 +410,7 @@ it('ends the tools of a server that exits by itself, since a tool it started out
     // The server ends on its own, not by Sotto's stop: its process tree is gone with it, but the tool is still running.
     await f.action(id, { type: 'exit' })
     await expect.poll(async () => (await thread(f, id)).lastTurn).toEqual({ id: 'first', status: 'interrupted' })
+    // The adapter has closed once its stop, the read included, is done: by then the tool has been told to end.
     await f.host.closed()
     const tool = child
     await expect.poll(() => running(tool), { timeout: 15_000 }).toBe(false)

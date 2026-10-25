@@ -267,17 +267,20 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
       }
       return hex(getComputedStyle(document.body).backgroundColor)
     }
-    // The night in the room's corner sits between the canvas and the header: text over it is measured against both.
+    // The night in the room's corner sits between the canvas and the header: text over it is measured against both,
+    // unless the text sits on an opaque fill of its own, such as Watched's badge, which hides the night under it.
     const sky = document.querySelector('.watcher-room__sky')?.getBoundingClientRect()
     const surfaces = (element: Element): string[] => {
       const under = background(element)
       const bounds = element.getBoundingClientRect()
-      const onSky = sky !== undefined && element.closest('.watcher-pane') !== null && bounds.top < sky.bottom && bounds.left < sky.right
+      const fill = getComputedStyle(element).backgroundColor
+      const ownFill = fill !== 'transparent' && !fill.startsWith('rgba(') && !fill.includes('/')
+      const onSky = !ownFill && sky !== undefined && element.closest('.watcher-pane') !== null && bounds.top < sky.bottom && bounds.left < sky.right
       return onSky ? [under, token(element.closest('.watcher-room')!, '--tt-owl-room-night')] : [under]
     }
     const selectors = ['.watcher-head h1', '.watcher-head__list', '.watcher-head__count', '.watcher-tabs__tab', '.watcher-tabs__count', '.watcher-glance__lead', '.watcher-glance__name', '.watcher-glance__why',
       '.watcher-pane .thread-chip', '.thread-options__caption', '.thread-chip-menu__options small', '.thread-chip-menu__foot', '.watched-note', '.watched-note__stop', '.watch-toggle', '.watch-toast > span',
-      '.watcher-dock__switch button', '.watcher-group__label', '.watcher-group__count', '.watcher-row__title', '.watcher-row__status',
+      '.watcher-dock__switch button', '.watcher-dock__tab', '.watcher-group__label', '.watcher-group__count', '.watcher-row__title', '.watcher-row__status',
       '.watcher-row__where', '.watcher-row__asks > span', '.watcher-answer', '.watcher-list__foot', '.watcher-list .thread-nav__time', '.watcher-first__intro h2', '.watcher-first__intro p',
       '.watcher-beside .thread-workspace__head h2', '.watcher-own__words > strong', '.watcher-own__said', '.watcher-own__none', '.watcher-own__toggle', '.watcher-own__files code',
       '.watcher-watched__lead > p', '.watcher-watched__label', '.watched-card__title', '.watched-card__meta', '.watched-card__doing', '.watched-card__stop',
@@ -1144,6 +1147,99 @@ test.describe("Watcher's room on the built app", () => {
     })
   })
 
+  test('Watcher’s conversation keeps a reader’s place while Watcher works on news, and follows the end only from the end', async () => {
+    // The wake-up that begins a news turn is left out of Watcher's conversation (watcherWakeUpsAsShown), so until its first
+    // reply the turn has nothing drawn: only its work, under your last turn. That turn stays as it finished (#1452).
+    const clock = (minute: number, second = 0): string => new Date(Date.UTC(2026, 6, 12, 18, minute, second)).toISOString()
+    const said = (id: string, role: AgentMessage['role'], minute: number, text: string, second = 0): AgentMessage => ({ id, role, text, createdAt: clock(minute, second) })
+    const long = (what: string): string => Array.from({ length: 14 }, (_, n) =>
+      `${what}, paragraph ${n + 1}. ${'Watcher read the thread and says what changed, what waits on you and what comes next. '.repeat(3)}`).join('\n\n')
+    let sequence = 1000
+    const work = (turnId: string, from: number, to: number, tools: readonly string[], status: 'running' | 'completed' = 'completed'): AgentActivity[] => [
+      { id: `turn-${turnId}`, turnId, afterMessageId: turnId, sequence: sequence++, kind: 'turn', status, title: 'Turn', startedAt: clock(from), ...status === 'completed' ? { completedAt: clock(to) } : {} },
+      ...tools.map((title): AgentActivity => ({ id: `${turnId}-${title}`, turnId, afterMessageId: turnId, sequence: sequence++, kind: title === 'Thinking' ? 'reasoning' : 'tool',
+        status, title, startedAt: clock(from), ...status === 'completed' ? { completedAt: clock(to) } : {} })),
+    ]
+    const messages: AgentMessage[] = []
+    const activities: AgentActivity[] = []
+    for (let turn = 0; turn < 4; turn++) {
+      const at = turn * 6
+      messages.push(said(`ask-${turn}`, 'user', at, `Question ${turn} for Watcher.`))
+      // The replies written on the way fold under the turn's Worked for line.
+      for (let step = 0; step < 4; step++) messages.push(said(`step-${turn}-${step}`, 'assistant', at + 1, `Looking at part ${step + 1} of question ${turn}. ${'Reading it first. '.repeat(8)}`, step * 10))
+      messages.push(said(`final-${turn}`, 'assistant', at + 2, long(`Answer ${turn}`)))
+      activities.push(...work(`ask-${turn}`, at, at + 2, ['Thinking', 'read_thread', 'list_threads', 'read_operation']))
+      if (turn < 3) {
+        messages.push(said(`news-reply-${turn}`, 'assistant', at + 4, `News ${turn}: Footer links pushed its branch.`, 5))
+        activities.push(...work(`news-${turn}`, at + 4, at + 5, ['Thinking', 'read_operation']))
+      }
+    }
+    await onReleaseTrack('owl', async () => withSotto(launchOptions('t3-code', 'dark'), async (launched) => {
+      const { page } = launched
+      await openThreads(page)
+      await seedRoom(page, { current: true, history: false })
+      const history = (next: { readonly messages: readonly AgentMessage[]; readonly activities: readonly AgentActivity[]; readonly status: 'idle' | 'running' }) =>
+        page.evaluate(async ({ master, next }) => window.sottoE2E!.agentEvent!({ type: 'history', threadId: master, text: '', ...next }),
+          { master: CURRENT, next: { ...next, messages: [...next.messages], activities: [...next.activities] } })
+      await history({ messages, activities, status: 'idle' })
+      await resizeContentWindow(launched, 1280, 800)
+      await openRoom(page)
+      const pane = watcherPane(page)
+      const log = pane.getByRole('log', { name: 'Thread transcript' })
+      // What the reader is reading: the first paragraph or line reaching the top of the view, and where it starts.
+      const reading = () => log.evaluate(element => {
+        const top = element.getBoundingClientRect().top
+        const first = [...element.querySelectorAll('.thread-transcript__content p, .thread-transcript__content button')].find(item => item.getBoundingClientRect().bottom > top + 1)
+        return { words: (first?.textContent ?? '').slice(0, 48), offset: first ? Math.round(first.getBoundingClientRect().top - top) : null }
+      })
+      const fromEnd = () => log.evaluate(element => element.scrollHeight - element.scrollTop - element.clientHeight)
+      const newsTurn = (id: string) => pane.locator(`.thread-activity[data-turn-id="${id}"]`)
+      const reply = (id: string) => pane.locator(`[data-message-id="${id}"]`)
+      // The control that takes the reader to the newest message, named for what it brings.
+      const toLatest = pane.getByRole('button', { name: /^(Jump to latest|New messages)$/u })
+      // Inside your last turn's answer, and higher up in the conversation.
+      for (const [answer, paragraph] of [['final-3', 'Answer 3, paragraph 4.'], ['final-1', 'Answer 1, paragraph 4.']] as const) {
+        // Each reading has news of its own, since a turn that ended is never reopened.
+        const news = `news-${answer}`, silent = `silent-${answer}`
+        const newsReply = said(`reply-${answer}`, 'assistant', 40, 'Footer links merged.', 20)
+        await history({ messages, activities, status: 'idle' })
+        await expect(reply(answer).getByText(paragraph)).toBeVisible()
+        await settle(page)
+        await reply(answer).getByText(paragraph).evaluate(element => element.scrollIntoView({ block: 'start' }))
+        await expect(toLatest).toBeVisible()
+        await settle(page)
+        const read = await reading()
+        expect(read.words, `reading ${answer}`).toContain(paragraph)
+        expect(await fromEnd(), `${answer} is away from the end`).toBeGreaterThan(400)
+        const steps = [
+          ['news starts', { messages, activities: [...activities, ...work(news, 40, 40, ['Thinking'], 'running')], status: 'running' },
+            () => expect(newsTurn(news)).toHaveCount(1)],
+          ['its reply arrives', { messages: [...messages, newsReply], activities: [...activities, ...work(news, 40, 40, ['Thinking'], 'running')], status: 'running' },
+            () => expect(reply(newsReply.id)).toBeVisible()],
+          ['it ends', { messages: [...messages, newsReply], activities: [...activities, ...work(news, 40, 41, ['Thinking'])], status: 'idle' },
+            () => expect(reply(newsReply.id).getByRole('button', { name: /^After news/u })).toBeVisible()],
+          ['silent news starts', { messages: [...messages, newsReply], activities: [...activities, ...work(news, 40, 41, ['Thinking']), ...work(silent, 42, 42, ['list_threads'], 'running')], status: 'running' },
+            () => expect(newsTurn(silent)).toHaveCount(1)],
+          ['it ends with no reply', { messages: [...messages, newsReply], activities: [...activities, ...work(news, 40, 41, ['Thinking']), ...work(silent, 42, 43, ['list_threads'])], status: 'idle' },
+            () => expect(newsTurn(silent)).toHaveCount(0)],
+        ] as const
+        for (const [what, next, drawn] of steps) {
+          await history(next)
+          await drawn()
+          await settle(page)
+          expect(await reading(), `reading ${answer} when ${what}`).toEqual(read)
+        }
+      }
+      // At the end, the conversation follows what arrives; the keyboard takes a reader there from higher up.
+      await toLatest.focus()
+      await page.keyboard.press('Enter')
+      await expect(toLatest).toHaveCount(0)
+      await history({ messages: [...messages, said('news-reply-later', 'assistant', 45, long('Later news'))], activities, status: 'idle' })
+      await expect(reply('news-reply-later')).toBeVisible()
+      await expect.poll(fromEnd).toBeLessThanOrEqual(1)
+    }))
+  })
+
   test('receipt cards, the takeover line and Stop all, from the keyboard at every size', async () => {
     // Watcher started Visual gate flake and Footer links and stopped Grok voice previews in its reply; the user then sent
     // in Weekly note, which Watcher was driving.
@@ -1367,8 +1463,8 @@ test.describe("Watcher's room on the built app", () => {
           await expect(beside(page)).toBeVisible()
           await expect(page.locator('.watcher-head .watcher-stop-all')).toHaveCount(stopAll ? 1 : 0)
           for (const counts of ['seeded', 'three-digit'] as const) {
-            // The counts are uncapped. The second pass draws both as 100, the widest three digits in tabular figures, at the
-            // window sizes whose panes span the sweep.
+            // All threads' count is uncapped and Watched's badge stops at 99+. The second pass draws both as 100, wider than
+            // either can be drawn, at the window sizes whose panes span the sweep.
             if (counts === 'three-digit') await page.locator('.watcher-head').evaluate(head => {
               for (const count of head.querySelectorAll('.watcher-head__count, .watcher-tabs__count')) count.textContent = '100'
             })

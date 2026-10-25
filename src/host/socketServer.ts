@@ -9,9 +9,10 @@ import { PairedClients, originAllowed, SESSION_LIFETIME_MS } from '../main/agent
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from '../main/agents/control'
 import { ModelCatalogRevisions } from '../main/agents/agentStateBroadcast'
 import { RefusedImage } from '../main/agents/attachmentStore'
+import { FileUploadRefusal, FileUploads } from './fileUploads'
 import { pullRequestReadFailureOf } from '../main/agents/gitPullRequests'
 import type { GitPullRequestReadFailure } from '../shared/gitPullRequests'
-import { shellForProtocolV1, clientUpdateForOlderClient, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, providersUnknownTo, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostWireShell } from '../shared/hostProtocol'
+import { shellForProtocolV1, clientUpdateForOlderClient, clientUpdateWithoutNotListed, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, providersUnknownTo, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostWireShell } from '../shared/hostProtocol'
 import { hostCatalogKey, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate } from '../shared/agents'
 import { foldAgentThreadDetailUpdates, isAgentThreadDetailDelta } from '../shared/agentThreadDetail'
 import { resolveModel } from '../shared/modelCatalog'
@@ -101,7 +102,7 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  * `unknownProviders` are the providers whose host feature its hello did not accept (`PROVIDER_HOST_FEATURES`, #1107): it is
  * sent nothing of theirs, and their threads are hidden from it. Until its hello, that is every such provider.
  */
-interface Peer { unknownProviders: HeldProviders; hostUpdate: boolean; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget> }
+interface Peer { unknownProviders: HeldProviders; hostUpdate: boolean; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget> }
 /**
  * A desktop from before history import, or from before Muse and OpenCode were counted, is sent only the Usage read its
  * strict schemas know (ADR-0083).
@@ -244,16 +245,19 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'watcher-work-settled' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-outcomes' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-muse' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
+    && (feature !== 'watcher-cursor' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
     && (feature !== 'answer-check' || service.checkRequestAnswer !== undefined)
     && (feature !== 'atomic-send' || service.supportsAtomicSend === true)
     && (feature !== 'draft-revisions' || service.supportsDraftRevisions === true)
     && (feature !== 'client-updates' || options.clientUpdates === true)
     // Offered with client updates: the coordinator's check keeps what an update already run said (ADR-0077).
     && (feature !== 'client-update-outcomes' || options.clientUpdates === true)
+    && (feature !== 'client-update-not-listed' || options.clientUpdates === true)
     && (feature !== 'usage-dashboard' || (service.supportsUsage === true && service.usageRead !== undefined && service.usageRefresh !== undefined && service.usageClear !== undefined))
     // Usage's place and window filters (ADR-0083) arrived with history import: an older host's strict query refuses them.
     && (feature !== 'usage-history' || (service.supportsUsage === true && service.usageRead !== undefined))
     && (feature !== 'usage-muse-opencode' || (service.supportsUsage === true && service.usageRead !== undefined))
+    && (feature !== 'usage-background-refresh' || (service.supportsUsage === true && service.usageRefresh !== undefined))
     && (feature !== 'pull-request-babysit' || service.supportsBabysitting === true)
     // Host facts are for a desktop placing work (#1031): a headless host offers them on both listeners, to desktops only,
     // and the desktop's own phone listener, which serves no desktop, never does.
@@ -266,6 +270,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'host-delegation' || service.supportsHostDelegation === true && service.desktopDefaults !== undefined && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
     // Continuing agents and forking (#1028) only where the host's Owl answer turns them on.
     && (feature !== 'thread-starts' || service.supportsThreadStarts === true && service.startHandover !== undefined)
+    // The message scrubber's prompts above a pane's window (ADR-0109) are for a desktop; the desktop's own phone listener serves none.
+    && (feature !== 'thread-prompts' || service.threadPrompts !== undefined && (options.admin !== false || options.tailnet !== undefined))
     // A host that keeps which failed threads were seen publishes it and takes Dismiss all (ADR-0092).
     && (feature !== 'failure-seen' || service.supportsFailureSeen === true)
     // The iPhone's pull request sheet (#1281) only where the host's Owl answer turns it on.
@@ -275,7 +281,18 @@ export async function startSocketServer(options: SocketServerOptions) {
     // Cut bodies are for a desktop on a slow link (ADR-0025, October 18 amendment); the desktop's own phone listener serves none.
     && (feature !== 'activity-bodies' || options.admin !== false || options.tailnet !== undefined)
     // The iPhone's Agents view (ADR-0103) only where the host's Owl answer turns it on.
-    && (feature !== 'agents-view' || service.supportsAgentsView === true))
+    && (feature !== 'agents-view' || service.supportsAgentsView === true)
+    // Attached files (ADR-0131) only where the host's Owl answer turns them on and it keeps attachments at all.
+    && (feature !== 'file-staging' || service.supportsFileStaging === true && service.stageAttachment !== undefined))
+  /**
+   * Each paired client's file on its way here, by its client ID, so a client holds one upload at a time however many
+   * sockets it opens (ADR-0131). A part may come on any of its sockets; the upload goes when the last of them closes.
+   */
+  const uploads = new FileUploads<string>()
+  const connected = (clientId: string): boolean => {
+    for (const peer of peers) if (peer.client.clientId === clientId) return true
+    return false
+  }
   /**
    * Whether a client may have its host update itself: one the launch script recorded as a desktop, on either listener, whose
    * `remote-answer` policy lets it answer (ADR-0088). Read afresh each time, so `--deny-answers` takes it away at once.
@@ -426,7 +443,9 @@ export async function startSocketServer(options: SocketServerOptions) {
     const phoneState = peer.watcherPhone && service.watcherPhone ? watcherFor(peer, service.watcherPhone.state(options.mayAnswer?.(peer.client) ?? false, peer.watcherPhoneManage === true, peer.watcherPhoneSteer === true)) : undefined
     const projected = phoneState ? { ...own, watcher: phoneState, host: { ...own.host, threads: own.host.threads.map(thread => ({ ...thread,
       watchedByWatcher: phoneState.watchedThreads.some(row => row.target.hostId === hostId && row.target.threadId === thread.id && row.watched) })) } } : own
-    const shell = peer.clientUpdates || !state.clientUpdates ? projected : { ...projected, clientUpdates: state.clientUpdates.map(clientUpdateForOlderClient) }
+    // One from before mise's `not-listed` failure reads it as the installer's, for the same reason.
+    const shell = !state.clientUpdates || (peer.clientUpdates && peer.clientUpdateNotListed) ? projected
+      : { ...projected, clientUpdates: state.clientUpdates.map(peer.clientUpdates ? clientUpdateWithoutNotListed : clientUpdateForOlderClient) }
     // An iPhone from before ADR-0111 settles a terminal answer it was waiting on only once a complete list leaves its
     // terminal out, so a client that still accepts `terminals` reads an empty one. Nothing offers the feature.
     return peer.retiredTerminals ? { ...shell, terminals: [] as [] } : shell
@@ -987,6 +1006,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.messageAliases = request.accepts?.includes('message-aliases') ?? false
         peer.afterSeq = request.afterSeq ?? Number.MAX_SAFE_INTEGER; peer.deltas = request.accepts?.includes('detail-delta') ?? false
         peer.clientUpdates = (request.accepts?.includes('client-updates') ?? false) && offers(peer, 'client-updates')
+        peer.clientUpdateNotListed = peer.clientUpdates && (request.accepts?.includes('client-update-not-listed') ?? false) && offers(peer, 'client-update-not-listed')
         peer.catalogRevisions = request.accepts?.includes('model-catalog-revision') ?? false
         peer.activitySummaries = request.accepts?.includes('activity-summaries') ?? false
         // Summaries win over cut bodies: a client that asks for both reads summaries, as it did before cut bodies.
@@ -1107,6 +1127,10 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (!offers(peer, 'thread-starts') || !service.startHandover) throw new Refusal('invalid_request')
         if (hiddenThread(peer, request.threadId)) throw new Refusal('forbidden')
         return toolRead(async () => ({ handover: await service.startHandover!(request.threadId) }))
+      case 'thread-prompts':
+        if (!offers(peer, 'thread-prompts') || !service.threadPrompts) throw new Refusal('invalid_request')
+        if (hiddenThread(peer, request.threadId)) throw new Refusal('forbidden')
+        return toolRead(() => service.threadPrompts!(request.threadId, request.beforeMessageId))
       case 'thread-delegations': {
         if (!offers(peer, 'agents-view') || !service.threadDelegations) throw new Refusal('invalid_request')
         if (hiddenThread(peer, request.threadId)) throw new Refusal('forbidden')
@@ -1153,7 +1177,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (!offers(peer, 'usage-dashboard') || !service.usageRefresh) throw new Refusal('invalid_request')
         {
           const providerIds = peer.usageMuseOpenCode ? request.providerIds : usageProvidersBeforeMuse(request.providerIds)
-          try { return usageForPeer(peer, usageLocalHostReadSchema.parse(await service.usageRefresh(providerIds))) } catch { throw new Refusal('unavailable') }
+          const background = request.background === true && offers(peer, 'usage-background-refresh')
+          try { return usageForPeer(peer, usageLocalHostReadSchema.parse(await (background ? service.usageRefresh(providerIds, true) : service.usageRefresh(providerIds)))) } catch { throw new Refusal('unavailable') }
         }
       case 'usage-clear':
         if (!offers(peer, 'usage-dashboard') || !service.usageClear) throw new Refusal('invalid_request')
@@ -1173,6 +1198,25 @@ export async function startSocketServer(options: SocketServerOptions) {
           // An image refused for what it is says so; anything else is the host's failure to keep it.
           if (error instanceof RefusedImage) throw new Refusal('invalid_request', error.message)
           throw new Refusal('unavailable')
+        } finally { peer.preview = false }
+      }
+      case 'stage-file-part': {
+        if (!offers(peer, 'file-staging') || !service.stageAttachment) throw new Refusal('invalid_request')
+        // Up to about 11 MB of base64 in, one part at a time per socket on the preview's guard, and at most one 25 MiB
+        // upload held per paired client across all its sockets.
+        if (peer.preview) throw new Refusal('busy')
+        peer.preview = true
+        try {
+          let file
+          try { file = uploads.receive(peer.client.clientId, request.part) }
+          catch (error) { if (error instanceof FileUploadRefusal) throw new Refusal('invalid_request', error.message); throw error }
+          if (!file) return null
+          try { return await service.stageAttachment({ name: file.name, mimeType: file.mimeType, bytes: file.bytes }) }
+          catch (error) {
+            // A file refused for what it is says so; anything else is the host's failure to keep it.
+            if (error instanceof RefusedImage) throw new Refusal('invalid_request', error.message)
+            throw new Refusal('unavailable')
+          }
         } finally { peer.preview = false }
       }
       case 'attachment-content': {
@@ -1373,10 +1417,10 @@ export async function startSocketServer(options: SocketServerOptions) {
     const deflate = offered && compresses(clientId)
     stream.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n' + (deflate ? 'Sec-WebSocket-Extensions: ' + DEFLATE_RESPONSE + '\r\n' : '') + '\r\n')
     const frames = new SocketFrames(stream, false, text => onMessage(peer, text), { deflate })
-    const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map() }
+    const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, clientUpdateNotListed: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map() }
     peers.add(peer)
     frames.startHeartbeat()
-    frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); peers.delete(peer); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
+    frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); peers.delete(peer); if (!connected(peer.client.clientId)) uploads.drop(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
     frames.feed(head)
     options.onPeersChanged?.()
   }

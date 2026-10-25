@@ -5,6 +5,9 @@ import { babysitEndedReasonSchema, type BabysitEndedReason } from '../../shared/
 import { ShortTextWriter } from '../llm/shortTextWriter'
 import { firstMessageTitleWriter, threadTitleWriter } from '../llm/threadTitle'
 import { threadBranchWriter } from '../llm/threadBranch'
+import { nextPromptWriter } from '../llm/nextPrompt'
+import { NextPrompts } from './nextPrompts'
+import type { NextPromptEntry } from '../../shared/nextPrompt'
 import { CodexAppServerHost, type CodexAdapterEvent } from './codex'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './claude'
 import { WorkerRoles } from './subagentRoles'
@@ -13,6 +16,10 @@ import { GrokAcpHost } from './grok'
 import { DevinAcpHost } from './devin'
 import { MuseMspHost } from './muse'
 import { OpenCodeHost } from './opencode'
+import { CursorAcpHost } from './cursor'
+import { CursorSignIn } from './cursorSignIn'
+import type { OwnServer } from '../../shared/ownModelServers'
+import { openCodeForOwnServers } from '../ownModelServers/openCode'
 import { HeldProviderHost } from './heldProviderGate'
 import { heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import { ConfiguredProviderHost } from './providerSwitch'
@@ -40,11 +47,13 @@ import { GitPullRequests } from './gitPullRequests'
 import { commitMessageWriter } from '../llm/commitMessage'
 import { pullRequestTextWriter } from '../llm/pullRequestText'
 import { WorktreeCleanup, type WorktreeCleanupDependencies } from './worktreeCleanup'
+import { IdleCompaction } from './idleCompaction'
 import { RestartResume } from './restartResume'
 import type { AgentHost } from './host'
 import { UsageService } from './usageService'
 import { mayGrantLocally } from './authority'
-import { HostFactsSource, hostMachineReport } from './hostFacts'
+import { HostFactsSource, hostMachineReport, type MachineWork } from './hostFacts'
+import type { HostMachineReport } from '../../shared/hostFacts'
 import { readProjectOrigins } from './projectOrigins'
 import { threadDelegations } from './agentsView'
 import { DesktopDefaultsStore, hostDelegationMachines } from './hostDelegation'
@@ -80,8 +89,10 @@ export interface AgentRuntimeOptions {
   /** The Owl list's answer for the iPhone's Agents view (ADR-0103), read once by the process owner. Absent fails closed. */
   agentsViewEnabled?: boolean
   /**
-   * The Owl list's answer for Work across machines (#1032), read once by the process owner. Absent fails closed: a start
-   * names no machine or system, nothing reads where new workers start, and the host does not report its projects' origins.
+   * The Owl list's answer for Work across machines (ADR-0082), read once by the process owner. Absent fails closed: a
+   * start names no machine or system, nothing reads where new workers start, the host does not report its projects'
+   * origins, this machine's report is its host facts and running threads alone, no live load is sampled, and
+   * list_machines shows none of it.
    */
   crossMachineEnabled?: boolean
   /**
@@ -92,6 +103,21 @@ export interface AgentRuntimeOptions {
    * delegation's kind of work starts on the desktop's roles.
    */
   hostDelegation?: { counts(clientId: string): boolean; roles: boolean }
+   * The Owl list's answer for attaching any file (ADR-0131), read once by the process owner. With it the store keeps files
+   * that are not images and the host lists `file-staging`. Absent fails closed: only the four image types are kept.
+   */
+  attachAnyFile?: boolean
+  /**
+   * The Owl list's answer for next prompts (ADR-0132), read once by the process owner. Absent fails closed, and a headless
+   * host builds none: only this computer's window shows them. `nextPromptChanged` hears each change, for the window.
+   */
+  nextPromptEnabled?: boolean
+  nextPromptChanged?: (entry: NextPromptEntry) => void
+  /**
+   * The user's own model servers (ADR-0124), given to this computer's OpenCode at each process start. Present only while
+   * the `own-model-servers` Owl answer is on; a headless host has none in this phase.
+   */
+  ownServers?: () => Promise<readonly OwnServer[]>
   claudeHistoryModulePath?: string
   credentials: ControlDependencies['credentials']
   settings: () => AppSettings
@@ -148,8 +174,15 @@ export interface AgentRuntimeOptions {
 export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const { directory, credentials } = options
   // This machine's host facts: its operating system is read now, once; memory only when facts are asked for (#1031).
+  // With Work across machines on, the first live load sample is taken now too, so the first ask reads over a window
+  // without waiting (#1311); with it off, nothing is sampled and the report carries no load.
+  const crossMachine = options.crossMachineEnabled === true
   const facts = new HostFactsSource()
-  void facts.read().catch(() => undefined)
+  void facts.read().then(() => crossMachine ? facts.primeLoad() : undefined).catch(() => undefined)
+  // Its threads and sends are read in place, after the load, as the report is answered, with Watcher's starts still on
+  // their way to a thread here.
+  const machineFacts = (): Promise<HostMachineReport> => hostMachineReport(facts, (): MachineWork => ({ threads: agentControl.watcherSnapshot().threads, ...agentControl.watcherSendRecords(),
+    ...crossMachine && watcher ? { startsNotYetSent: watcher.startsNotYetSent() } : {} }), crossMachine)
   const threadRegistry = options.host ? null : new ThreadRegistry(directory)
   const held = heldProvidersOption(options)
   // A held provider's adapter is never built: its stand-in starts nothing and refuses in the provider's name.
@@ -163,7 +196,10 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     muse: adapter('muse', () => options.providers?.muse ?? new MuseMspHost(directory, { disableSandbox: () => agentControl.configuration().museDisableSandbox, usageEnabled: options.usageEnabled === true })),
     // A desktop's OpenCode opens a sign-in page in the user's browser (#1104). A headless host's has no browser: a desktop signs
     // it in over the host connection and opens its pages itself (#1107).
-    opencode: adapter('opencode', () => options.providers?.opencode ?? new OpenCodeHost(directory, options.runsAs === 'headless-host' ? { heldProviders: held, usageEnabled: options.usageEnabled === true } : { heldProviders: held, openExternal: options.openExternal, usageEnabled: options.usageEnabled === true })),
+    opencode: adapter('opencode', () => options.providers?.opencode ?? new OpenCodeHost(directory, options.runsAs === 'headless-host' ? { heldProviders: held, usageEnabled: options.usageEnabled === true } : { heldProviders: held, openExternal: options.openExternal, usageEnabled: options.usageEnabled === true,
+      ...(options.ownServers ? { ownServers: options.ownServers } : {}) })),
+    // Cursor runs with Sotto's own Cursor folder under this runtime's directory: user data, or a headless host's data (ADR-0128).
+    cursor: adapter('cursor', () => options.providers?.cursor ?? new CursorAcpHost(directory)),
   }
   const agentHost = new WorkspaceHost(options.host ?? new ConfiguredProviderHost({
     directory,
@@ -174,6 +210,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       devin: new SottoThreadHost('devin', providers.devin!, threadRegistry!),
       muse: new SottoThreadHost('muse', providers.muse!, threadRegistry!),
       opencode: new SottoThreadHost('opencode', providers.opencode!, threadRegistry!),
+      cursor: new SottoThreadHost('cursor', providers.cursor!, threadRegistry!),
     },
     provider: () => agentControl.configuration().provider,
     enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },
@@ -221,6 +258,16 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       codex: new CodexSubscriptionClient(join(directory, 'reasoning', 'codex')),
       grok: new GrokSubscriptionClient(join(directory, 'reasoning', 'grok')),
     })
+  // Next prompts (ADR-0132): when a turn ends, the thread's own provider is asked on the side what the user will type next.
+  // Built only for this computer's own threads, while the Owl feature is on; the switch is read for every turn.
+  const nextPrompts = options.nextPromptEnabled === true && options.runsAs !== 'headless-host' && !options.host ? new NextPrompts({
+    write: nextPromptWriter(shortTextWriter, options.writingSettings),
+    thread: id => agentControl.liveThread(id),
+    history: thread => agentControl.threadHistory(thread),
+    historyEnabled: options.historyEnabled,
+    publish: entry => options.nextPromptChanged?.(entry),
+    log: event => options.logFailure?.('next-prompt-failed', event === 'next-prompt-failed error' ? 'failed' : 'unreadable'),
+  }) : undefined
   const agentControl: AgentControl = new AgentControl({
     directory, host: agentHost, credentials, turns, watcherEnabled: options.watcherEnabled ?? false,
     heldProviders: held, streamingPublishCost: options.streamingPublishCost ?? false, ...(usage ? { usage } : {}),
@@ -232,12 +279,14 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.bindRequestDraftDecision ? { bindRequestDraftDecision: options.bindRequestDraftDecision } : {}),
     ...(options.logFailure ? { logFailure: options.logFailure } : {}),
     ...(options.missingAttachment ? { missingAttachment: options.missingAttachment } : {}),
+    ...(options.attachAnyFile === true ? { attachAnyFile: true } : {}),
     ...(options.runsAs ? { runsAs: options.runsAs } : {}),
     ...(options.clients ? { clients: options.clients } : {}),
     ...(options.locateClient ? { locateClient: options.locateClient } : {}),
     ...(options.installedProviders ? { installedProviders: options.installedProviders } : {}),
     writeThreadTitle: threadTitleWriter(shortTextWriter, options.writingSettings),
     writeFirstMessageTitle: firstMessageTitleWriter(options.writingSettings),
+    ...(nextPrompts ? { nextPrompts } : {}),
     reasoner,
   })
   let watcherTools: WatcherToolServer | undefined
@@ -257,12 +306,11 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (workerRoles) agentHost.useWorkerRoles(workerRoles)
   // Work across machines (#1032): only the desktop places starts, so only its Watcher reads where new workers start. Every
   // host that has it on, the desktop's own included, reports its projects' origins.
-  const crossMachine = options.crossMachineEnabled === true
   const placing = crossMachine && options.runsAs !== 'headless-host'
     ? { workerMachine: () => options.settings().newWorkerMachine, projectOrigins: () => readProjectOrigins(agentControl.watcherSnapshot().projects) } : {}
   const watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
-      workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts: () => hostMachineReport(facts, agentControl.shell().host.threads),
+      workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts, crossMachine,
       settleFinished: () => options.settings().watcherSettlesFinishedThreads, ...options.watcherLog ? { log: options.watcherLog } : {},
       ...roles, ...placing }) : undefined
   if (options.delegationEnabled === true && options.runsAs !== 'headless-host') {
@@ -336,11 +384,16 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // A note already waiting in a queue goes only while both are still on; without the feature, none goes.
   if (restartResume) agentControl.useRestartResume({ due: () => options.settings().resumeThreadsAfterRestart,
     sending: threadId => restartResume.noteSending(threadId), unsent: threadId => restartResume.noteUnsent(threadId) })
+  // Idle compaction (ADR-0127): a large Claude thread quiet for 54 minutes is compacted while its prompt cache is warm.
+  // The switch is read at every sweep, so turning it off stops the next one without a restart.
+  const idleCompaction = new IdleCompaction({ control: agentControl, enabled: () => options.settings().compactIdleThreads })
   let closingWatcherTools: Promise<void> | undefined
   let watcherStopped = false
   const stopWatcher = (): void => {
     if (watcherStopped) return
     watcherStopped = true
+    nextPrompts?.close()
+    idleCompaction.stop()
     watcher?.close()
     delegation?.close()
     continuation?.close()
@@ -354,8 +407,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     const resumeFrozen = restartResume?.freeze()
     agentControl.dispose()
     stoppingProviders = (async () => {
-      // The record's last write runs beside the providers' closing; nothing they do changes it now.
-      const results = await Promise.allSettled([reasoner.close?.(), shortTextWriter.close(), ...Object.values(providers).map(provider => provider.closed?.()),
+      // The record's last write runs beside the providers' closing; nothing they do changes it now. A thread title still
+      // being written gets up to two seconds before the side calls are stopped, so `closed()` saves it (#980).
+      const results = await Promise.allSettled([reasoner.close?.(), agentControl.titleWritesSettled().then(() => shortTextWriter.close()), ...Object.values(providers).map(provider => provider.closed?.()),
         ...(closingWatcherTools ? [closingWatcherTools] : []), ...(resumeFrozen ? [resumeFrozen] : [])])
       await agentControl.closed()
       // A connection already starting when stop was requested has now settled. Stop and drain
@@ -402,6 +456,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     await agentControl.start(switchedOff ? { beforeConnect: async () => { await switchedOff.stop({ startedBy: 'agent' }, 'switch').catch(() => 0) } } : {})
   } catch (error) {
     await restartResume?.freeze()
+    idleCompaction.stop()
     watcher?.close()
     delegation?.close()
     continuation?.close()
@@ -416,12 +471,14 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (watcher) await watcher.recover()
   if (delegation) await delegation.recover()
   const delegationRecord = delegation
-  const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts,
+  const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
     ...(crossMachine ? { projectOrigins: readProjectOrigins } : {}),
     // A headless host that runs delegation for its own threads keeps the desktop defaults a desktop sends it (#1310).
     ...(desktopDefaults ? { desktopDefaults } : {}),
+    prompts: { threadPrompts: (threadId, beforeMessageId) => agentHost.threadPrompts(threadId, beforeMessageId) },
     ...(options.threadStartsEnabled === true ? { threadStarts: { startHandover: (threadId: string) => agentHost.startHandover(threadId) } } : {}),
     ...(options.pullRequestViewEnabled === true ? { pullRequestView: true } : {}),
+    ...(options.attachAnyFile === true ? { fileStaging: true } : {}),
     // The iPhone's Agents view (ADR-0103): delegated threads only where delegation runs, which on a headless host is only
     // where Work across machines is on (#1310).
     ...(options.agentsViewEnabled === true ? { agentsView: delegationRecord ? { delegations: (threadId, threads) => threadDelegations(delegationRecord, threads, threadId) } : {} } : {}),
@@ -431,5 +488,20 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   babysitter?.begin()
   // Signing Sotto's OpenCode in to model sources (#1104): only where its adapter runs, so a held OpenCode has none.
   const opencodeSignIn = providers.opencode instanceof OpenCodeHost ? providers.opencode.signIn : undefined
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, prepareForShutdown, close }
+  // The user's own model servers reach the same OpenCode (ADR-0124), only where it runs and they were asked for.
+  const ownServersOpenCode = options.ownServers && providers.opencode instanceof OpenCodeHost ? openCodeForOwnServers(providers.opencode) : undefined
+  // Signing Cursor in from its tile on this computer (ADR-0128): only where its adapter runs, and never on a headless host, whose
+  // Cursor a desktop signs in through the provider sign-in request instead.
+  const cursorHost = providers.cursor instanceof CursorAcpHost ? providers.cursor : undefined
+  const cursorSignIn = cursorHost && options.runsAs !== 'headless-host' ? new CursorSignIn({
+    configDirectory: cursorHost.folder, program: () => cursorHost.clientProgram(), openExternal: async url => { await options.openExternal(url) },
+    connect: async () => {
+      const state = await agentControl.command({ type: 'connect', provider: 'cursor' })
+      const status = state.host.providers?.find(item => item.id === 'cursor')
+      return status?.connection === 'connected' ? undefined : status?.error ?? state.error ?? 'It did not confirm the connection.'
+    },
+    signedOut: async () => { await agentControl.command({ type: 'disconnect', provider: 'cursor' }) },
+  }) : undefined
+  idleCompaction.start()
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, ownServersOpenCode, cursorSignIn, prepareForShutdown, close }
 }
