@@ -150,6 +150,7 @@ const settingKeys = [
   'llmMinWords',
   'llmModel',
   'llmMode',
+  'llmOwnModel',
   'threadTitles',
   'nextPromptSuggestions',
   'threadWorkingCopyDefault',

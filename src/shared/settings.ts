@@ -6,6 +6,7 @@ import { INTERFACE_LANGUAGE_SETTINGS, type InterfaceLanguageSetting } from './in
 import { DEFAULT_MENU_BAR_OWL_BODY, DEFAULT_MENU_BAR_OWL_EYES, MENU_BAR_OWL_BODIES, MENU_BAR_OWL_EYES, type MenuBarOwlBody, type MenuBarOwlEyes } from './menuBarOwl'
 import { parseWorkerRoleChoices, workerRoleChoicesSchema, type WorkerRoleChoices } from './workerRoles'
 import { parseThreadShortcutChoices, threadShortcutChoicesSchema, type ThreadShortcutChoices } from './threadShortcuts'
+import { ownCleanupChoiceSchema, type OwnCleanupChoice } from './ownServerCleanup'
 import {
   APPEARANCE_CONTRAST,
   DEFAULT_THEME_ID,
@@ -311,6 +312,11 @@ export interface AppSettings {
   /** How OpenRouter picks a host for the cleanup model: its own way, the fastest host (`:nitro`) or the cheapest (`:floor`). */
   llmMode: LlmMode
   /**
+   * A model on one of the user's own model servers that cleans up dictation instead of `llmModel`, by the server's and the
+   * model's saved IDs, or null. An Owl feature (ADR-0136): with it off the choice is kept and ignored.
+   */
+  llmOwnModel: OwnCleanupChoice | null
+  /**
    * Off stops thread-title and temporary-worktree-branch naming requests. Sotto's short writing is a
    * side call to the thread's own provider (ADR-0026); the OpenRouter writing model and its
    * `writingModel` setting are gone, and a settings file that still carries the key parses and drops it.
@@ -445,6 +451,7 @@ const fieldSchemas = {
   llmMinWords: z.number().int().min(0).max(50),
   llmModel: z.string().regex(/^[\w.\-/:]{1,128}$/u).nullable(),
   llmMode: z.enum(LLM_MODES),
+  llmOwnModel: ownCleanupChoiceSchema.nullable(),
   threadTitles: z.boolean(),
   nextPromptSuggestions: z.boolean(),
   threadWorkingCopyDefault: z.enum(['shared', 'independent']),
@@ -543,6 +550,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   llmMinWords: 5,
   llmModel: null,
   llmMode: 'default',
+  llmOwnModel: null,
   // On by default: the thread's own provider names it, on the account the thread
   // already uses, and a provider that writes nothing (Devin) keeps the stand-in.
   threadTitles: true,
@@ -712,6 +720,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     llmMinWords: parseField(persisted, 'llmMinWords', defaults),
     llmModel: parseField(persisted, 'llmModel', defaults),
     llmMode: parseField(persisted, 'llmMode', defaults),
+    llmOwnModel: parseField(persisted, 'llmOwnModel', defaults),
     threadTitles: parseField(persisted, 'threadTitles', defaults),
     nextPromptSuggestions: parseField(persisted, 'nextPromptSuggestions', defaults),
     threadWorkingCopyDefault: parseField(persisted, 'threadWorkingCopyDefault', defaults),
