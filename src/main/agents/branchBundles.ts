@@ -310,7 +310,7 @@ export class BranchBundles {
         } finally { await this.git(input.repository, ['update-ref', '--no-deref', '-d', ref], undefined, 30_000).catch(() => undefined) }
         return true
       })
-      if (!written) return branchMoveRefusal('failed', branchMoveWords.failed)
+      if (!written) return branchMoveRefusal('failed', branchMoveWords.outgoingRefChanged)
       const { size } = await stat(path)
       if (size > this.maxBytes) { await unlink(path).catch(() => undefined); return branchMoveRefusal('too-large', branchMoveWords.tooLarge(size, this.maxBytes)) }
       return { type: 'sending', path, size, sha256: await fileDigest(path) }
