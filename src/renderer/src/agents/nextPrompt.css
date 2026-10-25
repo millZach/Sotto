@@ -3,7 +3,8 @@
    transcript like the skills list (`.composer-picker` in composer.css), so it never takes height from the composer.
    Colour comes only from theme roles; the intent marks are ink, with no hue of their own. */
 .thread-prompt .prompt-editor[data-empty='true'][data-ghosted='true']::before { content: none; }
-.prompt-editor__ghost { color: var(--tt-text-muted); pointer-events: none; user-select: none; }
+/* The ghost's words take the placeholder's translucent ink (threads.css, repeated here as its fallback); the keycap below keeps solid muted ink. */
+.prompt-editor__ghost { color: var(--placeholder-ink, color-mix(in srgb, var(--tt-text-muted) 55%, transparent)); pointer-events: none; user-select: none; }
 .prompt-editor__ghost-key { display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin-left: 8px; padding: 0 5px; border: 1px solid var(--tt-border); border-radius: 5px; color: var(--tt-text-muted); font-family: inherit; font-size: 11px; font-weight: 600; line-height: 1; vertical-align: 1px; }
 
 .next-list__headline { margin: 4px 8px 6px; color: var(--tt-text-2); font-size: 12.5px; font-weight: 500; line-height: 1.4; }
