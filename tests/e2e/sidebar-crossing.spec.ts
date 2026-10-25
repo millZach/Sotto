@@ -120,7 +120,7 @@ async function checkCrossing(launched: LaunchedSotto, track: 'stable' | 'owl'): 
       expect(threads.hairline, label).toMatch(/^1px /u)
       expect(threads.foot.x, label).toBe(10)
       expect(threads.foot.x + threads.foot.width, label).toBe(threads.column.width - 1 - 10)
-      expect(threads.tabs, label).toHaveLength(track === 'owl' ? 3 : 2)
+      expect(threads.tabs, label).toHaveLength(3)
       expect(threads.litFits, label).toBe(true)
     }
   }
