@@ -61,7 +61,7 @@ test('signs Cursor in from its row, groups its models by maker, offers its three
     const list = await providerList(page)
     const row = list.getByRole('button', { name: 'Cursor', exact: true })
     const panel = page.getByRole('region', { name: 'Cursor details', exact: true })
-    // Codex's row is open to begin with; End from its header goes to the last, Cursor's, and Enter opens it.
+    // Every row starts closed; End from Codex's header goes to the last, Cursor's, and Enter opens it.
     await list.getByRole('button', { name: 'Codex', exact: true }).focus()
     await page.keyboard.press('End')
     await expect(row).toBeFocused()

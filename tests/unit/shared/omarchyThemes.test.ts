@@ -173,10 +173,10 @@ describe('Omarchy M3 and readability check', () => {
     // pill radius went and three chart series moved a step (ADR-0110), and then when Settings → Providers put each
     // mark on a badge, which gave Muse and OpenCode's badge a colour of their own, and when Cursor's mark and badge got
     // theirs (ADR-0128), and when the light crossing a running turn's working words got a colour of its own (ADR-0134,
-    // October 25 amendment); none of them changes a palette.
+    // October 25 amendment), and when DeepSeek's mark got its badge colour; none of them changes a palette.
     expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('18defa9e80c06093d4ffb6fbc1f5f3984bc3bd437e06b9aa9d5028548c5c4e08')
     const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
-    expect(createHash('sha256').update(tokenText).digest('hex')).toBe('42cb6528c6293a650bd0c70d0eaf65d51dd4c7d21418a092da6146bbb88698a0')
+    expect(createHash('sha256').update(tokenText).digest('hex')).toBe('3a5e64eb2308b1cbb2cc092591f09a027c3e726e0134fff30370d38c560e76ba')
     // Existing Windows and macOS imports named Omarchy remain user themes.
     expect(parseCustomThemes([{ ...parseOmarchyTheme(fixtures.themes.hackerman.rendered), id: 'omarchy' }])[0]?.id).toBe('omarchy')
   })
