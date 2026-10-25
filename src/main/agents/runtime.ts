@@ -5,6 +5,9 @@ import { babysitEndedReasonSchema, type BabysitEndedReason } from '../../shared/
 import { ShortTextWriter } from '../llm/shortTextWriter'
 import { firstMessageTitleWriter, threadTitleWriter } from '../llm/threadTitle'
 import { threadBranchWriter } from '../llm/threadBranch'
+import { nextPromptWriter } from '../llm/nextPrompt'
+import { NextPrompts } from './nextPrompts'
+import type { NextPromptEntry } from '../../shared/nextPrompt'
 import { CodexAppServerHost, type CodexAdapterEvent } from './codex'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './claude'
 import { WorkerRoles } from './subagentRoles'
@@ -86,6 +89,12 @@ export interface AgentRuntimeOptions {
    * that are not images and the host lists `file-staging`. Absent fails closed: only the four image types are kept.
    */
   attachAnyFile?: boolean
+  /**
+   * The Owl list's answer for next prompts (ADR-0132), read once by the process owner. Absent fails closed, and a headless
+   * host builds none: only this computer's window shows them. `nextPromptChanged` hears each change, for the window.
+   */
+  nextPromptEnabled?: boolean
+  nextPromptChanged?: (entry: NextPromptEntry) => void
   /**
    * The user's own model servers (ADR-0124), given to this computer's OpenCode at each process start. Present only while
    * the `own-model-servers` Owl answer is on; a headless host has none in this phase.
@@ -224,6 +233,16 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       codex: new CodexSubscriptionClient(join(directory, 'reasoning', 'codex')),
       grok: new GrokSubscriptionClient(join(directory, 'reasoning', 'grok')),
     })
+  // Next prompts (ADR-0132): when a turn ends, the thread's own provider is asked on the side what the user will type next.
+  // Built only for this computer's own threads, while the Owl feature is on; the switch is read for every turn.
+  const nextPrompts = options.nextPromptEnabled === true && options.runsAs !== 'headless-host' && !options.host ? new NextPrompts({
+    write: nextPromptWriter(shortTextWriter, options.writingSettings),
+    thread: id => agentControl.liveThread(id),
+    history: thread => agentControl.threadHistory(thread),
+    historyEnabled: options.historyEnabled,
+    publish: entry => options.nextPromptChanged?.(entry),
+    log: event => options.logFailure?.('next-prompt-failed', event === 'next-prompt-failed error' ? 'failed' : 'unreadable'),
+  }) : undefined
   const agentControl: AgentControl = new AgentControl({
     directory, host: agentHost, credentials, turns, watcherEnabled: options.watcherEnabled ?? false,
     heldProviders: held, streamingPublishCost: options.streamingPublishCost ?? false, ...(usage ? { usage } : {}),
@@ -242,6 +261,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.installedProviders ? { installedProviders: options.installedProviders } : {}),
     writeThreadTitle: threadTitleWriter(shortTextWriter, options.writingSettings),
     writeFirstMessageTitle: firstMessageTitleWriter(options.writingSettings),
+    ...(nextPrompts ? { nextPrompts } : {}),
     reasoner,
   })
   let watcherTools: WatcherToolServer | undefined
@@ -324,6 +344,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const stopWatcher = (): void => {
     if (watcherStopped) return
     watcherStopped = true
+    nextPrompts?.close()
     idleCompaction.stop()
     watcher?.close()
     delegation?.close()
@@ -430,5 +451,5 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     signedOut: async () => { await agentControl.command({ type: 'disconnect', provider: 'cursor' }) },
   }) : undefined
   idleCompaction.start()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, ownServersOpenCode, cursorSignIn, prepareForShutdown, close }
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, ownServersOpenCode, cursorSignIn, prepareForShutdown, close }
 }

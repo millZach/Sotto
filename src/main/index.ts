@@ -13,6 +13,8 @@ import { PullRequestToolServer } from './agents/pullRequestTools'
 import { DelegationToolServer } from './agents/delegationTools'
 import { registerDelegationIpc } from './agents/delegationIpc'
 import { registerContinueIpc } from './agents/continueThreadIpc'
+import { registerNextPromptIpc, windowNextPrompt } from './agents/nextPromptIpc'
+import { NEXT_PROMPT_CHANGED, NEXT_PROMPT_RENDERER_ARGUMENT } from '../shared/nextPrompt'
 import { desktopWindowClient } from './agents/hostService'
 import { DELEGATION_RENDERER_ARGUMENT } from '../shared/delegation'
 import { CONTINUE_RENDERER_ARGUMENT } from '../shared/continueThread'
@@ -678,6 +680,8 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   // The iPhone's Agents view (ADR-0103): offered to a paired iPhone only when the Owl list turns it on.
   const agentsViewEnabled = owlFeatures['iphone-agents-view']
   const continueEnabled = owlFeatures['continue-on-provider']
+  // Next prompts (ADR-0132): stable builds none, asks no provider and gives the window no bridge.
+  const nextPromptEnabled = owlFeatures['next-prompt']
   // Main watches its own event loop and can record a minute of itself (#1233, ADR-0098): an Owl feature, so stable
   // builds no service, starts no monitor and registers no bridge.
   const mainActivity = owlFeatures['main-freeze'] ? createMainActivity(userDataPath, appRunningVersion) : null
@@ -791,6 +795,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       const mainRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=main')
       const featureArguments = [...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []), ...(mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
         ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []),
+        ...(nextPromptEnabled && startupSettings.localHostEnabled ? [NEXT_PROMPT_RENDERER_ARGUMENT] : []),
         ...(mainActivity ? [MAIN_ACTIVITY_RENDERER_ARGUMENT] : []),
         ...(desktopNotificationsEnabled ? [DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') && startupSettings.localHostEnabled ? [OPENCODE_RENDERER_ARGUMENT] : []),
@@ -877,6 +882,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     delegationEnabled, workerRolesEnabled, continueEnabled, threadStartsEnabled, pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled,
     attachAnyFile: owlFeatures['attach-any-file'],
     ...(ownServers ? { ownServers: () => ownServers.list() } : {}),
+    ...(nextPromptEnabled ? { nextPromptEnabled, nextPromptChanged: entry => { windows.sendToMain(NEXT_PROMPT_CHANGED, windowNextPrompt(localRuntime?.agentControl.hostId(), entry)) } } : {}),
     ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}),
     settings: () => workingCopySettings, writingSettings: () => settings.get(),
     historyEnabled: () => agentHistoryEnabled,
@@ -1864,6 +1870,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       const cleanupDelegations = registerDelegationIpc(ipcMain, delegationService, () => windows.getTrustedRenderers(), () => agentControl.hostId(),
         (channel, payload) => { windows.sendToMain(channel, payload) })
       const cleanupContinue = registerContinueIpc(ipcMain, continueService, () => windows.getTrustedRenderers())
+      const cleanupNextPrompts = registerNextPromptIpc(ipcMain, localRuntime.nextPrompts, () => agentControl.hostId(), () => windows.getTrustedRenderers())
       const cleanupNotifications = registerNotificationIpc(ipcMain, desktopNotifier, () => windows.getTrustedRenderers())
       // A recording profiles the main window that asked, through its own debugger (ADR-0098).
       const cleanupMainActivity = registerMainActivityIpc(ipcMain, mainActivity, () => windows.getTrustedRenderers(),
@@ -2102,6 +2109,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         cleanupUsage()
         cleanupDelegations()
         cleanupContinue()
+        cleanupNextPrompts()
         cleanupMainActivity()
         cleanupNotifications()
         cleanupOpenCodeSignIn()

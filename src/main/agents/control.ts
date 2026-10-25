@@ -50,6 +50,7 @@ import { validatePromptAttachments, validateThreadOptions } from './threadOption
 import { AttachmentPreviews } from './attachmentPreviews'
 import { AttachmentStore, inlineStager, type StageInline } from './attachmentStore'
 import type { ThreadTitleExchange } from '../llm/threadTitle'
+import type { NextPromptHooks } from './nextPrompts'
 import { requestQuestionsDigest, type BindRequestDraftDecision } from './requestDrafts'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
 import { agentActivitySignature, applyAgentThreadDetailDelta, diffAgentThreadDetail, isAgentThreadDetailDelta, mergeAgentThreadDetailUpdates } from '../../shared/agentThreadDetail'
@@ -806,7 +807,7 @@ export class AgentControl {
      */
     writeFirstMessageTitle?: (prompt: string) => Promise<string | null>
     /** Local record of a silent failure; never a banner, never shown to the user. */
-    logFailure?: (code: 'client-update-handoff-failed' | 'thread-title-failed' | 'thread-answer-attribution-failed' | 'short-writing-failed', detail: ProviderId | 'failed' | `${ShortTextPurpose} ${ShortTextFailureReason}`) => void
+    logFailure?: (code: 'client-update-handoff-failed' | 'thread-title-failed' | 'thread-answer-attribution-failed' | 'short-writing-failed' | 'next-prompt-failed', detail: ProviderId | 'failed' | 'unreadable' | `${ShortTextPurpose} ${ShortTextFailureReason}`) => void
     /** Defers a coalesced broadcast; injectable so tests own the clock. */
     schedule?: PublishScheduler
     /** What each installed client publishes, and the press that installs it. */
@@ -830,11 +831,13 @@ export class AgentControl {
     threadStartsEnabled?: boolean
     /** Times a held prototype question and the minute after a send-back (ADR-0108); injectable so tests own the clock. */
     prototypeQuestionTimer?: (run: () => void, ms: number) => () => void
+    /** The next prompt (ADR-0132): told when a thread starts or finishes, and when the user sends it something. Absent while its Owl feature is off. */
+    nextPrompts?: NextPromptHooks
   }) {
     this.held = heldProvidersOption(dependencies)
     this.watcherMessageDisplay = dependencies.watcherEnabled === true ? new WatcherMessageDisplay() : undefined
     this.followupStore = new FollowupStore(dependencies.directory, () => dependencies.historyEnabled?.() !== false, id => this.dependencies.watcherEnabled === true && [this.watcher.current, this.watcher.creation?.identity, ...this.watcher.history].some(item => item?.target.threadId === id), () => this.dependencies.watcherEnabled === true)
-    this.finishedUnread = new FinishedUnread([], id => !this.threadAvailable(id))
+    this.finishedUnread = new FinishedUnread([], id => !this.threadAvailable(id), dependencies.nextPrompts)
     this.failuresSeen = new FailuresSeen([], id => !this.threadAvailable(id))
     this.clients = dependencies.clients ?? new ProviderClients({ opencodeFolders: opencodeFolders(join(dependencies.directory, 'opencode')), cursorConfigDirectory: join(dependencies.directory, 'cursor', 'config') })
     this.state = {
@@ -1062,6 +1065,7 @@ export class AgentControl {
     const shown = threadIds.filter(id => this.threadAvailable(id))
     // Showing a thread reads its finish and sees its failure (ADR-0092), so both records hear every show.
     const finished = this.finishedUnread.show(shown)
+    this.dependencies.nextPrompts?.shown?.(shown)
     if (!this.failuresSeen.show(shown, this.state.host.threads) && !finished) return false
     this.publish()
     void this.persist().catch(() => undefined)
@@ -3023,8 +3027,10 @@ export class AgentControl {
     void pending.finally(() => this.titleWrites.delete(pending)).catch(() => undefined)
     return pending
   }
+  /** The thread as this coordinator holds it now, read in place; for a side call's material, never per update. */
+  liveThread(threadId: string): AgentThread | undefined { return this.state.host.threads.find(thread => thread.id === threadId) }
   /** A thread's whole history: what the pane holds when that is all of it, else the store's own copy. */
-  private threadHistory(thread: AgentThread): readonly AgentMessage[] {
+  threadHistory(thread: AgentThread): readonly AgentMessage[] {
     if (thread.messages.length > 0 && thread.earlierAvailable !== true) return thread.messages
     return this.dependencies.host.threadMessages?.(thread.id) ?? thread.messages
   }
@@ -3228,6 +3234,14 @@ export class AgentControl {
     try { pending = this.commandWhileRunning(command, client, answerDecisionId, validateDraftOwner, composer) }
     catch (error) { releaseAnswer(); throw error }
     this.activeCommands.add(pending)
+    // Whatever was suggested next for a thread is over once main has taken something sent to it; a refused send keeps
+    // it (ADR-0132).
+    const sentTo = command.type === 'manual-send' || command.type === 'steer' || command.type === 'answer' || command.type === 'send'
+      ? explicitThreadId ?? implicitThreadId : undefined
+    if (sentTo && this.dependencies.nextPrompts) {
+      const sentAt = this.dependencies.nextPrompts.sending(sentTo)
+      if (sentAt !== undefined) void pending.then(result => { if (result.error === null) this.dependencies.nextPrompts?.started(sentTo, sentAt) }, () => undefined)
+    }
     const settled = () => { releaseAnswer(); this.activeCommands.delete(pending) }
     void pending.then(settled, settled)
     return pending
