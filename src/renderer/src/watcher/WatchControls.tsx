@@ -63,13 +63,13 @@ export function WatchOnSendToggle({ threadId }: { readonly threadId: string }): 
   useEffect(() => { if (watched && wanted) watchOnSend.set(threadId, false) }, [threadId, watched, wanted])
   if (actions === null) return null
   const on = watched || wanted
-  return <button type="button" className="thread-chip watch-on-send tt-focusable" aria-pressed={on} aria-label="Watch"
+  return <button type="button" className="thread-chip watch-on-send tt-focusable" aria-pressed={on}
     title={on ? WATCHED_ON_SEND_TIP : WATCH_ON_SEND_TIP}
     onClick={() => {
       if (!watched) { watchOnSend.set(threadId, !wanted); return }
       watchOnSend.set(threadId, false); void actions.setThread(threadId, false)
     }}>
-    <WatcherOwl size={14} /><span>{on ? 'Watching' : 'Watch'}</span>
+    <WatcherOwl size={14} /><span>Watch</span>
   </button>
 }
 

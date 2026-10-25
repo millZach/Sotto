@@ -580,11 +580,14 @@
 :root[data-room-transition] :is(.thread-nav__foot, .watcher-dock__pill) .thread-nav__seg button[data-room='watcher'] { view-transition-name: room-owl; }
 :root[data-room-transition]::view-transition-group(room-owl) { animation-duration: var(--room-owl-ms, var(--room-transition-ms)); animation-delay: var(--room-owl-delay, 0ms); animation-timing-function: linear; animation-fill-mode: both; }
 
-/* The owl's eye holes are lit only on a pressed toggle: there they glow in the theme's accent with dark pupils, and the
-   owl takes the text colour so the eyes stand out. Reduced motion keeps the glow and drops its pulse. */
+/* The owl's eye holes are lit only on a pressed toggle: there they glow in the theme's accent, with pupils in the colour
+   that reads on the accent, and the owl takes the text colour so the eyes stand out. The glow pulses only where motion
+   is allowed, by the system and by Sotto's own Reduce motion. */
 .watcher-owl__eyes { fill: none; }
 [aria-pressed='true'] > .watcher-owl { color: var(--tt-text); }
-[aria-pressed='true'] > .watcher-owl .watcher-owl__eyes { fill: var(--tt-accent); filter: drop-shadow(0 0 1.5px var(--tt-accent)); animation: watch-eyes-glow 2.4s ease-in-out infinite; }
-[aria-pressed='true'] > .watcher-owl .watcher-owl__pupil { fill: var(--tt-canvas); }
+[aria-pressed='true'] > .watcher-owl .watcher-owl__eyes { fill: var(--tt-accent); filter: drop-shadow(0 0 1.5px var(--tt-accent)); }
+[aria-pressed='true'] > .watcher-owl .watcher-owl__pupil { fill: var(--tt-on-accent); }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) [aria-pressed='true'] > .watcher-owl .watcher-owl__eyes { animation: watch-eyes-glow 2.4s ease-in-out infinite; }
+}
 @keyframes watch-eyes-glow { 50% { opacity: .7; } }
-@media (prefers-reduced-motion: reduce) { [aria-pressed='true'] > .watcher-owl .watcher-owl__eyes { animation: none; } }
