@@ -136,9 +136,9 @@ final class FileReplyTests: XCTestCase {
         await model.waitForPhotos()
         XCTAssertEqual(model.photos(ref).count, 1)
         XCTAssertEqual(model.files(ref).count, 7)
-        XCTAssertEqual(model.photoNotices[ref.id], "A reply can carry 8 attachments. The others weren’t added.")
+        XCTAssertEqual(model.photoNotices[ref.id], "A reply can carry 8 attachments, so the others weren’t added.")
         model.attachFiles(ref, from: [source("one-more.txt", Data("n".utf8))])
-        XCTAssertEqual(model.photoNotices[ref.id], "A reply can carry 8 attachments.")
+        XCTAssertEqual(model.photoNotices[ref.id], "A reply can carry 8 attachments. Remove one to add another.")
         XCTAssertEqual(model.files(ref).count, 7)
     }
 

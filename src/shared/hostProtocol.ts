@@ -238,7 +238,8 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * `attachment-files`: the host hands a sent attached file's bytes to a client that reads its thread, for the iPhone's
  * Quick Look (ADR-0131, October 25 amendment). `attachment-file` names a thread, a message and an attachment, as `preview`
  * does, and a part: the host answers only for a file, never an image, that the message carries and its store keeps, at most
- * 8 MiB a part, and null otherwise. It takes the per-client preview guard. Only a host that lists `file-staging` lists it.
+ * 8 MiB a part, and null otherwise. It takes the socket's preview guard, and the paired client has one such read at a time
+ * across all its sockets. Only a host that lists `file-staging` lists it.
  */
 export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files'] as const
 export type HostFeature = typeof HOST_FEATURES[number]

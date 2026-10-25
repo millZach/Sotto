@@ -4,8 +4,9 @@ import SottoCore
 // MARK: Sent files
 
 /// A sent file opened in Quick Look (ADR-0131, October 25 amendment): brought from its computer when pressed, checked
-/// against its handle, and written to the one temporary copy Quick Look reads. The copy goes when the preview closes,
-/// when Sotto moves to the background, when another file is opened and, for anything a crash left, at the next launch.
+/// against its handle, and written to the temporary copy Quick Look reads. The copy goes when the preview closes, when
+/// another opens, when Sotto moves to the background and, for anything a crash left, at the next launch. A copy written
+/// for a file no longer wanted is removed by its own folder, never the one being shown.
 @MainActor final class SentFiles: ObservableObject {
     struct Key: Hashable { let ref: ThreadRef; let messageID: String; let attachmentID: String }
     struct Fetching: Equatable { let key: Key; var progress: Double }
@@ -13,7 +14,7 @@ import SottoCore
     @Published private(set) var fetching: Fetching?
     /// The opened file's copy, which Quick Look shows while it is set. Closing the preview sets it back to nil.
     @Published var shown: URL? {
-        didSet { if shown == nil, oldValue != nil { copies.removeAll() } }
+        didSet { if let oldValue, oldValue != shown { copies.remove(oldValue) } }
     }
     private let copies = OpenedFileCopies()
     private var task: Task<Void, Never>?
@@ -33,13 +34,13 @@ import SottoCore
             case .file(let name, let data):
                 let url = try? await Task.detached { try copies.write(data, name: name) }.value
                 // Sotto went to the background, or another file was pressed, while this one was written.
-                guard self.fetching?.key == key else { if url != nil, self.shown == nil { copies.removeAll() }; return }
+                guard self.fetching?.key == key else { if let url { copies.remove(url) }; return }
                 self.fetching = nil
                 if let url { self.shown = url }
                 else { model.feedback = "This file couldn’t be opened on this iPhone. Nothing was lost. Open it on \(computer)." }
             case .notKept:
                 self.fetching = nil
-                model.feedback = "This file is no longer kept on \(computer)."
+                model.feedback = "This file is no longer kept on \(computer), so it can’t open here. Look for it in the thread’s working folder there, under .sotto/attachments."
             case .failed:
                 self.fetching = nil
                 model.feedback = "This file couldn’t be brought from \(computer). Nothing was lost. Try again when it’s connected."

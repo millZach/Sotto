@@ -2529,8 +2529,9 @@ struct HeldDetail {
         guard room > 0 else { photoNotices[box.id] = files(box).isEmpty ? "\(box.carrier) can carry \(PhotoLimits.count) photos." : FileWords.full; return }
         let added = sources.prefix(room).map { (photo: DraftPhoto(), source: $0) }
         draftPhotos[box.id, default: []] += added.map { $0.photo }
-        let carries = files(box).isEmpty ? "\(box.carrier) can carry \(PhotoLimits.count) photos." : FileWords.full
-        photoNotices[box.id] = sources.count > room ? carries + " The others weren’t added." : nil
+        let others = files(box).isEmpty ? "\(box.carrier) can carry \(PhotoLimits.count) photos. The others weren’t added."
+            : "A reply can carry \(PhotoLimits.count) attachments, so the others weren’t added."
+        photoNotices[box.id] = sources.count > room ? others : nil
         let previous = photoWork
         photoWork = Task { [weak self] in
             await previous?.value

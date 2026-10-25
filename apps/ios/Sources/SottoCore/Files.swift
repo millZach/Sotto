@@ -23,10 +23,10 @@ public enum FileWords {
     public static let tooLarge = "Each file must be 25 MB or smaller. Nothing was attached. Choose a smaller file."
     public static let tooMany = "Attach up to 8 files at a time. Nothing was attached."
     public static let tooLargeInTotal = "Attachments must total 50 MB or less. Nothing was attached. Remove a file or choose smaller ones."
-    public static let full = "A reply can carry 8 attachments."
+    public static let full = "A reply can carry 8 attachments. Remove one to add another."
     public static let unreadable = "This file couldn’t be read, so it wasn’t added. If it’s in iCloud, try again once it has downloaded."
     public static let tooSlow = "This file didn’t arrive within two minutes, so it wasn’t added. If it’s in iCloud, try again once it has downloaded."
-    public static let empty = "This file is empty, so it wasn’t added."
+    public static let empty = "This file is empty, so it wasn’t added. Choose another file."
 }
 
 /// A staged file's handle (ADR-0131): what the host answered the last `stage-file-part` with, and what a reply carries in
@@ -229,30 +229,42 @@ public enum Files {
     }
 }
 
-/// The one copy of a sent file Quick Look reads (ADR-0131, October 25 amendment): written only once its bytes match their
+/// The copy of a sent file Quick Look reads (ADR-0131, October 25 amendment): written only once its bytes match their
 /// handle, into a new folder of random name under the app's temporary directory, protected while the phone is locked and
-/// kept out of backups. Opening another removes it, and so do closing the preview, the app moving to the background and,
-/// for anything a crash left, the next launch.
+/// kept out of backups. Each copy lives in its own folder and is removed by that folder alone, so a write that finishes
+/// late never touches the copy being shown. Whoever opens it removes it when the preview closes, when another opens, when
+/// the app moves to the background and, for anything a crash left, at the next launch.
 public struct OpenedFileCopies: Sendable {
     public let root: URL
     public init(root: URL = FileManager.default.temporaryDirectory.appendingPathComponent("Opened files", isDirectory: true)) { self.root = root }
-    /// Writes the file, removing whatever was opened before it, and returns where Quick Look can read it.
+    /// Writes the file into a folder of its own and returns where Quick Look can read it. Nothing of it is left when
+    /// writing fails.
     public func write(_ data: Data, name: String) throws -> URL {
-        removeAll()
         let folder = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let url = folder.appendingPathComponent(Files.safeName(name), isDirectory: false)
-        #if os(iOS)
-        try data.write(to: url, options: [.withoutOverwriting, .completeFileProtection])
-        #else
-        try data.write(to: url, options: [.withoutOverwriting])
-        #endif
-        for var item in [root, folder, url] {
-            var values = URLResourceValues(); values.isExcludedFromBackup = true
-            try item.setResourceValues(values)
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let url = folder.appendingPathComponent(Files.safeName(name), isDirectory: false)
+            #if os(iOS)
+            try data.write(to: url, options: [.withoutOverwriting, .completeFileProtection])
+            #else
+            try data.write(to: url, options: [.withoutOverwriting])
+            #endif
+            for var item in [root, folder, url] {
+                var values = URLResourceValues(); values.isExcludedFromBackup = true
+                try item.setResourceValues(values)
+            }
+            return url
+        } catch {
+            try? FileManager.default.removeItem(at: folder)
+            throw error
         }
-        return url
     }
-    /// Removes every opened file.
+    /// Removes one copy, by the folder it was written in. A URL that isn't one of these copies is left alone.
+    public func remove(_ url: URL) {
+        let folder = url.deletingLastPathComponent().standardizedFileURL
+        guard folder.deletingLastPathComponent().path == root.standardizedFileURL.path else { return }
+        try? FileManager.default.removeItem(at: folder)
+    }
+    /// Removes every copy.
     public func removeAll() { try? FileManager.default.removeItem(at: root) }
 }

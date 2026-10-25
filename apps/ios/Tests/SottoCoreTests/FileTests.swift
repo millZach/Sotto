@@ -63,7 +63,7 @@ final class FileTests: XCTestCase {
         XCTAssertNil(Files.refusal(adding: [25 * mebibyte], to: [25 * mebibyte]))
         XCTAssertEqual(Files.refusal(adding: [1, 25 * mebibyte + 1], to: []), "Each file must be 25 MB or smaller. Nothing was attached. Choose a smaller file.")
         XCTAssertEqual(Files.refusal(adding: Array(repeating: 1, count: 9), to: []), "Attach up to 8 files at a time. Nothing was attached.")
-        XCTAssertEqual(Files.refusal(adding: Array(repeating: 1, count: 6), to: [1, 1, 1]), "A reply can carry 8 attachments.")
+        XCTAssertEqual(Files.refusal(adding: Array(repeating: 1, count: 6), to: [1, 1, 1]), "A reply can carry 8 attachments. Remove one to add another.")
         XCTAssertEqual(Files.refusal(adding: [25 * mebibyte, 1], to: [25 * mebibyte]),
                        "Attachments must total 50 MB or less. Nothing was attached. Remove a file or choose smaller ones.")
     }
@@ -153,8 +153,11 @@ final class FileTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: first), Data("first".utf8))
         XCTAssertEqual(try first.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup, true)
         let second = try copies.write(Data("second".utf8), name: "notes.txt")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: first.path), "Opening another removes the first")
-        XCTAssertNotEqual(first.deletingLastPathComponent(), second.deletingLastPathComponent())
+        XCTAssertNotEqual(first.deletingLastPathComponent(), second.deletingLastPathComponent(), "Each copy has a folder of its own")
+        copies.remove(first)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: first.deletingLastPathComponent().path), "Removing one takes its folder")
+        XCTAssertEqual(try Data(contentsOf: second), Data("second".utf8), "and leaves the other")
+        copies.remove(URL(fileURLWithPath: "/tmp/elsewhere/notes.txt"))
         copies.removeAll()
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
     }

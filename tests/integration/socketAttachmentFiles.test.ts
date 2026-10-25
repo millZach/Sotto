@@ -25,7 +25,7 @@ async function phoneOn(service: HostService) {
   const server = await startSocketServer({ service, pairing: fixture.host.pairing })
   const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'iPhone')
   const phone = await rawPeer(server.descriptor.port, fixture.host.pairing.signSession(paired.clientId))
-  return { server, phone }
+  return { server, phone, clientId: paired.clientId }
 }
 const request = (part = 0, threadId = 'workshop') => ({ op: 'attachment-file', request: { threadId, messageId: 'message', attachmentId: 'file', part } })
 
@@ -57,6 +57,24 @@ describe('a sent file’s bytes for the iPhone’s Quick Look (ADR-0131, October
       expect(await phone.call('shown', request())).toMatchObject({ ok: true, result: PART })
       expect(asked).toEqual(['workshop'])
     } finally { phone.frames.close(); await server.close() }
+  })
+
+  it('reads one part at a time for a paired client, whichever of its sockets asks', async () => {
+    let release!: () => void
+    const held = new Promise<void>(resolve => { release = resolve })
+    let reads = 0
+    const { server, phone, clientId } = await phoneOn(filesHost(true, async () => { reads += 1; await held; return PART }))
+    const second = await rawPeer(server.descriptor.port, fixture.host.pairing.signSession(clientId))
+    try {
+      await phone.call('hello', { op: 'hello' }); await second.call('hello', { op: 'hello' })
+      const first = phone.call('first', request())
+      while (reads === 0) await new Promise(resolve => setTimeout(resolve, 5))
+      expect(await second.call('second', request(1))).toMatchObject({ ok: false, error: { code: 'busy' } })
+      release()
+      expect(await first).toMatchObject({ ok: true, result: PART })
+      expect(await second.call('again', request(1))).toMatchObject({ ok: true })
+      expect(reads).toBe(2)
+    } finally { phone.frames.close(); second.frames.close(); await server.close() }
   })
 
   it('is neither offered nor answered where the host’s own answer is off', async () => {

@@ -330,20 +330,26 @@ struct AttachPhotosButton: View {
         return room > 0 ? nil : FileWords.full
     }
     /// A photo chosen in Files goes as a photo, made ready as one from the library is, and is refused in the photos' own
-    /// words where the thread's model can't take photos. Everything else goes as a file.
+    /// words where the thread's model can't take photos. Everything else goes as a file. The whole choice is checked
+    /// first: when its files are past the limits, counting the photos chosen with them, nothing of it is attached.
     private func pickedFiles(_ urls: [URL]) {
         guard case .thread(let ref) = box, !urls.isEmpty else { return }
         let photos = urls.filter { PhotoLimits.mimeTypes.contains(Files.mimeType(forName: $0.lastPathComponent)) }
-        let files = urls.filter { !photos.contains($0) }
-        if !photos.isEmpty {
-            if let reason = model.photoSupport(box).reason(computer: model.name(box.hostID)) { model.photoNotices[box.id] = reason }
-            else {
-                model.attachPhotos(box, from: photos.map { url in
-                    PhotoSource(name: url.deletingPathExtension().lastPathComponent) { try await Task.detached { try PickedFile.read(url) }.value }
-                })
-            }
+        let files = urls.filter { !photos.contains($0) }.map(PickedFile.source)
+        let photoRefusal = photos.isEmpty ? nil : model.photoSupport(box).reason(computer: model.name(box.hostID))
+        let chosenPhotos = photoRefusal == nil ? photos.count : 0
+        let others = model.photos(box).map { $0.prepared?.byteCount ?? 0 } + model.files(box).map(\.sizeBytes) + Array(repeating: 0, count: chosenPhotos)
+        if !files.isEmpty, let refusal = Files.refusal(adding: files.map { $0.sizeBytes ?? 0 }, to: others) {
+            model.photoNotices[box.id] = refusal
+            return
         }
-        if !files.isEmpty { model.attachFiles(ref, from: files.map(PickedFile.source)) }
+        if !files.isEmpty { model.attachFiles(ref, from: files) }
+        if let photoRefusal { model.photoNotices[box.id] = photoRefusal }
+        else if !photos.isEmpty {
+            model.attachPhotos(box, from: photos.map { url in
+                PhotoSource(name: url.deletingPathExtension().lastPathComponent) { try await Task.detached { try PickedFile.read(url) }.value }
+            })
+        }
     }
     /// The camera asks for access the first time. Once it has been refused, iOS won't ask again, so say where to turn it on.
     private func openCamera() {
