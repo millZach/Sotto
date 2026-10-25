@@ -51,3 +51,34 @@ Every provider can read a file by its path, so every provider takes files, Grok 
 - The folder checks guard against a link that is already there. A link swapped in between the checks and the write is caught by the check of where the folder resolves to, but not between that check and the write itself; the working folder is the user's own, and an agent that can already write there can already write anywhere it reaches.
 - Going back to a build from before this record is not safe with a file in a draft or the queue, for the reason ADR-0031 records for images: the older build cannot read the handle. Someone who must go back sends or clears those drafts and follow-ups first.
 - `tests/integration/adapterContract.ts` sends a staged text file and a PDF through every adapter and checks the working folder, what the provider heard and the thread's text, after a restart where the fixture has one.
+
+## Amendment, October 25, 2026: files from the iPhone
+
+The iPhone attaches files to a reply, and opens a sent file on the phone. Zach chose these from `docs/prototypes/iphone-file-attach-prototype.html`: **A · Pills**, **Quick Look**, the **`attach-any-file`** switch, and the **iPhone's own words** for photos on a text-only model. Two of them need things this record and ADR-0031's October 3 amendment did not allow: a host request that hands the phone a sent file's bytes, and a copy of a file on the phone's disk while it is open.
+
+**Where it is offered.** The reply box's + menu gains **Files** beside Photo library and Camera. It is offered when the thread's computer lists `file-staging`, which only a host whose own `attach-any-file` answer is on does (decision 4). A computer that doesn't list it keeps the item in the menu, unavailable, with the reason beneath it: "This computer cannot keep files yet. Update Sotto there to attach them." Files work on any model. A text-only model refuses only photos, in the phone's own words ("This thread's model can't take photos. Change the model on <computer> to attach them.").
+
+**A file is read, not imported.** The system document picker runs outside the app and hands over only the files chosen. Sotto opens them in place (`asCopy: false`), reads each one's size from its resource values first, and refuses before reading anything past the limits: 25 MB a file, 50 MB in all, and 8 attachments with the photos. The sentences are the desktop's (decision 2). It then reads the bytes into memory under the file's security-scoped access and gives that access back. Nothing is copied into the app's folders, so a file waiting in a reply lives only in memory, as a photo does (ADR-0031, October 3). The type comes from the file's extension through UTType, and is `application/octet-stream` when there is none.
+
+**Staging.** A file goes up with `stage-file-part` in 8 MiB parts (decision 4), on the same per-computer queue as photos, one large request at a time. The October 3 rules for staging again apply unchanged: a file staged 45 minutes ago or more, one staged over a connection that has since ended, and one in a refused reply put back in the box are staged again when the reply is sent. A reply's handles carry files as the desktop's do, and the computer delivers them through the thread's working folder like any other (decision 5).
+
+**Look.** A file waits as a one-line pill under the photos, inside the words' column, as on the desktop: type symbol, the name cut in the middle so the extension stays, the size, and a remove button named "Remove <name>". While a file is uploading its pill shows a percentage. A sent file is the same pill above the words.
+
+**A sent file opens in Quick Look.** A new host feature, `attachment-files`, adds one request, `attachment-file`. It names a thread, a message and an attachment, as `preview` does, plus a part index. The host answers only for a file that message carries and that its store still keeps, in parts of at most 8 MiB, since a 25 MB file is more than a frame: the part's bytes in base64, its index and the part count. It answers nothing for an image, which `preview` already serves. Naming the message rather than a bare digest means a phone can fetch only what a thread it reads carries. The request takes the per-client preview guard, so one client has at most one large read in flight. A file the host no longer keeps answers null, and the phone says "This file is no longer kept on <computer>." A host that doesn't list the feature leaves sent files as they are today: their name, with "(open on the desktop)".
+
+**The temporary copy.** Quick Look reads a file from disk, so this is the one place the phone writes what a reply carried. It writes it only for the file the user just pressed, only once all of its parts have arrived and match the handle's size and digest:
+
+- into a new folder of random name under the app's temporary directory, under the file's safe name (decision 5's rule);
+- with complete file protection, so it is unreadable while the phone is locked, and excluded from backup;
+- one at a time: opening another file removes the first.
+
+It is removed when the preview closes, when the app moves to the background, and, for anything a crash left, at the next launch. Its bytes are never logged. Quick Look's own Share button stays, so the user can save or send the file themselves, as they could from the desktop. That is the user's choice, not something Sotto does.
+
+**Built in two steps.** The host's side, `attachment-files` and `attachment-file`, comes first; the phone's picker, pills, uploads and Quick Look follow once #1446 (photos to Watcher) has moved the reply box onto one box for a thread or Watcher, which this builds on.
+
+**Not in this amendment.** Watcher's reply box on the phone (#1446 adds photos there) takes files later, through the same box abstraction. Files from the Android client follow ADR-0059's port.
+
+Consequences:
+
+- **No new host.** `HOST_FEATURES` gains `attachment-files`. Protocol version stays 1: a phone uses the request only when the host lists the feature, and a host never sends anything new unasked.
+- **Privacy.** The README's "Privacy and cost" gains one sentence: an opened file sits in the iPhone app's temporary folder until its preview closes.
