@@ -12,7 +12,7 @@ ADR-0122 lets someone on Owl choose any OpenRouter model to clean up dictation. 
 
 ## Decision
 
-1. **The Cleanup model list gains a Your own servers section,** above OpenRouter's models and below Default, listing the models of every server added in Settings › Providers › Your own model servers. Picking one saves it as `llmOwnModel` (the server's and the model's saved IDs) and clears `llmModel`; picking an OpenRouter model or Default clears `llmOwnModel`. There is no separate switch. Mode is hidden while one is chosen, since OpenRouter's routing does not apply to it; the saved mode is kept.
+1. **The Cleanup model list gains a Your own servers section,** above OpenRouter's models and below Default, listing the models of every server added in Settings › Providers › Your own model servers. Picking one saves it as `llmOwnModel` (the server's and the model's saved IDs), which wins over `llmModel` while the feature runs; `llmModel` is kept, so with the feature off the OpenRouter choice from before cleans up again. Picking an OpenRouter model or Default clears `llmOwnModel`. There is no separate switch. Mode is hidden while one is chosen, since OpenRouter's routing does not apply to it; the saved mode is kept.
 
 2. **Only a server added without a key can clean up.** OpenCode keeps a server's key and Sotto keeps none (ADR-0124 decision 3), so main has nothing to send. A server added with a key is not listed, and the list says why. Keeping a copy of the key in Sotto's credential store would be a second key, which is a product decision ([AGENTS.md](../../AGENTS.md), "One key"), so it waits until someone asks for it. A server Sotto reaches over plain http is still only a private one (ADR-0124 decision 4).
 
