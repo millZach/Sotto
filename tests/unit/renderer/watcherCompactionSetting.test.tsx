@@ -1,7 +1,7 @@
 import React from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { WatcherCompactionDial } from '../../../src/renderer/src/features/settings/WatcherCompactionSetting'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { tokensIn, WatcherCompactionDial } from '../../../src/renderer/src/features/settings/WatcherCompactionSetting'
 import { settingsIndex } from '../../../src/renderer/src/features/settings/settingsPages'
 
 afterEach(cleanup)
@@ -34,6 +34,29 @@ describe('Compact Watcher at', () => {
     // No reading yet: nothing said about Watcher's size.
     rerender(<WatcherCompactionDial value={250_000} tokens={null} onSave={() => {}} />)
     expect(screen.queryByText(/Watcher is at/)).toBeNull()
+  })
+
+  it('goes back to the point still in force when the save fails or is refused', async () => {
+    for (const outcome of [() => Promise.resolve(false), () => Promise.reject(new Error('disk full'))]) {
+      render(<WatcherCompactionDial value={400_000} tokens={312_000} onSave={outcome} />)
+      const slider = screen.getByRole('slider', { name: 'Compact Watcher at' }) as HTMLInputElement
+      fireEvent.change(slider, { target: { value: '200000' } })
+      expect(screen.getByText('Watcher is at 312k: it compacts at its next rest.')).toBeTruthy()
+      fireEvent.pointerUp(slider)
+      await waitFor(() => expect(slider.value).toBe('400000'))
+      expect(screen.getByText('Watcher is at 312k.')).toBeTruthy()
+      cleanup()
+    }
+  })
+
+  it('writes its sentence as a translated paragraph, and its numbers in the interface language', () => {
+    render(<WatcherCompactionDial value={400_000} tokens={312_000} onSave={() => {}} />)
+    expect(screen.getByText('Watcher is at 312k.').classList.contains('tt-paragraph')).toBe(true)
+    // English keeps the room's own "400k"; another language counts as it does.
+    expect(tokensIn(400_000, 'en')).toBe('400k')
+    expect(tokensIn(1_000_000, 'en')).toBe('1M')
+    expect(tokensIn(400_000, 'ja')).toBe(new Intl.NumberFormat('ja', { notation: 'compact', maximumFractionDigits: 1 }).format(400_000))
+    expect(tokensIn(400_000, 'de')).not.toBe('400k')
   })
 
   it('follows a saved change made elsewhere', () => {

@@ -5,6 +5,14 @@ import { formatTokenCount } from '../../../../shared/threadUsage'
 import { useWatcherRoom } from '../../watcher/watcherRoom'
 import './watcherCompaction.css'
 
+/**
+ * A token count as the interface language writes it. English keeps "400k" and "1M", as Watcher's room shows its point;
+ * another language writes the compact form it uses (ADR-0123).
+ */
+export function tokensIn(tokens: number, locale: string): string {
+  return locale === 'en' ? formatTokenCount(tokens) : new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(tokens)
+}
+
 /** Where a point sits along the dial, from 0 at 200k to 1 at 1M; Watcher's size past either end stops at it. */
 function along(tokens: number): number {
   return Math.min(1, Math.max(0, (tokens - WATCHER_COMPACT_AT.min) / (WATCHER_COMPACT_AT.max - WATCHER_COMPACT_AT.min)))
@@ -22,14 +30,18 @@ export function WatcherCompactionDial({ value, tokens, onSave }: {
   readonly tokens: number | null
   readonly onSave: (patch: SettingsPatch) => unknown
 }): ReactNode {
-  const { t } = useLingui()
+  const { t, i18n } = useLingui()
   const id = useId()
   const [point, setPoint] = useState(value)
   useEffect(() => setPoint(value), [value])
-  const commit = (): void => { if (point !== value) void onSave({ watcherCompactAtTokens: point }) }
-  const shown = formatTokenCount(point), size = tokens === null ? null : formatTokenCount(tokens)
+  // A save that fails or is refused leaves the point in force where it was, so the dial goes back to it.
+  const commit = (): void => {
+    if (point === value) return
+    void Promise.resolve(onSave({ watcherCompactAtTokens: point })).catch(() => false).then(saved => { if (saved === false) setPoint(value) })
+  }
+  const shown = tokensIn(point, i18n.locale), size = tokens === null ? null : tokensIn(tokens, i18n.locale)
   const past = tokens !== null && tokens > point
-  const low = formatTokenCount(WATCHER_COMPACT_AT.min), high = formatTokenCount(WATCHER_COMPACT_AT.max)
+  const low = tokensIn(WATCHER_COMPACT_AT.min, i18n.locale), high = tokensIn(WATCHER_COMPACT_AT.max, i18n.locale)
   const range = t({ message: `${low} to ${high}`, comment: 'The ends of the Compact Watcher at slider, such as 200k to 1M' })
   return <div className="tt-field watcher-compaction">
     <label className="tt-field__label" htmlFor={id}>{t`Compact Watcher at`}</label>
@@ -48,7 +60,7 @@ export function WatcherCompactionDial({ value, tokens, onSave }: {
         onPointerUp={commit} onKeyUp={commit} onBlur={commit} />
     </div>
     <p className="watcher-compaction__foot" id={`${id}-now`}>
-      <span>{size === null ? null : past ? t`Watcher is at ${size}: it compacts at its next rest.` : t`Watcher is at ${size}.`}</span>
+      <span className="tt-paragraph">{size === null ? null : past ? t`Watcher is at ${size}: it compacts at its next rest.` : t`Watcher is at ${size}.`}</span>
       <span className="watcher-compaction__range">{range}</span>
     </p>
   </div>
