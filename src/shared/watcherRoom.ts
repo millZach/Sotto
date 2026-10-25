@@ -4,7 +4,7 @@ import { watcherIdentitySchema, watcherMergeQueueItemSchema, watcherOperationSch
 import { watcherEventSchema } from './watcherNews'
 import { watcherAskSchema } from './watcherAsks'
 import { agentRuntimeModeSchema, handoverCountsSchema, isVisualMessage, type AgentMessage } from './agents'
-import { watcherKeptStateSchema, watcherOwnChangeSchema, watcherStandingWatchSchema, watcherStateThreadSchema, type WatcherThreadTarget } from './watcher'
+import { watcherKeptStateSchema, watcherOwnChangeSchema, watcherStandingWatchSchema, watcherStateThreadSchema, watcherWaitingOnUserSchema, type WatcherThreadTarget } from './watcher'
 
 /** Private desktop channels. A host may project the same state later without acquiring command authority. */
 export const WATCHER_GET = 'sotto:watcher:get'
@@ -48,6 +48,12 @@ export const watcherRoomStateSchema = z.object({
   receipts: z.array(watcherOperationSchema), news: z.array(watcherEventSchema).max(400).optional(),
   recoveryNotice: z.string().nullable(), observedAt: timestamp,
   /**
+   * Which build of the room this is: main numbers every room it builds, counting up, so of two rooms the higher is the
+   * newer even when both were read in the same millisecond (#1450). The window orders rooms by it and keeps `observedAt`
+   * for what it shows. Absent from rooms main did not build, such as the e2e stand-in's; they are ordered by time.
+   */
+  sequence: z.number().int().nonnegative().optional(),
+  /**
    * The handover of the last Watcher offered to the current one after a provider change or New Watcher, until its first message goes
    * or the user puts the offer away (ADR-0073): where it comes from and what it carries, in counts. Never its words.
    */
@@ -77,9 +83,13 @@ export const watcherRoomStateSchema = z.object({
    */
   context: z.object({ tokens: z.number().int().nonnegative().nullable(), compactAt: z.number().int().positive(),
     canCompact: z.boolean(), compacting: z.boolean() }).strict().nullable().optional(),
-  /** Watcher's state, kept through compaction (#1189): what each watched thread waits on, and what Watcher kept. */
+  /**
+   * Watcher's state (#1189): what each watched thread waits on, what waits on the user among them, worked out live
+   * (October 24, 2026), and what Watcher kept.
+   */
   // `unread` while a saved state could not be read: the lists are not what is kept, and the panel says so.
-  state: z.object({ watching: z.array(watcherStateThreadSchema), kept: watcherKeptStateSchema, unread: z.literal(true).optional() }).strict().optional(),
+  state: z.object({ watching: z.array(watcherStateThreadSchema), waitingOnUser: z.array(watcherWaitingOnUserSchema), kept: watcherKeptStateSchema,
+    unread: z.literal(true).optional() }).strict().optional(),
   /**
    * The requests the current Watcher's wake-ups said waited on the user, oldest first, each with the message of its
    * conversation the request's card goes under (ADR-0073, answering in Watcher's conversation): the reply of the turn
@@ -137,6 +147,100 @@ export type WatcherWatchThreadRequest = z.infer<typeof watcherWatchThreadRequest
 
 export type WatcherRoomState = z.infer<typeof watcherRoomStateSchema>
 type WatcherRoomRow = WatcherRoomState['watchedThreads'][number]
+
+/**
+ * A list of the room's that changed, as a room update carries it (#1450): its length now, each entry that differs from
+ * the entry at the same place in the room the update is measured from, whole in `at` or, when both are records, as what
+ * changed in it in `patch`. Entries past the old length are always whole. A request, receipt or participation that did
+ * not change does not ride, nor does the rest of a watched thread's row when only its status changed.
+ */
+export interface WatcherRoomListChange {
+  readonly length: number
+  readonly at: readonly (readonly [number, unknown])[]
+  readonly patch?: readonly (readonly [number, WatcherRoomPatch])[]
+}
+/** What changed in one record of a list: the fields set, the fields that went and the lists that changed, the same way. */
+export interface WatcherRoomPatch {
+  readonly set?: Readonly<Record<string, unknown>>
+  readonly removed?: readonly string[]
+  readonly lists?: Readonly<Record<string, WatcherRoomListChange>>
+}
+/**
+ * What crosses `WATCHER_CHANGED` to the window while the streaming-publish-cost answer is on (#1450): the room whole, or
+ * only what changed since the room the window was last sent. Without that answer main sends the room itself, as before.
+ * `base` names the update the changes are measured from, or is null when `room` is the whole room. Otherwise `room`
+ * holds each field that changed other than a list, `lists` each list that changed, and `removed` the fields the room
+ * no longer has. Like the room itself, nothing parses this shape: the preload puts the whole room back
+ * (`applyWatcherRoomUpdate`) before the page sees it, and a window that holds another base reads `WATCHER_GET`, which
+ * also tells main to send the next update whole.
+ */
+export interface WatcherRoomUpdate {
+  /** Names this update, for the next one to be measured from. Main's counter only advances. */
+  readonly revision: number
+  readonly base: number | null
+  readonly room: Partial<WatcherRoomState>
+  readonly lists?: Readonly<Partial<Record<keyof WatcherRoomState, WatcherRoomListChange>>>
+  readonly removed?: readonly (keyof WatcherRoomState)[]
+}
+/**
+ * The newer of two rooms, for a window that receives rooms from updates, reads and command replies in any order: the
+ * higher build number when both carry one, and otherwise the later read, with a tie going to `next` (#1450).
+ */
+export function newerWatcherRoom(current: WatcherRoomState | null, next: WatcherRoomState): WatcherRoomState {
+  if (current === null) return next
+  if (current.sequence !== undefined && next.sequence !== undefined) return current.sequence > next.sequence ? current : next
+  return Date.parse(current.observedAt) > Date.parse(next.observedAt) ? current : next
+}
+/** The room a window holds, with the update it came from. */
+export interface WatcherRoomHeld { readonly revision: number; readonly room: WatcherRoomState }
+
+const isPlace = (value: unknown, length: number): value is number => Number.isInteger(value) && (value as number) >= 0 && (value as number) < length
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
+/** The list `change` makes of `before`, or null when it would leave a gap or patch what is not a record. */
+function applyListChange(before: unknown, change: WatcherRoomListChange): unknown[] | null {
+  if (!isRecord(change) || !Number.isInteger(change.length) || change.length < 0 || !Array.isArray(change.at)) return null
+  const list: unknown[] = Array.isArray(before) ? before.slice(0, change.length) : []
+  const known = list.length
+  let filled = 0
+  for (const entry of change.at) {
+    if (!Array.isArray(entry) || !isPlace(entry[0], change.length)) return null
+    if (entry[0] >= known && !(entry[0] in list)) filled++
+    list[entry[0]] = entry[1]
+  }
+  if (known + filled !== change.length) return null
+  if (change.patch !== undefined && !Array.isArray(change.patch)) return null
+  for (const entry of change.patch ?? []) {
+    if (!Array.isArray(entry) || !isPlace(entry[0], list.length)) return null
+    const patched = applyPatch(list[entry[0]], entry[1])
+    if (patched === null) return null
+    list[entry[0]] = patched
+  }
+  return list
+}
+/** The record `patch` makes of `before`, a new record sharing every field it did not name, or null when it cannot. */
+function applyPatch(before: unknown, patch: WatcherRoomPatch): Record<string, unknown> | null {
+  if (!isRecord(before) || typeof patch !== 'object' || patch === null || patch.removed !== undefined && !Array.isArray(patch.removed)) return null
+  const after: Record<string, unknown> = { ...before, ...patch.set }
+  for (const key of patch.removed ?? []) delete after[key]
+  for (const [key, change] of Object.entries(patch.lists ?? {})) {
+    const list = applyListChange(before[key], change)
+    if (list === null) return null
+    after[key] = list
+  }
+  return after
+}
+/**
+ * The room `update` makes of `held`, or null when it cannot be applied: it is measured from another update, or a list
+ * would be left with a gap. A list, record or field the update does not name is the very one `held` had, so a reader
+ * that compares by identity sees only what changed.
+ */
+export function applyWatcherRoomUpdate(held: WatcherRoomHeld | null, update: WatcherRoomUpdate): WatcherRoomHeld | null {
+  if (update.base === null) return { revision: update.revision, room: update.room as WatcherRoomState }
+  if (held === null || held.revision !== update.base) return null
+  const room = applyPatch(held.room, { set: update.room as Record<string, unknown>, ...update.removed ? { removed: update.removed } : {},
+    ...update.lists ? { lists: update.lists as Record<string, WatcherRoomListChange> } : {} })
+  return room === null ? null : { revision: update.revision, room: room as WatcherRoomState }
+}
 
 /**
  * Whether Watcher takes part in a thread through one of `activeRequestIds`, and neither the user has taken the thread

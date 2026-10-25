@@ -12,8 +12,9 @@ import { threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 const VERSIONS = { stable: '0.1.34', owl: '0.1.37-owl.20261011.1' } as const satisfies Record<ReleaseTrack, string>
 const NAMES = { stable: 'Sotto', owl: 'Sotto Owl' } as const satisfies Record<ReleaseTrack, string>
 
-function trackBridge(track: ReleaseTrack, onboardingComplete: boolean) {
+function trackBridge(track: ReleaseTrack, onboardingComplete: boolean, platform: 'win32' | 'darwin' = 'win32') {
   return createBridge({
+    platform,
     getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete })),
     getUpdateStatus: vi.fn(async () => ({
       currentVersion: VERSIONS[track], releaseTrack: track, phase: { phase: 'unsupported' as const }, checkedAt: null,
@@ -90,6 +91,50 @@ describe.each(['stable', 'owl'] as const)('the %s build names itself', (track) =
     renderApp(trackBridge(track, false))
     await screen.findByRole('heading', { name: /talk to your computer and your coding agents/i })
     await expectBrand(() => screen.getByRole('banner'), track)
+    await waitFor(() => expect(document.title).toBe(NAMES[track]))
+  })
+})
+
+/** No mark sits beside the traffic lights, in either track: the row's left end stays empty. */
+function expectNoCornerBrand(row: () => HTMLElement): void {
+  expect(within(row()).queryByLabelText('Sotto application')).toBeNull()
+  expect(within(row()).queryByRole('img', { name: 'Sotto Owl' })).toBeNull()
+  expect(row().querySelector('svg[data-tile]')).toBeNull()
+}
+
+describe.each(['stable', 'owl'] as const)('the %s build on macOS', (track) => {
+  it('shows no mark beside the traffic lights in the sidebar top row, the Settings column or the collapsed rail', async () => {
+    const user = userEvent.setup()
+    const bridge = trackBridge(track, true, 'darwin')
+    const state = threadsStateFixture()
+    window.sotto = { ...bridge, agents: agentWireBridge({ get: async () => state, command: async () => state, onState: () => () => undefined }) }
+    renderApp(bridge)
+
+    await screen.findByRole('complementary', { name: 'Thread sidebar' })
+    expectNoCornerBrand(topRow)
+    for (const name of ['Add project', 'Collapse sidebar']) expect(within(topRow()).getByRole('button', { name })).toBeVisible()
+    await waitFor(() => expect(document.title).toBe(NAMES[track]))
+
+    await openPage('settings')
+    await screen.findByRole('heading', { level: 1, name: 'Settings' })
+    expectNoCornerBrand(() => document.querySelector<HTMLElement>('.settings-sidebar .thread-nav__top')!)
+
+    go('threads')
+    await screen.findByRole('button', { name: 'Collapse sidebar' })
+    await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
+    const rail = await waitFor(() => {
+      const found = document.querySelector<HTMLElement>('.thread-nav__rail')
+      expect(found).not.toBeNull()
+      return found!
+    })
+    expect(rail.querySelector('svg[data-tile]')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeVisible()
+  })
+
+  it('shows no mark in the strip over first-run setup', async () => {
+    renderApp(trackBridge(track, false, 'darwin'))
+    await screen.findByRole('heading', { name: /talk to your computer and your coding agents/i })
+    expectNoCornerBrand(() => screen.getByRole('banner'))
     await waitFor(() => expect(document.title).toBe(NAMES[track]))
   })
 })

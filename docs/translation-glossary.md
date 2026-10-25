@@ -20,7 +20,7 @@ What a translation of Sotto's interface follows (ADR-0123). The catalogs are `sr
 
 ## Never translated
 
-Sotto, Sotto Owl, Owl, Watcher, Muse, Claude Code, Claude bot, Codex, Grok Build, Devin, OpenCode, OpenCode Zen, OpenRouter, Parakeet, Parakeet Ultra, Tailscale, GitHub, Git, git, gh, the theme names (Sotto, Hush, Linen, Nocturne, Tropic, Citrine, Omarchy), Windows, macOS, Linux, iPhone, and anything in code type: commands, paths, branch names, keys and setting ids. Add the grammatical endings a name needs (`Sotto’yu`, `Sotto-வை`) without changing the name.
+Sotto, Sotto Owl, Owl, Watcher, Muse, Claude Code, Claude bot, Codex, Grok Build, Devin, OpenCode, OpenCode Zen, Cursor, OpenRouter, Parakeet, Parakeet Ultra, Tailscale, GitHub, Git, git, gh, the theme names (Sotto, Hush, Linen, Nocturne, Tropic, Citrine, Omarchy), Windows, macOS, Linux, iPhone, and anything in code type: commands, paths, branch names, keys and setting ids. Add the grammatical endings a name needs (`Sotto’yu`, `Sotto-வை`) without changing the name.
 
 ## Sotto's nouns
 

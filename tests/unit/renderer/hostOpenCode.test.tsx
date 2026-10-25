@@ -41,7 +41,7 @@ async function open(hosts: HostsBridge, providers = FORGE) {
 }
 
 it('draws OpenCode’s tile on a host, with its version and connection, after the providers that came before it', async () => {
-  expect(HOST_PROVIDER_ORDER).toEqual(['claude', 'codex', 'grok', 'devin', 'muse', 'opencode'])
+  expect(HOST_PROVIDER_ORDER).toEqual(['claude', 'codex', 'grok', 'devin', 'muse', 'opencode', 'cursor'])
   const { bridge: hosts } = bridge()
   await open(hosts)
   const tiles = within(screen.getByRole('list', { name: 'Providers on forge' })).getAllByRole('listitem')

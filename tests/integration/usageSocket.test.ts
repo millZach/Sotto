@@ -42,6 +42,9 @@ describe('optional Owl usage over frozen host v1', () => {
       expect(usage.read).toHaveBeenCalledWith({ timeZone: 'America/Los_Angeles', providerIds: ['codex'] })
       expect(await client.usageRefresh(['codex'])).toEqual(result)
       expect(usage.refresh).toHaveBeenCalledWith(['codex'])
+      // A refresh Usage made on its own reaches the host marked, so a costly read may be answered from a recent one (#1456).
+      expect(await client.usageRefresh(['codex'], true)).toEqual(result)
+      expect(usage.refresh).toHaveBeenLastCalledWith(['codex'], true)
       await expect(client.usageClear({ expectedRevision: 4 }, desktopWindowClient())).rejects.toMatchObject({ code: 'forbidden' })
       expect(usage.clear).not.toHaveBeenCalled()
       mayAnswer = true

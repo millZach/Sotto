@@ -47,11 +47,119 @@ export const HOST_FACTS_REFRESH_MS = 5_000
 export const HOST_RUNNING_THREADS_MAX = 100_000
 
 /**
- * What the optional `host-facts` feature answers (#1031): the machine's facts and how many of the host's threads are
- * running a turn now. Read leniently, as the facts are, so a later host's additions still read on an older desktop.
+ * Live load (#1311): how busy a machine is now, as numbers over one window ending at one observation time. A host reads
+ * it when facts are asked for, from two samples at least `HOST_LOAD_SAMPLE_MS` apart, and keeps the last reading; nothing
+ * reads on a timer. A number the machine cannot give honestly is null, never guessed:
+ * - `cpuBusyPercent`: the share of all CPU time over the window not spent idle, from the CPUs' own counters.
+ * - `loadAverage`: the one-minute load average. Windows has none.
+ * - `availableMemoryBytes`: memory a new process could have now, the cache and standby the system gives back counted in.
+ *   On macOS the counters Node reads count only free pages and understate it, so it reads unknown there.
+ * - `windowStartAvailableMemoryBytes`: the same at the window's start, so "short on two readings" needs no history.
+ * - `memoryPressurePercent`: Linux's own memory pressure, the share of the last ten seconds some task waited on memory.
+ */
+export const HOST_LOAD_SAMPLE_MS = 2_000
+/** A starting sample older than this is too old to say how busy the machine is now; the host samples twice instead. */
+export const HOST_LOAD_WINDOW_MAX_MS = 60_000
+const percent = z.number().min(0).max(100)
+
+export const hostLoadSchema = z.object({
+  observedAt: z.string().datetime(),
+  windowMs: z.number().int().positive().max(24 * 60 * 60_000),
+  cpuBusyPercent: percent.nullable(),
+  loadAverage: z.number().nonnegative().max(HOST_FACTS_CPU_COUNT_MAX * 1_000).nullable(),
+  availableMemoryBytes: bytes.nullable(),
+  windowStartAvailableMemoryBytes: bytes.nullable(),
+  memoryPressurePercent: percent.nullable(),
+})
+export type HostLoad = z.infer<typeof hostLoadSchema>
+
+/**
+ * Where a machine's live load starts to count against placing work there (#1311), in one place so they can be tuned on
+ * the laptop and forge. Short on memory: available memory under the smaller of `shortMemoryBytes` and `shortMemoryShare`
+ * of the total (Zach, October 23, 2026), on both readings of the window, so a large machine is not short with gigabytes
+ * free and a small one is not short at a tenth of very little. Without a total the line cannot be drawn, so short cannot
+ * be established: memory reads unknown, except that at least `shortMemoryBytes` on both readings is enough on any total,
+ * since the line is never above it. Busy: CPU busy above `busyCpuPercent` over the window. A reading older than `staleAfterMs` is unknown, not idle.
+ */
+export const MACHINE_LOAD_THRESHOLDS = {
+  shortMemoryBytes: 2 * 1024 ** 3,
+  shortMemoryShare: 0.1,
+  busyCpuPercent: 85,
+  staleAfterMs: 60_000,
+} as const
+
+export type MachineMemoryState = 'short' | 'enough' | 'unknown'
+export type MachineCpuState = 'busy' | 'not-busy' | 'unknown'
+
+/**
+ * What a machine's live load says for placing work, at `now`. An absent or stale reading is unknown on both counts. A
+ * reading from more than `staleAfterMs` ahead of `now` is unknown too, since the two clocks cannot both be right.
+ */
+export function machineLoadStates(load: HostLoad | null, totalMemoryBytes: number | null, now: number, thresholds = MACHINE_LOAD_THRESHOLDS): { memory: MachineMemoryState; cpu: MachineCpuState } {
+  const observed = load ? Date.parse(load.observedAt) : Number.NaN
+  if (!load || !Number.isFinite(observed) || Math.abs(now - observed) > thresholds.staleAfterMs) return { memory: 'unknown', cpu: 'unknown' }
+  const end = load.availableMemoryBytes, start = load.windowStartAvailableMemoryBytes
+  let memory: MachineMemoryState
+  if (totalMemoryBytes === null) {
+    // Without a total the line could be anywhere up to `shortMemoryBytes`: above it on the end reading is enough on any
+    // total, and anything less cannot be called short or enough.
+    memory = end !== null && end >= thresholds.shortMemoryBytes ? 'enough' : 'unknown'
+  } else {
+    const floor = Math.min(thresholds.shortMemoryBytes, totalMemoryBytes * thresholds.shortMemoryShare)
+    const short = (bytes: number) => bytes < floor
+    // One short reading is not enough to call a machine short, and a missing reading cannot second it.
+    memory = end === null ? 'unknown' : !short(end) ? 'enough' : start === null ? 'unknown' : short(start) ? 'short' : 'enough'
+  }
+  const cpu: MachineCpuState = load.cpuBusyPercent === null ? 'unknown' : load.cpuBusyPercent > thresholds.busyCpuPercent ? 'busy' : 'not-busy'
+  return { memory, cpu }
+}
+
+const threadCount = z.number().int().nonnegative().max(HOST_RUNNING_THREADS_MAX).nullable()
+
+/**
+ * What the optional `host-facts` feature answers (#1031): the machine's facts, how many of the host's threads are running a
+ * turn now, its live load and its work placed but not started (#1311): threads sent work on this host whose turn has not
+ * begun, so two starts seconds apart do not both count the same free memory. Read leniently, as the facts are, so a later
+ * host's additions still read on an older desktop. The load and the placed work are part of the Owl feature Work across
+ * machines (`cross-machine-work`): a host whose answer has it off sends neither, as an older host does, and both stay
+ * absent and read unknown; one it sends that cannot be read reads null.
  */
 export const hostMachineReportSchema = z.object({
   facts: hostFactsSchema,
-  runningThreads: z.number().int().nonnegative().max(HOST_RUNNING_THREADS_MAX).nullable().catch(null),
+  runningThreads: threadCount.catch(null),
+  load: hostLoadSchema.nullable().optional().catch(null),
+  placedNotStarted: threadCount.optional().catch(null),
+  /**
+   * The Sotto thread IDs `placedNotStarted` counts, so a desktop that has admitted a start there can tell whether the
+   * host has counted it yet (`placedNotStartedWith`). Sent with the count while it is within bounds; to an answer without
+   * it the desktop adds every start it has on its way there.
+   */
+  placedThreadIds: z.array(z.string().min(1).max(200)).max(HOST_RUNNING_THREADS_MAX).optional().catch(undefined),
 })
 export type HostMachineReport = z.infer<typeof hostMachineReportSchema>
+
+/**
+ * A paired machine's work placed but not started as this desktop reads it (#1311). The host counts what it holds; a
+ * start this desktop's Watcher has admitted there reaches the host only as its thread is created and its first prompt
+ * queued, so until then the host cannot count it, and the desktop adds its own reservation. A start and its thread share
+ * one Sotto thread ID on both sides (the desktop names the thread in its create-thread), so the rule is keyed by it: a
+ * reserved thread the host echoes in `placedThreadIds` is the host's to count, and every other is added.
+ *
+ * `reserved` is read before the host is asked and again once it has answered, so it holds every start on its way at any
+ * moment of the read, a start admitted while the host was sampling included: each either reached the host before it
+ * counted, and is echoed or running there, or it did not, and is added here. Nothing is read from the desktop's later copy
+ * of the host, which could show a start running that the answer's counts never saw. The price is an extra count, never a
+ * lost one: a start whose turn began on the host before it answered is counted there as running and here as placed,
+ * until the desktop's own record of the start catches up. A start in both readings counts once.
+ *
+ * An answer without the IDs (a host built before them) cannot say which starts it holds, so every reservation is added
+ * to its count: a start it already counts may count twice, and none is missed. A host's unknown count stays unknown.
+ */
+export function placedNotStartedWith(report: Pick<HostMachineReport, 'placedNotStarted' | 'placedThreadIds'>, reserved: readonly string[]): number | null {
+  const counted = report.placedNotStarted
+  if (counted === null || counted === undefined) return null
+  if (reserved.length === 0) return counted
+  const echoed = new Set(report.placedThreadIds ?? [])
+  const extra = new Set(reserved.filter(threadId => !echoed.has(threadId))).size
+  return counted + extra <= HOST_RUNNING_THREADS_MAX ? counted + extra : null
+}

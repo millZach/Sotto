@@ -24,12 +24,19 @@ const PROFILE = { onboardingComplete: true, appearance: 'dark', motion: 'reduced
 interface Box { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
 interface Frame {
   readonly column: Box
-  readonly brand: Box
+  /** The top row's brand; a Mac draws none beside the traffic lights, so a run there reads null on both pages. */
+  readonly brand: Box | null
   readonly foot: Box
-  /** The foot's top border: its width and colour. */
+  /** The hairline between the switch and the page links: its width and colour. */
   readonly hairline: string
-  readonly switch: Box
-  readonly tabs: readonly Box[]
+  /** The hairline's own box, between the switch's row and the links' row. */
+  readonly rule: Box
+  /** The switch's row; its width follows the open room, which Settings does not light. */
+  readonly switch: Pick<Box, 'y' | 'height'>
+  /** Each tile's height. */
+  readonly tabs: readonly number[]
+  /** The open room's tile shows its whole name inside the foot; true where no room is open. */
+  readonly litFits: boolean
   readonly tabFonts: readonly string[]
   readonly links: readonly Box[]
   readonly linkIcons: readonly number[]
@@ -48,16 +55,25 @@ async function frame(page: Page): Promise<Frame> {
     const aside = document.querySelector('aside.thread-nav')!
     const foot = aside.querySelector('.thread-nav__foot')!
     const room = foot.querySelector('.thread-nav__seg')!
+    const rule = foot.querySelector('.thread-nav__foot-rule')!
     const links = [...foot.querySelectorAll('.thread-nav__pages a')]
-    const border = getComputedStyle(foot)
+    const border = getComputedStyle(rule)
     return {
       column: box(aside)!,
-      brand: box(aside.querySelector('.thread-nav__brand'))!,
+      brand: box(aside.querySelector('.thread-nav__brand')),
       foot: box(foot)!,
       hairline: `${border.borderTopWidth} ${border.borderTopColor}`,
-      switch: box(room)!,
-      tabs: [...room.querySelectorAll('button')].map(tab => box(tab)!),
+      rule: box(rule)!,
+      // The switch is centred and its open room's tile widens to show its name; Settings opens no room, so only
+      // its row and the tiles' height carry over between the pages.
+      switch: { y: box(room)!.y, height: box(room)!.height },
+      tabs: [...room.querySelectorAll('button')].map(tab => box(tab)!.height),
       tabFonts: [...room.querySelectorAll('button')].map(tab => getComputedStyle(tab).fontSize),
+      litFits: (() => {
+        const lit = room.querySelector('[aria-selected="true"]'), name = lit?.querySelector('.room-tab__name')
+        if (!lit || !name) return true
+        return name.scrollWidth <= name.clientWidth + 0.5 && lit.getBoundingClientRect().right <= foot.getBoundingClientRect().right
+      })(),
       links: links.map(link => box(link)!),
       linkIcons: links.map(link => box(link.querySelector('svg'))?.width ?? 0),
       update: box(foot.querySelector('.update-control')),
@@ -104,13 +120,18 @@ async function checkCrossing(launched: LaunchedSotto, track: 'stable' | 'owl'): 
       expect(threads.column.width, label).toBe(shownWidth(saved, width))
       expect(settings, label).toEqual(threads)
       expect(again, label).toEqual(threads)
-      // The look the Settings column had: the hairline stops 10px short of each edge (the column's own border is the
-      // last pixel), the switch and the links sit 6px inside it, and the switch is one box per room.
+      // The look the Settings column had: the foot stops 10px short of each edge (the column's own border is the
+      // last pixel), the links sit 6px inside it, and the switch is one tile per room. No hairline tops the foot:
+      // the hairline sits 12px under the switch and 12px over the links, its ends level with the foot's content.
       expect(threads.hairline, label).toMatch(/^1px /u)
       expect(threads.foot.x, label).toBe(10)
       expect(threads.foot.x + threads.foot.width, label).toBe(threads.column.width - 1 - 10)
-      expect(threads.switch.x, label).toBe(16)
-      expect(threads.tabs, label).toHaveLength(track === 'owl' ? 3 : 2)
+      expect(threads.rule.y - (threads.switch.y + threads.switch.height), label).toBe(12)
+      expect(threads.links[0]!.y - (threads.rule.y + threads.rule.height), label).toBe(12)
+      expect(threads.rule.x, label).toBe(threads.foot.x + 6)
+      expect(threads.rule.x + threads.rule.width, label).toBe(threads.foot.x + threads.foot.width - 6)
+      expect(threads.tabs, label).toHaveLength(3)
+      expect(threads.litFits, label).toBe(true)
     }
   }
 }
@@ -134,7 +155,6 @@ test('owl with dictation off: the owl and Threads draw the foot the same on both
     expect(threads.tabs).toHaveLength(2)
     expect(settings).toEqual(threads)
     expect(threads.foot.x).toBe(10)
-    expect(threads.switch.x).toBe(16)
   }))
 })
 
@@ -162,9 +182,12 @@ test('the top row meets the window corner on Windows and Linux as it does on a M
       await withoutMacClass()
       const settings = await frame(page)
       // At the narrowest widths the wordmark gives way to the mark on both pages, so the brand is the same box too.
+      // A run on a Mac has no brand on either page; the corner's place is checked where the brand is drawn.
       expect(settings.brand, `saved ${saved}`).toEqual(threads.brand)
-      expect(threads.brand.x, `saved ${saved}`).toBe(14)
-      expect(threads.brand.y + threads.brand.height / 2, `saved ${saved}`).toBeCloseTo(22, 0)
+      if (threads.brand !== null) {
+        expect(threads.brand.x, `saved ${saved}`).toBe(14)
+        expect(threads.brand.y + threads.brand.height / 2, `saved ${saved}`).toBeCloseTo(22, 0)
+      }
       expect(settings, `saved ${saved}`).toEqual(threads)
     }
   })

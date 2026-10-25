@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { agentRuntimeModeSchema, providerIdSchema, type AgentState, type AgentThread } from './agents'
 import { WATCHER_OUTCOMES, watcherOutcomeSchema } from './watcher'
 import { workerKindSchema } from './workerRoles'
+import { workerSystemSchema } from './workerMachine'
 
 /**
  * Delegation between threads (ADR-0081): an ordinary thread hands work to a thread it starts, through the scoped
@@ -12,6 +13,8 @@ export const DELEGATE_MCP_SERVER = 'sotto_delegate'
 export const DELEGATE_TOOL = 'delegate'
 export const READ_DELEGATION_TOOL = 'read_delegation'
 export const CANCEL_DELEGATION_TOOL = 'cancel_delegation'
+/** The machines a delegating thread may name, as Watcher's `list_machines` gives them (#1032). Only while Work across machines is on. */
+export const LIST_MACHINES_TOOL = 'list_machines'
 /** Prompts per delegated thread per turn of the delegating thread, the brief that started it included (decision 5). */
 export const DELEGATION_PROMPTS_PER_THREAD = 4
 /** The longest `delegate` waits for an outcome in the same call (decision 8). The tool server's client timeout sits above it. */
@@ -41,6 +44,8 @@ export const delegateInputSchema = z.object({
   effort: z.string().min(1).max(64).optional().describe('For a new thread: a reasoning effort the model offers, required when it offers any.'),
   permission: agentRuntimeModeSchema.optional().describe('For a new thread, required: approval-required, auto-accept-edits, auto or full-access, one the model offers. Never wider than this thread\'s own or the user\'s new-thread default.'),
   working_copy: z.enum(['shared', 'independent']).optional().describe('For a new thread: share this project\'s checkout (the default) or start its own worktree.'),
+  machine: z.uuid().optional().describe(`For a new thread: the machine it starts on, a host ID from ${LIST_MACHINES_TOOL}. A delegated thread starts only on This computer for now.`),
+  os: workerSystemSchema.optional().describe('For a new thread: the system it needs, windows, macos or linux. Never falls back to another system.'),
   title: z.string().trim().min(1).max(DELEGATION_TITLE_MAX).optional().describe('For a new thread: its name in the sidebar, which Sotto keeps. Left out, Sotto names the thread from the brief, as it names any thread.'),
   wait_seconds: z.number().int().min(0).max(DELEGATION_WAIT_MAX_SECONDS).optional()
     .describe(`How long to wait in this call for the outcome, up to ${DELEGATION_WAIT_MAX_SECONDS}. Left out, ${DELEGATION_WAIT_MAX_SECONDS}. When the wait ends first the call returns working, and Sotto sends a wake-up when the outcome changes.`),
@@ -57,7 +62,10 @@ export const delegationRefusalCodeSchema = z.enum(['INVALID_INPUT', 'NOT_ADMITTE
   'PERMISSION_NOT_COMPARABLE', 'PERMISSION_TOO_WIDE', 'IN_FLIGHT_LIMIT', 'PROMPT_LIMIT', 'PAUSED', 'TARGET_CHANGED', 'PENDING_USER_REQUEST',
   'UNKNOWN_THREAD', 'UNKNOWN_DELEGATION', 'RETRY_KEY_CONFLICT', 'STOPPING',
   // The delegated thread's own queue holds its next prompt until the user resumes, clears or checks it there (October 19, 2026).
-  'QUEUE_HELD'])
+  'QUEUE_HELD',
+  // The machine or system a new thread named could not take it (#1032): not connected, no copy of the project, none of
+  // that system, or a machine other than This computer, where delegated threads start for now.
+  'MACHINE_UNAVAILABLE'])
 export type DelegationRefusalCode = z.infer<typeof delegationRefusalCodeSchema>
 /**
  * A refusal, and the delegation it is recorded as when the call was a delegation main refused under its rules: the
@@ -70,7 +78,8 @@ export interface DelegationRefusal { readonly status: 'refused'; readonly code: 
  * refuses without one, since no delegation was asked for that the rules turned down.
  */
 export const RECORDED_REFUSALS: ReadonlySet<DelegationRefusalCode> = new Set(['NOT_ADMITTED', 'LEVEL_LIMIT', 'NO_USER_MESSAGE', 'PROVIDER_UNAVAILABLE',
-  'PERMISSION_NOT_COMPARABLE', 'PERMISSION_TOO_WIDE', 'IN_FLIGHT_LIMIT', 'PROMPT_LIMIT', 'PAUSED', 'TARGET_CHANGED', 'PENDING_USER_REQUEST', 'UNKNOWN_THREAD', 'QUEUE_HELD'])
+  'PERMISSION_NOT_COMPARABLE', 'PERMISSION_TOO_WIDE', 'IN_FLIGHT_LIMIT', 'PROMPT_LIMIT', 'PAUSED', 'TARGET_CHANGED', 'PENDING_USER_REQUEST', 'UNKNOWN_THREAD', 'QUEUE_HELD',
+  'MACHINE_UNAVAILABLE'])
 
 /**
  * Where a delegation stands (CONTEXT.md, Outcome): Watcher's outcomes (ADR-0073), and `refused`, a delegation main
@@ -120,7 +129,7 @@ export const delegationNewsSchema = z.object({
 export type DelegationNews = z.infer<typeof delegationNewsSchema>
 
 /**
- * The window's read of a thread's delegations (#1029, design A): what each card in the delegating thread shows. Main
+ * The window's read of a thread's delegations (#1029, design A): what each row of delegated work in the delegating thread shows. Main
  * answers from `DelegationService`'s own record, reading no snapshot, and only when the window asks: a delegating
  * thread's pane opening, or a change main announced for that thread. Identities, outcome and timing only, never a brief
  * or a reply.
@@ -132,7 +141,7 @@ export const DELEGATIONS_CHANGED = 'sotto:delegations:changed'
 export const DELEGATION_RENDERER_ARGUMENT = '--sotto-delegation-enabled'
 /**
  * The newest finished delegations, refused ones among them, a read returns of what one thread delegated, beside every
- * one still open, and the newest briefs it was sent: enough for every card and brief a busy thread's history shows.
+ * one still open, and the newest briefs it was sent: enough for every row and brief a busy thread's history shows.
  */
 export const DELEGATION_VIEWS_MAX = 200
 /** Why a brief ended before it was delivered: the user's newer message or their turn there, a Stop, a failure, a restart. */
@@ -148,7 +157,7 @@ export const delegatedViewSchema = z.object({
   rootUserMessageId: id,
   /**
    * The delegating thread's newest message when it called, the user's or a wake-up's: the turn the call was made in,
-   * where its card goes.
+   * where its row goes.
    */
   anchorMessageId: id,
   /** The brief's own message in the delegated thread, which that thread shows as the delegating thread's, not the user's. */
@@ -170,7 +179,7 @@ export const delegatedViewSchema = z.object({
 export type DelegatedView = z.infer<typeof delegatedViewSchema>
 /**
  * A delegation main refused as it was asked for (decision 7): the rule that turned it down, and nothing started or
- * sent, so no brief and, for a start, no thread. The card words the rule; main's own words were written for the agent.
+ * sent, so no brief and, for a start, no thread. The row words the rule; main's own words were written for the agent.
  */
 export const refusedViewSchema = z.object({
   id: z.uuid(),

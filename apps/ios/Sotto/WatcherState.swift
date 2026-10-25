@@ -74,6 +74,9 @@ extension WatcherPhoneState {
 struct WatcherDrafts: Equatable, Sendable {
     struct Sent: Equatable, Sendable {
         let text: String
+        /// The staged handles of the photos that went with the words, by ID, in order: the same words with other photos, or
+        /// with the same photos staged again, are another message, as the host holds a draft ID to one packet.
+        var photos: [String] = []
         let draftID: String
         /// Its send has ended, so a page asked for from now on says where it stands.
         var ended = false
@@ -85,15 +88,15 @@ struct WatcherDrafts: Equatable, Sendable {
     /// Oldest first.
     private(set) var unresolved: [Sent] = []
     init() {}
-    /// The ID these exact words go with: the one they last went with, or a new one.
-    mutating func id(for text: String, minting: () -> String = { UUID().uuidString.lowercased() }) -> String {
-        if let index = unresolved.firstIndex(where: { $0.text == text }) {
+    /// The ID these exact words and photos go with: the one they last went with, or a new one.
+    mutating func id(for text: String, photos: [String] = [], minting: () -> String = { UUID().uuidString.lowercased() }) -> String {
+        if let index = unresolved.firstIndex(where: { $0.text == text && $0.photos == photos }) {
             unresolved[index].ended = false
             unresolved[index].sends += 1
             return unresolved[index].draftID
         }
         let draftID = minting()
-        unresolved.append(Sent(text: text, draftID: draftID))
+        unresolved.append(Sent(text: text, photos: photos, draftID: draftID))
         if unresolved.count > Self.limit { unresolved.removeFirst(unresolved.count - Self.limit) }
         return draftID
     }

@@ -45,11 +45,11 @@ async function scrollTo(page: Page, locator: Locator, offset = 80): Promise<void
   }, offset)
 }
 
-test('settled turn folds its work above the final reply, keeps the failure in view when opened and opens by keyboard', async () => {
+test('settled turn folds its work above the final reply, failures and all, and opens by keyboard', async () => {
   const { app, page } = await launch()
   try {
     const log = transcript(page)
-    const work = log.getByRole('button', { name: 'Worked for 2m 04s' })
+    const work = log.getByRole('button', { name: /^Worked for 2m 04s · \d+ steps$/ })
     await expect(work).toHaveAttribute('aria-expanded', 'false')
     // Folded, the turn reads as the request, one line of work and the final reply.
     await expect(log.locator('.thread-message')).toHaveCount(2)
@@ -73,7 +73,8 @@ test('settled turn folds its work above the final reply, keeps the failure in vi
     await expect(summary).toHaveAttribute('aria-expanded', 'false')
     const later = log.getByRole('button', { name: 'Ran 2 commands, changed 2 files, 1 agent action' })
     await expect(later).toHaveAttribute('aria-expanded', 'false')
-    await expect(log.getByRole('button', { name: 'npm run lint, Exit 1' })).toBeVisible()
+    // A failed step folds with the rest of its group.
+    await expect(log.getByRole('button', { name: 'npm run lint, Exit 1' })).toHaveCount(0)
     // Opened, messages keep their order and count; activity sits between them.
     await expect(log.locator('.thread-message')).toHaveCount(3)
     await expect(log.locator('.thread-message, .thread-activity')).toHaveCount(5)
@@ -127,35 +128,60 @@ test('settled turn folds its work above the final reply, keeps the failure in vi
   } finally { await app.close() }
 })
 
-test('a running turn shows its rows and one ticking live line; disconnection stops the clocks', async () => {
+test('a running turn folds its steps under the glowing working words, opens them on a press, and stops its clocks when disconnected', async () => {
   const { app, page } = await launch()
   try {
     await show(page, 'live')
     const log = transcript(page)
     const live = log.getByTestId('thread-activity-live')
-    // The current action is the running row directly above, so the live line names only the time.
-    // The changing word ahead of it is decoration over the same fact, which is said once for assistive tech.
-    await expect(live).toHaveText(/Working for 1m 0\ds$/)
+    const line = live.getByRole('button', { name: /^Working, \d+ steps so far$/ })
+    await expect(line).toHaveAttribute('aria-expanded', 'false')
+    // The words carry the wait: no clock, no step named on the line, and no live rows until it opens.
+    await expect(live.locator('.thread-activity-live__word')).toBeVisible()
     await expect(live).not.toContainText('npm test')
-    const first = await live.locator('[data-elapsed]').textContent()
-    await expect.poll(() => live.locator('[data-elapsed]').textContent(), { timeout: 3_000 }).not.toBe(first)
-    await expect(log.getByRole('button', { name: 'npm test -- --run tests/unit/audio, Running' })).toContainText(/Running \d+s/)
-    await expect(live.locator('.thread-activity__pulse')).toHaveCSS('animation-name', 'thread-activity-pulse')
-    await expect(log.locator('.thread-activity[data-live]')).toHaveCount(1)
+    await expect(live.locator('[data-elapsed]')).toHaveCount(0)
+    await expect(log.locator('.thread-activity[data-live]')).toHaveCount(0)
+    // A band of accent light crosses the words, and the dot steps aside for it.
+    await expect(live.locator('.thread-activity-live__word')).toHaveCSS('animation-name', 'thread-activity-glow')
+    await expect(live.locator('.thread-activity-live__line > .thread-activity__pulse')).toBeHidden()
+    expect(await overflow(page)).toBeLessThanOrEqual(0)
     for (const mode of ['dark', 'light'] as const) {
       await theme(page, mode)
       await transcript(page).evaluate(element => { element.scrollTop = element.scrollHeight })
       await page.screenshot({ path: resolve(shots, `live-1280-${mode}.png`) })
     }
+
+    await line.focus()
+    await page.keyboard.press('Enter')
+    await expect(line).toHaveAttribute('aria-expanded', 'true')
+    await expect(log.locator('.thread-activity[data-live]')).toHaveCount(1)
+    const running = log.getByRole('button', { name: 'npm test -- --run tests/unit/audio, Running' })
+    await expect(running).toContainText(/Running \d+s/)
+    const first = await running.locator('[data-elapsed]').textContent()
+    await expect.poll(() => running.locator('[data-elapsed]').textContent(), { timeout: 3_000 }).not.toBe(first)
+    expect(await overflow(page)).toBeLessThanOrEqual(0)
+    for (const mode of ['dark', 'light'] as const) {
+      await theme(page, mode)
+      await transcript(page).evaluate(element => { element.scrollTop = element.scrollHeight })
+      await page.screenshot({ path: resolve(shots, `live-open-1280-${mode}.png`) })
+    }
     await log.getByRole('button', { name: 'Spawn agent, 2 agents, Running' }).click()
     await expect(log.getByRole('list', { name: 'Agents' })).toContainText('Agent 1RunningSearching src/rendererAgent 2Starting')
     await page.screenshot({ path: resolve(shots, `live-agents-1280-light.png`) })
+    // Escape folds what it is inside first, then the steps, leaving focus on the line.
+    await page.keyboard.press('Escape')
+    await page.keyboard.press('Escape')
+    await expect(line).toHaveAttribute('aria-expanded', 'false')
+    await expect(line).toBeFocused()
 
     await theme(page, 'dark')
     await show(page, 'disconnected')
     await expect(live).toContainText('Last seen working')
-    await expect(live.locator('[data-elapsed]')).toHaveCount(0)
+    await expect(live.locator('.thread-activity-live__word')).toHaveCount(0)
     await expect(live.locator('.thread-activity__pulse')).toHaveCSS('animation-name', 'none')
+    const seen = live.getByRole('button', { name: /^Last seen working, \d+ steps so far$/ })
+    if (await seen.getAttribute('aria-expanded') === 'false') await seen.click()
+    await expect(log.locator('[data-elapsed]')).toHaveCount(0)
     // Last-seen rows lose the running accent: they read in the same muted ink as the row icons.
     const lastSeen = log.getByRole('button', { name: 'npm test -- --run tests/unit/audio, Last seen running' })
     expect(await lastSeen.locator('.thread-activity__meta').evaluate(element => getComputedStyle(element).color))
@@ -205,7 +231,11 @@ test('the shipped minimum width and reduced motion keep rows readable without si
     }
     await show(page, 'live')
     await page.evaluate(() => { document.documentElement.dataset.reducedMotion = 'on' })
-    await expect(log.getByTestId('thread-activity-live').locator('.thread-activity__pulse')).toHaveCSS('animation-name', 'none')
+    // Nothing moves: the words hold their ink and the dot stands still beside them.
+    const live = log.getByTestId('thread-activity-live')
+    await expect(live.locator('.thread-activity__pulse')).toHaveCSS('animation-name', 'none')
+    await expect(live.locator('.thread-activity__pulse')).toBeVisible()
+    await expect(live.locator('.thread-activity-live__word')).toHaveCSS('animation-name', 'none')
     await transcript(page).evaluate(element => { element.scrollTop = element.scrollHeight })
     expect(await overflow(page)).toBeLessThanOrEqual(0)
     await page.screenshot({ path: resolve(shots, 'live-820-reduced-motion-light.png') })
@@ -220,7 +250,7 @@ test('a turn a steer cut reads as steered, not stopped, at the minimum window', 
     const steered = log.getByRole('button', { name: 'Steered after 1m 05s' })
     await expect(steered).toHaveAttribute('aria-expanded', 'false')
     await expect(log.getByRole('button', { name: /^Stopped/ })).toHaveCount(0)
-    await expect(log.getByRole('button', { name: 'Worked for 9.0s' })).toBeVisible()
+    await expect(log.getByRole('button', { name: /^Worked for 9\.0s · \d+ steps?$/ })).toBeVisible()
     expect(await overflow(page)).toBeLessThanOrEqual(0)
     for (const mode of ['dark', 'light'] as const) {
       await theme(page, mode)

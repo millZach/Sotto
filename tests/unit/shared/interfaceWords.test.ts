@@ -11,12 +11,14 @@ import { MICROPHONE_NOT_SET_UP_DETAIL, SPEECH_MODEL_NOT_READY_DETAIL, TRANSCRIPT
 import { HOST_BUSY, hostVersionMismatch, LEGACY_MANAGEMENT_UPDATE, MANAGEMENT_REMOVED } from '../../../src/shared/hostProtocol'
 import { HOST_PROVIDER_JOB_WORDS, hostProviderJobTitle, type HostProviderJobCase } from '../../../src/shared/hostProviders'
 import {
-  bootUnsupportedWords, effortColorLabel, gitMergeMethodLabel, HOST_ANSWER_LOST_WORDS, hostBusyWords, hostCannotStageScreenshotsWords, hostProviderJobHeading,
-  hostProviderJobWords, hostVersionMismatchWords, inInterfaceLanguage, interactiveVisualLabel, microphoneNotSetUpDetail, opencodeHostNeedsUpdateWords,
+  bootUnsupportedWords, CURSOR_SIGN_IN_INTERFACE_WORDS, effortColorLabel, gitMergeMethodLabel, HOST_ANSWER_LOST_WORDS, hostBusyWords, hostCannotStageScreenshotsWords, hostProviderJobHeading,
+  hostProviderJobWords, hostVersionMismatchWords, ownServerRefusalInterfaceWords, inInterfaceLanguage, interactiveVisualLabel, microphoneNotSetUpDetail, opencodeHostNeedsUpdateWords,
   opencodeNotOnHostWords, SIGN_IN_INTERFACE_WORDS, speechModelNotReadyDetail, threadStartsUnsupportedWords, transcriptionErrorDetail, transcriptionKeptDetail,
   watcherDisabledWords, workerRoleWords,
 } from '../../../src/shared/interfaceWords'
 import { HOST_ANSWER_LOST, opencodeHostNeedsUpdate, opencodeNotOnHost, SIGN_IN_WORDS } from '../../../src/shared/opencodeSignIn'
+import { CURSOR_SIGN_IN_WORDS } from '../../../src/shared/cursorSignIn'
+import { ownServerRefusalWords, type OwnServerRefusal } from '../../../src/shared/ownModelServers'
 import { EFFORT_COLOR_LABELS, GIT_MERGE_METHOD_LABELS, type EffortColor, type GitMergeMethod } from '../../../src/shared/settings'
 import { THREAD_STARTS_UNSUPPORTED } from '../../../src/shared/threadStarts'
 import { INTERACTIVE_VISUAL_LABEL } from '../../../src/shared/visuals'
@@ -63,6 +65,8 @@ describe('interface words', () => {
     for (const models of [0, 1, 2, 1500]) expect(SIGN_IN_INTERFACE_WORDS.signedIn('Zen', models)).toBe(SIGN_IN_WORDS.signedIn('Zen', models))
     for (const key of [true, false]) expect(SIGN_IN_INTERFACE_WORDS.signedOut('Zen', key)).toBe(SIGN_IN_WORDS.signedOut('Zen', key))
     expect(keys(SIGN_IN_INTERFACE_WORDS).sort()).toEqual(keys(SIGN_IN_WORDS).sort())
+    for (const key of keys(CURSOR_SIGN_IN_WORDS)) expect(CURSOR_SIGN_IN_INTERFACE_WORDS[key]()).toBe(CURSOR_SIGN_IN_WORDS[key])
+    expect(keys(CURSOR_SIGN_IN_INTERFACE_WORDS).sort()).toEqual(keys(CURSOR_SIGN_IN_WORDS).sort())
   })
 
   it('says dictation’s failures and an interactive visual’s label as the windows always have', () => {
@@ -80,6 +84,9 @@ describe('interface words', () => {
     expect(threadStartsUnsupportedWords()).toBe(THREAD_STARTS_UNSUPPORTED)
     expect(hostCannotStageScreenshotsWords()).toBe(HOST_CANNOT_STAGE_SCREENSHOTS)
     expect(watcherDisabledWords()).toBe(WATCHER_DISABLED)
+    const refusals: OwnServerRefusal[] = ['bad-address', 'public-http', 'unreachable', 'key-needed', 'key-refused', 'no-models', 'not-openai', 'opencode-not-running',
+      'sign-in-failed', 'not-found', 'full', 'already-added', 'failed', 'removed-partly', 'added-partly']
+    for (const reason of refusals) expect(ownServerRefusalInterfaceWords(reason, 'spark-head', 'Spark')).toBe(ownServerRefusalWords(reason, 'spark-head', 'Spark'))
     for (const [host, owned] of [[undefined, true], [undefined, false], ['0.0.1', true], ['0.0.1', false], ['999.0.0', true]] as const) {
       expect(hostVersionMismatchWords('0.1.40', host, owned)).toBe(hostVersionMismatch('0.1.40', host, owned))
     }

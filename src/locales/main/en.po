@@ -698,6 +698,10 @@ msgstr "Local history is off, but saved Chats could not be cleared. Restore acce
 msgid "Local history is off, but saved Chats could not be read safely. The original personal-chat/chats.json is unchanged. Repair that file and save Settings again."
 msgstr "Local history is off, but saved Chats could not be read safely. The original personal-chat/chats.json is unchanged. Repair that file and save Settings again."
 
+#: src/main/ownModelServers/ipc.ts
+msgid "Manage your own model servers from the main Sotto window."
+msgstr "Manage your own model servers from the main Sotto window."
+
 #: src/main/tools/checkpoints.ts
 msgid "Matching native conversation rollback is unavailable."
 msgstr "Matching native conversation rollback is unavailable."
@@ -895,6 +899,10 @@ msgstr "Pull requests are unavailable."
 msgid "Quit"
 msgstr "Quit"
 
+#: src/main/agents/nextPromptIpc.ts
+msgid "Read next prompts from the main Sotto window."
+msgstr "Read next prompts from the main Sotto window."
+
 #: src/main/hotkeys/dictationStateFile.ts
 msgid "Recording stopped and was lost. Dictate again."
 msgstr "Recording stopped and was lost. Dictate again."
@@ -1002,6 +1010,10 @@ msgstr "Show Sotto"
 msgid "Showing linked files is not part of this version of Sotto. Nothing was opened."
 msgstr "Showing linked files is not part of this version of Sotto. Nothing was opened."
 
+#: src/main/agents/cursorSignInIpc.ts
+msgid "Sign Cursor in from the main Sotto window."
+msgstr "Sign Cursor in from the main Sotto window."
+
 #: src/main/agents/opencodeSignInIpc.ts
 msgid "Sign in to model sources from the main Sotto window."
 msgstr "Sign in to model sources from the main Sotto window."
@@ -1077,6 +1089,10 @@ msgstr "Sotto could not read that request, so nothing was sent to the host. Clos
 #: src/main/hosts/sshLauncher.ts
 msgid "Sotto could not read the key fingerprint. Check the key on the host before you trust it."
 msgstr "Sotto could not read the key fingerprint. Check the key on the host before you trust it."
+
+#: src/main/ownModelServers/ipc.ts
+msgid "Sotto could not read your own model servers."
+msgstr "Sotto could not read your own model servers."
 
 #: src/main/omarchy/setup.ts
 msgid "Sotto could not remove the Omarchy theme. Finish any theme switch in progress, then try again. Your files and Appearance choices were restored."

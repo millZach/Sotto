@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { describe, expect, it } from 'vitest'
-import { attemptOf, hiddenAnswers, integrationSchema, keyLabel, methodsOf, modelSourcesOf, safeSignInPage } from '../../../src/main/agents/opencodeSources'
+import { attemptOf, dialogSources, hiddenAnswers, integrationSchema, isOwnServerSource, keyLabel, methodsOf, modelSourcesOf, safeSignInPage } from '../../../src/main/agents/opencodeSources'
 
 // Shapes as OpenCode 2.0.31 lists them at GET /api/integration (scratch probe, October 16, 2026).
 const integration = (value: unknown) => integrationSchema.parse(value)
@@ -53,6 +53,16 @@ describe('who is signed in, read without a secret', () => {
     expect(read.sources.map(source => [source.id, source.signedIn?.how, source.models])).toEqual([
       ['anthropic', 'API key', 3], ['openai', 'ChatGPT account', 1], ['github-copilot', undefined, 0],
     ])
+  })
+
+  it('reads the user’s own model servers like any source, and leaves them out of the list the dialog gets', () => {
+    const own = integration({ id: 'own-spark1', name: 'Spark', methods: [{ type: 'key', label: 'Manually enter API Key' }],
+      connections: [{ type: 'credential', id: 'cred_3', label: 'Spark', method: 'key' }] })
+    const read = modelSourcesOf([own, copilot], ['own-spark1'])
+    expect(read.sources.map(source => [source.id, source.signedIn?.how, source.models])).toEqual([['own-spark1', 'API key', 1], ['github-copilot', undefined, 0]])
+    expect(dialogSources(read.sources).map(source => source.id)).toEqual(['github-copilot'])
+    expect(isOwnServerSource('own-spark1')).toBe(true)
+    expect(isOwnServerSource('openai')).toBe(false)
   })
 })
 

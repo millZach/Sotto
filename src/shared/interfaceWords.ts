@@ -3,6 +3,7 @@ import { plural, t } from '@lingui/core/macro'
 import { HOST_CANNOT_STAGE_SCREENSHOTS, PROVIDER_CONNECTION_NOTICES, PROVIDER_LABELS, SCREENSHOT_NOT_ITS_TYPE, SCREENSHOT_TOO_LARGE, SCREENSHOT_WRONG_TYPE, SCREENSHOTS_TOO_LARGE_IN_TOTAL, type ProviderId } from './agents'
 import type { BootUnsupportedReason } from './bootStart'
 import type { TranscriptionErrorCode } from './dictation'
+import type { OwnServerRefusal } from './ownModelServers'
 import { HOST_BUSY, hostIsNewer, hostIsOlder, LEGACY_MANAGEMENT_UPDATE, MANAGEMENT_REMOVED } from './hostProtocol'
 import type { HostProviderJobCase } from './hostProviders'
 import type { EffortColor, GitMergeMethod } from './settings'
@@ -186,6 +187,40 @@ export const SIGN_IN_INTERFACE_WORDS = {
   signedOut: (source: string, key: boolean): string => key
     ? t`Signed out of ${source}. Its key is gone from Sotto’s OpenCode.`
     : t`Signed out of ${source}. Its sign-in is gone from Sotto’s OpenCode.`,
+} as const
+
+/**
+ * A refusal about one of the user's own model servers (`ownServerRefusalWords`), by its reason, in the interface
+ * language. Main and the host answer with the reason and the English; a window says it with these.
+ */
+export function ownServerRefusalInterfaceWords(reason: OwnServerRefusal, host: string, serverName = host): string {
+  const name = serverName
+  switch (reason) {
+    case 'bad-address': return t`That is not an address Sotto can reach. Type it like http://localhost:11434 or http://spark-head:8888.`
+    case 'public-http': return t`${host} is on the internet, so Sotto needs https:// to send it a key and your code. Use the server’s https address, or reach it over your tailnet.`
+    case 'unreachable': return t`Nothing answered at ${host}. Nothing was saved. Check the server is on and this computer can reach it, over the tailnet if it is there, then try again.`
+    case 'key-needed': return t`${host} asks for a key. Nothing was saved. Paste the key whoever runs the server gave you, then check again.`
+    case 'key-refused': return t`${host} turned down the key. Nothing was saved. Check the key with whoever runs the server, then try again.`
+    case 'no-models': return t`${host} answered but has no models loaded. Nothing was saved. Load a model on the server, then check again.`
+    case 'not-openai': return t`Something answered at ${host}, but not as an OpenAI-compatible server. Nothing was saved. Check the port and the path, such as http://localhost:11434/v1, then try again.`
+    case 'opencode-not-running': return t`Your own servers run with OpenCode, and Sotto’s OpenCode is not running, so nothing was saved. Connect OpenCode under Providers, then add the server again.`
+    case 'sign-in-failed': return t`OpenCode did not take the key for ${name}, so nothing was saved. Try adding the server again.`
+    case 'not-found': return t`That server is no longer saved. Nothing was changed.`
+    case 'full': return t`Sotto keeps up to 32 servers. Remove one you no longer use, then add this one.`
+    case 'already-added': return t`${host} is already added. Nothing was saved. To change its key or its models, remove it and add it again.`
+    case 'failed': return t`Sotto could not finish that, so nothing was changed. Try again.`
+    case 'removed-partly': return t`OpenCode no longer has the key for ${name}, but Sotto could not take ${name} off its list. Remove it again.`
+    case 'added-partly': return t`OpenCode did not take the key for ${name}, and Sotto could not take ${name} back off its list, so it is saved without its key. Remove it, then add it again.`
+  }
+}
+
+/** Cursor's sign-in outcomes (`CURSOR_SIGN_IN_WORDS`), as main and the windows show them. */
+export const CURSOR_SIGN_IN_INTERFACE_WORDS = {
+  waiting: (): string => t`Finish signing in on cursor.com in your browser.`,
+  notRunning: (): string => t`Cursor’s sign-in is not available right now. Nothing was changed.`,
+  pageRefused: (): string => t`Cursor asked to sign in on a page Sotto does not open. Nothing was signed in. Run agent login in a terminal instead.`,
+  signedOut: (): string => t`Cursor is signed out on this computer.`,
+  signOutFailed: (): string => t`Cursor could not sign out. Nothing was changed. Run agent logout in a terminal to try again.`,
 } as const
 
 /** What an interactive visual is called on its card (`INTERACTIVE_VISUAL_LABEL`, which the tool's reply keeps in English). */

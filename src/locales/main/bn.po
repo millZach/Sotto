@@ -697,6 +697,10 @@ msgstr ""
 msgid "Local history is off, but saved Chats could not be read safely. The original personal-chat/chats.json is unchanged. Repair that file and save Settings again."
 msgstr ""
 
+#: src/main/ownModelServers/ipc.ts
+msgid "Manage your own model servers from the main Sotto window."
+msgstr ""
+
 #: src/main/tools/checkpoints.ts
 msgid "Matching native conversation rollback is unavailable."
 msgstr ""
@@ -894,6 +898,10 @@ msgstr ""
 msgid "Quit"
 msgstr "প্রস্থান"
 
+#: src/main/agents/nextPromptIpc.ts
+msgid "Read next prompts from the main Sotto window."
+msgstr ""
+
 #: src/main/hotkeys/dictationStateFile.ts
 msgid "Recording stopped and was lost. Dictate again."
 msgstr ""
@@ -1001,6 +1009,10 @@ msgstr "Sotto দেখান"
 msgid "Showing linked files is not part of this version of Sotto. Nothing was opened."
 msgstr ""
 
+#: src/main/agents/cursorSignInIpc.ts
+msgid "Sign Cursor in from the main Sotto window."
+msgstr ""
+
 #: src/main/agents/opencodeSignInIpc.ts
 msgid "Sign in to model sources from the main Sotto window."
 msgstr ""
@@ -1075,6 +1087,10 @@ msgstr ""
 
 #: src/main/hosts/sshLauncher.ts
 msgid "Sotto could not read the key fingerprint. Check the key on the host before you trust it."
+msgstr ""
+
+#: src/main/ownModelServers/ipc.ts
+msgid "Sotto could not read your own model servers."
 msgstr ""
 
 #: src/main/omarchy/setup.ts

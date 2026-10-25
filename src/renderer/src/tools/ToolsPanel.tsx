@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import { useMark } from '../components/marks'
 import { Copy, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, GitCompare, GitPullRequest, Globe, Maximize2, Minimize2, PanelRight, Pin, PinOff, Server, Smartphone, SquareTerminal, Users, X, type LucideIcon } from 'lucide-react'
 import { hostForThread, PROVIDER_LABELS, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { BrowserBridge } from '../../../shared/browser'
@@ -20,6 +21,7 @@ import { chordMatches } from '../agents/branchToolbar.logic'
 import { useOptionalApp } from '../state/AppContext'
 import type { SottoPlatform } from '../../../shared/platform'
 import { changesChord, chordBelongsElsewhere } from './changesShortcut'
+import { chosenThreadChord } from '../agents/threadShortcuts'
 import { describeWorkingCopy } from '../agents/ThreadWorkingCopy'
 import { BrowserPlayer } from './BrowserPlayer'
 import { browserPlayerStore, type BrowserPlayerStore } from './browserPlayerStore'
@@ -306,9 +308,9 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   const app = useOptionalApp()
   // One platform for the whole panel: the app's, or the preload's where there is no app context, so a Mac never reads mod as Ctrl.
   const platform: SottoPlatform = app?.platform ?? (bridgePlatform() as SottoPlatform | undefined) ?? 'win32'
-  const chord = changesChord(app?.settings?.hotkey, platform)
+  const chord = changesChord(chosenThreadChord(app?.settings, 'changes'), app?.settings?.hotkey, platform)
 
-  // The Changes shortcut, T3's `mod+d` unless the dictation hotkey has it: it opens the panel on Changes, and closes
+  // The Changes shortcut (T3's `mod+d` until changed on Settings › Keyboard), unless the dictation hotkey has it: it opens the panel on Changes, and closes
   // the panel when Changes is what it shows. A terminal keeps its own Ctrl+D, and an open dialog keeps its keys.
   useEffect(() => {
     if (chord === null) return
@@ -409,10 +411,12 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
     <BrowserPlayer state={state} focusedThreadId={focusedThreadId} bridge={browserBridge} store={store} autoShow={autoShowBrowser} playerStore={playerStore} />
     <PhonePlayer state={state} focusedThreadId={focusedThreadId} bridge={browserBridge} store={store} autoShow={autoShowBrowser} phoneStore={phoneStore} cloudStore={cloudStore} cloudBridge={cloudBridge} />
   </>
-  if (!open) return player
   const measured = available !== null && available > 0 ? available : null
   const preferred = chrome.resized || measured === null ? chrome.width : Math.min(TOOLS_PANEL_MAX_WIDTH, Math.max(TOOLS_PANEL_MIN_WIDTH, measured * .56))
   const overlay = chrome.expanded || (measured !== null && measured - preferred < TOOLS_PANEL_MIN_PANE_WIDTH)
+  // The page wears how the panel stands: docked beside the panes or over them, and nothing while it is shut.
+  useMark('tools', open ? overlay ? 'overlay' : 'docked' : null)
+  if (!open) return player
   const width = chrome.expanded && measured !== null ? measured : overlay && measured !== null ? Math.max(Math.min(preferred, measured - OVERLAY_GUTTER), Math.min(TOOLS_PANEL_MIN_WIDTH, measured)) : preferred
   const pinned = (chrome.surface !== 'agents' || delegationOn) && chrome.pinnedThreadId !== null
   const workspace = threadFiles?.workspace ?? threadChanges?.workspace ?? null

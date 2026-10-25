@@ -1,15 +1,22 @@
 import { flushSync } from 'react-dom'
 import type { UpdateStatus } from '../../../shared/contracts'
+import type { AppSettings, RoomTransitionLook } from '../../../shared/settings'
 import { prefersReducedMotion } from '../state/reducedMotion'
+import { toRgb } from './canvasColor'
+import { clamp, inkAt, sceneInk, type Rgb } from './nightScene'
 import './watcher.css'
 
 /**
  * Night falls (Drake's pick on October 23, 2026, variant 9 of `docs/prototypes/watcher-room-transition-prototype.html`):
- * moving between Threads and Watcher's room, a band of flickering text characters sweeps across the window. The room
+ * moving between Dictate or Threads and Watcher's room, a band of flickering text characters sweeps across the window. The room
  * being opened shows behind the band and the one being left ahead of it, edged in character cells, and the owl of the
  * room switch rides the band from the sidebar foot to the dock under Watcher's composer (or back). Built on the View
  * Transitions API: the page being left is a still snapshot and the one opened is live, so App keeps rendering one page.
  * Reduced motion, the setting being off, or a browser without view transitions swaps the page in one frame.
+ *
+ * The run has two looks (ADR-0119, decision 6): the Band, above, and Stars (variant C of the Band and Stars prototype,
+ * kept at the tag `prototype/night-falls-look`), a line of stars along the same front with a faint trail behind it. Both
+ * share the front, the clip that reveals the room being opened and the timing; only what is painted on the canvas differs.
  */
 
 /** The run's length at speed 1, in milliseconds. */
@@ -59,6 +66,134 @@ export function revealPolygon(u: number, width: number, height: number, forward:
   return `polygon(${points.join(', ')})`
 }
 
+// ---------- Stars ----------
+
+/** How far the Stars look's trail reaches behind its front, in CSS pixels. */
+export const TRAIL = 140
+/** The glyphs the Stars front is made of. Not words, so never translated. */
+export const STARS = ['*', '+', '·'] as const
+
+/** What the Stars front shows on one row at one flicker step: a glyph at a strength from 0 to 1. */
+export interface FrontStar { readonly glyph: string; readonly strength: number }
+
+/**
+ * The star on `row` at flicker step `step`, or null on the quarter of the rows that show none. The rest take one of the
+ * three glyphs, most of them bright and one in five faint. The same row and step always give the same star.
+ */
+export function frontStar(row: number, step: number): FrontStar | null {
+  if (hash(row, 3, 5) % 4 === 0) return null
+  const roll = hash(row, step, 9)
+  return { glyph: STARS[roll % STARS.length]!, strength: roll % 5 === 0 ? 0.45 : 0.95 }
+}
+
+/** How strong the trail is `distance` pixels behind the front: full at the front, nothing at TRAIL. */
+export function trailStrength(distance: number): number {
+  return clamp(1 - distance / TRAIL, 0, 1)
+}
+
+/**
+ * How much of the trail is left once the front runs on past the far side of the window, where the clip already shows the
+ * whole room: all of it until the front reaches that side at progress `u`, none at the end of the run. So the trail leaves
+ * with the run rather than vanishing when the canvas is taken away.
+ */
+export function trailLeft(u: number, width: number): number {
+  return clamp((1 - u) * (width + BAND * 2) / BAND, 0, 1)
+}
+
+/** One trail cell: a ramp glyph at a strength from 0 to 1, and whether it covers the room under it with the ground. */
+export interface TrailMark { readonly glyph: string; readonly strength: number; readonly ground: boolean }
+
+/**
+ * The trail cell `cells` behind the front, at grid cell (`col`, `row`) and flicker step `step`, or null where it shows
+ * nothing. It thins with distance: fewer cells show, fainter and in lighter glyphs. The cell next to the star always
+ * covers the room, so the front reads crisp; further back one in three does, the only darkening of the room being opened.
+ */
+export function trailMark(cells: number, col: number, row: number, step: number, left = 1): TrailMark | null {
+  const p = trailStrength(cells * CELL_W)
+  const roll = hash(col, row, step)
+  if (p <= 0 || (roll % 100) / 100 >= p * 0.5 * left) return null
+  const index = clamp(Math.floor(p * 5 * (0.5 + ((roll >>> 8) % 50) / 100)), 1, 5)
+  return { glyph: RAMP[index]!, strength: 0.14 + p * 0.3, ground: cells === 1 || (roll >>> 5) % 3 === 0 }
+}
+
+/** A cell the Stars look paints at (`x`, `y`): the ground under it or not, and a glyph in the accent or the text's ink. */
+export interface StarsCell {
+  readonly x: number
+  readonly y: number
+  readonly ground: boolean
+  readonly glyph: string | null
+  readonly ink: 'accent' | 'text'
+  readonly strength: number
+}
+
+/**
+ * Every cell the Stars look paints at progress `u` (0..1) and time `elapsed`. Each row's star sits in the cell its front
+ * edge falls in, the edge `revealPolygon` clips the room to, on a cell of ground so the edge is crisp. The trail runs back
+ * from it into the room being opened.
+ */
+export function starsCells(u: number, elapsed: number, width: number, height: number, forward: boolean): StarsCell[] {
+  const rows = Math.ceil(height / CELL_H)
+  const edge = frontEdge(u, width, rows, forward)
+  const step = Math.floor(elapsed / FLICKER_MS)
+  const back = forward ? -1 : 1
+  const cols = Math.ceil(width / CELL_W)
+  const left = trailLeft(u, width)
+  const cells: StarsCell[] = []
+  for (let row = 0; row < rows; row++) {
+    const front = edge[row]!
+    const y = row * CELL_H
+    const col = Math.floor(front / CELL_W)
+    for (let k = 1; k * CELL_W < TRAIL; k++) {
+      const at = col + back * k
+      if (at < 0 || at >= cols) continue
+      const mark = trailMark(k, at, row, step, left)
+      if (mark !== null) cells.push({ x: at * CELL_W, y, ground: mark.ground, glyph: mark.glyph, ink: 'text', strength: mark.strength })
+    }
+    if (col < 0 || col >= cols) continue
+    const star = frontStar(row, step)
+    cells.push({ x: col * CELL_W, y, ground: true, glyph: star?.glyph ?? null, ink: 'accent', strength: star?.strength ?? 0 })
+  }
+  return cells
+}
+
+/** The Stars look's inks: the canvas, and the text and the accent in 21 steps of strength (`inkAt` reads them). */
+export interface StarsInk {
+  readonly ground: string
+  readonly text: readonly string[]
+  readonly accent: readonly string[]
+}
+
+/**
+ * The Stars look's inks for a surface: the theme's accent and text laid over it the way Watcher's night scene lays them
+ * (`sceneInk`), so on a light surface they take LIGHT_ACCENT_BOOST and LIGHT_INK_BOOST and show as well as on a dark one.
+ */
+export function starsInk(surface: Rgb, text: Rgb, accent: Rgb): StarsInk {
+  const ink = sceneInk(surface, text, accent)
+  return { ground: `rgb(${surface.r}, ${surface.g}, ${surface.b})`, text: ink.ink, accent: ink.accent }
+}
+
+/** Draws the Stars look at progress `u` and time `elapsed`. */
+function paintStars(ctx: CanvasRenderingContext2D, u: number, elapsed: number, width: number, height: number, forward: boolean, inks: StarsInk & { readonly font: string }): void {
+  ctx.clearRect(0, 0, width, height)
+  ctx.font = `11px ${inks.font}`
+  ctx.textBaseline = 'top'
+  for (const cell of starsCells(u, elapsed, width, height, forward)) {
+    if (cell.ground) { ctx.fillStyle = inks.ground; ctx.fillRect(cell.x, cell.y, CELL_W, CELL_H) }
+    if (cell.glyph === null) continue
+    ctx.fillStyle = inkAt(cell.ink === 'accent' ? inks.accent : inks.text, cell.strength)
+    ctx.fillText(cell.glyph, cell.x, cell.y + 1)
+  }
+}
+
+/** The theme's colours for Stars, read through `pixel` (`--tt-canvas`, `--tt-text`, `--tt-accent`); null where one cannot be read, and the band plays. */
+function readStarsInk(pixel: CanvasRenderingContext2D, font: string): (StarsInk & { readonly font: string }) | null {
+  const surface = toRgb(cssColor('--tt-canvas', 'Canvas'), pixel)
+  const text = toRgb(cssColor('--tt-text', 'CanvasText'), pixel)
+  const accent = toRgb(cssColor('--tt-accent', 'Highlight'), pixel)
+  if (surface === null || text === null || accent === null) return null
+  return { ...starsInk(surface, text, accent), font }
+}
+
 function cssColor(name: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
 }
@@ -93,10 +228,12 @@ function paintBand(ctx: CanvasRenderingContext2D, u: number, elapsed: number, wi
 }
 
 export interface NightFallsOptions {
-  /** True moving into Watcher's room (the band sweeps left to right), false moving back to Threads. */
+  /** True moving into Watcher's room (the band sweeps left to right), false moving back to Dictate or Threads. */
   readonly forward: boolean
   /** 0.5 is half speed, 2 twice as fast. */
   readonly speed: number
+  /** The band or the stars (ADR-0119, decision 6). Left out, the band. */
+  readonly look?: RoomTransitionLook
 }
 
 /** Whether a run can play here: view transitions exist and motion is not reduced. */
@@ -120,6 +257,19 @@ export function nightFallsShipped(update: UpdateStatus | null | undefined): bool
 }
 
 /**
+ * The run a move from page `from` to page `to` plays, or null where the page swaps at once: the move is not between
+ * Dictate or Threads and Watcher's room, this build has no night falls, its switch is off, or no run can play here
+ * (reduced motion, or no view transitions), in which case the look is never read. Settings not yet read play the band
+ * at speed 1, as the defaults do.
+ */
+export function nightFallsRun(from: string, to: string, update: UpdateStatus | null | undefined,
+  settings: Pick<AppSettings, 'roomTransition' | 'roomTransitionSpeed' | 'roomTransitionLook'> | null | undefined): NightFallsOptions | null {
+  const betweenRooms = (to === 'watcher' && (from === 'threads' || from === 'home')) || (from === 'watcher' && (to === 'threads' || to === 'home'))
+  if (!betweenRooms || !nightFallsShipped(update) || !nightFallsAvailable() || settings?.roomTransition === false) return null
+  return { forward: to === 'watcher', speed: settings?.roomTransitionSpeed ?? 1, look: settings?.roomTransitionLook ?? 'band' }
+}
+
+/**
  * Runs `update` (the state change that swaps the page) inside the night falls transition, or plainly when it cannot
  * play. A press while a run is playing finishes that run at once and starts the next from where the window is.
  */
@@ -139,10 +289,16 @@ export function playNightFalls(update: () => void, options: NightFallsOptions): 
   const ctx = canvas.getContext('2d')
   ctx?.setTransform(scale, 0, 0, scale, 0, 0)
   const inks = { ground: cssColor('--tt-canvas', 'Canvas'), ink: cssColor('--tt-text', 'CanvasText'), font: cssColor('--tt-font-mono', 'monospace') }
+  // Stars reads its inks on the band's own canvas before it is shown; the first paint clears it.
+  const stars = options.look === 'stars' && ctx ? readStarsInk(ctx, inks.font) : null
+  const paint = (c: CanvasRenderingContext2D, u: number, elapsed: number): void => {
+    if (stars) paintStars(c, u, elapsed, width, height, options.forward, stars)
+    else paintBand(c, u, elapsed, width, height, options.forward, inks)
+  }
   root.dataset.roomTransition = options.forward ? 'in' : 'out'
   root.style.setProperty('--room-transition-ms', `${duration}ms`)
 
-  const owlSelector = ':is(.thread-nav__foot, .watcher-dock__pill) .thread-nav__seg button[data-room="watcher"]'
+  const owlSelector = ':is(.thread-nav__foot, .watcher-dock__pill) .thread-nav__seg button[data-room="watcher"] .watcher-owl'
   const centre = (): number | null => { const owl = document.querySelector(owlSelector)?.getBoundingClientRect(); return owl && owl.width > 0 ? owl.left + owl.width / 2 : null }
   const from = centre()
   document.body.append(canvas)
@@ -183,7 +339,7 @@ export function playNightFalls(update: () => void, options: NightFallsOptions): 
       const u = easeInOut(Math.min(1, elapsed / duration))
       // Paint only when the flicker or the front's cell column has moved.
       const key = `${Math.floor(elapsed / FLICKER_MS)}:${frontEdge(u, width, 1, options.forward)[0]! / CELL_W | 0}`
-      if (ctx && key !== painted) { painted = key; paintBand(ctx, u, elapsed, width, height, options.forward, inks) }
+      if (ctx && key !== painted) { painted = key; paint(ctx, u, elapsed) }
       if (elapsed < duration) frame = requestAnimationFrame(draw)
     }
     frame = requestAnimationFrame(draw)

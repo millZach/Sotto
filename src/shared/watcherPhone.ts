@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { agentMessageSchema, agentRequestSchema, agentQuestionAnswersSchema, providerIdSchema, agentRuntimeModeSchema } from './agents'
+import { agentAttachmentHandlesSchema, agentMessageSchema, agentRequestSchema, agentQuestionAnswersSchema, providerIdSchema, agentRuntimeModeSchema } from './agents'
 import { watcherRefusalSchema, watcherThreadTargetSchema, watcherPhoneOriginSchema, watcherOwnChangeSchema, watcherStandingWatchSchema, watcherOutcomeSchema } from './watcher'
 export { watcherPhoneOriginSchema } from './watcher'
 import { watcherStopAllPreviewSchema } from './watcherRoom'
@@ -20,15 +20,26 @@ export const WATCHER_PHONE_MANAGE_FEATURE = 'watcher-phone-manage' as const
  * waiting for Watcher, and `watcher-phone-remove-followup` takes one out of the queue.
  */
 export const WATCHER_PHONE_STEER_FEATURE = 'watcher-phone-steer' as const
+/**
+ * Photos for Watcher from the phone (October 23, 2026): a send may carry `images`, the handles `stage-attachment` answered,
+ * with or without words, and `watcher-phone-preview` reads one of a Watcher message's photos, which the page marks.
+ */
+export const WATCHER_PHONE_PHOTOS_FEATURE = 'watcher-phone-photos' as const
 /** How many of the user's follow-ups waiting for Watcher a phone's page carries, the first in line. */
 export const WATCHER_PHONE_FOLLOWUPS_MAX = 50
 export const watcherPhoneSetPermissionSchema = z.object({ runtimeMode: agentRuntimeModeSchema }).strict()
 export const watcherPhoneWatchSchema = z.object({ target: watcherThreadTargetSchema }).strict()
 export const watcherPhoneSendSchema = z.object({ origin: watcherPhoneOriginSchema, target: watcherThreadTargetSchema,
-  draftId: z.uuid(), text: z.string().min(1).max(20_000).refine(text => text.trim().length > 0),
+  draftId: z.uuid(), text: z.string().max(20_000),
+  // Only from a phone offered WATCHER_PHONE_PHOTOS_FEATURE: the photos it staged, which go with the words.
+  images: agentAttachmentHandlesSchema.min(1).optional(),
   // Only from a phone that negotiated WATCHER_PHONE_STEER_FEATURE: while Watcher works the message steers into its turn,
   // or goes next as its own turn when it cannot. Absent, a send while Watcher works is refused, as before (#1229).
   delivery: z.literal('steer').optional() }).strict()
+  .refine(send => send.text.trim().length > 0 || send.images !== undefined, 'Send words, photos or both.')
+/** One photo of a message in Watcher's conversation, for the phone to draw: Watcher's thread is never a phone's to read. */
+export const watcherPhonePreviewSchema = z.object({ target: watcherThreadTargetSchema, messageId: z.string().min(1).max(512),
+  attachmentId: z.string().min(1).max(512) }).strict()
 /** Takes one of the user's follow-ups out of Watcher's queue, by its queue item ID, before it goes (#1229). */
 export const watcherPhoneRemoveFollowupSchema = z.object({ target: watcherThreadTargetSchema, itemId: z.uuid() }).strict()
 const id = z.string().min(1).max(512)
@@ -90,6 +101,7 @@ export const watcherPhonePrepareStopResultSchema = z.union([watcherPhoneStopPrev
 export type WatcherPhoneState = z.infer<typeof watcherPhoneStateSchema>
 export type WatcherPhoneOrigin = z.infer<typeof watcherPhoneOriginSchema>
 export type WatcherPhoneSend = z.infer<typeof watcherPhoneSendSchema>
+export type WatcherPhonePreview = z.infer<typeof watcherPhonePreviewSchema>
 export type WatcherPhoneRemoveFollowup = z.infer<typeof watcherPhoneRemoveFollowupSchema>
 export type WatcherPhoneAnswer = z.infer<typeof watcherPhoneAnswerSchema>
 export type WatcherPhoneResult = z.infer<typeof watcherPhoneResultSchema>
