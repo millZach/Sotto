@@ -1,6 +1,7 @@
 // @vitest-environment node
 // #1033 over ADR-0081: a delegating thread starts a new thread from its own branch, in a worktree of its own, and a test
 // run carries its uncommitted work as a snapshot. Delegated threads start on This computer for now (#1316).
+import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
@@ -65,4 +66,19 @@ it('takes from_my_branch and test_run only for a new thread in a worktree of its
   expect(await off.start()).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
   expect(await off.start({ from_my_branch: undefined, test_run: true })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
   expect(git(off.folder, 'for-each-ref', 'refs/sotto')).toBe('')
+})
+
+it('finds a retry without walking the record, however many delegations it holds (#1033, AGENTS.md scaling rule)', async () => {
+  const f = await fixture()
+  f.ok(await f.start())
+  // Every read of the record's entries before the branch is copied counts against the preflight; with an index by
+  // retry key there are none, whatever the record holds.
+  const service = f.service as unknown as { entries: unknown[]; options: { branchMoves: { forStart: (...args: unknown[]) => Promise<unknown> } } }
+  let reads = 0, counting = true
+  service.entries = new Proxy(service.entries, { get(target, key, receiver) { if (counting && typeof key === 'string' && /^\d+$/u.test(key)) reads++; return Reflect.get(target, key, receiver) } })
+  const forStart = service.options.branchMoves.forStart.bind(service.options.branchMoves)
+  service.options.branchMoves.forStart = async (...args: unknown[]) => { counting = false; return forStart(...args) }
+  f.ok(await f.start({ retry_key: randomUUID() }))
+  expect(counting).toBe(false)
+  expect(reads).toBe(0)
 })

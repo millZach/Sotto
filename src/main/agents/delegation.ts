@@ -254,6 +254,8 @@ function listed<T>(index: Map<string, T[]>, key: string): T[] {
   if (!list) { list = []; index.set(key, list) }
   return list
 }
+/** The key `byRetryKey` files a record under: its delegating thread and retry key. */
+const retryIndex = (callerId: string, retryKey: string): string => `${callerId}\n${retryKey}`
 
 /**
  * Delegation between threads (ADR-0081): an ordinary thread starts threads and sends them briefs, under rules main
@@ -272,13 +274,15 @@ export class DelegationService {
    */
   private readonly byDelegating = new Map<string, DelegationRecord[]>()
   private readonly byDelegated = new Map<string, DelegationRecord[]>()
+  /** Each record by its delegating thread and retry key, so a retry is found without walking the user's history. */
+  private readonly byRetryKey = new Map<string, DelegationRecord>()
   private refusalEntries: RefusedDelegation[] = []
   /** Each delegating thread's refusals, oldest first as in `refusalEntries`. */
   private readonly refusedBy = new Map<string, RefusedDelegation[]>()
   private get records(): readonly DelegationRecord[] { return this.entries }
   private set records(records: DelegationRecord[]) {
     this.entries = records
-    this.byDelegating.clear(); this.byDelegated.clear()
+    this.byDelegating.clear(); this.byDelegated.clear(); this.byRetryKey.clear()
     for (const record of records) this.indexed(record)
   }
   private get refusals(): readonly RefusedDelegation[] { return this.refusalEntries }
@@ -608,7 +612,7 @@ export class DelegationService {
     // A caller that may not delegate is refused by admission, under its own rule; a retry reads the first call's result.
     const caller = this.snapshot().threads.find(thread => thread.id === threadId), local = this.options.control.hostId()
     if (!caller || !local || !this.admits(threadId)) return undefined
-    if (input.retry_key && this.records.some(record => record.delegatingThreadId === caller.id && record.retryKey === input.retry_key)) return undefined
+    if (this.retried(caller.id, input.retry_key)) return undefined
     if (!asks) {
       const away = workerMachineHostId(machines.setting())
       if (away === undefined || away === local) return undefined
@@ -640,7 +644,7 @@ export class DelegationService {
     if (input.working_copy === 'shared') return delegationRefusal('INVALID_INPUT', 'A thread started from your branch gets a worktree of its own. Leave working_copy out. Nothing was started.')
     const caller = this.snapshot().threads.find(thread => thread.id === threadId), local = this.options.control.hostId()
     if (!caller || !local || !this.admits(threadId)) return undefined
-    if (input.retry_key && this.records.some(record => record.delegatingThreadId === caller.id && record.retryKey === input.retry_key)) return undefined
+    if (this.retried(caller.id, input.retry_key)) return undefined
     const moveId = randomUUID()
     let moved: Awaited<ReturnType<DesktopBranchMoves['forStart']>>
     try { moved = await moves.forStart({ from: { hostId: local, threadId: caller.id }, to: { hostId: local, projectId: caller.projectId }, here: local, moveId, snapshot: input.test_run === true }) }
@@ -699,6 +703,11 @@ export class DelegationService {
   private indexed(record: DelegationRecord): void {
     listed(this.byDelegating, record.delegatingThreadId).push(record)
     listed(this.byDelegated, record.delegatedThreadId).push(record)
+    if (record.retryKey) this.byRetryKey.set(retryIndex(record.delegatingThreadId, record.retryKey), record)
+  }
+  /** The delegation `callerId` already made under `retryKey`, if any. */
+  private retried(callerId: string, retryKey: string | undefined): DelegationRecord | undefined {
+    return retryKey ? this.byRetryKey.get(retryIndex(callerId, retryKey)) : undefined
   }
   private owned(callerId: string, delegationId: string): DelegationRecord {
     const record = this.record(delegationId)
@@ -842,7 +851,7 @@ export class DelegationService {
     const snapshot = this.snapshot(), caller = this.caller(threadId, snapshot)
     const inputDigest = digest(input)
     if (input.retry_key) {
-      const retry = this.records.find(record => record.delegatingThreadId === caller.id && record.retryKey === input.retry_key)
+      const retry = this.retried(caller.id, input.retry_key)
       if (retry) {
         if (retry.inputDigest !== inputDigest) refuse('RETRY_KEY_CONFLICT', 'This retry key belongs to another delegation. Nothing was started.')
         return { record: retry, retry: true }
