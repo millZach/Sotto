@@ -314,6 +314,8 @@ export class NightScenePainter {
   private owlCells = new Uint8Array(0)
   /** Cells where an owl passing over the column or the scrubber's lane is drawn behind the words, on the landscape's canvas. */
   private behindCells = new Uint8Array(0)
+  /** What the last painted frame drew behind the words over the column and the scrubber's lane: ripple cells and owl glyphs. */
+  behind = { ripple: 0, owl: 0 }
   private noise = new Float32Array(0)
   private stars: Star[] = []
   private starAt = new Int32Array(0)
@@ -494,6 +496,7 @@ export class NightScenePainter {
     const summary = this.summary(frame, owlLines)
     if (summary === this.painted) return false
     this.painted = summary
+    this.behind = { ripple: 0, owl: 0 }
     const { cols, rows, cw, ch } = this.grid
     if (frame.watcher !== null) this.readOwl(frame.watcher.pose)
     else this.owlBox = null
@@ -545,7 +548,7 @@ export class NightScenePainter {
         const j = sc >= 0 && sc < cols && sr >= 0 && sr < rows ? sr * cols + sc : i
         const star = this.starAt[i]! >= 0 ? starStrength(this.stars[this.starAt[i]!]!, twinkleStep(t, still), still) * this.quiet[i]! : 0
         back.clearRect(c * cw, r * ch, cw, ch)
-        this.cell(back, i, j, effect.ring, star, x, y)
+        if (this.cell(back, i, j, effect.ring, star, x, y) && !this.marginCells[i]) this.behind.ripple++
       }
     }
 
@@ -608,6 +611,7 @@ export class NightScenePainter {
       const cap = accent ? ink.column.accent : ink.column.ink
       back.clearRect(c * cw, r * ch, cw, ch)
       back.fillStyle = inkAt(accent ? ink.accent : ink.ink, Math.min(cap, strength * this.quiet[i]!)); back.fillText(text, (c + 0.5) * cw, (r + 0.5) * ch)
+      this.behind.owl++
     }
     if (box !== null) {
       // The eyes are the cells the accent covers most. A smaller owl covers less of each cell, so the bar is the

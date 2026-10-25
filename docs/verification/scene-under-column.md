@@ -10,7 +10,8 @@ October 25, 2026. `feat/scene-under-column`, on Windows 11 with the built app (`
 
 - `nightScenePainter.ts`: a ripple's ring and bend run on under the column and the scrubber's lane. Those cells already take the column's share and ink ceiling in `cell()`, so the ring there is as quiet as the hills.
 - `nightScenePainter.ts`, `nightScene.ts`: where an owl is drawn is `owlLayer`. Over the margins it is drawn over everything on the owls' canvas, as before. Over the column and the scrubber's lane, below the header and away from the words that stand still, it is drawn behind the words, on the landscape's canvas, at the cell's share and under the column's ink ceiling, with the landscape cleared under it so it reads. Perches stay in the margins, so only a flight between the trees crosses.
-- ADR-0126 is amended, and `CONTEXT.md` and `docs/guide.md` say so.
+- `WatcherNightScene.tsx` counts what each painted frame drew behind the words over the column, ripple cells and owl glyphs, on the pane's `data-night-scene-behind`, so a test can see a crossing.
+- ADR-0126 and ADR-0109's lane decision are amended, and `CONTEXT.md` and `docs/guide.md` say so.
 
 A press still starts a ripple only in the open margin, and reduced motion still turns it into a still spot and keeps the owls home.
 
@@ -24,11 +25,14 @@ npm run build
 npx playwright test tests/e2e/watcher-column.spec.ts tests/e2e/watcher-night-scene.spec.ts tests/e2e/watcher-scene-steady.spec.ts tests/e2e/composer-slim-steady.spec.ts
 ```
 
-`watcher-column.spec.ts` gains a case, dark and light: a press in the margin beside the column sends a ripple, the landscape over a band of the column changes within the next second, and every word in the column keeps 4.5:1 against every pixel the scene draws there in each frame read. On `origin/main` it fails at "the ripple reached the column"; on this branch it passes. Its existing case reads every word against the scene in all six built-in themes, dark and light, which now includes any ripple or owl passing under the column. The unit tests pin `owlLayer`: over the margins, behind over the column and the lane, nowhere in the header band or around still words.
+`watcher-column.spec.ts` gains three cases on the live fixture (`phase3-workspace`), since the capture scenario holds the scene still:
 
-Of the 17 cases in those four specs, 16 pass. The "newcomer comes out of the moon" case of `watcher-night-scene.spec.ts` fails at its frame rate, one display frame in a second, the same way on `origin/main`'s source on this machine, so it is not this change.
+- A ripple, dark and light: a press in the margin beside the column sends one, the scene reports ripple cells drawn behind the words over the column within 1.4 seconds (1,067 by night, 1,069 by day at the most), and every word in the column keeps 4.5:1 against every pixel the scene draws there in each frame read (worst 5.1:1 by night, 4.8:1 by day).
+- An owl's crossing, with every roll pinned to 0 so Watcher's owl leaves home after the shortest stay and flies to the other tree: while it flies the scene reports owl glyphs behind the words (60 at the most), the owls' canvas, which lies over the words, paints no pixel over the column below the header, every word keeps 4.5:1 (worst 5.1:1), and once it perches no glyph is left behind.
 
-The owl's flight is at random times on a live clock, so it is shown here rather than in a test: a capture on the live fixture, with every roll pinned to 0 so Watcher's owl leaves home after the shortest stay and flies to the other tree, across the column.
+Before this change the ripple stopped at the column's edge and the owl was drawn only over the margins, so both counts stay 0 and both cases fail. The existing case reads every word against the scene in all six built-in themes, dark and light. The unit tests pin `owlLayer`: over the margins, behind over the column and the lane, nowhere in the header band or around still words.
+
+All 18 cases in those four specs pass. On an earlier run the "newcomer comes out of the moon" case of `watcher-night-scene.spec.ts` failed at its frame rate, one display frame in a second, the same way on `origin/main`'s source on this machine, so it is a slow-machine flake, not this change.
 
 ## Evidence
 

@@ -28,11 +28,36 @@ const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 const THEMES = ['t3-code', 'hush', 'linen', 'nocturne', 'tropic', 'citrine'] as const
 const recorded: Record<string, unknown> = {}
 
-function launchOptions(appearance: 'dark' | 'light') {
+function launchOptions(appearance: 'dark' | 'light', options: { readonly live?: boolean } = {}) {
   return {
-    onboardingComplete: true, appearance, motion: 'normal', agents: 'design-threads', scenario: 'design-threads',
+    onboardingComplete: true, appearance, motion: 'normal', agents: 'design-threads',
+    // The capture scenario holds every clock still, the scene's included, so a ripple is a still spot and no owl flies.
+    // A live run lets them move, over the same fixture threads.
+    scenario: options.live ? 'phase3-workspace' : 'design-threads',
     ...(appearance === 'dark' ? { darkTheme: 't3-code' } : { lightTheme: 't3-code' }),
   } as const
+}
+
+/** What the scene drew behind the words over the column in its last painted frame: ripple cells and owl glyphs. */
+async function behindWords(page: Page): Promise<{ ripple: number; owl: number }> {
+  const [ripple = 0, owl = 0] = (await page.evaluate(() => document.getElementById('watcher-pane')!.dataset.nightSceneBehind ?? '0,0')).split(',').map(Number)
+  return { ripple, owl }
+}
+
+/** Pixels the owls' canvas, which lies over the words, paints over the column below the header. None, ever. */
+async function owlsOverColumn(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const pane = document.getElementById('watcher-pane')!, base = pane.getBoundingClientRect()
+    const canvas = pane.querySelector<HTMLCanvasElement>(':scope > canvas.watcher-scene--owl')!, scale = canvas.width / canvas.clientWidth
+    const card = pane.querySelector(':scope > .thread-workspace__compose > .thread-prompt')!.getBoundingClientRect()
+    const header = Math.max(...[...pane.querySelectorAll(':scope > :is(.watcher-head, .watcher-glance)')].map(node => node.getBoundingClientRect().bottom))
+    const x0 = Math.round((card.left - base.left + 6) * scale), x1 = Math.round((card.right - base.left - 6) * scale)
+    const y0 = Math.round((header - base.top) * scale), y1 = Math.round((card.top - base.top) * scale)
+    const data = canvas.getContext('2d')!.getImageData(x0, y0, x1 - x0, y1 - y0).data
+    let painted = 0
+    for (let i = 3; i < data.length; i += 4) if (data[i]! > 0) painted++
+    return painted
+  })
 }
 
 /** `release-notes` as a Watcher with a long conversation, watching three threads of the design fixture. */
@@ -306,7 +331,7 @@ test.describe("Watcher's conversation column on the built app", () => {
 
   for (const appearance of ['dark', 'light'] as const) {
     test(`a ripple from the margin runs on under the column, and every word keeps 4.5:1 over it, ${appearance}`, async () => {
-      await onReleaseTrack('owl', () => withSotto(launchOptions(appearance), async (launched) => {
+      await onReleaseTrack('owl', () => withSotto(launchOptions(appearance, { live: true }), async (launched) => {
         const { page } = launched
         await openThreads(page)
         await seedRoom(page)
@@ -314,33 +339,60 @@ test.describe("Watcher's conversation column on the built app", () => {
         await resizeContentWindow(launched, 1280, 800)
         await readBack(page, 0)
         await settle(page)
-        // The landscape over a band of the column, beside where the margin is pressed.
-        const band = await page.evaluate(() => {
-          const pane = document.getElementById('watcher-pane')!, base = pane.getBoundingClientRect()
-          const card = pane.querySelector(':scope > .thread-workspace__compose > .thread-prompt')!.getBoundingClientRect()
-          const y = base.top + (card.top - base.top) * 0.45
-          return { pressX: card.left - 40, pressY: y, left: card.left - base.left + 10, top: y - base.top - 70, width: 160, height: 140 }
+        expect((await behindWords(page)).ripple, 'no ripple before the press').toBe(0)
+        const press = await page.evaluate(() => {
+          const card = document.querySelector('#watcher-pane > .thread-workspace__compose > .thread-prompt')!.getBoundingClientRect()
+          return { x: card.left - 40, y: card.top * 0.45 }
         })
-        const ink = (): Promise<string> => page.evaluate(band => {
-          const canvas = document.querySelector<HTMLCanvasElement>('#watcher-pane > canvas.watcher-scene--land')!, scale = canvas.width / canvas.clientWidth
-          const data = canvas.getContext('2d')!.getImageData(Math.round(band.left * scale), Math.round(band.top * scale), Math.round(band.width * scale), Math.round(band.height * scale)).data
-          let hash = 0
-          for (let i = 0; i < data.length; i += 4) hash = (Math.imul(hash, 31) + data[i + 3]! * 7 + data[i]!) | 0
-          return String(hash)
-        }, band)
-        const before = await ink()
-        await page.mouse.click(band.pressX, band.pressY)
-        let reached = false
+        await page.mouse.click(press.x, press.y)
+        let reached = 0
         let worst = Number.POSITIVE_INFINITY
-        for (let sample = 0; sample < 8; sample++) {
-          await page.waitForTimeout(120)
-          if (await ink() !== before) reached = true
-          worst = Math.min(worst, (await columnContrast(page)).worstWord)
+        for (let sample = 0; sample < 14; sample++) {
+          await page.waitForTimeout(100)
+          const behind = (await behindWords(page)).ripple
+          reached = Math.max(reached, behind)
+          if (behind > 0) worst = Math.min(worst, (await columnContrast(page)).worstWord)
         }
         recorded[`ripple-${appearance}`] = { reached, worst }
-        expect(reached, 'the ripple reached the column').toBe(true)
+        expect(reached, 'the ripple runs on under the column').toBeGreaterThan(0)
         expect(worst, 'every word over the ripple in the column').toBeGreaterThanOrEqual(4.5)
       }))
     })
   }
+
+  test("an owl crossing the column shows behind the words, never over them, and leaves nothing behind", async () => {
+    test.setTimeout(4 * 60_000)
+    await onReleaseTrack('owl', () => withSotto(launchOptions('dark', { live: true }), async (launched) => {
+      const { page } = launched
+      // Every roll is 0: Watcher's owl leaves home after the shortest stay and flies to the other tree, across the column.
+      await page.addInitScript(() => { Math.random = () => 0 })
+      await openThreads(page)
+      await seedRoom(page)
+      await openRoom(page)
+      await resizeContentWindow(launched, 1280, 800)
+      await readBack(page, 0)
+      await page.mouse.move(0, 0)
+      const owl = page.locator('#watcher-pane > canvas.watcher-scene--owl')
+      await expect(owl).toHaveAttribute('data-owl', 'flying', { timeout: 120_000 })
+      let behind = 0
+      let worst = Number.POSITIVE_INFINITY
+      let over = 0
+      for (let sample = 0; sample < 80 && await owl.getAttribute('data-owl') === 'flying'; sample++) {
+        const now = (await behindWords(page)).owl
+        if (now > 0) {
+          behind = Math.max(behind, now)
+          worst = Math.min(worst, (await columnContrast(page)).worstWord)
+        }
+        over = Math.max(over, await owlsOverColumn(page))
+        await page.waitForTimeout(80)
+      }
+      await expect(owl).toHaveAttribute('data-owl', 'perched', { timeout: 10_000 })
+      await page.waitForTimeout(300)
+      recorded['owl-crossing'] = { behind, worst, over }
+      expect(behind, 'owl glyphs drawn behind the words while it crossed').toBeGreaterThan(0)
+      expect(worst, 'every word over the owl in the column').toBeGreaterThanOrEqual(4.5)
+      expect(over, 'owl pixels over the words').toBe(0)
+      expect((await behindWords(page)).owl, 'owl glyphs left behind the words after it landed').toBe(0)
+    }))
+  })
 })
