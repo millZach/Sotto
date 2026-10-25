@@ -1,4 +1,6 @@
 import React, { useRef, type KeyboardEvent, type ReactNode } from 'react'
+import { useLingui } from '@lingui/react/macro'
+import { shownCount } from '../state/interfaceNumbers'
 import './visualStepper.css'
 
 export interface VisualStepperProps {
@@ -21,6 +23,7 @@ export const clampStep = (index: number, count: number): number => Math.min(Math
  * interactive page's card) keeps the step and lights it.
  */
 export function VisualStepper({ steps, index, onStep }: VisualStepperProps): ReactNode {
+  const { t } = useLingui()
   const dots = useRef<(HTMLButtonElement | null)[]>([])
   const count = steps.length
   if (!count) return null
@@ -28,7 +31,7 @@ export function VisualStepper({ steps, index, onStep }: VisualStepperProps): Rea
   const first = current === 0
   const last = current === count - 1
   // One step has nowhere to go: its words alone, under its lit part of the visual.
-  if (count === 1) return <div className="visual-stepper" role="group" aria-label="Walkthrough">
+  if (count === 1) return <div className="visual-stepper" role="group" aria-label={t`Walkthrough`}>
     <p className="visual-stepper__text visual-stepper__text--only">{steps[0]!.text}</p>
   </div>
   const go = (next: number): void => { if (next >= 0 && next < count && next !== current) onStep(next) }
@@ -42,21 +45,25 @@ export function VisualStepper({ steps, index, onStep }: VisualStepperProps): Rea
     if (dots.current.includes(event.target as HTMLButtonElement)) dots.current[next]?.focus()
   }
 
-  return <div className="visual-stepper" role="group" aria-label="Walkthrough" onKeyDown={onKeyDown}>
+  const number = current + 1
+  return <div className="visual-stepper" role="group" aria-label={t`Walkthrough`} onKeyDown={onKeyDown}>
     <div className="visual-stepper__head">
-      <span className="visual-stepper__count">Step {current + 1} of {count}</span>
-      <div className="visual-stepper__dots" role="group" aria-label="Steps">
-        {steps.map((_, step) => <button key={step} ref={element => { dots.current[step] = element }} type="button"
-          tabIndex={step === current ? 0 : -1} className="visual-stepper__dot tt-focusable" aria-label={`Go to step ${step + 1}`}
-          aria-current={step === current ? 'step' : undefined} data-state={step === current ? 'current' : step < current ? 'done' : undefined}
-          onClick={() => go(step)} />)}
+      <span className="visual-stepper__count">{t`Step ${{ number: shownCount(number) }} of ${{ count: shownCount(count) }}`}</span>
+      <div className="visual-stepper__dots" role="group" aria-label={t`Steps`}>
+        {steps.map((_, step) => {
+          const stepNumber = step + 1
+          return <button key={step} ref={element => { dots.current[step] = element }} type="button"
+            tabIndex={step === current ? 0 : -1} className="visual-stepper__dot tt-focusable" aria-label={t`Go to step ${{ stepNumber: shownCount(stepNumber) }}`}
+            aria-current={step === current ? 'step' : undefined} data-state={step === current ? 'current' : step < current ? 'done' : undefined}
+            onClick={() => go(step)} />
+        })}
       </div>
       <div className="visual-stepper__nav">
         {/* Back stays focusable on the first step, so a press there does not drop the focus. */}
         <button type="button" className="tt-button visual-stepper__button tt-focusable" aria-disabled={first || undefined}
-          onClick={() => go(current - 1)}>Back</button>
+          onClick={() => go(current - 1)}>{t({ message: 'Back', context: 'walkthrough', comment: 'Goes to the previous step of a walkthrough.' })}</button>
         <button type="button" className="tt-button tt-button--primary visual-stepper__button tt-focusable"
-          onClick={() => last ? onStep(0) : go(current + 1)}>{last ? 'Start over' : 'Next'}</button>
+          onClick={() => last ? onStep(0) : go(current + 1)}>{last ? t`Start over` : t({ message: 'Next', context: 'walkthrough', comment: 'Goes to the next step of a walkthrough.' })}</button>
       </div>
     </div>
     <p className="visual-stepper__text" aria-live="polite">{steps[current]!.text}</p>

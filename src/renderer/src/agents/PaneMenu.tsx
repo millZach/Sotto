@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { MoreHorizontal } from 'lucide-react'
+import { useLingui } from '@lingui/react/macro'
 
 /**
  * One row of a pane's More menu. An item the thread cannot take right now is listed and disabled rather
@@ -28,7 +29,7 @@ const ITEM = '[role="menuitem"]:not(:disabled)'
  * the pane's own focus bookkeeping keeps working. Escape or Tab closes it and returns focus to the button,
  * as a pointer outside it does.
  */
-export function PaneMenu({ groups, label = 'More actions', icon, text, className }: {
+export function PaneMenu({ groups, label: givenLabel, icon, text, className }: {
   readonly groups: readonly (readonly PaneMenuItem[])[]
   readonly label?: string
   /** The button's glyph; the ellipsis unless a control says otherwise. */
@@ -37,6 +38,8 @@ export function PaneMenu({ groups, label = 'More actions', icon, text, className
   readonly text?: ReactNode
   readonly className?: string
 }): ReactNode {
+  const { t } = useLingui()
+  const label = givenLabel ?? t`More actions`
   const [open, setOpen] = useState(false)
   const button = useRef<HTMLButtonElement>(null)
   const list = useRef<HTMLDivElement>(null)

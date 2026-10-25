@@ -1,5 +1,7 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown, CornerDownRight, CornerUpLeft, Laptop, X } from 'lucide-react'
+import { msg, ph, t } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { hostForThread, PROVIDER_LABELS, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread, type HandoverCounts,
   type ProviderId, type ThreadContinuedIn } from '../../../shared/agents'
 import { continueThreadRefusal } from '../../../shared/continueThread'
@@ -12,9 +14,9 @@ import { usesProviderModes } from './pendingSettings'
 import { ProviderMark } from './ProviderMark'
 import { clockLabel } from './threadFacts'
 import { ChoiceChip, effortChoices, modeChoices, PERMISSIONS_ICON, RUNTIME_LABELS, startingProviderMode } from './ThreadOptions'
+import { leftToRight, shownWords, type LaterWords } from './interfaceWords'
 import { continueChoiceFor, continuedSince, continueModels, continueStore, lastLimitStop, providerDefaults, unavailableProviders,
   sameFolderOffered, useContinueChoice, useContinueEnabled, useContinueLinks, type ContinueChoice } from './continuations'
-import { useLingui as useInterfaceLanguage } from '../state/interfaceLanguageReact'
 import './continueThread.css'
 
 /**
@@ -25,9 +27,10 @@ import './continueThread.css'
 
 /** Why the new thread starts on a narrower permission than the source's, in the words its chip uses. */
 function narrowedWords(mode: AgentRuntimeMode, narrowed: NonNullable<ContinueChoice['narrowed']>, target: string, model: string | undefined): string {
+  const permission = RUNTIME_LABELS[mode], from = RUNTIME_LABELS[narrowed.from], offeredBy = model ?? target
   return narrowed.by === 'default'
-    ? `It starts on ${RUNTIME_LABELS[mode]}, not this thread’s ${RUNTIME_LABELS[narrowed.from]}, since your new-thread default allows no more. You can change it below.`
-    : `It starts on ${RUNTIME_LABELS[mode]}, the nearest ${model ?? target} offers to this thread’s ${RUNTIME_LABELS[narrowed.from]}. You can change it below.`
+    ? t`It starts on ${permission}, not this thread’s ${from}, since your new-thread default allows no more. You can change it below.`
+    : t({ message: `It starts on ${permission}, the nearest ${offeredBy} offers to this thread’s ${from}. You can change it below.`, comment: '{permission} and {from} are permission levels; {offeredBy} is a model or provider name.' })
 }
 
 /** Whose limit a stop was, as the line under the composer says it. */
@@ -39,6 +42,7 @@ const LIMIT_OWNER: Partial<Record<ProviderId, string>> = { claude: 'Claude' }
  * continuation in the composer; nothing is sent until the user sends.
  */
 export function ContinueNow({ thread, state, onStart }: { readonly thread: AgentThread; readonly state: AgentState; readonly onStart: () => void }): ReactNode {
+  const { t } = useLingui()
   const enabled = useContinueEnabled()
   const chosen = useContinueChoice(thread.id)
   if (!enabled || lastLimitStop(thread) === undefined || continueThreadRefusal(thread) !== null || continuedSince(thread) !== undefined) return null
@@ -50,19 +54,21 @@ export function ContinueNow({ thread, state, onStart }: { readonly thread: Agent
     if (!pick) onStart()
   }
   const defaults = providerDefaults(state, models)
-  return <div className="continue-now" role="group" aria-label="Continue now on another provider">
-    <span className="continue-now__lead">Or continue now on</span>
+  return <div className="continue-now" role="group" aria-label={t`Continue now on another provider`}>
+    <span className="continue-now__lead"><Trans comment="Before chips naming providers: Or continue now on Codex, Grok Build…">Or continue now on</Trans></span>
     {defaults.map(model => {
       const name = model.providerId ? PROVIDER_LABELS[model.providerId] : model.provider
+      const modelName = model.name
+      const label = t`Continue on ${name}, ${modelName}`
       return <button key={model.id} type="button" className="continue-chip tt-focusable" aria-pressed={chosen?.modelId === model.id}
-        aria-label={`Continue on ${name}, ${model.name}`} title={`Continue on ${name}, ${model.name}`} onClick={() => begin(model)}>
+        aria-label={label} title={label} onClick={() => begin(model)}>
         <ProviderMark provider={model.providerId} name={name} />{name === model.name ? name : `${name} · ${model.name}`}</button>
     })}
     {unavailable.map(item => <button key={item.providerId} type="button" className="continue-chip tt-focusable" aria-disabled="true"
       aria-label={`${item.name}: ${item.reason}`} title={item.reason}>
       <ProviderMark provider={item.providerId} name={item.name} />{item.name}<small>· {item.short}</small></button>)}
-    {models.length > defaults.length ? <button type="button" className="continue-chip tt-focusable" aria-label="More models to continue on"
-      title="More models to continue on" onClick={() => begin(defaults[0]!, true)}>More<ChevronDown size={14} aria-hidden="true" /></button> : null}
+    {models.length > defaults.length ? <button type="button" className="continue-chip tt-focusable" aria-label={t`More models to continue on`}
+      title={t`More models to continue on`} onClick={() => begin(defaults[0]!, true)}>{t({ message: 'More', comment: 'Opens the list of every other model to continue on.' })}<ChevronDown size={14} aria-hidden="true" /></button> : null}
   </div>
 }
 
@@ -74,12 +80,14 @@ export function ContinueNow({ thread, state, onStart }: { readonly thread: Agent
 export function ContinueStrip({ thread, state, choice, composerId }: {
   readonly thread: AgentThread; readonly state: AgentState; readonly choice: ContinueChoice; readonly composerId: string
 }): ReactNode {
+  const { t } = useLingui()
   const bridge = typeof window === 'undefined' ? undefined : window.sotto?.continueThread
   const host = hostForThread(state.host, thread)
   const model = resolveModel(host.models, choice.modelId)
-  const target = model?.providerId ? PROVIDER_LABELS[model.providerId] : model?.provider ?? 'the other provider'
+  const target = model?.providerId ? PROVIDER_LABELS[model.providerId] : model?.provider
+    ?? t({ message: 'the other provider', comment: 'Stands in for a provider name in "Continue on {continueTarget}" and the like, when the model names none.' })
   const [counts, setCounts] = useState<HandoverCounts | null>(null)
-  const [readError, setReadError] = useState<string | null>(null)
+  const [readError, setReadError] = useState<LaterWords | null>(null)
   const [text, setText] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [reading, setReading] = useState(false)
@@ -96,7 +104,7 @@ export function ContinueStrip({ thread, state, choice, composerId }: {
     bridge.read({ threadId: thread.id }).then(read => {
       if (!live) return
       if (read.status === 'ok') { setCounts(read.counts); setReadError(null) } else setReadError(read.message)
-    }, () => { if (live) setReadError('Sotto could not read what the handover carries. It is built again when you send.') })
+    }, () => { if (live) setReadError(msg`Sotto could not read what the handover carries. It is built again when you send.`) })
     return () => { live = false }
   }, [bridge, thread.id, messageCount])
   // Escape from the composer under the strip puts the continuation away too, once nothing open there has taken the key.
@@ -126,19 +134,26 @@ export function ContinueStrip({ thread, state, choice, composerId }: {
     try {
       const read = await bridge.read({ threadId: thread.id, words: true })
       if (read.status === 'ok' && read.text !== undefined) { setText(read.text); setCounts(read.counts); setOpen(true); setReadError(null) }
-      else setReadError(read.status === 'refused' ? read.message : 'Sotto could not read the handover. Press Read it to try again.')
-    } catch { setReadError('Sotto could not read the handover. Nothing was sent. Press Read it to try again.') }
+      else setReadError(read.status === 'refused' ? read.message : msg`Sotto could not read the handover. Press Read it to try again.`)
+    } catch { setReadError(msg`Sotto could not read the handover. Nothing was sent. Press Read it to try again.`) }
     finally { setReading(false) }
   }
   const ledger = counts === null ? null : handoverLedger(counts)
   const branch = thread.worktree?.branch ?? thread.worktree?.git?.branch ?? undefined
-  const here = thread.worktree?.mode === 'independent' ? 'This thread’s worktree' : 'This thread’s project folder'
+  const worktree = thread.worktree?.mode === 'independent'
+  const sameDescription = worktree
+    ? branch ? t`This thread’s worktree, on ${ph({ branch: leftToRight(branch) })}. Both threads change the same files.` : t`This thread’s worktree. Both threads change the same files.`
+    : branch ? t`This thread’s project folder, on ${ph({ branch: leftToRight(branch) })}. Both threads change the same files.` : t`This thread’s project folder. Both threads change the same files.`
+  const sameFolder = t({ message: 'Same folder', comment: 'Where a continued thread works: the folder this thread works in.' })
   // A worktree that was put away offers only a new one until a send to this thread brings it back (ADR-0041).
   const copies = [
-    ...(sameFolderOffered(thread) ? [{ id: 'same', label: 'Same folder', description: `${here}${branch ? `, on ${branch}` : ''}. Both threads change the same files.` }] : []),
-    ...(branch ? [{ id: 'new-worktree', label: `New worktree from ${branch}`, description: `Starts from ${branch}’s last commit. Uncommitted changes stay where they are.` }] : []),
+    ...(sameFolderOffered(thread) ? [{ id: 'same', label: sameFolder, description: sameDescription }] : []),
+    ...(branch ? [{ id: 'new-worktree', label: t`New worktree from ${ph({ branch: leftToRight(branch) })}`, description: t`Starts from ${ph({ branch: leftToRight(branch) })}’s last commit. Uncommitted changes stay where they are.` }] : []),
   ]
-  return <section ref={strip} className="continue-strip" aria-label={`Continue on ${target}`} data-tone={choice.error ? 'error' : undefined}
+  const continueTarget = target
+  const carried = ledger?.carried
+  const leftOut = ledger?.leftOut ?? null
+  return <section ref={strip} className="continue-strip" aria-label={t`Continue on ${continueTarget}`} data-tone={choice.error ? 'error' : undefined}
     onKeyDown={event => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
       event.preventDefault(); event.stopPropagation()
@@ -147,35 +162,34 @@ export function ContinueStrip({ thread, state, choice, composerId }: {
     }}>
     <div className="continue-strip__lead">
       <CornerDownRight size={15} aria-hidden="true" />
-      <p>Sending starts a <strong>new {target} thread</strong> with a handover of this one.</p>
-      <button type="button" className="continue-strip__dismiss tt-focusable" aria-label="Don’t continue: keep writing to this thread"
-        title="Don’t continue: keep writing to this thread" disabled={choice.sending} onClick={dismiss}><X size={15} aria-hidden="true" /></button>
+      <p className="tt-paragraph"><Trans>Sending starts a <strong>new {target} thread</strong> with a handover of this one.</Trans></p>
+      <button type="button" className="continue-strip__dismiss tt-focusable" aria-label={t`Don’t continue: keep writing to this thread`}
+        title={t`Don’t continue: keep writing to this thread`} disabled={choice.sending} onClick={dismiss}><X size={15} aria-hidden="true" /></button>
     </div>
     <div className="continue-strip__chips">
       {copies.length > 1
-        ? <ChoiceChip label="Where the new thread works" placeholder="Same folder" value={choice.workingCopy} options={copies} disabled={choice.sending} pending={false}
+        ? <ChoiceChip label={t`Where the new thread works`} placeholder={sameFolder} value={choice.workingCopy} options={copies} disabled={choice.sending} pending={false}
           onChange={id => continueStore.update(thread.id, { workingCopy: id === 'new-worktree' ? 'new-worktree' : 'same' })} />
         : copies[0] ? <span className="continue-strip__fact" title={copies[0].description}>{copies[0].label}</span> : null}
-      <span className="continue-strip__fact" title="Starting on another machine isn’t available yet."><Laptop size={14} aria-hidden="true" />This computer</span>
+      <span className="continue-strip__fact" title={t`Starting on another machine isn’t available yet.`}><Laptop size={14} aria-hidden="true" />{t`This computer`}</span>
     </div>
-    <p className="continue-strip__ledger">
-      {counts?.historyKept === false ? 'Keep local history is off, so it holds only what Sotto kept since it last started. ' : null}
-      {ledger === null ? readError === null ? 'Reading what the handover carries… ' : null
-        : <>Handover first: it carries {ledger.carried}{ledger.leftOut === null ? '' : ` and leaves out ${ledger.leftOut}`}. </>}
+    <p className="continue-strip__ledger tt-paragraph">
+      {counts?.historyKept === false ? <>{t`Keep local history is off, so it holds only what Sotto kept since it last started.`}{' '}</> : null}
+      {carried === undefined ? readError === null ? <>{t`Reading what the handover carries…`}{' '}</> : null
+        : <>{leftOut === null ? t`Handover first: it carries ${carried}.` : t`Handover first: it carries ${carried} and leaves out ${leftOut}.`}{' '}</>}
       <button ref={readButton} type="button" className="continue-strip__read tt-focusable" aria-expanded={open} aria-controls={open ? regionId : undefined}
-        disabled={reading || bridge === undefined} onClick={() => void toggle()}>{open ? 'Hide it' : reading ? 'Reading it…' : 'Read it'}</button>
+        disabled={reading || bridge === undefined} onClick={() => void toggle()}>{open ? t`Hide it` : reading ? t`Reading it…` : t`Read it`}</button>
     </p>
-    {open && text !== null ? <div id={regionId} className="continue-strip__text tt-focusable" tabIndex={0} role="region" aria-label="The handover, word for word">{text}</div> : null}
-    {choice.narrowed && choice.runtimeMode ? <p className="continue-strip__permission">{narrowedWords(choice.runtimeMode, choice.narrowed, target, model?.name)}</p> : null}
-    {readError === null ? null : <p className="continue-strip__error" role="alert">{readError}</p>}
-    {choice.error === null ? null : <p className="continue-strip__error" role="alert">{choice.error}</p>}
+    {open && text !== null ? <div id={regionId} className="continue-strip__text tt-focusable" tabIndex={0} role="region" aria-label={t`The handover, word for word`}>{text}</div> : null}
+    {choice.narrowed && choice.runtimeMode ? <p className="continue-strip__permission tt-paragraph">{narrowedWords(choice.runtimeMode, choice.narrowed, target, model?.name)}</p> : null}
+    {readError === null ? null : <p className="continue-strip__error tt-paragraph" role="alert">{shownWords(readError)}</p>}
+    {choice.error === null ? null : <p className="continue-strip__error tt-paragraph" role="alert">{shownWords(choice.error)}</p>}
   </section>
 }
 
 /** The composer's chips while a continuation is begun: the model it starts on, that model's effort, and its permissions. */
 export function ContinueOptions({ thread, state, choice }: { readonly thread: AgentThread; readonly state: AgentState; readonly choice: ContinueChoice }): ReactNode {
-  // Cursor's permission lines are messages, so a change of interface language draws this again.
-  useInterfaceLanguage()
+  const { t } = useLingui()
   const models = continueModels(state, thread)
   const unavailable = unavailableProviders(state, thread)
   const model = resolveModel(models, choice.modelId)
@@ -187,12 +201,12 @@ export function ContinueOptions({ thread, state, choice }: { readonly thread: Ag
   useEffect(() => { if (choice.pick) continueStore.update(thread.id, { pick: undefined }) }, [choice.pick, thread.id])
   return <div className="thread-options-bar">
     <div className="thread-options thread-options--chips">
-      <ModelPicker models={models} modelId={choice.modelId} disabled={choice.sending} unavailable={unavailable} label="Model the new thread starts on"
-        openOnMount={choice.pick === true} note="Your first message starts a new thread on the model you pick, with a handover of this one."
+      <ModelPicker models={models} modelId={choice.modelId} disabled={choice.sending} unavailable={unavailable} label={t`Model the new thread starts on`}
+        openOnMount={choice.pick === true} note={t`Your first message starts a new thread on the model you pick, with a handover of this one.`}
         onChange={id => continueStore.set(thread.id, continueChoiceFor(state, thread, id, choice))} />
       {efforts.length > 0 ? <EffortPicker key={choice.modelId} value={effort} options={efforts} disabled={choice.sending}
         defaultValue={model?.defaultReasoningEffort} modelName={model?.name} onChange={reasoningEffort => continueStore.update(thread.id, { reasoningEffort })} /> : null}
-      {modes.length > 0 ? <ChoiceChip label="Permissions the new thread starts on" placeholder="Provider default" value={(own ? startingProviderMode(model, choice.providerMode) : choice.runtimeMode) ?? ''}
+      {modes.length > 0 ? <ChoiceChip label={t`Permissions the new thread starts on`} placeholder={t`Provider default`} value={(own ? startingProviderMode(model, choice.providerMode) : choice.runtimeMode) ?? ''}
         options={modes} disabled={choice.sending} pending={false} icon={PERMISSIONS_ICON}
         onChange={mode => continueStore.update(thread.id, own ? { providerMode: mode, narrowed: undefined } : { runtimeMode: mode as AgentRuntimeMode, narrowed: undefined })} /> : null}
     </div>
@@ -201,31 +215,37 @@ export function ContinueOptions({ thread, state, choice }: { readonly thread: Ag
 
 /** At the top of a continued thread's history: the thread it continues, which stays readable there, and a way to open it. */
 export function ContinuedFromNote({ thread, state, command }: { readonly thread: AgentThread; readonly state: AgentState; readonly command: AgentConnection['command'] }): ReactNode {
+  const { t } = useLingui()
   const enabled = useContinueEnabled()
   const from = enabled ? thread.continuedFrom : undefined
   if (from === undefined) return null
   const source = state.host.threads.find(item => item.id === from.threadId)
   const name = PROVIDER_LABELS[from.provider]
+  const title = source?.title ?? t`a thread that is no longer listed`
+  const openLabel = t`Open ${title}, the thread this one continues`
   return <div className="continue-note" role="note">
     <CornerUpLeft size={15} aria-hidden="true" />
-    <p>Continued from <ProviderMark provider={from.provider} name={name} size={13} /><strong>{source?.title ?? 'a thread that is no longer listed'}</strong> on {name}.
-      {source ? <> It stays readable there. <button type="button" className="continue-note__open tt-focusable" aria-label={`Open ${source.title}, the thread this one continues`}
-        onClick={() => void command({ type: 'select-thread', threadId: source.id })}>Open it</button></> : null}</p>
+    <p className="tt-paragraph"><Trans>Continued from <ProviderMark provider={from.provider} name={name} size={13} /><strong>{title}</strong> on {name}.</Trans>
+      {source ? <> <Trans>It stays readable there. <button type="button" className="continue-note__open tt-focusable" aria-label={openLabel}
+        onClick={() => void command({ type: 'select-thread', threadId: source.id })}>Open it</button></Trans></> : null}</p>
   </div>
 }
 
 /** After the turn that was newest when it happened: a thread that continues this one, and a way to open it. */
 export function ContinuedInNotes({ links }: { readonly links: readonly ThreadContinuedIn[] }): ReactNode {
+  const { t } = useLingui()
   const context = useContinueLinks()
   if (context === null) return null
   return <>{links.map(link => {
     const target = context.threads.find(item => item.id === link.threadId)
     const name = PROVIDER_LABELS[link.provider]
+    const title = target?.title ?? t`a thread that is no longer listed`
+    const time = clockLabel(Date.parse(link.at))
     return <div key={link.threadId} className="continue-note" role="note">
       <CornerDownRight size={15} aria-hidden="true" />
-      <p>Continued in <ProviderMark provider={link.provider} name={name} size={13} /><strong>{target?.title ?? 'a thread that is no longer listed'}</strong> on {name}, {clockLabel(Date.parse(link.at))}, with a handover of this thread.
-        {target ? <> <button type="button" className="continue-note__open tt-focusable" aria-label={`Open ${target.title} on ${name}, the thread that continues this one`}
-          onClick={() => context.open(target.id)}>Open it</button></> : null}</p>
+      <p className="tt-paragraph"><Trans>Continued in <ProviderMark provider={link.provider} name={name} size={13} /><strong>{title}</strong> on {name}, {time}, with a handover of this thread.</Trans>
+        {target ? <> <button type="button" className="continue-note__open tt-focusable" aria-label={t`Open ${title} on ${name}, the thread that continues this one`}
+          onClick={() => context.open(target.id)}>{t`Open it`}</button></> : null}</p>
     </div>
   })}</>
 }
@@ -235,11 +255,14 @@ export function ContinuedInNotes({ links }: { readonly links: readonly ThreadCon
  * be sent to, once its limit resets where Sotto knows when.
  */
 export function ContinueComposerNote({ thread }: { readonly thread: AgentThread }): ReactNode {
+  const { t } = useLingui()
   const enabled = useContinueEnabled()
   const newest = enabled ? continuedSince(thread) : undefined
   if (newest === undefined) return null
   const stop = lastLimitStop(thread)
   const owner = stop ? LIMIT_OWNER[stop.provider] : undefined
-  return <p className="continue-composer-note"><CornerDownRight size={13} aria-hidden="true" />
-    <span>Continued in a {PROVIDER_LABELS[newest.provider]} thread. {stop?.resetsAt && owner ? `You can still send here once ${owner}’s limit resets at ${stop.resetsAt}.` : 'You can still send here.'}</span></p>
+  const provider = PROVIDER_LABELS[newest.provider]
+  const resetsAt = stop?.resetsAt
+  return <p className="continue-composer-note tt-paragraph"><CornerDownRight size={13} aria-hidden="true" />
+    <span>{resetsAt && owner ? t`Continued in a ${provider} thread. You can still send here once ${owner}’s limit resets at ${resetsAt}.` : t`Continued in a ${provider} thread. You can still send here.`}</span></p>
 }
