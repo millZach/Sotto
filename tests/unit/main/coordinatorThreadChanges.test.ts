@@ -12,8 +12,10 @@
  * things are normalized, and nothing else: each failure's name and each page's token, which each coordinator makes afresh
  * at random, are named in the order they first appear; and a window's held history is compared without its revision
  * numbers, since each coordinator is told of a command a moment apart and one may send a revision the other never needed
- * (every other field of the detail, such as `earlierAvailable`, is compared).
+ * (every other field of the detail, such as `earlierAvailable`, is compared). Usage is compared by the threads whose usage
+ * each read and by what each saved, read back as the Usage page reads it, without the time its store was made.
  */
+import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -141,7 +143,12 @@ async function stack(control: TestControlOptions = {}, threads = 6) {
     cleanup.push(() => coordinator.dispose())
     // Usage over the workspace, reading through a `visitUsage` that fails for `failingUsage`; the second sees no thread changes.
     const usageHost = new Proxy(workspace, { get(target, key) {
-      if (key === 'visitUsage') return (threadId: string) => { if (failingUsage.has(registry.byThread(threadId)?.sessionId ?? '')) throw new Error('The usage could not be read.') }
+      if (key === 'visitUsage') return (threadId: string, visitor: (record: unknown) => void) => {
+        if (failingUsage.has(registry.byThread(threadId)?.sessionId ?? '')) throw new Error('The usage could not be read.')
+        // One record of the thread's usage, the same for both, so what each usage saved can be compared.
+        visitor({ providerId: 'claude', threadId, recordKey: createHash('sha256').update(threadId).digest('hex'), modelId: MODEL.id,
+          tokens: { input: 10, output: 5 }, at: AT, phase: 'replay', partial: false })
+      }
       if (key === 'subscribeActivityChanges' && name === 'whole') return undefined
       const value = Reflect.get(target, key, target) as unknown
       return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value
@@ -211,7 +218,7 @@ function where(changed: string, whole: string): string {
 }
 
 /** Every way the two coordinators' downstream differs now, named. */
-function differences({ changed, whole }: Stack): string[] {
+async function differences({ changed, whole }: Stack): Promise<string[]> {
   const held = (seen: Downstream, targets: readonly string[]) => targets.map(id => {
     const detail = seen.details.get(id)
     if (!detail) return undefined
@@ -220,6 +227,14 @@ function differences({ changed, whole }: Stack): string[] {
     return rest
   })
   const usage = (seen: Downstream) => [...(seen.usage as unknown as { visited: Set<string> }).visited].sort()
+  // What each usage saved: its records written now, and read back as the Usage page reads them.
+  // Each store says when it was made, which is its own; everything else it says is compared.
+  const saved = async (seen: Downstream) => {
+    (seen.usage as unknown as { flush(): void }).flush()
+    const activity = (await seen.usage.read({})).activity
+    return activity && { ...activity, metadata: { ...activity.metadata, startedAt: undefined } }
+  }
+  const [changedUsage, wholeUsage] = [await saved(changed), await saved(whole)]
   const targets = changed.targets()
   const aspects: [string, unknown, unknown][] = [
     ['the coordinator\'s host snapshot', changed.control.watcherSnapshot(), whole.control.watcherSnapshot()],
@@ -230,6 +245,7 @@ function differences({ changed, whole }: Stack): string[] {
     ['each shown thread\'s history', held(changed, targets), held(whole, targets)],
     ['the phone\'s shell over the host socket', changed.phone()?.state, whole.phone()?.state],
     ['the threads whose usage was read', usage(changed), usage(whole)],
+    ['the usage records saved', changedUsage, wholeUsage],
   ]
   return aspects.flatMap(([aspect, left, right]) => { const a = text(left), b = text(right); return a === b ? [] : [`${aspect} ${where(a, b)}`] })
 }
@@ -237,7 +253,34 @@ function differences({ changed, whole }: Stack): string[] {
 /** The two coordinators agree once both have taken in what the operation set off. */
 async function agree(made: Stack, step: string): Promise<void> {
   await made.settle()
-  await expect.poll(() => differences(made), { timeout: 3_000, message: `after ${step}` }).toEqual([])
+  await expect.poll(() => differences(made), { timeout: 10_000, message: `after ${step}` }).toEqual([])
+}
+
+/**
+ * Fills a coordinator's kept prototype marks to their limit with marks of threads that are long gone, newest last, as a
+ * coordinator that has kept marks for many threads holds them: the next mark a thread takes lets the oldest kept go.
+ */
+function fillKept(seen: Downstream, prefix: string): void {
+  const ready = (seen.control as unknown as { prototypeReady: { kept: Map<string, unknown>; restore(saved: readonly never[], began: undefined, marked: readonly { threadId: string; messageId: string; createdAt: string }[]): void } }).prototypeReady
+  const room = PROTOTYPES_MARKED_MAX - ready.kept.size
+  if (room > 0) ready.restore([], undefined, Array.from({ length: room }, (_, index) => ({ threadId: `${prefix}-${index}`, messageId: `${prefix}-reply-${index}`, createdAt: AT })))
+}
+
+/** The threads a coordinator keeps a prototype mark for, oldest first. */
+const keptOf = (seen: Downstream): string[] => [...(seen.control as unknown as { prototypeReady: { kept: Map<string, unknown> } }).prototypeReady.kept.keys()]
+/** Whether a coordinator's broadcast shows a thread's prototype mark. */
+const markedIn = (seen: Downstream, threadId: string): boolean => seen.control.broadcastShell().host.threads.find(item => item.id === threadId)?.prototypeReady !== undefined
+
+/**
+ * Each session replies naming a page, all in one publication, dated now, and both coordinators find the pages and mark
+ * the threads. A mark is taken as each search ends, in the order the searches began, which is display order.
+ */
+async function markWithPages(made: Stack, sessions: readonly string[]): Promise<void> {
+  for (const session of sessions) made.adapter.log.add(session, { id: `page-of-${session}`, role: 'assistant', text: 'The mock-up is ready: mock.html', createdAt: new Date().toISOString() })
+  made.publish(...sessions)
+  await agree(made, `${sessions.length} threads replying with a page`)
+  await expect.poll(() => sessions.every(session => markedIn(made.changed, made.sotto(session))), { timeout: 20_000 }).toBe(true)
+  await agree(made, `${sessions.length} threads marked`)
 }
 
 /** Moves the clock on by `ms` and runs every prototype question timer that is due, on both coordinators. */
@@ -331,6 +374,15 @@ async function equivalenceRun(control: TestControlOptions, seed: number, rounds 
     async () => { adapter.state.models = adapter.state.models.length > 1 ? [{ ...MODEL }] : [{ ...MODEL }, { ...OTHER_MODEL }]; publish(); await same('the provider\'s catalog changing') },
     // A thread's model changing at the provider.
     async (session) => { at(session).modelId = at(session).modelId === OTHER_MODEL.id ? MODEL.id : OTHER_MODEL.id; publish(session); await same(`${session}'s model changing`) },
+    // Kept prototype marks filled to their limit with marks of threads long gone, so the next mark a thread takes lets the
+    // oldest go, and a thread that keeps its mark through a reply lets a chain of others go in turn.
+    async () => { for (const each of both) fillKept(each, `fill-${madeThreads++}`); publish(); await same('the kept marks filled to their limit') },
+    // Two threads archived or unarchived in one change: unarchived, each takes its mark back and lets another's go.
+    async () => {
+      const [first, second] = [sessions[next(sessions.length)]!, sessions[next(sessions.length)]!]
+      for (const session of new Set([first, second])) at(session).archivedAt = at(session).archivedAt ? undefined : AT
+      publish(first, second); await same(`archiving or unarchiving ${first} and ${second} in one change`)
+    },
     // A thread whose usage cannot be read yet, read again with a later publication once it can.
     async () => {
       if (failingUsage.size) { failingUsage.clear(); publish(); await same('usage readable again'); return }
@@ -367,6 +419,81 @@ describe('the coordinator taking in changes and taking in everything', () => {
 })
 
 describe('the coordinator at its limits', () => {
+  /**
+   * Codex's case (#925 review): in display order B, C, D, with the kept marks full and C's kept the oldest, a change takes
+   * B's and D's marks back. B's lets C's kept reply go, and C, read again, takes its mark back and lets the next oldest go,
+   * before D does, as the whole path reads them. Which of C and D the kept marks let go first, once later marks fill them
+   * again, follows that order.
+   */
+  it('reads a thread another\'s mark let go at its place among the threads a change names', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
+    const made = await stack({ watcherEnabled: true })
+    const { changed, whole, sotto, at, publish } = made
+    for (const each of [changed, whole]) await each.control.command({ type: 'connect' })
+    const [b, c, d] = ['s2', 's3', 's4']
+    // B and D are marked and archived, which lets their kept go while their pages stay found; C keeps its mark.
+    await markWithPages(made, [b, d])
+    at(b).archivedAt = AT; at(d).archivedAt = AT; publish(b, d)
+    await agree(made, 'B and D archived')
+    await markWithPages(made, [c])
+    for (const each of [changed, whole]) fillKept(each, 'old')
+    at(b).archivedAt = undefined; at(d).archivedAt = undefined; publish(b, d)
+    await agree(made, 'B and D unarchived in one change')
+    expect(keptOf(changed).slice(-3)).toEqual([sotto(b), sotto(c), sotto(d)])
+    expect(keptOf(changed)).toEqual(keptOf(whole))
+    // Each replies again naming no page, so each keeps its mark through its kept reply alone, and loses it once let go.
+    for (const session of [b, c, d]) made.adapter.log.add(session, { id: `plain-${session}`, role: 'assistant', text: 'Nothing else to show.', createdAt: new Date().toISOString() })
+    publish(b, c, d)
+    await agree(made, 'B, C and D replying again')
+    expect(keptOf(changed).slice(-3)).toEqual([sotto(b), sotto(c), sotto(d)])
+    // Later marks fill the kept marks again, past B's and C's, so D's alone stays.
+    for (const each of [changed, whole]) {
+      const ready = (each.control as unknown as { prototypeReady: { restore(saved: readonly never[], began: undefined, marked: readonly { threadId: string; messageId: string; createdAt: string }[]): void } }).prototypeReady
+      ready.restore([], undefined, Array.from({ length: PROTOTYPES_MARKED_MAX - 1 }, (_, index) => ({ threadId: `later-${index}`, messageId: `later-reply-${index}`, createdAt: AT })))
+    }
+    made.adapter.log.add('s5', { id: 'unrelated', role: 'user', text: 'Unrelated', createdAt: AT }); publish()
+    await agree(made, 'later marks filling the kept marks')
+    expect([b, c, d].map(session => markedIn(changed, sotto(session)))).toEqual([false, false, true])
+  }, 120_000)
+
+  /**
+   * Codex's case (#925 review): N comes before 65 threads whose kept marks are the oldest, in display order, the first 64
+   * kept through their newest reply and the 65th through an older one. N taking its mark back lets the first go; read
+   * again, each takes its mark back and lets the next go, until the 65th, which cannot, loses its mark. The chain is read
+   * to its end, however long, as the whole path reads it.
+   */
+  it('follows marks letting each other go to the end of the chain, however long', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
+    const made = await stack({ watcherEnabled: true }, 68)
+    const { changed, whole, sotto, at, publish, sessions } = made
+    for (const each of [changed, whole]) await each.control.command({ type: 'connect' })
+    const n = 's1', chain = sessions.slice(1, 66), last = chain.at(-1)!
+    await markWithPages(made, [n])
+    at(n).archivedAt = AT; publish(n)
+    await agree(made, 'N archived')
+    await markWithPages(made, chain)
+    expect(keptOf(changed).slice(0, chain.length)).toEqual(chain.map(sotto))
+    made.adapter.log.add(last, { id: 'plain', role: 'assistant', text: 'Nothing else to show.', createdAt: new Date().toISOString() }); publish(last)
+    await agree(made, 'the last of the chain replying again')
+    for (const each of [changed, whole]) fillKept(each, 'old')
+    expect(markedIn(changed, sotto(last))).toBe(true)
+    // The whole path clears the 65th's mark in the pass that takes N's change in, so the changes path must too, rather
+    // than with a later change.
+    const inside = changed.control as unknown as { acceptChanges(map: ThreadMap, changes: AgentHostChanges): void }
+    const accept = inside.acceptChanges.bind(changed.control)
+    let inPass: boolean | undefined
+    inside.acceptChanges = (map, changes) => {
+      accept(map, changes)
+      if (changes.upserts.some(record => record.id === sotto(n))) inPass ??= changed.control.watcherSnapshot().threads.find(item => item.id === sotto(last))?.prototypeReady !== undefined
+    }
+    at(n).archivedAt = undefined; publish(n)
+    await agree(made, 'N unarchived')
+    expect(inPass, 'the 65th thread still marked once the change that let its kept reply go was taken in').toBe(false)
+    expect(markedIn(changed, sotto(last))).toBe(false)
+    expect(chain.slice(0, -1).every(session => markedIn(changed, sotto(session)))).toBe(true)
+    expect(keptOf(changed)).toEqual(keptOf(whole))
+  }, 180_000)
+
   /**
    * Codex's case (#925 review): with more running threads than Just finished keeps marks for, two finish in one change
    * that names them out of display order, and then the rest finish. Which marks the limit drops follows the order the
@@ -508,6 +635,32 @@ describe('the coordinator\'s thread changes', () => {
     expect(checked).toBeGreaterThan(0)
     expect(drift).toEqual([])
   })
+
+  /**
+   * The check in verifying mode shows every thread again, which can let a kept mark go and name a thread to be shown again.
+   * It must change nothing (#925 review): it puts the prototype records back, names nothing, and leaves out only threads
+   * that were named before it began. Here a kept mark is taken away and another added behind the coordinator's back, so a
+   * whole pass would follow a chain of marks letting each other go to the 65th thread, which the coordinator still shows.
+   */
+  it('checks a change against a whole pass that changes nothing, and leaves out only what was named before it', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
+    const made = await stack({ watcherEnabled: true }, 67)
+    const { changed, whole, sotto, publish, sessions } = made
+    for (const each of [changed, whole]) await each.control.command({ type: 'connect' })
+    const chain = sessions.slice(1, 66), last = chain.at(-1)!
+    await markWithPages(made, chain)
+    made.adapter.log.add(last, { id: 'plain', role: 'assistant', text: 'Nothing else to show.', createdAt: new Date().toISOString() }); publish(last)
+    await agree(made, 'the last of the chain replying again')
+    fillKept(changed, 'old')
+    const inside = changed.control as unknown as { incoming: ThreadMap; reshow: Set<string>; verifyChanges(map: ThreadMap): void
+      prototypeReady: { kept: Map<string, { messageId: string; createdAt: string }> } }
+    expect(() => inside.verifyChanges(inside.incoming)).not.toThrow()
+    const kept = inside.prototypeReady.kept
+    kept.delete(sotto(chain[0]!)); kept.set('behind-its-back', { messageId: 'behind-reply', createdAt: AT })
+    const before = { kept: [...kept.keys()], reshow: [...inside.reshow] }
+    expect(() => inside.verifyChanges(inside.incoming)).toThrow(ThreadChangesDrift)
+    expect({ kept: [...kept.keys()], reshow: [...inside.reshow] }).toEqual(before)
+  }, 180_000)
 
   it('finds, verifying, a thread shown from something that moved without anything naming it', async () => {
     vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })

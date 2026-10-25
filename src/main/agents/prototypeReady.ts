@@ -101,6 +101,20 @@ export class PrototypeReady {
    */
   onEvicted: ((threadId: string, by: string) => void) | undefined
 
+  /**
+   * The records as they are now, and a way back to them, for a check that shows every thread again and must leave the
+   * records as it found them (the coordinator's verifying mode, #925).
+   */
+  checkpoint(): () => void {
+    const cleared = [...this.cleared], asked = [...this.asked]
+    const kept = [...this.kept].map(([threadId, item]) => [threadId, { ...item, ...(item.scan ? { scan: { ...item.scan } } : {}) }] as const)
+    return () => {
+      this.cleared.clear(); for (const [key, item] of cleared) this.cleared.set(key, item)
+      this.asked.clear(); for (const [threadId, reply] of asked) this.asked.set(threadId, reply)
+      this.kept.clear(); for (const [threadId, item] of kept) this.kept.set(threadId, item)
+    }
+  }
+
   /** When marks began, as the coordinator saves it. */
   since(): number | undefined { return this.began }
 

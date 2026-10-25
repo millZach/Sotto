@@ -107,6 +107,47 @@ interface HostThreadIndex {
   readonly watcherKinds: Set<string>
 }
 const isWatcherKind = (thread: AgentThread): boolean => thread.kind === 'watcher' || thread.kind === 'watcher-history'
+/**
+ * Thread IDs taken out in the order of their place, smallest first: a binary heap, so each push and pop costs the log of
+ * what it holds. An ID already held is not held twice.
+ */
+class PositionQueue {
+  private readonly heap: string[] = []
+  private readonly held = new Set<string>()
+  constructor(private readonly position: (id: string) => number) {}
+  push(id: string): void {
+    if (this.held.has(id)) return
+    this.held.add(id)
+    const heap = this.heap
+    heap.push(id)
+    for (let at = heap.length - 1; at > 0;) {
+      const parent = (at - 1) >> 1
+      if (this.position(heap[parent]!) <= this.position(heap[at]!)) break
+      ;[heap[parent], heap[at]] = [heap[at]!, heap[parent]!]
+      at = parent
+    }
+  }
+  pop(): string | undefined {
+    const heap = this.heap
+    if (!heap.length) return undefined
+    const top = heap[0]!
+    const last = heap.pop()!
+    if (heap.length) {
+      heap[0] = last
+      for (let at = 0; ;) {
+        const left = at * 2 + 1, right = left + 1
+        let least = at
+        if (left < heap.length && this.position(heap[left]!) < this.position(heap[least]!)) least = left
+        if (right < heap.length && this.position(heap[right]!) < this.position(heap[least]!)) least = right
+        if (least === at) break
+        ;[heap[least], heap[at]] = [heap[at]!, heap[least]!]
+        at = least
+      }
+    }
+    this.held.delete(top)
+    return top
+  }
+}
 function noteIndexed(index: HostThreadIndex, thread: AgentThread): void {
   if (thread.hiddenWakeUpMessageIds?.length) index.hidden.add(thread.id); else index.hidden.delete(thread.id)
   if (isWatcherKind(thread)) index.watcherKinds.add(thread.id); else index.watcherKinds.delete(thread.id)
@@ -784,10 +825,10 @@ export class AgentControl {
   private clockAt: number | undefined
   private clock(): number { return this.clockAt ?? Date.now() }
   /**
-   * The threads whose prototype mark another thread's mark let go of while an accept of changes shows its threads, each
-   * with the thread that let it go, so a thread the whole path reads after that one is read again in the same pass.
+   * The threads whose prototype mark another thread's mark let go of while an accept of changes shows its threads, so a
+   * thread the whole path reads after that one is read at its place in the same pass.
    */
-  private evictions: { readonly id: string; readonly by: string }[] | undefined
+  private evictions: string[] | undefined
   /** How many accepts of thread changes verifying mode checked against the whole path, for a test that asks it ran. */
   verifiedChanges = 0
   private hostIndex: HostThreadIndex | undefined
@@ -910,7 +951,7 @@ export class AgentControl {
     this.finishedUnread.onMoved = id => { this.marksMoved.add(id) }
     // A thread whose kept reply or cleared source was let go may lose or regain its mark though nothing in it changed:
     // it is shown again with the next change, as the next snapshot showed every thread (#925).
-    this.prototypeReady.onEvicted = (id, by) => { this.reshow.add(id); this.evictions?.push({ id, by }) }
+    this.prototypeReady.onEvicted = id => { this.reshow.add(id); this.evictions?.push(id) }
     this.failuresSeen.onMoved = id => { this.marksMoved.add(id) }
     this.clients = dependencies.clients ?? new ProviderClients({ opencodeFolders: opencodeFolders(join(dependencies.directory, 'opencode')), cursorConfigDirectory: join(dependencies.directory, 'cursor', 'config') })
     this.state = {
@@ -5422,30 +5463,29 @@ export class AgentControl {
       position = id => index.at.get(id) ?? index.list.length + (fresh.get(id) ?? fresh.size)
     }
     const byPosition = (left: AgentThread, right: AgentThread): number => position(left.id) - position(right.id)
-    const sources: AgentThread[] = []
-    for (const id of named) { const source = map.get(id); if (source) sources.push(source) }
-    sources.sort(byPosition)
-    this.evictions = []
+    // The threads are read one at a time, in display order, from a queue ordered by their place. Reading one can let
+    // another thread's kept prototype reply go, which changes that thread though nothing named it. The whole path reads
+    // every thread in display order, so it reads one let go ahead of the place it has reached after the eviction, in this
+    // pass: such a thread joins the queue and is read at its place, among the threads the change named. One let go behind
+    // that place the whole path read before the eviction, as nothing it is made from had moved yet, so it shows as it
+    // did until the next snapshot: it stays named in `reshow`, and the next change reads it. Every thread not read is one
+    // the whole path would read to the same record. Only threads ahead of the place reached join the queue, and that place
+    // only moves on, so no thread is read twice and the reading ends with the threads it reached.
+    const queue = new PositionQueue(position)
+    for (const id of named) if (map.has(id)) queue.push(id)
     const records = new Map<string, AgentThread>()
-    // The pass each thread was last read in: within one, threads are read in display order, as the whole path reads them.
-    const readIn = new Map<string, number>()
-    for (const thread of this.shownSnapshot({ ...this.state.host, threads: sources }, gone).threads) records.set(thread.id, thread)
-    for (const source of sources) readIn.set(source.id, 0)
-    // A thread whose prototype mark another let go, and which the whole path reads after that one, is read again in this
-    // pass unless it was read after it already; one the whole path read before it is read with the next change
-    // (`reshow`), as the whole path reads it with the next snapshot.
-    for (let pass = 1; this.evictions.length && pass <= 64; pass++) {
-      const evicted = this.evictions
-      this.evictions = []
-      const again = new Map<string, AgentThread>()
-      for (const { id, by } of evicted) {
-        const source = map.get(id), at = readIn.get(id), byAt = readIn.get(by) ?? pass - 1
-        if (!source || position(id) <= position(by) || at !== undefined && at >= byAt) continue
-        again.set(id, source)
-      }
-      if (!again.size) break
-      for (const id of again.keys()) { named.add(id); readIn.set(id, pass) }
-      for (const thread of this.shownSnapshot({ ...this.state.host, threads: [...again.values()].sort(byPosition) }, gone).threads) records.set(thread.id, thread)
+    this.evictions = []
+    let first = true
+    for (let id = queue.pop(); id !== undefined; id = queue.pop()) {
+      const reached = position(id)
+      // Read at its place: what moved under it is in its record now, whatever named it.
+      this.reshow.delete(id)
+      named.add(id)
+      const went = first ? gone : new Set<string>()
+      for (const thread of this.shownSnapshot({ ...this.state.host, threads: [map.get(id)!] }, went).threads) records.set(thread.id, thread)
+      if (!first) for (const each of went) gone.add(each)
+      first = false
+      for (const evicted of this.evictions.splice(0)) if (position(evicted) > reached && map.has(evicted)) queue.push(evicted)
     }
     const shown = [...records.values()].sort(byPosition)
     const list = this.patchHostThreads(index, map, named, shown, gone, changes.placements !== undefined && changes.placements.length > 0)
@@ -5502,7 +5542,13 @@ export class AgentControl {
    */
   private verifyChanges(map: ThreadMap): void {
     this.verifiedChanges++
-    const whole = this.shownSnapshot({ ...map.rest!, threads: map.threads() } as AgentHostSnapshot)
+    // The whole pass shows every thread again, which can let kept prototype replies go: it must change nothing, so the
+    // records are put back and nothing it lets go is named, and only threads named before it began are left out.
+    const named = new Set(this.reshow)
+    const restore = this.prototypeReady.checkpoint(), evicted = this.prototypeReady.onEvicted
+    this.prototypeReady.onEvicted = undefined
+    let whole: AgentHostSnapshot
+    try { whole = this.shownSnapshot({ ...map.rest!, threads: map.threads() } as AgentHostSnapshot) } finally { this.prototypeReady.onEvicted = evicted; restore() }
     const held = this.state.host
     const differences: string[] = []
     if (whole.threads.length !== held.threads.length) differences.push(`the host snapshot lists ${held.threads.length} threads where the whole path lists ${whole.threads.length}`)
@@ -5511,7 +5557,7 @@ export class AgentControl {
       if (expected.id !== actual.id) { differences.push(`the threads are in another order from position ${at}`); break }
       // A thread already named to be shown again with the next change is shown as the whole path showed it before what
       // moved under it, which the whole path too shows only with the next snapshot; this check reads it after.
-      if (expected !== actual && !this.reshow.has(actual.id) && !isDeepStrictEqual(expected, actual)) differences.push(`thread "${actual.id}" is shown unlike the whole path shows it, a missed change`)
+      if (expected !== actual && !named.has(actual.id) && !isDeepStrictEqual(expected, actual)) differences.push(`thread "${actual.id}" is shown unlike the whole path shows it, a missed change`)
     }
     const { threads: _whole, ...wholeRest } = whole, { threads: _held, ...heldRest } = held
     void _whole; void _held
