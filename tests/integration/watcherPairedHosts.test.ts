@@ -35,6 +35,7 @@ import { storedFollowups } from '../fixtures/followupQueue'
 import { markTurnActivity } from '../../src/main/agents/turnActivity'
 import { HostFactsSource, hostMachineReport } from '../../src/main/agents/hostFacts'
 import { lastUserMessageIdOf, type AgentState } from '../../src/shared/agents'
+import { isResumeNoteText } from '../../src/shared/restartResume'
 
 /** These tests run on the real clock: ordinary news waits as long as a question does (#1190's timing has unit tests). */
 const SHORT_BATCH = { quietMs: 2_000, maxMs: 5_000 }
@@ -1258,7 +1259,12 @@ it('keeps restored queues paused after retrying another receipt on the same requ
   remote.native.event({ type: 'ready', threadId: nativeId, text: 'Synthetic completion after restart' })
   await socket.command({ type: 'refresh', provider: 'codex' })
   await vi.waitFor(() => expect(remote.host.service.state().followups?.find(item => item.threadId === first.target.threadId)?.status).toBe('paused'))
-  expect((await remote.native.snapshot()).threads.find(item => item.id === nativeId)!.messages.filter(item => item.role === 'user')).toHaveLength(1)
+  // The start's first turn was running when the host closed, so the host resumes it with its restart note once that turn
+  // ends, whenever it recorded the turn before closing (ADR-0076). That note is the host's own; the restored queue's
+  // prompt must not go, so the only other prompt the thread has had is its first.
+  const prompts = (await remote.native.snapshot()).threads.find(item => item.id === nativeId)!.messages.filter(item => item.role === 'user')
+  expect(prompts.filter(item => !isResumeNoteText(item.text))).toHaveLength(1)
+  expect(prompts.filter(item => item.text.includes('Synthetic restored machine queue'))).toEqual([])
 }, 60_000)
 
 
