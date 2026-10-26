@@ -104,6 +104,8 @@ export default defineConfig({
       gitLauncherWorker: resolve(__dirname, 'src/main/agents/gitLauncherWorker.ts'),
       // The thread store's log is checkpointed on this worker thread, so no save on main runs a checkpoint (`walCheckpointer.ts`).
       walCheckpointWorker: resolve(__dirname, 'src/main/storage/walCheckpointWorker.ts'),
+      // Main's hang watch runs on this worker thread, which can see main stop when main cannot (`hangWatchdog.ts`).
+      hangWatchdogWorker: resolve(__dirname, 'src/main/performance/hangWatchdogWorker.ts'),
     } } },
     // electron-updater is a devDependency that is compiled into the main chunk,
     // exactly like zod is compiled into the sandboxed preload: production

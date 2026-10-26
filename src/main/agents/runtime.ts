@@ -418,10 +418,12 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const SAID_ENDINGS: ReadonlySet<BabysitEndReason> = new Set(babysitEndedReasonSchema.options)
   const babysitRun = options.babysitting?.run ?? gitRun
   const babysitter = gitHubRateLimit && options.gitStatus ? new Babysitter({ store: agentHost, deliver: deliverWakeUp, rateLimit: gitHubRateLimit,
-    ...(watcher || mainCheckout ? { observed: (read: PullRequestObservation) => {
+    // Each read also brings the threads' links to that pull request to the state GitHub gave (#1147).
+    observed: (read: PullRequestObservation) => {
       watcher?.pullRequestObserved(read)
+      agentHost.notePullRequestState(read)
       if (read.state === 'merged') mainCheckout?.pullRequestMerged(read.url)
-    } } : {}),
+    },
     ...(babysitRun ? { run: babysitRun } : {}), ...(options.gitStatus.log ? { log: options.gitStatus.log } : {}),
     ended: async (threadId, url, reason) => {
       if (reason === 'merged') mainCheckout?.pullRequestMerged(url)

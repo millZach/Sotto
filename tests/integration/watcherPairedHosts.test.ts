@@ -295,7 +295,7 @@ it.each([
   // Receipts cannot be read, so the start stays unconfirmed.
   const reads = vi.spyOn(f.socket, 'watcherRead').mockRejectedValue(new Error('lost-projection'))
   vi.spyOn(f.socket, 'watcherControl').mockRejectedValue(timedOut
-    ? new HostRequestTimeoutError('The host did not answer in time. Try refreshing.', 'disconnected')
+    ? new HostRequestTimeoutError('The host did not answer in time. Try refreshing.')
     : new HostConnectionError('The host connection closed. Connect again to refresh.', 'disconnected'))
   const started = await f.call('start_thread', f.start())
   expect(started).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN' })
@@ -331,7 +331,7 @@ it('leaves a timed-out paired start to the host once the host’s own receipt sh
   const control = f.socket.watcherControl.bind(f.socket)
   vi.spyOn(f.socket, 'watcherControl').mockImplementationOnce(async (...args) => {
     await control(...args)
-    throw new HostRequestTimeoutError('The host did not answer in time. Try refreshing.', 'disconnected')
+    throw new HostRequestTimeoutError('The host did not answer in time. Try refreshing.')
   })
   const started = await f.call('start_thread', f.start())
   expect(started).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN' })

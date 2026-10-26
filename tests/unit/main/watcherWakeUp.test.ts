@@ -2157,3 +2157,39 @@ describe('news that a card or prototype no longer waits on the user', () => {
     expect(events(f).filter(event => event.kind === 'prototype-closed')).toHaveLength(1)
   })
 })
+
+it('makes one merge fact and at most one wake-up from alternating open and merged reads of one merged pull request (#1146)', async () => {
+  const f = fixture(), url = 'https://github.com/synthetic/project/pull/922'
+  f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }
+  // Its link was last told open, long ago, and the branch's own Git read says merged, as on October 15 and 17.
+  f.thread.pullRequests = [{ url, number: 922, title: 'Synthetic pull request', state: 'open', draft: false, source: 'created', linkedAt: centerTime }]
+  const git = (at: number) => ({ isRepository: true, branch: 'topic', upstream: 'origin/topic', hasRemote: true, defaultBranch: 'main', isDefaultBranch: false,
+    dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null,
+    pullRequest: { url, number: 922, title: 'Synthetic pull request', state: 'merged' as const, draft: false }, readAt: new Date(at).toISOString(), fetchedAt: null })
+  const worktree: NonNullable<AgentThread['worktree']> = { mode: 'independent', status: 'ready', branch: 'topic', baseBranch: 'main', git: git(f.now()) }
+  f.thread.worktree = worktree
+  f.wakes.observe(); await f.advance(WATCHER_BATCH_MS)
+  const told = f.delivered.length
+  const evidence = () => f.delivered.slice(told).flatMap(news => news.events).filter(event => event.kind === 'evidence-changed')
+  for (let n = 0; n < 20; n++) {
+    f.wakes.pullRequest({ url, head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available', state: n % 2 ? 'merged' : 'open', checks: 'unknown' })
+    worktree.git = git(f.now()); f.wakes.observe()
+    await f.advance(60_000)
+  }
+  expect(evidence().length).toBeLessThanOrEqual(1)
+  expect(f.wakes.evidence.read(centerTarget).filter(item => item.fact === 'merge-observed')).toHaveLength(1)
+  expect(f.wakes.evidence.read(centerTarget).filter(item => item.pullRequestState === 'open')).toHaveLength(0)
+})
+
+it('wakes once for a pull request Watcher saw open merging, and never for what GitHub says of it after (#1146)', async () => {
+  const f = fixture(), url = 'https://github.com/synthetic/project/pull/31'
+  f.thread.pullRequests = [{ url, number: 31, title: 'Synthetic pull request', state: 'open', draft: false, source: 'created', linkedAt: centerTime }]
+  const read = (state: 'open' | 'merged', checks: 'passed' | 'unknown' | 'failed') =>
+    f.wakes.pullRequest({ url, head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available', state, checks, checkCount: 1 })
+  read('open', 'passed'); await f.advance(WATCHER_BATCH_MS)
+  const told = f.delivered.length
+  read('merged', 'passed'); await f.advance(WATCHER_BATCH_MS)
+  expect(f.delivered).toHaveLength(told + 1)
+  for (const checks of ['unknown', 'failed', 'passed', 'unknown'] as const) { read(checks === 'failed' ? 'open' : 'merged', checks); await f.advance(120_000) }
+  expect(f.delivered).toHaveLength(told + 1)
+})

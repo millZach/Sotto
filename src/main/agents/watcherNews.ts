@@ -45,6 +45,8 @@ export function foldWatcherNews(earlier: WatcherNews | undefined, later: Watcher
   return { ...later, events, omitted: omitted + all.length - events.length }
 }
 export const requestRevision = (request: unknown): string => observationDigest(request)
+/** What reaches a thread after a takeover fenced a request there (#1148), as its news and its refusals say it. */
+export const LATER_REQUEST_REACHES = 'A message the user sends Watcher after that starts a request that reaches the thread; while the user’s own turn there runs, it can only steer it.'
 /** Each kind's line; a closed card's depends on whose it was and whether Sotto saw the user answer it (`closedWords`). */
 const words: Record<Exclude<WatcherEvent['kind'], 'request-closed'>, string> = {
   'turn-finished': 'The foreground turn finished. This is not review or merge approval.',
@@ -52,7 +54,7 @@ const words: Record<Exclude<WatcherEvent['kind'], 'request-closed'>, string> = {
   'turn-failed': 'The provider confirmed that this turn failed. Read the thread for its error.',
   'needs-user': 'This thread waits on the user to answer its request, which they do on its card in your conversation or in the thread. Only the user can answer it.',
   quiet: 'No progress was observed for twenty minutes of connected work.',
-  'taken-over': 'You took over this thread. Watcher stopped sending to it.',
+  'taken-over': `The user took over this thread, so the request Watcher was working with it in no longer sends to it. ${LATER_REQUEST_REACHES}`,
   'delivery-changed': 'Sotto observed a new delivery receipt. Read the operation for its state.',
   'evidence-changed': 'Sotto observed changed evidence. Read the thread for the sourced facts.',
   'prototype-ready': 'This thread has a prototype ready for the user to review. Only the user can review it; open the thread for its page.',

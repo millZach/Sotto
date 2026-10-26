@@ -48,3 +48,15 @@ Zach found the light too faint to see and asked for the time the turn has been w
 **The clock.** The line now reads the words, then how long the turn has run ("Combing the desert 1m 04s"), in the muted ink a size smaller, counting from the turn's start, or from Send while the prompt is on its way. It uses the transcript's clock: whole seconds under a minute, then "1m 04s" and "1h 02m", and it updates its own text once a second without redrawing the transcript. Like every clock in the transcript it shows only while the provider is connected, so **Last seen working** has none. The button keeps its name, "Working, 12 steps so far"; a name that changed every second would be read out again and again.
 
 This replaces "There is no clock on the line" above and the light's description in the Decision, and the considered option **A clock on the line** is now the decision. It applies to the desktop's threads, threads beside Watcher and Watcher's conversation. The iPhone keeps the light and line of ADR-0051's October 24 amendment, without a clock, until Zach asks for it there.
+
+## October 26 amendment: the steps start as you last left them
+
+Drake asked for the steps to remember being opened across the whole app: open one, and every later one starts open until he folds one; fold one, and they start folded until he opens one.
+
+**One answer, kept.** A press on the working line, a **Worked for** line or the work in a Watcher reply's header sets whether a turn's steps start open (**steps opening** in `CONTEXT.md`). Every one of those lines the user has not pressed while it is on screen follows it at once, in every thread, beside Watcher and in Watcher's own conversation, and a new turn's working line starts from it. A line the user pressed keeps its own state while it stays on screen. The answer is a window preference in the renderer's storage, like the sidebar's width, so it survives a restart and has no Settings row.
+
+**Groups follow, never set.** The groups inside an open fold ("Ran 2 commands, changed 1 file") follow the answer too, so an open fold shows its commands and thinking the way the open working line does. A press on a group keeps that group's own state without setting the answer, because the fold around it may be following the answer, and folding a group would otherwise fold the turn it sits in.
+
+**Running turns.** Nothing was forced open while a turn ran: the working line started folded each turn, and the group under it, once opened, has no button of its own. So the answer replaces the working line's folded start, and nothing else about a running turn changed. A fold that opens itself, as **Show where it asked** opens one, does not set the answer. Escape folds only the line it is in: it is also how a pane beside Watcher is put away, one level at a time, and a key pressed to get out should not change how every other turn opens.
+
+This replaces "starts folded" for the working line and "opens on a press" for the Worked for line in the Decision above; both still open and fold on a press, and Escape still folds one level at a time.

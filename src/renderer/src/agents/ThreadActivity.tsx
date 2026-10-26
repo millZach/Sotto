@@ -18,6 +18,7 @@ import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import { shownCount } from '../state/interfaceNumbers'
 import { focusComposerFrom, TurnFailureReason, useOwnServerTurnActions, type OwnServerTurnActions } from './OwnServerTurn'
 import { retryingWords, stillWaitingNote, stillWaitingWords, stopName, stopWords } from './ownServerTurnWords'
+import { foldedTurns, setStepsOpen, useStepsOpen } from './stepsOpen'
 import './activity.css'
 
 /** A running turn shows its newest rows; older ones stay one click away. */
@@ -313,14 +314,17 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
 /**
  * The work a provider reported after one message. Live, it lists its rows, which is how the working line shows the
  * running turn's steps once opened; settled, it folds to a single line, failures and all, and opens on a press (Zach's
- * pick, docs/prototypes/turn-steps-glow-prototype.html). Nothing here can act on the provider or its agents.
+ * pick, docs/prototypes/turn-steps-glow-prototype.html). Until pressed it starts as the user last left a turn's steps;
+ * a press here does not change that, because the group usually sits inside a fold that follows it. Nothing here can act
+ * on the provider or its agents.
  */
 export const ActivityGroupView = memo(function ActivityGroupView({ group, live, threadRunning, connected, provider, onDisclosure, outcome }: ActivityGroupViewProps): ReactNode {
   const { t } = useLingui()
   const [choice, setChoice] = useState<boolean | null>(null)
   const [showAll, setShowAll] = useState(false)
   const listId = useId()
-  const expanded = choice ?? live
+  const stepsOpen = useStepsOpen()
+  const expanded = choice ?? (live || stepsOpen)
   const headline = turnHeadline(group.turn, threadRunning)
   const summary = groupSummary(group.records)
   // Work done for a subagent or tool sits under it.
@@ -434,8 +438,10 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   readonly sendingSince?: string | undefined
 }): ReactNode {
   const { t } = useLingui()
-  // The turn whose steps are open, so the next turn starts folded even though this line stays mounted between turns.
-  const [openTurn, setOpenTurn] = useState<string | null>(null)
+  // The turn whose steps the user opened or folded here, so the next turn starts as the user last left any turn's steps
+  // even though this line stays mounted between turns.
+  const [pressed, setPressed] = useState<{ readonly turnId: string; readonly open: boolean } | null>(null)
+  const stepsOpen = useStepsOpen()
   const stepsId = useId()
   const turnId = liveTurnId(thread)
   const turn = turnId === null ? undefined : thread.activities?.find(record => record.turnId === turnId && isTurnRecord(record))
@@ -446,14 +452,14 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   const own = useOwnServerTurnActions()
   const server = own !== null && connected && turn?.status === 'running' ? turn.ownServer : undefined
   const waiting = useStillWaiting(turn?.startedAt, server !== undefined && server.attempt === undefined && turnId !== null && !heardFrom(thread, turnId))
-  const open = turnId !== null && openTurn === turnId
+  const open = turnId !== null && (pressed?.turnId === turnId ? pressed.open : stepsOpen)
   const disclosure: StepsDisclosure | undefined = turnId === null || !steps.length ? undefined : {
     id: stepsId, label: stepsLabel(steps.length), open,
     opened: open ? <div id={stepsId} className="thread-activity-live__steps">
       <ActivityGroupView group={{ key: `live:${turnId}`, turnId, anchorMessageId: null, records: steps }} live threadRunning connected={connected} provider={provider} onDisclosure={onDisclosure} />
     </div> : null,
-    onToggle: event => { onDisclosure?.(event.currentTarget); setOpenTurn(open ? null : turnId) },
-    onKeyDown: foldOnEscape(open, summary => { onDisclosure?.(summary); setOpenTurn(null) }),
+    onToggle: event => { onDisclosure?.(event.currentTarget); setPressed({ turnId, open: !open }); setStepsOpen(!open) },
+    onKeyDown: foldOnEscape(open, summary => { onDisclosure?.(summary); setPressed({ turnId, open: false }); foldedTurns.add(turnId) }),
   }
   // Compaction holds the thread in the running state without a turn of its own, and a line saying the agent
   // is working would be the wrong thing to read while the only thing happening is the context being folded up.
