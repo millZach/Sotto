@@ -1857,12 +1857,13 @@ it('lets go of a moved branch once reconciling finds the start failed with no th
     await git('git', ['-C', f.project.path, 'update-ref', ref!, commit!])
     throw new Error('synthetic-lost-answer')
   })
-  const started = await f.call('start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId, workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
-  expect(started).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN' })
-  expect(await refs()).not.toBe('')
-  // Reconciling reads the failed receipt and a host with no such thread: the branch is let go.
-  await expect.poll(refs, { timeout: 30_000 }).toBe('')
-  vi.restoreAllMocks()
+  try {
+    const started = await f.call('start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId, workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
+    expect(started).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN' })
+    expect(await refs()).not.toBe('')
+    // Reconciling reads the failed receipt and a host with no such thread: the branch is let go.
+    await expect.poll(refs, { timeout: 30_000 }).toBe('')
+  } finally { vi.restoreAllMocks() }
 }, 60_000)
 
 it('keeps a lost start’s moved branch for the next reconcile when this computer has no host ID for a moment (#1033)', async () => {
