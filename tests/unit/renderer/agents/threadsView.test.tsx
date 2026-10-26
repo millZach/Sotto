@@ -346,7 +346,7 @@ describe('ThreadsView workspace', () => {
     expect(screen.getByRole('button', { name: 'Connect providers' })).toBeEnabled()
     state.connection = 'connecting'; state.error = null
     view.rerender(<ThreadsView now={NOW} />)
-    expect(screen.getByRole('button', { name: 'Connecting...' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Connecting…' })).toBeDisabled()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
