@@ -210,6 +210,7 @@ import {
   createE2EGlobalShortcuts,
   createE2ENativeState,
   createE2EPasteProcess,
+  failE2EOnUncaughtException,
   resolveE2EConfiguration,
   isTrustedMainE2ESender,
   snapshotE2EState,
@@ -304,6 +305,7 @@ if (e2eConfiguration === null) {
   delete process.env.SOTTO_E2E_USER_DATA
 } else if (e2eConfiguration !== null) {
   app.setPath('userData', e2eConfiguration.userDataPath)
+  failE2EOnUncaughtException(process, text => process.stderr.write(text), code => app.exit(code))
 }
 
 // The only read of process.platform in the application; every platform-varying
