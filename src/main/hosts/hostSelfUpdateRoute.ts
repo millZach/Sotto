@@ -87,6 +87,21 @@ export function socketStepResult(action: 'fetch' | 'install', answer: HostUpdate
   return { type: 'error', reason: 'update-failed' }
 }
 
+/** Whether `outcome` is the restart the host had already recorded in `before`, by its attempt ID or, without one, whole. */
+function recordedBefore(outcome: HostUpdateAnswer, before: HostUpdateAnswer | undefined): boolean {
+  if (outcome.type !== 'update-outcome' || before?.type !== 'update-outcome' || before.restart.state === 'none') return false
+  if (before.restart.attempt && 'attempt' in outcome.restart && outcome.restart.attempt) return before.restart.attempt === outcome.restart.attempt
+  return JSON.stringify(before.restart) === JSON.stringify(outcome.restart)
+}
+/**
+ * Whether what the host says after a restart over its socket is the last word on it: a finished restart other than the one
+ * it recorded before (`before`), or an answer that is no outcome at all. A host that says restarting, that has no restart
+ * recorded, or that still shows the earlier one may be the old host before this restart reached it, so it is asked again.
+ */
+export function restartSettled(outcome: HostUpdateAnswer, before?: HostUpdateAnswer): boolean {
+  if (outcome.type !== 'update-outcome') return true
+  return outcome.restart.state === 'finished' && !recordedBefore(outcome, before)
+}
 /**
  * How a restart sent over the socket ended, from what the host says once this computer has connected to it again: the new
  * host started, or the launch script's own failure, such as the old version started again. Undefined when the answer cannot
@@ -96,11 +111,7 @@ export function socketStepResult(action: 'fetch' | 'install', answer: HostUpdate
  */
 export function restartFromOutcome(outcome: HostUpdateAnswer | undefined, to: string, before?: HostUpdateAnswer): HostUpdateRestartResult | undefined {
   if (outcome?.type !== 'update-outcome' || outcome.restart.state !== 'finished' || outcome.restart.version !== to) return undefined
-  if (before?.type === 'update-outcome' && before.restart.state !== 'none') {
-    if (before.restart.attempt && outcome.restart.attempt) {
-      if (before.restart.attempt === outcome.restart.attempt) return undefined
-    } else if (JSON.stringify(before.restart) === JSON.stringify(outcome.restart)) return undefined
-  }
+  if (recordedBefore(outcome, before)) return undefined
   const { result } = outcome.restart
   if (result.type === 'ready') return outcome.running === to ? result : undefined
   return result.reason === 'update-lost' ? undefined : result

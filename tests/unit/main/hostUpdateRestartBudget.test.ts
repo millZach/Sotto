@@ -174,3 +174,69 @@ it('still retries an outcome connection that drops and returns the confirmed rol
   expect(f.client.hostUpdate).toHaveBeenCalledTimes(2)
   expect(vi.getTimerCount()).toBe(0)
 })
+
+type Recovering = {
+  scheduleReconnect(target: typeof host, active: undefined, droppedAt?: number): void
+  restartOnPurpose<T>(target: typeof host, operation: () => Promise<T>, untouched: (result: T) => boolean, reconnect: () => { since?: number; tailnetOnlyMs?: number }): Promise<T>
+  runUpdate(id: string, operation: { op: 'update-install'; version: string; file: string; sha256: string }): Promise<unknown>
+  retries: Map<string, { since?: number; tailnetOnlyMs?: number; timer?: ReturnType<typeof setTimeout> }>
+}
+/** A manager with only the reconnect bookkeeping a restart window touches; `open` and `press` are held. */
+function reconnecting(status: { phase: string; reconnecting?: boolean } = { phase: 'connecting', reconnecting: true }) {
+  const manager = Object.create(DesktopHosts.prototype) as DesktopHosts
+  const open = vi.fn(() => new Promise<void>(() => undefined))
+  const press = vi.fn(async (_host: unknown, run: (connection: { updateHost(): Promise<unknown> }) => Promise<unknown>) => run({ updateHost: async () => ({ type: 'update-installed' }) }))
+  Object.assign(manager, { options: { now: () => Date.now(), retryDelayMs: () => 60_000, router: { setReconnecting: vi.fn(), remove: vi.fn() } },
+    saved: [host], status: new Map([[host.id, status]]), live: new Map([[host.id, { via: 'tailnet', up: false }]]), retries: new Map(),
+    held: new Map(), restartWindows: new Map(), socketSteps: new Map(), listeners: new Set(), closed: false, open, press })
+  const run = manager as unknown as Recovering & { restartWindows: Map<string, { since: number; tailnetOnlyMs: number }> }
+  dispose.push(async () => { for (const retry of run.retries.values()) clearTimeout(retry.timer) })
+  return { run, open, press }
+}
+
+it('keeps a later reconnect on the tailnet alone until the restart budget ends, after one that reached the stopping host', () => {
+  const f = reconnecting()
+  f.run.restartWindows.set(host.id, { since: 1_000, tailnetOnlyMs: 140_000 })
+  f.run.scheduleReconnect(host, undefined, 70_000)
+  expect(f.run.retries.get(host.id)).toMatchObject({ since: 1_000, tailnetOnlyMs: 140_000 })
+  f.run.retries.clear()
+  vi.setSystemTime(141_000)
+  f.run.scheduleReconnect(host, undefined, 141_000)
+  expect(f.run.retries.get(host.id)).toMatchObject({ since: 141_000 })
+  expect(f.run.retries.get(host.id)?.tailnetOnlyMs).toBeUndefined()
+  expect(f.run.restartWindows.size).toBe(0)
+})
+
+it('stops waiting for the first reconnect after a restart at the restart budget, while that connect carries on', async () => {
+  const f = reconnecting({ phase: 'connected' }), seen = vi.fn()
+  void f.run.restartOnPurpose(host, async () => 'restarting', () => false, () => ({ since: Date.now(), tailnetOnlyMs: 100 })).then(seen)
+  await vi.advanceTimersByTimeAsync(99)
+  expect(f.open).toHaveBeenCalledTimes(1)
+  expect(seen).not.toHaveBeenCalled()
+  await vi.advanceTimersByTimeAsync(1)
+  expect(seen).toHaveBeenCalledWith('restarting')
+})
+
+it('installs over an admin connection while the tailnet reconnects after a download that fell back to SSH', async () => {
+  const f = reconnecting()
+  await expect(f.run.runUpdate(host.id, { op: 'update-install', version: '9.9.9', file: 'host.tar.gz', sha256: 'a'.repeat(64) })).resolves.toEqual({ type: 'update-installed' })
+  expect(f.press).toHaveBeenCalledTimes(1)
+})
+
+it('still refuses an update step for a host that is neither connected nor reconnecting', async () => {
+  const f = reconnecting({ phase: 'connecting' })
+  await expect(f.run.runUpdate(host.id, { op: 'update-install', version: '9.9.9', file: 'host.tar.gz', sha256: 'a'.repeat(64) })).rejects.toThrow('is not connected')
+  expect(f.press).not.toHaveBeenCalled()
+})
+
+it('asks again when a quick reconnect reaches the old host before the restart has recorded itself', async () => {
+  const f = recovery()
+  const rollback = { type: 'update-outcome', running: '9.9.8', restart: { state: 'finished', version: '9.9.9', attempt: 'bbbbbbbb',
+    result: { type: 'error', reason: 'update-start-failed', restarted: true } } } as const
+  vi.spyOn(f.client, 'hostUpdate').mockResolvedValueOnce({ type: 'update-outcome', running: '9.9.8', restart: { state: 'none' } }).mockResolvedValueOnce(rollback)
+  const result = f.read(1_000)
+  await vi.advanceTimersByTimeAsync(500)
+  expect(await result).toEqual(rollback)
+  expect(f.client.hostUpdate).toHaveBeenCalledTimes(2)
+  expect(vi.getTimerCount()).toBe(0)
+})

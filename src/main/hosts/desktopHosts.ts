@@ -8,7 +8,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { RetainedDraftStore } from '../agents/retainedDraftStore'
 import type { AgentCredentials } from '../agents/credentials'
 import { HostConnectionError, HostUpdateMissed, SocketHostService, type HostUpdateMiss } from '../agents/socketHostService'
-import { afterSocketMiss, missOf, restartFromOutcome, socketStepResult, updateCarrier } from './hostSelfUpdateRoute'
+import { afterSocketMiss, missOf, restartFromOutcome, restartSettled, socketStepResult, updateCarrier } from './hostSelfUpdateRoute'
 import { HOST_UPDATE_RESTART_BUDGET_MS, type HostUpdateAnswer, type HostUpdateRequest, type HostUpdateRestartResult } from '../../shared/hostSelfUpdate'
 import { afterTailnetFailure, classifyTailnetFailure, connectOrder, TAILNET_HEALTH_MS, TAILNET_RETURN_MS, tryTailnetAfterSsh, type HostConnectionPreference, type HostVia, type TailnetFailure } from './hostConnectionPlan'
 import { TailnetStore } from './tailnetStore'
@@ -241,6 +241,12 @@ export class DesktopHosts {
   private readonly grantPending = new Set<string>()
   /** Each host's socket update steps, chained so one runs at a time (see `socketStep`). */
   private readonly socketSteps = new Map<string, Promise<void>>()
+  /**
+   * Hosts restarting after a restart sent over their socket, with when it was sent and its budget: every reconnect until
+   * this computer has read how the restart went tries the tailnet alone, a connection that reached the stopping host and
+   * dropped again included (ADR-0088, October 16 amendment).
+   */
+  private readonly restartWindows = new Map<string, Required<Pick<Retry, 'since' | 'tailnetOnlyMs'>>>()
   /** Set by close(): Sotto is quitting, so no retry may start an SSH session the quit drain would leave behind. */
   private closed = false
   private writing: Promise<void> = Promise.resolve()
@@ -371,7 +377,9 @@ export class DesktopHosts {
    */
   async runUpdate(id: string, operation: SshHostUpdateOperation, options?: SshHostUpdateOptions): Promise<SshHostUpdateResult> {
     const host = this.saved.find(item => item.id === id)
-    if (!host || !this.live.has(id) || !this.reachable(id)) throw new Error(`${host?.name ?? 'This host'} is not connected. Nothing was changed.`)
+    // A step after a download that fell back to SSH can find the tailnet still reconnecting: it goes over an admin connection.
+    const reconnecting = this.status.get(id)?.phase === 'connecting' && this.status.get(id)?.reconnecting === true
+    if (!host || !this.live.has(id) || !(this.reachable(id) || reconnecting)) throw new Error(`${host?.name ?? 'This host'} is not connected. Nothing was changed.`)
     const socket = this.updateSocket(id, operation.op)
     if (socket && (operation.op === 'update-fetch' || operation.op === 'update-install')) {
       // The request carries a version, and for install the archive the host's own download named. Never a releases page.
@@ -453,12 +461,12 @@ export class DesktopHosts {
    * A restart the host runs on itself, asked over its socket (ADR-0088, October 16 amendment). The host answers once the
    * restart has passed its checks, and stops a moment later, so this computer waits for the socket to drop before it
    * connects again; it then tries the tailnet alone for the restart's whole budget, since an SSH attempt would ask Tailscale
-   * for the approval this route exists to spare, and asks the host how the restart went until it stops saying restarting.
+   * for the approval this route exists to spare, and asks the host how the restart went until it says how this one ended.
    * Any refusal stopped nothing: `went` is false, and the restart takes the path it always has. An error answer comes from
    * a host still running, so the same connection carries on.
    */
   private async restartOverSocket(host: SavedHost, socket: SocketHostService, version: string): Promise<{ readonly went: false } | { readonly went: true; readonly result: HostUpdateRestartResult | undefined }> {
-    let sentAt = this.now(), went = false, acknowledged = false
+    let sentAt = this.now(), acknowledged = false
     // What the host recorded of its last restart before this one, so a record left from an earlier Try again is not read as this one's.
     let before: HostUpdateAnswer | undefined
     type Sent = { readonly refused: true } | { readonly answer: HostUpdateRestartResult } | { readonly restarting: true }
@@ -466,7 +474,11 @@ export class DesktopHosts {
       before = await this.socketStep(host.id, () => socket.hostUpdate({ action: 'outcome' })).catch(() => undefined)
       sentAt = this.now()
       const deadline = sentAt + HOST_UPDATE_RESTART_BUDGET_MS
-      const restarting = async (): Promise<Sent> => { went = true; await this.socketDown(socket, deadline); return { restarting: true } }
+      const restarting = async (): Promise<Sent> => {
+        this.restartWindows.set(host.id, { since: sentAt, tailnetOnlyMs: HOST_UPDATE_RESTART_BUDGET_MS })
+        await this.socketDown(socket, deadline)
+        return { restarting: true }
+      }
       let answer: HostUpdateAnswer
       try { answer = await this.socketStep(host.id, () => socket.hostUpdate({ action: 'restart', version })) }
       catch (error) {
@@ -484,23 +496,30 @@ export class DesktopHosts {
       if (answer.type !== 'update-restarting') return { answer: { type: 'error', reason: 'restart-not-sent' } }
       acknowledged = true
       return restarting()
-    }, result => !('restarting' in result), () => went ? { since: sentAt, tailnetOnlyMs: HOST_UPDATE_RESTART_BUDGET_MS } : { since: this.now() })
+    }, result => !('restarting' in result), () => this.restartWindow(host.id) ?? { since: this.now() })
     if ('refused' in sent) return { went: false }
     if ('answer' in sent) return { went: true, result: sent.answer }
     // An acknowledged restart went even on an older host with no attempt IDs; an identical rollback can be fresh.
-    return { went: true, result: restartFromOutcome(await this.outcomeAfterRestart(host, socket, sentAt + HOST_UPDATE_RESTART_BUDGET_MS), version, acknowledged ? undefined : before) }
+    const earlier = acknowledged ? undefined : before
+    try { return { went: true, result: restartFromOutcome(await this.outcomeAfterRestart(host, socket, sentAt + HOST_UPDATE_RESTART_BUDGET_MS, earlier), version, earlier) } }
+    finally { this.restartWindows.delete(host.id) }
   }
   /** Resolves once `socket` has dropped, or at `deadline` when it has not. */
-  private async socketDown(socket: SocketHostService, deadline: number): Promise<void> {
+  private socketDown(socket: SocketHostService, deadline: number): Promise<void> {
+    return this.untilTime(socket.whenDisconnected(), deadline)
+  }
+  /** Resolves once `waited` settles, or at `deadline` when it has not; `waited` carries on either way. */
+  private async untilTime(waited: Promise<unknown>, deadline: number): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined
-    await Promise.race([socket.whenDisconnected(), new Promise<void>(resolve => { timer = setTimeout(resolve, Math.max(0, deadline - this.now())); timer.unref?.() })])
+    await Promise.race([waited.then(() => undefined, () => undefined), new Promise<void>(resolve => { timer = setTimeout(resolve, Math.max(0, deadline - this.now())); timer.unref?.() })])
     clearTimeout(timer)
   }
   /**
    * What the host says of the last restart over its socket, once this computer has connected to it again by `deadline`:
-   * asked again while it says restarting. Undefined when no connection came back in time, or the host did not answer.
+   * asked again until it says how this restart ended (`restartSettled`, with `earlier` the record from before it was sent).
+   * Undefined when no connection came back in time, or the host did not answer.
    */
-  private async outcomeAfterRestart(host: SavedHost, before: SocketHostService, deadline: number): Promise<HostUpdateAnswer | undefined> {
+  private async outcomeAfterRestart(host: SavedHost, before: SocketHostService, deadline: number, earlier?: HostUpdateAnswer): Promise<HostUpdateAnswer | undefined> {
     const left = (): number => Math.max(0, deadline - this.now())
     // Asked at most as often as fits in the time left, whatever the clock says.
     let outcome: HostUpdateAnswer | undefined
@@ -522,7 +541,7 @@ export class DesktopHosts {
         if (!['closed', 'timeout'].includes(missOf(error))) return undefined
         outcome = undefined
       }
-      if (left() === 0 || (outcome !== undefined && (outcome.type !== 'update-outcome' || outcome.restart.state !== 'restarting'))) return outcome
+      if (left() === 0 || (outcome !== undefined && restartSettled(outcome, earlier))) return outcome
       await new Promise(resolve => setTimeout(resolve, Math.min(500, left())).unref?.())
     }
     return outcome
@@ -607,8 +626,11 @@ export class DesktopHosts {
       } else if (!this.closed && this.saved.includes(host) && host.enabled !== false) {
         // A reconnect, with the backoff behind it: the row reads Reconnecting…, as it does after a drop. Its first minute tries
         // the tailnet alone, as after a drop (ADR-0053, step 6); after a restart sent over the tailnet, its whole budget does.
-        this.retries.set(id, { timer: undefined, attempt: 0, active: undefined, ...reconnect() })
-        await this.open(host).catch(() => undefined)
+        const window = reconnect()
+        this.retries.set(id, { timer: undefined, attempt: 0, active: undefined, ...window })
+        const opening = this.open(host).catch(() => undefined)
+        // A restart with a budget waits for its first connect no longer than the budget; the connect itself carries on.
+        await (window.tailnetOnlyMs === undefined || window.since === undefined ? opening : this.untilTime(opening, window.since + window.tailnetOnlyMs))
       } else this.releaseHeld(id)
     }
   }
@@ -1404,13 +1426,21 @@ export class DesktopHosts {
     return error instanceof FinalHostError || (error instanceof SshFailure && FINAL_SSH_FAILURES.has(error.code)) || (error instanceof HostConnectionError && error.code === 'version_mismatch')
   }
   private clearRetry(id: string): void { const entry = this.retries.get(id); if (entry) { clearTimeout(entry.timer); this.retries.delete(id) } }
+  /** The restart window a host is in now, if any (see `restartWindows`); one whose budget has passed is gone. */
+  private restartWindow(id: string): Required<Pick<Retry, 'since' | 'tailnetOnlyMs'>> | undefined {
+    const window = this.restartWindows.get(id)
+    if (window && this.now() >= window.since + window.tailnetOnlyMs) { this.restartWindows.delete(id); return undefined }
+    return window
+  }
   private scheduleReconnect(host: SavedHost, active: LiveHost | undefined, droppedAt?: number): void {
     if (this.closed) return
     const previous = this.retries.get(host.id)
     if (previous) clearTimeout(previous.timer)
-    const since = previous?.since ?? droppedAt
+    const window = previous ? undefined : this.restartWindow(host.id)
+    const since = previous?.since ?? window?.since ?? droppedAt
+    const tailnetOnlyMs = previous ? previous.tailnetOnlyMs : window?.tailnetOnlyMs
     const entry: Retry = { attempt: previous?.attempt ?? 0, active, timer: undefined, ...(since === undefined ? {} : { since }),
-      ...(previous?.tailnetOnlyMs === undefined ? {} : { tailnetOnlyMs: previous.tailnetOnlyMs }) }
+      ...(tailnetOnlyMs === undefined ? {} : { tailnetOnlyMs }) }
     entry.timer = setTimeout(() => {
       if (this.retries.get(host.id) !== entry) return
       if (entry.active && (this.live.get(host.id) !== entry.active || entry.active.closing)) return

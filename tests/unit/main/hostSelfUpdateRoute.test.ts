@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { HostUpdateMissed, type HostUpdateMiss } from '../../../src/main/agents/socketHostService'
-import { afterSocketMiss, missOf, restartFromOutcome, socketStepResult, updateCarrier, type AfterSocketMiss, type CarrierFacts, type SocketUpdateAction } from '../../../src/main/hosts/hostSelfUpdateRoute'
+import { afterSocketMiss, missOf, restartFromOutcome, restartSettled, socketStepResult, updateCarrier, type AfterSocketMiss, type CarrierFacts, type SocketUpdateAction } from '../../../src/main/hosts/hostSelfUpdateRoute'
 import { hostUpdateAnswerSchema, type HostUpdateAnswer } from '../../../src/shared/hostSelfUpdate'
 
 // How a host update's steps travel (ADR-0088, October 16 amendment), row by row.
@@ -106,5 +106,21 @@ describe('restartFromOutcome', () => {
     const after = hostUpdateAnswerSchema.parse({ ...wire, restart: { ...wire.restart, attempt: 'bbbbbbbbbbbbbbbb' } })
     expect(restartFromOutcome(after, '9.9.9', before)).toEqual(failed)
     expect(restartFromOutcome(before, '9.9.9', before)).toBeUndefined()
+  })
+})
+
+describe('restartSettled', () => {
+  const outcome = (restart: Extract<HostUpdateAnswer, { type: 'update-outcome' }>['restart']): HostUpdateAnswer => ({ type: 'update-outcome', running: '9.9.8', restart })
+  const failed = { type: 'error', reason: 'update-start-failed', restarted: true } as const
+  const earlier = outcome({ state: 'finished', version: '9.9.9', attempt: 'aaaaaaaa', result: failed })
+  it('asks again while the host may be the old one before this restart reached it', () => {
+    expect(restartSettled(outcome({ state: 'restarting', version: '9.9.9' }))).toBe(false)
+    expect(restartSettled(outcome({ state: 'none' }))).toBe(false)
+    expect(restartSettled(earlier, earlier)).toBe(false)
+  })
+  it('stops at a finished restart other than the one recorded before, and at an answer that is no outcome', () => {
+    expect(restartSettled(outcome({ state: 'finished', version: '9.9.9', attempt: 'bbbbbbbb', result: failed }), earlier)).toBe(true)
+    expect(restartSettled(earlier)).toBe(true)
+    expect(restartSettled({ type: 'error', reason: 'update-failed' }, earlier)).toBe(true)
   })
 })
