@@ -2,7 +2,7 @@
 import { expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { WATCHER_READ_BYTES_MAX, watcherToolSchemas, type WatcherEvidence, type WatcherToolOutput } from '../../../src/shared/watcher'
-import { watcherHostInput, watcherPullRequestSummaries, watcherSlimRead } from '../../../src/main/agents/watcherSlimReads'
+import { watcherEndedPullRequests, watcherHostInput, watcherPullRequestSummaries, watcherSlimRead } from '../../../src/main/agents/watcherSlimReads'
 
 const hostId = randomUUID(), at = '2026-10-19T10:00:00.000Z'
 const target = (threadId: string) => ({ hostId, threadId })
@@ -189,4 +189,51 @@ it('adds nothing to a read with no pull requests, so a read that fit its bound s
   expect(slim).not.toHaveProperty('pullRequests')
   expect(bytes(slim)).toBe(bytes(read))
   expect(watcherToolSchemas.read_thread.output.parse(slim)).toBeTruthy()
+})
+
+/** A pull request's facts once GitHub says it is merged or closed, and its checks no longer read. */
+const endedFacts = (threadId: string, n: number, state: 'merged' | 'closed') => prFacts(threadId, n).map(fact => fact.pullRequestState
+  ? { ...fact, fact: state === 'merged' ? 'merge-observed' as const : fact.fact, pullRequestState: state }
+  : fact.checksState ? { ...fact, fact: 'pull-request-observed' as const, checksState: 'unknown' as const, reason: 'checks-unavailable' as const } : fact)
+it('lists a roster row’s open pull requests by what GitHub last said, and counts the merged and closed ones (#1147)', () => {
+  const full = roster(1, 4), row = full.rows[0] as Extract<FullRows[number], { evidence: unknown }>
+  // Every link still says open, as a link keeps the state it was made in; GitHub has since merged two and closed one.
+  row.evidence = [...prFacts('thread-0', 1000), ...endedFacts('thread-0', 1001, 'merged'), ...endedFacts('thread-0', 1002, 'merged'), ...endedFacts('thread-0', 1003, 'closed')]
+  const slim = watcherSlimRead('list_threads', {}, full, () => true) as typeof full
+  expect(watcherToolSchemas.list_threads.output.parse(slim)).toBeTruthy()
+  expect(slim.rows[0]).toMatchObject({ pullRequests: [{ number: 1000, state: 'open' }], mergedPullRequests: 2, closedPullRequests: 1 })
+  // A row with none merged or closed says neither.
+  expect(watcherSlimRead('list_threads', {}, roster(1, 2), () => true)).not.toMatchObject({ rows: [{ mergedPullRequests: expect.anything() }] })
+})
+
+it('reads a thread with twenty-five merged pull requests in under 2 KB, summing up only one merged since the last read (#1147)', () => {
+  const evidence = Array.from({ length: 25 }, (_, n) => endedFacts('a', 900 + n, 'merged')).flat()
+  const messages = [0, 1].map(position => ({ id: `m-${position}`, position, role: 'assistant' as const, text: 'Synthetic reply about the merge order.', createdAt: at }))
+  const read = (facts: WatcherEvidence[]) => ({ status: 'ok', target: target('a'), messages, waitsOn: [], activities: [], evidence: facts, historyEpoch: 'epoch',
+    firstPosition: 0, lastPosition: 1, nextPosition: null, truncated: false, earlierAvailable: false, observedAt: at })
+  // A first read, and one with nothing new, sum up none of them: the news told each merge as it came.
+  for (const before of [undefined, watcherEndedPullRequests(evidence)]) {
+    const slim = watcherSlimRead('read_thread', { limit: 2 }, read(evidence), () => false, undefined, undefined, () => before)
+    expect(slim).not.toHaveProperty('pullRequests')
+    expect(slim).toMatchObject({ mergedPullRequests: 25 })
+    expect(bytes(slim)).toBeLessThan(2_048)
+    expect(watcherToolSchemas.read_thread.output.parse(slim)).toBeTruthy()
+  }
+  // One merged since the last read is summed up; one still open always is.
+  const later = [...evidence, ...endedFacts('a', 925, 'merged'), ...prFacts('a', 926)]
+  const slim = watcherSlimRead('read_thread', { limit: 2 }, read(later), () => false, undefined, undefined, () => watcherEndedPullRequests(evidence))
+  expect(slim).toMatchObject({ mergedPullRequests: 25, pullRequests: [{ number: 925, state: 'merged' }, { number: 926, state: 'open' }] })
+  expect(watcherSlimRead('read_thread', { evidence: 'full' }, read(later), () => false)).toMatchObject({ evidence: later })
+})
+
+it('fits ten threads with three open and twenty-five merged pull requests each in 8 KiB of list_threads (#1147)', () => {
+  const full = roster(10, 28)
+  for (const row of full.rows as Extract<FullRows[number], { evidence: unknown }>[]) {
+    const id = row.target.threadId, numbers = row.pullRequests.map(pr => pr.number)
+    row.evidence = numbers.flatMap((number, n) => n < 3 ? prFacts(id, number) : endedFacts(id, number, 'merged'))
+  }
+  const slim = watcherSlimRead('list_threads', {}, full, () => true) as typeof full
+  expect(slim.rows.every(row => row.pullRequests.length === 3 && (row as { mergedPullRequests?: number }).mergedPullRequests === 25)).toBe(true)
+  expect(bytes(slim)).toBeLessThan(8 * 1_024)
+  if (process.env.SOTTO_PERF_REPORT === '1') console.info(JSON.stringify({ full: bytes(full), slim: bytes(slim) }))
 })

@@ -68,9 +68,24 @@ function addressShared(items: readonly { url: string; summary: WatcherPullReques
  */
 export function watcherOpenPullRequests<P extends { readonly number: number; readonly url: string; readonly state: 'open' | 'closed' | 'merged' }>(
   pullRequests: readonly P[], evidence: readonly WatcherEvidence[]): { pr: P; summary: WatcherPullRequestSummary }[] {
-  const said = summariesByKey(evidence), open = pullRequests.filter(pr => pr.state === 'open').slice(0, 50)
-  const summaries = addressShared(open.map(pr => ({ url: pr.url, summary: { ...said.get(prKey(pr.url)) ?? { stale: true as const }, number: pr.number, state: said.get(prKey(pr.url))?.state ?? pr.state } })))
+  const said = summariesByKey(evidence), open = pullRequests.filter(pr => stateOf(pr, said) === 'open').slice(0, 50)
+  const summaries = addressShared(open.map(pr => ({ url: pr.url, summary: { ...said.get(prKey(pr.url)) ?? { stale: true as const }, number: pr.number, state: 'open' as const } })))
   return open.map((pr, index) => ({ pr, summary: summaries[index]! }))
+}
+/**
+ * A pull request's state as GitHub last gave it to Sotto, else as its link holds it: a link keeps the state it was last
+ * read in, which may be long before a merge (#1147).
+ */
+const stateOf = (pr: { readonly url: string; readonly state: 'open' | 'closed' | 'merged' }, said: ReadonlyMap<string, WatcherPullRequestSummary>) =>
+  said.get(prKey(pr.url))?.state ?? pr.state
+/** How many of a thread's pull requests are merged and how many closed, each said only when there are any (#1147). */
+function endedCounts(states: readonly ('open' | 'closed' | 'merged' | undefined)[]): { mergedPullRequests?: number; closedPullRequests?: number } {
+  const merged = states.filter(state => state === 'merged').length, closed = states.filter(state => state === 'closed').length
+  return { ...merged ? { mergedPullRequests: merged } : {}, ...closed ? { closedPullRequests: closed } : {} }
+}
+/** The pull requests a thread's evidence says are merged or closed, by key, for what a later slim read leaves out (#1147). */
+export function watcherEndedPullRequests(evidence: readonly WatcherEvidence[]): Set<string> {
+  return new Set([...summariesByKey(evidence)].filter(([, summary]) => summary.state === 'merged' || summary.state === 'closed').map(([key]) => key))
 }
 
 type Rows = Extract<WatcherToolOutput<'list_threads'>, { status: 'ok' }>['rows']
@@ -81,13 +96,14 @@ type FullRow = Extract<Rows[number], { evidence: unknown }>
  */
 export function watcherSlimRow(row: FullRow, watched: boolean, turnFailed = false, prototypeReady = false) {
   const open = watcherOpenPullRequests(row.pullRequests, row.evidence).map(item => item.summary)
+  const said = summariesByKey(row.evidence)
   // Why it needs the user or is not watched: its last turn's failure, and its newest participation's takeover or stop.
   const latest = row.participation.at(-1)
   return { target: row.target, title: row.title, projectId: row.projectId, status: row.status, group: row.group, waitsOn: row.waitsOn,
     watched, ...row.standingWatch ? { standingWatchId: row.standingWatch.id } : {}, connected: row.connected,
     ...turnFailed ? { turnFailed: true as const } : {}, ...latest?.state === 'taken-over' ? { takenOver: true as const } : {},
     ...latest?.automationStopped ? { automationStopped: true as const } : {}, ...prototypeReady ? { prototypeReady: true as const } : {},
-    ...row.protected ? { protected: true as const } : {}, pullRequests: open }
+    ...row.protected ? { protected: true as const } : {}, pullRequests: open, ...endedCounts(row.pullRequests.map(pr => stateOf(pr, said))) }
 }
 
 const isOk = (result: unknown): result is { status: 'ok' } & Record<string, unknown> =>
@@ -101,7 +117,8 @@ const isOk = (result: unknown): result is { status: 'ok' } & Record<string, unkn
  * waits for the user's review (ADR-0108), from the thread too, so a paired host never sends a field an older desktop refuses.
  */
 export function watcherSlimRead(name: WatcherToolName, input: unknown, result: unknown, watched: (target: WatcherThreadTarget) => boolean,
-  turnFailed: (target: WatcherThreadTarget) => boolean = () => false, prototypeReady: (target: WatcherThreadTarget) => boolean = () => false): unknown {
+  turnFailed: (target: WatcherThreadTarget) => boolean = () => false, prototypeReady: (target: WatcherThreadTarget) => boolean = () => false,
+  endedBefore: (target: WatcherThreadTarget) => ReadonlySet<string> | undefined = () => undefined): unknown {
   if (!isOk(result)) return result
   if (name === 'list_threads') {
     const asked = input as WatcherToolInput<'list_threads'>, rows = (result.rows as FullRow[]).filter(row => !asked.watchedOnly || watched(row.target))
@@ -115,8 +132,13 @@ export function watcherSlimRead(name: WatcherToolName, input: unknown, result: u
     const read = prototypeReady(result.target as WatcherThreadTarget) ? { ...result, prototypeReady: true as const } : result
     // Only the pull request facts are summed up; the thread's own facts, a failed turn, a takeover or a receipt, are few and stay.
     if (asked.evidence === 'full') return read
-    const pullRequests = watcherPullRequestSummaries(evidence)
-    const slim = { ...read, evidence: evidence.filter(fact => fact.source !== 'github'), ...pullRequests.length ? { pullRequests } : {} }
+    // A merged or closed pull request is summed up only when it became so since Watcher's last read of the thread; the
+    // others are counted. Before a first read, every one is counted: the news told each merge or close as it came (#1147).
+    const before = endedBefore(result.target as WatcherThreadTarget), summaries = watcherPullRequestSummaries(evidence)
+    const ended = (summary: WatcherPullRequestSummary) => summary.state === 'merged' || summary.state === 'closed'
+    const pullRequests = summaries.filter(summary => !ended(summary) || before !== undefined && !before.has(prKey(summary.url!)))
+    const left = endedCounts(summaries.filter(summary => !pullRequests.includes(summary)).map(summary => summary.state))
+    const slim = { ...read, evidence: evidence.filter(fact => fact.source !== 'github'), ...pullRequests.length ? { pullRequests } : {}, ...left }
     // The full read was cut to the read bound. A slim one is almost always smaller; one that is not is given in full.
     return Buffer.byteLength(JSON.stringify(slim)) > WATCHER_READ_BYTES_MAX ? read : slim
   }

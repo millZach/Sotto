@@ -1325,6 +1325,26 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.publishSoon()
     return link
   }
+  /**
+   * Brings a link a thread has up to date with the state GitHub just gave Sotto through a read of its own, as the branch's
+   * Git read or babysitting makes (#1147). Otherwise a link keeps the state it had when the user last opened it, and lists
+   * a pull request merged long ago as open. Merged is final, so no read moves a merged link. Callers hold the thread's lane.
+   */
+  private followPullRequestState(threadId: string, url: string, state: GitPullRequestLink['state']): boolean {
+    const link = this.threadById(threadId)?.pullRequests?.find(item => pullRequestKey(item.url) === pullRequestKey(url))
+    if (!link || link.state === state || link.state === 'merged') return false
+    return this.linkPullRequestRecord(threadId, { ...link, state }, link.source) !== null
+  }
+  /** A pull request read Sotto made outside a thread's own Pull request surface, such as babysitting's (#1147). */
+  notePullRequestState(read: PullRequestObservation): void {
+    if (read.availability !== 'available' || read.state === undefined || this.stopping) return
+    const key = pullRequestKey(read.url), state = read.state
+    for (const thread of this.state.snapshot.threads) {
+      const link = thread.pullRequests?.find(item => pullRequestKey(item.url) === key)
+      if (!link || link.state === state || link.state === 'merged') continue
+      void this.onLane(thread.id, async () => { if (this.followPullRequestState(thread.id, read.url, state)) await this.saveLinks() }).catch(() => undefined)
+    }
+  }
   private async saveLinks(): Promise<void> {
     try { await this.flush() } catch { this.saveError = 'The pull request link could not be saved. It shows until Sotto restarts.' }
   }
@@ -1545,6 +1565,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (gitStatusFingerprint(current.worktree.git) === gitStatusFingerprint(status)) return
     if (status.pullRequest?.state === 'merged' && current.worktree.git?.pullRequest?.state !== 'merged') this.pullRequestMerged(status.pullRequest.url)
     this.touched(current).worktree = { ...current.worktree, git: status }
+    // The branch's own pull request, as this read found it, brings the thread's link to it up to date (#1147).
+    if (status.pullRequest) this.followPullRequestState(threadId, status.pullRequest.url, status.pullRequest.state)
     this.dirty = true
     try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
     this.publish()

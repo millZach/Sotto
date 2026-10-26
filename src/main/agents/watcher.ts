@@ -30,7 +30,7 @@ import { ThreadChangesDrift, verifyingThreadChanges } from './threadChanges'
 import { threadsById, WatcherHosts } from './watcherHosts'
 import type { WorkspaceHost } from './workspace'
 import { WatcherWakeUp, watcherBackgroundWorkCount, watcherProgressFingerprint, type WatcherWakeOptions } from './watcherWakeUp'
-import { watcherHostInput, watcherOpenPullRequests, watcherPullRequestSummaries, watcherSlimRead } from './watcherSlimReads'
+import { watcherEndedPullRequests, watcherHostInput, watcherOpenPullRequests, watcherPullRequestSummaries, watcherSlimRead } from './watcherSlimReads'
 import { watcherMergeQueue, watcherSettlesWhen, watcherStaleNotes, type WatcherKnownPullRequest, type WatcherOpenPullRequest } from './watcherComputedState'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { WATCHER_COMPACTED_NOTE, watcherRequestLine, watcherRequestNote } from './watcherRequestNote'
@@ -413,6 +413,13 @@ export class WatcherService implements WatcherControlHooks {
   private roomReceipted: RoomReceipts | undefined
   /** The number of the last room built: each build takes the next, so the window can tell which is newer (#1450). */
   private roomSequence = 0
+  /**
+   * The pull requests the last read_thread of each thread gave each Watcher conversation as merged or closed (#1147), so a
+   * slim read sums up only those that became so since. In memory, as `readsGiven` is: after a restart a first read counts
+   * them all. A read's set waits on its answer (`endedPending`) and counts only once the answer reaches Watcher.
+   */
+  private readonly endedRead = new Map<string, ReadonlySet<string>>()
+  private readonly endedPending = new WeakMap<object, ReadonlySet<string>>()
   private readonly confirmations = new Map<string, { targets: WatcherThreadTarget[]; signature: string; expires: number; phoneClientId: string | undefined }>()
   private readonly pages = new Map<string, { kind: string; rows: unknown[]; expires: number; workingCopies?: { revision: string; baseRefs: { choiceId: string; name: string }[] } }>()
   private readonly copyChoices = new Map<string, { projectId: string; path?: string; branch?: string; revision: string; snapshotId: string }>()
@@ -4032,9 +4039,15 @@ ${operation.draftId}`)
   private slim(name: WatcherToolName, input: unknown, result: unknown): unknown {
     const watched = this.wakes.watchedKeys()
     const thread = (target: WatcherThreadTarget) => this.owningSnapshot(target.hostId)?.threads.find(item => item.id === target.threadId)
-    return watcherSlimRead(name, input, result, target => watched.has(key(target)), target => thread(target)?.lastTurn?.status === 'failed',
-      target => thread(target)?.prototypeReady !== undefined)
+    const slim = watcherSlimRead(name, input, result, target => watched.has(key(target)), target => thread(target)?.lastTurn?.status === 'failed',
+      target => thread(target)?.prototypeReady !== undefined, target => this.endedRead.get(this.readSlot(target)))
+    // What this read gives as merged or closed, so the next leaves those out once this one is given (#1147). A refusal says nothing.
+    if (name === 'read_thread' && typeof result === 'object' && result !== null && (result as { status?: unknown }).status === 'ok' && typeof slim === 'object' && slim !== null)
+      this.endedPending.set(slim, watcherEndedPullRequests((result as { evidence: WatcherEvidence[] }).evidence))
+    return slim
   }
+  /** A read's place among what each Watcher conversation was given, by conversation and target. */
+  private readSlot(target: WatcherThreadTarget): string { return `${this.view().current?.target.threadId ?? ''} ${key(target)}` }
   /**
    * Marks a read_thread result that gives Watcher nothing its last read of that thread did not (#1552). A Watcher that
    * rereads a working thread to see whether it has finished, as one on Muse did 84 times in one turn, adds each read
@@ -4047,7 +4060,9 @@ ${operation.draftId}`)
     const { observedAt, evidence, ...read } = result as { observedAt: string; target: WatcherThreadTarget; evidence: WatcherEvidence[] }
     // When a fact was last seen is left out: a refresh that changes only that leaves the fact as it was (watcherEvidence.ts).
     const facts = evidence.map(({ observedAt: _seen, fetchedAt: _fetched, ...fact }) => { void _seen; void _fetched; return fact })
-    const slot = `${this.view().current?.target.threadId ?? ''} ${key(read.target)}`, given = digest([read, facts]), before = this.readsGiven.get(slot)
+    const slot = this.readSlot(read.target), given = digest([read, facts]), before = this.readsGiven.get(slot)
+    const ended = this.endedPending.get(result)
+    if (ended) { this.endedRead.delete(slot); this.endedRead.set(slot, ended); while (this.endedRead.size > 256) this.endedRead.delete(this.endedRead.keys().next().value!) }
     const thread = this.owningSnapshot(read.target.hostId)?.threads.find(item => item.id === read.target.threadId)
     const working = thread !== undefined && !thread.requests.length && (thread.status === 'running' || watcherBackgroundWorkCount(thread) > 0)
     if (before?.digest === given && working && this.wakes.watchedKeys().has(key(read.target))) {
