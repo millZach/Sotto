@@ -241,7 +241,7 @@ export interface WatcherWakeOptions {
 }
 /** Event subscriptions and cancellable deadlines only. It owns no provider writer, roster or GitHub poll. */
 export class WatcherWakeUp {
-  readonly evidence = new WatcherEvidenceStore()
+  readonly evidence = new WatcherEvidenceStore(() => this.now())
   readonly observations = new Map<string, WatcherObservation>()
   private readonly progress = new Map<string, Progress>()
   private readonly seen = new Set<string>()

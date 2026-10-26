@@ -161,3 +161,67 @@ it('never reads all checks as passed from a read that holds only some of them, t
   expect(partial('success').checks).toBe('pending')
   expect(partial('failure').checks).toBe('failed')
 })
+
+const branchRead = (prUrl: string, readAt: string, state: 'open' | 'merged') => ({ isRepository: true, branch: 'topic', upstream: 'origin/topic', hasRemote: true,
+  defaultBranch: 'main', isDefaultBranch: false, dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null,
+  pullRequest: { number: 922, title: 'Merged long ago', url: prUrl, state, draft: false }, readAt, fetchedAt: null })
+const minutesLater = (minutes: number) => new Date(Date.parse(centerTime) + minutes * 60_000).toISOString()
+it('keeps a merged pull request merged when its stored link or a late read still says open (#1146)', () => {
+  const store = new WatcherEvidenceStore(), merged = 'https://github.com/o/r/pull/922'
+  // The thread's link was last told open; the branch's own Git read says merged, as GitHub does.
+  const thread: AgentThread = { id: 'worker', projectId: 'project', modelId: 'model', title: 'Worker', status: 'idle', requests: [], messages: [],
+    pullRequests: [{ number: 922, url: merged, title: 'Merged long ago', state: 'open', draft: false, source: 'created', linkedAt: centerTime }],
+    worktree: { mode: 'independent', status: 'ready', branch: 'topic', baseBranch: 'main', git: branchRead(merged, centerTime, 'merged') } }
+  const states = () => store.read(centerTarget).filter(item => item.pullRequestState !== undefined).map(item => item.pullRequestState)
+  store.observeThread(thread, centerTarget, centerTime)
+  expect(states()).toEqual(['merged'])
+  for (let minute = 1; minute <= 6; minute++) {
+    // Every Git read sees the stale link again, and every other GitHub answer is an older one that says open.
+    thread.worktree!.git = branchRead(merged, minutesLater(minute), 'merged')
+    expect(store.observeThread(thread, centerTarget, minutesLater(minute))).toBe(false)
+    store.pullRequest(centerTarget, { url: merged, head: 'head', observedAt: minutesLater(minute), availability: 'available', state: minute % 2 ? 'open' : 'merged' })
+    expect(states()).toEqual(['merged'])
+  }
+  expect(store.read(centerTarget).filter(item => item.fact === 'merge-observed')).toHaveLength(1)
+})
+it('holds no attention for a link made to a pull request already merged, and tells one linked open merging once (#1146)', () => {
+  const store = new WatcherEvidenceStore(), old = 'https://github.com/o/r/pull/8', seen = 'https://github.com/o/r/pull/7'
+  const link = (prUrl: string, number: number, state: 'open' | 'merged') => ({ number, url: prUrl, title: 'Synthetic', state, draft: false, source: 'linked' as const, linkedAt: centerTime })
+  const thread: AgentThread = { id: 'worker', projectId: 'project', modelId: 'model', title: 'Worker', status: 'idle', requests: [], messages: [],
+    pullRequests: [link(old, 8, 'merged'), link(seen, 7, 'open')] }
+  const read = (prUrl: string, state: 'open' | 'merged', checks: 'passed' | 'failed' | 'unknown', at = centerTime) =>
+    store.pullRequest(centerTarget, { url: prUrl, head: 'head', observedAt: at, availability: 'available', state, checks, checkCount: 1 })
+  store.observeThread(thread, centerTarget, centerTime)
+  // Linked after it merged: neither the merge nor anything its checks say after is news.
+  read(old, 'merged', 'passed'); read(old, 'merged', 'failed', minutesLater(1)); read(old, 'merged', 'unknown', minutesLater(2))
+  expect(store.attention(centerTarget)).toEqual(new Set())
+  read(seen, 'open', 'failed')
+  expect([...store.attentionByPullRequest(centerTarget).values()]).toEqual([new Set(['checks-failed'])])
+  read(seen, 'merged', 'passed', minutesLater(3))
+  const merged = store.attention(centerTarget)
+  expect([...store.attentionByPullRequest(centerTarget).values()]).toEqual([new Set(['merged'])])
+  // A late read that says open, and checks that move after the merge, leave what Watcher is told as it was.
+  for (const [minute, checks] of [[4, 'unknown'], [5, 'failed'], [6, 'passed']] as const) {
+    read(seen, minute % 2 ? 'merged' : 'open', checks, minutesLater(minute))
+    store.observeThread(thread, centerTarget, minutesLater(minute))
+    expect(store.attention(centerTarget)).toEqual(merged)
+  }
+})
+it('holds a closed pull request read open again within ten minutes, and takes a reopen after that (#1146)', () => {
+  let clock = Date.parse(centerTime)
+  const store = new WatcherEvidenceStore(() => clock), prUrl = 'https://github.com/o/r/pull/5'
+  const read = (state: 'open' | 'closed') => store.pullRequest(centerTarget, { url: prUrl, head: 'head', observedAt: new Date(clock).toISOString(), availability: 'available', state })
+  const state = () => store.read(centerTarget).find(item => item.pullRequestState !== undefined)?.pullRequestState
+  read('open'); clock += 60_000; read('closed')
+  const closed = store.attention(centerTarget)
+  expect([...closed].some(fact => fact.includes('closed'))).toBe(true)
+  clock += 60_000; read('open')
+  expect(state()).toBe('closed')
+  clock += 60_000; read('closed')
+  expect(store.attention(centerTarget)).toEqual(closed)
+  // Reopened for good: an open read ten minutes after the close is taken, and a close after that is not told twice.
+  clock += 10 * 60_000; read('open')
+  expect(state()).toBe('open')
+  clock += 60_000; read('closed')
+  expect(store.attention(centerTarget)).toEqual(closed)
+})
