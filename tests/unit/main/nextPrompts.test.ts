@@ -165,11 +165,24 @@ describe('the generation guard', () => {
     }
   })
 
-  it('asks nothing for a turn that did not end on an answer, for Watcher, or while local history is off', async () => {
+  it('asks for Watcher\'s conversation after its reply, from that conversation, as for any thread', async () => {
+    const s = service()
+    const watcher = idle({ id: 'watcher', kind: 'watcher', messages: [message('u1', 'user', 'What is waiting on me?'), message('a1', 'assistant', 'Two threads wait on you.')] })
+    s.set(watcher)
+    s.prompts.finished(watcher)
+    await vi.waitFor(() => expect(s.published).toHaveLength(1))
+    expect(s.deps.write).toHaveBeenCalledWith('watcher', [{ prompt: 'What is waiting on me?', reply: 'Two threads wait on you.' }], expect.any(AbortSignal))
+    expect(s.published[0]).toMatchObject({ threadId: 'watcher', afterUserMessageId: 'u1', prompt: { ghost: 'Open the pull request for this fix' } })
+  })
+
+  it('asks nothing for a turn that did not end on an answer, for a past Watcher or Watcher\'s reply to news, or while local history is off', async () => {
     const cases: [AgentThread, Partial<NextPromptsDependencies>][] = [
       [idle({ lastTurn: { id: 't', status: 'interrupted' } }), {}],
       [idle({ lastTurn: { id: 't', status: 'failed' } }), {}],
-      [idle({ kind: 'watcher' }), {}],
+      [idle({ kind: 'watcher-history' }), {}],
+      // Watcher answering Sotto's news: the host recorded the message as a wake-up, by ID or on the message itself.
+      [idle({ kind: 'watcher', wakeUpMessageIds: ['u1'] }), {}],
+      [idle({ kind: 'watcher', messages: [{ ...message('u1', 'user', 'News: a thread finished.'), wakeUp: true }, message('a1', 'assistant', 'Noted.')] }), {}],
       [idle({ delegatedBy: 'delegating-thread' }), {}],
       // A thread no window shows carries its summary alone: its history is not read from the store at the turn's end.
       [idle({ messages: [], earlierAvailable: true }), {}],

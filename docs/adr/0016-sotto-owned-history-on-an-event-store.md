@@ -228,6 +228,10 @@ So "isolated per publication" becomes: shared and frozen across publications. A 
 
 With 200 threads and one streaming, the objects copied per thread per coordinator update fell from 16.8 to about 7.7 on Owl and from 18.9 to about 9.7 on stable, and the workspace no longer copies the whole state on any update (`tests/perf/streamingCopyBudget.perf.test.ts`). At the owner's scale the objects copied per streamed update fell from 8,100 to 5,809 on Owl and from 4,457 to 2,176 on stable (`tests/perf/ownerScaleWorkBudget.perf.test.ts`). What is left of #925 is the adapter's own copy of every thread for its subscribers, and the layers between it and the workspace. A provider without certified activity used to reach the coordinator as a writable copy; its records are now frozen and owned like everyone else's, so the coordinator's certified paths read them too.
 
+## Amendment: clearing a thread forgets it (October 23, 2026)
+
+[ADR-0140](0140-settled-threads-can-be-cleared.md) gives `ThreadStore.forget` its first caller: deleting a settled thread, on Owl. A clear of many threads forgets them in one transaction with one scrub, and commits at FULL like every removal the user asks for. The workspace also keeps the cleared thread IDs and refuses them in provider snapshots and thread events, so an event for a cleared thread is never appended again.
+
 ## Amendment: the broadcast shell is shared and frozen across broadcasts (October 23, 2026, #1334)
 
 The October 19 amendment left the coordinator's broadcast shell with thread records and the rest of its state of its own, made again on every broadcast. A recording of the owner's Owl build (0.1.38-owl.20261023.3) had that preparation, with the per-thread work of accepting a snapshot, at about 11% of main's busy time.
