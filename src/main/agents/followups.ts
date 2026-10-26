@@ -385,6 +385,18 @@ export class FollowupStore {
   private watcherNewsHeld(items: readonly QueuedFollowup[]): QueuedFollowup[] {
     return items.filter(item => item.wakeUp && item.news?.some(isWatcherNews) && this.active(item.threadId) && !this.dormant.has(item.id))
   }
+  /**
+   * Cleared threads' queue goes (ADR-0140): a wake-up still waiting for one and every receipt of what was sent to it. Clearing
+   * never takes a thread with a follow-up of the user's queued, so nothing the user wrote waits here.
+   */
+  forgetThreads(threadIds: ReadonlySet<string>): Promise<void> {
+    return this.change(state => {
+      const items = state.items.filter(item => !threadIds.has(item.threadId))
+      const receipts = state.receipts.filter(receipt => !threadIds.has(receipt.threadId))
+      if (items.length === state.items.length && receipts.length === state.receipts.length) return false
+      state.items = items; state.receipts = receipts
+    })
+  }
   /** Takes these hidden wake-ups out of the queue whole, in one change, in whatever state each is (hiddenWakeUp.ts). */
   removeWakeUp(...ids: string[]): Promise<void> {
     return this.change(state => {

@@ -16,6 +16,9 @@ export const E2E_TRANSCRIPT = 'A deterministic local transcript.'
 export const E2E_HISTORY_CREATED_AT = Date.UTC(2026, 6, 12, 19, 30)
 export const E2E_PRESERVED_CLIPBOARD = 'Clipboard text that must survive silence.'
 export const E2E_CONFLICTING_HOTKEY = 'Ctrl+Alt+9'
+/** The exit code and stderr line an e2e-launched main ends with after an uncaught exception (#1577), so its test fails. */
+export const E2E_UNCAUGHT_EXIT_CODE = 70
+export const E2E_UNCAUGHT_PREFIX = '[Sotto] e2e-uncaught-exception'
 export const E2E_SNAPSHOT_CHANNEL = 'sotto:e2e:snapshot'
 export const E2E_TRIGGER_SHORTCUT_CHANNEL = 'sotto:e2e:trigger-shortcut'
 export const E2E_BROWSER_AGENT_CHANNEL = 'sotto:e2e:browser-agent'

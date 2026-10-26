@@ -556,6 +556,14 @@ msgstr ""
 msgid "{listedCount, plural, one {Only the first {folders} folder here is listed.} other {Only the first {folders} folders here are listed.}}"
 msgstr ""
 
+#: src/renderer/src/agents/delegationWords.ts
+msgid "{machine} hasn't had this computer's defaults yet. It gets them the next time this computer connects to it; new threads there use them from then, unless this computer can't answer there."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "{machine} is not connected, so Sotto cannot read how it went since. It reads it again when {machine} reconnects."
+msgstr ""
+
 #. {maker} is the company that made the models, such as Anthropic.
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "{maker} models in Cursor"
@@ -1250,9 +1258,17 @@ msgstr ""
 msgid "A folder named {trimmed} is already here."
 msgstr ""
 
+#: src/renderer/src/agents/delegationWords.ts
+msgid "a Linux machine"
+msgstr ""
+
 #. {five} is the number 5.
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "A long prompt can take a few minutes. The turn stops waiting at {five} minutes."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "a Mac"
 msgstr ""
 
 #: src/renderer/src/agents/mainCheckoutLine.logic.ts
@@ -1279,10 +1295,18 @@ msgstr ""
 msgid "a revert is in progress"
 msgstr ""
 
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "a thread it delegated to is still working"
+msgstr ""
+
 #: src/renderer/src/agents/ContinueThread.tsx
 #: src/renderer/src/agents/ThreadStart.tsx
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "a thread that is no longer listed"
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "a Windows machine"
 msgstr ""
 
 #: src/renderer/src/agents/GitActionButton.tsx
@@ -1489,6 +1513,10 @@ msgstr ""
 msgid "and {more} more"
 msgstr ""
 
+#: src/renderer/src/agents/delegationWords.ts
+msgid "another machine"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Another provider’s model starts a new Watcher. This conversation stays in Watcher history, and you can send its handover with your first message."
 msgstr ""
@@ -1538,6 +1566,10 @@ msgstr ""
 #. {who} is "this thread" or the title of the thread that delegated.
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Answered in {duration}, while {who} waited for it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Answered when last read"
 msgstr ""
 
 #. {who} is "this thread" or the title of the thread that delegated. {told} says whether it has been told.
@@ -1592,6 +1624,10 @@ msgstr ""
 #. A permission mode: the agent asks before it acts.
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Ask for approval"
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Asked for {asked}. {machine} can start threads only on {machine} for now. Nothing was started."
 msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
@@ -1720,6 +1756,14 @@ msgctxt "delegation outcome"
 msgid "Background work"
 msgstr ""
 
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Background work when last read"
+msgstr ""
+
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "being babysat"
+msgstr ""
+
 #. Read before a Git branch's name.
 #: src/renderer/src/agents/ThreadGreeting.tsx
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
@@ -1769,6 +1813,7 @@ msgstr ""
 
 #. Stops a sign-in that is waiting for the user.
 #: src/renderer/src/agents/CursorConnection.tsx
+#: src/renderer/src/agents/DeleteThread.tsx
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 #: src/renderer/src/agents/ForkFromHere.tsx
 #: src/renderer/src/agents/GitActionButton.tsx
@@ -1911,6 +1956,10 @@ msgstr ""
 msgid "Checking the published version…"
 msgstr ""
 
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "Checking the thread…"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Checking..."
 msgstr ""
@@ -2045,6 +2094,7 @@ msgstr ""
 #. A keyboard hint: Escape closes the dialog.
 #. Closes the dialog.
 #. Closes the dialog.
+#: src/renderer/src/agents/DeleteThread.tsx
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 #: src/renderer/src/agents/NewThreadDialog.tsx
 msgid "Close"
@@ -2848,6 +2898,18 @@ msgstr ""
 msgid "Delegated work"
 msgstr ""
 
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "Delete"
+msgstr ""
+
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "Delete “{title}”?"
+msgstr ""
+
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "Delete thread…"
+msgstr ""
+
 #. A file deleted locally
 #: src/renderer/src/agents/mainCheckoutLine.logic.ts
 msgid "deleted"
@@ -2870,6 +2932,10 @@ msgstr ""
 #: src/renderer/src/agents/ThreadActivity.tsx
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "Deleted {subject}"
+msgstr ""
+
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "Deleting…"
 msgstr ""
 
 #. Answers an agent’s permission request.
@@ -3318,6 +3384,10 @@ msgstr ""
 msgid "Failed to switch ref. Sotto could not confirm this change."
 msgstr ""
 
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Failed when last read"
+msgstr ""
+
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Fast. For small, clear tasks."
 msgstr ""
@@ -3579,9 +3649,21 @@ msgstr ""
 msgid "Handover, thin"
 msgstr ""
 
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Held at Ask for approval: {machine} no longer lets this computer answer there."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Held at Ask for approval: this computer can't answer on {machine}."
+msgstr ""
+
 #. The Help page.
 #: src/renderer/src/agents/SidebarFrame.tsx
 msgid "Help"
+msgstr ""
+
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "hidden"
 msgstr ""
 
 #. Hides the list under a project
@@ -3739,8 +3821,40 @@ msgstr ""
 msgid "It asked for more permission than this thread has, or than your new-thread default allows. A delegated thread gets no more than either. {nothing} To give it more, raise the lower of the two first."
 msgstr ""
 
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It had answered at {time}, when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It had answered when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It had failed at {time}, when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It had failed when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It had stopped at {time}, when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It had stopped when Sotto last read it."
+msgstr ""
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "It runs with OpenCode."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It started at Ask for approval, because {machine} no longer lets this computer answer permission requests there, so a thread there cannot be given more."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It started at Ask for approval, because this computer can't answer permission requests on {machine}, so a thread there cannot be given more."
 msgstr ""
 
 #: src/renderer/src/agents/ContinueThread.tsx
@@ -3758,6 +3872,46 @@ msgstr ""
 
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "It took the message but sent nothing back. It may be busy, stuck or still reading a very long prompt. Nothing in the thread was lost. Check {name}, then try again."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It was paused at {time}, when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It was paused when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It was refused at {time}, when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It was refused when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It was waiting for you at {time}, when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It was waiting for you when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It was working at {time}, when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It was working when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Its background work was still running at {time}, when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Its background work was still running when Sotto last read it."
 msgstr ""
 
 #: src/renderer/src/agents/HostUpdates.tsx
@@ -3779,6 +3933,10 @@ msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Its last turn failed. Open it to see why."
+msgstr ""
+
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "Its messages and activity leave Sotto and can’t be brought back."
 msgstr ""
 
 #. {host} is the name of a saved host; {sourceName} is a model source.
@@ -3836,6 +3994,30 @@ msgstr ""
 #. {Who} is "This thread" or the title of the thread that delegated.
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Its turn ended with background work still running. {Who} hears when it settles."
+msgstr ""
+
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "its worktree could not be removed; delete it on its own to see why"
+msgstr ""
+
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "its worktree folder could not be checked"
+msgstr ""
+
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "its worktree folder has no branch checked out; switch it to a branch first"
+msgstr ""
+
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "its worktree folder links to another folder (<0>{link}</0>); remove the link first"
+msgstr ""
+
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "its worktree holds files Git ignores; delete it on its own to review them"
+msgstr ""
+
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "its worktree is in use"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadTranscript.tsx
@@ -4561,6 +4743,10 @@ msgstr ""
 msgid "Not sent to {threadTitle}"
 msgstr ""
 
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "not settled"
+msgstr ""
+
 #. After a provider's name on a chip: why it cannot take a continued thread now.
 #: src/renderer/src/agents/continuations.ts
 msgid "not signed in"
@@ -5017,6 +5203,10 @@ msgstr ""
 msgid "Paused by Watcher"
 msgstr ""
 
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Paused when last read"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Pending message"
 msgstr ""
@@ -5191,6 +5381,10 @@ msgstr ""
 #. A Git action: pull commits from the remote.
 #: src/renderer/src/agents/gitActionButton.logic.ts
 msgid "Pull"
+msgstr ""
+
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "pull request still open"
 msgstr ""
 
 #. A Git pull finished.
@@ -5398,6 +5592,10 @@ msgctxt "delegation outcome"
 msgid "Refused"
 msgstr ""
 
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Refused when last read"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadPane.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Regenerate title"
@@ -5495,6 +5693,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "Removed {name}. Its models are gone from the model menu. Threads that used them keep their history; pick another model in them to go on."
+msgstr ""
+
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "Removes the worktree folder it made. Its branch and commits stay."
 msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
@@ -6208,6 +6410,10 @@ msgstr ""
 msgid "Something answered at {host}, but not as an OpenAI-compatible server. Nothing was saved. Check the port and the path, such as http://localhost:11434/v1, then try again."
 msgstr ""
 
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "something is queued for it"
+msgstr ""
+
 #: src/renderer/src/agents/threadGreeting.logic.ts
 msgid "Something to build, fix or figure out?"
 msgstr ""
@@ -6229,6 +6435,10 @@ msgstr ""
 msgid "Sotto can’t read the handover from this window. It still goes with your first message."
 msgstr ""
 
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "Sotto could not check this thread. Nothing was deleted. Close this and try again."
+msgstr ""
+
 #: src/renderer/src/agents/ThreadCompaction.tsx
 msgid "Sotto could not compact this idle thread. Its full history is kept."
 msgstr ""
@@ -6243,6 +6453,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Sotto could not confirm that the prompt was set aside. Your next message is kept. Check again before continuing."
+msgstr ""
+
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "Sotto could not confirm the delete. If the thread is still listed, nothing was deleted."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadFollowups.tsx
@@ -6322,6 +6536,10 @@ msgstr ""
 msgid "Sotto could not reach its own side of this. Nothing was saved. Try again."
 msgstr ""
 
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Sotto could not read it again on {machine} just now. It reads it again when {machine} says it changed."
+msgstr ""
+
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
 msgid "Sotto could not read saved answers."
 msgstr ""
@@ -6364,6 +6582,14 @@ msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Sotto could not start it or send it the brief. Nothing was sent."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Sotto could not tell how it stood at {time}, when it last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Sotto could not tell how it stood when it last read it."
 msgstr ""
 
 #: src/renderer/src/agents/SkillPicker.tsx
@@ -6502,6 +6728,10 @@ msgstr ""
 msgid "Start the {name} thread"
 msgstr ""
 
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Started at Ask for approval: {machine} had no new-thread default from this computer yet."
+msgstr ""
+
 #. {agent} is the thread's provider, such as Codex.
 #: src/renderer/src/agents/babysitting.ts
 msgid "Started by {agent}. Sotto sends this thread a wake-up when #{number} needs it."
@@ -6631,6 +6861,10 @@ msgstr ""
 msgid "Still waiting for this folder’s project. Try again to check its status; the folder will not be added twice."
 msgstr ""
 
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "still working"
+msgstr ""
+
 #: src/renderer/src/agents/DelegatedWork.tsx
 msgid "Still working after this reply"
 msgstr ""
@@ -6672,6 +6906,10 @@ msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Stopped at {time}. Nothing more will come of it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Stopped when last read"
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
@@ -7121,6 +7359,7 @@ msgid "This answer’s question is no longer pending."
 msgstr ""
 
 #. The computer Sotto runs on, inside a sentence.
+#: src/renderer/src/agents/DelegatedWork.tsx
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "this computer"
 msgstr ""
@@ -7269,6 +7508,10 @@ msgstr ""
 msgid "This thread"
 msgstr ""
 
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "This thread can’t be deleted: {reason}. Nothing was deleted."
+msgstr ""
+
 #: src/renderer/src/agents/delegationWords.ts
 msgid "This thread cannot delegate. Only Claude Code, Codex, Grok Build and Muse threads can, outside Watcher, host setup and provider jobs, on this computer or on a machine whose Sotto offers it. {nothing}"
 msgstr ""
@@ -7291,6 +7534,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "This thread runs on {hostName}. New thread chooses the host for new work."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "This thread runs on {machine}, and a thread on {machine} can start threads only on {machine}. Nothing was started. Ask again without naming a machine to start it on {machine}."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadComposer.tsx
@@ -7537,6 +7784,10 @@ msgstr ""
 msgid "Uncommitted changes"
 msgstr ""
 
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "uncommitted changes in its worktree"
+msgstr ""
+
 #. A queued message's state: Sotto does not know whether it arrived.
 #. A queued message's state: Sotto does not know whether it arrived.
 #. A sent message's delivery status: Sotto does not know whether the provider took it.
@@ -7558,6 +7809,10 @@ msgstr ""
 #: src/renderer/src/agents/delegationWords.ts
 msgctxt "delegation outcome"
 msgid "Unknown"
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Unknown when last read"
 msgstr ""
 
 #: src/renderer/src/agents/threadFacts.ts
@@ -7592,6 +7847,10 @@ msgstr ""
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Update"
+msgstr ""
+
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "Update {host} to delete its threads"
 msgstr ""
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
@@ -7716,6 +7975,10 @@ msgstr ""
 #. The Usage page.
 #: src/renderer/src/agents/SidebarFrame.tsx
 msgid "Usage"
+msgstr ""
+
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "Usage keeps its numbers. {provider} keeps its own copy of the session."
 msgstr ""
 
 #. {methodName} is a way to sign in, in OpenCode's words, such as "ChatGPT account".
@@ -7881,6 +8144,10 @@ msgstr ""
 msgid "Waiting on the request above."
 msgstr ""
 
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "waiting on you"
+msgstr ""
+
 #: src/renderer/src/agents/threadFacts.ts
 msgid "Waiting on you"
 msgstr ""
@@ -7919,6 +8186,10 @@ msgstr ""
 #. The context's size before a compaction.
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "was {from} tokens"
+msgstr ""
+
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "Watcher is watching it"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadComposer.tsx
@@ -8065,6 +8336,10 @@ msgstr ""
 
 #: src/renderer/src/agents/threadFacts.ts
 msgid "Working on your prompt."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Working when last read"
 msgstr ""
 
 #. {taken} is how many steps the running turn has taken, such as 3 steps.

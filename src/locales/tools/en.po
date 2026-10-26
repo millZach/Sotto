@@ -43,6 +43,10 @@ msgstr "{additions, plural, other {{added} lines added, {removed} removed}}"
 msgid "{additions} added, {deletions} removed"
 msgstr "{additions} added, {deletions} removed"
 
+#: src/renderer/src/tools/delegatedRoster.ts
+msgid "{agentCount, plural, one {# agent} other {# agents}}"
+msgstr "{agentCount, plural, one {# agent} other {# agents}}"
+
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "{allWorking, plural, other {# working}}"
 msgstr "{allWorking, plural, other {# working}}"
@@ -141,6 +145,18 @@ msgstr "{name} failed"
 msgid "{name} failed: {description}"
 msgstr "{name} failed: {description}"
 
+#: src/renderer/src/tools/AgentsSurface.tsx
+msgid "{name} is not connected. Losing the connection stops nothing on {name}."
+msgstr "{name} is not connected. Losing the connection stops nothing on {name}."
+
+#: src/renderer/src/tools/AgentsSurface.tsx
+msgid "{name} is not connected. These threads are as Sotto last read them at {time}. Losing the connection stops nothing on {name}."
+msgstr "{name} is not connected. These threads are as Sotto last read them at {time}. Losing the connection stops nothing on {name}."
+
+#: src/renderer/src/tools/AgentsSurface.tsx
+msgid "{name} is not connected. These threads are as Sotto last read them. Losing the connection stops nothing on {name}."
+msgstr "{name} is not connected. These threads are as Sotto last read them. Losing the connection stops nothing on {name}."
+
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "{name} is still running"
 msgstr "{name} is still running"
@@ -180,6 +196,10 @@ msgstr "{name}, {state}, in {folder}"
 #: src/renderer/src/tools/TerminalSurface.tsx
 msgid "{name}, terminal"
 msgstr "{name}, terminal"
+
+#: src/renderer/src/tools/AgentsSurface.tsx
+msgid "{name}’s Sotto does not report how these threads’ delegations stand, so they show no brief or outcome. Update {name} in Settings › Hosts & phones to see them."
+msgstr "{name}’s Sotto does not report how these threads’ delegations stand, so they show no brief or outcome. Update {name} in Settings › Hosts & phones to see them."
 
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "{needs, plural, one {A delegated thread needs you} other {# delegated threads need you}}"
@@ -261,6 +281,10 @@ msgstr "{steps, plural, other {# recorded steps}}, {unchecked, plural, other {# 
 msgid "{surfaceLabel} is on the host machine."
 msgstr "{surfaceLabel} is on the host machine."
 
+#: src/renderer/src/tools/delegatedRoster.ts
+msgid "{threads, plural, one {# thread} other {# threads}}"
+msgstr "{threads, plural, one {# thread} other {# threads}}"
+
 #: src/renderer/src/tools/AgentsSurface.tsx
 #: src/renderer/src/tools/delegatedRoster.ts
 msgid "{total, plural, one {# agent} other {# agents}}"
@@ -273,6 +297,10 @@ msgstr "{total, plural, other {{completed} of # finished}}"
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "{working, plural, one {# agent is working} other {# agents are working}}"
 msgstr "{working, plural, one {# agent is working} other {# agents are working}}"
+
+#: src/renderer/src/tools/delegatedRoster.ts
+msgid "{working, plural, one {# working} other {# working}}"
+msgstr "{working, plural, one {# working} other {# working}}"
 
 #: src/renderer/src/tools/AgentsSurface.tsx
 #: src/renderer/src/tools/delegatedRoster.ts
@@ -476,6 +504,10 @@ msgstr "Approved by {approver}"
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "Approved by {approver}. {author}'s request for changes is still open"
 msgstr "Approved by {approver}. {author}'s request for changes is still open"
+
+#: src/renderer/src/tools/DelegatedThreads.tsx
+msgid "as of {time}"
+msgstr "as of {time}"
 
 #: src/renderer/src/tools/PullRequestDialogs.tsx
 msgid "Attach a pull request to this thread. A full GitHub URL can point at any repository your gh sign-in can read."
@@ -1050,8 +1082,16 @@ msgid "delegated thread on {provider}"
 msgstr "delegated thread on {provider}"
 
 #: src/renderer/src/tools/AgentsSurface.tsx
+msgid "Delegated threads and agents on {machine}, newest first"
+msgstr "Delegated threads and agents on {machine}, newest first"
+
+#: src/renderer/src/tools/AgentsSurface.tsx
 msgid "Delegated threads and agents, newest first"
 msgstr "Delegated threads and agents, newest first"
+
+#: src/renderer/src/tools/AgentsSurface.tsx
+msgid "Delegated threads on {machine}, newest first"
+msgstr "Delegated threads on {machine}, newest first"
 
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "Delete comment"
@@ -1923,6 +1963,10 @@ msgstr "Not a draft"
 msgid "Not checked: {uncheckedList}"
 msgstr "Not checked: {uncheckedList}"
 
+#: src/renderer/src/tools/AgentsSurface.tsx
+msgid "not connected"
+msgstr "not connected"
+
 #: src/renderer/src/tools/TerminalSurface.tsx
 msgid "Nothing it showed was kept."
 msgstr "Nothing it showed was kept."
@@ -2357,6 +2401,10 @@ msgstr "Reload window"
 #: src/renderer/src/tools/ChangesBasePicker.tsx
 msgid "Remote"
 msgstr "Remote"
+
+#: src/renderer/src/tools/delegatedRoster.ts
+msgid "Remote host"
+msgstr "Remote host"
 
 #: src/renderer/src/tools/ChangesBasePicker.tsx
 msgid "Remote only"
@@ -2945,6 +2993,10 @@ msgstr "The selected thread is no longer listed."
 msgid "The shell could not start in this folder."
 msgstr "The shell could not start in this folder."
 
+#: src/renderer/src/tools/DelegatedThreads.tsx
+msgid "The start of the brief, as Sotto last read it from {machine}."
+msgstr "The start of the brief, as Sotto last read it from {machine}."
+
 #: src/renderer/src/tools/terminalStore.ts
 msgid "The terminal output could not load."
 msgstr "The terminal output could not load."
@@ -3028,6 +3080,7 @@ msgstr "This closes #{number} without merging it."
 msgid "This comparison could not be read."
 msgstr "This comparison could not be read."
 
+#: src/renderer/src/tools/delegatedRoster.ts
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "This computer"
 msgstr "This computer"
@@ -3370,6 +3423,10 @@ msgstr "What should change?"
 #: src/renderer/src/tools/IPhoneSurface.tsx
 msgid "What the agent did on the test iPhone"
 msgstr "What the agent did on the test iPhone"
+
+#: src/renderer/src/tools/DelegatedThreads.tsx
+msgid "When Sotto last read it"
+msgstr "When Sotto last read it"
 
 #. A run of several subagents a provider started together.
 #. A run of several subagents a provider started together.

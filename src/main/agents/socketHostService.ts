@@ -28,7 +28,7 @@ import { CONNECT_FAILURES, WordedError, type FailureWords } from '../hosts/hostF
 import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, hostAttachmentContentSchema, hostIsNewer, hostIsOlder, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema, hostActivityBodySchema, hostThreadPromptsSchema, PROVIDER_HOST_FEATURES, HOST_FILE_PART_BYTES } from '../../shared/hostProtocol'
 import type { AgentActivity } from '../../shared/agentActivity'
 import type { HostFeature, HostAnswerTarget, HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
-import type { HostService, ClientIdentity, RequestAnswerRecovery } from './hostService'
+import type { HostService, ClientIdentity, DelegationViewsChange, RequestAnswerRecovery } from './hostService'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
 import { compareOwlHostTarget } from '../../shared/hostUpdates'
 import { getReleaseTrack } from '../../shared/releaseTrack'
@@ -41,6 +41,7 @@ import { hostMachineReportSchema, type HostMachineReport } from '../../shared/ho
 import type { HostBranchMoveRequest } from '../../shared/branchMoves'
 import { projectOriginsSchema, type ProjectOrigins } from '../../shared/workerMachine'
 import { desktopDefaultsReceiptSchema, type DesktopDefaultsInput, type DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
+import { delegationBriefSchema, delegationsReadSchema, type DelegationBrief, type DelegationsRead } from '../../shared/delegation'
 import { usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, usageProvidersBeforeMuse, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
 
 export const REMOTE_COMPOSE_UNSAVED = 'This host cannot save this draft yet. Your draft is kept on this computer and has not been saved on the host. Update the host.'
@@ -74,6 +75,11 @@ export class WrongHostError extends HostConnectionError {
 export interface SocketHostServiceOptions {
   url: string; token: string; expectedHostId?: string
   watcherEnabled?: boolean
+  /**
+   * Work across machines (#1032, #1310), as this computer's Owl list answers it at start: only then does this desktop accept
+   * `delegation-views` and read a host's own threads' delegations. Stable reads none and is pushed none.
+   */
+  crossMachineEnabled?: boolean
   streamingPublishCost?: boolean
   /** The providers held to Owl on this run (ADR-0072); absent holds every one. */
   heldProviders?: HeldProviders
@@ -165,6 +171,7 @@ export class SocketHostService implements HostService {
   /** The providers held to Owl on this run, read once at start. */
   private readonly held: HeldProviders
   private readonly watcherListeners = new Set<(projection: WatcherHostProjection) => void>()
+  private readonly delegationListeners = new Set<(change: DelegationViewsChange) => void>()
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
   private readonly pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; command: boolean }>()
@@ -315,7 +322,7 @@ export class SocketHostService implements HostService {
     try {
       // This desktop knows every provider Sotto has, OpenCode among them, so it accepts each one's feature (#1107); a provider
       // held on this run is hidden here as on this computer, by the held gate.
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'activity-bodies', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'activity-bodies', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
@@ -350,6 +357,10 @@ export class SocketHostService implements HostService {
     this.pending.clear(); this.lateDetails.clear(); this.behind.clear(); this.confirmedObserved = new Set()
     if (this.cached) this.publish({ ...this.cached, stale: true })
     this.options.onConnectionChange?.(false)
+    if (this.options.crossMachineEnabled === true) this.delegationsChanged({ connected: false })
+  }
+  private delegationsChanged(change: DelegationViewsChange): void {
+    for (const listener of [...this.delegationListeners]) { try { listener(change) } catch { /* A listener's failure is its own. */ } }
   }
   private receive(text: string): void {
     let raw: unknown
@@ -381,6 +392,7 @@ export class SocketHostService implements HostService {
         else if (message.event === 'detail-delta') this.applyDelta(message.threadId, message.delta)
         // Sent only to a client whose hello accepts `host-update` (ADR-0088), which this one does not ask for yet.
         else if (message.event === 'host-update-step') return
+        else if (message.event === 'delegations-changed') { if (this.supportsDelegationViews) this.delegationsChanged({ threadIds: message.threadIds }) }
         else { this.pushErrorThread = message.threadId ?? null; if (message.threadId) this.tooLarge.add(message.threadId); this.options.onPushError?.(message.error.message) }
       } else {
         const pending = this.pending.get(message.id)
@@ -737,6 +749,8 @@ export class SocketHostService implements HostService {
   get supportsDraftRevisions(): boolean { return this.features.includes('draft-revisions') }
   /** The host lists `pull-request-babysit`: it babysits and takes the user's Babysit pull request (ADR-0061 decision 11). */
   get supportsBabysitting(): boolean { return this.features.includes('pull-request-babysit') }
+  /** The host lists `thread-delete`: it deletes one of its settled threads when asked (ADR-0140). */
+  get supportsThreadDelete(): boolean { return this.features.includes('thread-delete') }
   async command(command: AgentCommand, _client?: ClientIdentity, commandId?: string): Promise<AgentState> {
     this.requireCommandAvailable(command)
     const refusal = managementCommandRefusal(command)
@@ -748,6 +762,7 @@ export class SocketHostService implements HostService {
     const admitted = structuredClone(command)
     // A host from before babysitting would refuse the command with no word of why; this says which side to update.
     if ((admitted.type === 'babysit-pull-request' || admitted.type === 'stop-babysitting') && !this.supportsBabysitting) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
+    if ((admitted.type === 'delete-thread' || admitted.type === 'preview-delete-thread') && !this.supportsThreadDelete) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     // A host from before the window's own refresh (#820) would refuse the field; it reads the folder as any refresh instead.
     if (admitted.type === 'refresh-thread-worktree' && admitted.background !== undefined && !this.features.includes('background-refresh')) delete admitted.background
     if (admitted.type === 'compose' && admitted.threadId !== undefined) {
@@ -792,7 +807,11 @@ export class SocketHostService implements HostService {
         releaseAdmission ? () => { packetPlaced = true } : undefined)
       releaseAdmission?.()
       const result = await executing
-      if (admitted.type === 'preview-reclaim-thread-worktree') return result
+      if (admitted.type === 'preview-reclaim-thread-worktree' || admitted.type === 'preview-delete-thread') return result
+      // A deleted thread's draft, kept here for its host, goes with it (ADR-0140).
+      if (admitted.type === 'delete-thread' && result.error === null) {
+        this.retainedDrafts.remove(this.retainedHostId(), admitted.threadId)
+      }
       if (result.error === null && edit && (admitted.type === 'send' || admitted.type === 'cancel-draft')) {
         const latest = this.retainedDrafts.get(this.retainedHostId(), edit.draft.threadId)
         this.retainedDrafts.remove(this.retainedHostId(), edit.draft.threadId, edit.draft.draftId)
@@ -1035,7 +1054,7 @@ export class SocketHostService implements HostService {
         this.quietConnectionNotices.delete(text)
       }
     }
-    if (command.type === 'preview-reclaim-thread-worktree') { this.validateState(state); return state }
+    if (command.type === 'preview-reclaim-thread-worktree' || command.type === 'preview-delete-thread') { this.validateState(state); return state }
     if (retainedId && 'threadId' in command && command.threadId
       && this.retainedDrafts.get(this.retainedHostId(), command.threadId)?.draft.draftId !== retainedId) {
       return { ...this.state(), error: state.error }
@@ -1242,6 +1261,26 @@ export class SocketHostService implements HostService {
   async desktopDefaults(defaults: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> {
     this.offers('host-delegation')
     return this.read(desktopDefaultsReceiptSchema, await this.call({ op: 'desktop-defaults', defaults }, undefined, undefined, 10000))
+  }
+  /**
+   * The host lists `delegation-views` and this desktop accepted it (#1310): its window reads what the host's own threads
+   * delegated and were sent, and is told which changed. An older or stable host offers none, and a stable desktop asks none.
+   */
+  get supportsDelegationViews(): boolean { return this.options.crossMachineEnabled === true && this.features.includes('delegation-views') }
+  async delegationViews(threadId: string): Promise<DelegationsRead> {
+    if (this.options.crossMachineEnabled !== true) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    this.offers('delegation-views')
+    return this.read(delegationsReadSchema, await this.call({ op: 'delegation-views', threadId }, undefined, undefined, 10000))
+  }
+  async delegationBrief(threadId: string): Promise<DelegationBrief> {
+    if (this.options.crossMachineEnabled !== true) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    this.offers('delegation-views')
+    return this.read(delegationBriefSchema, await this.call({ op: 'delegation-brief', threadId }, undefined, undefined, 10000))
+  }
+  /** Hears the host name threads whose delegations changed, and this connection closing. Returns the way to stop. */
+  subscribeDelegationViews(listener: (change: DelegationViewsChange) => void): () => void {
+    this.delegationListeners.add(listener)
+    return () => { this.delegationListeners.delete(listener) }
   }
   /** The host lists `thread-starts`: it continues agents as threads and reads a started thread's handover (#1028). */
   get supportsThreadStarts(): boolean { return this.features.includes('thread-starts') }

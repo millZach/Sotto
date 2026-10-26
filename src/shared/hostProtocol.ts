@@ -13,6 +13,7 @@ import { gitReviewRequestSchema } from './gitChanges'
 import { toolListRequestSchema } from './tools'
 import { subagentAssignmentsRequestSchema, subagentPageRequestSchema } from './subagents'
 import { desktopDefaultsSchema } from './desktopDefaults'
+import { DELEGATIONS_CHANGED_MAX } from './delegation'
 import { PASTED_CODE_MAX } from './hostProviders'
 import { opencodeHostCallSchema } from './opencodeSignIn'
 import type { HeldProviders } from './heldProviders'
@@ -259,14 +260,23 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * the same machine, and it takes `desktop-defaults`, the desktop's new-thread default and worker roles, which it keeps and
  * holds those threads to. Only a host whose Owl answer turns on Work across machines lists it, and only to a desktop the
  * launch script recorded. A host never told holds every delegated start to Ask for approval.
+ * `delegation-views`: the host answers `delegation-views` and `delegation-brief` for its own threads as the desktop's
+ * window reads this computer's (#1310): what one thread delegated and was sent, with each delegation's outcome and timing,
+ * and the newest brief a delegated thread was sent, never a reply. A desktop whose hello accepts it is pushed
+ * `delegations-changed`, naming the threads whose delegations changed, and reads those it shows again. Only a host that
+ * runs delegation for its own threads lists it, where its Owl answer turns on Work across machines, and only to a desktop
+ * the launch script recorded.
+ * `thread-delete`: the host takes `preview-delete-thread` and `delete-thread` for one of its settled threads (ADR-0140),
+ * from a client whose `remote-answer` policy lets it answer, since a deletion cannot be taken back. Only a host whose Owl
+ * answer turns clearing on lists it; a desktop shows Delete thread… off for a host that does not, and says to update it.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'branch-moves'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
  * (ADR-0053). Its health lists them; a phone's hello does not, and their requests are refused for a phone.
  */
-export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'client-update-outcomes', 'client-update-not-listed', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'watcher-cursor', 'host-update', 'opencode-sign-in', 'activity-bodies', 'thread-prompts', 'project-origins', 'host-delegation', 'branch-moves']
+export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'client-update-outcomes', 'client-update-not-listed', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'watcher-cursor', 'host-update', 'opencode-sign-in', 'activity-bodies', 'thread-prompts', 'project-origins', 'host-delegation', 'delegation-views', 'branch-moves']
 /**
  * The providers a host sends only to a client whose hello accepts their feature (#1107, ADR-0087). A desktop or phone from
  * before a provider joined Sotto reads provider IDs against a list without it, and refuses a whole shell that names one, so
@@ -510,6 +520,10 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('opencode-sign-in'), call: opencodeHostCallSchema }).strict(),
   /** A thread's delegated threads as delegation's record knows them, for the iPhone's Agents view (`agents-view`, ADR-0103). */
   z.object({ ...base, op: z.literal('thread-delegations'), threadId: id }).strict(),
+  /** What one of the host's threads delegated and was sent, as the desktop's window reads it (`delegation-views`, #1310). */
+  z.object({ ...base, op: z.literal('delegation-views'), threadId: id }).strict(),
+  /** The newest brief one of the host's delegated threads was sent, in full, never a reply (`delegation-views`). */
+  z.object({ ...base, op: z.literal('delegation-brief'), threadId: id }).strict(),
   /** One step of a branch move, either way, for a recorded desktop (`branch-moves`, ADR-0105 decision 8). */
   z.object({ ...base, op: z.literal('branch-move'), request: hostBranchMoveRequestSchema }).strict(),
 ])
@@ -539,6 +553,8 @@ export type HostPush = { v: 1; event: 'shell'; state: HostWireShell; eventPage?:
   | { v: 1; event: 'error'; threadId?: string | undefined; error: HostProtocolError }
   /** Which step a host update this client asked for is on (ADR-0088); only to a client that accepts `host-update`. */
   | { v: 1; event: 'host-update-step'; step: HostUpdateStep }
+  /** The host's threads whose delegations changed (#1310); only to a desktop that accepts `delegation-views`. */
+  | { v: 1; event: 'delegations-changed'; threadIds: string[] }
 export interface HostEventPage { events: StoredThreadEvent[]; latestSeq: number; hasMore: boolean }
 /**
  * What a headless host says about itself in health and hello (ADR-0053, ADR-0054). `tailnetAddress` is the address
@@ -622,6 +638,8 @@ export const hostPushSchema = z.discriminatedUnion('event', [
   z.object({ v: z.literal(1), event: z.literal('answer-receipt'), acceptedAnswer: hostAnswerTargetSchema.extend({ decisionId: id }) }),
   z.object({ v: z.literal(1), event: z.literal('error'), threadId: id.optional(), error: hostProtocolErrorSchema }),
   z.object({ v: z.literal(1), event: z.literal('host-update-step'), step: z.enum(HOST_UPDATE_STEPS) }),
+  /** The host's threads whose delegations changed (`delegation-views`), only to a desktop whose hello accepts it. */
+  z.object({ v: z.literal(1), event: z.literal('delegations-changed'), threadIds: z.array(id).max(DELEGATIONS_CHANGED_MAX) }),
 ])
 export const hostReceiptSchema = z.object({ status: z.enum(['pending', 'completed', 'unknown']), error: hostProtocolErrorSchema.optional(),
   answerDelivered: z.boolean().optional(), acceptedAnswer: hostAnswerTargetSchema.extend({ decisionId: id }).optional(),

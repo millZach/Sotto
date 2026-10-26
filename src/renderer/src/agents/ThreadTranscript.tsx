@@ -487,8 +487,10 @@ function withoutFinishedNews(groups: readonly ActivityGroup[] | undefined, liveT
 /** The briefs a delegating thread sent to this thread, by their message IDs, and that thread's name (ADR-0081). */
 export interface DelegatedBriefs { readonly ids: ReadonlySet<string>; readonly from: string }
 
-export const MessageList = memo(function MessageList({ messages, provider, running, placement, context, streamText = true, threadId, speaker, delegations, backgroundWork, briefs, continuedIn }: {
+export const MessageList = memo(function MessageList({ messages, provider, running, sending = false, placement, context, streamText = true, threadId, speaker, delegations, backgroundWork, briefs, continuedIn }: {
   readonly messages: readonly AgentMessage[]; readonly provider: string; readonly running: boolean
+  /** A prompt the user sent is drawn below these messages until the history carries it, so the newest reply here is not the one being written. */
+  readonly sending?: boolean
   readonly placement: ActivityPlacement; readonly context: ActivityContext; readonly streamText?: boolean
   /** The thread these messages belong to, which is how a submitted attachment finds its preview. */
   readonly threadId?: string
@@ -518,7 +520,7 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   // leaves the reply above it finished. A visual after the reply means the reply is no longer being written.
   const newest = turns.at(-1)
   const last = newest === undefined ? undefined : [...newest.user ? [newest.user] : [], ...newest.replies].findLast(drawn)
-  const writing = live && last?.role === 'assistant' && !isVisualMessage(last) && !placement.after.get(last.id)?.length ? last.id : undefined
+  const writing = live && !sending && last?.role === 'assistant' && !isVisualMessage(last) && !placement.after.get(last.id)?.length ? last.id : undefined
   // A Watcher news turn that wrote no reply shows nothing once it has finished (variant b); one that failed or stopped still says so.
   const unshown = (groups: readonly ActivityGroup[] | undefined): readonly ActivityGroup[] | undefined => speaker === 'watcher' ? withoutFinishedNews(groups, context.liveTurn) : groups
   return <><ActivityGroups groups={unshown(placement.leading)} context={context} />
@@ -672,6 +674,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   const following = useRef(true)
+  /** Where the scroll stood when last heard or set to the end, so a reader moving up from the end is told apart from the end moving away. */
+  const lastTop = useRef(0)
   const anchor = useRef<{ readonly height: number; readonly top: number } | null>(null)
   const followed = useRef(followSignal)
   const seen = useRef<string | undefined>(undefined)
@@ -733,7 +737,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const delegationsOn = useDelegationsEnabled()
   const delegations = useDelegations(delegationsOn && !watcher ? thread.id : undefined)
   const delegatedWork = useShared(useMemo(() => delegationsByTurn(delegations.made, messages), [delegations.made, messages]))
-  const delegationWorld = useDelegationWorld(state, command)
+  const delegationWorld = useDelegationWorld(state, command, undefined, { thread, lastReadAt: delegations.lastReadAt })
   // The provider's own agents still running in the background, which stand under the last reply when the composer's
   // ornament may show them too. A command waits rather than works, so it stays the ornament's alone.
   const ornamentAllowed = threadOrnamentAllowed(thread, row.connected)
@@ -829,6 +833,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     // Jump to latest, a send or another thread is somewhere else to be, so a pressed prompt still loading is not.
     far.current = null
     element.scrollTop = element.scrollHeight
+    lastTop.current = element.scrollTop
     following.current = true
     setAway(false)
     setUnseen(false)
@@ -855,7 +860,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     if (followed.current !== followSignal) { followed.current = followSignal; toEnd(); return }
     const arrived = seen.current !== lastMessageId
     seen.current = lastMessageId
-    if (following.current) element.scrollTop = element.scrollHeight
+    if (following.current) { element.scrollTop = element.scrollHeight; lastTop.current = element.scrollTop }
     else if (arrived) setUnseen(true)
   }, [lastMessageId, pendingKey, hidden, followSignal, thread.historyStatus, toEnd])
 
@@ -864,7 +869,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     const element = content.current
     if (element === null || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(() => {
-      if (following.current && anchor.current === null && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight
+      if (following.current && anchor.current === null && scroller.current) { scroller.current.scrollTop = scroller.current.scrollHeight; lastTop.current = scroller.current.scrollTop }
       if (scroller.current) { setRequestUnderJump(reachesJumpBand(scroller.current)); noteReading(scroller.current) }
     })
     observer.observe(element)
@@ -879,7 +884,11 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     const held = reading.current
     if (held?.held === true && held.threadId === thread.id && Math.abs(element.scrollTop - held.top) < 1) return
     const distance = element.scrollHeight - element.scrollTop - element.clientHeight
-    following.current = distance <= FOLLOW_SLACK_PX
+    // Any move up that is not the end being cut short lets go of the end, however near it: a reply being written grows the
+    // end faster than a reader scrolls out of the slack, and following would pull them back down with every word.
+    const movedUp = element.scrollTop < lastTop.current - 1 && distance > 1
+    lastTop.current = element.scrollTop
+    following.current = !movedUp && distance <= FOLLOW_SLACK_PX
     const isAway = distance > Math.max(FOLLOW_SLACK_PX, element.clientHeight / 2)
     if (isAway !== away) setAway(isAway)
     if (following.current && unseen) setUnseen(false)
@@ -1031,7 +1040,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {startView && startNoteAtHead ? <ThreadStartNote view={startView} /> : null}
         {startView && startHandoverWaiting ? <StartHandoverCard key={thread.id} view={startView} createdAt={startView.start.at} /> : null}
         {thread.messages.length || showsActivity ? <ActivityBodyContext.Provider value={bodyHost}><ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><ForkContext.Provider value={forkOptions}><DelegationWorldProvider world={delegationWorld}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
-          <MessageRowsContext.Provider value={rows}><MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
+          <MessageRowsContext.Provider value={rows}><MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} sending={sending.some(item => item.status === 'queued' || item.status === 'submitting' || item.status === 'accepted')} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
           delegations={delegatedWork.size ? delegatedWork : undefined} backgroundWork={backgroundAgents} briefs={briefs} continuedIn={continuedIn?.size ? continuedIn : undefined} /></MessageRowsContext.Provider>
         </HandoverFromContext.Provider></ContinueLinksContext.Provider></DelegationWorldProvider></ForkContext.Provider></ThreadStartContext.Provider></ActivityBodyContext.Provider>
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>

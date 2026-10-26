@@ -1,0 +1,21 @@
+{
+  "groupedUnderForge": true,
+  "heldNotTold": true,
+  "heldNoAnswerGrant": true,
+  "refusedOtherMachine": true,
+  "nestedSecondLevel": true,
+  "keyboardOpensAndEscapeCloses": true,
+  "keptGreyedWhileAway": true,
+  "readAfreshOnReconnect": true,
+  "sizes": [
+    "1600x1000",
+    "1280x800",
+    "820x560"
+  ],
+  "themes": [
+    "dark",
+    "light"
+  ],
+  "reducedMotion": true,
+  "errors": []
+}
