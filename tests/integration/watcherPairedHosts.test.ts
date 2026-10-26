@@ -1865,6 +1865,35 @@ it('lets go of a moved branch once reconciling finds the start failed with no th
   vi.restoreAllMocks()
 }, 60_000)
 
+it('keeps a lost start’s moved branch for the next reconcile when this computer has no host ID for a moment (#1033)', async () => {
+  const f = await fromBranch()
+  const refs = async () => (await git('git', ['-C', f.project.path, 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/sotto'])).stdout.trim()
+  const watcher = f.watcher as unknown as { madeThread: (...args: unknown[]) => boolean; lostStartMoves: Map<string, unknown>; reconcileRemote(hostId?: string): Promise<void> }
+  // As the test above: the start fails on the paired machine with no thread, and its answer is lost.
+  const control = f.socket.watcherControl.bind(f.socket)
+  vi.spyOn(f.socket, 'watcherControl').mockImplementationOnce(async (request, ...rest) => {
+    const [ref, commit] = (await refs()).split(' ')
+    await git('git', ['-C', f.project.path, 'update-ref', '-d', ref!])
+    await control(request, ...rest)
+    await git('git', ['-C', f.project.path, 'update-ref', ref!, commit!])
+    throw new Error('synthetic-lost-answer')
+  })
+  // While Sotto starts, this computer has no host ID, and asking whether the paired machine made the thread throws.
+  const made = vi.spyOn(watcher, 'madeThread').mockImplementation(() => { throw new Error('synthetic-no-host-id') })
+  try {
+    const started = await f.call('start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId, workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
+    expect(started).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN' })
+    await expect.poll(() => made.mock.calls.length, { timeout: 30_000 }).toBeGreaterThan(0)
+    // Nothing was decided, so the branch and its entry wait.
+    expect(watcher.lostStartMoves.size).toBe(1)
+    expect(await refs()).not.toBe('')
+    made.mockRestore()
+    await watcher.reconcileRemote(f.pairing.hostId)
+    await expect.poll(refs, { timeout: 30_000 }).toBe('')
+    expect(watcher.lostStartMoves.size).toBe(0)
+  } finally { vi.restoreAllMocks() }
+}, 60_000)
+
 it('lets go of a moved branch when the paired machine answers its start with a definite failure and no thread (#1033)', async () => {
   const f = await fromBranch()
   // The branch has arrived on the paired machine; its answer is a failed receipt for this very start, and it made no thread.

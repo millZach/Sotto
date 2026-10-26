@@ -3780,15 +3780,18 @@ ${operation.draftId}`)
   /**
    * After a reconcile of `hostId`: a start whose answer was lost lets its branch go once its receipt is a definite failure
    * and the host's snapshot holds no thread for it, the rule an answer follows. An accepted start's thread owns the ref;
-   * an uncertain one keeps it.
+   * an uncertain one keeps it. An entry is forgotten only once it has been handled: while this computer has no host ID, as
+   * while Sotto starts, the check cannot be made, so the entry waits for the next reconcile and this one goes on.
    */
   private async releaseLostStartMoves(hostId: string): Promise<void> {
     for (const [operationId, landed] of [...this.lostStartMoves]) {
       if (landed.hostId !== hostId) continue
       const operation = this.record().operations.find(item => item.id === operationId)
       if (operation?.deliveryState === 'uncertain' || operation?.deliveryState === 'dispatching') continue
+      try {
+        if (operation?.deliveryState === 'failed' && !this.madeThread(operation.target)) await this.releaseMove(landed)
+      } catch { continue }
       this.lostStartMoves.delete(operationId)
-      if (operation?.deliveryState === 'failed' && !this.madeThread(operation.target)) await this.releaseMove(landed)
     }
   }
   private recordRemoteRefusal(record: WatcherRecord, operationId: string, code: WatcherRefusal['code']): void {
