@@ -3,7 +3,7 @@ import { parentPort, workerData } from 'node:worker_threads'
 
 import { saveHangRecording, updateHangRecording } from './hangRecording'
 import { MainHangWatch, type MainDebugger } from './mainHangWatch'
-import { HEARTBEAT_SLOT, QUIT_SLOT, WATCH_TICK_MS, type HangWatchdogWorkerData } from './hangWatchdogShared'
+import { HEARTBEAT_SLOT, monotonicMs, QUIT_SLOT, WATCH_TICK_MS, type HangWatchdogWorkerData } from './hangWatchdogShared'
 
 /**
  * The hang watch's own thread (#1581): built beside main's index.js and started by `hangWatchdog.ts`. It reads main's
@@ -46,7 +46,8 @@ function mainDebugger(): MainDebugger {
 const watch = new MainHangWatch({
   lastAnswered: () => Number(Atomics.load(shared, HEARTBEAT_SLOT)),
   quitReceivedAt: () => Number(Atomics.load(shared, QUIT_SLOT)),
-  now: () => Date.now(),
+  now: monotonicMs,
+  wallNow: () => Date.now(),
   connect: mainDebugger,
   save: record => saveHangRecording(data.directory, record),
   update: (name, record) => updateHangRecording(data.directory, name, record),

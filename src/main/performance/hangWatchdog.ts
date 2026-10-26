@@ -4,8 +4,8 @@ import { Worker } from 'node:worker_threads'
 
 import type { MainLoopReading } from '../../shared/mainActivity'
 import { sweepPartialHangRecordings, type HangProcess, type HangRecord } from './hangRecording'
-import { HANG_RECORDING_GAP_MS } from './mainHangWatch'
-import { HEARTBEAT_MS, HEARTBEAT_SLOT, QUIT_SLOT, SHARED_SLOTS, type HangWatchdogWorkerData } from './hangWatchdogShared'
+import { ASLEEP_GAP_MS, HANG_RECORDING_GAP_MS, QUIT_FORCE_MS } from './mainHangWatch'
+import { HEARTBEAT_MS, HEARTBEAT_SLOT, monotonicMs, QUIT_SLOT, SHARED_SLOTS, type HangWatchdogWorkerData } from './hangWatchdogShared'
 
 /** The worker's file, built beside main's index.js. Under the test runner there is none, and no watch starts. */
 export const BUILT_HANG_WATCHDOG_WORKER = join(__dirname, 'hangWatchdogWorker.js')
@@ -14,17 +14,53 @@ export type HangWatchdogLogEvent = 'hang-recording-saved' | 'hang-recording-fail
 const LOG_EVENTS: ReadonlySet<string> = new Set<HangWatchdogLogEvent>(['hang-recording-saved', 'hang-recording-failed', 'quit-forced'])
 
 /**
+ * Main's heartbeat and the Quit stamp, written into memory main shares with the watch's worker, on the monotonic clock
+ * both read. A Quit stamp that main outlives by twice the deadline, running all along, belonged to a quit that did not
+ * happen, so main takes it back; a quit Sotto knows it called off takes it back at once.
+ */
+export class MainHeartbeat {
+  private quitRanMs = 0
+  private lastBeat: number | undefined
+
+  constructor(private readonly shared: BigInt64Array, private readonly now: () => number = monotonicMs,
+    private readonly quitForceMs: number = QUIT_FORCE_MS) {}
+
+  beat(): void {
+    const now = this.now()
+    const gap = this.lastBeat === undefined ? 0 : now - this.lastBeat
+    this.lastBeat = now
+    Atomics.store(this.shared, HEARTBEAT_SLOT, BigInt(now))
+    if (Atomics.load(this.shared, QUIT_SLOT) === 0n) return
+    // Time asleep does not count: only time main ran past the stamp says the quit did not happen.
+    if (gap <= ASLEEP_GAP_MS) this.quitRanMs += gap
+    if (this.quitRanMs >= 2 * this.quitForceMs) this.quitCancelled()
+  }
+
+  quitReceived(): void {
+    if (Atomics.load(this.shared, QUIT_SLOT) !== 0n) return
+    this.quitRanMs = 0
+    Atomics.store(this.shared, QUIT_SLOT, BigInt(Math.max(1, this.now())))
+  }
+
+  quitCancelled(): void {
+    this.quitRanMs = 0
+    Atomics.store(this.shared, QUIT_SLOT, 0n)
+  }
+}
+
+/**
  * Main's side of the hang watch (#1581, ADR-0098's October 26 amendment). Main writes a heartbeat into memory it shares
  * with the watch's worker, which notices when the heartbeat stops and records main's stack. Main also tells it when Quit
- * was received, so the worker can end Sotto if main never finishes quitting.
+ * was received, so the worker can end Sotto if main stops partway through quitting.
  */
 export class HangWatchdog {
   private readonly beat: ReturnType<typeof setInterval>
+  private readonly heartbeat: MainHeartbeat
 
-  private constructor(private readonly worker: Worker, private readonly shared: BigInt64Array) {
-    const write = (): void => { Atomics.store(shared, HEARTBEAT_SLOT, BigInt(Date.now())) }
-    write()
-    this.beat = setInterval(write, HEARTBEAT_MS)
+  private constructor(private readonly worker: Worker, shared: BigInt64Array, quitForceMs: number) {
+    this.heartbeat = new MainHeartbeat(shared, monotonicMs, quitForceMs)
+    this.heartbeat.beat()
+    this.beat = setInterval(() => this.heartbeat.beat(), HEARTBEAT_MS)
     this.beat.unref()
   }
 
@@ -41,12 +77,17 @@ export class HangWatchdog {
     worker.on('error', () => undefined)
     // It never keeps Sotto running; it ends with the process.
     worker.unref()
-    return new HangWatchdog(worker, shared)
+    return new HangWatchdog(worker, shared, data.quitForceMs ?? QUIT_FORCE_MS)
   }
 
-  /** Quit was received. From here a hang is answered by ending Sotto rather than recorded. */
+  /** Quit was received. From here a main that stops for good is ended rather than waited on. */
   quitReceived(): void {
-    if (Atomics.load(this.shared, QUIT_SLOT) === 0n) Atomics.store(this.shared, QUIT_SLOT, BigInt(Date.now()))
+    this.heartbeat.quitReceived()
+  }
+
+  /** A quit was called off, as a refused update restart is: Sotto goes on, and the Quit stamp is taken back. */
+  quitCancelled(): void {
+    this.heartbeat.quitCancelled()
   }
 
   /**
@@ -69,7 +110,10 @@ export interface WatchedWindow {
 export interface WindowHangWatchOptions {
   /** The main window while it is shown and not minimized; null otherwise, and then it is not asked. */
   readonly target: () => WatchedWindow | null
+  /** A monotonic clock (`performance.now()`), so a change of the computer's clock is never taken for a hang. */
   readonly now: () => number
+  /** The computer's clock, for the time a recording names. */
+  readonly wallNow?: () => number
   readonly setInterval: (callback: () => void, ms: number) => { unref?: () => unknown }
   readonly clearInterval: (handle: { unref?: () => unknown }) => void
   readonly processes: () => HangProcess[]
@@ -98,6 +142,7 @@ export class WindowHangWatch {
   private asking: { readonly sentAt: number; readonly window: WatchedWindow } | null = null
   private recording: { readonly name: Promise<string | null>; readonly record: HangRecord; readonly window: WatchedWindow } | null = null
   private lastRecordingAt = Number.NEGATIVE_INFINITY
+  private lastLook: number | undefined
   private readonly hangMs: number
 
   constructor(private readonly options: WindowHangWatchOptions) {
@@ -118,6 +163,16 @@ export class WindowHangWatch {
 
   /** One look; public so tests drive it with their own clock. */
   tick(): void {
+    const now = this.options.now(), askEvery = this.options.askEveryMs ?? WINDOW_ASK_EVERY_MS
+    // Looks this far apart mean main itself did not run, or the computer slept: a question pending across the gap
+    // says nothing of the window, and is dropped.
+    const gap = this.lastLook === undefined ? 0 : now - this.lastLook
+    this.lastLook = now
+    if (gap > askEvery + ASLEEP_GAP_MS && this.asking) {
+      if (this.recording?.window === this.asking.window && this.recording.record.answeredAfterMs === null) this.recording = null
+      this.asking = null
+      return
+    }
     const asking = this.asking
     if (asking) {
       // A window that went, or began loading a page, while it was asked has not stopped: its question is dropped, and a
@@ -143,7 +198,7 @@ export class WindowHangWatch {
     this.lastRecordingAt = now
     const mainLoop = this.options.mainLoop()
     const record: HangRecord = { format: 1, kind: 'window', sottoVersion: this.options.sottoVersion, platform: this.options.platform,
-      startedAt: new Date(sentAt).toISOString(), answeredAfterMs: null, writtenAfterMs: now - sentAt,
+      startedAt: new Date((this.options.wallNow ?? Date.now)() - (now - sentAt)).toISOString(), answeredAfterMs: null, writtenAfterMs: now - sentAt,
       processes: this.options.processes(), ...(mainLoop ? { mainLoop } : {}) }
     const name = this.options.save(record).then(saved => { this.options.log('hang-recording-saved'); return saved },
       () => { this.options.log('hang-recording-failed'); return null })

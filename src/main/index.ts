@@ -1207,7 +1207,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       const window = contents ? BrowserWindow.fromWebContents(contents as WebContents) : null
       return window && !window.isDestroyed() && window.isVisible() && !window.isMinimized() ? window.webContents : null
     },
-    now: () => Date.now(),
+    now: () => performance.now(),
     setInterval: (callback, ms) => setInterval(callback, ms), clearInterval: handle => clearInterval(handle as ReturnType<typeof setInterval>),
     processes: () => app.getAppMetrics().map(metric => ({ type: metric.type, cpuPercent: Math.round(metric.cpu.percentCPUUsage * 10) / 10,
       workingSetKb: metric.memory.workingSetSize, privateKb: metric.memory.privateBytes ?? null })),
@@ -1512,6 +1512,8 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     // the reason on its update card.
     restartRefused: () => {
       windows.cancelQuit()
+      // Sotto goes on: the Quit stamp the restart left is taken back, so a later stop of main is not taken for a stuck quit.
+      hangWatchdog?.quitCancelled()
       void windows.showMain().catch(() => logOperational('native-main-show-failed'))
     },
     ...(updatesSupported ? { createUpdater: createElectronUpdaterAdapter } : updateStandIn ? { createUpdater: () => e2eUpdater(updateStandIn, undefined, closeWindowsLikeInstaller) } : {}),

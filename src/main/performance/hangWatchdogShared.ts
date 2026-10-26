@@ -18,3 +18,11 @@ export interface HangWatchdogWorkerData {
   readonly hangMs?: number
   readonly quitForceMs?: number
 }
+
+/**
+ * Milliseconds on the process's monotonic clock, the same on every thread: a change of the computer's clock never moves
+ * it. Main writes its heartbeat and the Quit stamp on it, and the worker reads them on it.
+ */
+export function monotonicMs(): number {
+  return Number(process.hrtime.bigint() / 1_000_000n)
+}

@@ -7,7 +7,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { OUTSIDE_SOTTO } from '../../../src/main/performance/activityRecorder'
 import { cleanHangFrames, HANG_FILE, HANG_RECORDINGS_KEPT, saveHangRecording, sweepPartialHangRecordings, updateHangRecording, type HangRecord } from '../../../src/main/performance/hangRecording'
-import { WindowHangWatch, type WatchedWindow } from '../../../src/main/performance/hangWatchdog'
+import { MainHeartbeat, WindowHangWatch, type WatchedWindow } from '../../../src/main/performance/hangWatchdog'
+import { HEARTBEAT_SLOT, QUIT_SLOT, SHARED_SLOTS } from '../../../src/main/performance/hangWatchdogShared'
 import { HANG_STACKS, MainHangWatch, type MainDebugger, type MainHangWatchOptions } from '../../../src/main/performance/mainHangWatch'
 
 const APP = process.platform === 'win32' ? 'C:\\Program Files\\Sotto\\resources\\app.asar' : '/opt/Sotto/resources/app.asar'
@@ -84,85 +85,118 @@ function harness(overrides: Partial<MainHangWatchOptions> = {}) {
     close: () => { state.closed += 1 },
   }
   const watch = new MainHangWatch({
-    lastAnswered: () => state.answered, quitReceivedAt: () => state.quitAt, now: () => state.now, connect: () => debug,
+    lastAnswered: () => state.answered, quitReceivedAt: () => state.quitAt, now: () => state.now, wallNow: () => state.now, connect: () => debug,
     save: async record => { state.saved.push(record); return 'sotto-hang-x' }, update: async (_name, record) => { state.updated.push(record) },
     kill: () => { state.killed += 1 }, sleep: async ms => { state.now += ms }, log: event => { state.logged.push(event) },
     appRoots: [APP], sottoVersion: '0.1.41', platform: 'win32', debuggerWaitMs: 5, ...overrides,
   })
-  return { state, watch }
+  /** `ms` of the computer running, the watch looking every 250 ms as its worker does; `step` is what main does meanwhile. */
+  const run = async (ms: number, step: () => void = () => undefined): Promise<void> => {
+    const until = state.now + ms
+    while (state.now < until) { state.now = Math.min(until, state.now + 250); step(); await watch.tick() }
+  }
+  return { state, watch, run }
 }
 
 describe('the watch on main', () => {
   it('waits out a short stop, then takes main\'s stack while it stays stopped and writes how long it lasted', async () => {
-    const { state, watch } = harness()
-    state.now += 4_000
+    const { state, watch, run } = harness()
     await watch.tick()
+    await run(4_750)
     expect(state.saved).toEqual([])
-    state.now += 1_500
-    await watch.tick()
+    await run(250)
     expect(state.pauses).toBe(HANG_STACKS)
     expect(state.saved).toHaveLength(1)
     expect(state.saved[0]).toMatchObject({ kind: 'main', answeredAfterMs: null, startedAt: new Date(100_000).toISOString() })
     expect(state.saved[0]!.stacks![0]!.frames[0]).toEqual({ functionName: 'saveThreads', url: 'sotto:///out/main/index.js', lineNumber: 1, columnNumber: 2 })
     expect(state.closed).toBe(1)
     expect(state.logged).toEqual(['hang-recording-saved'])
-    state.answered = state.now = 112_000
-    await watch.tick()
-    expect(state.updated.map(record => record.answeredAfterMs)).toEqual([12_000])
-    await watch.tick()
+    await run(250, () => { state.answered = state.now })
+    expect(state.updated.map(record => record.answeredAfterMs)).toEqual([state.answered - 100_000])
+    await run(250, () => { state.answered = state.now })
     expect(state.updated).toHaveLength(1)
   })
 
   it('keeps no stack from a pause that landed after main had answered', async () => {
-    const { state, watch } = harness()
+    const { state, watch, run } = harness()
     state.duringPause = 'answers'
-    state.now += 6_000
     await watch.tick()
+    await run(6_000)
     expect(state.pauses).toBe(1)
     expect(state.saved[0]!.stacks).toEqual([])
   })
 
   it('saves the hang with no stack when main is stopped outside JavaScript', async () => {
-    const { state, watch } = harness()
+    const { state, watch, run } = harness()
     state.enable = 'never'
-    state.now += 6_000
     await watch.tick()
+    await run(6_000)
     expect(state.pauses).toBe(0)
     expect(state.saved[0]!.stacks).toEqual([])
   })
 
   it('records one hang in ten minutes at most', async () => {
-    const { state, watch } = harness()
-    state.now += 6_000
+    const { state, watch, run } = harness()
     await watch.tick()
-    state.answered = state.now; await watch.tick()
-    state.now += 6_000
-    await watch.tick()
+    await run(6_000)
+    await run(250, () => { state.answered = state.now })
+    await run(6_000)
     expect(state.saved).toHaveLength(1)
   })
 
-  it('records a hang during quit like any other, then ends Sotto once Quit is 20 s old and main is still stopped', async () => {
-    const { state, watch } = harness({ quitForceMs: 20_000 })
-    state.quitAt = state.now
-    state.now += 6_000
+  it('records a hang during quit like any other, then ends Sotto once main has been stopped 20 s into the quit', async () => {
+    const { state, watch, run } = harness({ quitForceMs: 20_000 })
     await watch.tick()
+    state.quitAt = state.now
+    await run(6_000)
     expect(state.saved).toHaveLength(1)
     expect(state.killed).toBe(0)
-    state.now = state.quitAt + 19_000
-    await watch.tick()
-    expect(state.killed).toBe(0)
-    state.now += 1_000
-    await watch.tick()
+    await run(20_000)
     expect(state.killed).toBe(1)
     expect(state.logged).toEqual(['hang-recording-saved', 'quit-forced'])
   })
 
-  it('leaves a quit to the quit drain while main still answers, even past the deadline', async () => {
-    const { state, watch } = harness({ quitForceMs: 20_000 })
-    state.quitAt = state.now
-    state.now += 60_000
-    state.answered = state.now - 1_000
+  it('never ends Sotto for a quit that was cancelled, even when main stops later (quit-slot-never-cleared)', async () => {
+    const { state, watch, run } = harness({ quitForceMs: 20_000 })
     await watch.tick()
+    state.quitAt = state.now
+    // Quit was refused, as a refused update restart is: main goes on answering past the whole deadline.
+    await run(25_000, () => { state.answered = state.now })
+    await run(6_000)
+    expect(state.killed).toBe(0)
+    expect(state.saved).toHaveLength(1)
+  })
+
+  it('takes a gap with no looks at all, as a computer asleep, for no hang and no stopped quit (wallclock-false-hang)', async () => {
+    const { state, watch, run } = harness({ quitForceMs: 20_000 })
+    await watch.tick()
+    state.quitAt = state.now
+    await run(1_000, () => { state.answered = state.now })
+    // Asleep for a minute: neither main nor the watch ran, so main's heartbeat is a minute old when the watch wakes.
+    state.now += 60_000
+    await watch.tick()
+    expect(state.killed).toBe(0)
+    expect(state.saved).toEqual([])
+    // Awake again and draining: main answers, so the quit is still the quit drain's.
+    await run(2_000, () => { state.answered = state.now })
+    expect(state.killed).toBe(0)
+  })
+
+  it('does not record a sleep of the computer as a hang', async () => {
+    const { state, watch, run } = harness()
+    await watch.tick()
+    state.now += 60_000
+    await watch.tick()
+    expect(state.saved).toEqual([])
+    await run(1_000, () => { state.answered = state.now })
+    expect(state.saved).toEqual([])
+  })
+
+  it('leaves a quit to the quit drain while main still answers, even past the deadline', async () => {
+    const { state, watch, run } = harness({ quitForceMs: 20_000 })
+    await watch.tick()
+    state.quitAt = state.now
+    await run(60_000, () => { state.answered = state.now - 1_000 })
     expect(state.killed).toBe(0)
     expect(state.saved).toEqual([])
   })
@@ -177,7 +211,7 @@ describe('the watch on the window', () => {
     const makeWindow = (): WatchedWindow => ({ executeJavaScript: () => new Promise(resolve => { asks.push(resolve) }), isDestroyed: () => destroyed, isLoading: () => loading })
     let window = makeWindow()
     const watch = new WindowHangWatch({
-      target: () => shown ? window : null, now: () => clock.now, setInterval: () => ({}), clearInterval: () => undefined,
+      target: () => shown ? window : null, now: () => clock.now, wallNow: () => clock.now, setInterval: () => ({}), clearInterval: () => undefined,
       processes: () => [{ type: 'Browser', cpuPercent: 3, workingSetKb: 1, privateKb: 1 }, { type: 'Tab', cpuPercent: 99.5, workingSetKb: 2, privateKb: 2 }],
       mainLoop: () => ({ blockedShare: 0, longestFreezeMs: 0, freezesOver100ms: 0, bars: [] }),
       save: async record => { saved.push(record); return 'sotto-hang-w' }, update: async (_name, record) => { updated.push(record) },
@@ -192,8 +226,7 @@ describe('the watch on the window', () => {
     watch.tick()
     asks.shift()!(0)
     await Promise.resolve()
-    clock.now = 2_000; watch.tick()
-    clock.now = 9_000; watch.tick()
+    for (const at of [2_000, 4_000, 6_000, 8_000]) { clock.now = at; watch.tick() }
     expect(saved).toEqual([])
     clock.now = 10_000; watch.tick()
     expect(saved).toHaveLength(1)
@@ -218,15 +251,25 @@ describe('the watch on the window', () => {
 
   it('lets go of a recording whose window was destroyed, so the next window\'s answer does not end it', async () => {
     const { clock, saved, updated, asks, watch, destroy, replace } = windowHarness()
-    watch.tick()
-    clock.now = 8_000; watch.tick()
+    for (const at of [0, 2_000, 4_000, 6_000, 8_000]) { clock.now = at; watch.tick() }
     expect(saved).toHaveLength(1)
     destroy(); watch.tick()
     replace()
-    clock.now = 9_000; watch.tick()
+    clock.now = 10_000; watch.tick()
     asks.at(-1)!(0)
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(updated).toEqual([])
+  })
+
+  it('drops a question that was pending while the computer slept, saving nothing (wallclock-false-hang)', () => {
+    const { clock, saved, asks, watch } = windowHarness()
+    watch.tick()
+    expect(asks).toHaveLength(1)
+    clock.now = 60_000; watch.tick()
+    expect(saved).toEqual([])
+    clock.now = 62_000; watch.tick()
+    expect(saved).toEqual([])
+    expect(asks).toHaveLength(2)
   })
 
   it('does not ask a window that is loading a page, and drops a question when it starts loading', () => {
@@ -239,5 +282,43 @@ describe('the watch on the window', () => {
     load(true)
     clock.now = 20_000; watch.tick()
     expect(saved).toEqual([])
+  })
+})
+
+describe('main\'s heartbeat and the Quit stamp (quit-slot-never-cleared)', () => {
+  function heartbeat() {
+    const clock = { now: 5_000 }
+    const shared = new BigInt64Array(SHARED_SLOTS)
+    return { clock, shared, beat: new MainHeartbeat(shared, () => clock.now, 20_000) }
+  }
+
+  it('writes the heartbeat on the monotonic clock it is given, and stamps Quit once', () => {
+    const { clock, shared, beat } = heartbeat()
+    beat.beat()
+    expect(shared[HEARTBEAT_SLOT]).toBe(5_000n)
+    beat.quitReceived()
+    clock.now += 250
+    beat.quitReceived()
+    expect(shared[QUIT_SLOT]).toBe(5_000n)
+  })
+
+  it('takes the stamp back once main has run on for twice the deadline, so a quit that did not happen ends nothing', () => {
+    const { clock, shared, beat } = heartbeat()
+    beat.beat()
+    beat.quitReceived()
+    for (let ran = 0; ran < 39_750; ran += 250) { clock.now += 250; beat.beat() }
+    expect(shared[QUIT_SLOT]).not.toBe(0n)
+    clock.now += 250; beat.beat()
+    expect(shared[QUIT_SLOT]).toBe(0n)
+  })
+
+  it('does not count time asleep towards that, and takes the stamp back at once when a quit is called off', () => {
+    const { clock, shared, beat } = heartbeat()
+    beat.beat()
+    beat.quitReceived()
+    clock.now += 120_000; beat.beat()
+    expect(shared[QUIT_SLOT]).not.toBe(0n)
+    beat.quitCancelled()
+    expect(shared[QUIT_SLOT]).toBe(0n)
   })
 })
