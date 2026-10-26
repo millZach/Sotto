@@ -189,7 +189,7 @@ function reconnecting(status: { phase: string; reconnecting?: boolean } = { phas
   Object.assign(manager, { options: { now: () => Date.now(), retryDelayMs: () => 60_000, router: { setReconnecting: vi.fn(), remove: vi.fn() } },
     saved: [host], status: new Map([[host.id, status]]), live: new Map([[host.id, { via: 'tailnet', up: false }]]), retries: new Map(),
     held: new Map(), restartWindows: new Map(), updatesOverSsh: new Set(), socketSteps: new Map(), listeners: new Set(), closed: false, open, press })
-  const run = manager as unknown as Recovering & { restartWindows: Map<string, { since: number; tailnetOnlyMs: number }> }
+  const run = manager as unknown as Recovering & { restartWindows: Map<string, { since: number; tailnetOnlyMs: number }>; updatesOverSsh: Set<string> }
   dispose.push(async () => { for (const retry of run.retries.values()) clearTimeout(retry.timer) })
   return { run, open, press }
 }
@@ -219,8 +219,22 @@ it('stops waiting for the first reconnect after a restart at the restart budget,
 
 it('installs over an admin connection while the tailnet reconnects after a download that fell back to SSH', async () => {
   const f = reconnecting()
+  f.run.updatesOverSsh.add(host.id)
   await expect(f.run.runUpdate(host.id, { op: 'update-install', version: '9.9.9', file: 'host.tar.gz', sha256: 'a'.repeat(64) })).resolves.toEqual({ type: 'update-installed' })
   expect(f.press).toHaveBeenCalledTimes(1)
+})
+
+it('signs in for no install while the tailnet reconnects after a download the socket carried', async () => {
+  const f = reconnecting()
+  await expect(f.run.runUpdate(host.id, { op: 'update-install', version: '9.9.9', file: 'host.tar.gz', sha256: 'a'.repeat(64) })).rejects.toThrow('is not connected')
+  expect(f.press).not.toHaveBeenCalled()
+})
+
+it('starts no download while the tailnet reconnects, whatever an earlier update ran over SSH', async () => {
+  const f = reconnecting()
+  f.run.updatesOverSsh.add(host.id)
+  await expect(f.run.runUpdate(host.id, { op: 'update-fetch', version: '9.9.9' } as never)).rejects.toThrow('is not connected')
+  expect(f.press).not.toHaveBeenCalled()
 })
 
 it('still refuses an update step for a host that is neither connected nor reconnecting', async () => {
@@ -256,6 +270,7 @@ it('ends a restart whose old host never drops within its budget, the reconnect i
 
 it('installs over an admin connection between reconnect attempts, when no connection is live', async () => {
   const f = reconnecting()
+  f.run.updatesOverSsh.add(host.id)
   ;(f.run as unknown as { live: Map<string, unknown> }).live.clear()
   await expect(f.run.runUpdate(host.id, { op: 'update-install', version: '9.9.9', file: 'host.tar.gz', sha256: 'a'.repeat(64) })).resolves.toEqual({ type: 'update-installed' })
   expect(f.press).toHaveBeenCalledTimes(1)
@@ -268,6 +283,8 @@ it('restarts over an admin connection while the tailnet reconnects, only after a
   run.press = vi.fn(async (_host: unknown, press: (connection: { updateHost(): Promise<unknown> }) => Promise<unknown>) => press({ updateHost: async () => restarted }))
   run.open = vi.fn(async () => undefined)
   await expect(run.restartForUpdate(host.id, '9.9.9')).rejects.toThrow('Connect to Test host')
+  // The download fell back to SSH; the install after it goes the same way while the tailnet reconnects.
+  later.run.updatesOverSsh.add(host.id)
   await run.runUpdate(host.id, { op: 'update-install', version: '9.9.9', file: 'host.tar.gz', sha256: 'a'.repeat(64) })
   await expect(run.restartForUpdate(host.id, '9.9.9')).resolves.toEqual(restarted)
 })

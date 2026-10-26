@@ -380,10 +380,12 @@ export class DesktopHosts {
    */
   async runUpdate(id: string, operation: SshHostUpdateOperation, options?: SshHostUpdateOptions): Promise<SshHostUpdateResult> {
     const host = this.saved.find(item => item.id === id)
-    // A step after a download that fell back to SSH can find the tailnet still reconnecting, between attempts too: it goes
-    // over an admin connection.
-    if (!host || !((this.live.has(id) && this.reachable(id)) || this.reconnecting(id))) throw new Error(host ? t`${{ host: host.name }} is not connected. Nothing was changed.` : t`This host is not connected. Nothing was changed.`)
+    // A download starts a new update, so what an earlier one ran over SSH says nothing about it.
     if (operation.op === 'update-fetch') this.updatesOverSsh.delete(id)
+    // A step after one of this update's that went over SSH can find the tailnet still reconnecting, between attempts too:
+    // it goes over an admin connection. Any other step waits for the tailnet, since signing in now could ask Tailscale for
+    // the approval this route exists to spare (ADR-0088).
+    if (!host || !((this.live.has(id) && this.reachable(id)) || (this.updatesOverSsh.has(id) && this.reconnecting(id)))) throw new Error(host ? t`${{ host: host.name }} is not connected. Nothing was changed.` : t`This host is not connected. Nothing was changed.`)
     const socket = this.updateSocket(id, operation.op)
     if (socket && (operation.op === 'update-fetch' || operation.op === 'update-install')) {
       // The request carries a version, and for install the archive the host's own download named. Never a releases page.
