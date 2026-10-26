@@ -70,6 +70,8 @@
 .thread-transcript__earlier { display: flex; justify-content: center; margin: 0 0 20px; }
 .thread-transcript__earlier .tt-button { font-size: 13px; }
 .thread-transcript__jump { position: absolute; bottom: 14px; left: 50%; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 1px solid var(--threads-field-border); border-radius: 6px; background: var(--threads-field); box-shadow: var(--tt-shadow-sm, 0 4px 14px rgb(0 0 0 / 35%)); color: var(--tt-text); font: inherit; font-size: 14px; cursor: pointer; transform: translateX(-50%); }
+.thread-transcript__jump:hover { border-color: var(--threads-field-focus); }
+.thread-transcript__jump:active { filter: brightness(.96); }
 .thread-transcript__jump[data-unseen] { border-color: var(--threads-field-focus); }
 /*
  * A long thread is mostly out of view. Its messages, folded work and activity skip layout and paint until the
@@ -101,8 +103,9 @@
 /* The copy control sits in the message's bottom-left corner and appears while the message is hovered,
    holds focus, or is mid-confirmation. A message that has one keeps room for it under its last line:
    replies line its icon up with their text, user bubbles pin it inside their padding. */
-.thread-message__copy { position: absolute; bottom: 0; left: -5px; display: inline-flex; align-items: center; gap: 5px; min-width: 28px; height: 28px; padding: 0 5px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; cursor: pointer; opacity: 0; transition: opacity 120ms ease; }
+.thread-message__copy { position: absolute; bottom: 0; left: -5px; display: inline-flex; align-items: center; gap: 5px; min-width: 28px; height: 28px; min-height: 28px; padding: 0 5px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; cursor: pointer; opacity: 0; transition: opacity 120ms ease; }
 .thread-message__copy:hover { background: var(--tt-hover); color: var(--tt-text); }
+.thread-message__copy:active { background: var(--tt-hover-strong); color: var(--tt-text); }
 .thread-message__copy[data-copied] { color: var(--tt-success); }
 .thread-message__copy[data-copied] svg { animation: rich-confirm 220ms cubic-bezier(.2, .9, .3, 1.3); }
 .thread-message:has(> .thread-message__copy) { padding-bottom: 30px; }
@@ -232,6 +235,8 @@
 .thread-prompt__actions > .thread-prompt__stop[data-beside], .thread-prompt__actions > .thread-prompt__stop[data-beside]:hover:not(:disabled), .thread-prompt__actions > .thread-prompt__stop[data-beside]:active:not(:disabled) { border-color: var(--threads-field-border); background: transparent; color: var(--tt-text-muted); filter: none; }
 .thread-prompt__actions > .thread-prompt__stop[data-beside]:hover:not(:disabled) { border-color: var(--tt-text-faint); color: var(--tt-text); }
 .thread-prompt--saved { width: min(520px, 100%); margin: 12px 0; text-align: left; }
+/* The saved draft is read, not edited: its words lie on the card with no field around them. */
+.thread-prompt--saved textarea { display: block; width: 100%; min-height: 0; padding: 0; border: 0; background: transparent; color: var(--tt-text); font-size: 15px; line-height: 1.5; resize: none; }
 .thread-prompt--saved .thread-prompt__images { margin: 6px 0 0; color: var(--tt-text-muted); font-size: 12px; overflow-wrap: anywhere; }
 
 /* At a model's highest level the composer takes the colourway's tide when the level is reached (ADR-0019, amended); it
@@ -254,13 +259,13 @@
 .threads-view .screenshot-input__tools .tt-button { width: 30px; min-height: 30px; border-radius: 8px; }
 
 
-.thread-workspace__empty { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 10px; min-height: 200px; height: 100%; padding: 30px; text-align: center; color: var(--tt-text-muted); }
+.thread-workspace__empty { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; min-height: 200px; height: 100%; padding: 32px; text-align: center; color: var(--tt-text-muted); }
 .thread-workspace__empty h2, .thread-workspace__empty h3 { margin: 2px 0; color: var(--tt-text); font-size: 19px; font-weight: 500; letter-spacing: -.3px; }
 .thread-workspace__empty p { margin: 0; font-size: 13px; }
 /* The Threads page with no pane open carries a saved draft as well, so at the minimum window it scrolls from its top. */
 .thread-workspace__empty--page { justify-content: safe center; overflow: auto; }
 .thread-workspace__empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
-.thread-workspace__transcript .thread-workspace__empty { min-height: 0; padding: 40px 0; gap: 6px; }
+.thread-workspace__transcript .thread-workspace__empty { min-height: 0; padding: 40px 0; gap: 8px; }
 .thread-workspace__transcript .thread-workspace__empty h3 { font-size: 16px; }
 
 /* A new thread greets above its composer, and the two stand together in the middle of the pane, the composer a little
@@ -290,7 +295,7 @@
 .thread-draft-notice p { margin: 0; }
 .thread-draft-notice strong { color: var(--tt-text); font-weight: 500; }
 
-.thread-history-status { display: flex; align-items: center; gap: 12px; color: var(--tt-text-muted); font-size: 13px; padding: 14px 0; }
+.thread-history-status { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; color: var(--tt-text-muted); font-size: 13px; padding: 14px 0; }
 .thread-history-skeleton { display: grid; gap: 28px; padding: 20px 0; }
 .thread-history-skeleton i { display: block; height: 56px; width: 72%; border-radius: 10px; background: linear-gradient(110deg, var(--tt-skeleton-a, #111713), var(--tt-skeleton-b, #19201c), var(--tt-skeleton-a, #111713)); }
 .thread-history-skeleton i:nth-child(2) { margin-left: auto; width: 55%; }
