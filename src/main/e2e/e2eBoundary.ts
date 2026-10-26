@@ -3,6 +3,8 @@ import { isAbsolute } from 'node:path'
 import {
   E2E_CONFLICTING_HOTKEY,
   E2E_PRESERVED_CLIPBOARD,
+  E2E_UNCAUGHT_EXIT_CODE,
+  E2E_UNCAUGHT_PREFIX,
   e2eScenarioSchema,
   type E2EScenario,
   type E2ESnapshot,
@@ -33,14 +35,12 @@ export function resolveE2EConfiguration(
   return Object.freeze({ scenario: scenario.data, userDataPath })
 }
 
-/** The exit code an e2e-launched main ends with after an uncaught exception, so the test that launched it fails. */
-export const E2E_UNCAUGHT_EXIT_CODE = 70
-
 /**
  * An e2e-launched main never shows Electron's native uncaught-exception box (#1577). With no listener, Electron calls
  * `dialog.showErrorBox`, which lands on the desktop of whoever runs the suite and blocks main until it is dismissed, so
- * the test hangs to its deadline instead of failing. Here the error goes to stderr, where Playwright shows it, and main
- * exits. Only an e2e launch installs this; a packaged build never resolves an e2e configuration.
+ * the test hangs to its deadline instead of failing. Here a stable line goes to stderr, where Playwright shows it, and
+ * main exits. The line names the error's type and where it was thrown, never its message, which can carry anything a
+ * thread said. Only an e2e launch installs this; a packaged build never resolves an e2e configuration.
  */
 export function failE2EOnUncaughtException(
   target: { on(event: 'uncaughtException', listener: (error: unknown) => void): unknown },
@@ -48,9 +48,15 @@ export function failE2EOnUncaughtException(
   exit: (code: number) => void,
 ): void {
   target.on('uncaughtException', (error) => {
-    const detail = error instanceof Error ? error.stack ?? `${error.name}: ${error.message}` : String(error)
-    try { write(`[Sotto] e2e-uncaught-exception ${detail}\n`) } finally { exit(E2E_UNCAUGHT_EXIT_CODE) }
+    try { write(`${E2E_UNCAUGHT_PREFIX} ${uncaughtLocation(error)}\n`) } finally { exit(E2E_UNCAUGHT_EXIT_CODE) }
   })
+}
+
+/** The error's type and its stack's frames, which are places in code; the message line is left out. */
+function uncaughtLocation(error: unknown): string {
+  if (!(error instanceof Error)) return typeof error
+  const frames = (error.stack ?? '').split('\n').filter(line => /^\s+at /u.test(line)).map(line => line.trim())
+  return [error.name, ...frames].join('\n  ')
 }
 
 export interface E2ENativeState {

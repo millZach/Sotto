@@ -3,13 +3,12 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   createE2EGlobalShortcuts,
-  E2E_UNCAUGHT_EXIT_CODE,
   failE2EOnUncaughtException,
   isTrustedMainE2ESender,
   resolveE2EConfiguration,
 } from '../../../src/main/e2e/e2eBoundary'
 import { parseAccelerator } from '../../../src/shared/accelerator'
-import { E2E_CONFLICTING_HOTKEY, e2eScenarioSchema } from '../../../src/shared/e2e'
+import { E2E_CONFLICTING_HOTKEY, E2E_UNCAUGHT_EXIT_CODE, e2eScenarioSchema } from '../../../src/shared/e2e'
 
 const e2eUserData = process.platform === 'win32' ? 'C:\\temp\\sotto-e2e' : '/tmp/sotto-e2e'
 
@@ -89,15 +88,27 @@ describe('development-only E2E admission', () => {
 })
 
 describe('an uncaught exception in an e2e-launched main (#1577)', () => {
-  it('writes the error to stderr and exits, so no native box is shown', () => {
+  it('writes where the error was thrown to stderr and exits, so no native box is shown', () => {
     const listeners: ((error: unknown) => void)[] = []
     const written: string[] = []
     const exits: number[] = []
     failE2EOnUncaughtException({ on: (_event, listener) => listeners.push(listener) }, text => written.push(text), code => exits.push(code))
     expect(listeners).toHaveLength(1)
-    listeners[0]!(new TypeError('Object has been destroyed'))
-    expect(written.join('')).toMatch(/^\[Sotto\] e2e-uncaught-exception TypeError: Object has been destroyed/u)
+    const error = new TypeError('Object has been destroyed')
+    error.stack = 'TypeError: Object has been destroyed\n    at Timeout.eval [as _onTimeout] (eval at evaluate (:303:30), <anonymous>:9:42)\n    at listOnTimeout (node:internal/timers:685:17)'
+    listeners[0]!(error)
+    expect(written.join('')).toBe('[Sotto] e2e-uncaught-exception TypeError\n  at Timeout.eval [as _onTimeout] (eval at evaluate (:303:30), <anonymous>:9:42)\n  at listOnTimeout (node:internal/timers:685:17)\n')
     expect(exits).toEqual([E2E_UNCAUGHT_EXIT_CODE])
+  })
+
+  it('never writes what the error says, which can carry what a thread said', () => {
+    const listeners: ((error: unknown) => void)[] = []
+    const written: string[] = []
+    failE2EOnUncaughtException({ on: (_event, listener) => listeners.push(listener) }, text => written.push(text), () => undefined)
+    listeners[0]!(new Error('the words of a private prompt'))
+    listeners[0]!('the words of a private prompt')
+    expect(written.join('')).not.toContain('private prompt')
+    expect(written[1]).toBe('[Sotto] e2e-uncaught-exception string\n')
   })
 
   it('still exits when writing the error fails', () => {
