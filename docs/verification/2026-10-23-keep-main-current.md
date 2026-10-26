@@ -10,16 +10,17 @@ On Owl, each project's checkout is now fetched every 15 minutes and after a pull
   - a clean default branch two commits behind is fast-forwarded and the line goes;
   - a lockfile change at any depth is said, survives a new keeper reading the same data folder, and goes on dismiss;
   - tracked changes, an untracked file the update would overwrite, another branch checked out, a local commit, and a merge in progress each leave `HEAD` and `refs/heads/main` where they were, and are said;
-  - a checkout a thread holds is not touched and says nothing;
+  - a checkout a thread holds is not touched and says nothing, even when its edits would block the update, and once the thread rests the block is said;
+  - an ignored file the incoming commits track is named as in the way and keeps its contents;
   - an unreachable remote keeps the last line;
   - a project switched off is left alone and its line forgotten;
-  - a merged pull request checks only the projects whose `origin` is its repository, once.
+  - a merged pull request checks only the projects whose `origin` is its repository on the same host, once.
 - **The checkout guard.** `tests/integration/workspaceProjectCheckout.test.ts`: while a thread's Git action holds the project folder, the update runs nothing. While the update runs, a Git action in that folder is refused with "Sotto is pulling this folder."
 - **The mock-up.** `design/keep-main-current/mockup.html` offered three variants. Zach picked A, the line under the project's name, and Show changes rather than an Update now press.
 
 ## Covered by unit tests
 
-- `tests/unit/renderer/mainCheckoutLine.test.tsx`: the words for every block, Show changes and Show commits, Open folder, Escape returning focus, dismiss, and no line without the bridge.
+- `tests/unit/renderer/mainCheckoutLine.test.tsx`: the words for every block, Show changes and Show commits, Open folder, Escape returning focus, dismiss, no line without the bridge, and the open list read again when what blocks the update changes.
 - `tests/unit/main/mainCheckoutParsing.test.ts`: repository names from HTTPS, SSH and pull request URLs, the files in Git's refusals with LF and CRLF, and tracked changes from `status -z`.
 - `tests/unit/shared/settings.test.ts`: on by default, per-project answers kept, and unreadable ones dropped.
 
@@ -28,4 +29,8 @@ On Owl, each project's checkout is now fetched every 15 minutes and after a pull
 - macOS and Linux. The commands are the same Git, but the app was run only on Windows.
 - A real GitHub merge waking the check. The merge listener was exercised with URLs, and the three places that call it (the Pull request surface, babysitting and a thread's status read) were not driven end to end.
 - The 15-minute timer itself. Every check in these runs was asked for by saving the switch.
-- A repository whose `post-merge` hook does something slow. The fast-forward runs it as the user's own pull would.
+- A repository whose `post-merge` hook does something slow. The fast-forward runs it as the user's own pull would; one that outlasts the timeout after the branch moved still counts as the update.
+
+## Rerun October 26, 2026
+
+After `main` was merged in and the review's fixes landed, `tests/e2e/keep-main-current.spec.ts` passed again in the built app on Windows 11. The first attempt timed out resizing the window before the screenshots, after every assertion about the line had passed; the second run passed whole. The screenshots were not regenerated.
