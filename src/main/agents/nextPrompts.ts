@@ -91,9 +91,9 @@ export class NextPrompts implements NextPromptHooks {
   }
 
   finished(thread: AgentThread): void {
-    // A turn the user stopped or that failed did not end on an answer. Watcher's own threads are its, and a delegated
-    // thread's next message comes from the thread that delegated to it (ADR-0081), not the user.
-    if (this.closed || thread.kind === 'watcher' || thread.kind === 'watcher-history' || thread.delegatedBy !== undefined
+    // A turn the user stopped or that failed did not end on an answer. A past Watcher conversation takes no more messages,
+    // and a delegated thread's next message comes from the thread that delegated to it (ADR-0081), not the user.
+    if (this.closed || thread.kind === 'watcher-history' || thread.delegatedBy !== undefined
       || thread.lastTurn?.status === 'interrupted' || thread.lastTurn?.status === 'failed') return
     const held = this.hold(thread.id)
     this.supersede(held)
