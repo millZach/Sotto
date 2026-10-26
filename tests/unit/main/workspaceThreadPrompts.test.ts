@@ -49,14 +49,14 @@ describe('the prompts above a pane’s window, for the message scrubber (ADR-010
     const first = thread().messages[0]!
     expect(first.id).toBe('u50')
     expect(thread().earlierAvailable).toBe(true)
-    const read = host.threadPrompts('session-workshop', first.id)!
+    const read = (await host.threadPrompts('session-workshop', first.id))!
     expect(agentThreadPromptsSchema.parse(read)).toEqual(read)
     expect(read.prompts.map(prompt => prompt.id)).toEqual(Array.from({ length: 50 }, (_, index) => `u${index}`))
     expect(read.prompts[7]).toEqual({ id: 'u7', createdAt: at(21), text: 'Prompt 7', reply: { id: 'a7', text: 'Reply 7' } })
     // What the window holds is the window's; nothing before the first message is nothing at all.
-    expect(host.threadPrompts('session-workshop', 'u0')).toEqual({ prompts: [] })
-    expect(host.threadPrompts('session-workshop', 'not-in-the-store')).toEqual({ prompts: [] })
-    expect(host.threadPrompts('no-such-thread', 'u50')).toBeNull()
+    expect(await host.threadPrompts('session-workshop', 'u0')).toEqual({ prompts: [] })
+    expect(await host.threadPrompts('session-workshop', 'not-in-the-store')).toEqual({ prompts: [] })
+    expect(await host.threadPrompts('no-such-thread', 'u50')).toBeNull()
     // It is read on request, and what the pane is published does not grow with it.
     expect(thread().messages).toHaveLength(40)
   })
@@ -66,7 +66,7 @@ describe('the prompts above a pane’s window, for the message scrubber (ADR-010
     const turns = conversation(12, long)
     turns[0] = { ...turns[0]!, text: `${'x'.repeat(THREAD_PROMPT_TEXT - 1)}😀 and more after it`, attachments: [{ id: 'one', name: 'one.png', mimeType: 'image/png', sizeBytes: 4 }, { id: 'two', name: 'two.png', mimeType: 'image/png', sizeBytes: 4 }] }
     const { host, thread } = await opened(turns)
-    const [prompt] = host.threadPrompts('session-workshop', thread().messages[0]!.id)!.prompts
+    const [prompt] = (await host.threadPrompts('session-workshop', thread().messages[0]!.id))!.prompts
     // The cut never leaves half a character.
     expect(prompt!.text).toBe('x'.repeat(THREAD_PROMPT_TEXT - 1))
     expect(prompt!.attachments).toBe(2)
@@ -104,7 +104,7 @@ describe('the prompts above a pane’s window, for the message scrubber (ADR-010
   it('leaves a wake-up out, with the reply that answered it', async () => {
     const { host, thread } = await opened(conversation(20))
     vi.spyOn(ThreadStore.prototype, 'wakeUps').mockReturnValue(new Set(['u4']))
-    const prompts = host.threadPrompts('session-workshop', thread().messages[0]!.id)!.prompts
+    const prompts = (await host.threadPrompts('session-workshop', thread().messages[0]!.id))!.prompts
     expect(prompts.map(prompt => prompt.id)).toEqual(['u0', 'u1', 'u2', 'u3', 'u5', 'u6', 'u7', 'u8', 'u9'])
     expect(prompts[3]!.reply?.id).toBe('a3')
   })
