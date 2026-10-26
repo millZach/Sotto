@@ -76,7 +76,13 @@ test('uses Devin through the native adapter and preserves explicit thread decisi
     await panel.getByRole('button', { name: 'Connect Devin' }).click()
     await expect(panel.getByRole('button', { name: 'Disconnect Devin' })).toBeVisible()
     await expect(panel.getByRole('combobox', { name: 'Devin default thread model' })).toHaveCount(0)
-    await expect(panel.getByRole('list', { name: 'Devin available models' })).toContainText('Fixture Devin')
+    // Its models are behind a small field; the list opens over it, and Escape closes it back onto the field.
+    const devinModels = panel.getByRole('button', { name: /^Show Devin models, /u })
+    await devinModels.click()
+    await expect(page.getByRole('dialog', { name: 'Devin models', exact: true })).toContainText('Fixture Devin')
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog', { name: 'Devin models', exact: true })).toHaveCount(0)
+    await expect(devinModels).toBeFocused()
     // Up and Down move between the rows' headers.
     await page.getByRole('button', { name: 'Devin', exact: true }).focus()
     await page.keyboard.press('ArrowUp')
