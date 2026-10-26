@@ -14,7 +14,7 @@ import { localHostId } from '../features/onboarding/localAgents'
 import { EffortPicker, effortLabel } from './EffortPicker'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { providerKey } from './threadFacts'
-import { FAST_OFF, FAST_ON, pendingSettingsStore, permissionPatch, settingValues, settingValuesFor, unconfirmedKinds, usePendingSettings, usesProviderModes, type SettingKind, type SettingsPatch } from './pendingSettings'
+import { FAST_MODE_NOT_CARRIED, FAST_OFF, FAST_ON, pendingSettingsStore, permissionPatch, settingValues, settingValuesFor, unconfirmedKinds, usePendingSettings, usesProviderModes, type SettingKind, type SettingsPatch } from './pendingSettings'
 import { WatcherPermissionChip } from '../watcher/WatcherPermissionChip'
 import { useWatcherRoom } from '../watcher/watcherRoom'
 import { WatchOnSendToggle } from '../watcher/WatchControls'
@@ -333,8 +333,12 @@ export function fastModeTitle(model: AgentModel | undefined, provider: string | 
   return on ? t({ message: `Fast mode is on for this thread. ${cost} Press to turn it off.`, comment: '{cost} is a sentence about what fast mode costs.' })
     : t({ message: `Fast mode is off. ${cost} Press to turn it on for this thread.`, comment: '{cost} is a sentence about what fast mode costs.' })
 }
-/** The alert after a fast mode press the provider did not take, as `settingRefusalText` says it for the other chips. */
-export function fastRefusalText(provider: string, wanted: boolean, error: string | null): string {
+/**
+ * The alert after a fast mode press the provider did not take, as `settingRefusalText` says it for the other chips. A
+ * model change whose fast mode the provider refused went through, so that line names the model the thread is now on.
+ */
+export function fastRefusalText(provider: string, wanted: boolean, error: string | null, model = ''): string {
+  if (error === FAST_MODE_NOT_CARRIED) return t({ message: `${provider} did not switch fast mode on. The thread is on ${model} at normal speed.`, comment: '{provider} is a provider\'s name or "The provider"; {model} is the model the thread is now on.' })
   if (error === null) return t({ message: `Sotto did not get ${provider}'s answer about fast mode, so the toggle shows what the thread last reported. Try again to send it once more.`, comment: '{provider} is a provider\'s name or "The provider".' })
   if (error === PROVIDER_REJECTED_ACTION) return wanted
     ? t({ message: `${provider} did not switch fast mode on. The thread stays at normal speed; nothing else changed.`, comment: '{provider} is a provider\'s name or "The provider".' })
@@ -565,7 +569,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
       const refusal = settings.refusals[kind]
       if (!refusal) return null
       return <p key={`refused-${kind}`} className="thread-options__notice tt-paragraph" role="alert">
-        <span>{kind === 'fast' ? fastRefusalText(provider, refusal.wanted === FAST_ON, refusal.error)
+        <span>{kind === 'fast' ? fastRefusalText(provider, refusal.wanted === FAST_ON, refusal.error, valueName('model', drawn.model, confirmedModel))
           : settingRefusalText(provider, valueName(kind, refusal.wanted, model), valueName(kind, drawn[kind], confirmedModel), refusal.error)}</span>
         <button type="button" className="tt-focusable" disabled={fixed} onClick={() => retry(kind)}>{t`Try again`}</button></p>
     })}

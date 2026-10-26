@@ -805,6 +805,11 @@ msgstr ""
 msgid "{provider} did not switch fast mode on. {error}"
 msgstr ""
 
+#. {provider} is a provider's name or "The provider"; {model} is the model the thread is now on.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "{provider} did not switch fast mode on. The thread is on {model} at normal speed."
+msgstr ""
+
 #. {provider} is a provider's name or "The provider".
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{provider} did not switch fast mode on. The thread stays at normal speed; nothing else changed."

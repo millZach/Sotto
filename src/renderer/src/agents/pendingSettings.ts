@@ -52,6 +52,11 @@ interface Entry {
 
 /** Fast mode's two values, as the toggle's pending setting holds them. */
 export const FAST_ON = 'on', FAST_OFF = 'off'
+/**
+ * The fast mode refusal a model change leaves when the provider took the model and not the fast mode it carried. It
+ * stands in a refusal's `error`, and the toggle's line says it in its own words; it is never shown as it is.
+ */
+export const FAST_MODE_NOT_CARRIED = 'fast-mode-not-carried'
 /** Each setting's value on this thread as its own model reads it: the defaults are the model's. */
 export function settingValues(state: AgentState, thread: AgentThread): SettingValues {
   const model = resolveModel(hostForThread(state.host, thread).models, thread.modelId)
@@ -223,6 +228,11 @@ export class PendingSettingsStore {
         }
         const thread = reply.host.threads.find(item => item.id === threadId)
         const expected = thread ? settingValues(reply, thread)[kind] : null
+        // A model change that ends with fast mode off where it was on is the provider refusing the fast mode the change
+        // carried (ADR-0143): the model went through, and the toggle's line says fast mode did not.
+        if (kind === 'model' && thread && this.lastDrawn.get(threadId)?.fast === FAST_ON && settingValues(reply, thread).fast === FAST_OFF) {
+          this.refusals.set(keyOf(threadId, 'fast'), { kind: 'fast', wanted: FAST_ON, patch: { fastMode: true }, error: FAST_MODE_NOT_CARRIED })
+        }
         if (expected === null || this.lastDrawn.get(threadId)?.[kind] === expected) { this.drop(key, entry); return }
         this.hold(entry, expected, () => { if (this.entries.get(key) === entry && !entry.sending) { this.drop(key, entry); this.emit(threadId) } })
         return

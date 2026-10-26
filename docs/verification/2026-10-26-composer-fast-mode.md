@@ -38,7 +38,7 @@ Both pass, so the opacity stays at .75. Light's off state is the closest, at 3.5
 
 Against the fake Claude Code and Codex clients in `tests/fixtures/`, not a live client:
 
-- Claude Code launches with `--settings {"fastMode":true}` only where fast mode runs. A running CLI gets `apply_flag_settings`, and fast mode goes off before a model change and on after one. A CLI that refuses to turn it on leaves the refusal standing: the model it had already taken is put back, nothing restarts, and the thread shows fast mode off. A spare started without the flag is not used for a first send that turns it on.
+- Claude Code launches with `--settings {"fastMode":true}` only where fast mode runs. A running CLI gets `apply_flag_settings`, and fast mode goes off before a model change and on after one. A CLI that refuses to turn it on leaves the refusal standing and nothing restarts. A refused toggle changes nothing else; a model change that carried the choice and was refused only for fast mode goes through on the same CLI, with fast mode not running and the thread's choice off. A spare started without the flag is not used for a first send that turns it on.
 - Codex names `priority` or `default` on start, resume and fork only where the model offers Fast, and on `thread/settings/update` only where the model offers it or the thread is leaving a model it ran fast on. A fork starts on `default`. A change shows as on only once Codex reports the Fast tier. A thread on a model without Fast starts and forks whatever tier Codex reports, since Sotto asked for none.
 - The renderer draws the bolt only for a Claude Code or Codex model that offers fast mode, sends `fastMode` on a press, and says a refusal and an unconfirmed change in fast mode's own words.
 

@@ -167,7 +167,7 @@ it('saves the toggle through the coordinator, which reconciles off against a thr
   } finally { control.dispose() }
 })
 
-it('lets a refusal to turn fast mode on stand, keeps the running CLI and puts back what it had already taken', async () => {
+it('lets a model change go through when Claude Code refuses only the fast mode it carried, and lets a refused toggle stand', async () => {
   const { f, id } = await fixture()
   // The thread chose fast mode and moved to a model without it, so moving back turns it on after the model.
   expect((await configure(f, id, { fastMode: true })).accepted).toBe(true)
@@ -176,21 +176,29 @@ it('lets a refusal to turn fast mode on stand, keeps the running CLI and puts ba
   const launched = (await launchArgs(f)).length
   const { process } = await f.liveSettings.effective(id)
   const before = (await settingsFrames(f)).length
-  expect(await configure(f, id, { modelId: 'fixture-model' })).toEqual({ accepted: false })
-  // The model the CLI took is put back, and nothing starts again with the flag.
+  const moved = await configure(f, id, { modelId: 'fixture-model' })
+  expect(moved.accepted).toBe(true)
+  expect(moved.snapshot?.threads.find(value => value.id === id)).toMatchObject({ modelId: 'fixture-model' })
+  // The model stays; fast mode is not running and the thread's choice is off, as after a refused toggle.
   expect((await settingsFrames(f)).slice(before).map(frame => frame.subtype === 'apply_flag_settings' ? frame.settings : `${String(frame.subtype)} ${String(frame.model)}`))
-    .toEqual(['set_model fixture-model', { fastMode: true }, 'set_model fixture-plain'])
+    .toEqual(['set_model fixture-model', { fastMode: true }])
   expect((await launchArgs(f)).length).toBe(launched)
-  expect(await f.liveSettings.effective(id)).toMatchObject({ process, modelId: 'fixture-plain', fastMode: false })
-  expect(await thread(f, id)).toMatchObject({ modelId: 'fixture-plain', fastMode: true })
-
-  // Pressed on its own, the refusal stands the same way: the thread shows fast mode off.
-  expect((await configure(f, id, { fastMode: false })).accepted).toBe(true)
-  expect((await configure(f, id, { modelId: 'fixture-model' })).accepted).toBe(true)
-  expect(await configure(f, id, { fastMode: true })).toEqual({ accepted: false })
-  expect((await thread(f, id)).fastMode).toBeUndefined()
   expect(await f.liveSettings.effective(id)).toMatchObject({ process, modelId: 'fixture-model', fastMode: false })
-  expect((await launchArgs(f)).length).toBe(launched)
+  expect((await thread(f, id)).modelId).toBe('fixture-model')
+  expect((await thread(f, id)).fastMode).toBeUndefined()
+  // Saved so: a restart shows the choice off and launches without the flag.
+  const next = await restarted(f)
+  expect((await thread(next, id)).fastMode).toBeUndefined()
+
+  // Pressed on its own, the refusal stands: nothing else changes and nothing starts again.
+  const { f: g, id: other } = await fixture()
+  await writeFile(join(g.root, 'settings-script.json'), JSON.stringify({ refuseFastMode: true }))
+  const gLaunched = (await launchArgs(g)).length
+  const gProcess = (await g.liveSettings.effective(other)).process
+  expect(await configure(g, other, { fastMode: true })).toEqual({ accepted: false })
+  expect((await thread(g, other)).fastMode).toBeUndefined()
+  expect(await g.liveSettings.effective(other)).toMatchObject({ process: gProcess, modelId: 'fixture-model', fastMode: false })
+  expect((await launchArgs(g)).length).toBe(gLaunched)
 })
 
 it('does not adopt a spare started without fast mode for a first send that turned it on, and adopts one that matches', async () => {

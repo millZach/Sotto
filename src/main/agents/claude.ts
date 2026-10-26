@@ -1156,6 +1156,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
         // A CLI that will not turn fast mode on is the account or organisation saying no (ADR-0143). A restart with the
         // flag would only hide that, so the refusal stands as it does under background work, and the warm CLI is kept.
         const fastRefused = live.stopped === 'fastMode'
+        // A model change that carried the kept choice onto a model with fast mode, refused only that last step, goes
+        // through: the thread is on the new model at normal speed, and its choice is off, as after a refused toggle.
+        if (fastRefused && after.fastMode && command.fastMode === undefined && command.runtimeMode === undefined) {
+          return await this.settleSettings(id, { ...command, fastMode: false }, live.reached)
+        }
         // A restart would end the background work, so the refusal below stands. Whatever the CLI already took
         // is put back first, because the refusal says nothing was changed. When the CLI will not take it back
         // either, that is no longer true, and the CLI is stopped as it is for a lost answer.

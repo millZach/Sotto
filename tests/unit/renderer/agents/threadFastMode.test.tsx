@@ -1,5 +1,5 @@
 import React from 'react'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, type AgentModel, type AgentState, type AgentThread } from '../../../../src/shared/agents'
 import { fixture, LiveThread, mount, setupThreadOptionsTests, withThread } from '../../../fixtures/renderer/threadOptionsHarness'
@@ -72,6 +72,27 @@ describe('fast mode toggle', () => {
     render(<LiveThread start={offering()} answer={async (_request, current) => ({ ...current, error: PROVIDER_REJECTED_ACTION })} />)
     fireEvent.click(toggle())
     expect(await screen.findByRole('alert')).toHaveTextContent('Claude Code did not switch fast mode on. The thread stays at normal speed; nothing else changed.')
+    expect(toggle()).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('says fast mode did not come on when a model change carrying it went through without it', async () => {
+    // A started thread on a Claude model without fast mode, which kept the choice; Opus offers it.
+    const start = offering({ modelId: 'claude:plain', fastMode: true, nativeSessionStarted: true })
+    start.host.models = [...start.host.models, { ...start.host.models.find(model => model.id === 'claude:model')!, id: 'claude:plain', name: 'Sonnet 5.5' }]
+      .map(model => model.id === 'claude:model' ? { ...model, name: 'Opus 5.5' } : model)
+    delete start.host.models.at(-1)!.fastMode
+    let sent: unknown
+    render(<LiveThread start={start} answer={async (request, current) => {
+      sent = request
+      // Claude Code took the model and refused the fast mode it carried: the thread is on Opus with its choice off.
+      return withThread(current, { modelId: 'claude:model', fastMode: undefined })
+    }} />)
+    expect(screen.queryByRole('button', { name: 'Fast mode' })).toBeNull()
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Choose model' })).getByRole('option', { name: /Opus 5\.5/u }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Claude Code did not switch fast mode on. The thread is on Opus 5.5 at normal speed.')
+    expect(sent).toEqual({ type: 'configure-thread', threadId: 'thread', modelId: 'claude:model' })
+    expect(screen.getByRole('combobox', { name: 'Thread model' })).toHaveTextContent('Opus 5.5')
     expect(toggle()).toHaveAttribute('aria-pressed', 'false')
   })
 
