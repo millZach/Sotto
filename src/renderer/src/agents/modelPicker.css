@@ -17,9 +17,10 @@
 
 /* The model menu: a provider rail, then a search line over the list with one note under it. Anchored over
    the chip. Two columns whenever more than one provider can be chosen; one when the thread is settled. Its one row
-   takes no more than the menu's height, so a long list scrolls inside it and the note under it stays in view. */
+   takes no more than the menu's height, so a long list scrolls inside it and the note under it stays in view. With the
+   rail it keeps that full height, so choosing another provider does not resize the menu under the pointer. */
 .model-picker__dialog { position: fixed; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); width: min(300px, calc(100vw - 32px)); max-height: min(380px, calc(100vh - 32px)); margin: 0; padding: 0; overflow: hidden; border: 1px solid var(--tt-field-border); border-radius: 14px; background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 16px 48px var(--tt-shadow-color); }
-.model-picker__dialog[data-rail] { grid-template-columns: 52px minmax(0, 1fr); width: min(336px, calc(100vw - 32px)); }
+.model-picker__dialog[data-rail] { grid-template-columns: 52px minmax(0, 1fr); width: min(336px, calc(100vw - 32px)); height: min(380px, calc(100vh - 32px)); }
 /* The menu goes straight to the place it is given. Reduced motion gives every property a 1ms transition (global.css),
    which a window in the background never finishes, and that left the menu over the chip after a step changed its height. */
 .model-picker__dialog { transition: none; }

@@ -125,7 +125,9 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
     }
     element.addEventListener('scroll', onScroll, { passive: true })
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(onScroll)
-    observer?.observe(element)
+    // The border box, because a pane narrowed by a split shrinks only the transcript's centring padding: its content box
+    // stays the column's width, and the lane, measured from that padding, would stay where the wider pane put it.
+    observer?.observe(element, { box: 'border-box' })
     if (content.current) observer?.observe(content.current)
     return () => { element.removeEventListener('scroll', onScroll); observer?.disconnect(); cancelAnimationFrame(frame.current) }
   }, [scroller, content, measure, readInView])

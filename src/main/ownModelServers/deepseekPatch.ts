@@ -66,6 +66,12 @@ export function deepseekPatch(servers: readonly OwnServer[]): string | undefined
       `        apiKeyEnv: ${yaml(deepseekRouteKeyVariable(server.id))}`,
       '        api: openai-completions',
       `        baseURL: ${yaml(server.address)}`,
+      // At most one retry, and none after the 300 s stream idle timeout: a server that took the prompt and went quiet
+      // still holds it, so each resend queues another copy (14 of a 183k-token prompt on a stalled cluster).
+      '        retryPolicy:',
+      '          mode: normal',
+      '          maxRetries: 1',
+      '          retryableCodes: [SERVER, TRANSPORT, RATE_LIMIT, EMPTY_RESPONSE]',
       '        models:',
     )
     for (const model of server.models) {

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { clearSettledThreadsAfterDaysSchema, type ClearSettledThreadsAfterDays } from './threadClear'
 import { OMARCHY_THEME_ID, omarchyThemeSchema, type OmarchyTheme } from './themes/omarchy'
 
 import { DEFAULT_HOTKEY } from './constants'
@@ -247,6 +248,12 @@ export interface AppSettings {
    * the worktree cleanup's hourly schedule. Settling removes no folder unless a cleanup rule says so.
    */
   autoSettleMergedThreads: boolean
+  /**
+   * 30 days by default; null is Never. A number of days, and this computer's settled threads quiet longer than that are
+   * cleared on their own at start, every hour and when it changes, beside the worktree cleanup (ADR-0140). Saved on every
+   * track; only Owl acts on it until the feature goes to stable.
+   */
+  clearSettledThreadsAfterDays: ClearSettledThreadsAfterDays
   /** Off by default. On, Changes opens on its own after a turn that changed at least 3 files or 50 lines. */
   proactivePanels: boolean
   reducedMotion: ReducedMotion
@@ -486,6 +493,7 @@ const fieldSchemas = {
   gitWritingInstructions: z.string().max(GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS),
   followPullRequestTemplates: z.boolean(),
   autoSettleMergedThreads: z.boolean(),
+  clearSettledThreadsAfterDays: clearSettledThreadsAfterDaysSchema,
   proactivePanels: z.boolean(),
   pullRequestText: z.boolean(),
   commitMessages: z.boolean(),
@@ -597,6 +605,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   followPullRequestTemplates: true,
   // Off: nothing moves in the sidebar on its own until the user asks for it.
   autoSettleMergedThreads: false,
+  // 30 days, Zach's pick on October 25, 2026 (ADR-0140); Never stays a choice.
+  clearSettledThreadsAfterDays: 30,
   // Off: nothing opens on its own until the user asks for it (ADR-0027).
   proactivePanels: false,
   pullRequestText: true,
@@ -762,6 +772,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     gitWritingInstructions: parseField(persisted, 'gitWritingInstructions', defaults),
     followPullRequestTemplates: parseField(persisted, 'followPullRequestTemplates', defaults),
     autoSettleMergedThreads: parseField(persisted, 'autoSettleMergedThreads', defaults),
+    clearSettledThreadsAfterDays: parseField(persisted, 'clearSettledThreadsAfterDays', defaults),
     proactivePanels: parseField(persisted, 'proactivePanels', defaults),
     pullRequestText: parseField(persisted, 'pullRequestText', defaults),
     commitMessages: parseField(persisted, 'commitMessages', defaults),

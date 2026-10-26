@@ -424,14 +424,14 @@ describe('IPC validation and lifecycle', () => {
         { gitAutoPull: true }, { defaultMergeMethod: 'squash' }, { lastMergeMethod: 'rebase' },
         { diffLayout: 'split' }, { diffHideWhitespace: false }, { diffFileState: 'expanded' },
         { gitWritingStyle: 'custom' }, { gitWritingInstructions: 'Subjects in the past tense.' }, { followPullRequestTemplates: false },
-        { autoSettleMergedThreads: true }, { proactivePanels: true },
+        { autoSettleMergedThreads: true }, { proactivePanels: true }, { clearSettledThreadsAfterDays: 90 }, { clearSettledThreadsAfterDays: null },
       ]
       // One control saves one field, so each must survive the allow-list on its own or its toggle snaps back.
       for (const patch of choices) {
         await expect(ipc.invoke(SETTINGS_UPDATE, patch)).resolves.toMatchObject(patch)
         expect(settings.update).toHaveBeenLastCalledWith(patch)
       }
-      for (const patch of [{ defaultMergeMethod: 'fast-forward' }, { lastMergeMethod: 'last' }, { diffLayout: 'unified' }, { diffFileState: 'open' }, { gitWritingStyle: 'haiku' }, { gitWritingInstructions: 'x'.repeat(2_001) }, { proactivePanels: 'yes' }]) {
+      for (const patch of [{ defaultMergeMethod: 'fast-forward' }, { lastMergeMethod: 'last' }, { diffLayout: 'unified' }, { diffFileState: 'open' }, { gitWritingStyle: 'haiku' }, { gitWritingInstructions: 'x'.repeat(2_001) }, { proactivePanels: 'yes' }, { clearSettledThreadsAfterDays: 7 }]) {
         await expect(ipc.invoke(SETTINGS_UPDATE, patch)).rejects.toThrow('Invalid IPC payload')
       }
       expect(settings.update).toHaveBeenCalledTimes(choices.length)

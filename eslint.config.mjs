@@ -272,4 +272,10 @@ export default tseslint.config(
       },
     },
   },
+  {
+    // A Babel plugin for Playwright's transform (#1579): Babel loads its plugins with require, so it is plain CommonJS.
+    files: ['tests/e2e/support/*.cjs'],
+    languageOptions: { globals: { __dirname: 'readonly', module: 'writable', require: 'readonly' } },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
+  },
 )

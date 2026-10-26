@@ -240,6 +240,10 @@ export class DevinAcpHost implements AgentHost {
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
   private aliases: Record<string, Alias> = {}
+  /** Whether `this.aliases` reflects the store: false until a connection has loaded it once (ADR-0140). */
+  private aliasesLoaded = false
+  /** Threads `forgetThread` removed, kept so a connect racing its disk write cannot bring one back. */
+  private readonly forgottenAliasIds = new Set<string>()
   private readonly threads = new Map<string, AgentThread>()
   /** Read by `withSession`, which shows a thread's session open, so each write marks the thread changed. */
   private readonly connections = new ThreadMarkingMap<Connection>(id => this.threadChanges.mark(id))
@@ -300,6 +304,37 @@ export class DevinAcpHost implements AgentHost {
   private persist(): Promise<void> {
     this.writing = this.aliasStore.write(structuredClone(this.aliases))
     return this.writing
+  }
+  /**
+   * ADR-0140: stop the thread's own connection if it has one, remove its alias and every per-thread record this
+   * adapter keeps, and persist. Guarded with `forgottenAliasIds` against a connect that reads the alias store
+   * before this removal reaches disk (see there).
+   */
+  async forgetThread(id: string): Promise<void> {
+    this.forgottenAliasIds.add(id)
+    if (!this.aliasesLoaded) {
+      const current = await this.aliasStore.read()
+      if (!(id in current)) return
+      const next = { ...current }
+      delete next[id]
+      await this.aliasStore.write(next)
+      return
+    }
+    if (!this.aliases[id]) return
+    await this.stopSession(id)
+    this.clearRequests(id)
+    this.reaper.forget(id)
+    this.observed.delete(id)
+    this.dispatching.delete(id)
+    this.active.delete(id)
+    this.lastReadAt.delete(id)
+    this.loading.delete(id)
+    this.reading.delete(id)
+    this.log.forget(id)
+    this.threads.delete(id)
+    delete this.aliases[id]
+    await this.persist()
+    if (this.state.connected) this.emit()
   }
   private thread(id: string): AgentThread {
     const alias = this.aliases[id]
@@ -533,7 +568,8 @@ export class DevinAcpHost implements AgentHost {
     // Replace what this process holds only once discovery has succeeded. A
     // refusal earlier leaves the threads and their messages as they were,
     // rather than publishing empty ones over a history Sotto already had.
-    this.aliases = aliases; this.state.projects = projects
+    for (const forgottenId of this.forgottenAliasIds) delete aliases[forgottenId]
+    this.aliases = aliases; this.aliasesLoaded = true; this.state.projects = projects
     this.threads.clear(); this.threadChanges.markAll(); this.log.forgetAll()
     for (const id of Object.keys(this.aliases)) {
       this.thread(id); this.log.seed(id, this.history?.messageIdentities(id) ?? [])

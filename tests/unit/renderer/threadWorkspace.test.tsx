@@ -720,6 +720,32 @@ describe('Thread transcript scrolling', () => {
       expect(transcript.scrollTop).toBe(transcript.scrollHeight - VIEW)
     })
 
+    it('lets go of the end for a reader who scrolls up a little while a reply is written, and follows again at the end', () => {
+      // The window lays out what is written late; jsdom has no ResizeObserver, so the test says when it fires.
+      const resized: (() => void)[] = []
+      vi.stubGlobal('ResizeObserver', class { constructor(callback: () => void) { resized.push(callback) } observe(): void {} disconnect(): void {} })
+      const { transcript, update, scrollTo } = mountWith(answered())
+      const end = (): number => transcript.scrollHeight - VIEW
+      const write = (paragraph: number): void => {
+        update(item => ({ messages: item.messages.map(message => message.id === 'answer' ? { ...message, text: `${message.text}\n\nAnswer paragraph ${paragraph}.` } : message) }))
+        act(() => { for (const callback of resized) callback() })
+      }
+      write(11)
+      expect(transcript.scrollTop).toBe(end())
+      // A nudge up, well inside the slack at the end that still counts as following.
+      scrollTo(end() - 30)
+      const reading = transcript.scrollTop
+      write(12)
+      expect(transcript.scrollTop).toBe(reading)
+      update(item => ({ messages: [...item.messages, { id: 'next', role: 'user' as const, text: 'And the header?', createdAt: at(6) }] }))
+      expect(transcript.scrollTop).toBe(reading)
+      // Back at the end, the reply is followed again.
+      scrollTo(end())
+      write(13)
+      expect(transcript.scrollTop).toBe(end())
+      vi.unstubAllGlobals()
+    })
+
     it('comes back to where they were reading when the answer is held back while written and then shown whole', () => {
       // With replies shown once complete, the reopened turn's answer reads "Writing a reply…": the transcript grows too short
       // to keep the place, and the window can only scroll to its top. When the answer is whole again, so is the place.

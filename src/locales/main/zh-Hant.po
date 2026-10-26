@@ -2175,6 +2175,10 @@ msgstr ""
 msgid "This checkpoint no longer matches the selected native thread and working copy."
 msgstr ""
 
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This clear could not be read. Nothing was deleted."
+msgstr ""
+
 #: src/main/tools/cloudIphone/service.ts
 msgid "This cloud iPhone request already changed or expired. Ask again."
 msgstr ""
@@ -2205,6 +2209,10 @@ msgstr ""
 
 #: src/main/hosts/hostFailureWords.ts
 msgid "This computer pairs with a host only through its SSH connection. Nothing was sent. Connect again over SSH."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This computer runs no threads of its own here, so there is nothing to clear. Nothing was deleted."
 msgstr ""
 
 #: src/main/hosts/hostFailureWords.ts
@@ -2283,6 +2291,14 @@ msgstr ""
 
 #: src/main/hosts/hostFailureWords.ts
 msgid "This host connection was closed. Nothing was saved."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This host could not check the thread. Nothing was deleted. Check its connection and try again."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This host could not check the thread. Nothing was deleted. Try again."
 msgstr ""
 
 #: src/main/hosts/desktopHostRouter.ts
@@ -2627,6 +2643,10 @@ msgstr ""
 
 #: src/main/themes/openVsx.ts
 msgid "Type up to 100 characters to search."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "Update {host} to delete its threads. Nothing was deleted."
 msgstr ""
 
 #: src/main/agents/socketHostService.ts
