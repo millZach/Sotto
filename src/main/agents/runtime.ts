@@ -142,7 +142,7 @@ export interface AgentRuntimeOptions {
    * Git status the way T3 reads it: how often a project's origin may be fetched in the background, and
    * whether a window is in front to read for. Absent, thread records carry no Git status.
    */
-  gitStatus?: { fetchIntervalMs: () => number; foreground?: () => boolean
+  gitStatus?: { fetchIntervalMs: () => number; foreground?: () => boolean; visible?: () => boolean
     /** A scripted `gh` for a journey in the running app; development only. */
     ghStandIn?: { executable: string; args: readonly string[] }
     /** When GitHub's rate limit holds Sotto's questions back (#820), and what babysitting did (ADR-0061), as stable
@@ -224,7 +224,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   /** How Git and gh are run; only a journey's stand-in changes it. */
   let gitRun: RunGitCommand | undefined
   if (options.gitStatus) {
-    const { fetchIntervalMs, foreground, ghStandIn, log } = options.gitStatus
+    const { fetchIntervalMs, foreground, visible, ghStandIn, log } = options.gitStatus
     if (ghStandIn) gitRun = runWithGhStandIn(ghStandIn)
     // One rate limit for the process: the status reader and the Pull request surface spend the same gh sign-in's points.
     gitHubRateLimit = new GitHubRateLimit(log ? { log } : {})
@@ -232,7 +232,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     gitHubHosts = new GitHubHosts({ run: gitRun ?? runGitStatusCommand })
     gitStatus = new GitStatusReader({ fetchIntervalMs, rateLimit: gitHubRateLimit, hosts: gitHubHosts, ...(gitRun ? { run: gitRun } : {}) })
     // Automatically pull is read at every remote read, so turning it on or off applies without a restart on the desktop.
-    agentHost.setGitStatus(gitStatus, { pollIntervalMs: fetchIntervalMs, autoPull: () => options.settings().gitAutoPull, ...(foreground ? { foreground } : {}) })
+    agentHost.setGitStatus(gitStatus, { pollIntervalMs: fetchIntervalMs, autoPull: () => options.settings().gitAutoPull, ...(foreground ? { foreground } : {}), ...(visible ? { visible } : {}) })
   }
   // Sotto's own short writing (ADR-0026): thread titles, branch names, commit and pull request drafts, each a
   // side call to the thread's own provider client. A design fixture host offers none, so its titles stay the stand-in.

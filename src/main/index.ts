@@ -892,8 +892,10 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   let windowBlurredAt = 0
   app.on('browser-window-focus', () => { windowBlurredAt = 0 })
   app.on('browser-window-blur', () => { windowBlurredAt = Date.now() })
-  const windowInFront = (): boolean => BrowserWindow.getAllWindows().some(window => window.getTitle() === buildName && window.isVisible() && !window.isMinimized()
+  const showing = (window: BrowserWindow): boolean => window.getTitle() === buildName && window.isVisible() && !window.isMinimized()
+  const windowInFront = (): boolean => BrowserWindow.getAllWindows().some(window => showing(window)
     && (window.isFocused() || (windowBlurredAt !== 0 && Date.now() - windowBlurredAt < 45_000)))
+  const windowShowing = (): boolean => BrowserWindow.getAllWindows().some(showing)
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart: owlFeatures['resume-after-restart'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
     delegationEnabled, workerRolesEnabled, continueEnabled, threadStartsEnabled, pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
@@ -903,7 +905,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}),
     settings: () => workingCopySettings, writingSettings: () => settings.get(),
     historyEnabled: () => agentHistoryEnabled,
-    gitStatus: { fetchIntervalMs: () => workingCopySettings.gitFetchIntervalSeconds * 1000, foreground: windowInFront, ...(ghStandIn ? { ghStandIn } : {}), log: event => { logOperational(event) } },
+    gitStatus: { fetchIntervalMs: () => workingCopySettings.gitFetchIntervalSeconds * 1000, foreground: windowInFront, visible: windowShowing, ...(ghStandIn ? { ghStandIn } : {}), log: event => { logOperational(event) } },
     babysitting: { agentTool: () => workingCopySettings.babysitPullRequests },
     // A journey's Cursor sign-in page is written down for the spec to read, never opened in a browser.
     openExternal: url => cursorFixtureRoot ? appendFile(join(cursorFixtureRoot, 'opened-pages.txt'), `${url}
