@@ -16,6 +16,7 @@ import { followupsFor } from './ThreadFollowups'
 import { deliveryFor, deliveryPending, hasDraftContent, queuedRevision, submissionStatus, useSubmissions, useThreadComposer, type Submission, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import { clockLabel, type ThreadRow } from './threadFacts'
 import { useShared } from './stateSharing'
+import { foldedTurns, setStepsOpen, useStepsOpen } from './stepsOpen'
 import { MessageContent, AttachmentPreviews } from './MessageContent'
 import { renderedPlainText, useTransientFlag, writeClipboard } from './richActions'
 import { LinkMenu, type LinkMenuItem } from '../tools/webLinks'
@@ -133,8 +134,11 @@ function TurnWork({ headline, steps, delegated, open, setOpen, turn, failed, cha
   readonly steps: number
   /** The turn's delegated work in a few words, after the headline, so a closed fold still says what it holds. */
   readonly delegated?: ReactNode
-  /** Whether the fold is open, held by the turn, which keeps what still works under its reply only while the fold is closed. */
-  readonly open: boolean; readonly setOpen: (open: boolean | ((open: boolean) => boolean)) => void
+  /**
+   * Whether the fold is open, held by the turn, which keeps what still works under its reply only while the fold is closed.
+   * `setOpen` holds this fold only; a press also sets how every fold not yet pressed starts.
+   */
+  readonly open: boolean; readonly setOpen: (open: boolean) => void
   /** The turn failed: its line is where a press that opens the thread at its failed turn lands. */
   readonly failed: boolean
   readonly onDisclosure: (element: HTMLElement) => void; readonly onSeek?: ((message: HTMLElement) => void) | undefined
@@ -157,7 +161,7 @@ function TurnWork({ headline, steps, delegated, open, setOpen, turn, failed, cha
     <section className="thread-work" data-expanded={open || undefined} data-turn-outcome={failed ? 'failed' : undefined} aria-labelledby={`${bodyId}-headline`}
       onKeyDown={foldOnEscape(open, summary => { onDisclosure(summary); setOpen(false) })}>
       <button type="button" className="thread-work__summary tt-focusable" aria-expanded={open} aria-controls={open ? bodyId : undefined}
-        onClick={event => { onDisclosure(event.currentTarget); setOpen(value => !value) }}>
+        onClick={event => { onDisclosure(event.currentTarget); setOpen(!open); setStepsOpen(!open) }}>
         <span id={`${bodyId}-headline`} className="thread-work__headline">{headline}{steps ? ` · ${stepsLabel(steps)}` : null}{delegated}</span>
         <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
       </button>
@@ -299,7 +303,9 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
     return element !== null && rows !== null ? rows.add(message.id, element) : undefined
   }, [rows, message.id])
   const workButton = useRef<HTMLButtonElement>(null)
-  const [workOpen, setWorkOpen] = useState(false)
+  const [pressedOpen, setWorkOpen] = useState<boolean | null>(null)
+  const stepsOpen = useStepsOpen()
+  const workOpen = pressedOpen ?? stepsOpen
   const workId = useId()
   const foldWork = (event: React.KeyboardEvent): void => {
     if (!workOpen || event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing || !workButton.current) return
@@ -331,7 +337,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
       : <span className="thread-message__who">{message.role === 'user' ? t({ message: 'You', comment: 'Who wrote a message: the user.' }) : message.role === 'assistant' ? speaker === 'watcher' ? <><WatcherOwl size={13} />Watcher</> : provider : t({ message: 'System', comment: 'Who wrote a message: the system.' })}</span>}
       <time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time>
       {work ? <button type="button" ref={workButton} className="thread-message__work tt-focusable" aria-expanded={workOpen} aria-controls={workOpen ? workId : undefined}
-        onClick={event => { activity?.onDisclosure(event.currentTarget); setWorkOpen(open => !open) }}>
+        onClick={event => { activity?.onDisclosure(event.currentTarget); setWorkOpen(!workOpen); setStepsOpen(!workOpen) }}>
         {work}<ChevronRight className="thread-activity__chevron" size={13} aria-hidden="true" />
       </button> : null}</header>
     {work ? <TurnFailureReason turn={lifecycle} /> : null}
@@ -373,8 +379,10 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
 }): ReactNode {
   // Its work lines are worded by helpers, so it draws again when the interface language changes.
   useInterfaceLanguageState()
-  // The turn holds its fold's state: what still works after the reply stands under it only while the fold is closed.
-  const [workOpen, setWorkOpen] = useState(false)
+  // The turn holds its fold's state: what still works after the reply stands under it only while the fold is closed. Until
+  // pressed, the fold starts as the user last left any turn's steps.
+  const [pressedOpen, setWorkOpen] = useState<boolean | null>(null)
+  const stepsOpen = useStepsOpen()
   // A fork carries finished turns, so only a finished turn's newest written reply offers one (#1028, E5b).
   const forkableId = running && last ? undefined : turn.replies.findLast(message => message.role === 'assistant' && !isVisualMessage(message) && !isWakeUpMessage(message) && drawn(message))?.id
   // A visual an agent drew is its card; one this window cannot draw is its text, which says what it showed (ADR-0056).
@@ -444,6 +452,8 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   const shown = (from: number, to: number): ReactNode => visuals.filter(visual => visual.at > from && visual.at < to)
     .map(({ message }) => <React.Fragment key={message.id}>{article(message)}</React.Fragment>)
   const lifecycle = groups.find(group => group.turn)?.turn
+  // A turn whose working line was folded with Escape stays folded once it ends.
+  const workOpen = pressedOpen ?? (lifecycle !== undefined && foldedTurns.has(lifecycle.turnId) ? false : stepsOpen)
   const moments = [...turn.replies.map(message => message.createdAt), ...groups.flatMap(group => group.records.map(record => record.completedAt ?? record.startedAt))]
   // A question a folded reply asked would fold away with it, so it is quoted under the fold (#1019).
   const lifted = work.flatMap(message => message.role === 'assistant' && !isWakeUpMessage(message) && asked(message).length ? [{ message, questions: asked(message) }] : [])

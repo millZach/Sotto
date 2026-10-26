@@ -578,6 +578,9 @@ describe("Watcher's room", () => {
     fireEvent.click(work)
     const group = within(beside).getByRole('button', { name: 'Ran 1 command' })
     group.focus()
+    // The group opened with the fold, so Escape folds it first, then the fold.
+    fireEvent.keyDown(group, { key: 'Escape' })
+    expect(group).toHaveAttribute('aria-expanded', 'false')
     fireEvent.keyDown(group, { key: 'Escape' })
     expect(work).toHaveAttribute('aria-expanded', 'false')
     expect(work).toHaveFocus()
