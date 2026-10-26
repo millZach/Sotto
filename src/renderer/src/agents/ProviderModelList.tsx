@@ -4,6 +4,7 @@ import { plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import type { AgentModel } from '../../../shared/agents'
 import { useAnchoredMenu } from './anchoredMenu'
+import { moveListboxFocus } from './listboxKeys'
 import { countModels, matchesWords, modelSources, newestModelsFirst, searchWords } from './ModelPicker'
 import './modelPicker.css'
 
@@ -40,7 +41,7 @@ export function ProviderModelList({ label, models, agentEntryId }: {
     : [{ name: '', models: newestModelsFirst(models).filter(matches) }].filter(group => group.models.length)
   const count = countModels(models.length)
   const close = (): void => setOpen(false)
-  const row = (model: AgentModel): ReactNode => <li key={model.id}>
+  const row = (model: AgentModel): ReactNode => <li key={model.id} tabIndex={-1}>
     <span><b>{model.name}</b>{model.reasoningEfforts?.length ? <small>{model.reasoningEfforts.join(' · ')}</small> : null}</span>
     {model.id === agentEntryId ? <span className="provider-model-list__tag">{t`Agent setting`}</span> : null}
   </li>
@@ -62,12 +63,13 @@ export function ProviderModelList({ label, models, agentEntryId }: {
           <input ref={search} aria-label={t`Search models`} placeholder={t({ message: `Search ${label} models`, comment: '{label} is a provider\'s name.' })} value={query} onChange={event => setQuery(event.target.value)}
             onKeyDown={event => {
               if (event.key === 'Enter') event.preventDefault()
-              if (event.key === 'ArrowDown') { event.preventDefault(); list.current?.focus() }
+              if (event.key === 'ArrowDown') { event.preventDefault(); list.current?.querySelector<HTMLElement>('li')?.focus() }
             }} />
           <button type="button" aria-label={t`Close models`} title={t`Close models`} onClick={close}><X size={15} aria-hidden="true" /></button>
         </header>
-        {/* One tab stop that scrolls with the arrow keys: the rows are to read, not to choose. */}
-        <div ref={list} role="region" tabIndex={0} aria-label={t({ message: `${label} models`, comment: '{label} is a provider\'s name.' })} className="model-picker__models provider-model-list__models">
+        {/* One tab stop: the arrows move through the rows as the model menu's do, though the rows are to read, not to
+            choose, and Up from the first goes back to search. */}
+        <div ref={list} role="region" tabIndex={0} onKeyDown={event => moveListboxFocus(event, list.current, search.current, 'li')} aria-label={t({ message: `${label} models`, comment: '{label} is a provider\'s name.' })} className="model-picker__models provider-model-list__models">
           {groups.map(group => group.name
             ? <section key={group.name} aria-label={group.name}><p className="model-picker__group" aria-hidden="true">{group.name}<span>{group.models.length}</span></p><ul>{group.models.map(row)}</ul></section>
             : <ul key="models">{group.models.map(row)}</ul>)}
