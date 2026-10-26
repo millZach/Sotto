@@ -3,7 +3,7 @@ import { cleanSettingsHistory } from './settings/privacyCleanup'
 import { RetiredChatHistory } from './settings/retiredChats'
 import { registerHostQuitDrain, type HostQuitHandles } from './app/hostQuitDrain'
 import { HOSTS_CHANGED } from '../shared/hosts'
-import { parseHostEntityKey } from '../shared/clientIdentity'
+import { hostEntityKey, parseHostEntityKey } from '../shared/clientIdentity'
 import { DesktopHostRouter } from './hosts/desktopHostRouter'
 import { questionPageDestination } from './hosts/questionPageDestination'
 import { DesktopHosts } from './hosts/desktopHosts'
@@ -210,6 +210,7 @@ import {
   createE2EGlobalShortcuts,
   createE2ENativeState,
   createE2EPasteProcess,
+  failE2EOnUncaughtException,
   resolveE2EConfiguration,
   isTrustedMainE2ESender,
   snapshotE2EState,
@@ -274,7 +275,7 @@ import { RunCloudClient } from './tools/cloudIphone/runCloudClient'
 import { registerCloudIphoneIpc } from './tools/cloudIphoneIpc'
 import { CLOUD_IPHONE_EVENT } from '../shared/cloudIphone'
 import { TERMINAL_EVENT } from '../shared/terminal'
-import { githubPullRequestMerged } from './agents/worktreeCleanup'
+import { githubOpenPullRequestBranches, githubPullRequestMerged } from './agents/worktreeCleanup'
 import type { GitHubRateLimitEvent } from './agents/github'
 import type { BabysitEvent } from './agents/babysitting'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './agents/claude'
@@ -304,6 +305,7 @@ if (e2eConfiguration === null) {
   delete process.env.SOTTO_E2E_USER_DATA
 } else if (e2eConfiguration !== null) {
   app.setPath('userData', e2eConfiguration.userDataPath)
+  failE2EOnUncaughtException(process, text => process.stderr.write(text), code => app.exit(code))
 }
 
 // The only read of process.platform in the application; every platform-varying
@@ -910,6 +912,8 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart: owlFeatures['resume-after-restart'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
     delegationEnabled, workerRolesEnabled, continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
     attachAnyFile: owlFeatures['attach-any-file'],
+    // Clearing settled threads (ADR-0140): Owl's answer, read once here. The log names the event and a count or a reason's code.
+    clearThreadsEnabled: owlFeatures['clear-threads'], clearLog: (event, detail) => { console.error(`[Sotto] ${event} ${detail}`) },
     ...(ownServers ? { ownServers: () => ownServers.list() } : {}),
     ...(nextPromptEnabled ? { nextPromptEnabled, nextPromptChanged: entry => { windows.sendToMain(NEXT_PROMPT_CHANGED, windowNextPrompt(localRuntime?.agentControl.hostId(), entry)) } } : {}),
     ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}),
@@ -967,7 +971,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(),
     } } : {}),
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
-    worktreeCleanup: { ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged } : {}), log: code => { logOperational(code) } },
+    worktreeCleanup: { ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged, openPullRequestBranches: githubOpenPullRequestBranches } : {}), log: code => { logOperational(code) } },
     watcherLog: event => { logOperational(event) },
     claudeSettingsLog: event => { logOperational(event) },
     codexLog: event => { logOperational(event) },
@@ -987,6 +991,8 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), { watcherEnabled, heldProviders, streamingPublishCost: owlFeatures['streaming-publish-cost'],
     attachAnyFile: owlFeatures['attach-any-file'],
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
+    // A paired host's deleted thread takes the answer drafts this computer kept for it (ADR-0140).
+    threadsDeleted: threadIds => { void requestDrafts.forgetThreads(new Set(threadIds)).catch(() => undefined) },
   })
   quitHandles.hostRouter = hostRouter
   // The window's panes show their threads only while it has the focus (ADR-0046), on this computer's host and on every
@@ -1169,6 +1175,11 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     return localRuntime?.agentHost.dormantThreadIds?.().includes(key?.id ?? owner.ownerId) ?? false
   }, () => requestDraftWatcherOwnerIds(agentControl, () => localRuntime?.agentHost.dormantThreadIds?.(), hostRouter))
   await requestDrafts.start()
+  // This computer's deleted threads take their answer drafts too, under either name the window gave them (ADR-0140).
+  localRuntime?.agentControl.onThreadsDeleted(threadIds => {
+    const hostId = agentControl.hostId()
+    void requestDrafts.forgetThreads(new Set(threadIds.flatMap(id => [id, hostEntityKey(hostId, id)]))).catch(() => undefined)
+  })
   const unsubscribeRequestDrafts = requestDrafts.onChanged(owner => windows.sendToMain(REQUEST_DRAFT_CHANGED, owner))
   mainActivity?.subscribe(state => { windows.sendToMain(MAIN_ACTIVITY_CHANGED, state) })
   const cleanRetiredHistory = async (): Promise<void> => {

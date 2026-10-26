@@ -613,6 +613,21 @@ export class ConfiguredProviderHost implements AgentHost {
     return host.rollbackThread(threadId, removedUserMessages, expectedUserMessageIds)
   }
   /**
+   * A cleared thread goes to the adapter that owns it whether or not its provider is connected (ADR-0140): the alias is
+   * on disk either way. Its slot drops it at once, so the next aggregate does not carry it until the adapter's own does.
+   */
+  async forgetThread(threadId: string): Promise<void> {
+    const provider = this.providerForThread(threadId)
+    if (!provider) return
+    await this.options.hosts[provider].forgetThread?.(threadId)
+    const slot = this.slots.get(provider)!
+    if (!slot.threads.has(threadId)) return
+    this.mark(provider, threadId); slot.named.delete(threadId)
+    slot.threads.apply({ sequence: slot.threads.sequence! + 1, upserts: [], removals: [threadId] })
+    // Until the adapter's own publication drops it too, the next one replaces the slot whole rather than bring it back.
+    slot.diverged = !this.followsIncoming(slot)
+  }
+  /**
    * A fork is its source's provider's own copy (#1028), so it goes to the provider that owns the source thread, on one of
    * that provider's models; no other provider is asked in its place.
    */

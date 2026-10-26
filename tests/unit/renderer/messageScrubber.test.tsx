@@ -32,6 +32,7 @@ vi.mock('../../../src/shared/threadPrompts', async importOriginal => ({ ...await
 const VIEW = 600
 const MARGIN = 120
 let contentHeight = 5_000
+let margin = MARGIN
 
 const at = (minutes: number): string => new Date(E2E_THREADS_NOW - minutes * 60_000).toISOString()
 function conversation(turns: number): AgentMessage[] {
@@ -64,6 +65,7 @@ const card = () => document.querySelector<HTMLElement>('.message-scrubber__card'
 
 beforeEach(() => {
   contentHeight = 5_000
+  margin = MARGIN
   const scroller = (element: Element): boolean => element.classList.contains('thread-workspace__transcript')
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return scroller(this) ? VIEW : 0 })
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return scroller(this) ? 1_000 : 0 })
@@ -72,7 +74,7 @@ beforeEach(() => {
   vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
     const style = real(element, pseudo)
     if (!scroller(element)) return style
-    return new Proxy(style, { get: (target, key) => key === 'paddingLeft' || key === 'paddingRight' ? `${MARGIN}px` : (value => typeof value === 'function' ? value.bind(target) : value)(Reflect.get(target, key)) })
+    return new Proxy(style, { get: (target, key) => key === 'paddingLeft' || key === 'paddingRight' ? `${margin}px` : (value => typeof value === 'function' ? value.bind(target) : value)(Reflect.get(target, key)) })
   })
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalApp).mockReset() })
@@ -86,6 +88,26 @@ describe('the message scrubber', () => {
     expect(scrubber()!.style.getPropertyValue('--scrubber-left')).toBe(`${MARGIN - 44}px`)
     expect(scrubber()!.style.getPropertyValue('--scrubber-lane')).toBe('44px')
     expect(ticks()[0]).toHaveAccessibleName(/^Go to your message at .+: Question 0: what about part 0\?$/u)
+  })
+
+  it('moves the lane with the column when a split narrows the pane and only the transcript’s margin shrinks', () => {
+    // jsdom has no ResizeObserver, so this one reports what a browser does: a box it watches that changed size. Opening a
+    // split beside a wide pane shrinks the transcript's centring padding and leaves its content box the column's width.
+    const watched: { readonly callback: ResizeObserverCallback; readonly element: Element; readonly box: ResizeObserverBoxOptions }[] = []
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(private readonly callback: ResizeObserverCallback) {}
+      observe(element: Element, options?: ResizeObserverOptions): void { watched.push({ callback: this.callback, element, box: options?.box ?? 'content-box' }) }
+      unobserve(): void {}
+      disconnect(): void {}
+    })
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(step => { step(0); return 0 })
+    try {
+      mount(conversation(5))
+      expect(scrubber()!.style.getPropertyValue('--scrubber-left')).toBe(`${MARGIN - 44}px`)
+      margin = 60
+      act(() => { for (const { callback, element, box } of watched) if (element === transcript() && box !== 'content-box') callback([], {} as ResizeObserver) })
+      expect(scrubber()!.style.getPropertyValue('--scrubber-left')).toBe('16px')
+    } finally { vi.unstubAllGlobals() }
   })
 
   it('shows only on a long conversation of three or more sent messages, and not on stable', () => {

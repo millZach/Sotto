@@ -736,6 +736,8 @@ export class SocketHostService implements HostService {
   get supportsDraftRevisions(): boolean { return this.features.includes('draft-revisions') }
   /** The host lists `pull-request-babysit`: it babysits and takes the user's Babysit pull request (ADR-0061 decision 11). */
   get supportsBabysitting(): boolean { return this.features.includes('pull-request-babysit') }
+  /** The host lists `thread-delete`: it deletes one of its settled threads when asked (ADR-0140). */
+  get supportsThreadDelete(): boolean { return this.features.includes('thread-delete') }
   async command(command: AgentCommand, _client?: ClientIdentity, commandId?: string): Promise<AgentState> {
     this.requireCommandAvailable(command)
     const refusal = managementCommandRefusal(command)
@@ -747,6 +749,7 @@ export class SocketHostService implements HostService {
     const admitted = structuredClone(command)
     // A host from before babysitting would refuse the command with no word of why; this says which side to update.
     if ((admitted.type === 'babysit-pull-request' || admitted.type === 'stop-babysitting') && !this.supportsBabysitting) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
+    if ((admitted.type === 'delete-thread' || admitted.type === 'preview-delete-thread') && !this.supportsThreadDelete) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     // A host from before the window's own refresh (#820) would refuse the field; it reads the folder as any refresh instead.
     if (admitted.type === 'refresh-thread-worktree' && admitted.background !== undefined && !this.features.includes('background-refresh')) delete admitted.background
     if (admitted.type === 'compose' && admitted.threadId !== undefined) {
@@ -791,7 +794,11 @@ export class SocketHostService implements HostService {
         releaseAdmission ? () => { packetPlaced = true } : undefined)
       releaseAdmission?.()
       const result = await executing
-      if (admitted.type === 'preview-reclaim-thread-worktree') return result
+      if (admitted.type === 'preview-reclaim-thread-worktree' || admitted.type === 'preview-delete-thread') return result
+      // A deleted thread's draft, kept here for its host, goes with it (ADR-0140).
+      if (admitted.type === 'delete-thread' && result.error === null) {
+        this.retainedDrafts.remove(this.retainedHostId(), admitted.threadId)
+      }
       if (result.error === null && edit && (admitted.type === 'send' || admitted.type === 'cancel-draft')) {
         const latest = this.retainedDrafts.get(this.retainedHostId(), edit.draft.threadId)
         this.retainedDrafts.remove(this.retainedHostId(), edit.draft.threadId, edit.draft.draftId)
@@ -1034,7 +1041,7 @@ export class SocketHostService implements HostService {
         this.quietConnectionNotices.delete(text)
       }
     }
-    if (command.type === 'preview-reclaim-thread-worktree') { this.validateState(state); return state }
+    if (command.type === 'preview-reclaim-thread-worktree' || command.type === 'preview-delete-thread') { this.validateState(state); return state }
     if (retainedId && 'threadId' in command && command.threadId
       && this.retainedDrafts.get(this.retainedHostId(), command.threadId)?.draft.draftId !== retainedId) {
       return { ...this.state(), error: state.error }

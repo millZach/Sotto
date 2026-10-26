@@ -317,6 +317,20 @@ export class RequestDraftService {
     })
   }
 
+  /**
+   * Cleared threads' answer drafts and their retired answers go (ADR-0140): every form and ledger entry whose thread owner
+   * is one of `ownerIds`, as the window names them.
+   */
+  forgetThreads(ownerIds: ReadonlySet<string>): Promise<void> {
+    return this.serial(async () => {
+      const owned = (owner: RequestDraftOwner): boolean => owner.kind === 'thread' && ownerIds.has(owner.ownerId)
+      const drafts = this.saved.drafts.filter(draft => !owned(draft.target))
+      const retirements = this.saved.retirements.filter(item => !owned(item.owner))
+      if (drafts.length === this.saved.drafts.length && retirements.length === this.saved.retirements.length) return
+      await this.commit(drafts, retirements)
+    })
+  }
+
   list(input: RequestDraftOwner): Promise<RequestDraft[]> {
     const owner = requestDraftOwnerSchema.parse(input)
     if (owner.kind !== 'thread') throw new Error('Standalone chats are no longer available.')
