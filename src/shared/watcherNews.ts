@@ -25,16 +25,19 @@ export const WATCHER_NEWS_TARGETS_MAX = 50
  * `delegatedThreadId` names the thread a watched thread delegated to whose request card this is: Watcher watches the
  * delegating thread, and hears of the card as that thread's news (#1190). `prototype-ready` comes once for each prototype
  * waiting for the user's review (ADR-0108), named by its question (`requestCardId`) or by the reply that named its page
- * (`messageId`); like all news it answers and approves nothing.
+ * (`messageId`); like all news it answers and approves nothing. `request-closed` and `prototype-closed` come once when a card or
+ * prototype Watcher was told of no longer waits on the user (October 24, 2026), with `answeredByUser` when Sotto saw the
+ * user answer that card. They carry none of the answer, and approve nothing.
  */
 export const watcherEventSchema = z.object({
-  id: z.string().max(512), kind: z.enum(['turn-finished', 'needs-user', 'turn-failed', 'quiet', 'taken-over', 'delivery-changed', 'evidence-changed', 'work-settled', 'prototype-ready']),
+  id: z.string().max(512), kind: z.enum(['turn-finished', 'needs-user', 'turn-failed', 'quiet', 'taken-over', 'delivery-changed', 'evidence-changed', 'work-settled', 'prototype-ready',
+    'request-closed', 'prototype-closed']),
   requestId: z.uuid(), target: watcherThreadTargetSchema, generation: z.number().int().nonnegative(),
   observedAt: z.iso.datetime(), turnId: z.string().max(512).optional(), messageId: z.string().max(512).optional(),
   requestCardId: z.string().max(512).optional(), requestCardKind: z.enum(['question', 'permission']).optional(),
   revision: z.string().max(512).optional(), operationId: z.uuid().optional(),
   backgroundWorkCount: z.number().int().nonnegative().optional(), evidenceIds: z.array(z.string().max(512)).max(100).optional(),
-  delegatedThreadId: z.string().max(512).optional(),
+  delegatedThreadId: z.string().max(512).optional(), answeredByUser: z.literal(true).optional(),
 }).strict()
 export const watcherNewsSchema = z.object({ source: z.literal('watcher'), watcher: watcherThreadTargetSchema,
   events: z.array(watcherEventSchema).max(400), omitted: z.number().int().nonnegative().default(0) }).strict()

@@ -188,6 +188,7 @@ private struct WatcherHero: View {
                 }
             }
             if model.watcherHostIDs.count > 1 { computerMenu } else { subtitleText }
+            WatcherMachinesLine(hostID: hostID)
             if model.offersWatcherManage(hostID), model.watcherPage(hostID) != nil {
                 WatcherPermissionChip(hostID: hostID).padding(.top, Space.s1)
             }
@@ -235,6 +236,189 @@ private struct WatcherHero: View {
         let computer = model.name(hostID)
         guard let running = model.watcherModel(hostID) else { return "On \(computer)" }
         return running + " on " + computer
+    }
+}
+
+// MARK: - Machines
+
+/// The machines line (#1032, Zach's pick D "Names" on October 23, 2026), under Watcher's computer while that computer has
+/// Work across machines on: each machine's name, then its working count, then the words a problem adds, in the warning
+/// ink. A phone always shortens it: no "starting" counts, only the machines with a problem and how many more, and with
+/// nothing wrong anywhere just how many machines and how much works on them. Each name opens that machine's panel, and
+/// the count of the rest shows every machine. Plain text and underlined names, never pills or chips (ADR-0110).
+private struct WatcherMachinesLine: View {
+    @EnvironmentObject var model: AppModel
+    /// Watched for Watcher's page, which publishes on its own store, not on the model.
+    @EnvironmentObject var watcherStore: WatcherStore
+    let hostID: String
+    @State private var all = false
+    @State private var open: OpenMachine?
+    struct OpenMachine: Identifiable { let id: String }
+
+    var body: some View {
+        if model.offersWatcherMachines(hostID), let machines = model.watcherPage(hostID)?.machines, !machines.rows.isEmpty {
+            let rows = MachineLine.named(machines.rows, computer: model.name(hostID))
+            let short = MachineLine.short(rows)
+            let shown = all ? rows : short.shown
+            FlowLayout(spacing: Space.s1) {
+                ForEach(Array(shown.enumerated()), id: \.element.id) { index, machine in
+                    entry(machine, first: index == 0, starting: all)
+                }
+                if !all && short.more > 0 {
+                    if short.shown.isEmpty {
+                        moreButton(MachineLine.calm(rows), label: MachineLine.calmLabel(rows))
+                    } else {
+                        HStack(alignment: .firstTextBaseline, spacing: Space.s1) {
+                            Text("·").foregroundStyle(Palette.muted).accessibilityHidden(true)
+                            moreButton(MachineLine.more(short.more), label: MachineLine.moreLabel(short.more))
+                        }
+                    }
+                }
+            }
+            .font(.sotto(.small))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Machines and what works on each")
+            .accessibilityIdentifier("watcher-machines")
+            // Machine facts are read when Watcher places work, once for each set of starts, and when a panel opens.
+            .onAppear { model.readWatcherMachinesAfterStarts(hostID) }
+            .onChange(of: model.watcherPage(hostID)?.receiptGroups) { _, _ in model.readWatcherMachinesAfterStarts(hostID) }
+            .onChange(of: hostID) { _, _ in all = false; open = nil }
+            .sheet(item: $open) { machine in
+                MachineSheet(hostID: hostID, machineID: machine.id)
+                    .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+            }
+        }
+    }
+
+    /// One machine: its name, a press that opens its panel, then its count and any problem's words.
+    private func entry(_ machine: WatcherMachines.Machine, first: Bool, starting: Bool) -> some View {
+        let count = MachineLine.count(machine, starting: starting)
+        let problems = MachineLine.problems(machine).joined(separator: ", ")
+        return HStack(alignment: .firstTextBaseline, spacing: Space.s1) {
+            if !first { Text("·").foregroundStyle(Palette.muted).accessibilityHidden(true) }
+            Button { open = OpenMachine(id: machine.id) } label: {
+                // A long saved name gives way to an ellipsis; the button's spoken label keeps it whole.
+                Text(machine.name).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
+                    .underline()
+                    .lineLimit(1).truncationMode(.tail)
+                    .frame(maxWidth: 180, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .frame(minHeight: 30)
+            .contentShape(Rectangle())
+            .accessibilityLabel(MachineLine.label(machine))
+            .accessibilityIdentifier("watcher-machine-\(machine.id)")
+            if !count.isEmpty { Text(count).foregroundStyle(Palette.muted).lineLimit(1).fixedSize().accessibilityHidden(true) }
+            if !problems.isEmpty {
+                Text((count.isEmpty ? "" : ", ") + problems).foregroundStyle(Palette.warningText)
+                    .fixedSize(horizontal: false, vertical: true).accessibilityHidden(true)
+            }
+        }
+    }
+
+    private func moreButton(_ words: String, label: String) -> some View {
+        Button { all = true } label: {
+            Text(words).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink).underline()
+        }
+        .buttonStyle(.plain)
+        .frame(minHeight: 30)
+        .contentShape(Rectangle())
+        .accessibilityLabel(label)
+        .accessibilityIdentifier("watcher-machines-more")
+    }
+}
+
+/// One machine's panel, as a sheet (#1032, pick D): its system, CPU busy, memory available and when that was read; why its
+/// load reads unknown when it does; what works there and who started each; and whether new workers start there.
+/// Opening it reads the machines afresh. Where new workers start is changed on the computer, in Settings.
+private struct MachineSheet: View {
+    @EnvironmentObject var model: AppModel
+    @EnvironmentObject var watcherStore: WatcherStore
+    @Environment(\.dismiss) private var dismiss
+    let hostID: String
+    let machineID: String
+
+    var body: some View {
+        let computer = model.name(hostID)
+        let machine = model.watcherPage(hostID)?.machines.flatMap { MachineLine.named($0.rows, computer: computer).first { $0.id == machineID } }
+        ScrollView {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
+                    Text(machine?.name ?? "Machine").font(.sotto(.title, .bold)).tracking(-0.4).foregroundStyle(Palette.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: Space.s2)
+                    Button("Done") { dismiss() }
+                        .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
+                        .keyboardShortcut(.cancelAction)
+                        .accessibilityIdentifier("machine-done")
+                }
+                if let machine { details(machine, computer: computer) }
+                else { line("\(computer) no longer lists this machine.") }
+            }
+            .padding(Space.gutter)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(Palette.canvas)
+        .task { await model.readWatcherMachines(hostID) }
+    }
+
+    @ViewBuilder private func details(_ machine: WatcherMachines.Machine, computer: String) -> some View {
+        if !machine.connected {
+            line(MachineLine.notConnected(machine, computer: computer))
+        } else {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                if let system = machine.system {
+                    row("System", system + (machine.logicalCpuCount.map { " · \($0) CPUs" } ?? ""), warn: false)
+                }
+                if machine.cpuState != nil {
+                    row("CPU", MachineLine.cpu(machine), warn: machine.cpuState != "not-busy")
+                    row("Memory", MachineLine.memoryRow(machine), warn: machine.memoryState != "enough")
+                }
+                if let at = machine.loadObservedAt.flatMap({ Stamp.date($0) }) {
+                    row("Read", MachineLine.ago(Date().timeIntervalSince(at)), warn: false)
+                }
+            }
+            if let why = machine.unknownWhy { line(why) }
+            Text(MachineLine.panelCount(machine)).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
+            if let over = MachineLine.over(machine) { line(over, warn: true) }
+            if !machine.threads.isEmpty || machine.starting > 0 {
+                VStack(alignment: .leading, spacing: Space.s2) {
+                    ForEach(Array(machine.threads.enumerated()), id: \.offset) { _, thread in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(thread.title).font(.sotto(.small)).foregroundStyle(Palette.ink).lineLimit(2)
+                            Text(thread.who).font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                    if machine.working > machine.threads.count {
+                        Text("and \(machine.working - machine.threads.count) more").font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                    }
+                    if machine.starting > 0 {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(machine.starting) placed here, starting").font(.sotto(.small)).foregroundStyle(Palette.ink)
+                            Text("Counted, so the next start sees it").font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+            }
+        }
+        line("Where new workers start is set on \(computer), in Settings, under Watcher.")
+    }
+
+    private func row(_ name: String, _ value: String, warn: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
+            Text(name).foregroundStyle(Palette.muted).frame(width: 72, alignment: .leading)
+            Text(value).foregroundStyle(warn ? Palette.warningText : Palette.ink).monospacedDigit().fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.sotto(.small))
+        .accessibilityElement(children: .combine)
+    }
+
+    private func line(_ words: String, warn: Bool = false) -> some View {
+        Text(words).font(.sotto(.small)).foregroundStyle(warn ? Palette.warningText : Palette.muted).fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -401,6 +585,8 @@ private struct WatcherConversationPane: View {
     /// The reader is on a card (`WatcherFollow.held`), as the scroll anchor needs it. Changed only where that is decided,
     /// never as the page scrolls, and read only on iOS 18 and later.
     @State private var holdingCard = false
+    /// A message's photos, open full screen.
+    @State private var viewing: OpenPhotos?
     private static let end = "watcher-end"
     private static let sendingID = "watcher-sending"
     /// A waiting card's place on the page, to scroll it whole above the box.
@@ -409,6 +595,9 @@ private struct WatcherConversationPane: View {
     var body: some View {
         let page = model.watcherPage(hostID)
         let sending = model.watcherSending[hostID]
+        let sendingPhotos = model.watcherSendingPhotos[hostID] ?? []
+        // The photos of Watcher's messages are its thread's, read through Watcher's page.
+        let ref = page?.current.map { ThreadRef(hostID: hostID, threadID: $0.target.threadId) }
         let items = page.map { WatcherConversation.items($0) } ?? []
         let newest = sending != nil ? Self.sendingID : items.last?.id ?? Self.end
         // While a card waits on the user, the bar stays where it is (#1288).
@@ -426,14 +615,14 @@ private struct WatcherConversationPane: View {
                             ForEach(items) { item in
                                 Group {
                                     switch item {
-                                    case .message(let message): WatcherMessage(message: message).equatable()
+                                    case .message(let message): WatcherMessage(message: message, ref: ref) { viewing = $0 }.equatable()
                                     case .receipts(let group, _): ReceiptCard(hostID: hostID, group: group)
                                     case .ownChange(let change): WatcherOwnChangeLine(change: change)
                                     }
                                 }
                                 .id(item.id)
                             }
-                            if let sending { SendingBubble(text: sending).id(Self.sendingID) }
+                            if let sending { SendingBubble(text: sending, photos: sendingPhotos).id(Self.sendingID) }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(reader { follow.newest = $0.maxY })
@@ -519,6 +708,7 @@ private struct WatcherConversationPane: View {
             // the layout while it is away. It stays until no card waits (#1288).
             .onChange(of: pinned, initial: true) { _, waits in if waits { slideBar(false) } }
         }
+        .fullScreenCover(item: $viewing) { PhotoViewer(opened: $0) }
     }
 
     /// Scrolls to the hero at the page's top. The reader is reading there now, so Watcher's new words leave them there;
@@ -694,18 +884,35 @@ private struct WatcherConversationPane: View {
 /// owl, its name and the time. Drawn again only when the message changes, not each time Watcher's page moves.
 private struct WatcherMessage: View, Equatable {
     let message: Message
+    /// Watcher's thread, whose photos these are; nil while the page names no Watcher.
+    let ref: ThreadRef?
+    let open: (OpenPhotos) -> Void
     @Environment(\.sottoDensity) private var density
-    static func == (a: Self, b: Self) -> Bool { a.message == b.message }
+    /// Opening a photo is the same action for every message.
+    static func == (a: Self, b: Self) -> Bool { a.message == b.message && a.ref == b.ref }
     var body: some View {
         if message.role == "user" {
-            MarkdownText(text: message.text).equatable()
-                .foregroundStyle(Palette.bubbleInk)
-                .padding(.horizontal, Space.s4)
-                .padding(.vertical, Space.dense(Space.s3, density))
-                .background(Palette.bubble, in: bubble)
-                .overlay(bubble.stroke(Palette.accent.opacity(0.12), lineWidth: 1))
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.leading, 48)
+            // The user's photos stand on their own above their words, as in a thread and in Messages.
+            let photos: [Attachment] = ref == nil ? [] : (message.attachments ?? []).filter(\.hasPreview)
+            VStack(alignment: .trailing, spacing: Space.s1) {
+                if let ref { SentPhotoButtons(ref: ref, messageID: message.id, photos: photos, open: open) }
+                if !message.text.isEmpty || photos.count != (message.attachments ?? []).count {
+                    VStack(alignment: .leading, spacing: Space.s2) {
+                        if !message.text.isEmpty { MarkdownText(text: message.text).equatable() }
+                        // A photo Sotto keeps no copy of is named, and so is a file, as in a thread (ADR-0131).
+                        ForEach((message.attachments ?? []).filter { photo in !photos.contains { $0.id == photo.id } }) { attachment in
+                            Label("\(attachment.name) (open on the desktop)", systemImage: attachment.mimeType.map { PhotoLimits.mimeTypes.contains($0) } == false ? "doc" : "photo").font(.sotto(.small))
+                        }
+                    }
+                    .foregroundStyle(Palette.bubbleInk)
+                    .padding(.horizontal, Space.s4)
+                    .padding(.vertical, Space.dense(Space.s3, density))
+                    .background(Palette.bubble, in: bubble)
+                    .overlay(bubble.stroke(Palette.accent.opacity(0.12), lineWidth: 1))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.leading, 48)
         } else {
             VStack(alignment: .leading, spacing: Space.s2) {
                 HStack(spacing: Space.s2) {
@@ -730,11 +937,36 @@ private struct WatcherMessage: View, Equatable {
 /// Words on their way to Watcher.
 private struct SendingBubble: View {
     let text: String
+    let photos: [DraftPhoto]
+    private static let shown = 4
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
-            Text(text).font(.sotto(.body)).foregroundStyle(Palette.bubbleInk)
-                .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
-                .background(Palette.bubble.opacity(0.6), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            if !photos.isEmpty {
+                // At most four, then how many more, so eight fit the narrowest iPhone.
+                HStack(spacing: 6) {
+                    ForEach(photos.prefix(Self.shown)) { photo in
+                        Group {
+                            if let thumbnail = photo.prepared?.thumbnail { Image(decorative: thumbnail, scale: 1).resizable().scaledToFill() }
+                            else { Rectangle().fill(Palette.surface) }
+                        }
+                        .frame(width: 60, height: 60)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .opacity(0.6)
+                    }
+                    if photos.count > Self.shown {
+                        Text("+\(photos.count - Self.shown)").font(.sotto(.body, .semibold)).foregroundStyle(Palette.muted)
+                            .frame(width: 60, height: 60)
+                            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                }
+                .accessibilityElement()
+                .accessibilityLabel(photos.count == 1 ? "1 photo" : "\(photos.count) photos")
+            }
+            if !text.isEmpty {
+                Text(text).font(.sotto(.body)).foregroundStyle(Palette.bubbleInk)
+                    .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
+                    .background(Palette.bubble.opacity(0.6), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            }
             HStack(spacing: 6) { ProgressView().controlSize(.mini); Text("Sending to Watcher…") }
                 .font(.sotto(.caption)).foregroundStyle(Palette.muted)
                 .accessibilityElement(children: .combine)
@@ -759,7 +991,7 @@ private struct WatcherFollowupLine: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(WatcherWords.followup(item.status)).font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
-                Text(item.text).font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(1).truncationMode(.tail)
+                Text(item.text.isEmpty ? "Photos" : item.text).font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(1).truncationMode(.tail)
                 if let note = WatcherWords.followupNote(item.status, page: page, computer: model.name(hostID)) {
                     Text(note).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
                 }
@@ -774,7 +1006,7 @@ private struct WatcherFollowupLine: View {
                     .contentShape(Rectangle())
                     .buttonStyle(PressStyle())
                     .disabled(!model.canRemoveWatcherFollowup(item, on: hostID))
-                    .accessibilityLabel("Remove “\(item.text)” from the queue")
+                    .accessibilityLabel(item.text.isEmpty ? "Remove these photos from the queue" : "Remove “\(item.text)” from the queue")
                     .accessibilityIdentifier("watcher-followup-remove")
             }
         }
@@ -801,7 +1033,7 @@ private struct SetAsideCard: View {
             }
             Button("Put it back in the box") { model.restoreWatcherWords(words, on: hostID) }
                 .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
-                .disabled(!(model.drafts[model.watcherDraftKey(hostID)] ?? "").isEmpty)
+                .disabled(!model.canRestoreWatcherWords(on: hostID))
                 .accessibilityHint("Once the box is empty")
         }
         .card()
@@ -1264,7 +1496,11 @@ private struct WatcherDock: View {
     }
 
     private var field: some View {
-        let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
+        let box = PhotoBox.watcher(hostID: hostID)
+        let photos = model.photos(box)
+        // Locked from the press of a message with photos until Watcher answers, so nothing typed meanwhile joins it.
+        let preparing = model.preparingSends.contains(box.id)
+        let shape = RoundedRectangle(cornerRadius: photos.isEmpty ? 26 : 22, style: .continuous)
         let working = model.watcherPage(hostID)?.working == true
         let canSend = model.canSendToWatcher(hostID)
         // While Watcher's turn runs on a computer that takes it, Send steers into that turn, or queues when its provider
@@ -1275,26 +1511,39 @@ private struct WatcherDock: View {
         let symbol = queueing ? "text.badge.plus" : steering ? "arrow.turn.up.right" : "arrow.up"
         let label = queueing ? "Queue for after this turn" : steering ? "Steer into Watcher’s turn" : "Send to Watcher"
         return HStack(alignment: .bottom, spacing: Space.s2) {
-            TextField("Ask Watcher", text: draft, prompt: Text(working ? "Ask Watcher while it works" : "Ask Watcher").foregroundStyle(Palette.placeholder), axis: .vertical)
-                .font(.sotto(.body))
-                .foregroundStyle(Palette.ink)
-                .lineLimit(1...6)
-                .focused($focused)
-                .padding(.vertical, 11)
-                .padding(.leading, Space.s3)
-                .accessibilityLabel("Ask Watcher")
-                .accessibilityIdentifier("watcher-reply")
+            AttachPhotosButton(box: box)
+            // Photos wait inside the box, above the words, as in a thread's reply box.
+            VStack(alignment: .leading, spacing: Space.s2) {
+                if !photos.isEmpty { DraftPhotoStrip(box: box).padding(.top, Space.s1) }
+                if let notice = model.photoNotices[box.id] {
+                    Text(notice).font(.sotto(.small)).foregroundStyle(Palette.dangerText).fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.updatesFrequently)
+                }
+                TextField("Ask Watcher", text: draft, prompt: Text(working ? "Ask Watcher while it works" : "Ask Watcher").foregroundStyle(Palette.placeholder), axis: .vertical)
+                    .font(.sotto(.body))
+                    .foregroundStyle(Palette.ink)
+                    .lineLimit(1...6)
+                    .focused($focused)
+                    .padding(.vertical, 11)
+                    .accessibilityLabel("Ask Watcher")
+                    .accessibilityIdentifier("watcher-reply")
+                    .disabled(preparing)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             // Sending puts the keyboard away, as the design does, so Watcher's answer has room on a small phone.
             Button { willSend(); focused = false; Task { await model.sendToWatcher(hostID) } } label: {
-                Image(systemName: symbol).font(.system(size: 17, weight: .semibold))
-                    .frame(width: 44, height: 44)
-                    .foregroundStyle(canSend ? Palette.onAccent : Palette.muted)
-                    .background(canSend ? Palette.accent : Palette.fillSoft, in: Circle())
-                    .contentShape(Circle())
+                Group {
+                    if preparing { ProgressView().tint(Palette.onAccent) }
+                    else { Image(systemName: symbol).font(.system(size: 17, weight: .semibold)) }
+                }
+                .frame(width: 44, height: 44)
+                .foregroundStyle(canSend || preparing ? Palette.onAccent : Palette.muted)
+                .background(canSend || preparing ? Palette.accent : Palette.fillSoft, in: Circle())
+                .contentShape(Circle())
             }
             .buttonStyle(PressStyle())
             .disabled(!canSend)
-            .accessibilityLabel(label)
+            .accessibilityLabel(preparing ? "Sending to Watcher" : label)
             .accessibilityIdentifier("watcher-send")
         }
         .padding(6)

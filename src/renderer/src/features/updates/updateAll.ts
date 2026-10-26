@@ -1,3 +1,5 @@
+import { plural, t } from '@lingui/core/macro'
+
 import { PROVIDER_LABELS, type AgentClientHost, type ProviderClientUpdate, type ProviderId } from '../../../../shared/agents'
 import type { UpdateStatus } from '../../../../shared/contracts'
 import type { HostStatus } from '../../../../shared/hosts'
@@ -119,10 +121,12 @@ export const clientKey = (machine: 'local' | string, provider: ProviderId): stri
 export const hostKey = (id: string): string => `host:${id}`
 export const APP_KEY = 'sotto'
 
-const plural = (count: number, one: string, many = `${one}s`): string => `${count} ${count === 1 ? one : many}`
 /** "a", "a and b", "a, b and c". */
 export function listed(names: readonly string[]): string {
-  return names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`
+  if (names.length <= 1) return names.join('')
+  const first = names.slice(0, -1).join(', ')
+  const last = names.at(-1)!
+  return t`${first} and ${last}`
 }
 
 function appItem(app: UpdateStatus | null, pass: UpdateAllPass | null): UpdateAllItem | undefined {
@@ -134,24 +138,25 @@ function appItem(app: UpdateStatus | null, pass: UpdateAllPass | null): UpdateAl
   if (phase.phase === 'available') {
     const versions = { from: app.currentVersion, to: phase.version }
     if (refused || touched && phase.problem !== null && phase.failedStep === 'download') {
-      return { ...base, versions, state: 'failed', detail: refused ?? phase.problem ?? 'The download did not finish. Nothing was installed.' }
+      return { ...base, versions, state: 'failed', detail: refused ?? phase.problem ?? t`The download did not finish. Nothing was installed.` }
     }
-    if (touched) return { ...base, versions, state: 'running', detail: 'Starting the download…' }
-    return { ...base, versions, state: 'offered', detail: 'Downloads now, and installs when Sotto restarts.' }
+    if (touched) return { ...base, versions, state: 'running', detail: t`Starting the download…` }
+    return { ...base, versions, state: 'offered', detail: t`Downloads now, and installs when Sotto restarts.` }
   }
   if (phase.phase === 'downloading') {
-    return { ...base, versions: { from: app.currentVersion, to: phase.version }, state: 'running', detail: `Downloading · ${phase.percent}%`, percent: phase.percent }
+    const percent = phase.percent
+    return { ...base, versions: { from: app.currentVersion, to: phase.version }, state: 'running', detail: t`Downloading · ${percent}%`, percent: phase.percent }
   }
   if (phase.phase === 'downloaded') {
-    return { ...base, versions: { from: app.currentVersion, to: phase.version }, state: 'done', detail: 'Downloaded. It installs when Sotto restarts.' }
+    return { ...base, versions: { from: app.currentVersion, to: phase.version }, state: 'done', detail: t`Downloaded. It installs when Sotto restarts.` }
   }
-  if (phase.phase === 'failed' && touched) return { ...base, versions: { from: app.currentVersion }, state: 'failed', detail: refused ?? phase.problem ?? 'Sotto could not reach the update. Nothing was installed.' }
+  if (phase.phase === 'failed' && touched) return { ...base, versions: { from: app.currentVersion }, state: 'failed', detail: refused ?? phase.problem ?? t`Sotto could not reach the update. Nothing was installed.` }
   return undefined
 }
 
 /** What a host client step whose line was lost says: that the host restarted, when it was out of reach meanwhile. */
 function lostDetail(host: string, name: string, restarted: boolean): string {
-  return restarted ? `${host} restarted before ${name} updated. Nothing was changed. Try again.` : `The ${name} update on ${host} stopped before it finished. Nothing was changed. Try again.`
+  return restarted ? t`${host} restarted before ${name} updated. Nothing was changed. Try again.` : t`The ${name} update on ${host} stopped before it finished. Nothing was changed. Try again.`
 }
 
 function clientItem(machine: UpdateAllMachine, update: ProviderClientUpdate, pass: UpdateAllPass | null): UpdateAllItem | undefined {
@@ -174,43 +179,49 @@ function clientItem(machine: UpdateAllMachine, update: ProviderClientUpdate, pas
   // and the line went with it, or the update was cancelled on the host's tile. This computer's line cannot go without the
   // card going too.
   const lost = machine.kind === 'host' && touched && pass?.seen?.has(key) === true
-  if (update.state === 'queued') return { ...base, state: 'running', detail: 'Waiting for the update before it.' }
+  const installed = update.installed
+  if (update.state === 'queued') return { ...base, state: 'running', detail: t`Waiting for the update before it.` }
   if (update.state === 'updating') {
-    const step = update.steps && update.steps > 1 ? `, step ${update.step ?? 1} of ${update.steps}` : ''
-    return { ...base, state: 'running', detail: `Updating${step}…` }
+    const step = update.step ?? 1, steps = update.steps
+    return { ...base, state: 'running', detail: steps && steps > 1 ? t`Updating, step ${step} of ${steps}…` : t`Updating…` }
   }
-  if (ranSincePress && update.state === 'updated') return { ...base, versions: { from: update.installed }, state: 'done', detail: `Now ${update.installed}.` }
+  if (ranSincePress && update.state === 'updated') return { ...base, versions: { from: update.installed }, state: 'done', detail: t`Now ${installed}.` }
   if (ranSincePress && update.state === 'failed') {
     // What the installer printed stays where Sotto keeps it for each machine; the card says what happened and what next.
-    const where = machine.kind === 'host' ? `Settings → Hosts & phones shows what the installer said on ${machine.name}.` : 'Settings → Providers shows what the installer said.'
-    return { ...base, state: 'failed', detail: `${name} did not update. Nothing was changed. ${where}`, commands: update.byHand?.length ? update.byHand.join('\n') : undefined }
+    const host = machine.kind === 'host' ? machine.name : ''
+    const detail = machine.kind === 'host'
+      ? t`${name} did not update. Nothing was changed. Settings → Hosts & phones shows what the installer said on ${host}.`
+      : t`${name} did not update. Nothing was changed. Settings → Providers shows what the installer said.`
+    return { ...base, state: 'failed', detail, commands: update.byHand?.length ? update.byHand.join('\n') : undefined }
   }
   if (ranSincePress && update.state === 'unchanged') {
-    return { ...base, state: 'failed', detail: update.error ?? `The installer finished, but ${name} still reports ${update.installed}.` }
+    return { ...base, state: 'failed', detail: update.error ?? t`The installer finished, but ${name} still reports ${installed}.` }
   }
   // The installer finished with the provider disconnected, so nothing could read the version yet (ADR-0042).
-  if (ranSincePress && update.state === 'idle') return { ...base, state: 'done', detail: `The installer finished. Connect ${name} to see the version it runs now.` }
+  if (ranSincePress && update.state === 'idle') return { ...base, state: 'done', detail: t`The installer finished. Connect ${name} to see the version it runs now.` }
   if (lost && machine.kind === 'host') {
     // It finished before the line went only if the host now runs another version than when the step was seen. Whether
     // the client reads as behind cannot say: one whose registry did not answer reads as not behind (Sol, review of #1084).
-    if (update.installed !== pass?.seen?.get(key)?.versions.from) return { ...base, versions: { from: update.installed }, state: 'done', detail: `Now ${update.installed}.` }
+    if (update.installed !== pass?.seen?.get(key)?.versions.from) return { ...base, versions: { from: update.installed }, state: 'done', detail: t`Now ${installed}.` }
     return { ...base, state: 'failed', detail: lostDetail(machine.name, name, pass?.dropped?.has(key) === true) }
   }
   if (!update.behind) return undefined
   if (!update.canInstall) {
     const commands = update.byHand?.length ? update.byHand.join('\n') : update.command
-    return { ...base, state: 'by-hand', detail: commands ? `Update it yourself with ${commands.split('\n')[0]}.` : 'Sotto cannot update this install. Update it the way you installed it.', commands }
+    const command = commands?.split('\n')[0] ?? ''
+    return { ...base, state: 'by-hand', detail: commands ? t`Update it yourself with ${command}.` : t`Sotto cannot update this install. Update it the way you installed it.`, commands }
   }
-  if (touched) return { ...base, state: 'running', detail: 'Starting…' }
+  if (touched) return { ...base, state: 'running', detail: t`Starting…` }
   return { ...base, state: 'offered', detail: '' }
 }
 
 function stepTitle(update: HostUpdateState, step: HostUpdateStep): string {
+  const { to, from, name } = update
   switch (step) {
-    case 'download': return `Download ${update.to}`
-    case 'check': return 'Check the download'
-    case 'install': return `Install beside ${update.from}`
-    case 'restart': return `Restart ${update.name}’s host`
+    case 'download': return t`Download ${to}`
+    case 'check': return t`Check the download`
+    case 'install': return t`Install beside ${from}`
+    case 'restart': return t`Restart ${name}’s host`
   }
 }
 
@@ -222,34 +233,41 @@ function hostItem(update: HostUpdateState, pass: UpdateAllPass | null): UpdateAl
   const base = { key, machine: { kind: 'host', id: update.id, name } as const, kind: 'host' as const, name: 'Sotto host', versions: { from: update.from, to: update.to }, working, target: update.to }
   // A host's own note before any press, such as one still running thread management, explains rather than fails.
   const refused = pass?.refused.get(key) ?? (touched || update.phase === 'failed' ? update.error : undefined)
-  const threads = plural(working, 'thread')
+  const to = update.to
   // A finished update's note, such as one that finished a version this computer stopped updating to, says what happened.
-  if (update.phase === 'done') return touched ? { ...base, versions: { from: update.to }, state: 'done', detail: update.error ?? `${name} runs Sotto host ${update.to}.` } : undefined
+  if (update.phase === 'done') return touched ? { ...base, versions: { from: update.to }, state: 'done', detail: update.error ?? t`${name} runs Sotto host ${to}.` } : undefined
   if (update.phase === 'updating') {
     const step = update.step ?? 'download'
+    const number = HOST_UPDATE_STEPS.indexOf(step) + 1
+    const title = stepTitle(update, step)
     // A client update running on the host holds the restart, however far the update has come (ADR-0077 decision 2).
-    const held = !update.clientsUpdating ? '' : step === 'restart' ? ' once its clients have' : ` · Restarts once ${name}’s clients have.`
-    return { ...base, state: 'running', detail: `Step ${HOST_UPDATE_STEPS.indexOf(step) + 1} of 4 · ${stepTitle(update, step)}${held}`, cancellable: step === 'download' || step === 'check' }
+    const detail = !update.clientsUpdating ? t`Step ${number} of 4 · ${title}`
+      : step === 'restart' ? t`Step ${number} of 4 · ${title} once its clients have`
+        : t`Step ${number} of 4 · ${title} · Restarts once ${name}’s clients have.`
+    return { ...base, state: 'running', detail, cancellable: step === 'download' || step === 'check' }
   }
   // Waiting for the host's client update line and nothing else reads as the press's own wait for its clients.
-  if (update.phase === 'waiting' && update.clientsUpdating && !working) return { ...base, state: 'running', detail: `Updates once ${name}’s clients have.`, cancellable: true }
+  if (update.phase === 'waiting' && update.clientsUpdating && !working) return { ...base, state: 'running', detail: t`Updates once ${name}’s clients have.`, cancellable: true }
   if (update.phase === 'waiting' || update.phase === 'confirm' && !touched) {
     const clientsUpdating = update.phase === 'waiting' && update.clientsUpdating === true
-    return { ...base, state: 'waiting', detail: `Updates once its ${threads} ${working === 1 ? 'finishes' : 'finish'}${clientsUpdating ? ' and its clients have' : ''}.`, cancellable: true,
+    const detail = clientsUpdating
+      ? plural(working, { one: 'Updates once its # thread finishes and its clients have.', other: 'Updates once its # threads finish and its clients have.' })
+      : plural(working, { one: 'Updates once its # thread finishes.', other: 'Updates once its # threads finish.' })
+    return { ...base, state: 'waiting', detail, cancellable: true,
       ...clientsUpdating ? { clientsUpdating } : {} }
   }
   if (refused) return { ...base, state: 'failed', detail: refused }
   if (update.phase === 'failed') {
-    return { ...base, state: 'failed', detail: update.failure ? `${update.failure.message} ${update.failure.kept} ${update.failure.next}` : `${name} was not updated.`, commands: update.commands }
+    return { ...base, state: 'failed', detail: update.failure ? `${update.failure.message} ${update.failure.kept} ${update.failure.next}` : t`${name} was not updated.`, commands: update.commands }
   }
   if (!update.owned) {
-    return { ...base, state: 'by-hand', detail: `Sotto did not start the host on ${name}, so it cannot restart it. Update it there with these commands.`, commands: update.commands }
+    return { ...base, state: 'by-hand', detail: t`Sotto did not start the host on ${name}, so it cannot restart it. Update it there with these commands.`, commands: update.commands }
   }
-  if (pass?.after.has(update.id)) return { ...base, state: 'running', detail: `Updates once ${name}’s clients have.` }
-  if (touched) return { ...base, state: 'running', detail: 'Starting…' }
+  if (pass?.after.has(update.id)) return { ...base, state: 'running', detail: t`Updates once ${name}’s clients have.` }
+  if (touched) return { ...base, state: 'running', detail: t`Starting…` }
   return { ...base, state: 'offered', detail: update.error ?? (working
-    ? `${threads} on ${name} ${working === 1 ? 'is' : 'are'} working. It updates once they finish.`
-    : `Restarts ${name}’s host, so its threads are unavailable for a few seconds.`) }
+    ? plural(working, { one: `# thread on ${name} is working. It updates once they finish.`, other: `# threads on ${name} are working. It updates once they finish.` })
+    : t`Restarts ${name}’s host, so its threads are unavailable for a few seconds.`) }
 }
 
 /**
@@ -258,7 +276,7 @@ function hostItem(update: HostUpdateState, pass: UpdateAllPass | null): UpdateAl
  */
 function checkingItem(host: HostStatus, update: HostUpdateState | undefined): UpdateAllItem {
   return { key: hostKey(host.id), machine: { kind: 'host', id: host.id, name: host.name }, kind: 'host', name: 'Sotto host',
-    versions: { from: update?.from ?? host.version ?? '' }, state: 'checking', detail: 'Checking the releases page for its update…' }
+    versions: { from: update?.from ?? host.version ?? '' }, state: 'checking', detail: t`Checking the releases page for its update…` }
 }
 /**
  * Whether a host's step is its check: while it lasts, in place of an offer, or of nothing to show, for a host Sotto can
@@ -314,10 +332,11 @@ function hostClients(host: HostStatus, sources: UpdateAllSources, pass: UpdateAl
   // While the host is out of reach it waits to hear from it. A connected host says everything it still has in its
   // first shell, so one that leaves the client out lost its line, as a restarted host without results or checks does.
   const reachable = sources.clientHosts.some(item => item.hostId === host.hostId && item.connected)
+  const hostName = host.name
   const unheard = [...pass?.seen?.values() ?? []].filter(item => clientMachine(item) === host.id && !pass?.kept?.has(item.key) && !updates.some(update => clientKey(host.id, update.id) === item.key))
     .map(item => reachable
       ? { ...item, state: 'failed' as const, detail: lostDetail(host.name, item.name, pass?.dropped?.has(item.key) === true) }
-      : { ...item, state: 'running' as const, detail: `Waiting to hear from ${host.name}…` })
+      : { ...item, state: 'running' as const, detail: t`Waiting to hear from ${hostName}…` })
   return [...updates.flatMap(update => clientItem(machine, update, pass) ?? []), ...unheard]
 }
 
@@ -408,7 +427,9 @@ export interface UpdateAllContext {
 }
 
 function machineName(item: UpdateAllItem): string {
-  return item.machine.kind === 'host' ? `${item.machine.name}’s ${item.name === 'Sotto host' ? 'host' : item.name}` : item.name
+  if (item.machine.kind !== 'host') return item.name
+  const host = item.machine.name, name = item.name
+  return name === 'Sotto host' ? t`${host}’s host` : t`${host}’s ${name}`
 }
 export function updateAllWords(view: UpdateAllView): UpdateAllWords {
   const offered = view.items.filter(item => item.state === 'offered')
@@ -416,31 +437,37 @@ export function updateAllWords(view: UpdateAllView): UpdateAllWords {
   const covered = view.items.filter(item => item.state === 'offered' || item.state === 'checking')
   const failed = view.items.filter(item => item.state === 'failed')
   const waiting = view.items.filter(item => item.state === 'waiting')
-  const didNot = failed.length ? `${listed(failed.map(machineName))} did not update.` : ''
+  const failedNames = listed(failed.map(machineName))
+  const didNot = failed.length ? t`${failedNames} did not update.` : ''
   const waitingNames = listed(waiting.map(item => item.machine.kind === 'host' ? item.machine.name : item.name))
-  const one = waiting.length === 1
+  const waitingCount = waiting.length
   // The wait lasts while Sotto is open (ADR-0077 decision 4): a restart first leaves the host for the next press.
   const waits = !waiting.length ? '' : view.phase === 'restart'
-    ? `${waitingNames} ${one ? 'is' : 'are'} waiting for ${one ? 'its' : 'their'} threads. If Sotto restarts first, Update all offers ${one ? 'it' : 'them'} again.`
-    : `${waitingNames} ${one ? 'updates' : 'update'} once ${one ? 'its' : 'their'} threads finish.`
+    ? plural(waitingCount, {
+        one: `${waitingNames} is waiting for its threads. If Sotto restarts first, Update all offers it again.`,
+        other: `${waitingNames} are waiting for their threads. If Sotto restarts first, Update all offers them again.`,
+      })
+    : plural(waitingCount, { one: `${waitingNames} updates once its threads finish.`, other: `${waitingNames} update once their threads finish.` })
   const app = offered.some(item => item.kind === 'app')
   const clients = offered.filter(item => item.kind === 'client').length
   const hosts = [...new Set(covered.filter(item => item.kind === 'host').map(item => item.machine.kind === 'host' ? item.machine.name : ''))]
-  const parts = [...app ? ['Sotto'] : [], ...clients ? [plural(clients, 'client')] : [], ...hosts]
-  const summary = parts.length ? listed(parts) : 'Sotto cannot install these itself.'
+  const parts = [...app ? ['Sotto'] : [], ...clients ? [plural(clients, { one: '# client', other: '# clients' })] : [], ...hosts]
+  const summary = parts.length ? listed(parts) : t`Sotto cannot install these itself.`
+  const { finished, total } = view
+  const failedCount = failed.length
   switch (view.phase) {
-    case 'running': return { title: 'Updating', sub: `${view.finished} of ${view.total} done`, summary, notes: [], pill: `Updating · ${view.finished} of ${view.total}` }
+    case 'running': return { title: t`Updating`, sub: t`${finished} of ${total} done`, summary, notes: [], pill: t`Updating · ${finished} of ${total}` }
     // Each step says how it ended, and the restart step what restarting does; only a wait that a restart cuts short is left.
-    case 'restart': return { title: 'Restart to finish', sub: view.sotto ? versionsText(view.sotto) : `Sotto ${view.ready}`, summary, notes: waits ? [waits] : [], pill: 'Restart to finish' }
-    case 'done': return { title: failed.length ? 'Not everything updated' : 'Updated', sub: [didNot, waits].filter(Boolean).join(' ') || 'Nothing needs a restart.', summary, notes: [],
-      pill: failed.length ? `${plural(failed.length, 'update')} did not finish` : 'Updated' }
+    case 'restart': return { title: t`Restart to finish`, sub: view.sotto ? versionsText(view.sotto) : `Sotto ${view.ready}`, summary, notes: waits ? [waits] : [], pill: t`Restart to finish` }
+    case 'done': return { title: failed.length ? t`Not everything updated` : t`Updated`, sub: [didNot, waits].filter(Boolean).join(' ') || t`Nothing needs a restart.`, summary, notes: [],
+      pill: failed.length ? plural(failedCount, { one: '# update did not finish', other: '# updates did not finish' }) : t`Updated` }
     default: return {
-      title: 'Updates',
+      title: t`Updates`,
       sub: view.sotto ? versionsText(view.sotto) : summary,
       summary,
       // A host's restart, and Sotto's, are said by their own steps; that threads keep working through client updates is not.
-      notes: clients ? ['Threads keep working while clients update.'] : [],
-      pill: covered.length ? 'Update all' : 'Updates',
+      notes: clients ? [t`Threads keep working while clients update.`] : [],
+      pill: covered.length ? t`Update all` : t`Updates`,
     }
   }
 }
@@ -464,24 +491,26 @@ export interface UpdateAllStep {
 
 function itemStep(item: UpdateAllItem, view: UpdateAllView): UpdateAllStep {
   const host = item.machine.kind === 'host' ? item.machine.name : ''
-  const title = item.kind === 'app' ? `Download ${item.name}` : item.kind === 'client' ? `Update ${item.name}` : `Update ${host}’s host`
+  const name = item.name
+  const title = item.kind === 'app' ? t`Download ${name}` : item.kind === 'client' ? t`Update ${name}` : t`Update ${host}’s host`
   // A host's own step names it, so it carries no place. A client's versions are its own, and a host's are shown only
   // when they are not Sotto's pair in the head; once either is done, its sentence says the version it runs, and while a
   // host is checked, the version it is to get is what the check finds out.
-  const where = item.kind === 'host' ? '' : host || 'This computer'
+  const where = item.kind === 'host' ? '' : host || t`This computer`
   const hidden = item.state === 'done' || item.state === 'checking' || item.kind === 'app' || item.kind === 'host' && sameVersions(item.versions, view.sotto)
   const versions = hidden ? undefined : versionsText(item.versions)
   return { key: item.key, item, title, versions, detail: [where, item.detail].filter(Boolean).join(' · '), state: item.state }
 }
 
 function restartStep(view: UpdateAllView, context: UpdateAllContext): UpdateAllStep {
-  const base = { key: RESTART_KEY, title: 'Restart Sotto' }
-  if (view.phase !== 'restart' || !view.ready) return { ...base, detail: 'Last. Sotto asks before it restarts.', state: 'last' }
+  const base = { key: RESTART_KEY, title: t`Restart Sotto` }
+  if (view.phase !== 'restart' || !view.ready) return { ...base, detail: t`Last. Sotto asks before it restarts.`, state: 'last' }
   const { working, resumes } = context
-  const threads = working === 0 ? '' : resumes
-    ? ` ${plural(working, 'working thread')} here ${working === 1 ? 'stops and resumes' : 'stop and resume'} after.`
-    : ` ${plural(working, 'working thread')} here ${working === 1 ? 'stops' : 'stop'}; drafts and history stay.`
-  return { ...base, detail: `Installs ${view.ready}.${threads}`, state: 'ready' }
+  const ready = view.ready
+  const detail = working === 0 ? t`Installs ${ready}.` : resumes
+    ? plural(working, { one: `Installs ${ready}. # working thread here stops and resumes after.`, other: `Installs ${ready}. # working threads here stop and resume after.` })
+    : plural(working, { one: `Installs ${ready}. # working thread here stops; drafts and history stay.`, other: `Installs ${ready}. # working threads here stop; drafts and history stay.` })
+  return { ...base, detail, state: 'ready' }
 }
 
 /**

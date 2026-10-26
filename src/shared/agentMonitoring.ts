@@ -22,6 +22,8 @@ export type AgentMonitoringTask = z.infer<typeof agentMonitoringSchema>[number]
  */
 export const backgroundWorkTypes = ['workflow', 'subagent', 'teammate', 'remote-agent', 'command'] as const
 export type BackgroundWorkType = typeof backgroundWorkTypes[number]
+/** Each kind of background work in a word: what the readout and a row under the reply call it, and a task's label when the provider gave none. */
+export const BACKGROUND_WORK_LABELS: Record<BackgroundWorkType, string> = { workflow: 'Workflow', subagent: 'Subagent', teammate: 'Teammate', 'remote-agent': 'Remote agent', command: 'Background command' }
 
 /**
  * Background work: agent work or a command started from this thread that the provider confirms is still

@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { z } from 'zod'
 
 import { phonesStateSchema, type HostPhonesCommand } from '../../shared/phones'
@@ -114,7 +115,7 @@ export class HostPhones {
   /** One press in the dialog. A refusal throws its sentence; the state the host answered with is shown either way. */
   async command(id: string, command: HostPhonesCommand): Promise<void> {
     const entry = this.entries.get(id), link = this.link(id)
-    if (!entry || !link) throw new Error('This host is not connected, so its phone access cannot be changed. Nothing was changed. Connect it, then try again.')
+    if (!entry || !link) throw new Error(t`This host is not connected, so its phone access cannot be changed. Nothing was changed. Connect it, then try again.`)
     const run = entry.commands.then(async () => {
       this.set(id, { busy: true })
       let answer: Answer
@@ -127,7 +128,7 @@ export class HostPhones {
       this.set(id, { busy: false, state: answer.state, error: undefined, readAt: new Date().toISOString() })
       if (answer.error) throw new Error(answer.error)
       if (command.type === 'open-serve-setup') {
-        if (!answer.url || !isTailscaleApprovalUrl(answer.url)) throw new Error('Tailscale did not give a page to open. Open the Tailscale admin console to turn on Serve.')
+        if (!answer.url || !isTailscaleApprovalUrl(answer.url)) throw new Error(t`Tailscale did not give a page to open. Open the Tailscale admin console to turn on Serve.`)
         await this.options.openExternal(answer.url)
       }
     })
@@ -186,12 +187,12 @@ export class HostPhones {
   }
 
   private failure(name: string, error: unknown): string {
-    if (error instanceof Error && error.name === 'TimeoutError') return `${name} did not answer about phone access in time. Nothing was changed. Try again.`
+    if (error instanceof Error && error.name === 'TimeoutError') return t`${name} did not answer about phone access in time. Nothing was changed. Try again.`
     // The host answered, but not with phone access: it has no such route, or answered with something else.
     if (error instanceof HostAdminRefused && error.status !== 401) {
-      return `The host on ${name} can’t share phone access with this computer. Nothing was changed. Update the host on ${name} from the Threads page, then try again.`
+      return t`The host on ${name} can’t share phone access with this computer. Nothing was changed. Update the host on ${name} from the Threads page, then try again.`
     }
-    return `Phone access on ${name} could not be reached. Nothing was changed. Check that ${name} is connected, then try again.`
+    return t`Phone access on ${name} could not be reached. Nothing was changed. Check that ${name} is connected, then try again.`
   }
 
   private link(id: string): HostPhonesLink | undefined { return this.options.hosts.links().find(link => link.id === id) }

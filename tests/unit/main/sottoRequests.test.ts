@@ -67,7 +67,9 @@ it('shows the request in its thread, takes the local window\'s answer without th
     const { requests, answer, set } = source()
     control.useSottoRequests(requests)
     set(new Map([['workshop', [ADD]]]))
-    expect(control.shell().host.threads.find(thread => thread.id === 'workshop')!.requests).toEqual([ADD])
+    // Shown with when its wait began stamped on it (ADR-0135), as every request is as it is first shown.
+    const shown = control.shell().host.threads.find(thread => thread.id === 'workshop')!.requests
+    expect(shown).toEqual([{ ...ADD, since: expect.any(String) }])
     // A refresh from the provider keeps it: the provider's snapshot knows nothing of Sotto's request.
     await control.command({ type: 'refresh' })
     expect(control.shell().host.threads.find(thread => thread.id === 'workshop')!.requests.map(request => request.id)).toEqual([ADD.id])
@@ -75,7 +77,7 @@ it('shows the request in its thread, takes the local window\'s answer without th
     const refused = await control.command({ type: 'answer', threadId: 'workshop', requestId: ADD.id, answer: 'Add forge', approved: true, permissionChoice: 'add' }, phone)
     expect(refused.error).toBeTruthy()
     expect(answer).not.toHaveBeenCalled()
-    expect(control.shell().host.threads.find(thread => thread.id === 'workshop')!.requests).toEqual([ADD])
+    expect(control.shell().host.threads.find(thread => thread.id === 'workshop')!.requests).toEqual(shown)
     const commands = execute.mock.calls.length
     await control.command({ type: 'answer', threadId: 'workshop', requestId: ADD.id, answer: 'Add forge', approved: true, permissionChoice: 'add' })
     expect(answer).toHaveBeenCalledWith('workshop', ADD.id, true)

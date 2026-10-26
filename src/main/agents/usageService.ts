@@ -10,6 +10,7 @@ import {
 } from '../../shared/usageDashboard'
 import type { AgentHost } from './host'
 import { subscribeActivitySnapshots } from './activitySnapshots'
+import { ThreadMap, type ActivityChangesSubscription, type AgentHostChanges } from './threadChanges'
 import { unavailableProviderQuota } from './providerQuota'
 import { UsageStore, USAGE_PENDING_RECONCILIATION_BATCH_MAX } from './usageStore'
 import { UsageHistoryImporter, type UsageHistoryStore } from './usageHistory/importer'
@@ -45,6 +46,8 @@ export class UsageService implements UsagePromptRecorder {
   private readonly quotaStarted = new Map<UsageLimitProviderId, number>()
   private quotaStarts = 0
   private readonly visited = new Set<string>()
+  /** Threads whose usage could not be read: each change reads them again, as every snapshot read every thread not yet read. */
+  private readonly unread = new Set<string>()
   private readonly connected = new Set<UsageProviderId>()
   private readonly subscriptions: (() => void)[] = []
   private readonly refreshing = new Map<UsageLimitProviderId, Promise<UsageQuotaRead>>()
@@ -80,7 +83,13 @@ export class UsageService implements UsagePromptRecorder {
     if (this.options.host.subscribeUsage) {
       this.subscriptions.push(this.options.host.subscribeUsage(record => this.observeTokens(record)))
     }
-    this.subscriptions.push(subscribeActivitySnapshots(this.options.host, snapshot => this.acceptSnapshot(snapshot)))
+    const host = this.options.host
+    if (host.subscribeActivityChanges) {
+      // The host's thread changes (#925): a change reads only the threads it names, and those not yet read that could not be.
+      const map = new ThreadMap({ verify: false })
+      const subscription: ActivityChangesSubscription = host.subscribeActivityChanges(changes => this.acceptChanges(map, subscription, changes))
+      this.subscriptions.push(subscription)
+    } else this.subscriptions.push(subscribeActivitySnapshots(host, snapshot => this.acceptSnapshot(snapshot)))
     if (this.options.host.subscribeEvents) {
       this.subscriptions.push(this.options.host.subscribeEvents(({ threadId, event }) => {
         if ((event.kind === 'message-added' || event.kind === 'message-replaced') && event.message.role === 'user') {
@@ -247,20 +256,42 @@ export class UsageService implements UsagePromptRecorder {
       for (const thread of snapshot.threads) if (isUsageProviderId(thread.providerId)) this.connected.add(thread.providerId)
       for (const model of snapshot.models) if (isUsageProviderId(model.providerId)) this.connected.add(model.providerId)
     }
-    if (this.options.host.visitUsage) {
-      for (const thread of snapshot.threads) {
-        if (this.visited.has(thread.id) || (thread.providerId && (!isUsageProviderId(thread.providerId) || !this.connected.has(thread.providerId)))) continue
-        try {
-          this.options.host.visitUsage(thread.id, record => this.observeTokens(record))
-          this.visited.add(thread.id)
-        } catch { this.failed = true }
-      }
-    }
+    for (const thread of snapshot.threads) this.visit(thread)
     if (this.started && (firstSnapshot || [...this.connected].some(provider => !previouslyConnected.has(provider)))) {
       this.reconciliationRequested = true
       this.reconcilePending()
     }
     if (this.connected.size && !this.seedMarked) { this.seedPending = true; this.schedule(FLUSH_MS) }
+  }
+
+  /**
+   * One publication of the host's thread changes. A whole one, one carrying the rest of the snapshot, and one from a host
+   * that names no providers are read whole, as every snapshot was: they can change which providers are connected, and so
+   * which threads are read. Any other reads only the threads it upserted and those whose read failed, which is what reading
+   * every thread again would have read.
+   */
+  private acceptChanges(map: ThreadMap, subscription: ActivityChangesSubscription, changes: AgentHostChanges): void {
+    const applied = map.apply(changes)
+    if (applied === 'resync') { subscription.resync(); return }
+    if (applied === 'stale') return
+    if (changes.whole || changes.rest !== undefined || !map.rest?.providers || !this.receivedSnapshot) {
+      this.acceptSnapshot({ ...map.rest!, threads: map.threads() } as AgentHostSnapshot)
+      return
+    }
+    for (const thread of changes.upserts) this.visit(thread)
+    for (const id of [...this.unread]) { const thread = map.get(id); if (thread) this.visit(thread); else this.unread.delete(id) }
+    if (this.connected.size && !this.seedMarked) { this.seedPending = true; this.schedule(FLUSH_MS) }
+  }
+
+  /** Reads a thread's usage once its provider is connected; a read that fails is tried again with the next publication. */
+  private visit(thread: AgentHostSnapshot['threads'][number]): void {
+    if (!this.options.host.visitUsage) return
+    if (this.visited.has(thread.id) || (thread.providerId && (!isUsageProviderId(thread.providerId) || !this.connected.has(thread.providerId)))) return
+    try {
+      this.options.host.visitUsage(thread.id, record => this.observeTokens(record))
+      this.visited.add(thread.id)
+      this.unread.delete(thread.id)
+    } catch { this.failed = true; this.unread.add(thread.id) }
   }
 
   private reconcilePending(): void {

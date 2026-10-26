@@ -20,14 +20,13 @@ import type { HostThreadDelegations } from '../../shared/agentsView'
 import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import { listHostFolders } from './hostFolders'
 import type { HostThreadToolReads } from './threadToolReads'
-import type { HostAnswerTarget, HostErrorCode } from '../../shared/hostProtocol'
+import type { HostAnswerTarget, HostAttachmentFile, HostAttachmentFileRequest, HostErrorCode } from '../../shared/hostProtocol'
 import { mayGrantLocally, REMOTE_PERMISSION_DENIED } from './authority'
 import type { HostMachineReport } from '../../shared/hostFacts'
 import type { ProjectOrigins } from '../../shared/workerMachine'
 import type { DesktopDefaultsInput, DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
 import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
 import type { DelegationViews } from './delegationIpc'
-import { hostMachineReport, type HostFactsSource } from './hostFacts'
 import type { QuestionPageTarget } from './questionPages'
 import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery, type UsageProviderId } from '../../shared/usageDashboard'
 
@@ -181,6 +180,8 @@ export interface HostService {
   /** A page was opened by its token, which clears the prototype-ready mark it belongs to (ADR-0108). */
   questionPageOpened?(token: string): void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
+  /** One part of a sent attached file a message carries, for the iPhone's Quick Look (ADR-0131); null for anything else. */
+  attachmentFile?(request: HostAttachmentFileRequest): Promise<HostAttachmentFile>
   /** Keeps an image's bytes on this host once and answers with the handle a draft carries instead (ADR-0031). */
   stageAttachment?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
   /** A staged image's bytes, for a composer restoring a chip it has no copy of; null once the host no longer keeps it. */
@@ -265,6 +266,7 @@ export interface LocalHostControl {
   questionPage?(token: string): QuestionPageTarget | undefined
   questionPageOpened?(token: string): void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult>
+  attachmentFile?(request: HostAttachmentFileRequest): Promise<HostAttachmentFile>
   stageAttachment?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
   attachmentContent?(digest: string): Promise<AgentAttachmentContent | null>
   gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
@@ -311,8 +313,8 @@ export class LocalHostService implements HostService {
   private readonly mayClearUsage: (client: ClientIdentity) => boolean
 
   /** `tools` are the runtime's reads of its threads' Files, Changes and Agents, for a paired client (ADR-0025, October 5 amendment). */
-  /** `facts` is this machine's host facts, read the same way on the desktop and on a headless host (#1031). */
-  constructor(private readonly options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService; facts?: HostFactsSource
+  /** `facts` reads this machine's report, the same way on the desktop and on a headless host (#1031). */
+  constructor(private readonly options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService; facts?: () => Promise<HostMachineReport>
     /** Continuing agents and forking at a reply (#1028), present only when the host's Owl answer turns them on. */
     threadStarts?: { startHandover(threadId: string): { readonly text: string } | undefined }
     /** The prompts the thread store holds above a pane's window, for the message scrubber (ADR-0109). */
@@ -390,7 +392,7 @@ export class LocalHostService implements HostService {
   }
   hostFacts(): Promise<HostMachineReport> {
     if (!this.options.facts) return Promise.reject(new Error('This host does not report its machine facts.'))
-    return hostMachineReport(this.options.facts, this.control.shell().host.threads)
+    return this.options.facts()
   }
 
   usageRead(query: UsageLocalQuery): Promise<UsageLocalHostRead> {
@@ -451,6 +453,7 @@ export class LocalHostService implements HostService {
   questionPage(token: string): QuestionPageTarget | undefined { return this.control.questionPage?.(token) }
   questionPageOpened(token: string): void { this.control.questionPageOpened?.(token) }
   async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> { return await this.control.attachmentPreview?.(request) ?? null }
+  async attachmentFile(request: HostAttachmentFileRequest): Promise<HostAttachmentFile> { return await this.control.attachmentFile?.(request) ?? null }
   stageAttachment(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle> {
     if (!this.control.stageAttachment) return Promise.reject(new Error(HOST_CANNOT_STAGE_SCREENSHOTS))
     return this.control.stageAttachment(image)

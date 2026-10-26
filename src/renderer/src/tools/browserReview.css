@@ -1,5 +1,6 @@
 .browser-review-link { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 3px 6px; border: 0; border-radius: 5px; font: inherit; font-size: 14px; color: var(--tt-text); background: transparent; cursor: pointer; }
 .browser-review-link:hover { background: var(--tt-hover); }
+.browser-review-link:active { background: var(--tt-hover-strong); }
 .browser-review-problem { color: var(--tt-error); font-size: 14px; margin: 8px 12px; }
 .browser-task { border-bottom: 1px solid var(--tt-border-faint); padding: 6px 12px; font-size: 14px; max-height: 40%; overflow: auto; }
 .browser-task__line { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

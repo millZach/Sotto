@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { z } from 'zod'
 import { hostEntityKey, parseHostEntityKey } from '../../shared/clientIdentity'
 import { DELEGATION_BRIEF_READ, DELEGATIONS_CHANGED, DELEGATIONS_READ, delegationBriefRequestSchema, delegationBriefSchema, delegationsChangedSchema, delegationsReadSchema, delegationsRequestSchema, type DelegatedView, type DelegationBrief, type DelegationsRead, type DelegationView } from '../../shared/delegation'
@@ -34,7 +35,7 @@ export function registerDelegationIpc(ipc: IpcMainAdapter, delegation: Delegatio
   const windowId = (id: string): string => hostEntityKey(localHostId(), id)
   // Synchronous for this computer's threads, so a refusal throws as the window asks; a remote read answers when its host does.
   ipc.handle(DELEGATIONS_READ, (event, ...args) => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('Open delegations in the main Sotto window.')
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open delegations in the main Sotto window.`)
     const [request] = z.tuple([delegationsRequestSchema]).parse(args)
     const key = parseHostEntityKey(request.threadId)
     if (key && key.hostId !== localHostId()) {
@@ -47,7 +48,7 @@ export function registerDelegationIpc(ipc: IpcMainAdapter, delegation: Delegatio
     return delegationsReadSchema.parse({ threadId: request.threadId, delegations: made.map(named), received: received.map(named) })
   })
   ipc.handle(DELEGATION_BRIEF_READ, (event, ...args) => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('Open delegations in the main Sotto window.')
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open delegations in the main Sotto window.`)
     const [request] = z.tuple([delegationBriefRequestSchema]).parse(args)
     const key = parseHostEntityKey(request.threadId)
     if (key && key.hostId !== localHostId()) return remote ? remote.delegationBrief(request.threadId).then(brief => delegationBriefSchema.parse(brief)) : null

@@ -2,6 +2,7 @@ import { HostsSettings } from './HostsSettings'
 import { PhonesSettings } from './PhonesSettings'
 import { DictationShortcuts } from './DictationShortcuts'
 import { LinuxDictationShortcuts } from './LinuxDictationShortcuts'
+import { ThreadShortcutsSettings } from './ThreadShortcutsSettings'
 import { useRevisionDraft } from './useRevisionDraft'
 import { shownWords, type LaterWords } from './laterWords'
 import { SettingsFindField, SettingsFindResults } from './SettingsFind'
@@ -10,7 +11,7 @@ import { describeSetting, findSettingControl, findSettings, isSettingsSection, r
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { msg, t as tNow } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { AudioLines, ChevronRight, ClipboardPaste, Cloud, Command, Download, Eye, FolderGit2, Gauge, GitBranch, Globe, History, Keyboard, MessageSquareText, MessagesSquare, Mic, Palette, Power, RotateCcw, Server, Settings2, ShieldCheck, Smartphone, Sparkles, Timer } from 'lucide-react'
+import { AudioLines, ChevronRight, ClipboardPaste, Cloud, Command, Download, Eye, FolderGit2, Gauge, GitBranch, Globe, History, Keyboard, MessageSquareText, MessagesSquare, Mic, Palette, Power, RotateCcw, Server, Settings2, ShieldCheck, Shrink, Smartphone, Sparkles, Timer } from 'lucide-react'
 
 import {
   TRANSCRIPTION_PRIVACY_NOTICE,
@@ -45,6 +46,7 @@ import { Select } from '../../components/Select'
 import { SegmentedControl } from '../../components/SegmentedControl'
 import { Toggle } from '../../components/Toggle'
 import { NightFallsSettings } from './NightFallsSettings'
+import { WatcherCompactionSetting } from './WatcherCompactionSetting'
 import { SettingsGroup } from './SettingsGroup'
 import { NotificationSettings } from './NotificationSettings'
 import { useDesktopNotifications } from '../../state/desktopNotifications'
@@ -64,6 +66,7 @@ import { CloudIphoneSettings } from './CloudIphoneSettings'
 import { GitSettings } from './GitSettings'
 import { ProjectThreadDefaults } from './ProjectThreadDefaults'
 import { WorkerRolesSettings } from './WorkerRolesSettings'
+import { WorkerMachineSettings } from './WorkerMachineSettings'
 import { PerformanceSettings } from '../performance/PerformanceSettings'
 import { WatcherOwl } from '../../watcher/WatcherOwl'
 import { VoiceWave } from '../../components/VoiceWave'
@@ -123,6 +126,7 @@ const PAGE_ICONS: Record<SettingsPageId, RailIcon> = {
   'settings-capture': Mic,
   'settings-formatting': Sparkles,
   'settings-agents': MessagesSquare,
+  'settings-keyboard': Keyboard,
   'settings-git': GitBranch,
   // Watcher, an Owl feature: shown only while the Owl list turns it on. Worker roles (#1041) inside it follow their own.
   'settings-watcher': WatcherNavIcon,
@@ -434,8 +438,10 @@ export function SettingsView({
   /** A group or setting to bring into view once its page shows. */
   const [reveal, setReveal] = useState<{ readonly group: string | null; readonly settings: readonly string[]; readonly key: number } | null>(null)
   // Settings, under Watcher, exists only while the Owl list turns Watcher on; its worker roles, only while they are on too.
-  const watcherOn = useOwlFeature('watcher'), workerRolesOn = useOwlFeature('worker-roles')
+  const watcherOn = useOwlFeature('watcher'), workerRolesOn = useOwlFeature('worker-roles'), crossMachineOn = useOwlFeature('cross-machine-work')
   const workerRoles = watcherOn && workerRolesOn
+  // Where new workers start (#1032), part of the Owl feature Work across machines, inside Watcher's page.
+  const workerMachine = watcherOn && crossMachineOn
   const performanceOn = useOwlFeature('main-freeze')
   // Owl `dictation-off`: with dictation off, only the switch stays in Dictation, and its sections leave the rail.
   const dictationSwitch = useOwlFeature('dictation-off')
@@ -447,9 +453,13 @@ export function SettingsView({
   const nightFallsOn = useOwlFeature('night-falls') && watcherOn
   const creatureToggle = useOwlFeature('creature-toggle')
   const cleanupModelOn = useOwlFeature('cleanup-model')
-  const ownServersOn = useOwnServersBridge() !== undefined
+  const ownServersBridge = useOwnServersBridge()
+  const ownServersOn = ownServersBridge !== undefined
+  // AI cleanup on the user's own servers (ADR-0136): its own Owl entry, and the bridge main gives only while it runs.
+  const ownServerCleanupOn = useOwlFeature('own-server-cleanup')
+  const ownCleanup = ownServerCleanupOn && ownServersBridge ? window.sotto?.ownServerCleanup : undefined
   const notificationsShown = useDesktopNotifications() !== undefined
-  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart, 'next-prompt': nextPromptOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'own-model-servers': ownServersOn }
+  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart, 'next-prompt': nextPromptOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'own-model-servers': ownServersOn }
   // Find a setting reaches only what the page shows now. While it holds text it reads the mounted pages: a setting
   // whose page is not showing it (Providers with the local host off, say) is left out, and what the page says about
   // each one is matched as well as its name.
@@ -529,7 +539,7 @@ export function SettingsView({
       <SettingsLayout>
         {/* The rail wears the Threads sidebar's frame: its top row above the sections, its foot below them. */}
         <aside className={platform === 'darwin' ? 'settings-sidebar thread-nav thread-nav--mac' : 'settings-sidebar thread-nav'}>
-          <SidebarTop />
+          <SidebarTop platform={platform} />
           <div className="settings-sidebar__body">
           <h1 ref={headingRef} tabIndex={-1}><Trans comment="The Settings page's heading, at the top of its rail.">Settings</Trans></h1>
           <SettingsFindField query={findQuery} onQueryChange={setFindQuery} inputRef={findInputRef}
@@ -671,7 +681,8 @@ export function SettingsView({
                 <div className="settings-rows">
                   <Toggle setting="ai-formatting" label={t`AI formatting`} checked={settings.llmFormatting} onCheckedChange={(checked) => void save({ llmFormatting: checked })} description={t`Sends the text, never audio, to OpenRouter to tidy it up. Offline, you get the raw transcript.`} />
                   <OpenRouterKeyField migrationFailed={openRouterKeyMigrationFailed} apiKey={settings.llmApiKey} onUpdateSettings={onUpdateSettings} onCheckOpenRouterKey={onCheckOpenRouterKey} />
-                  {cleanupModelOn ? <CleanupModelFields settings={settings} onSave={save} onListModels={onListOpenRouterModels} /> : null}
+                  {cleanupModelOn ? <CleanupModelFields settings={settings} onSave={save} onListModels={onListOpenRouterModels}
+                    {...(ownCleanup ? { ownServers: ownServersBridge, ownCleanup } : {})} /> : null}
                   <div className="settings-input-action">
                     <Field setting="personal-dictionary" label={t`Personal dictionary`} description={llmDictionaryDraft.value.length >= 4000
                       ? t`One word or name per line, so AI cleanup spells them your way. 4,000 characters maximum.`
@@ -720,17 +731,29 @@ export function SettingsView({
                 </SettingsGroup>
               </Card>
 
+              <Card className="settings-section" id="settings-keyboard" {...panelProps('settings-keyboard')}>
+                <div className="settings-section__heading"><h2><Trans>Keyboard</Trans></h2><p className="tt-paragraph"><Trans>Every shortcut in Sotto, in one place</Trans></p></div>
+                <ThreadShortcutsSettings settings={settings} platform={platform} onUpdateSettings={onUpdateSettings} onOpenDictation={() => selectSection('settings-capture')} />
+              </Card>
+
               <Card className="settings-section" id="settings-git" {...panelProps('settings-git')}>
                 <div className="settings-section__heading"><h2><Trans>Git &amp; worktrees</Trans></h2><p className="tt-paragraph"><Trans>Worktrees, commits, pull requests, Changes &amp; fetching</Trans></p></div>
                 <GitSettings settings={settings} onSave={save} />
               </Card>
 
               {watcherOn ? <Card className="settings-section" id="settings-watcher" {...panelProps('settings-watcher')}>
-                <div className="settings-section__heading"><h2>Watcher</h2><p className="tt-paragraph">{workerRoles ? t`How Watcher looks after threads, and what each kind of work runs on` : t`How Watcher looks after threads`}</p></div>
+                <div className="settings-section__heading"><h2>Watcher</h2><p className="tt-paragraph">{workerMachine && workerRoles ? t`How Watcher looks after threads, where new workers start, and what each kind of work runs on`
+                  : workerMachine ? t`How Watcher looks after threads, and where new workers start`
+                  : workerRoles ? t`How Watcher looks after threads, and what each kind of work runs on` : t`How Watcher looks after threads`}</p></div>
                 <SettingsGroup title={t`Watched threads`} icon={Eye}>
                   <Toggle setting="watcher-settles" label={t`Settle finished threads`} checked={settings.watcherSettlesFinishedThreads} onCheckedChange={checked => void save({ watcherSettlesFinishedThreads: checked })}
                     description={t`Watcher settles a thread it watches once its work is done: nothing running or waiting on you, and every pull request merged or closed. Then it stops watching it.`} />
                 </SettingsGroup>
+                <SettingsGroup title={t`Compaction`} icon={Shrink}>
+                  <WatcherCompactionSetting value={settings.watcherCompactAtTokens} onSave={save} />
+                </SettingsGroup>
+                {workerMachine ? <WorkerMachineSettings settings={settings} onUpdateSettings={onUpdateSettings}
+                  onOpenHosts={() => { selectSection('settings-hosts'); document.getElementById('tab-settings-hosts')?.focus() }} /> : null}
                 {workerRoles ? <WorkerRolesSettings settings={settings} platform={platform} onUpdateSettings={onUpdateSettings}
                   onOpenSection={id => { selectSection(id); document.getElementById(`tab-${id}`)?.focus() }} /> : null}</Card> : null}
 

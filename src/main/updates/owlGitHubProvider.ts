@@ -3,6 +3,8 @@ import type { URL } from 'node:url'
 import type { AppUpdater } from 'electron-updater'
 import { GitHubProvider } from 'electron-updater/out/providers/GitHubProvider'
 import type { ProviderRuntimeOptions } from 'electron-updater/out/providers/Provider'
+import { t } from '@lingui/core/macro'
+
 
 import { getReleaseTrack } from '../../shared/releaseTrack'
 
@@ -24,7 +26,7 @@ export class OwlGitHubProvider extends GitHubProvider {
     const selectedTag = this.readSelectedTag()
     if (getReleaseTrack(info.version) !== 'owl' || selectedTag === null ||
       info.tag !== selectedTag || selectedTag.replace(/^v/u, '') !== info.version) {
-      throw new Error('The Owl release has inconsistent update information. Try again after the release is corrected.')
+      throw new Error(t`The Owl release has inconsistent update information. Try again after the release is corrected.`)
     }
     return info
   }

@@ -1,3 +1,5 @@
+// Main's own code runs here, so English is active first, as it is in main (tests/fixtures/desktopMainBundle.ts).
+import '../../src/main/interfaceLanguage'
 /**
  * One process of `tests/perf/checkpointSend.perf.test.ts`: takes a thread's checkpoints across several sends into
  * one working copy, the way the send hook and the completed-turn hook do, and prints what each cost as JSON.

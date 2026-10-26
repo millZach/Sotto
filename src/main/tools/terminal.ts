@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { randomUUID } from 'node:crypto'
 import { stat } from 'node:fs/promises'
 import { basename, isAbsolute, join, win32 as win32Path } from 'node:path'
@@ -9,7 +10,8 @@ import { terminalCreateSchema, terminalRequestSchema, terminalWriteSchema, termi
 import { saveTerminalImage, terminalImageInput } from '../terminals/clipboard'
 import type { FilesService } from '../files/service'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import { ToolOperations, fail, parse, workspace } from './common'
+import { INVALID_REQUEST, ToolOperations, fail, parse, workspace } from './common'
+import { terminalInputFor } from '../../shared/runnableCommand'
 import { TerminalShell } from '../terminals/shell'
 import { CheckoutSendRefusal } from '../agents/checkoutMutations'
 
@@ -25,8 +27,16 @@ export interface TerminalDependencies {
   executableExists?: (path: string) => Promise<boolean>
   /** Prevents a new shell from starting while the desktop removes its checkout. */
   acquireStart?: (workspace: FileWorkspace) => Promise<() => void>
+  /** Whether a drawer shell may start with a command from a reply (ADR-0139, an Owl feature), read once at start. */
+  runCommandEnabled?: boolean
 }
-interface LiveTerminal { session: TerminalSession; pty?: IPty | undefined; cwd?: string; reopening?: boolean; output: string; sequence: number; subscriptions: { dispose(): void }[] }
+interface PendingRun { output(): void; arm(): void; cancel(): void }
+interface LiveTerminal { session: TerminalSession; pty?: IPty | undefined; cwd?: string; reopening?: boolean; output: string; sequence: number; subscriptions: { dispose(): void }[]; pendingRun?: PendingRun | undefined }
+
+/** A reply's command waits for the new shell to go quiet this long after it last printed, so its prompt is drawn. */
+export const RUN_QUIET_MS = 150
+/** However busy a shell's start-up is, the command is typed this long after it spawned. */
+export const RUN_START_CAP_MS = 3_000
 
 /** Main owns live PTYs. Disk records are reopen hints, never process-resumption claims. */
 export class TerminalService extends ToolOperations {
@@ -63,9 +73,9 @@ export class TerminalService extends ToolOperations {
   private async owned(request: z.infer<typeof terminalRequestSchema>, validateDirectory = true): Promise<LiveTerminal> {
     await this.ready
     const record = this.sessions.get(request.sessionId)
-    if (!record || record.session.workspace.threadId !== request.threadId || record.session.workspace.workspaceId !== request.workspaceId) return fail('session-unavailable', 'This terminal belongs to a different workspace or was closed.')
+    if (!record || record.session.workspace.threadId !== request.threadId || record.session.workspace.workspaceId !== request.workspaceId) return fail('session-unavailable', t`This terminal belongs to a different workspace or was closed.`)
     if (validateDirectory) await workspace(this.dependencies.files, request.threadId, request.workspaceId)
-    if (this.disposed || this.sessions.get(request.sessionId) !== record) return fail('session-unavailable', 'This terminal has closed.')
+    if (this.disposed || this.sessions.get(request.sessionId) !== record) return fail('session-unavailable', t`This terminal has closed.`)
     return record
   }
   list(payload: unknown) { return this.run(async () => {
@@ -77,13 +87,15 @@ export class TerminalService extends ToolOperations {
   }) }
   create(payload: unknown) { return this.run(async () => {
     const request = parse(terminalCreateSchema, payload)
+    // A command runs only in a new drawer shell, and only while the feature is on; the command itself is never logged.
+    if (request.run !== undefined && (request.place !== 'drawer' || !this.dependencies.runCommandEnabled)) return fail('invalid-request', INVALID_REQUEST)
     await this.ready
     const owner = await workspace(this.dependencies.files, request.threadId, request.workspaceId)
-    return this.snapshot(await this.start(owner, request.cols ?? 80, request.rows ?? 24, request.place ?? 'tools'))
+    return this.snapshot(await this.start(owner, request.cols ?? 80, request.rows ?? 24, request.place ?? 'tools', undefined, request.run))
   }) }
-  private async start(owner: FileWorkspace, cols: number, rows: number, place: TerminalPlace, replacing?: LiveTerminal): Promise<LiveTerminal> {
+  private async start(owner: FileWorkspace, cols: number, rows: number, place: TerminalPlace, replacing?: LiveTerminal, run?: string): Promise<LiveTerminal> {
     // Reserve synchronously before importing/spawning so concurrent create calls respect limits.
-    if (this.disposed) return fail('unavailable', 'Terminal is shutting down.')
+    if (this.disposed) return fail('unavailable', t`Terminal is shutting down.`)
     if (!replacing && this.sessions.size >= TERMINAL_SESSIONS_MAX) return fail('busy', TERMINAL_LIMIT_MESSAGE)
     const platform = this.dependencies.platform ?? process.platform
     const env = { ...(this.dependencies.env ?? process.env) }
@@ -115,12 +127,13 @@ export class TerminalService extends ToolOperations {
         releases.push(await this.dependencies.acquireStart(owner))
         if (cwd !== owner.workingDirectory) releases.push(await this.dependencies.acquireStart({ ...owner, workingDirectory: cwd }))
       }
-      if (this.disposed) return fail('unavailable', 'Terminal is shutting down.')
+      if (this.disposed) return fail('unavailable', t`Terminal is shutting down.`)
       const pty = spawn(shell, platform === 'win32' ? ['-NoLogo'] : ['-l'], { cwd, cols, rows, env, name: 'xterm-256color' })
       record.cwd = cwd
       record.pty = pty
       record.subscriptions.push(pty.onData(data => {
         if (record.pty !== pty || this.disposed) return
+        record.pendingRun?.output()
         for (let offset = 0; offset < data.length;) {
           let end = Math.min(offset + 65536, data.length)
           if (end < data.length && /[\uD800-\uDBFF]/.test(data[end - 1]!)) end--
@@ -133,14 +146,22 @@ export class TerminalService extends ToolOperations {
         }
       }), pty.onExit(({ exitCode }) => {
         if (record.pty !== pty) return
+        record.pendingRun?.cancel()
         record.pty = undefined
         record.session.status = 'exited'
         record.session.exitCode = exitCode
         this.publish(record)
         void this.save().catch(() => { record.session.status = 'unavailable'; this.publish(record) })
       }))
+      // Main types the command, so no window replay can drop it; it waits for the shell's prompt (typeWhenSettled).
+      // The tab names the command.
+      if (run !== undefined) {
+        record.session.title = run.split('\n')[0]!.slice(0, 256)
+        record.pendingRun = this.typeWhenSettled(record, pty, run)
+      }
       await this.save()
-      if (this.disposed) return fail('unavailable', 'Terminal is shutting down.')
+      if (this.disposed) return fail('unavailable', t`Terminal is shutting down.`)
+      record.pendingRun?.arm()
       this.publish(record)
       return record
     } catch (error) {
@@ -149,8 +170,36 @@ export class TerminalService extends ToolOperations {
       if (replacing) this.sessions.set(replacing.session.id, replacing)
       this.publishCapacity()
       if (error instanceof CheckoutSendRefusal) return fail('busy', error.terminalMessage())
-      return fail('unavailable', 'The terminal could not start or save its session. Check that the shell is available and app storage is writable.')
+      return fail('unavailable', t`The terminal could not start or save its session. Check that the shell is available and app storage is writable.`)
     } finally { for (const release of releases.reverse()) release() }
+  }
+  /**
+   * Types a reply's command into a new shell once it is ready to read it: after its first output and then RUN_QUIET_MS
+   * with none, or RUN_START_CAP_MS after it spawned, whichever comes first. Typed sooner, a shell still running its
+   * profile can drop the text or echo it twice. A shell that ended or was closed meanwhile receives nothing. Nothing
+   * is typed before `arm`, which follows the session's save: a shell whose record could not be saved is stopped, so
+   * "did not start" means the command did not run.
+   */
+  private typeWhenSettled(record: LiveTerminal, pty: IPty, run: string): PendingRun {
+    let quiet: ReturnType<typeof setTimeout> | undefined
+    let armed = false
+    let due = false
+    const cancel = (): void => {
+      clearTimeout(quiet); clearTimeout(cap)
+      if (record.pendingRun === pending) record.pendingRun = undefined
+    }
+    const type = (): void => {
+      if (!armed) { due = true; return }
+      cancel()
+      if (record.pty === pty && !this.disposed) pty.write(terminalInputFor(run))
+    }
+    const cap = setTimeout(type, RUN_START_CAP_MS)
+    const pending: PendingRun = {
+      output: () => { if (due) return; clearTimeout(quiet); quiet = setTimeout(type, RUN_QUIET_MS) },
+      arm: () => { armed = true; if (due) type() },
+      cancel,
+    }
+    return pending
   }
   /** The project folder, or the thread's working copy when the project folder is gone or cannot be opened. */
   private async projectFolder(owner: FileWorkspace): Promise<string> {
@@ -167,7 +216,7 @@ export class TerminalService extends ToolOperations {
     // Reserve order before ownership validation yields. Queued keys do not consume the active-operation cap.
     return this.input(request.sessionId, async () => {
       const record = await this.owned(request)
-      if (!record.pty) return fail('not-running', 'This terminal has exited. Reopen it to start a new shell.')
+      if (!record.pty) return fail('not-running', t`This terminal has exited. Reopen it to start a new shell.`)
       record.pty.write(request.data)
     })
   }
@@ -181,7 +230,7 @@ export class TerminalService extends ToolOperations {
   resize(payload: unknown) { return this.run(async () => {
     const request = parse(terminalResizeSchema, payload)
     const record = await this.owned(request)
-    if (!record.pty) return fail('not-running', 'This terminal has exited.')
+    if (!record.pty) return fail('not-running', t`This terminal has exited.`)
     record.pty.resize(request.cols, request.rows)
     record.session.cols = request.cols; record.session.rows = request.rows
     this.publish(record)
@@ -192,17 +241,17 @@ export class TerminalService extends ToolOperations {
     const request = parsed.data
     return this.input(request.sessionId, async () => {
     const record = await this.owned(request)
-    if (!record.pty) return fail('not-running', 'This terminal has exited. Reopen it before pasting an image.')
+    if (!record.pty) return fail('not-running', t`This terminal has exited. Reopen it before pasting an image.`)
     const path = await saveTerminalImage(record.session.workspace.workingDirectory, request.dataUrl)
     // A save yields; do not write to a shell closed or replaced while it was on disk.
     await this.owned(request)
-    if (!record.pty) return fail('not-running', 'The image was saved, but this terminal has exited. Reopen it before pasting again.')
+    if (!record.pty) return fail('not-running', t`The image was saved, but this terminal has exited. Reopen it before pasting again.`)
     record.pty.write(terminalImageInput(path, this.dependencies.platform ?? process.platform))
     })
   }
   interrupt(payload: unknown) { return this.run(async () => {
     const record = await this.owned(parse(terminalRequestSchema, payload), false)
-    if (!record.pty) return fail('not-running', 'This terminal has exited.')
+    if (!record.pty) return fail('not-running', t`This terminal has exited.`)
     record.pty.write('\x03')
   }) }
   close(payload: unknown) { return this.run(async () => {
@@ -215,8 +264,8 @@ export class TerminalService extends ToolOperations {
   }) }
   reopen(payload: unknown) { return this.run(async () => {
     const record = await this.owned(parse(terminalRequestSchema, payload))
-    if (record.pty) return fail('not-running', 'This terminal is still running; select it instead.')
-    if (record.reopening) return fail('busy', 'This terminal is already reopening.')
+    if (record.pty) return fail('not-running', t`This terminal is still running; select it instead.`)
+    if (record.reopening) return fail('busy', t`This terminal is already reopening.`)
     record.reopening = true
     // Replace the dead session's reservation atomically, including rollback, so a failed reopen frees no slot.
     let replacement: LiveTerminal
@@ -232,6 +281,7 @@ export class TerminalService extends ToolOperations {
     return this.snapshot(replacement)
   }) }
   private stop(record: LiveTerminal): void {
+    record.pendingRun?.cancel()
     const pty = record.pty; record.pty = undefined
     for (const subscription of record.subscriptions.splice(0)) subscription.dispose()
     try { pty?.kill() } catch { /* Already exited. */ }

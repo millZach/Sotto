@@ -118,7 +118,9 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   // threads delegate on this machine only where Work across machines is on (#1310), below.
   const delegation = owlFeatures['thread-delegation'] || owlFeatures['cross-machine-work']
   const agentsViewEnabled = owlFeatures['iphone-agents-view']
-  // A host names its projects' GitHub origins to a desktop placing work (#1032) only where its Owl answer turns it on.
+  // Work across machines (ADR-0082) only where the host's Owl answer turns it on: the host names its projects' GitHub
+  // origins to a desktop placing work (#1032), and reads its live load and counts its work placed but not started
+  // (#1311); otherwise its facts are what they were.
   const crossMachineEnabled = owlFeatures['cross-machine-work']
   // Attached files (ADR-0131): the host keeps them and lists `file-staging` only on its own Owl answer.
   const attachAnyFile = owlFeatures['attach-any-file']

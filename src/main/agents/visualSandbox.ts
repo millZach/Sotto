@@ -1,3 +1,5 @@
+import { i18n } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
 import { join } from 'node:path'
 import { VISUAL_PAGE_OPEN, visualPageRequestSchema, type VisualPageResult } from '../../shared/visualPages'
 import type { AgentVisual } from '../../shared/visuals'
@@ -44,8 +46,8 @@ export interface VisualSandboxOptions {
   readonly fontCss: string
 }
 
-const NOT_SEALED = 'Sotto could not seal this page from the network, so it is not shown.'
-const ON_ANOTHER_COMPUTER = 'This page belongs to a thread on another computer, so it is not shown here.'
+const NOT_SEALED = msg`Sotto could not seal this page from the network, so it is not shown.`
+const ON_ANOTHER_COMPUTER = msg`This page belongs to a thread on another computer, so it is not shown here.`
 
 /**
  * Answers the window's request for an interactive visual's page, admits a `<webview>` guest only for an address
@@ -108,8 +110,8 @@ export function installVisualSandbox(adapters: VisualSandboxAdapters, options: V
     const request = visualPageRequestSchema.parse(payload)
     // A key for another host names a paired host's thread: its visuals are there, never in this computer's store.
     const threadId = localVisualThreadId(request.threadId, options.localHostId())
-    if (threadId === undefined) return { ok: false, reason: ON_ANOTHER_COMPUTER }
-    try { await seal() } catch { return { ok: false, reason: NOT_SEALED, retry: true } }
+    if (threadId === undefined) return { ok: false, reason: i18n._(ON_ANOTHER_COMPUTER) }
+    try { await seal() } catch { return { ok: false, reason: i18n._(NOT_SEALED), retry: true } }
     return store.open({ ...request, threadId })
   })
 

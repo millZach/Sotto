@@ -29,10 +29,9 @@ export const OWL_FEATURES = [
   { id: 'message-scrubber', name: 'Message scrubber', owlSince: '2026-10-22', owner: 'docs/adr/0109-a-column-of-ticks-reaches-every-message-the-user-sent.md', sentToStable: true },
   { id: 'menu-bar-owl', name: 'The menu bar owl', owlSince: '2026-10-22', owner: 'docs/adr/0114-the-menu-bar-owl-is-alive.md', sentToStable: true },
   { id: 'desktop-notifications', name: 'Notifications when a thread has finished or needs you', owlSince: '2026-10-22', owner: 'docs/adr/0117-the-desktop-notifies-when-a-thread-has-finished-everything-or-needs-you.md', sentToStable: true },
-  { id: 'cross-machine-work', name: 'Work across machines', owlSince: '2026-10-22', owner: 'docs/adr/0082-work-moves-between-a-desktops-machines-over-its-own-ssh-link.md', sentToStable: false },
   { id: 'recent-projects', name: 'Recent projects on a new thread', owlSince: '2026-10-23', owner: 'docs/adr/0121-a-new-thread-can-move-to-a-recent-project.md', sentToStable: false },
   { id: 'creature-toggle', name: 'Show the creature', owlSince: '2026-10-23', owner: 'docs/adr/0116-the-creature-above-the-composer-is-a-choice.md', sentToStable: false },
-  { id: 'night-falls', name: 'Night falls between Threads and Watcher', owlSince: '2026-10-23', owner: 'docs/adr/0119-night-falls-moves-the-window-between-threads-and-watchers-room.md', sentToStable: false },
+  { id: 'night-falls', name: 'Night falls between Dictate or Threads and Watcher', owlSince: '2026-10-23', owner: 'docs/adr/0119-night-falls-moves-the-window-between-threads-and-watchers-room.md', sentToStable: false },
   { id: 'reveal-linked-files', name: 'Show linked files in Finder or File Explorer', owlSince: '2026-10-23', owner: 'docs/adr/0120-a-file-link-in-a-reply-shows-the-file-in-its-folder.md', sentToStable: false },
   { id: 'cursor', name: 'Cursor provider', owlSince: '2026-10-23', owner: 'docs/adr/0128-cursor-is-a-thread-provider.md', sentToStable: false },
   { id: 'cleanup-model', name: 'Choose the AI cleanup model and mode', owlSince: '2026-10-23', owner: 'docs/adr/0122-the-cleanup-model-can-be-chosen-on-owl.md', sentToStable: false },
@@ -42,6 +41,12 @@ export const OWL_FEATURES = [
   { id: 'attach-any-file', name: 'Attach any file', owlSince: '2026-10-24', owner: 'docs/adr/0131-any-file-can-be-attached.md', sentToStable: false },
   { id: 'reply-quote', name: 'Quote a reply in the prompt', owlSince: '2026-10-24', owner: 'docs/adr/0129-words-from-a-reply-can-be-quoted-in-the-next-prompt.md', sentToStable: false },
   { id: 'next-prompt', name: 'Next prompt suggestions', owlSince: '2026-10-24', owner: 'docs/adr/0132-a-finished-turn-suggests-the-next-prompt.md', sentToStable: false },
+  { id: 'deepseek', name: 'DeepSeek Harness provider', owlSince: '2026-10-24', owner: 'docs/adr/0138-deepseek-harness-is-a-thread-provider.md', sentToStable: false },
+  { id: 'cross-machine-work', name: 'Work across machines', owlSince: '2026-10-22', owner: 'docs/adr/0082-work-moves-between-a-desktops-machines-over-its-own-ssh-link.md', sentToStable: false },
+  { id: 'own-server-cleanup', name: 'AI cleanup on your own model server', owlSince: '2026-10-25', owner: 'docs/adr/0136-ai-cleanup-can-run-on-your-own-model-server.md', sentToStable: false },
+  { id: 'needs-you-queue', name: 'Needs you in the Threads sidebar', owlSince: '2026-10-24', owner: 'docs/adr/0135-the-threads-sidebar-opens-on-needs-you.md', sentToStable: false },
+  { id: 'folder-peek', name: 'Peek inside a closed folder', owlSince: '2026-10-24', owner: 'docs/plans/collapsed-folder-peek.md', sentToStable: false },
+  { id: 'run-command', name: 'Run a command from a reply', owlSince: '2026-10-25', owner: 'docs/adr/0139-a-command-in-a-reply-runs-in-the-terminal-drawer.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
 export type OwlFeatureId = typeof OWL_FEATURES[number]['id']

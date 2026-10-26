@@ -41,6 +41,19 @@ const refusal = async (placing: Promise<unknown>) => {
 }
 
 describe('a start that names no machine or system', () => {
+  it('stays on This computer, away from the default and saying why, when it reuses a worktree or a base branch read here (Zach, October 25)', async () => {
+    const read = sources([laptop(), forge()])
+    expect(await placeWorker({ pinnedBy: 'existing-worktree' }, FORGE, onLaptop, read)).toEqual({ hostId: LAPTOP, projectId: 'laptop-sotto',
+      receipt: { hostId: LAPTOP, name: 'This computer', awayFromDefault: true, defaultName: 'forge',
+        note: 'It reuses a worktree on This computer, so it started here rather than on forge, where new workers start.' } })
+    expect((await placeWorker({ pinnedBy: 'base-branch' }, FORGE, onLaptop, read)).receipt).toEqual({ hostId: LAPTOP, name: 'This computer', awayFromDefault: true, defaultName: 'forge',
+      note: 'Its base branch was read on This computer, so it started here rather than on forge, where new workers start.' })
+    expect(read.originReads).toEqual([])
+    // A start that names the machine still goes there; where it is placed refuses the choices that do not travel.
+    expect((await placeWorker({ machine: FORGE, pinnedBy: 'existing-worktree' }, FORGE, onLaptop, read)).hostId).toBe(FORGE)
+    // While new workers start on This computer, nothing is away from the default.
+    expect((await placeWorker({ pinnedBy: 'base-branch' }, 'this-computer', onLaptop, read)).receipt).toEqual({ hostId: LAPTOP, name: 'This computer', awayFromDefault: false })
+  })
   it('stays where its project is while new workers start on This computer, and reads no machine', async () => {
     const read = sources([laptop(), forge()])
     expect(await placeWorker({}, 'this-computer', onLaptop, read)).toEqual({ hostId: LAPTOP, projectId: 'laptop-sotto',
@@ -53,7 +66,7 @@ describe('a start that names no machine or system', () => {
   })
   it('starts on This computer and says why when the machine new workers start on is not connected or no longer saved', async () => {
     expect(await placeWorker({}, FORGE, onLaptop, sources([laptop(), forge({ machine: { hostId: FORGE, name: 'forge', thisComputer: false, connected: false } })]))).toEqual({
-      hostId: LAPTOP, projectId: 'laptop-sotto', receipt: { hostId: LAPTOP, name: 'This computer', awayFromDefault: true,
+      hostId: LAPTOP, projectId: 'laptop-sotto', receipt: { hostId: LAPTOP, name: 'This computer', awayFromDefault: true, defaultName: 'forge',
         note: 'Forge, where new workers start, is not connected, so this one started on This computer.' } })
     expect((await placeWorker({}, MAC, onLaptop, sources([laptop(), forge()]))).receipt).toEqual({ hostId: LAPTOP, name: 'This computer', awayFromDefault: true,
       note: 'The machine new workers start on is no longer saved, so this one started on This computer.' })
@@ -61,7 +74,7 @@ describe('a start that names no machine or system', () => {
   it('keeps a project named on another machine there, and says it is away from where new workers start', async () => {
     const onForge = { hostId: FORGE, projectId: 'forge-sotto' }
     expect(await placeWorker({}, 'this-computer', onForge, sources([laptop(), forge()]))).toEqual({ hostId: FORGE, projectId: 'forge-sotto',
-      receipt: { hostId: FORGE, name: 'forge', awayFromDefault: true } })
+      receipt: { hostId: FORGE, name: 'forge', awayFromDefault: true, defaultName: 'This computer' } })
     expect((await placeWorker({}, 'watcher', onForge, sources([laptop(), forge()]))).receipt.awayFromDefault).toBe(false)
     expect((await placeWorker({}, MAC, onForge, sources([laptop(), forge(), mac()]))).hostId).toBe(FORGE)
   })
@@ -77,7 +90,7 @@ describe('a start that names no machine or system', () => {
 describe('a start that names a machine', () => {
   it('starts on that machine’s copy, whatever the setting says', async () => {
     expect(await placeWorker({ machine: FORGE }, 'this-computer', onLaptop, sources([laptop(), forge()]))).toEqual({ hostId: FORGE, projectId: 'forge-sotto',
-      receipt: { hostId: FORGE, name: 'forge', awayFromDefault: true } })
+      receipt: { hostId: FORGE, name: 'forge', awayFromDefault: true, defaultName: 'This computer' } })
     expect(await placeWorker({ machine: LAPTOP }, FORGE, { hostId: FORGE, projectId: 'forge-sotto' }, sources([laptop(), forge()]))).toMatchObject({ hostId: LAPTOP, projectId: 'laptop-sotto',
       receipt: { awayFromDefault: true } })
   })

@@ -131,6 +131,11 @@ describe('the run a move plays', () => {
     expect(nightFallsRun('watcher', 'threads', owl, { ...stars, roomTransitionLook: 'band' })).toEqual({ forward: false, speed: 1.5, look: 'band' })
   })
 
+  it('plays between Dictate and Watcher\'s room the same way, in either direction', () => {
+    expect(nightFallsRun('home', 'watcher', owl, stars)).toEqual({ forward: true, speed: 1.5, look: 'stars' })
+    expect(nightFallsRun('watcher', 'home', owl, stars)).toEqual({ forward: false, speed: 1.5, look: 'stars' })
+  })
+
   it('plays nothing where night falls is not shipped, whatever look is set', () => {
     expect(nightFallsRun('threads', 'watcher', { owlFeatures: owlFeaturesForTrack('stable') } as never, stars)).toBeNull()
     expect(nightFallsRun('threads', 'watcher', null, stars)).toBeNull()
@@ -139,6 +144,9 @@ describe('the run a move plays', () => {
   it('plays nothing with the switch off, or for a move that is not between the rooms', () => {
     expect(nightFallsRun('threads', 'watcher', owl, { ...stars, roomTransition: false })).toBeNull()
     expect(nightFallsRun('threads', 'settings', owl, stars)).toBeNull()
+    expect(nightFallsRun('home', 'threads', owl, stars)).toBeNull()
+    expect(nightFallsRun('settings', 'watcher', owl, stars)).toBeNull()
+    expect(nightFallsRun('watcher', 'settings', owl, stars)).toBeNull()
     expect(nightFallsRun('watcher', 'watcher', owl, stars)).toBeNull()
   })
 
@@ -334,7 +342,7 @@ describe('night falls settings', () => {
   it('switches night falls off and saves the speed when the dial is let go', () => {
     const onSave = vi.fn()
     render(<NightFallsSettings settings={{ roomTransition: true, roomTransitionSpeed: 1, roomTransitionLook: 'band' }} onSave={onSave} />)
-    fireEvent.click(screen.getByRole('switch', { name: /Night falls between Threads and Watcher/ }))
+    fireEvent.click(screen.getByRole('switch', { name: /Night falls between Dictate or Threads and Watcher/ }))
     expect(onSave).toHaveBeenCalledWith({ roomTransition: false })
     const dial = screen.getByRole('slider', { name: 'Night falls speed' })
     fireEvent.change(dial, { target: { value: '1.5' } })

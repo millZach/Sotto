@@ -1,5 +1,8 @@
 import React, { useRef, type ReactNode } from 'react'
 import { Check, Copy, X } from 'lucide-react'
+import { i18n } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 import { INTERACTIVE_VISUAL_LABEL, type AgentVisual } from '../../../shared/visuals'
 import type { VisualStepPlace } from '../../../shared/visualGuest'
 import { useFrameControls, type FrameControls } from './diagrams/DiagramFrame'
@@ -10,9 +13,9 @@ import { pageStepFor, useWalkthroughPlace } from './VisualWalkthrough'
 
 /** Where a reader can turn when the page is not shown, by what the visual has besides it. */
 export function pageFallbackHint(visual: Pick<AgentVisual, 'intro' | 'steps'>): string {
-  if (visual.steps?.length) return 'Its steps are below.'
-  if (visual.intro) return 'What it shows is described below.'
-  return 'Show source shows its HTML.'
+  if (visual.steps?.length) return i18n._(msg`Its steps are below.`)
+  if (visual.intro) return i18n._(msg`What it shows is described below.`)
+  return i18n._(msg({ message: 'Show source shows its HTML.', comment: 'Show source is the name of a button on the card.' }))
 }
 
 /**
@@ -21,6 +24,8 @@ export function pageFallbackHint(visual: Pick<AgentVisual, 'intro' | 'steps'>): 
  * with the names that step is about, so the page can show it. Escape inside the page gives focus back to the card.
  */
 export function InteractiveVisualCard({ visual, threadId }: { readonly visual: AgentVisual; readonly threadId: string | undefined }): ReactNode {
+  const { t } = useLingui()
+  const title = visual.title
   const frame = useFrameControls(visual.source)
   const card = useRef<HTMLElement>(null)
   const [place, movePlace] = useWalkthroughPlace(visual.id)
@@ -35,11 +40,11 @@ export function InteractiveVisualCard({ visual, threadId }: { readonly visual: A
     element.focus()
   }
 
-  return <VisualCardShell visual={visual} kind={INTERACTIVE_VISUAL_LABEL} state="drawn" interactive cardRef={card} frame={frame} showing shownTitle="Show page"
+  return <VisualCardShell visual={visual} kind={INTERACTIVE_VISUAL_LABEL} state="drawn" interactive cardRef={card} frame={frame} showing shownTitle={t`Show page`}
     place={place} movePlace={movePlace}
     stage={frame.showSource
       ? <div className="visual-card__stage">
-        <pre className="rich-code__scroll visual-card__source" tabIndex={0} aria-label={`${visual.title} source`}><code>{visual.source}</code></pre>
+        <pre className="rich-code__scroll visual-card__source" tabIndex={0} aria-label={t({ message: `${title} source`, comment: '{title} is a visual\'s title: its source.' })}><code>{visual.source}</code></pre>
       </div>
       // The page stops while Expand shows it, so one visual never runs twice.
       : frame.expanded ? <div className="interactive-visual" data-state="expanded" aria-hidden="true" />
@@ -51,14 +56,16 @@ export function InteractiveVisualCard({ visual, threadId }: { readonly visual: A
 function InteractiveVisualViewer({ visual, threadId, step, fallbackHint, frame }: {
   readonly visual: AgentVisual; readonly threadId: string | undefined; readonly step: VisualStepPlace; readonly fallbackHint: string; readonly frame: FrameControls
 }): ReactNode {
+  const { t } = useLingui()
   const closeButton = useRef<HTMLButtonElement>(null)
-  const { feedback, copy, close } = frame
-  return <ViewerDialog title={`Interactive page: ${visual.title}`} className="interactive-visual-viewer" status={feedback} focusOnOpen={closeButton} onClose={close}
+  const { feedback, copied, copy, close } = frame
+  const title = visual.title
+  return <ViewerDialog title={t({ message: `Interactive page: ${title}`, comment: '{title} is the title of a page an agent made.' })} className="interactive-visual-viewer" status={feedback} focusOnOpen={closeButton} onClose={close}
     controls={<>
-      <button type="button" className="rich-code__copy tt-focusable" data-copied={feedback === 'Copied' || undefined} aria-label="Copy page source" title="Copy source" onClick={copy}>
-        {feedback === 'Copied' ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
+      <button type="button" className="rich-code__copy tt-focusable" data-copied={copied || undefined} aria-label={t`Copy page source`} title={t`Copy source`} onClick={copy}>
+        {copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
       </button>
-      <button ref={closeButton} type="button" className="rich-code__copy tt-focusable" aria-label="Close page" title="Close (Esc)" onClick={close}><X size={17} aria-hidden="true" /></button>
+      <button ref={closeButton} type="button" className="rich-code__copy tt-focusable" aria-label={t`Close page`} title={t`Close (Esc)`} onClick={close}><X size={17} aria-hidden="true" /></button>
     </>}>
     <div className="interactive-visual-viewer__body">
       <InteractiveVisualPage threadId={threadId} visualId={visual.id} title={visual.title} step={step} fallbackHint={fallbackHint} expanded onEscape={close} />

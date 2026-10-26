@@ -141,7 +141,7 @@ describe('the desktop defaults a host keeps', () => {
 describe('where a thread on a host may delegate', () => {
   const facts = (family: 'linux' | 'macos' | null) => ({ read: async () => ({ observedAt: new Date().toISOString(), os: { family, name: null, version: null },
     architecture: null, totalMemoryBytes: null, freeMemoryBytes: null, logicalCpuCount: null }) }) as unknown as HostFactsSource
-  const machines = (family: 'linux' | 'macos' | null = 'linux') => hostDelegationMachines(() => 'host-a', facts(family), () => [{ status: 'running' }, { status: 'idle' }])
+  const machines = (family: 'linux' | 'macos' | null = 'linux') => hostDelegationMachines(() => 'host-a', facts(family), () => [{ id: 'thread-a', status: 'running' }, { id: 'thread-b', status: 'idle' }])
   const project = { hostId: 'host-a', projectId: 'project-a' }
 
   it('lists this machine alone and starts on it, by its ID or its own system', async () => {
@@ -216,6 +216,41 @@ describe('the desktop\'s push of its defaults', () => {
     expect(events).toEqual(['desktop-defaults-failed', 'desktop-defaults-sent'])
     push.close(); push.update('full-access', undefined); await push.settled()
     expect(sent).toHaveLength(2)
+  })
+
+  it('tries a failed send again while the host stays connected, so a narrowed default never stays wider there', async () => {
+    const sent: DesktopDefaultsInput[] = [], events: string[] = []
+    let failing = false
+    const host: DesktopDefaultsTarget = { hostId: 'host-a', kind: 'remote', service: { supportsHostDelegation: true, desktopDefaults: async defaults => {
+      await new Promise(resolve => setTimeout(resolve, 5))
+      if (failing) { failing = false; throw new Error('away') }
+      sent.push(defaults); return { receivedAt: new Date().toISOString() } } } }
+    const push = new DesktopDefaultsPush({ connections: () => [host], log: event => events.push(event), retryAfterMs: 20 })
+    push.update('full-access', undefined)
+    await push.settled()
+    // The narrowing fails once, and the same defaults again are deduplicated, so only the retry can reach the host.
+    failing = true
+    push.update('approval-required', undefined)
+    await push.settled()
+    push.update('approval-required', undefined)
+    await expect.poll(() => sent.at(-1)?.newThreadRuntimeMode, { timeout: 5_000 }).toBe('approval-required')
+    expect(events).toEqual(['desktop-defaults-sent', 'desktop-defaults-failed', 'desktop-defaults-sent'])
+    push.close()
+  })
+
+  it('stops trying a failed send once the host is gone or the push is closed', async () => {
+    const sent: DesktopDefaultsInput[] = []
+    let connected = true
+    const host = target('host-a', true, sent, true)
+    const push = new DesktopDefaultsPush({ connections: () => connected ? [host] : [], retryAfterMs: 10 })
+    push.update('auto', undefined)
+    await push.settled()
+    connected = false
+    await new Promise(resolve => setTimeout(resolve, 60))
+    await push.settled()
+    // One try, then the retry found the host gone and waits for its next connection.
+    expect(sent).toHaveLength(1)
+    push.close()
   })
 
   it('follows the default the router publishes, whichever host gives it, and this computer\'s roles', async () => {

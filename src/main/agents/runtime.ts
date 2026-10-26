@@ -17,6 +17,7 @@ import { DevinAcpHost } from './devin'
 import { MuseMspHost } from './muse'
 import { OpenCodeHost } from './opencode'
 import { CursorAcpHost } from './cursor'
+import { DeepSeekAcpHost } from './deepseek'
 import { CursorSignIn } from './cursorSignIn'
 import type { OwnServer } from '../../shared/ownModelServers'
 import { openCodeForOwnServers } from '../ownModelServers/openCode'
@@ -52,7 +53,8 @@ import { RestartResume } from './restartResume'
 import type { AgentHost } from './host'
 import { UsageService } from './usageService'
 import { mayGrantLocally } from './authority'
-import { HostFactsSource, hostMachineReport } from './hostFacts'
+import { HostFactsSource, hostMachineReport, type MachineWork } from './hostFacts'
+import type { HostMachineReport } from '../../shared/hostFacts'
 import { readProjectOrigins } from './projectOrigins'
 import { threadDelegations } from './agentsView'
 import { DesktopDefaultsStore, hostDelegationMachines } from './hostDelegation'
@@ -88,8 +90,10 @@ export interface AgentRuntimeOptions {
   /** The Owl list's answer for the iPhone's Agents view (ADR-0103), read once by the process owner. Absent fails closed. */
   agentsViewEnabled?: boolean
   /**
-   * The Owl list's answer for Work across machines (#1032), read once by the process owner. Absent fails closed: a start
-   * names no machine or system, nothing reads where new workers start, and the host does not report its projects' origins.
+   * The Owl list's answer for Work across machines (ADR-0082), read once by the process owner. Absent fails closed: a
+   * start names no machine or system, nothing reads where new workers start, the host does not report its projects'
+   * origins, this machine's report is its host facts and running threads alone, no live load is sampled, and
+   * list_machines shows none of it.
    */
   crossMachineEnabled?: boolean
   /**
@@ -148,7 +152,7 @@ export interface AgentRuntimeOptions {
    * Git status the way T3 reads it: how often a project's origin may be fetched in the background, and
    * whether a window is in front to read for. Absent, thread records carry no Git status.
    */
-  gitStatus?: { fetchIntervalMs: () => number; foreground?: () => boolean
+  gitStatus?: { fetchIntervalMs: () => number; foreground?: () => boolean; visible?: () => boolean
     /** A scripted `gh` for a journey in the running app; development only. */
     ghStandIn?: { executable: string; args: readonly string[] }
     /** When GitHub's rate limit holds Sotto's questions back (#820), and what babysitting did (ADR-0061), as stable
@@ -172,8 +176,15 @@ export interface AgentRuntimeOptions {
 export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const { directory, credentials } = options
   // This machine's host facts: its operating system is read now, once; memory only when facts are asked for (#1031).
+  // With Work across machines on, the first live load sample is taken now too, so the first ask reads over a window
+  // without waiting (#1311); with it off, nothing is sampled and the report carries no load.
+  const crossMachine = options.crossMachineEnabled === true
   const facts = new HostFactsSource()
-  void facts.read().catch(() => undefined)
+  void facts.read().then(() => crossMachine ? facts.primeLoad() : undefined).catch(() => undefined)
+  // Its threads and sends are read in place, after the load, as the report is answered, with Watcher's starts still on
+  // their way to a thread here.
+  const machineFacts = (): Promise<HostMachineReport> => hostMachineReport(facts, (): MachineWork => ({ threads: agentControl.watcherSnapshot().threads, ...agentControl.watcherSendRecords(),
+    ...crossMachine && watcher ? { startsNotYetSent: watcher.startsNotYetSent() } : {} }), crossMachine)
   const threadRegistry = options.host ? null : new ThreadRegistry(directory)
   const held = heldProvidersOption(options)
   // A held provider's adapter is never built: its stand-in starts nothing and refuses in the provider's name.
@@ -191,6 +202,10 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       ...(options.ownServers ? { ownServers: options.ownServers } : {}) })),
     // Cursor runs with Sotto's own Cursor folder under this runtime's directory: user data, or a headless host's data (ADR-0128).
     cursor: adapter('cursor', () => options.providers?.cursor ?? new CursorAcpHost(directory)),
+    // DeepSeek Harness runs only the user's own model servers, whose record is this computer's in this phase, so a
+    // headless host holds it back as OpenCode was held before its hosts slice (ADR-0138).
+    deepseek: adapter('deepseek', () => options.providers?.deepseek ?? (options.runsAs === 'headless-host' ? new HeldProviderHost('deepseek')
+      : new DeepSeekAcpHost(directory, { heldProviders: held, ...(options.ownServers ? { servers: options.ownServers } : {}) }))),
   }
   const agentHost = new WorkspaceHost(options.host ?? new ConfiguredProviderHost({
     directory,
@@ -202,6 +217,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       muse: new SottoThreadHost('muse', providers.muse!, threadRegistry!),
       opencode: new SottoThreadHost('opencode', providers.opencode!, threadRegistry!),
       cursor: new SottoThreadHost('cursor', providers.cursor!, threadRegistry!),
+      deepseek: new SottoThreadHost('deepseek', providers.deepseek!, threadRegistry!),
     },
     provider: () => agentControl.configuration().provider,
     enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },
@@ -218,7 +234,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   /** How Git and gh are run; only a journey's stand-in changes it. */
   let gitRun: RunGitCommand | undefined
   if (options.gitStatus) {
-    const { fetchIntervalMs, foreground, ghStandIn, log } = options.gitStatus
+    const { fetchIntervalMs, foreground, visible, ghStandIn, log } = options.gitStatus
     if (ghStandIn) gitRun = runWithGhStandIn(ghStandIn)
     // One rate limit for the process: the status reader and the Pull request surface spend the same gh sign-in's points.
     gitHubRateLimit = new GitHubRateLimit(log ? { log } : {})
@@ -226,7 +242,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     gitHubHosts = new GitHubHosts({ run: gitRun ?? runGitStatusCommand })
     gitStatus = new GitStatusReader({ fetchIntervalMs, rateLimit: gitHubRateLimit, hosts: gitHubHosts, ...(gitRun ? { run: gitRun } : {}) })
     // Automatically pull is read at every remote read, so turning it on or off applies without a restart on the desktop.
-    agentHost.setGitStatus(gitStatus, { pollIntervalMs: fetchIntervalMs, autoPull: () => options.settings().gitAutoPull, ...(foreground ? { foreground } : {}) })
+    agentHost.setGitStatus(gitStatus, { pollIntervalMs: fetchIntervalMs, autoPull: () => options.settings().gitAutoPull, ...(foreground ? { foreground } : {}), ...(visible ? { visible } : {}) })
   }
   // Sotto's own short writing (ADR-0026): thread titles, branch names, commit and pull request drafts, each a
   // side call to the thread's own provider client. A design fixture host offers none, so its titles stay the stand-in.
@@ -297,13 +313,12 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (workerRoles) agentHost.useWorkerRoles(workerRoles)
   // Work across machines (#1032): only the desktop places starts, so only its Watcher reads where new workers start. Every
   // host that has it on, the desktop's own included, reports its projects' origins.
-  const crossMachine = options.crossMachineEnabled === true
   const placing = crossMachine && options.runsAs !== 'headless-host'
     ? { workerMachine: () => options.settings().newWorkerMachine, projectOrigins: () => readProjectOrigins(agentControl.watcherSnapshot().projects) } : {}
   const watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
-      workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts: () => hostMachineReport(facts, agentControl.shell().host.threads),
-      settleFinished: () => options.settings().watcherSettlesFinishedThreads, ...options.watcherLog ? { log: options.watcherLog } : {},
+      workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts, crossMachine,
+      settleFinished: () => options.settings().watcherSettlesFinishedThreads, compactAt: () => options.settings().watcherCompactAtTokens, ...options.watcherLog ? { log: options.watcherLog } : {},
       ...roles, ...placing }) : undefined
   if (options.delegationEnabled === true && options.runsAs !== 'headless-host') {
     agentHost.enableDelegation()
@@ -377,8 +392,10 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (restartResume) agentControl.useRestartResume({ due: () => options.settings().resumeThreadsAfterRestart,
     sending: threadId => restartResume.noteSending(threadId), unsent: threadId => restartResume.noteUnsent(threadId) })
   // Idle compaction (ADR-0127): a large Claude thread quiet for 54 minutes is compacted while its prompt cache is warm.
-  // The switch is read at every sweep, so turning it off stops the next one without a restart.
-  const idleCompaction = new IdleCompaction({ control: agentControl, enabled: () => options.settings().compactIdleThreads })
+  // The switch is read at every sweep, so turning it off stops the next one without a restart. Watcher's own conversation
+  // is compacted too, while Watcher rests.
+  const idleCompaction = new IdleCompaction({ control: agentControl, enabled: () => options.settings().compactIdleThreads,
+    ...watcher ? { watcherAtRest: (threadId: string) => watcher.restsForIdleCompaction(threadId) } : {} })
   let closingWatcherTools: Promise<void> | undefined
   let watcherStopped = false
   const stopWatcher = (): void => {
@@ -463,7 +480,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (watcher) await watcher.recover()
   if (delegation) await delegation.recover()
   const delegationRecord = delegation
-  const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts,
+  const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
     ...(crossMachine ? { projectOrigins: readProjectOrigins } : {}),
     // A headless host that runs delegation for its own threads keeps the desktop defaults a desktop sends it (#1310).
     ...(desktopDefaults ? { desktopDefaults } : {}),
@@ -478,12 +495,15 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.agentsViewEnabled === true ? { agentsView: delegationRecord ? { delegations: (threadId, threads) => threadDelegations(delegationRecord, threads, threadId) } : {} } : {}),
     ...(usage ? { usage, mayClearUsage: client => (options.authority?.mayGrant(client) ?? mayGrantLocally(client)).allowed } : {}),
     ...(options.runsAs === 'headless-host' && watcher ? { watcher } : {}),
-    ...(options.runsAs !== 'headless-host' && watcher ? { watcherPhone: new WatcherPhoneService(agentControl, watcher) } : {}) })
+    ...(options.runsAs !== 'headless-host' && watcher ? { watcherPhone: new WatcherPhoneService(agentControl, watcher, crossMachine) } : {}) })
   babysitter?.begin()
   // Signing Sotto's OpenCode in to model sources (#1104): only where its adapter runs, so a held OpenCode has none.
   const opencodeSignIn = providers.opencode instanceof OpenCodeHost ? providers.opencode.signIn : undefined
   // The user's own model servers reach the same OpenCode (ADR-0124), only where it runs and they were asked for.
   const ownServersOpenCode = options.ownServers && providers.opencode instanceof OpenCodeHost ? openCodeForOwnServers(providers.opencode) : undefined
+  // And the same record reaches DeepSeek Harness (ADR-0138), only where its adapter runs.
+  const deepseekHost = providers.deepseek instanceof DeepSeekAcpHost ? providers.deepseek : undefined
+  const ownServersDeepSeek = options.ownServers && deepseekHost ? { changed: () => deepseekHost.ownServersChanged() } : undefined
   // Signing Cursor in from its tile on this computer (ADR-0128): only where its adapter runs, and never on a headless host, whose
   // Cursor a desktop signs in through the provider sign-in request instead.
   const cursorHost = providers.cursor instanceof CursorAcpHost ? providers.cursor : undefined
@@ -497,5 +517,5 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     signedOut: async () => { await agentControl.command({ type: 'disconnect', provider: 'cursor' }) },
   }) : undefined
   idleCompaction.start()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, ownServersOpenCode, cursorSignIn, prepareForShutdown, close }
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, cursorSignIn, prepareForShutdown, close }
 }

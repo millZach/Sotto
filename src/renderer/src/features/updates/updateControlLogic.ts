@@ -1,3 +1,5 @@
+import { t } from '@lingui/core/macro'
+
 import type { UpdateStatus } from '../../../../shared/contracts'
 
 /** What pressing the footer's update control would do right now. */
@@ -6,7 +8,12 @@ export type UpdateAction = 'check' | 'download' | 'install' | 'none'
 /** The glyph the control wears; `checking` and `downloading` also animate. */
 export type UpdateIconState = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded'
 
-/** Where updates do run, for a build that cannot update itself (ADR-0093). */
+/** Where updates do run, for a build that cannot update itself (ADR-0093), in the interface language. */
+export function updatesUnsupportedMessage(): string {
+  return t`Update checks run in the installed Windows app and in Sotto Owl on a Mac.`
+}
+
+/** The same sentence in English, for Settings until it reads `updatesUnsupportedMessage`. */
 export const UPDATES_UNSUPPORTED_MESSAGE = 'Update checks run in the installed Windows app and in Sotto Owl on a Mac.'
 
 /**
@@ -42,35 +49,41 @@ export function updateIconState(status: UpdateStatus | null): UpdateIconState {
 
 /** The control's name: what it shows and, when it is pressable, what a press does. */
 export function updateTooltip(status: UpdateStatus | null): string {
-  if (status === null) return 'Check for updates'
+  if (status === null) return t`Check for updates`
   const phase = status.phase
   switch (phase.phase) {
     case 'checking':
-      return 'Checking for updates…'
-    case 'available':
+      return t`Checking for updates…`
+    case 'available': {
+      const version = phase.version
       return phase.problem === null
-        ? `Update ${phase.version} ready to download`
+        ? t`Update ${version} ready to download`
         : phase.failedStep === 'download'
-          ? `Download failed for ${phase.version}. Click to retry.`
-          : `Update check failed. Update ${phase.version} is still offered. Click to download.`
-    case 'downloading':
-      return `Downloading update (${phase.percent}%)`
-    case 'downloaded':
+          ? t`Download failed for ${version}. Click to retry.`
+          : t`Update check failed. Update ${version} is still offered. Click to download.`
+    }
+    case 'downloading': {
+      const percent = phase.percent
+      return t`Downloading update (${percent}%)`
+    }
+    case 'downloaded': {
+      const version = phase.version
       return phase.problem === null
-        ? `Update ${phase.version} downloaded. Click to restart and install.`
-        : `Install failed for ${phase.version}. Click to retry.`
+        ? t`Update ${version} downloaded. Click to restart and install.`
+        : t`Install failed for ${version}. Click to retry.`
+    }
     case 'unsupported':
-      return UPDATES_UNSUPPORTED_MESSAGE
+      return updatesUnsupportedMessage()
     default:
-      return 'Check for updates'
+      return t`Check for updates`
   }
 }
 
 /** The question asked before restarting into the installer for `version`. */
 export function installConfirmation(version: string): { readonly title: string; readonly description: string } {
   return {
-    title: `Install update ${version} and restart Sotto?`,
-    description: 'Any dictation or agent work in progress will be interrupted. Make sure you are ready before continuing.',
+    title: t`Install update ${version} and restart Sotto?`,
+    description: t`Any dictation or agent work in progress will be interrupted. Make sure you are ready before continuing.`,
   }
 }
 

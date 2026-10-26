@@ -5,7 +5,7 @@ import { createWatcherRoomDesktop } from '../../../src/main/agents/watcherRoomDe
 import type { PublishScheduler } from '../../../src/main/agents/control'
 import { registerIpc } from '../../../src/main/ipc/registerIpc'
 import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL,
-  WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD, WATCHER_START_NEW, applyWatcherRoomUpdate, newerWatcherRoom,
+  WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD, WATCHER_START_NEW, WATCHER_READ_MACHINES, applyWatcherRoomUpdate, newerWatcherRoom,
   type WatcherHandoverRead, type WatcherMergeTurnsRead, type WatcherRoomHeld, type WatcherRoomState, type WatcherRoomResult, type WatcherRoomUpdate,
   type WatcherStopAllResult } from '../../../src/shared/watcherRoom'
 import { createIpcHarness } from '../../fixtures/ipcHarness'
@@ -355,5 +355,27 @@ describe('desktop Watcher room publication', () => {
       expect(f.order).toEqual(['send:leading', 'send:pending', 'rejected'])
       f.clock.tick(); f.clock.tick(); expect(f.send).toHaveBeenCalledTimes(2)
     } finally { f.desktop!.dispose() }
+  })
+})
+
+describe('the machines read (#1032, Owl cross-machine-work)', () => {
+  const machines = { status: 'ok' as const, observedAt: at, machines: [{ hostId: randomUUID(), name: 'This computer', thisComputer: true, connected: true,
+    factsState: 'unknown' as const, facts: null, runningThreads: null, load: null, placedNotStarted: null, memoryState: 'unknown' as const, cpuState: 'unknown' as const }] }
+
+  it.each([false, true])('is offered, and registered, only while Work across machines is on (%s)', async on => {
+    const service = { subscribe: vi.fn(() => () => undefined), machines: vi.fn(async () => machines) }
+    const desktop = createWatcherRoomDesktop({ watcherEnabled: true, streamingPublishCost: false, machinesEnabled: on,
+      watcher: service as unknown as Parameters<typeof createWatcherRoomDesktop>[0]['watcher'], send: () => true })!
+    try {
+      expect(desktop.bridge.readMachines !== undefined).toBe(on)
+      if (on) expect(await desktop.bridge.readMachines!()).toEqual(machines)
+      const ipc = createIpcHarness(); ipc.cleanup()
+      const cleanup = registerIpc(ipc.ipc, { settings: ipc.settings, history: ipc.history, startup: ipc.startup, hotkeys: ipc.hotkeys,
+        app: ipc.app, trustedSenders: () => [{ role: 'main', webContents: ipc.trustedContents, url: ipc.trustedUrl }], watcher: desktop.bridge })
+      try {
+        expect(ipc.ipc.handlers.has(WATCHER_READ_MACHINES)).toBe(on)
+        if (on) expect(await ipc.ipc.invoke(WATCHER_READ_MACHINES)).toEqual(machines)
+      } finally { cleanup() }
+    } finally { desktop.dispose() }
   })
 })

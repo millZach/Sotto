@@ -1,10 +1,8 @@
 // @vitest-environment node
 import { spawn } from 'node:child_process'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
-import { isBuiltin } from 'node:module'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
-import { build } from 'vite'
+import { dirname, join } from 'node:path'
 import { afterAll, beforeAll } from 'vitest'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { publicProviderEntityId, type ProviderId } from '../../src/shared/agents'
@@ -19,10 +17,12 @@ import { cursorFixture, cursorFixtureSkips } from '../fixtures/fakeCursorFixture
 import { serveStandIn } from '../fixtures/serveStandIn'
 import { ensureFixtureDesktopAnswers } from '../fixtures/sshDesktopAnswers'
 import { describeHostServiceContract } from './hostServiceContract'
+import { bundleDesktopMain } from '../fixtures/desktopMainBundle'
 let buildRoot: string
 beforeAll(async () => {
   buildRoot = await mkdtemp(join(tmpdir(), 'sotto-socket-build-'))
-  await build({ configFile: false, logLevel: 'silent', ssr: { noExternal: ['zod'] }, build: { ssr: resolve('tests/fixtures/socketHostChild.ts'), target: 'node24', outDir: buildRoot, emptyOutDir: false, rollupOptions: { external: id => isBuiltin(id), output: { format: 'cjs', entryFileNames: 'host.cjs' } } } })
+  // The child runs this desktop's own client of the host (its host router and socket client), so it is built as main is.
+  await bundleDesktopMain('tests/fixtures/socketHostChild.ts', join(buildRoot, 'host.cjs'))
 })
 afterAll(async () => { if (buildRoot && dirname(buildRoot) === tmpdir() && buildRoot.includes('sotto-socket-build-')) await rm(buildRoot, { recursive: true, force: true }) })
 /**

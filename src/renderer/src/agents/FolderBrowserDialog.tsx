@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { ArrowLeft, ChevronRight, Folder, FolderOpen, FolderPlus, Home, Laptop, Search, Server, X } from 'lucide-react'
+import type { MessageDescriptor } from '@lingui/core'
+import { msg, plural, t } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 import type { AgentProject, AgentState } from '../../../shared/agents'
 import type { HostFolderCrumb, HostFoldersResult } from '../../../shared/hostFolders'
 import type { HostStatus } from '../../../shared/hosts'
@@ -9,6 +12,8 @@ import { chordClaimed, chordMatches } from './branchToolbar.logic'
 import { listedHostName } from './HostBadge'
 import { projectAtFolder } from './projectFolders'
 import { isCompositionKey } from './composerKeys'
+import { shownWords, type LaterWords } from './interfaceWords'
+import { shownCount } from '../state/interfaceNumbers'
 import './newThread.css'
 import './folderBrowser.css'
 
@@ -27,7 +32,7 @@ export interface FolderChoice { readonly hostId: string; readonly path: string; 
  * among the router's connections, so it comes from the saved hosts, listed but not browsable.
  */
 export function browsableHosts(state: Pick<AgentState, 'connections' | 'hostId'>, saved: readonly HostStatus[] = []): readonly BrowsableHost[] {
-  const connections = state.connections?.length ? state.connections : [{ hostId: state.hostId ?? '', name: 'This computer', kind: 'local' as const, connected: true }]
+  const connections = state.connections?.length ? state.connections : [{ hostId: state.hostId ?? '', name: t({ message: 'This computer', comment: 'The computer Sotto runs on, named among the hosts that run threads.' }), kind: 'local' as const, connected: true }]
   const listed: BrowsableHost[] = [...connections].sort((a, b) => Number(a.kind === 'remote') - Number(b.kind === 'remote'))
     .map(item => ({ hostId: item.hostId, name: listedHostName(item), kind: item.kind, connected: item.connected !== false }))
   const away = saved.filter(item => !listed.some(host => host.hostId === (item.hostId ?? item.id)))
@@ -45,24 +50,27 @@ interface NamedFolder { readonly parent: Listed; readonly name: string; readonly
  * ignores case, while Linux and macOS refuse only `/`. Only the host joins paths otherwise; a new folder's path is the
  * listed folder's, the separator the host named, and the name.
  */
-function folderNameProblem(name: string, listing: Listed): string | null {
+function folderNameProblem(name: string, listing: Listed): MessageDescriptor | null {
   const trimmed = name.trim()
-  if (!trimmed) return 'Type a name for the folder.'
+  if (!trimmed) return msg`Type a name for the folder.`
   const windows = listing.separator === '\\'
   const refused = windows ? /[<>:"/\\|?*]/u.test(trimmed) || /[. ]$/u.test(trimmed) : trimmed.includes('/')
-  if (refused || /^\.\.?$/u.test(trimmed) || trimmed.length > 255) return 'Choose a name that can be used as a folder name.'
+  if (refused || /^\.\.?$/u.test(trimmed) || trimmed.length > 255) return msg`Choose a name that can be used as a folder name.`
   const same = (folder: string): boolean => windows ? folder.toLowerCase() === trimmed.toLowerCase() : folder === trimmed
-  if (listing.folders.some(folder => same(folder.name))) return `A folder named ${trimmed} is already here.`
+  if (listing.folders.some(folder => same(folder.name))) return msg({ message: `A folder named ${trimmed} is already here.`, comment: '{trimmed} is the folder name the user typed.' })
   return null
 }
 
 /** How a host is named in a sentence: this computer, or its saved name. */
-const where = (host: Pick<BrowsableHost, 'kind' | 'name'>): string => host.kind === 'local' ? 'this computer' : host.name
-const notConnected = (host: BrowsableHost): string => host.off
-  ? `${host.name} is switched off, so its folders can't be listed. Nothing was changed. Switch it on in Settings > Hosts & phones, then try again.`
-  : `${host.name} is not connected, so its folders can't be listed. Nothing was changed. Connect it in Settings > Hosts & phones, then try again.`
+const where = (host: Pick<BrowsableHost, 'kind' | 'name'>): LaterWords => host.kind === 'local' ? msg({ message: 'this computer', comment: 'The computer Sotto runs on, inside a sentence.' }) : host.name
+const notConnected = (host: BrowsableHost): MessageDescriptor => {
+  const hostName = host.name
+  return host.off
+    ? msg({ message: `${hostName} is switched off, so its folders can't be listed. Nothing was changed. Switch it on in Settings > Hosts & phones, then try again.`, comment: '{hostName} is the name of a saved host.' })
+    : msg({ message: `${hostName} is not connected, so its folders can't be listed. Nothing was changed. Connect it in Settings > Hosts & phones, then try again.`, comment: '{hostName} is the name of a saved host.' })
+}
 /** A main-process refusal as the sentence it carries, never the IPC wrapper or a bare error code. */
-function refusalText(caught: unknown, fallback: string): string {
+function refusalText(caught: unknown, fallback: LaterWords): LaterWords {
   const message = caught instanceof Error ? caught.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '').trim() : ''
   return message && !/^[A-Z0-9_]+$/u.test(message) ? message : fallback
 }
@@ -85,10 +93,11 @@ export function FolderBrowserDialog({ state, hostId: givenHostId, heading, busy 
   readonly heading: string
   /** The caller is adding the project: the dialog waits rather than taking another choice. */
   readonly busy?: boolean | undefined
-  readonly error?: string | null | undefined
+  readonly error?: LaterWords | null | undefined
   readonly onUse: (choice: FolderChoice) => void
   readonly onClose: () => void
 }): ReactNode {
+  const { t } = useLingui()
   const dialog = useRef<HTMLDialogElement>(null)
   const search = useRef<HTMLInputElement>(null)
   const computers = useRef<HTMLDivElement>(null)
@@ -110,18 +119,19 @@ export function FolderBrowserDialog({ state, hostId: givenHostId, heading, busy 
     return () => { live = false; off?.() }
   }, [])
   const hosts = browsableHosts(state, saved ?? [])
-  const givenHost = givenHostId === undefined ? undefined : hosts.find(item => item.hostId === givenHostId) ?? { hostId: givenHostId, name: 'This computer', kind: 'local' as const, connected: true }
+  const givenHost = givenHostId === undefined ? undefined : hosts.find(item => item.hostId === givenHostId) ?? { hostId: givenHostId, name: t({ message: 'This computer', comment: 'The computer Sotto runs on, named among the hosts that run threads.' }), kind: 'local' as const, connected: true }
   const choosing = givenHost === undefined && hosts.length > 1
   const [chosenHostId, setChosenHostId] = useState<string | null>(null)
   const host = givenHost ?? (choosing ? hosts.find(item => item.hostId === chosenHostId) ?? null : saved === null ? null : hosts[0] ?? null)
   const [listing, setListing] = useState<Listed | null>(null)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  // Sotto's words kept as messages and read when shown; a host's refusal as written.
+  const [error, setError] = useState<LaterWords | null>(null)
   const [query, setQuery] = useState('')
   const [highlight, setHighlight] = useState(-1)
   /** The New folder field's text while it is open. */
   const [draftName, setDraftName] = useState<string | null>(null)
-  const [draftNameError, setDraftNameError] = useState<string | null>(null)
+  const [draftNameError, setDraftNameError] = useState<MessageDescriptor | null>(null)
   const [namedFolder, setNamedFolder] = useState<NamedFolder | null>(null)
   /** Counts listings asked for, so an answer to one the user has moved on from is dropped. */
   const listingRequests = useRef(0)
@@ -129,19 +139,24 @@ export function FolderBrowserDialog({ state, hostId: givenHostId, heading, busy 
   const read = useCallback(async (target: BrowsableHost, path: string | null | undefined, name?: string): Promise<void> => {
     const bridge = window.sotto?.agents?.hostFolders
     const request = ++listingRequests.current
-    if (!bridge) { setError('Folder browsing is unavailable. Reopen Sotto and try again.'); return }
+    if (!bridge) { setError(msg`Folder browsing is unavailable. Reopen Sotto and try again.`); return }
     setLoading(true); setError(null)
+    const place = where(target)
     try {
       const result = await bridge({ hostId: target.hostId, ...(path === undefined ? {} : { path }) })
       if (request !== listingRequests.current) return
       if (result.status === 'listed') {
         setListing(result); setQuery(''); setHighlight(result.folders.length ? 0 : -1); setNamedFolder(null); setDraftName(null)
       } else if (result.status === 'unreadable') {
-        setError(`Sotto can't read ${name ?? 'this folder'} on ${where(target)}. It may belong to another account. Nothing was changed; choose another folder.`)
-      } else setError(`${name ?? 'This folder'} is no longer on ${where(target)}. Nothing was changed; choose another folder.`)
+        const folder = name ?? msg({ message: 'this folder', comment: 'Stands for a folder whose name is not known, inside a sentence.' })
+        setError(msg({ message: `Sotto can't read ${{ folder }} on ${{ place }}. It may belong to another account. Nothing was changed; choose another folder.`, comment: '{folder} is a folder\'s name or "this folder"; {place} is "this computer" or a saved host\'s name.' }))
+      } else {
+        const folder = name ?? msg({ message: 'This folder', comment: 'Stands for a folder whose name is not known, at the start of a sentence.' })
+        setError(msg({ message: `${{ folder }} is no longer on ${{ place }}. Nothing was changed; choose another folder.`, comment: '{folder} is a folder\'s name or "This folder"; {place} is "this computer" or a saved host\'s name.' }))
+      }
     } catch (caught) {
       if (request !== listingRequests.current) return
-      setError(refusalText(caught, `Could not list the folders on ${where(target)}. Nothing was changed. Try again.`))
+      setError(refusalText(caught, msg({ message: `Could not list the folders on ${{ place }}. Nothing was changed. Try again.`, comment: '{place} is "this computer" or a saved host\'s name.' })))
     } finally { if (request === listingRequests.current) setLoading(false) }
   }, [])
 
@@ -184,8 +199,10 @@ export function FolderBrowserDialog({ state, hostId: givenHostId, heading, busy 
   const chosenPath = namedFolder?.path ?? (atTop ? null : listing?.path ?? null)
   const projectAt = (path: string): AgentProject | undefined => host ? projectAtFolder(state.host.projects, host.hostId, path) : undefined
   const existing = namedFolder || chosenPath === null ? undefined : projectAt(chosenPath)
-  const currentName = current && listing && current.path === listing.home ? 'Home' : current?.name ?? ''
-  const useLabel = existing ? 'Open project' : 'Use this folder'
+  const existingTitle = existing?.title ?? ''
+  const homeName = t({ message: 'Home', comment: 'The home folder of the user\'s account on a computer.' })
+  const currentName = current && listing && current.path === listing.home ? homeName : current?.name ?? ''
+  const useLabel = existing ? t`Open project` : t({ message: 'Use this folder', comment: 'A button; a sentence elsewhere in the dialog names it.' })
 
   const open = (path: string, name: string): void => { if (host && !busy) void read(host, path, name) }
   const up = (): void => {
@@ -213,9 +230,9 @@ export function FolderBrowserDialog({ state, hostId: givenHostId, heading, busy 
     try {
       const path = await picker()
       if (path) onUse({ hostId: host.hostId, path, name: path.replace(/[\\/]+$/u, '').split(/[\\/]/u).at(-1) || path })
-    } catch { setError('Could not open the folder dialog. Nothing was changed. Try again.') }
+    } catch { setError(msg`Could not open the folder dialog. Nothing was changed. Try again.`) }
   }
-  const explorerLabel = mac ? 'Browse with Finder' : platform === 'linux' ? 'Browse with file manager' : 'Browse with File Explorer'
+  const explorerLabel = mac ? t`Browse with Finder` : platform === 'linux' ? t`Browse with file manager` : t`Browse with File Explorer`
 
   const onKeyDown = (event: React.KeyboardEvent): void => {
     if (isCompositionKey(event.nativeEvent)) return
@@ -237,7 +254,10 @@ export function FolderBrowserDialog({ state, hostId: givenHostId, heading, busy 
   }
   useEffect(() => { dialog.current?.querySelector('[data-highlighted]')?.scrollIntoView?.({ block: 'nearest' }) }, [highlight])
 
-  const alert = outsideError ?? error
+  const alert = shownWords(outsideError ?? error)
+  const place = host ? shownWords(where(host)) : ''
+  const hostName = host?.name ?? ''
+  const listedCount = listing?.folders.length ?? 0
   return <dialog ref={dialog} className="new-thread-dialog folder-browser" aria-labelledby={titleId} aria-busy={busy || loading || undefined}
     onKeyDown={onKeyDown}
     onCancel={event => {
@@ -247,31 +267,31 @@ export function FolderBrowserDialog({ state, hostId: givenHostId, heading, busy 
       if (host && choosing) back(); else onClose()
     }}
     onClick={event => { event.stopPropagation(); if (event.target === event.currentTarget && !busy) onClose() }}>
-    {!host && !choosing ? <p className="new-thread-dialog__empty" role="status">Finding your computers…</p> : !host ? <>
+    {!host && !choosing ? <p className="new-thread-dialog__empty tt-paragraph" role="status">{t`Finding your computers…`}</p> : !host ? <>
       <header className="new-thread-dialog__search folder-browser__head">
         <h2 id={titleId}>{heading}</h2>
-        <Button variant="ghost" iconOnly aria-label="Close" disabled={busy} onClick={onClose}><X size={16} /></Button>
+        <Button variant="ghost" iconOnly aria-label={t({ message: 'Close', comment: 'Closes the dialog.' })} disabled={busy} onClick={onClose}><X size={16} /></Button>
       </header>
-      <p className="folder-browser__lede">Its threads and agents run on the computer you choose. You can follow them from any computer with Sotto.</p>
-      <div ref={computers} className="new-thread-dialog__choices folder-browser__computers" tabIndex={-1} aria-label="Computers" role="group">
-        <h3>Computers</h3>
+      <p className="folder-browser__lede tt-paragraph">{t`Its threads and agents run on the computer you choose. You can follow them from any computer with Sotto.`}</p>
+      <div ref={computers} className="new-thread-dialog__choices folder-browser__computers" tabIndex={-1} aria-label={t`Computers`} role="group">
+        <h3>{t`Computers`}</h3>
         {hosts.map((item, index) => <button key={item.hostId} type="button" className="new-thread-choice" data-highlighted={highlight === index || undefined}
           onMouseEnter={() => setHighlight(index)} onClick={() => choose(item)}>
-          {hostIcon(item, 19)}<span><strong>{item.name}</strong><small>{item.connected ? (item.kind === 'local' ? 'This computer' : 'Connected') : item.off ? 'Off' : 'Not connected'}</small></span><ChevronRight size={15} aria-hidden="true" /></button>)}
-        {alert ? <p className="agent-error" role="alert">{alert}</p> : null}
+          {hostIcon(item, 19)}<span><strong>{item.name}</strong><small>{item.connected ? (item.kind === 'local' ? t({ message: 'This computer', comment: 'The computer Sotto runs on, named among the hosts that run threads.' }) : t({ message: 'Connected', comment: 'A host\'s status.' })) : item.off ? t({ message: 'Off', comment: 'A host\'s status: switched off.' }) : t({ message: 'Not connected', comment: 'A host\'s status.' })}</small></span><ChevronRight size={15} aria-hidden="true" /></button>)}
+        {alert ? <p className="agent-error tt-paragraph" role="alert">{alert}</p> : null}
       </div>
-      <footer className="new-thread-dialog__keys"><span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>Enter</kbd> Choose</span><span><kbd>Esc</kbd> Close</span></footer>
+      <footer className="new-thread-dialog__keys"><span><kbd>↑</kbd><kbd>↓</kbd> {t({ message: 'Navigate', comment: 'A keyboard hint: the arrow keys move through the list.' })}</span><span><kbd>Enter</kbd> {t({ message: 'Choose', comment: 'A keyboard hint: Enter chooses the highlighted computer.' })}</span><span><kbd>Esc</kbd> {t({ message: 'Close', comment: 'A keyboard hint: Escape closes the dialog.' })}</span></footer>
     </> : <>
-      <h2 id={titleId} className="tt-visually-hidden">{heading} Folders on {where(host)}</h2>
+      <h2 id={titleId} className="tt-visually-hidden">{t({ message: `${heading} Folders on ${place}`, comment: 'The dialog\'s heading, then where its folders are: {place} is "this computer" or a saved host\'s name.' })}</h2>
       <header className="new-thread-dialog__search">
-        {choosing ? <Button variant="ghost" iconOnly aria-label="Back to computers" disabled={busy} onClick={back}><ArrowLeft size={17} /></Button> : null}
+        {choosing ? <Button variant="ghost" iconOnly aria-label={t`Back to computers`} disabled={busy} onClick={back}><ArrowLeft size={17} /></Button> : null}
         <span className="folder-browser__host">{hostIcon(host, 14)}{host.name}</span>
         <Search size={16} aria-hidden="true" />
-        <input ref={search} type="search" aria-label={`Search folders in ${currentName || host.name}`} placeholder={currentName ? `Search in ${currentName}…` : 'Search folders…'}
+        <input ref={search} type="search" aria-label={currentName ? t({ message: `Search folders in ${currentName}`, comment: '{currentName} is a folder\'s name.' }) : t({ message: `Search folders in ${hostName}`, comment: '{hostName} is a computer\'s name.' })} placeholder={currentName ? t({ message: `Search in ${currentName}…`, comment: '{currentName} is a folder\'s name.' }) : t`Search folders…`}
           value={query} disabled={busy} onChange={event => { setQuery(event.target.value); setHighlight(0) }} />
-        <Button variant="ghost" iconOnly aria-label="Close" disabled={busy} onClick={onClose}><X size={16} /></Button>
+        <Button variant="ghost" iconOnly aria-label={t({ message: 'Close', comment: 'Closes the dialog.' })} disabled={busy} onClick={onClose}><X size={16} /></Button>
       </header>
-      {crumbs.length ? <nav className="folder-browser__crumbs" aria-label={`Folder on ${host.name}`}>
+      {crumbs.length ? <nav className="folder-browser__crumbs" aria-label={t({ message: `Folder on ${hostName}`, comment: '{hostName} is a computer\'s name.' })}>
         {crumbs.map((crumb, index) => {
           const last = index === crumbs.length - 1
           const home = listing !== null && crumb.path === listing.home
@@ -279,49 +299,49 @@ export function FolderBrowserDialog({ state, hostId: givenHostId, heading, busy 
             {index ? <ChevronRight size={12} aria-hidden="true" className="folder-browser__sep" /> : null}
             <button type="button" className="tt-focusable" aria-current={last ? 'location' : undefined} disabled={busy}
               onClick={() => { if (last) return; if (namedFolder && index === crumbs.length - 2) { setNamedFolder(null); return } void read(host, crumb.path, crumb.name) }}>
-              {home ? <><Home size={13} aria-hidden="true" />Home</> : crumb.name}
+              {home ? <><Home size={13} aria-hidden="true" />{homeName}</> : crumb.name}
             </button>
           </React.Fragment>
         })}
       </nav> : null}
       <div className="new-thread-dialog__choices folder-browser__list">
-        {alert ? <p className="agent-error" role="alert">{alert}</p> : null}
+        {alert ? <p className="agent-error tt-paragraph" role="alert">{alert}</p> : null}
         {draftName !== null ? <>
           <div className="folder-browser__new">
             <FolderPlus size={17} aria-hidden="true" />
-            <input ref={nameInput} aria-label="New folder name" placeholder="Folder name" value={draftName}
+            <input ref={nameInput} aria-label={t`New folder name`} placeholder={t`Folder name`} value={draftName}
               onChange={event => { setDraftName(event.target.value); setDraftNameError(null) }}
               onKeyDown={event => {
                 if (isCompositionKey(event.nativeEvent)) return
                 if (event.key === 'Enter') { event.preventDefault(); nameFolder() }
                 if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setDraftName(null); setDraftNameError(null) }
               }} />
-            <Button variant="secondary" onClick={nameFolder}>Name folder</Button>
-            <Button variant="ghost" onClick={() => { setDraftName(null); setDraftNameError(null) }}>Cancel</Button>
+            <Button variant="secondary" onClick={nameFolder}>{t`Name folder`}</Button>
+            <Button variant="ghost" onClick={() => { setDraftName(null); setDraftNameError(null) }}>{t`Cancel`}</Button>
           </div>
-          {draftNameError ? <p className="folder-browser__naming-error" role="alert">{draftNameError}</p> : null}
+          {draftNameError ? <p className="folder-browser__naming-error tt-paragraph" role="alert">{shownWords(draftNameError)}</p> : null}
         </> : null}
-        {loading ? <p className="new-thread-dialog__empty" role="status">Reading folders on {where(host)}…</p>
-          : namedFolder ? <p className="new-thread-dialog__empty">This folder is new. Sotto makes it on {where(host)} when you press Use this folder.</p>
+        {loading ? <p className="new-thread-dialog__empty tt-paragraph" role="status">{t({ message: `Reading folders on ${place}…`, comment: '{place} is "this computer" or a saved host\'s name.' })}</p>
+          : namedFolder ? <p className="new-thread-dialog__empty tt-paragraph">{t({ message: `This folder is new. Sotto makes it on ${place} when you press Use this folder.`, comment: '{place} is "this computer" or a saved host\'s name. "Use this folder" is the button\'s name.' })}</p>
           : listing ? <>
             {shown.map((folder, index) => <button key={folder.path} type="button" className="new-thread-choice" data-highlighted={highlight === index || undefined} disabled={busy}
               onMouseEnter={() => setHighlight(index)} onClick={() => open(folder.path, folder.name)}>
               <Folder size={17} aria-hidden="true" /><span><strong>{folder.name}</strong></span>
               {folder.git ? <span className="folder-browser__tag">Git</span> : null}
-              {projectAt(folder.path) ? <span className="folder-browser__tag folder-browser__tag--project">Project</span> : null}
+              {projectAt(folder.path) ? <span className="folder-browser__tag folder-browser__tag--project">{t({ message: 'Project', context: 'folder tag', comment: 'A tag on a folder that is already a Sotto project.' })}</span> : null}
               <ChevronRight size={15} aria-hidden="true" />
             </button>)}
-            {!shown.length ? <p className="new-thread-dialog__empty">{query ? 'No folders match.' : 'No folders in here.'}</p> : null}
-            {listing.truncated ? <p className="new-thread-dialog__empty">Only the first {listing.folders.length} folders here are listed.</p> : null}
+            {!shown.length ? <p className="new-thread-dialog__empty tt-paragraph">{query ? t`No folders match.` : t`No folders in here.`}</p> : null}
+            {listing.truncated ? <p className="new-thread-dialog__empty tt-paragraph">{plural(listedCount, { one: `Only the first ${{ folders: shownCount(listedCount) }} folder here is listed.`, other: `Only the first ${{ folders: shownCount(listedCount) }} folders here are listed.` })}</p> : null}
           </> : null}
       </div>
       <footer className="folder-browser__foot">
-        <Button variant="ghost" disabled={busy || loading || !listing || listing.path === null || draftName !== null || namedFolder !== null} onClick={() => { setDraftName(''); setDraftNameError(null) }}><FolderPlus size={15} aria-hidden="true" />New folder</Button>
+        <Button variant="ghost" disabled={busy || loading || !listing || listing.path === null || draftName !== null || namedFolder !== null} onClick={() => { setDraftName(''); setDraftNameError(null) }}><FolderPlus size={15} aria-hidden="true" />{t`New folder`}</Button>
         {host.kind === 'local' && window.sotto?.agents?.chooseProjectDirectory ? <Button variant="ghost" disabled={busy} onClick={() => void explorer()}><FolderOpen size={15} aria-hidden="true" />{explorerLabel}</Button> : null}
-        <span className="folder-browser__target" title={chosenPath ?? undefined}><bdi>{existing ? `Already the project ${existing.title}` : chosenPath ?? ''}</bdi></span>
-        <Button disabled={busy || loading || chosenPath === null} onClick={use}>{busy ? 'Adding…' : useLabel}</Button>
+        <span className="folder-browser__target" title={chosenPath ?? undefined}><bdi>{existing ? t({ message: `Already the project ${existingTitle}`, comment: '{existingTitle} is a project\'s title.' }) : chosenPath ?? ''}</bdi></span>
+        <Button disabled={busy || loading || chosenPath === null} onClick={use}>{busy ? t`Adding…` : useLabel}</Button>
       </footer>
-      <footer className="new-thread-dialog__keys"><span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>Enter</kbd> Open folder</span><span><kbd>⌫</kbd> Up a folder</span>{useChord ? <span><kbd>{mac ? '⌘' : 'Ctrl'}</kbd><kbd>Enter</kbd> {useLabel}</span> : null}<span><kbd>Esc</kbd> {choosing ? 'Back' : 'Close'}</span></footer>
+      <footer className="new-thread-dialog__keys"><span><kbd>↑</kbd><kbd>↓</kbd> {t({ message: 'Navigate', comment: 'A keyboard hint: the arrow keys move through the list.' })}</span><span><kbd>Enter</kbd> {t({ message: 'Open folder', comment: 'A keyboard hint: Enter opens the highlighted folder.' })}</span><span><kbd>⌫</kbd> {t({ message: 'Up a folder', comment: 'A keyboard hint: Backspace goes to the parent folder.' })}</span>{useChord ? <span><kbd>{mac ? '⌘' : 'Ctrl'}</kbd><kbd>Enter</kbd> {useLabel}</span> : null}<span><kbd>Esc</kbd> {choosing ? t({ message: 'Back', comment: 'A keyboard hint: Escape goes back to the list of computers.' }) : t({ message: 'Close', comment: 'A keyboard hint: Escape closes the dialog.' })}</span></footer>
     </>}
   </dialog>
 }

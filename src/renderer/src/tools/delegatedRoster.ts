@@ -1,3 +1,4 @@
+import { plural, t } from '@lingui/core/macro'
 import { hostForThread, PROVIDER_LABELS, type AgentHostSnapshot, type AgentState, type AgentThread } from '../../../shared/agents'
 import { delegatedThreadsBelow, DELEGATION_WORK_TITLES, type DelegatedView, type DelegationOutcome, type DelegationView } from '../../../shared/delegation'
 import { resolveModel } from '../../../shared/modelCatalog'
@@ -8,7 +9,6 @@ import { effortLabel } from '../agents/EffortPicker'
 import type { AgentConnection } from '../agents/AgentContext'
 import { clockLabel } from '../agents/threadFacts'
 import { toolsPanelStore, type ToolsPanelStore } from './toolsPanelStore'
-import { plural as pluralMessage, t } from '@lingui/core/macro'
 
 /**
  * Delegated threads in Tools › Agents (ADR-0081, as Zach settled it on October 17, 2026, variant B of the roster
@@ -247,8 +247,8 @@ export function machineCount(group: Pick<RosterMachineGroup, 'machine' | 'famili
   const working = rows.filter(row => !row.lastRead && (row.status === 'working' || row.status === 'background')).length + (agents?.working ?? 0)
   const threads = rows.length, agentCount = agents?.total ?? 0
   // Each count is a plural message, so `#` is the number written in the reader's own digits (the translation glossary).
-  return [pluralMessage(threads, { one: '# thread', other: '# threads' }), ...agentCount ? [pluralMessage(agentCount, { one: '# agent', other: '# agents' })] : [],
-    ...group.machine.connected && working ? [pluralMessage(working, { one: '# working', other: '# working' })] : []].join(' · ')
+  return [plural(threads, { one: '# thread', other: '# threads' }), ...agentCount ? [plural(agentCount, { one: '# agent', other: '# agents' })] : [],
+    ...group.machine.connected && working ? [plural(working, { one: '# working', other: '# working' })] : []].join(' · ')
 }
 
 function families(ownerId: string, threads: readonly AgentThread[]): { readonly thread: AgentThread; readonly below: readonly AgentThread[] }[] {
@@ -299,8 +299,6 @@ export function mixedRoster(agents: readonly { readonly row: SubagentRow; readon
   return blocks.map((block, index) => ({ block, index })).sort((first, second) => newestFirst(first.block, second.block) || first.index - second.index).map(({ block }) => block)
 }
 
-const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`
-
 /**
  * The roster's line of chrome while it lists delegated threads: "4 delegated threads · 2 agents", and beside it what
  * needs the user and what is working, delegated threads and agents together ("1 needs you · 2 working").
@@ -309,16 +307,19 @@ export function rosterCounts(rows: readonly DelegatedRosterRow[], summary: Pick<
   const needs = rows.filter(row => row.status === 'needs').length
   // A row whose machine is not connected is only as Sotto last read it, so it is not counted as working now (#1310).
   const working = rows.filter(row => !row.lastRead && (row.status === 'working' || row.status === 'background')).length + summary.working
-  const title = [plural(rows.length, 'delegated thread'), ...summary.total ? [plural(summary.total, 'agent')] : []].join(' · ')
-  const detail = [needs ? `${needs} needs you` : '', working ? `${working} working` : ''].filter(Boolean).join(' · ')
-  return { title, detail: detail || (summary.unknown ? 'Activity not confirmed' : 'None working') }
+  const delegatedCount = rows.length, total = summary.total
+  const title = [plural(delegatedCount, { one: '# delegated thread', other: '# delegated threads' }), ...total ? [plural(total, { one: '# agent', other: '# agents' })] : []].join(' · ')
+  const detail = [needs ? plural(needs, { other: '# needs you' }) : '', working ? plural(working, { other: '# working' }) : ''].filter(Boolean).join(' · ')
+  return { title, detail: detail || (summary.unknown ? t`Activity not confirmed` : t`None working`) }
 }
 
 /** What a delegated thread's open control says and does, by whether it waits on the user and whether it is in the pane. */
 export function openAction(row: Pick<DelegatedRosterRow, 'thread' | 'waitingFor'>, shown: boolean): { readonly kind: 'shown' } | { readonly kind: 'open' | 'answer'; readonly label: string; readonly name: string } {
   if (shown) return { kind: 'shown' }
   const title = row.thread.title
-  return row.waitingFor !== null ? { kind: 'answer', label: 'Open to answer', name: `Open ${title} to answer its request` } : { kind: 'open', label: 'Open as thread', name: `Open ${title} as a thread` }
+  return row.waitingFor !== null
+    ? { kind: 'answer', label: t`Open to answer`, name: t({ message: `Open ${title} to answer its request`, comment: '{title} is a thread\'s title.' }) }
+    : { kind: 'open', label: t`Open as thread`, name: t({ message: `Open ${title} as a thread`, comment: '{title} is a thread\'s title.' }) }
 }
 
 /**

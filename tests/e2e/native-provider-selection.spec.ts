@@ -12,13 +12,16 @@ test('provider configuration and new-thread defaults have separate settings', as
     const providers = page.getByRole('list', { name: 'Thread providers', exact: true })
     for (const [index, label] of ['Codex', 'Claude Code', 'Grok Build'].entries()) {
       const header = providers.getByRole('button', { name: label, exact: true })
-      // Codex's row is open to begin with; each next row is reached with Down from the one before and opened with Enter.
+      // Every row starts closed. Codex's opens with Enter; each next row is reached with Down from the one before and opened with Enter.
       if (index > 0) {
         await providers.getByRole('button', { name: ['Codex', 'Claude Code'][index - 1]!, exact: true }).focus()
         await page.keyboard.press('ArrowDown')
         await expect(header).toBeFocused()
-        await page.keyboard.press('Enter')
+      } else {
+        await expect(providers.getByRole('region')).toHaveCount(0)
+        await header.focus()
       }
+      await page.keyboard.press('Enter')
       await expect(header).toHaveAttribute('aria-expanded', 'true')
       const panel = providers.getByRole('region', { name: `${label} details`, exact: true })
       await expect(providers.getByRole('region')).toHaveCount(1)
@@ -29,7 +32,7 @@ test('provider configuration and new-thread defaults have separate settings', as
     await expect(providers.getByRole('combobox', { name: 'Reasoning account', exact: true })).toHaveCount(0)
     const before = await page.evaluate(async () => (await window.sotto!.agents!.get()).configuration)
     const nav = page.getByRole('tablist', { name: 'Settings sections' })
-    await expect(nav.getByRole('tab')).toHaveText(['Dictation', 'Cleanup', 'Threads', 'Git & worktrees', 'Providers', 'Hosts & phones', 'Cloud iPhone', 'Appearance', 'Application'])
+    await expect(nav.getByRole('tab')).toHaveText(['Dictation', 'Cleanup', 'Threads', 'Keyboard', 'Git & worktrees', 'Providers', 'Hosts & phones', 'Cloud iPhone', 'Appearance', 'Application'])
     const sections = page.locator('.settings-form > [role="tabpanel"]')
     await expect(sections.nth(2)).toHaveAttribute('id', 'settings-agents')
     await expect(sections.nth(4)).toHaveAttribute('id', 'settings-providers')
