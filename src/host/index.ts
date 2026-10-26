@@ -152,7 +152,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       hostDelegation: { roles: owlFeatures['worker-roles'],
         counts: clientId => pairing.isPaired(clientId) && (policy?.mayGrant({ clientId, user: 'Paired desktop', transport: 'socket' }).allowed ?? false),
         // A grant taken away, as `--deny-answers` does, is said as such, since setting the desktop up again does not restore it.
-        revoked: clientId => policy?.mayGrant({ clientId, user: 'Paired desktop', transport: 'socket' }).reason === 'unpaired' },
+        // An expired grant or one held behind an always-confirm boundary is not revoked: it says the answers grant is missing.
+        revoked: clientId => policy?.remoteAnswersRevoked(clientId) ?? false },
       historyEnabled: () => startup.historyEnabled,
       gitStatus: { fetchIntervalMs: () => startup.gitFetchIntervalSeconds * 1000, foreground: () => peersConnected(), log: event => options.log?.(event) },
       ...(policy ? { authority: policy } : {}),

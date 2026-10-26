@@ -181,5 +181,21 @@ describe('PolicyStore', () => {
     expect(policies.list({ scope: 'client:phone' }).filter(record => record.action === 'remote-answer')).toEqual([])
     expect(policies.mayGrant(phone)).toMatchObject({ allowed: false, reason: 'unpaired' })
   })
+  it('says a client\u2019s answers were revoked only when they were, not when they expired or a boundary holds them', () => {
+    expect(policies.remoteAnswersRevoked('desk', at)).toBe(false)
+    policies.setRemoteAnswers('desk', true, 'The user allowed this desktop to answer.')
+    expect(policies.remoteAnswersRevoked('desk')).toBe(false)
+    policies.setRemoteAnswers('desk', false, 'The user turned off answers.')
+    expect(policies.remoteAnswersRevoked('desk')).toBe(true)
+    // A grant that ran out is not revoked: renewing it restores the answers.
+    policies.grantRemoteAnswers('lapsed', 'Answers for a while.', '2026-09-10T11:00:00.000Z')
+    expect(policies.mayGrant({ clientId: 'lapsed', user: '', transport: 'socket' }, at)).toMatchObject({ allowed: false, reason: 'unpaired' })
+    expect(policies.remoteAnswersRevoked('lapsed', at)).toBe(false)
+    // Nor is one held behind an always-confirm boundary.
+    policies.grantRemoteAnswers('held', 'Answers.')
+    policies.grant({ action: 'remote-answer', resource: 'held', scope: 'client:held', effect: 'always-confirm', note: 'Always ask.' })
+    expect(policies.mayGrant({ clientId: 'held', user: '', transport: 'socket' })).toMatchObject({ allowed: false, reason: 'unpaired' })
+    expect(policies.remoteAnswersRevoked('held')).toBe(false)
+  })
 
 })
