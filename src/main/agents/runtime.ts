@@ -188,6 +188,14 @@ export interface AgentRuntimeOptions {
 }
 
 /** The provider stack both Electron main and a plain Node host own. No client transport lives here. */
+/**
+ * Whether this runtime clears its settled threads on its own (ADR-0140 decision 7): only on Owl, and never as a headless
+ * host. A host has no Settings to choose Clear settled threads after in, so the 30-day default read from its own file
+ * would delete threads no one asked it to, whatever the desktop chose. A desktop's Delete thread… still reaches it.
+ */
+export function clearsOnItsOwn(options: Pick<AgentRuntimeOptions, 'clearThreadsEnabled' | 'runsAs'>): boolean {
+  return options.clearThreadsEnabled === true && options.runsAs !== 'headless-host'
+}
 export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const { directory, credentials } = options
   // This machine's host facts: its operating system is read now, once; memory only when facts are asked for (#1031).
@@ -389,10 +397,11 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const merged = options.worktreeCleanup?.pullRequestMerged
   const openPullRequests = options.worktreeCleanup?.openPullRequestBranches
   const github = gitHubRateLimit && gitHubHosts ? { rateLimit: gitHubRateLimit, hosts: gitHubHosts } : undefined
-  // Clear settled threads after (ADR-0140) rides the same hour, on the computer whose setting it is, and only on Owl.
+  // Clear settled threads after (ADR-0140) rides the same hour, on the computer whose setting it is, and only on Owl:
+  // never a headless host's, which has no Settings to choose it in (clearsOnItsOwn).
   const worktreeCleanup = new WorktreeCleanup({ host: agentHost, rules: () => options.settings().worktreeCleanup,
     autoSettleMerged: () => options.settings().autoSettleMergedThreads, ...options.worktreeCleanup,
-    ...options.clearThreadsEnabled === true ? { clearSettledThreads: { afterDays: () => options.settings().clearSettledThreadsAfterDays,
+    ...clearsOnItsOwn(options) ? { clearSettledThreads: { afterDays: () => options.settings().clearSettledThreadsAfterDays,
       clear: (days: number, keep?: (thread: AgentThread) => Promise<ThreadClearKeptReason | null>) => agentControl.clearSettledThreads(days, keep) } } : {},
     ...merged && github ? { pullRequestMerged: (repositoryRoot: string, branch: string) => merged(repositoryRoot, branch, github) } : {},
     ...openPullRequests && github ? { openPullRequestBranches: (repositoryRoot: string) => openPullRequests(repositoryRoot, github) } : {} })

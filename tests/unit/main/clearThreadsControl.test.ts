@@ -9,6 +9,7 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentControl } from '../../../src/main/agents/control'
 import type { AgentHost } from '../../../src/main/agents/host'
+import { clearsOnItsOwn } from '../../../src/main/agents/runtime'
 import { WorktreeCleanup } from '../../../src/main/agents/worktreeCleanup'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { EMPTY_AGENT_HOST, type AgentCommand, type AgentHostSnapshot, type AgentThread } from '../../../src/shared/agents'
@@ -249,6 +250,12 @@ describe('the automatic rule beside the worktree sweep (ADR-0140 decision 2)', (
     sweep.settingsChanged()
     expect(clear.mock.calls.length).toBe(calls)
     await sweep.close()
+  })
+  it('runs no rule on a headless host, which has no Settings to choose it in, whatever its own file holds', () => {
+    expect(clearsOnItsOwn({ clearThreadsEnabled: true })).toBe(true)
+    expect(clearsOnItsOwn({ clearThreadsEnabled: true, runsAs: 'headless-host' })).toBe(false)
+    expect(clearsOnItsOwn({ clearThreadsEnabled: false })).toBe(false)
+    expect(clearsOnItsOwn({})).toBe(false)
   })
   it('runs no rule without the Owl feature: the runtime gives the sweep none', async () => {
     const sweep = new WorktreeCleanup({ host, rules: () => DEFAULT_WORKTREE_CLEANUP })

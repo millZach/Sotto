@@ -15,7 +15,7 @@ import { join } from 'node:path'
 import { openHostCredentials } from './credentials'
 import { PairedClients } from '../main/agents/pairing'
 import { startSocketServer } from './socketServer'
-import { githubOpenPullRequestBranches, githubPullRequestMerged } from '../main/agents/worktreeCleanup'
+import { githubPullRequestMerged } from '../main/agents/worktreeCleanup'
 import { acquireHostLock, HOST_LOCK_HELD_EXIT_CODE, HostLockError, HostLockHeldError, readBootId, releaseHostLock, type HostLease } from './lock'
 import { ProviderSignIns, type ProviderSignInOptions } from './providerSignIn'
 import { startHostPhoneAccess, type HostPhoneAccess } from './phones'
@@ -169,7 +169,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       // The host connects every provider that is installed and signed in here, except the ones turned off (ADR-0036).
       runsAs: 'headless-host',
       // The host owns its worktrees, so it reclaims them under the rules in its own settings (ADR-0041, ADR-0025).
-      worktreeCleanup: { pullRequestMerged: githubPullRequestMerged, openPullRequestBranches: githubOpenPullRequestBranches, log: event => options.log?.(event) },
+      worktreeCleanup: { pullRequestMerged: githubPullRequestMerged, log: event => options.log?.(event) },
       claudeSettingsLog: event => options.log?.(event),
     })
     // Sotto's tool servers for this host's own threads (#1310), on this machine's loopback with this host's own tokens. Only
