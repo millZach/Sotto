@@ -38,7 +38,7 @@ import { RetainedDraftStore, type RetainedDraft } from './retainedDraftStore'
 import { heldProviderOfWatcherRequest, heldProviderRefusedBy, heldWatcherRefusal, rememberDormantProviderThreads, type DormantProviderThread } from './heldProviderGate'
 import { heldProviderRefusal, heldProvidersOption, type HeldProviderNames, type HeldProviders } from '../../shared/heldProviders'
 import { hostMachineReportSchema, type HostMachineReport } from '../../shared/hostFacts'
-import type { HostBranchMoveRequest } from '../../shared/branchMoves'
+import { branchMoveStepTimeoutMs, type HostBranchMoveRequest } from '../../shared/branchMoves'
 import { projectOriginsSchema, type ProjectOrigins } from '../../shared/workerMachine'
 import { desktopDefaultsReceiptSchema, type DesktopDefaultsInput, type DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
 import { delegationBriefSchema, delegationsReadSchema, type DelegationBrief, type DelegationsRead } from '../../shared/delegation'
@@ -1245,7 +1245,7 @@ export class SocketHostService implements HostService {
    */
   async branchMove(request: HostBranchMoveRequest): Promise<unknown> {
     this.offers('branch-moves')
-    return this.call({ op: 'branch-move', request }, undefined, undefined, 120000)
+    return this.call({ op: 'branch-move', request }, undefined, undefined, branchMoveStepTimeoutMs(request.action))
   }
   /** The host lists `project-origins`: it names each of its projects' GitHub repository (#1032). An older host's cannot be matched. */
   get supportsProjectOrigins(): boolean { return this.features.includes('project-origins') }

@@ -11,6 +11,18 @@ import { z } from 'zod'
 export const BRANCH_BUNDLE_MAX_BYTES = 256 * 1024 * 1024
 /** Bytes per chunk on the socket: well inside the 16 MiB frame once base64 grows it, and short to parse on main. */
 export const BRANCH_BUNDLE_CHUNK_BYTES = 1024 * 1024
+/** How long `git bundle create` or `git bundle unbundle` may run on either side before the step fails. */
+export const BRANCH_BUNDLE_GIT_MS = 600_000
+/** How long the desktop waits for one step's answer: other steps are quick, so a hung one fails in two minutes. */
+const BRANCH_MOVE_STEP_MS = 120_000
+/**
+ * How long the desktop waits for a host's answer to one step of a branch move. `send-begin` creates the bundle and
+ * `receive-finish` imports it, each allowed `BRANCH_BUNDLE_GIT_MS` on the host, so the desktop waits that and a minute more
+ * rather than ending a move the host would still have finished.
+ */
+export function branchMoveStepTimeoutMs(action: string): number {
+  return action === 'send-begin' || action === 'receive-finish' ? BRANCH_BUNDLE_GIT_MS + 60_000 : BRANCH_MOVE_STEP_MS
+}
 /** The receiver's branch tips a sender may bundle against, newest first, so the bundle carries only what it lacks. */
 export const BRANCH_TIPS_MAX = 256
 /** Moves a machine stages at once, either way. */
