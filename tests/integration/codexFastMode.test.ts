@@ -96,3 +96,63 @@ it('refuses to turn fast mode on for a model without it, and sends nothing', asy
   await expect(configure(f, id, { fastMode: true })).rejects.toThrow('This model does not offer fast mode.')
   expect((await params(f, 'thread/settings/update')).length).toBe(before)
 })
+
+/** A thread with one finished turn, to fork at its reply. */
+async function withReply(f: Fixture, options: Record<string, unknown> = {}): Promise<{ id: string; reply: string }> {
+  const id = await created(f, options)
+  await f.script({ models, reply: 'An answer' })
+  await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: 'A question' })
+  await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+  const read = (await f.host.refreshThread!(id)).threads.find(value => value.id === id)!
+  return { id, reply: read.messages.find(message => message.text === 'An answer')!.id }
+}
+
+it('forks a fast thread at the standard tier, since a copy is a new thread', async () => {
+  const f = await fixture()
+  const { id, reply } = await withReply(f, { fastMode: true })
+  expect((await thread(f, id)).fastMode).toBe(true)
+  expect(await f.adapter.forkThread({ commandId: randomUUID(), threadId: 'fork', title: 'Fork', modelId: 'fixture-model', source: { threadId: id, messageId: reply } })).toEqual({ accepted: true })
+  expect((await params(f, 'thread/fork')).at(-1)).toMatchObject({ serviceTier: 'default' })
+  expect((await thread(f, 'fork')).fastMode).toBeUndefined()
+})
+
+it('shows fast mode only once Codex reports the Fast tier: a lost confirmation waits for a read, another tier never settles', async () => {
+  const f = await codexFixture(undefined, false, 600)
+  fixtures.push(f)
+  await f.script({ models })
+  await f.host.connect()
+  await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Fast', path: f.root })
+  const id = await created(f)
+  await f.script({ models, dropSettingsNotification: true })
+  expect(await configure(f, id, { fastMode: true })).toEqual({ accepted: false, uncertain: true })
+  // Codex took it and never said so; the next read finds the thread on Fast, which is what settles it.
+  await f.adapter.refreshThread(id)
+  expect((await thread(f, id)).fastMode).toBe(true)
+
+  const other = await created(f)
+  await f.script({ models, serviceTierReported: 'default' })
+  expect(await configure(f, other, { fastMode: true })).toEqual({ accepted: false, uncertain: true })
+  await f.adapter.refreshThread(other)
+  expect((await thread(f, other)).fastMode).toBeUndefined()
+})
+
+it('names no tier on a change to a thread on a model without Fast', async () => {
+  const f = await fixture()
+  const id = await created(f, { modelId: 'fixture-plain' })
+  expect((await configure(f, id, { reasoningEffort: 'high' })).accepted).toBe(true)
+  expect((await params(f, 'thread/settings/update')).at(-1)).not.toHaveProperty('serviceTier')
+  // A model change between two models without Fast names none either.
+  await created(f)
+  expect((await configure(f, id, { modelId: 'fixture-plain', reasoningEffort: 'low' })).accepted).toBe(true)
+  expect((await params(f, 'thread/settings/update')).at(-1)).not.toHaveProperty('serviceTier')
+})
+
+it('starts and forks a thread on a model without Fast whatever tier Codex reports, having asked for none', async () => {
+  // A user's own `service_tier` can make Codex answer Fast where Sotto named no tier.
+  const f = await fixture({ defaultServiceTier: 'priority' })
+  const { id, reply } = await withReply(f, { modelId: 'fixture-plain' })
+  expect((await params(f, 'thread/start')).at(-1)).not.toHaveProperty('serviceTier')
+  expect((await thread(f, id)).fastMode).toBeUndefined()
+  expect(await f.adapter.forkThread({ commandId: randomUUID(), threadId: 'fork', title: 'Fork', modelId: 'fixture-plain', source: { threadId: id, messageId: reply } })).toEqual({ accepted: true })
+  expect((await params(f, 'thread/fork')).at(-1)).not.toHaveProperty('serviceTier')
+})

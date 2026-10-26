@@ -166,3 +166,57 @@ it('saves the toggle through the coordinator, which reconciles off against a thr
     expect((await f.liveSettings.effective(id)).fastMode).toBe(true)
   } finally { control.dispose() }
 })
+
+it('lets a refusal to turn fast mode on stand, keeps the running CLI and puts back what it had already taken', async () => {
+  const { f, id } = await fixture()
+  // The thread chose fast mode and moved to a model without it, so moving back turns it on after the model.
+  expect((await configure(f, id, { fastMode: true })).accepted).toBe(true)
+  expect((await configure(f, id, { modelId: 'fixture-plain' })).accepted).toBe(true)
+  await writeFile(join(f.root, 'settings-script.json'), JSON.stringify({ refuseFastMode: true }))
+  const launched = (await launchArgs(f)).length
+  const { process } = await f.liveSettings.effective(id)
+  const before = (await settingsFrames(f)).length
+  expect(await configure(f, id, { modelId: 'fixture-model' })).toEqual({ accepted: false })
+  // The model the CLI took is put back, and nothing starts again with the flag.
+  expect((await settingsFrames(f)).slice(before).map(frame => frame.subtype === 'apply_flag_settings' ? frame.settings : `${String(frame.subtype)} ${String(frame.model)}`))
+    .toEqual(['set_model fixture-model', { fastMode: true }, 'set_model fixture-plain'])
+  expect((await launchArgs(f)).length).toBe(launched)
+  expect(await f.liveSettings.effective(id)).toMatchObject({ process, modelId: 'fixture-plain', fastMode: false })
+  expect(await thread(f, id)).toMatchObject({ modelId: 'fixture-plain', fastMode: true })
+
+  // Pressed on its own, the refusal stands the same way: the thread shows fast mode off.
+  expect((await configure(f, id, { fastMode: false })).accepted).toBe(true)
+  expect((await configure(f, id, { modelId: 'fixture-model' })).accepted).toBe(true)
+  expect(await configure(f, id, { fastMode: true })).toEqual({ accepted: false })
+  expect((await thread(f, id)).fastMode).toBeUndefined()
+  expect(await f.liveSettings.effective(id)).toMatchObject({ process, modelId: 'fixture-model', fastMode: false })
+  expect((await launchArgs(f)).length).toBe(launched)
+})
+
+it('does not adopt a spare started without fast mode for a first send that turned it on, and adopts one that matches', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-claude-fast-'))
+  await writeFile(join(root, 'models.json'), JSON.stringify(models))
+  const f = await claudeFixture(root)
+  fixtures.push(f)
+  await f.host.connect()
+  await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Fast', path: f.root })
+  const session = (args: readonly string[]): string => args[args.indexOf('--session-id') + 1]!
+
+  // Typing began while fast mode was off, and the toggle was pressed before the first send.
+  const plain = randomUUID()
+  await f.adapter.startThreadSession(plain, { modelId: 'fixture-model', workingDirectory: f.root })
+  expect(await launchArgs(f)).toHaveLength(1)
+  await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: plain, projectId: f.projectId, title: 'Fast', modelId: 'fixture-model', fastMode: true })
+  const [spare, own] = await launchArgs(f)
+  expect(spare).not.toContain('--settings')
+  expect(own![own!.indexOf('--settings') + 1]).toBe('{"fastMode":true}')
+  expect(session(own!)).not.toBe(session(spare!))
+
+  // A spare started with the choice the first send carries is the thread's CLI.
+  const fast = randomUUID()
+  await f.adapter.startThreadSession(fast, { modelId: 'fixture-model', workingDirectory: f.root, fastMode: true })
+  await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: fast, projectId: f.projectId, title: 'Fast', modelId: 'fixture-model', fastMode: true })
+  const all = await launchArgs(f)
+  expect(all).toHaveLength(3)
+  expect(all[2]![all[2]!.indexOf('--settings') + 1]).toBe('{"fastMode":true}')
+})

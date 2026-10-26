@@ -273,6 +273,8 @@ lines.on('line', async line => {
       if (script.silent) return
       const request = frame.request
       const refuse = error => output({ type: 'control_response', response: { subtype: 'error', request_id: frame.request_id, error } })
+      // `refuseFastMode` answers turning fast mode on with an error, as a CLI whose account or organisation has it off.
+      if (script.refuseFastMode && request.subtype === 'apply_flag_settings' && request.settings?.fastMode === true) { refuse('Fast mode is not available'); return }
       if (script.refuse === true || script.refuse?.includes?.(request.subtype)) {
         if (script.once) unlinkSync(join(root, 'settings-script.json'))
         refuse('Synthetic settings refusal'); return

@@ -1153,26 +1153,33 @@ export class ClaudeStreamJsonHost implements AgentHost {
         if (live.outcome === 'applied') return await this.settleSettings(id, command, after)
         if (live.outcome === 'uncertain') return await this.unconfirmedSettings(id, runtime, command, after, SETTINGS_UNCONFIRMED)
         this.options.logEvent?.('claude-settings-live-rejected')
+        // A CLI that will not turn fast mode on is the account or organisation saying no (ADR-0143). A restart with the
+        // flag would only hide that, so the refusal stands as it does under background work, and the warm CLI is kept.
+        const fastRefused = live.stopped === 'fastMode'
         // A restart would end the background work, so the refusal below stands. Whatever the CLI already took
         // is put back first, because the refusal says nothing was changed. When the CLI will not take it back
         // either, that is no longer true, and the CLI is stopped as it is for a lost answer.
-        if (thread.backgroundWork?.length && !sameSettings(live.reached, before)) {
+        if ((fastRefused || thread.backgroundWork?.length) && !sameSettings(live.reached, before)) {
           const back = await this.applySteps(runtime, live.reached, before, settingsSteps(live.reached, before)!)
           if (back.outcome !== 'applied') {
             return await this.unconfirmedSettings(id, runtime, command, after, back.outcome === 'rejected' ? SETTINGS_PART_TAKEN : SETTINGS_UNCONFIRMED)
           }
         }
+        if (fastRefused) return { accepted: false }
       }
       return await this.restartWithSettings(id, command, after, watcherGuard)
     } finally { this.dispatching.delete(id); this.configuring.delete(id); this.configurationGuards.delete(id); this.configurationLaunches.delete(id) }
   }
-  /** Send each step in turn and stop at the first the CLI does not confirm; `reached` is what it confirmed. */
-  private async applySteps(runtime: Runtime, from: ClaudeSettings, to: ClaudeSettings, steps: readonly ClaudeSettingsStep[], watcherGuard?: () => void): Promise<{ outcome: 'applied' | 'rejected' | 'uncertain'; reached: ClaudeSettings }> {
+  /**
+   * Send each step in turn and stop at the first the CLI does not confirm; `reached` is what it confirmed and `stopped`
+   * the setting it did not.
+   */
+  private async applySteps(runtime: Runtime, from: ClaudeSettings, to: ClaudeSettings, steps: readonly ClaudeSettingsStep[], watcherGuard?: () => void): Promise<{ outcome: 'applied' | 'rejected' | 'uncertain'; reached: ClaudeSettings; stopped?: keyof ClaudeSettings }> {
     let reached = from
     for (const step of steps) {
       watcherGuard?.()
       try { await runtime.protocol.control(step.request) }
-      catch (error) { return { outcome: error instanceof ClaudeRejected ? 'rejected' : 'uncertain', reached } }
+      catch (error) { return { outcome: error instanceof ClaudeRejected ? 'rejected' : 'uncertain', reached, stopped: step.field } }
       reached = { ...reached, [step.field]: to[step.field] }
     }
     return { outcome: 'applied', reached }

@@ -373,7 +373,7 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
       const unpaged = thread.historyMode === 'paginated' && method === 'thread/read'
       const history = { ...JSON.parse(JSON.stringify(thread)), turns: method === 'thread/resume' && params.excludeTurns || unpaged ? [] : historyTurns(thread, script) }
       reply({ thread: history, model: thread.model, approvalPolicy: thread.approvalPolicy, approvalsReviewer: thread.approvalsReviewer,
-        reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' }, serviceTier: thread.serviceTier ?? 'default',
+        reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' }, serviceTier: script.serviceTierReported ?? thread.serviceTier ?? 'default',
         ...(method === 'thread/resume' ? script.threadResumeSettings : {}) })
     }
     else emit({ id, error: { code: -32000, message: 'Unknown thread' } })
@@ -405,7 +405,8 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     if (params.sandboxPolicy) thread.sandbox = { readOnly: 'read-only', workspaceWrite: 'workspace-write', dangerFullAccess: 'danger-full-access' }[params.sandboxPolicy.type]
     save()
     const settings = { model: thread.model, effort: thread.reasoningEffort, approvalPolicy: thread.approvalPolicy, approvalsReviewer: thread.approvalsReviewer,
-      serviceTier: thread.serviceTier ?? 'default', sandboxPolicy: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' } }
+      // `serviceTierReported` stands for a Codex that answers with another tier than the one it was asked for, here and on a read.
+      serviceTier: script.serviceTierReported ?? thread.serviceTier ?? 'default', sandboxPolicy: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' } }
     if (script.stopBeforeSettingsConfirmation) {
       // Acknowledge the change, then stop before confirming it: the confirmation is lost without waiting out a deadline.
       delete script.stopBeforeSettingsConfirmation; writeFileSync(file('script.json'), JSON.stringify(script))
