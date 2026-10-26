@@ -139,7 +139,9 @@ describe('remote command allow-list', () => {
       // A thread's delegated threads for the iPhone's Agents view: a read on a listener that offers agents-view (ADR-0103).
       'thread-delegations',
       // The prompts above a pane's window, a read for the message scrubber on a listener that offers thread-prompts (ADR-0109).
-      'thread-prompts']
+      'thread-prompts',
+      // A branch move with a recorded desktop: it writes only a new incoming ref and answers nothing (ADR-0105 decision 8).
+      'branch-move']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
     expect(ops.sort()).toEqual([...decided].sort())
   })

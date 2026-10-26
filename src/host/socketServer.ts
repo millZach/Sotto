@@ -40,6 +40,7 @@ import { delegationBriefSchema, delegationsReadSchema, stateWithoutDelegation, D
 import { MAX_AGENT_ACTIVITIES } from '../shared/agentActivity'
 import type { OpenCodeHostCall } from '../shared/opencodeSignIn'
 import type { OpenCodeSignIn } from '../main/agents/opencodeSignIn'
+import type { HostBranchMoves } from './branchMoves'
 
 const errors: Record<HostErrorCode, string> = {
   unauthenticated: HOST_SESSION_REJECTED,
@@ -185,6 +186,11 @@ export interface SocketServerOptions {
    * phone would otherwise hide it under the thread that delegated to it.
    */
   delegation?: boolean
+  /**
+   * Branch moves with a desktop (`branch-moves`, ADR-0105 decision 8), present only where the host's Owl answer turns on
+   * `cross-machine-work`. Offered on either listener, to a client the launch script recorded as a desktop, and to no other.
+   */
+  branchMoves?: Pick<HostBranchMoves, 'handle'>
 }
 /**
  * Which paired clients a tailnet listener admits, and as what. `desktops` is read again before a session and a hello,
@@ -287,6 +293,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'activity-bodies' || options.admin !== false || options.tailnet !== undefined)
     // The iPhone's Agents view (ADR-0103) only where the host's Owl answer turns it on.
     && (feature !== 'agents-view' || service.supportsAgentsView === true)
+    // Branch moves (ADR-0105 decision 8) only where the host's Owl answer turns on cross-machine work, for recorded desktops.
+    && (feature !== 'branch-moves' || options.branchMoves !== undefined && options.watcherDesktops !== undefined)
     // Deleting settled threads (ADR-0140) only where the host's Owl answer turns clearing on, and only for a desktop: the
     // desktop's own phone listener, which serves no desktop, never offers it, and neither phone app deletes.
     && (feature !== 'thread-delete' || service.supportsThreadDelete === true && (options.admin !== false || options.tailnet !== undefined))
@@ -315,6 +323,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   const featuresFor = (peer: Peer): string[] => (peer.desktop ? [...features] : features.filter(feature => !HOST_DESKTOP_FEATURES.includes(feature)))
     .filter(feature => !feature.startsWith('watcher-') || feature.startsWith('watcher-phone') || options.watcherDesktops?.has(peer.client.clientId))
     .filter(feature => feature !== 'host-update' || mayUpdate(peer))
+    .filter(feature => feature !== 'branch-moves' || (options.watcherDesktops?.has(peer.client.clientId) ?? false))
     // Desktop defaults come only from a client the launch script recorded as a desktop (#1310).
     .filter(feature => feature !== 'host-delegation' && feature !== 'delegation-views' || options.watcherDesktops?.has(peer.client.clientId) === true)
   const watcherScopes = new WeakMap<Peer, WatcherHostRead>()
@@ -1234,6 +1243,14 @@ export async function startSocketServer(options: SocketServerOptions) {
           return await hostUpdate.run({ action: request.action, version: request.version, file: request.file, sha256: request.sha256 }, { owner: peer, gone: peer.gone.signal,
             onStep: next => { if (peer.hostUpdate && !peer.frames.isClosed && authenticated(peer)) push(peer, { v: 1, event: 'host-update-step', step: next }) } })
         } catch { throw new Refusal('unavailable') }
+      }
+      case 'branch-move': {
+        // A branch move with a recorded desktop (ADR-0105 decision 8). Refusals are answers in plain words; only a failure to
+        // run the step at all is the host's, and Git's own words never cross.
+        await options.watcherDesktops?.refresh().catch(() => undefined)
+        const { branchMoves } = options
+        if (!branchMoves || !offers(peer, 'branch-moves') || !peer.ready) throw new Refusal('invalid_request')
+        try { return await branchMoves.handle(request.request, peer, peer.gone.signal) } catch { throw new Refusal('unavailable') }
       }
       case 'usage-read':
         if (!offers(peer, 'usage-dashboard') || !service.usageRead) throw new Refusal('invalid_request')
