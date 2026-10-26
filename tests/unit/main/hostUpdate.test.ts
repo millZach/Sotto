@@ -6,6 +6,7 @@ import { compareOwlHostTarget, HostUpdates, publishedAnswer, type HostUpdateCand
 import type { SshHostUpdateOperation, SshHostUpdateOptions, SshHostUpdateResult } from '../../../src/main/hosts/sshLauncher'
 import { SshFailure } from '../../../src/main/hosts/sshFailure'
 import type { HostUpdateState } from '../../../src/shared/hostUpdates'
+import type { HostUpdateRestartResult } from '../../../src/shared/hostSelfUpdate'
 import { deferred } from '../../fixtures/deferred'
 
 const DESKTOP = '0.1.24'
@@ -37,7 +38,7 @@ class Hosts implements HostUpdateHosts {
     if (!step) throw new Error(`no ${operation.op}`)
     return step(operation, options)
   }
-  async restart(id: string, version: string, options: SshHostUpdateOptions = {}): Promise<SshHostUpdateResult> {
+  async restart(id: string, version: string, options: SshHostUpdateOptions = {}): Promise<SshHostUpdateResult | HostUpdateRestartResult | undefined> {
     let result: SshHostUpdateResult
     try { result = await this.run(id, { op: 'update-restart', version }, options) }
     catch (error) { if (this.after === null) { this.list = []; this.emit() } throw error }
@@ -325,6 +326,39 @@ describe('an update', () => {
     expect(one().failure?.kept).toBe('forge\'s threads are back. Nothing was lost.')
     // Worded once for the stop and the language, so the panel's frequent reads do not word it again.
     expect(one().failure).toBe(one().failure)
+  })
+  it('reads a restart sent over the host’s socket the way it reads one over SSH, with the same sentences (ADR-0088)', async () => {
+    // The host's outcome said the new host started.
+    const started = setup()
+    started.hosts.restart = async () => { started.hosts.list = [forge({ version: DESKTOP })]; started.hosts.emit(); return { type: 'ready', hostId: HOST_ID, pid: 43 } }
+    await started.updates.command(ID, 'update')
+    await started.settled()
+    expect(started.one()).toMatchObject({ phase: 'done', from: DESKTOP })
+    // The outcome could not say, and the host came back on the new version: done all the same.
+    const unsaid = setup()
+    unsaid.hosts.restart = async () => { unsaid.hosts.list = [forge({ version: DESKTOP })]; unsaid.hosts.emit(); return undefined }
+    await unsaid.updates.command(ID, 'update')
+    await unsaid.settled()
+    expect(unsaid.one()).toMatchObject({ phase: 'done', from: DESKTOP })
+    // It could not say, and the host came back on the old one.
+    const old = setup()
+    old.hosts.restart = async () => undefined
+    await old.updates.command(ID, 'update')
+    await old.settled()
+    expect(old.one()).toMatchObject({ phase: 'failed', failure: { step: 'restart', message: 'The connection to forge closed while its host restarted, and it came back on 0.1.22.' } })
+    // It could not say, and nothing came back by the deadline.
+    const gone = setup()
+    gone.hosts.restart = async () => { gone.hosts.list = []; gone.hosts.emit(); return undefined }
+    await gone.updates.command(ID, 'update')
+    await vi.waitFor(() => expect(gone.updates.state()[0]?.phase).toBe('failed'))
+    expect(gone.one().failure?.message).toBe('The connection to forge closed while its host restarted, so Sotto cannot tell which version is running.')
+    // The outcome said the old version was started again.
+    const rolled = setup()
+    rolled.hosts.restart = async () => ({ type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' })
+    await rolled.updates.command(ID, 'update')
+    await rolled.settled()
+    expect(rolled.one()).toMatchObject({ phase: 'failed', failure: { step: 'restart', message: `${DESKTOP} installed on forge, but its host did not start, so Sotto started 0.1.22 again.` } })
+    for (const each of [started, unsaid, old, gone, rolled]) each.updates.dispose()
   })
   it('says the old version still runs when the restart could not be asked for, and nothing was stopped', async () => {
     const { hosts, updates, one, settled } = setup()

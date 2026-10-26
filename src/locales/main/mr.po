@@ -1456,6 +1456,10 @@ msgstr ""
 msgid "The connection closed before this request could be confirmed. Nothing was saved."
 msgstr ""
 
+#: src/main/hosts/desktopHosts.ts
+msgid "The connection to {host} closed during the update."
+msgstr ""
+
 #: src/main/hosts/hostBootStart.ts
 msgid "The connection to {name} closed before start at boot changed. Nothing was lost. Its row shows whether start at boot changed once it connects again."
 msgstr ""
