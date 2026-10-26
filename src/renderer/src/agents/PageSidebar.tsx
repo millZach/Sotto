@@ -63,7 +63,7 @@ export function PageSidebar({ now: fixedNow }: {
   if (state === null) {
     return <aside className={app?.platform === 'darwin' ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label={t`Thread sidebar`}>
       <SidebarTop platform={app?.platform} />
-      <div className="thread-nav__scroll">{agents.error ? <p className="thread-nav__error tt-paragraph" role="alert">{agents.error}</p> : <p className="thread-nav__empty tt-paragraph" role="status">{t`Preparing agent controls…`}</p>}</div>
+      <div className="thread-nav__scroll">{agents.error ? <p className="thread-nav__error tt-paragraph" role="alert">{agents.error}</p> : <p className="thread-nav__empty tt-paragraph">{t`Preparing agent controls…`}</p>}</div>
       <SidebarFoot />
     </aside>
   }
