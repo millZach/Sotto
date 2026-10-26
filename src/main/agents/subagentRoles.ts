@@ -64,14 +64,14 @@ export interface ClaudeSubagent {
 }
 /**
  * When Claude should start each role's agent: its trigger, not its ability, so the parent hands work off only when that
- * saves context. Research reads only and stops sooner; with `tools` set it carries no MCP tool definitions (31k to 6.6k
- * first-turn tokens, October 9, 2026). Every other role keeps every tool and stops at 60 turns.
+ * saves context. Research gets no file-editing tools and stops sooner; with `tools` set it carries no MCP tool definitions
+ * (31k to 6.6k first-turn tokens, October 9, 2026). Its shell still runs under the role's permission, which asks by default. Every other role keeps every tool and stops at 60 turns.
  */
 const CLAUDE_ROLE_USE: Readonly<Record<WorkerKind, { readonly description: string; readonly tools?: readonly string[]; readonly maxTurns: number }>> = {
   building: { description: 'Use when a self-contained code change can be handed off with a clear brief and only its result is needed back.', maxTurns: 60 },
   ui: { description: 'Use when a screen, style or layout change can be handed off with a clear brief and only its result is needed back.', maxTurns: 60 },
   'code-review': { description: 'Use when a finished change needs a second read for what is wrong with it before it ships.', maxTurns: 60 },
-  research: { description: 'Use when answering needs more than a handful of files, docs or web pages and only a summary is needed back; read-only.',
+  research: { description: 'Use when answering needs more than a handful of files, docs or web pages and only a summary is needed back; it has no file-editing tools.',
     tools: ['Read', 'Grep', 'Glob', 'Bash', 'PowerShell', 'WebFetch', 'WebSearch', 'Skill'], maxTurns: 40 },
   'computer-use': { description: 'Use when the work needs clicking and typing in an app or the browser and no command or API can do it.', maxTurns: 60 },
 }
