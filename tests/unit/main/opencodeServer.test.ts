@@ -149,6 +149,20 @@ describe('the record of each server, while Sotto writes it and a sweep reads it'
       expect(tableReads).toBe(process.platform === 'win32' ? 1 : 0)
     } finally { await rm(ledger, { recursive: true, force: true }) }
   })
+  it.skipIf(process.platform === 'win32')('keeps the record of a server it cannot show has ended, for the next connect', async () => {
+    const ledger = await ledgerFolder()
+    try {
+      // A server whose Sotto has gone, at a PID that runs: this process, which no answer below lets the sweep signal.
+      const record = { pid: process.pid, startedAt: Date.now(), owner: 2 ** 31 - 1 }
+      await recordOpenCodeServer(ledger, record)
+      // ps gave no answer about a process that still runs: it may be the server.
+      await endServersLeftBehind(ledger, undefined, undefined, () => Promise.resolve(undefined))
+      expect(await readdir(ledger)).toEqual([`${process.pid}.json`])
+      // Once ps shows something other than OpenCode's server at that PID, the server has gone and so does its record.
+      await endServersLeftBehind(ledger, undefined, undefined, () => Promise.resolve({ started: record.startedAt, command: 'node other.js' }))
+      expect(await readdir(ledger)).toEqual([])
+    } finally { await rm(ledger, { recursive: true, force: true }) }
+  })
 })
 
 describe('where a server says it listens', () => {

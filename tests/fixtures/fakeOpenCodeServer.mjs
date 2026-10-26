@@ -36,6 +36,10 @@ if (args.includes('--version')) {
   process.stdout.write(Number(VERSION.split('.')[0]) >= 2 ? `opencode v${VERSION}\n` : `${VERSION}\n`)
   process.exit(0)
 }
+// A test run killed partway leaves nobody to stop this server, so it ends once the process that started it has gone and
+// it has been handed to another parent. Its input is ignored, so the end of it says nothing.
+const parent = process.ppid
+setInterval(() => { if (process.ppid !== parent) process.exit(0) }, 2_000).unref()
 const record = frame => appendFileSync(path('requests.jsonl'), JSON.stringify({ ...frame, process: process.pid }) + '\n')
 const violation = reason => appendFileSync(path('violations.jsonl'), JSON.stringify({ reason, process: process.pid }) + '\n')
 const MODELS = startup.models ?? [
