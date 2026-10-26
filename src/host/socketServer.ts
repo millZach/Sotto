@@ -1197,7 +1197,12 @@ export async function startSocketServer(options: SocketServerOptions) {
         // Delegation's own record of one of this host's threads (#1310), read for a recorded desktop's window, never a reply.
         if (!offers(peer, 'delegation-views') || !service.delegationViews) throw new Refusal('invalid_request')
         const read = await toolRead(() => service.delegationViews!(request.threadId))
-        try { return delegationsReadSchema.parse(read) } catch { throw new Refusal('unavailable') }
+        let parsed: ReturnType<typeof delegationsReadSchema.parse>
+        try { parsed = delegationsReadSchema.parse(read) } catch { throw new Refusal('unavailable') }
+        // A thread this peer is not sent is not named to it here either, as its `delegations-changed` push and Watcher's
+        // reads leave it out (#1107). A refused start names no thread and stays.
+        const shown = (thread: string | undefined) => thread === undefined || !hiddenThread(peer, thread)
+        return { ...parsed, delegations: parsed.delegations.filter(row => shown(row.thread)), received: parsed.received.filter(row => shown(row.thread)) }
       }
       case 'delegation-brief': {
         if (!offers(peer, 'delegation-views') || !service.delegationBrief) throw new Refusal('invalid_request')
