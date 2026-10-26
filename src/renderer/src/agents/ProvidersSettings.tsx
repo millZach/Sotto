@@ -293,9 +293,11 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
         <div className="provider-client">
           <div>
             <h4><Trans>Models</Trans></h4>
+            {/* A provider that is not connected keeps its last models marked not ready, so connection is asked first. */}
             <p className="tt-paragraph">{models.length ? t({ message: `The models ${clientName} offers you now.`, comment: '{clientName} is a provider\'s client, such as Claude Code.' })
+              : !connected ? t({ message: `Connect ${label} to load its models.`, comment: '{label} is a provider\'s name.' })
               : listed.length ? t({ message: `${clientName} lists no model you can use now. Check your ${clientName} sign-in and plan, then refresh this provider.`, comment: '{clientName} is a provider\'s client, such as Claude Code.' })
-              : connected ? t`No models were returned. Refresh this provider to check again.` : t({ message: `Connect ${label} to load its models.`, comment: '{label} is a provider\'s name.' })}</p>
+              : t`No models were returned. Refresh this provider to check again.`}</p>
           </div>
           {models.length ? <div className="provider-client__actions"><ProviderModelList label={label} models={models} agentEntryId={inheritedEntryId} /></div> : null}
         </div>

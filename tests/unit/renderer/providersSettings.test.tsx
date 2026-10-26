@@ -353,6 +353,18 @@ describe('a provider’s models, in provider settings', () => {
     expect(within(row).queryByRole('button', { name: /^Show Codex models/u })).toBeNull()
     expect(row).toHaveTextContent('Codex lists no model you can use now. Check your Codex sign-in and plan, then refresh this provider.')
   })
+  it('asks a disconnected provider to connect, though its last models are still in the catalog', () => {
+    // Disconnecting keeps a provider's models, each marked not ready, until it connects again.
+    const state = withModels()
+    state.host.models = state.host.models.map(model => ({ ...model, ready: false }))
+    state.host.providers = state.host.providers!.map(provider => provider.id === 'codex' ? { ...provider, connection: 'disconnected' as const } : provider)
+    provide(state)
+    render(<ProvidersSettings />)
+    const row = openRow('Codex')
+    expect(within(row).queryByRole('button', { name: /^Show Codex models/u })).toBeNull()
+    expect(row).toHaveTextContent('Connect Codex to load its models.')
+    expect(row).not.toHaveTextContent('sign-in and plan')
+  })
   it('searches the list, then clears the search and closes on Escape, leaving the row open', () => {
     provide(withModels())
     render(<ProvidersSettings />)
