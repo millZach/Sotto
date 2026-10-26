@@ -222,7 +222,7 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
     <label className="threads-search"><span className="tt-visually-hidden">{searchPlaceholder}</span><Search size={15} aria-hidden="true" />
       <input className="tt-input tt-focusable" type="search" value={query} placeholder={searchPlaceholder} onChange={event => onQuery(event.currentTarget.value)}
         onKeyDown={event => { if (event.key === 'Escape' && query) { event.preventDefault(); onQuery('') } }} />
-      {query ? <button type="button" className="threads-search__clear tt-focusable" aria-label={t`Clear search`} title={t`Clear search`} onClick={() => onQuery('')}><X size={14} /></button> : null}
+      {query ? <button type="button" className="threads-search__clear tt-focusable" aria-label={t`Clear search`} title={t`Clear search`} onClick={() => onQuery('')}><X size={14} aria-hidden="true" /></button> : null}
     </label>
     {afterSearch}
     {addProject.dialog}
