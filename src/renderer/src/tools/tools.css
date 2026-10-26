@@ -5,10 +5,11 @@
 .tools-panel .files-icon { display: grid; place-items: center; flex: none; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
 .tools-panel .files-icon:hover { background: var(--tools-hover); color: var(--tt-text); }
 .tools-panel .files-icon[aria-pressed='true'] { color: var(--tt-accent-text); }
-.tools-panel .files-icon--small { width: 28px; height: 28px; border-radius: 7px; }
+.tools-panel .files-icon--small { width: 28px; height: 28px; min-height: 28px; border-radius: 7px; }
 :is(.tools-panel, .pane-terminal) .files-link { min-height: 32px; padding: 0 12px; border: 1px solid var(--tt-border-faint); border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 14px; cursor: pointer; }
 :is(.tools-panel, .pane-terminal) .files-link:hover { border-color: var(--tt-border); }
 .tools-panel .files-toggle { min-height: 28px; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; cursor: pointer; }
+.tools-panel .files-toggle:not([aria-pressed='true']):hover { border-color: var(--tt-border); color: var(--tt-text); }
 .tools-panel .files-toggle[aria-pressed='true'] { border-color: var(--tt-accent-border); color: var(--tt-text); background: var(--tt-accent-wash); }
 
 /* Files: the tree, and the open file stacked beneath it (side by side once the panel is wide). */
@@ -25,6 +26,7 @@
 .files-tree__item:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
 .files-tree__item[data-selected] { border-color: var(--tt-selected-border); background: var(--tt-selected); color: var(--tt-text); }
 .files-tree__item[data-kind='unavailable'] { color: var(--tt-text-muted); cursor: default; }
+.files-tree__item[data-kind='unavailable']:hover { background: transparent; }
 .files-tree__chevron { display: grid; place-items: center; flex: none; width: 14px; color: var(--tt-text-muted); }
 .files-tree__item[aria-expanded='true'] .files-tree__chevron { transform: rotate(90deg); }
 .files-tree__name { white-space: nowrap; }
@@ -65,7 +67,7 @@
 .terminal-tabs__item { display: inline-flex; flex: none; align-items: center; min-width: 0; border: 1px solid transparent; border-radius: 7px; }
 .terminal-tabs__item[data-selected] { border-color: var(--tt-selected-border); background: var(--tt-selected); }
 .terminal-tabs__item[data-selected] > .terminal-tabs__tab { padding-right: 4px; border-color: transparent; background: transparent; }
-.terminal-tabs__close { display: inline-grid; flex: none; place-items: center; width: 24px; height: 24px; margin-right: 4px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.terminal-tabs__close { display: inline-grid; flex: none; place-items: center; width: 24px; height: 24px; min-height: 24px; margin-right: 4px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
 .terminal-tabs__close:hover { background: var(--tools-hover); color: var(--tt-text); }
 .terminal-tabs__close:disabled { opacity: .5; cursor: default; }
 .terminal-tabs__dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-success); }
@@ -87,11 +89,12 @@
 .terminal-view__screen[data-search-open] .terminal-view__output { top: 48px; }
 .terminal-search { position: absolute; top: 8px; right: 12px; z-index: 2; display: flex; align-items: center; gap: 2px; max-width: calc(100% - 20px); padding: 4px; border: 1px solid var(--tt-hairline); border-radius: 9px; background: var(--tt-glass); backdrop-filter: blur(16px) saturate(1.08); box-shadow: var(--tt-shadow-overlay); }
 .terminal-search[hidden] { display: none; }
-.terminal-search input { flex: 1 1 150px; width: 150px; min-width: 56px; height: 26px; padding: 0 8px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: var(--tt-field); color: var(--tt-text); font: 12.5px var(--tt-font-ui); }
+.terminal-search input { flex: 1 1 150px; width: 150px; min-width: 56px; height: 26px; min-height: 26px; padding: 0 8px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: var(--tt-field); color: var(--tt-text); font: 12.5px var(--tt-font-ui); }
 .terminal-search input::placeholder { color: var(--tt-text-muted); }
 .terminal-search input:focus { outline: none; border-color: color-mix(in srgb, var(--tt-accent) 55%, var(--tt-field-border)); }
+.terminal-search input:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 1px; }
 .terminal-search output { flex: none; min-width: 50px; padding: 0 6px; color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: center; }
-.terminal-search button { display: grid; place-items: center; flex: none; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.terminal-search button { display: grid; place-items: center; flex: none; width: 26px; height: 26px; min-height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
 .terminal-search button:hover { color: var(--tt-text); background: var(--tt-hover); }
 .terminal-search button:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
 .terminal-search button:disabled { opacity: .45; cursor: default; }
