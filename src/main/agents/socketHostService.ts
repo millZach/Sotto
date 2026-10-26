@@ -39,6 +39,7 @@ import { heldProviderOfWatcherRequest, heldProviderRefusedBy, heldWatcherRefusal
 import { heldProviderRefusal, heldProvidersOption, type HeldProviderNames, type HeldProviders } from '../../shared/heldProviders'
 import { hostMachineReportSchema, type HostMachineReport } from '../../shared/hostFacts'
 import { projectOriginsSchema, type ProjectOrigins } from '../../shared/workerMachine'
+import { desktopDefaultsReceiptSchema, type DesktopDefaultsInput, type DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
 import { usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, usageProvidersBeforeMuse, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
 
 export const REMOTE_COMPOSE_UNSAVED = 'This host cannot save this draft yet. Your draft is kept on this computer and has not been saved on the host. Update the host.'
@@ -1221,6 +1222,15 @@ export class SocketHostService implements HostService {
   async projectOrigins(): Promise<ProjectOrigins> {
     this.offers('project-origins')
     return this.read(projectOriginsSchema, await this.call({ op: 'project-origins' }, undefined, undefined, 10000))
+  }
+  /**
+   * The host lists `host-delegation`: its own threads delegate on its machine and it keeps the desktop defaults this
+   * desktop sends (#1310). An older or stable host takes none, and a desktop never sends it any.
+   */
+  get supportsHostDelegation(): boolean { return this.features.includes('host-delegation') }
+  async desktopDefaults(defaults: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> {
+    this.offers('host-delegation')
+    return this.read(desktopDefaultsReceiptSchema, await this.call({ op: 'desktop-defaults', defaults }, undefined, undefined, 10000))
   }
   /** The host lists `thread-starts`: it continues agents as threads and reads a started thread's handover (#1028). */
   get supportsThreadStarts(): boolean { return this.features.includes('thread-starts') }

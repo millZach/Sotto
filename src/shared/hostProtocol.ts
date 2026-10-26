@@ -12,6 +12,7 @@ import { fileListRequestSchema, fileRequestSchema } from './files'
 import { gitReviewRequestSchema } from './gitChanges'
 import { toolListRequestSchema } from './tools'
 import { subagentAssignmentsRequestSchema, subagentPageRequestSchema } from './subagents'
+import { desktopDefaultsSchema } from './desktopDefaults'
 import { PASTED_CODE_MAX } from './hostProviders'
 import { opencodeHostCallSchema } from './opencodeSignIn'
 import type { HeldProviders } from './heldProviders'
@@ -249,14 +250,18 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * names, host, owner and name only, so a desktop placing a worker can find the same project on this machine (#1032). Only
  * a host whose Owl answer turns on Work across machines lists it, and only to a desktop; one that does not cannot be
  * matched by repository, and a start must name one of its projects instead.
+ * `host-delegation`: the host runs delegation for its own threads (#1310), so a thread there may delegate to threads on
+ * the same machine, and it takes `desktop-defaults`, the desktop's new-thread default and worker roles, which it keeps and
+ * holds those threads to. Only a host whose Owl answer turns on Work across machines lists it, and only to a desktop the
+ * launch script recorded. A host never told holds every delegated start to Ask for approval.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
  * (ADR-0053). Its health lists them; a phone's hello does not, and their requests are refused for a phone.
  */
-export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'client-update-outcomes', 'client-update-not-listed', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'watcher-cursor', 'host-update', 'opencode-sign-in', 'activity-bodies', 'thread-prompts', 'project-origins']
+export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'client-update-outcomes', 'client-update-not-listed', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'watcher-cursor', 'host-update', 'opencode-sign-in', 'activity-bodies', 'thread-prompts', 'project-origins', 'host-delegation']
 /**
  * The providers a host sends only to a client whose hello accepts their feature (#1107, ADR-0087). A desktop or phone from
  * before a provider joined Sotto reads provider IDs against a list without it, and refuses a whole shell that names one, so
@@ -473,6 +478,8 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('host-facts') }).strict(),
   /** The GitHub repository of each of the host's projects, read on request and never pushed (#1032). */
   z.object({ ...base, op: z.literal('project-origins') }).strict(),
+  /** A desktop's new-thread default and worker roles, which a host that runs delegation for its own threads keeps (#1310). */
+  z.object({ ...base, op: z.literal('desktop-defaults'), defaults: desktopDefaultsSchema }).strict(),
   /** One activity record whole, for a desktop that was sent it with a cut body; read when its row opens (`activity-bodies`). */
   z.object({ ...base, op: z.literal('activity-body'), threadId: id, activityId: id }).strict(),
   /** The words of a started thread's handover, read only when the user asks to read them (#1028). */

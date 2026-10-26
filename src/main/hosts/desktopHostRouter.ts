@@ -37,7 +37,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads'>
+  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -263,6 +263,8 @@ export class DesktopHostRouter {
   private runs = 0
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly changeListeners = new Set<() => void>()
+  /** Told once of each host connection the router takes, new or in place of one it had, as it takes it. */
+  private readonly connectedListeners = new Set<(connection: DesktopHostConnection) => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
   /**
    * Each remote thread's revisions as the window is given them. A host counts a thread's revisions in memory, so after
@@ -505,6 +507,22 @@ export class DesktopHostRouter {
     this.watcherChanged(connection.hostId)
     this.selectedHostId ??= connection.hostId
     this.emit()
+    this.connected(connection)
+  }
+  /**
+   * Hears each host connection as the router takes it, new or in place of one it had (a reconnect), so what a host must
+   * be told on connecting, such as the desktop defaults (#1310), is told on every connection. Returns the way to stop.
+   */
+  subscribeConnected(listener: (connection: DesktopHostConnection) => void): () => void {
+    this.connectedListeners.add(listener)
+    return () => { this.connectedListeners.delete(listener) }
+  }
+  /** The remote hosts connected now, read in place. */
+  *remoteConnections(): Iterable<DesktopHostConnection> {
+    for (const { connection } of this.hosts.values()) if (connection.kind === 'remote') yield connection
+  }
+  private connected(connection: DesktopHostConnection): void {
+    for (const listener of [...this.connectedListeners]) { try { listener(connection) } catch { /* A listener's failure is its own. */ } }
   }
   /**
    * The same host on a new connection, in place of the one it had: its threads, the selection and the panes showing them
@@ -519,6 +537,7 @@ export class DesktopHostRouter {
     this.reconnecting.delete(connection.hostId)
     this.watcherChanged(connection.hostId)
     this.emit()
+    this.connected(connection)
   }
   /** Marks a connected host's threads as reconnecting, or no longer: while it is set they read Reconnecting, not Disconnected. */
   setReconnecting(hostId: string, value: boolean): void {
