@@ -792,6 +792,26 @@ msgstr "{provider} did not report this agent’s result."
 
 #. {error} is the provider's or Sotto's own reason, shown as it came.
 #: src/renderer/src/agents/ThreadOptions.tsx
+msgid "{provider} did not switch fast mode off. {error}"
+msgstr "{provider} did not switch fast mode off. {error}"
+
+#. {provider} is a provider's name or "The provider".
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "{provider} did not switch fast mode off. The thread stays in fast mode; nothing else changed."
+msgstr "{provider} did not switch fast mode off. The thread stays in fast mode; nothing else changed."
+
+#. {error} is the provider's or Sotto's own reason, shown as it came.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "{provider} did not switch fast mode on. {error}"
+msgstr "{provider} did not switch fast mode on. {error}"
+
+#. {provider} is a provider's name or "The provider".
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "{provider} did not switch fast mode on. The thread stays at normal speed; nothing else changed."
+msgstr "{provider} did not switch fast mode on. The thread stays at normal speed; nothing else changed."
+
+#. {error} is the provider's or Sotto's own reason, shown as it came.
+#: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{provider} did not switch to {wanted}. {error}"
 msgstr "{provider} did not switch to {wanted}. {error}"
 
@@ -828,6 +848,16 @@ msgstr "{provider} has not confirmed {wanted}. The thread starts on {wanted} the
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{provider} has not confirmed {wanted}. Until it does, a turn can still run on {inForce}."
 msgstr "{provider} has not confirmed {wanted}. Until it does, a turn can still run on {inForce}."
+
+#. {provider} is a provider's name or "The provider".
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "{provider} has not confirmed fast mode. Until it does, a turn can still run at normal speed."
+msgstr "{provider} has not confirmed fast mode. Until it does, a turn can still run at normal speed."
+
+#. {provider} is a provider's name or "The provider".
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "{provider} has not confirmed turning fast mode off. Until it does, a turn can still run in fast mode."
+msgstr "{provider} has not confirmed turning fast mode off. Until it does, a turn can still run in fast mode."
 
 #. {provider} is a provider's name or "The provider".
 #: src/renderer/src/agents/ThreadOptions.tsx
@@ -3388,6 +3418,30 @@ msgstr "Failed to switch ref. Sotto could not confirm this change."
 msgid "Failed when last read"
 msgstr "Failed when last read"
 
+#: src/renderer/src/agents/optionChipNames.ts
+msgid "Fast mode"
+msgstr "Fast mode"
+
+#. {cost} is a sentence about what fast mode costs.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Fast mode is off. {cost}"
+msgstr "Fast mode is off. {cost}"
+
+#. {cost} is a sentence about what fast mode costs.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Fast mode is off. {cost} Press to turn it on for this thread."
+msgstr "Fast mode is off. {cost} Press to turn it on for this thread."
+
+#. {cost} is a sentence about what fast mode costs.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Fast mode is on for this thread. {cost}"
+msgstr "Fast mode is on for this thread. {cost}"
+
+#. {cost} is a sentence about what fast mode costs.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Fast mode is on for this thread. {cost} Press to turn it off."
+msgstr "Fast mode is on for this thread. {cost} Press to turn it off."
+
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Fast. For small, clear tasks."
 msgstr "Fast. For small, clear tasks."
@@ -3396,6 +3450,10 @@ msgstr "Fast. For small, clear tasks."
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Faster"
 msgstr "Faster"
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Faster output, at a higher price."
+msgstr "Faster output, at a higher price."
 
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Fastest. For the smallest tasks."
@@ -6601,6 +6659,11 @@ msgstr "Sotto couldn’t load skills."
 msgid "Sotto did not get {provider}'s answer about {wanted}, so the chip shows what the thread last reported. Try again to send it once more."
 msgstr "Sotto did not get {provider}'s answer about {wanted}, so the chip shows what the thread last reported. Try again to send it once more."
 
+#. {provider} is a provider's name or "The provider".
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Sotto did not get {provider}'s answer about fast mode, so the toggle shows what the thread last reported. Try again to send it once more."
+msgstr "Sotto did not get {provider}'s answer about fast mode, so the toggle shows what the thread last reported. Try again to send it once more."
+
 #. {name} is the name of a saved host.
 #: src/renderer/src/agents/HostUpdates.tsx
 msgid "Sotto did not start this host, so it cannot restart it. Update it on {name} with these commands."
@@ -7841,6 +7904,10 @@ msgstr "Up a folder"
 #: src/renderer/src/agents/threadGreeting.logic.ts
 msgid "Up late. What are we making?"
 msgstr "Up late. What are we making?"
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Up to 2.5x faster output, at twice the price per token."
+msgstr "Up to 2.5x faster output, at twice the price per token."
 
 #. A button that installs the published version of a provider's client.
 #. A button that installs the published version of a provider's client.

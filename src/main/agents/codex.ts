@@ -18,7 +18,8 @@ import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
-import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, type AgentRuntimeMode, type AgentHostSnapshot, type AgentMessage, type AgentThread, type ProviderId } from '../../shared/agents'
+import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, type AgentModel, type AgentRuntimeMode, type AgentHostSnapshot, type AgentMessage, type AgentThread, type ProviderId } from '../../shared/agents'
+import { resolveModel } from '../../shared/modelCatalog'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
@@ -36,7 +37,7 @@ import { CodexSessionLogWatcher, promptDigest, textOf, wordsOf } from './codexSe
 import { carriesAttachedFiles, deliverAttachments } from './attachedFiles'
 import { answerRequest, declineRequest, pendingRequest, type CodexPendingRequest } from './codexRequests'
 import { needsPerson, unreadableRequest } from './nativeRequests'
-import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
+import { effortAfterChange, fastModeRuns, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { CodexActivityProjection, codexItemSchema } from './codexActivity'
 import { ProviderUnavailable } from './providerProblem'
 import { SessionReaper } from './sessionReaper'
@@ -94,8 +95,12 @@ const aliasSchema = z.object({ codexThreadId: z.string(), projectId: z.string().
   historyMode: z.enum(['legacy', 'paginated']).optional(), historyEpoch: z.string().optional(),
   rewoundMessageIds: z.array(z.string()).default([]), rewoundTurnIds: z.array(z.string()).default([]),
   pendingRollback: z.object({ removedTurnIds: z.array(z.string()), removedMessageIds: z.array(z.string()), retainedUsers: z.array(z.string()) }).optional(),
-  pendingSettings: z.object({ modelId: z.string(), reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema }).optional(),
+  pendingSettings: z.object({ modelId: z.string(), reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema,
+    /** The fast mode choice the change sets; absent from a change saved before Sotto had fast mode, which keeps the thread's. */
+    fastMode: z.boolean().optional() }).optional(),
   reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(), createdAt: z.string(), origins: z.array(originSchema).default([]),
+  /** The user turned fast mode on for this thread (ADR-0143); kept on a model without it, which then runs at the standard tier. */
+  fastMode: z.boolean().optional(),
   messageIdentities: z.array(codexTurnIdentitySchema).default([]) }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A project thread requires its project; a personal chat cannot have one.')
 const aliasesSchema = z.record(z.string(), aliasSchema)
 
@@ -114,11 +119,26 @@ const turnCreatedAt = (alias: { readonly createdAt: string }, turn: Turn): strin
 const threadSchema = z.object({ id: z.string(), historyMode: z.enum(['legacy', 'paginated']).optional(), turns: z.array(turnSchema).default([]), status: z.object({ type: z.string() }).optional() })
 const threadResponse = z.object({ thread: threadSchema })
 const settingsResponse = threadResponse.extend({ model: z.string(), reasoningEffort: z.string().nullish(),
-  approvalPolicy: z.string(), approvalsReviewer: z.string(), sandbox: z.object({ type: z.string() }) })
+  approvalPolicy: z.string(), approvalsReviewer: z.string(), sandbox: z.object({ type: z.string() }),
+  /** The thread's service tier: `priority` is Codex's Fast. Absent from a Codex that does not report it. */
+  serviceTier: z.string().nullish() })
 const settingsObservation = settingsResponse.extend({ thread: threadSchema.optional() })
 const settingsNotification = z.object({ threadId: z.string(), threadSettings: z.object({
   model: z.string(), effort: z.string().nullish(), approvalPolicy: z.string(), approvalsReviewer: z.string(), sandboxPolicy: z.object({ type: z.string() }),
+  serviceTier: z.string().nullish(),
 }) })
+/** Codex's own id for its Fast service tier (codex-cli 0.164.0), which fast mode is (ADR-0143). */
+const FAST_SERVICE_TIER = 'priority'
+/**
+ * Whether Codex's answer agrees with fast mode running or not. A Codex that reports no tier cannot say, so it is taken
+ * at its word on the rest; one that reports a tier runs fast only on `priority`.
+ */
+const tierAgrees = (serviceTier: string | null | undefined, runs: boolean): boolean => serviceTier === undefined || (serviceTier === FAST_SERVICE_TIER) === runs
+/** A model offers fast mode when `model/list` lists the `priority` tier for it; its description is Codex's line about the cost. */
+function fastModeOf(tiers: readonly { readonly id: string; readonly description?: string | undefined }[] | undefined): Pick<AgentModel, 'fastMode'> {
+  const tier = tiers?.find(candidate => candidate.id === FAST_SERVICE_TIER)
+  return tier ? { fastMode: tier.description?.trim() ? { description: tier.description.trim().slice(0, 300) } : {} } : {}
+}
 const notificationSchema = z.object({ threadId: z.string(), turnId: z.string().optional(), turn: turnSchema.optional(), item: itemSchema.optional(), itemId: z.string().optional(), delta: z.string().optional(), requestId: z.union([z.string(), z.number()]).optional(),
   startedAtMs: z.number().optional(), completedAtMs: z.number().optional(), summaryIndex: z.number().optional(), message: z.string().optional(),
   error: z.object({ message: z.string() }).optional(), willRetry: z.boolean().optional(), status: z.object({ type: z.string() }).optional(),
@@ -241,6 +261,15 @@ export class CodexAppServerHost implements AgentHost {
       this.stopUnverifiedProfile(id, refusal.message)
       throw refusal
     }
+  }
+  /**
+   * The service tier a thread starts, resumes or is copied on (ADR-0143): `priority` where fast mode runs, and `default`
+   * where the model offers fast mode and the thread has it off, so a model whose own default is Fast, or a `service_tier`
+   * in the user's Codex config, does not run fast unasked. A model without fast mode is left to Codex.
+   */
+  private serviceTier(modelId: string, fastMode: boolean | undefined): { serviceTier?: string } {
+    if (fastModeRuns(this.state, modelId, fastMode)) return { serviceTier: FAST_SERVICE_TIER }
+    return resolveModel(this.state.models, modelId)?.fastMode ? { serviceTier: 'default' } : {}
   }
   private async threadConfiguration(id: string, effort?: string) {
     const generation = this.generation
@@ -580,11 +609,14 @@ export class CodexAppServerHost implements AgentHost {
         await this.rpc('model/list', { limit: 100, includeHidden: false, ...(cursor ? { cursor } : {}) }, value => {
           const result = z.object({ data: z.array(z.object({ model: z.string(), displayName: z.string(), hidden: z.boolean().optional(),
             supportedReasoningEfforts: z.array(z.object({ reasoningEffort: z.string() })).optional(), defaultReasoningEffort: z.string().optional(), inputModalities: z.array(z.string()).default(['text', 'image']),
+            // The tiers a model offers (codex-cli 0.164.0). `additionalSpeedTiers` is deprecated and not read.
+            serviceTiers: z.array(z.object({ id: z.string(), description: z.string().optional() })).optional().catch(undefined),
           })), nextCursor: z.string().nullish() }).parse(value)
           models.push(...result.data.filter(m => !m.hidden).map(m => ({ id: m.model, name: m.displayName, provider: 'Codex', ready: true,
             reasoningEfforts: orderReasoningEfforts(m.supportedReasoningEfforts?.map(option => option.reasoningEffort) ?? []),
             ...(m.defaultReasoningEffort ? { defaultReasoningEffort: m.defaultReasoningEffort } : {}),
             runtimeModes: [...agentRuntimeModeSchema.options], supportsImages: m.inputModalities.includes('image'),
+            ...fastModeOf(m.serviceTiers),
           })))
           cursor = result.nextCursor ?? undefined
         }, undefined, server)
@@ -945,7 +977,8 @@ export class CodexAppServerHost implements AgentHost {
   private ensureThread(id: string): AgentThread {
     const alias = this.aliases[id]!
     if (!this.threads.has(id)) this.threads.set(id, { id, projectId: alias.projectId!, workingDirectory: alias.cwd, title: alias.title, modelId: alias.modelId,
-      runtimeMode: alias.runtimeMode ?? 'auto-accept-edits', ...(alias.reasoningEffort ? { reasoningEffort: alias.reasoningEffort } : {}), status: 'idle', messages: [], requests: [] })
+      runtimeMode: alias.runtimeMode ?? 'auto-accept-edits', ...(alias.reasoningEffort ? { reasoningEffort: alias.reasoningEffort } : {}), ...(alias.fastMode ? { fastMode: true } : {}),
+      status: 'idle', messages: [], requests: [] })
     const thread = this.threads.get(id)!
     thread.compaction = alias.compaction
     thread.manualCompactionSupported = true
@@ -1255,7 +1288,7 @@ export class CodexAppServerHost implements AgentHost {
       // Resume restores the conversation, never its transcript: turns are read when the
       // thread is opened, so resuming costs the same for a long thread and a short one.
       await this.rpc('thread/resume', { threadId: alias.codexThreadId, cwd: alias.cwd, excludeTurns: true,
-        ...(!alias.pendingSettings ? { model: alias.modelId, modelProvider: 'openai', ...runtimePolicy(alias.runtimeMode) } : {}),
+        ...(!alias.pendingSettings ? { model: alias.modelId, modelProvider: 'openai', ...runtimePolicy(alias.runtimeMode), ...this.serviceTier(alias.modelId, alias.fastMode) } : {}),
         ...configuration, developerInstructions }, async value => {
         if (alias.pendingSettings) return this.applySettings(id, value)
         this.applyThread(id, threadResponse.parse(value).thread); await this.persist(); this.live.add(id); this.log.pin(id)
@@ -1496,7 +1529,8 @@ export class CodexAppServerHost implements AgentHost {
     const policy = runtimePolicy(desired.runtimeMode)
     const sandboxType = policy.sandbox === 'read-only' ? 'readOnly' : policy.sandbox === 'workspace-write' ? 'workspaceWrite' : 'dangerFullAccess'
     if (response.model !== desired.modelId || response.approvalPolicy !== policy.approvalPolicy || response.approvalsReviewer !== policy.approvalsReviewer || response.sandbox.type !== sandboxType
-      || desired.reasoningEffort !== undefined && response.reasoningEffort !== desired.reasoningEffort) {
+      || desired.reasoningEffort !== undefined && response.reasoningEffort !== desired.reasoningEffort
+      || desired.fastMode !== undefined && !tierAgrees(response.serviceTier, fastModeRuns(this.state, desired.modelId, desired.fastMode))) {
       // A valid response can disagree with an interrupted settings change. Keep the
       // intent for reconciliation, but isolate this thread from the shared transport.
       const error = new SettingsUnconfirmed()
@@ -1512,9 +1546,13 @@ export class CodexAppServerHost implements AgentHost {
       return
     }
     alias.modelId = response.model; alias.runtimeMode = desired.runtimeMode; alias.reasoningEffort = response.reasoningEffort ?? undefined
+    if (desired.fastMode === true) alias.fastMode = true
+    else if (desired.fastMode === false) delete alias.fastMode
     delete alias.pendingSettings
     const thread = this.ensureThread(id)
     thread.modelId = alias.modelId; thread.runtimeMode = alias.runtimeMode; thread.reasoningEffort = alias.reasoningEffort
+    if (alias.fastMode) thread.fastMode = true
+    else delete thread.fastMode
     if (thread.historyError === new SettingsUnconfirmed().message) { delete thread.historyStatus; delete thread.historyError }
     if (response.thread) this.applyThread(id, response.thread)
     this.live.add(id); this.log.pin(id); await this.persist(); this.emit()
@@ -1613,8 +1651,10 @@ export class CodexAppServerHost implements AgentHost {
     // A fork is a load like any other, so it carries the role files and table its own permission allows (#1042).
     const { configuration, roles } = await this.newThreadSetup(request.threadId, request.reasoningEffort, request.runtimeMode ?? 'auto-accept-edits')
     try {
+      // A copy is a new thread, so it starts with fast mode off whatever its source ran (ADR-0143).
       await this.rpc('thread/fork', { threadId: nativeSource, ...(lastTurnId ? { lastTurnId } : {}), cwd, model: request.modelId, modelProvider: 'openai',
         developerInstructions: [developerInstructions, roles.instructions].filter(Boolean).join('\n\n'), ...runtimePolicy(request.runtimeMode), ...configuration,
+        ...this.serviceTier(request.modelId, false),
         // Durable, so the copy outlives this app-server; without its turns, which are read back the way every thread's are.
         ephemeral: false, excludeTurns: true }, async value => {
         const response = settingsResponse.parse(value)
@@ -1623,7 +1663,8 @@ export class CodexAppServerHost implements AgentHost {
         // An answer that comes after Sotto gave up on the fork leaves Codex's copy where it is, bound to nothing.
         if (this.abandonedForks.delete(request.threadId) || generation !== this.generation) { this.creating.delete(request.threadId); this.stopSession(request.threadId); return }
         if (response.model !== request.modelId || response.approvalPolicy !== policy.approvalPolicy || response.approvalsReviewer !== policy.approvalsReviewer
-          || response.sandbox.type !== sandboxType || request.reasoningEffort !== undefined && response.reasoningEffort !== request.reasoningEffort) throw new Error('Codex did not confirm the requested thread options.')
+          || response.sandbox.type !== sandboxType || request.reasoningEffort !== undefined && response.reasoningEffort !== request.reasoningEffort
+          || !tierAgrees(response.serviceTier, false)) throw new Error('Codex did not confirm the requested thread options.')
         this.aliases[request.threadId] = { codexThreadId: response.thread.id, projectId: source.projectId, cwd, title: request.title, modelId: request.modelId,
           runtimeMode: request.runtimeMode ?? 'auto-accept-edits', ...(response.reasoningEffort ? { reasoningEffort: response.reasoningEffort } : {}),
           ...(response.thread.historyMode ? { historyMode: response.thread.historyMode } : {}),
@@ -1712,17 +1753,20 @@ export class CodexAppServerHost implements AgentHost {
         catch (error) { this.creating.delete(command.threadId); throw error }
         this.reaper.touch(command.threadId)
         const { configuration, roles } = await this.newThreadSetup(command.threadId, command.reasoningEffort, command.runtimeMode ?? 'auto-accept-edits')
+        const fast = fastModeRuns(this.state, command.modelId, command.fastMode)
         await this.rpc('thread/start', { cwd, model: command.modelId, modelProvider: 'openai', allowProviderModelFallback: false,
           developerInstructions: [developerInstructions, roles.instructions].filter(Boolean).join('\n\n'),
-          ...runtimePolicy(command.runtimeMode), ...configuration, ephemeral: false, historyMode: 'legacy' }, async value => {
+          ...runtimePolicy(command.runtimeMode), ...configuration, ...this.serviceTier(command.modelId, command.fastMode), ephemeral: false, historyMode: 'legacy' }, async value => {
           const response = settingsResponse.parse(value)
           const policy = runtimePolicy(command.runtimeMode)
           const sandboxType = policy.sandbox === 'read-only' ? 'readOnly' : policy.sandbox === 'workspace-write' ? 'workspaceWrite' : 'dangerFullAccess'
           if (response.model !== command.modelId || response.approvalPolicy !== policy.approvalPolicy || response.approvalsReviewer !== policy.approvalsReviewer
-            || response.sandbox.type !== sandboxType || command.reasoningEffort !== undefined && response.reasoningEffort !== command.reasoningEffort) throw new Error('Codex did not confirm the requested thread options.')
+            || response.sandbox.type !== sandboxType || command.reasoningEffort !== undefined && response.reasoningEffort !== command.reasoningEffort
+            || !tierAgrees(response.serviceTier, fast)) throw new Error('Codex did not confirm the requested thread options.')
           this.aliases[command.threadId] = { codexThreadId: response.thread.id, projectId: command.projectId, cwd,
             title: command.title, modelId: command.modelId,
             runtimeMode: command.runtimeMode ?? 'auto-accept-edits', ...(response.reasoningEffort ? { reasoningEffort: response.reasoningEffort } : {}),
+            ...(command.fastMode ? { fastMode: true } : {}),
             createdAt: new Date().toISOString(), origins: [], messageIdentities: [], rewoundMessageIds: [], rewoundTurnIds: [] }
           this.providerSessionIds.set(response.thread.id, command.threadId); this.recordLoadedRoles(command.threadId, roles.widest)
           await this.persist(); this.creating.delete(command.threadId); this.ensureThread(command.threadId); this.live.add(command.threadId); this.histories.add(command.threadId); delete this.ensureThread(command.threadId).historyStatus
@@ -1771,7 +1815,8 @@ export class CodexAppServerHost implements AgentHost {
           const mode = command.runtimeMode ?? alias.runtimeMode ?? 'auto-accept-edits'
           const policy = runtimePolicy(mode)
           const previousPendingSettings = alias.pendingSettings
-          const desired = { modelId, reasoningEffort, runtimeMode: mode }
+          const fastMode = command.fastMode ?? alias.fastMode === true
+          const desired = { modelId, reasoningEffort, runtimeMode: mode, fastMode }
           const generation = this.generation
           watcherGuard?.()
           alias.pendingSettings = desired
@@ -1787,7 +1832,9 @@ export class CodexAppServerHost implements AgentHost {
             // Resume returns existing settings for an already-loaded session. The
             // dedicated update confirms its effective values in a notification.
             // Wait outside rpc.apply: that callback shares the notification queue.
+            // The tier is said every time, `default` when fast mode does not run, so a move to a model without it ends it.
             await this.rpc('thread/settings/update', { threadId: alias.codexThreadId, model: modelId, effort: reasoningEffort ?? null,
+              serviceTier: fastModeRuns(this.state, modelId, fastMode) ? FAST_SERVICE_TIER : 'default',
               approvalPolicy: policy.approvalPolicy, approvalsReviewer: policy.approvalsReviewer,
               sandboxPolicy: { type: policy.sandbox === 'read-only' ? 'readOnly' : policy.sandbox === 'workspace-write' ? 'workspaceWrite' : 'dangerFullAccess' },
             }, value => { z.object({}).parse(value) }, async () => {

@@ -275,8 +275,17 @@ export const agentProviderModeSchema = z.object({ id: providerEntityId, name: id
   allows: z.enum(['nothing', 'edits', 'everything']).optional() }).strict()
 export type AgentProviderMode = z.infer<typeof agentProviderModeSchema>
 export const agentThreadOptionsSchema = z.object({ modelId: providerEntityId.optional(), reasoningEffort: z.string().min(1).max(64).optional(),
-  runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional() })
+  runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional(),
+  /** Fast mode on or off for this thread (ADR-0143): the user's choice, kept when the thread moves to a model without it. */
+  fastMode: z.boolean().optional() })
 export type AgentThreadOptions = z.infer<typeof agentThreadOptionsSchema>
+/**
+ * A model's fast mode (ADR-0143): faster output at a higher price. Present only on a model whose provider offers it,
+ * Claude Code from its catalog's `supportsFastMode` and Codex from a `priority` service tier. `description` is the
+ * provider's own line about what it costs, where it gives one (Codex's tier description).
+ */
+export const agentModelFastModeSchema = z.object({ description: z.string().max(300).optional() })
+export type AgentModelFastMode = z.infer<typeof agentModelFastModeSchema>
 export const agentModelSchema = z.object({ id: providerEntityId, provider: id, providerId: providerIdSchema.optional(), name: id, ready: z.boolean(),
   /**
    * The provider's own ids in Sotto's order, least to most thorough, so the last is the highest level.
@@ -292,6 +301,8 @@ export const agentModelSchema = z.object({ id: providerEntityId, provider: id, p
   providerModes: z.array(agentProviderModeSchema).max(20).optional(),
   /** The provider names one of its own models as the one to reach for; the picker keeps it at the top. */
   recommended: z.boolean().optional(),
+  /** Present only when the model offers fast mode (ADR-0143); the composer draws its toggle only then. */
+  fastMode: agentModelFastModeSchema.optional(),
   /**
    * Where the model runs, for a provider that offers models from several companies under one sign-in: OpenCode's
    * **model source**, such as OpenCode Zen or Anthropic (ADR-0087). The picker may group by it; `provider` stays the
@@ -547,6 +558,11 @@ export const agentThreadSchema = z.object({
   reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(),
   /** The provider's own permission mode this thread is set to, where the provider names its own. */
   providerMode: providerEntityId.optional(),
+  /**
+   * The user turned fast mode on for this thread (ADR-0143). It is the choice, not what runs: on a model without fast
+   * mode the thread runs at normal speed and keeps the choice for a model that has it. Absent when off, and from older hosts.
+   */
+  fastMode: z.boolean().optional(),
   status: z.enum(['idle', 'running', 'error']),
   workingDirectory: z.string().optional(), worktree: agentWorktreeSchema.optional(),
   /** The last stacked Git action run on this thread's folder, as it runs and once it is over (ADR-0027). */
@@ -807,6 +823,8 @@ export const subscriptionAccountSchema = z.object({
     /** Least to most thorough, the last being the highest level, as on `agentModelSchema.reasoningEfforts`. */
     reasoningEfforts: z.array(z.string()).optional(),
     defaultReasoningEffort: z.string().optional(),
+    /** As on `agentModelSchema.fastMode`: present only when the model offers fast mode. */
+    fastMode: agentModelFastModeSchema.optional(),
   })),
   defaultModelId: z.string().optional(), allowCustomModel: z.boolean().optional(),
 })
@@ -1333,7 +1351,8 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
    * head as a branch a draft's new worktree takes on first send. */
   z.object({ type: z.literal('git-checkout-pull-request'), threadId: id, reference: z.string().min(1).max(2_048), mode: z.enum(['local', 'worktree']) }).strict(),
   agentThreadOptionsSchema.extend({ type: z.literal('configure-thread'), threadId: id }).strict()
-    .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined || value.providerMode !== undefined, 'Choose a thread setting to change.'),
+    .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined || value.providerMode !== undefined
+      || value.fastMode !== undefined, 'Choose a thread setting to change.'),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),
   /** `shownThreadIds`: which of them the client shows now, where that is fewer; the socket server says so for the paired
    * desktops whose windows are behind another app (ADR-0092). Absent, every observed thread is shown. A paired client

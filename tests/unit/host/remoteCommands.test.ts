@@ -297,6 +297,8 @@ describe('remote command allow-list', () => {
   it('lets a device without the policy pick a mode that allows nothing and leave clean folders', () => {
     // Asking first is the runtime mode that grants nothing, so a paired device can always lower a thread back to it.
     expect(refuse({ type: 'configure-thread', threadId: 'thread', runtimeMode: 'approval-required' })).toBeNull()
+    // Fast mode changes speed and price, as a model does, and answers no permission (ADR-0143).
+    expect(refuse({ type: 'configure-thread', threadId: 'thread', fastMode: true })).toBeNull()
     expect(refuse({ type: 'create-thread', projectId: 'project', title: 'Asks', modelId: 'codex', runtimeMode: 'approval-required' })).toBeNull()
     expect(refuse({ type: 'create-thread', projectId: 'project', title: 'Asks', modelId: 'devin', providerMode: 'ask' }, false, ['ask-first', 'ask'])).toBeNull()
     expect(refuse({ type: 'configure-thread', threadId: 'thread', providerMode: 'ask' }, false, ['ask-first', 'ask'])).toBeNull()

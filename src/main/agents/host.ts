@@ -240,6 +240,8 @@ export interface ThreadSessionDraft {
   readonly workingDirectory?: string | undefined
   readonly reasoningEffort?: string | undefined
   readonly runtimeMode?: AgentRuntimeMode | undefined
+  /** The thread's fast mode choice (ADR-0143), so an early client starts as the first send's would. */
+  readonly fastMode?: boolean | undefined
 }
 /** What an activity subscriber asks of the host it subscribes to. */
 export interface ActivitySubscriptionOptions {

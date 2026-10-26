@@ -27,6 +27,8 @@ const NATIVE_MODEL = z.object({
   value: MODEL_ID, displayName: z.string().min(1).max(300), description: z.string().max(600).optional(),
   supportsEffort: z.boolean().optional(),
   supportedEffortLevels: z.array(z.string().max(32).regex(/^[a-z][a-z0-9_-]*$/u)).max(30).optional(),
+  /** Whether the model takes fast mode (ADR-0143), as https://code.claude.com/docs/en/fast-mode lists them; Claude Code 2.1.310 says it here. */
+  supportsFastMode: z.boolean().optional(),
 })
 
 /**
@@ -172,6 +174,7 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
       return parsed.data.response.response.models.map(model => ({
         id: model.value, name: versionedName(model),
         reasoningEfforts: model.supportsEffort === false ? [] : orderReasoningEfforts(model.supportedEffortLevels ?? []),
+        ...(model.supportsFastMode === true ? { fastMode: {} } : {}),
       }))
     }
     throw new Error('Claude Code did not report an available model catalog.')

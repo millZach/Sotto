@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, ChevronDown, Lock, Shield } from 'lucide-react'
+import { Check, ChevronDown, Lock, Shield, Zap } from 'lucide-react'
 import { msg, t } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { hostForThread, capabilitiesForThread, isThreadProviderConnected, PROVIDER_LABELS, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, THREAD_SETTINGS_UNRECONCILED, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../../shared/agents'
@@ -14,7 +14,7 @@ import { localHostId } from '../features/onboarding/localAgents'
 import { EffortPicker, effortLabel } from './EffortPicker'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { providerKey } from './threadFacts'
-import { pendingSettingsStore, permissionPatch, settingValues, settingValuesFor, unconfirmedKinds, usePendingSettings, usesProviderModes, type SettingKind, type SettingsPatch } from './pendingSettings'
+import { FAST_OFF, FAST_ON, pendingSettingsStore, permissionPatch, settingValues, settingValuesFor, unconfirmedKinds, usePendingSettings, usesProviderModes, type SettingKind, type SettingsPatch } from './pendingSettings'
 import { WatcherPermissionChip } from '../watcher/WatcherPermissionChip'
 import { useWatcherRoom } from '../watcher/watcherRoom'
 import { WatchOnSendToggle } from '../watcher/WatchControls'
@@ -317,6 +317,59 @@ export interface ThreadContinueOffer {
 const providerNameOf = (thread: AgentThread): string | undefined => thread.providerId ? PROVIDER_LABELS[thread.providerId] : undefined
 
 /**
+ * What fast mode costs, said once in the toggle's tooltip (ADR-0143): the provider's own line where it gives one (Codex's
+ * tier description), Sotto's for Claude Code, and a plain one otherwise.
+ */
+export function fastModeCost(model: AgentModel | undefined, provider: string | undefined): string {
+  const own = model?.fastMode?.description?.trim()
+  if (own) return /[.!?]$/u.test(own) ? own : `${own}.`
+  return provider === 'claude' ? t`Up to 2.5x faster output, at twice the price per token.` : t`Faster output, at a higher price.`
+}
+/** The fast mode toggle's tooltip: whether it is on, what it costs and what a press does. A fixed toggle says no press. */
+export function fastModeTitle(model: AgentModel | undefined, provider: string | undefined, on: boolean, fixed: boolean): string {
+  const cost = fastModeCost(model, provider)
+  if (fixed) return on ? t({ message: `Fast mode is on for this thread. ${cost}`, comment: '{cost} is a sentence about what fast mode costs.' })
+    : t({ message: `Fast mode is off. ${cost}`, comment: '{cost} is a sentence about what fast mode costs.' })
+  return on ? t({ message: `Fast mode is on for this thread. ${cost} Press to turn it off.`, comment: '{cost} is a sentence about what fast mode costs.' })
+    : t({ message: `Fast mode is off. ${cost} Press to turn it on for this thread.`, comment: '{cost} is a sentence about what fast mode costs.' })
+}
+/** The alert after a fast mode press the provider did not take, as `settingRefusalText` says it for the other chips. */
+export function fastRefusalText(provider: string, wanted: boolean, error: string | null): string {
+  if (error === null) return t({ message: `Sotto did not get ${provider}'s answer about fast mode, so the toggle shows what the thread last reported. Try again to send it once more.`, comment: '{provider} is a provider\'s name or "The provider".' })
+  if (error === PROVIDER_REJECTED_ACTION) return wanted
+    ? t({ message: `${provider} did not switch fast mode on. The thread stays at normal speed; nothing else changed.`, comment: '{provider} is a provider\'s name or "The provider".' })
+    : t({ message: `${provider} did not switch fast mode off. The thread stays in fast mode; nothing else changed.`, comment: '{provider} is a provider\'s name or "The provider".' })
+  return wanted ? t({ message: `${provider} did not switch fast mode on. ${error}`, comment: '{error} is the provider\'s or Sotto\'s own reason, shown as it came.' })
+    : t({ message: `${provider} did not switch fast mode off. ${error}`, comment: '{error} is the provider\'s or Sotto\'s own reason, shown as it came.' })
+}
+/** The line when the provider never answered a fast mode press, as `unconfirmedSettingText` says it for the other chips. */
+export function fastUnconfirmedText(provider: string, wanted: boolean, error: string | null): string {
+  if (error === null || error === PROVIDER_RESULT_UNCONFIRMED || error === THREAD_SETTINGS_UNRECONCILED) return wanted
+    ? t({ message: `${provider} has not confirmed fast mode. Until it does, a turn can still run at normal speed.`, comment: '{provider} is a provider\'s name or "The provider".' })
+    : t({ message: `${provider} has not confirmed turning fast mode off. Until it does, a turn can still run in fast mode.`, comment: '{provider} is a provider\'s name or "The provider".' })
+  return error
+}
+
+/**
+ * Fast mode for this thread (ADR-0143, Zach's pick A of the `prototype/composer-fast-mode` tag): a one-press toggle after
+ * the model chip, a muted outline bolt while off and a filled bolt in the accent while on, with `aria-pressed`. Space or
+ * Enter toggles it and focus stays on it. Drawn only for a model that offers fast mode, on Claude Code or Codex.
+ */
+export function FastModeToggle({ model, provider, on, disabled, pending, describedBy, onChange }: {
+  readonly model: AgentModel | undefined; readonly provider: string | undefined; readonly on: boolean; readonly disabled: boolean; readonly pending: boolean
+  readonly describedBy?: string | undefined; readonly onChange: (on: boolean) => void
+}): ReactNode {
+  return <button type="button" className="thread-chip thread-fast tt-focusable" aria-label={OPTION_CHIP_NAMES.fast} aria-pressed={on}
+    title={fastModeTitle(model, provider, on, disabled)} aria-describedby={pending ? describedBy : undefined} data-pending={pending ? 'true' : undefined}
+    disabled={disabled} onClick={() => onChange(!on)}>
+    <Zap size={14} aria-hidden="true" fill={on ? 'currentColor' : 'none'} />
+  </button>
+}
+/** Whether a thread on this model shows the fast mode toggle: the model offers it, on Claude Code or Codex (ADR-0143). */
+export const offersFastMode = (model: AgentModel | undefined, provider: string | undefined): boolean =>
+  model?.fastMode !== undefined && (provider === 'claude' || provider === 'codex')
+
+/**
  * Whether a prompt on this thread is on its way to the provider, which a settings change would have to wait behind. One
  * the user set aside is not: Sotto never sends it again, whatever became of it (#1156).
  */
@@ -368,7 +421,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const bar = useRef<HTMLDivElement>(null)
   const refocus = useRef<HTMLButtonElement | null>(null)
   const captionId = useId()
-  const unconfirmedId = useId(), unconfirmedModelId = useId(), unconfirmedEffortId = useId()
+  const unconfirmedId = useId(), unconfirmedModelId = useId(), unconfirmedEffortId = useId(), unconfirmedFastId = useId()
   const { models: own, locked } = threadModelChoices(state, thread, watcher)
   // Watcher keeps its provider; another provider's model is a new Watcher, which main makes and which offers the last
   // one's handover (ADR-0073). Only where the room can open one.
@@ -411,7 +464,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const fixed = Boolean(thread.archivedAt) || thread.status === 'running' || thread.requests.length > 0 || promptOnItsWay(state, thread.id) || unconfirmed.has('permissions')
     || (locked && !isThreadProviderConnected(state.host, thread))
   const unconfirmedKey = [...unconfirmed].join(',')
-  useLayoutEffect(() => { pendingSettingsStore.observe(thread.id, drawn, unconfirmed) }, [thread.id, drawn.model, drawn.effort, drawn.permissions, unconfirmedKey])
+  useLayoutEffect(() => { pendingSettingsStore.observe(thread.id, drawn, unconfirmed) }, [thread.id, drawn.model, drawn.effort, drawn.permissions, drawn.fast, unconfirmedKey])
   const threads = state.host.threads
   useEffect(() => { pendingSettingsStore.prune(new Set(threads.map(item => item.id))) }, [threads])
   useEffect(() => () => { pendingSettingsStore.forget(thread.id) }, [thread.id])
@@ -459,9 +512,14 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   // What each chip shows with nothing pressed: the drawn values, except that a model change starts on the new
   // model's default effort, so that is what the effort chip shows meanwhile.
   const unpressed = modelId === thread.modelId ? drawn
-    : settingValuesFor({ modelId, ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}), ...(thread.providerMode ? { providerMode: thread.providerMode } : {}) }, model)
+    : settingValuesFor({ modelId, ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}), ...(thread.providerMode ? { providerMode: thread.providerMode } : {}),
+      ...(thread.fastMode ? { fastMode: true } : {}) }, model)
   const reasoning = settings.pending.effort?.value ?? unpressed.effort
   const permission = settings.pending.permissions?.value ?? unpressed.permissions
+  // The choice stays through a change of model; the toggle shows only on a model that offers fast mode (ADR-0143).
+  const fastOn = (settings.pending.fast?.value ?? unpressed.fast) === FAST_ON
+  const fastProvider = model?.providerId ?? thread.providerId
+  const showFast = offersFastMode(model, fastProvider)
   const efforts = effortChoices(model, reasoning)
   const modes = modeChoices(model, thread.runtimeMode, thread.providerMode)
   const providers = new Set(models.map(item => item.provider)).size
@@ -492,20 +550,23 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const retry = (kind: SettingKind): void => {
     if (pendingSettingsStore.retry(thread.id, kind, command, drawn)) bar.current?.querySelector<HTMLButtonElement>(`[aria-label="${OPTION_CHIP_NAMES[kind]}"]`)?.focus()
   }
-  const kinds: readonly SettingKind[] = ['model', 'effort', 'permissions']
+  const kinds: readonly SettingKind[] = ['model', 'effort', 'permissions', 'fast']
+  const unconfirmedIds: Readonly<Record<SettingKind, string>> = { model: unconfirmedModelId, effort: unconfirmedEffortId, permissions: unconfirmedId, fast: unconfirmedFastId }
   const notices = <>
     {replacing?.refusal ? <p className="thread-options__notice tt-paragraph" role="alert"><span>{shownWords(replacing.refusal)}</span></p> : null}
     {kinds.map(kind => {
       const pending = settings.pending[kind]
       if (pending?.awaiting !== 'unconfirmed') return null
-      return <p key={`unconfirmed-${kind}`} id={kind === 'permissions' ? unconfirmedId : kind === 'model' ? unconfirmedModelId : unconfirmedEffortId} className="thread-options__notice tt-paragraph" role="alert">
-        <span>{unconfirmedSettingText(provider, valueName(kind, pending.value, model), pending.error, kind === 'permissions' ? undefined : valueName(kind, drawn[kind], confirmedModel))}</span></p>
+      return <p key={`unconfirmed-${kind}`} id={unconfirmedIds[kind]} className="thread-options__notice tt-paragraph" role="alert">
+        <span>{kind === 'fast' ? fastUnconfirmedText(provider, pending.value === FAST_ON, pending.error)
+          : unconfirmedSettingText(provider, valueName(kind, pending.value, model), pending.error, kind === 'permissions' ? undefined : valueName(kind, drawn[kind], confirmedModel))}</span></p>
     })}
     {kinds.map(kind => {
       const refusal = settings.refusals[kind]
       if (!refusal) return null
       return <p key={`refused-${kind}`} className="thread-options__notice tt-paragraph" role="alert">
-        <span>{settingRefusalText(provider, valueName(kind, refusal.wanted, model), valueName(kind, drawn[kind], confirmedModel), refusal.error)}</span>
+        <span>{kind === 'fast' ? fastRefusalText(provider, refusal.wanted === FAST_ON, refusal.error)
+          : settingRefusalText(provider, valueName(kind, refusal.wanted, model), valueName(kind, drawn[kind], confirmedModel), refusal.error)}</span>
         <button type="button" className="tt-focusable" disabled={fixed} onClick={() => retry(kind)}>{t`Try again`}</button></p>
     })}
   </>
@@ -526,6 +587,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
         const id = chosenModelId(models, pressed, modelId, thread.modelId); press('model', id, { modelId: id })
         orchestrating?.(id, resolveModel(models, id)?.defaultReasoningEffort ?? null, state.host.models)
       }} />
+      {showFast && <FastModeToggle model={model} provider={fastProvider} on={fastOn} disabled={fixed} pending={settings.pending.fast?.awaiting === 'unconfirmed'} describedBy={unconfirmedFastId}
+        onChange={next => press('fast', next ? FAST_ON : FAST_OFF, { fastMode: next }, unpressed.fast)} />}
       {efforts.length > 0 && <EffortPicker key={`${modelId}:${model?.reasoningEfforts?.join(',') ?? ''}`} value={reasoning} options={efforts}
         disabled={fixed || modelDisabled} pending={settings.pending.effort?.awaiting === 'unconfirmed'} describedBy={unconfirmedEffortId} onChange={reasoningEffort => {
           press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)
