@@ -153,7 +153,10 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       // the desktop defaults the last desktop still paired here with an answers grant sent, read at every start, so a desktop
       // forgotten or revoked stops counting at once and after a restart (ADR-0074 decision 3).
       hostDelegation: { roles: owlFeatures['worker-roles'],
-        counts: clientId => pairing.isPaired(clientId) && (policy?.mayGrant({ clientId, user: 'Paired desktop', transport: 'socket' }).allowed ?? false) },
+        counts: clientId => pairing.isPaired(clientId) && (policy?.mayGrant({ clientId, user: 'Paired desktop', transport: 'socket' }).allowed ?? false),
+        // A grant taken away, as `--deny-answers` does, is said as such, since setting the desktop up again does not restore it.
+        // An expired grant or one held behind an always-confirm boundary is not revoked: it says the answers grant is missing.
+        revoked: clientId => policy?.remoteAnswersRevoked(clientId) ?? false },
       historyEnabled: () => startup.historyEnabled,
       gitStatus: { fetchIntervalMs: () => startup.gitFetchIntervalSeconds * 1000, foreground: () => peersConnected(), log: event => options.log?.(event) },
       ...(policy ? { authority: policy } : {}),
