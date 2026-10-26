@@ -620,7 +620,7 @@ const known = (track: OwnerScaleTrack, scenario: Scenario, kind: Kind) => KNOWN_
  * before it, so a send that skipped coalesced publications still finds the one it was last sent. Only Owl's reads of a
  * thread move: from 307.54 to 218.23 per streamed update on one thread, 342.54 to 232.46 on three, 912 to 330 per
  * answer-draft save, 2,153 to 1,567 per debounced save, 4,173 to 3,590 per thread opened and 9,924 to 9,362 per send. Of
- * the 112 reads per streamed update the walk cost when it came in (October 22), 89 are gone; the 22 left are walks of a
+ * the 112 reads per streamed update the walk cost when it came in (October 22), about 89 are gone; the 23 left are walks of a
  * publication the router read whole, after a whole accept or a read, two of them per send. Stable does not move: its
  * router hides the held providers' threads in a new host on every build, which carries no note, so it reads every host
  * whole and the broadcast walks every list, as before. Each Owl reads budget is lowered to the new count exactly. No

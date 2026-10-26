@@ -119,7 +119,7 @@ async function run(seed: number, rounds = 160) {
   const away = new Map<string, Host>([[STUDIO, studio]])
   const notes = new AgentStateBroadcaster(), whole = new AgentStateBroadcaster()
   const ran = new Map<Family, number>()
-  let sends = 0, compared = 0
+  let sends = 0
   /** The window, applying each broadcast it is sent as the page does: it must then hold the router's list. */
   const window = { revision: undefined as number | undefined, records: new Map<string, AgentThread>(), order: [] as string[] }
   const show = (payload: AgentStateBroadcast, state: AgentState): void => {
@@ -145,7 +145,6 @@ async function run(seed: number, rounds = 160) {
     whole.send({ ...state, host: { ...state.host } }, payload => { byWalk = payload; return delivered })
     sends++
     expect(JSON.stringify(byNotes), `seed ${seed}, send ${sends}`).toBe(JSON.stringify(byWalk))
-    compared++
     if (delivered) show(byNotes!, state)
   }
   const pick = (from: Map<string, Host>): Host | undefined => { const hosts = [...from.values()]; return hosts.length ? hosts[random(hosts.length)] : undefined }
@@ -200,14 +199,15 @@ async function run(seed: number, rounds = 160) {
   const weighted: Family[] = [...FAMILIES, ...Array<Family>(8).fill('stream one'), ...Array<Family>(4).fill('stream several'), ...Array<Family>(3).fill('coalesced'),
     ...Array<Family>(2).fill('remote push noted'), 'same data', 'quiet']
   for (let round = 0; round < rounds; round++) await apply(weighted[random(weighted.length)]!)
-  return { ran, sends, compared, notes: notes.threadEncodes, whole: whole.threadEncodes }
+  return { ran, sends, notes: notes.threadEncodes, whole: whole.threadEncodes }
 }
 
 describe('the window\'s broadcast read where the notes say (#925 step 6)', () => {
   it.each([1, 7, 42, 925])('says what the whole walk says after every operation, seed %i', async seed => {
     const result = await run(seed)
     for (const family of FAMILIES) expect(result.ran.get(family) ?? 0, `family "${family}" ran`).toBeGreaterThan(0)
-    expect(result.compared).toBe(result.sends)
+    // Each send was compared as it went; a quiet push or a coalesced publish sends nothing, so most rounds do.
+    expect(result.sends, 'the run sent broadcasts to compare').toBeGreaterThan(160)
     // The whole side never reads in part; the notes side does on most broadcasts.
     expect(result.whole.patched).toBe(0)
     expect(result.notes.patched, `of ${result.sends} broadcasts`).toBeGreaterThan(result.sends / 2)
@@ -264,7 +264,9 @@ describe('the verifying mode of the window\'s broadcast (#925 step 6)', () => {
     const { payload } = encoder.encode(third.threads, third)
     expect(payload).toEqual({ revision: 3, base: 1, changed: [second.threads[1], second.threads[2]] })
   })
+})
 
+describe('a record replaced in place (#925 step 6)', () => {
   it('sends no record replaced with the same data', () => {
     const encoder = new ThreadRecordsBroadcast()
     const first = { threads: [record('a', 'A'), record('b', 'B')] }
@@ -273,5 +275,56 @@ describe('the verifying mode of the window\'s broadcast (#925 step 6)', () => {
     noteThreadsReplaced(second, first, [0])
     expect(encoder.encode(second.threads, second).payload).toEqual({ revision: 2, base: 1, changed: [] })
     expect(encoder.patchedEncodes).toBe(1)
+  })
+})
+
+describe('what a broadcast read in part keeps, and when it must walk whole (#925 step 6)', () => {
+  /** Two broadcasters fed the same lists: one with each list noted as made from the last, one with every list walked whole. */
+  function pair(threads: AgentThread[]) {
+    const notes = new ThreadRecordsBroadcast(), whole = new ThreadRecordsBroadcast()
+    let host = { threads }
+    notes.encode(host.threads, host).commit(); whole.encode(threads, { threads }).commit()
+    const send = (next: AgentThread[], at: number[]) => {
+      const made = { threads: next }
+      noteThreadsReplaced(made, host, at)
+      const noted = notes.encode(next, made), walked = whole.encode(next, { threads: next })
+      expect(JSON.stringify(noted.payload)).toBe(JSON.stringify(walked.payload))
+      noted.commit(); walked.commit(); host = made
+      return noted.payload
+    }
+    return { notes, send }
+  }
+
+  it('folds the records it sent into the last whole walk\'s once more than 64 have changed, and still sends what the whole walk does', () => {
+    let threads = Array.from({ length: 80 }, (_, index) => record(`t${index}`, `T${index}`))
+    const { notes, send } = pair(threads)
+    const kept = () => (notes as unknown as { base: { overrides: ReadonlyMap<string, AgentThread> } }).base.overrides.size
+    let folded = false
+    for (let round = 0; round < 2; round++) for (let index = 0; index < 70; index++) {
+      threads = threads.slice(); threads[index] = { ...threads[index]!, title: `T${index} ${round}` }
+      const before = kept()
+      expect(send(threads, [index]).changed.map(thread => thread.id)).toEqual([`t${index}`])
+      if (kept() < before) folded = true
+      // A record sent again with the same data is not sent.
+      threads = threads.slice(); threads[index] = { ...threads[index]! }
+      expect(send(threads, [index]).changed).toEqual([])
+    }
+    expect(folded, 'the records sent were folded into the base').toBe(true)
+    expect(notes.patchedEncodes).toBe(280)
+  })
+
+  it('walks whole when a note covers a list of another length, or names a place another thread now holds', () => {
+    const threads = [record('a', 'A'), record('b', 'B'), record('c', 'C')]
+    const { notes, send } = pair(threads)
+    // A false note: a thread was added, though the note says one was replaced in place.
+    send([...threads, record('d', 'D')], [0])
+    expect(notes.patchedEncodes).toBe(0)
+    // Another false note: the thread at 1 is another thread, though the list is as long.
+    const swapped = [record('a', 'A'), record('x', 'X'), record('c', 'C'), record('d', 'D')]
+    expect(send(swapped, [1]).removed).toEqual(['b'])
+    expect(notes.patchedEncodes).toBe(0)
+    // A true note is read in part again.
+    send([swapped[0]!, { ...swapped[1]!, title: 'X+' }, swapped[2]!, swapped[3]!], [1])
+    expect(notes.patchedEncodes).toBe(1)
   })
 })
