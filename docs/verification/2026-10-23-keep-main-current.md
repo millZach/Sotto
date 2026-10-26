@@ -12,6 +12,7 @@ On Owl, each project's checkout is now fetched every 15 minutes and after a pull
   - tracked changes, an untracked file the update would overwrite, another branch checked out, a local commit, and a merge in progress each leave `HEAD` and `refs/heads/main` where they were, and are said;
   - a checkout a thread holds is not touched and says nothing, even when its edits would block the update, and once the thread rests the block is said;
   - an ignored file the incoming commits track is named as in the way and keeps its contents;
+  - untracked files left by a checkout stopped part way, each the incoming version exactly, are replaced by the update; when one of them differs, every file stays as it was and the line says they are in the way;
   - an unreachable remote keeps the last line;
   - a project switched off is left alone and its line forgotten;
   - a merged pull request checks only the projects whose `origin` is its repository on the same host, once.

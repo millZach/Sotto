@@ -156,6 +156,30 @@ describe('Keep main up to date (ADR-0142)', () => {
     await vi.waitFor(() => expect(keeper.state().projects[0]?.blocked).toEqual({ reason: 'changes' }))
   }, 30_000)
 
+  it('finishes an update an earlier checkout left part way, when the files in the way are the incoming ones exactly', async () => {
+    const repository = await behind([{ 'incoming.txt': 'incoming', 'deep/new.txt': 'new' }])
+    // What a checkout cut off part way leaves: some of the target's new files on disk, HEAD where it was.
+    mkdirSync(join(repository.repo, 'deep'), { recursive: true })
+    await writeFile(join(repository.repo, 'deep', 'new.txt'), 'new')
+    const { keeper } = await keeperFor(repository)
+    await keeper.request('all')
+    expect(head(repository)).toBe(remoteHead(repository))
+    expect(keeper.state().projects).toEqual([])
+  }, 30_000)
+
+  it('leaves every file in the way where it is when any one of them is not the incoming version', async () => {
+    const repository = await behind([{ 'incoming.txt': 'incoming', 'other.txt': 'other' }])
+    await writeFile(join(repository.repo, 'incoming.txt'), 'incoming')
+    await writeFile(join(repository.repo, 'other.txt'), 'the user\'s own')
+    const before = head(repository)
+    const { keeper } = await keeperFor(repository)
+    await keeper.request('all')
+    expect(head(repository)).toBe(before)
+    expect(await readFile(join(repository.repo, 'incoming.txt'), 'utf8')).toBe('incoming')
+    expect(await readFile(join(repository.repo, 'other.txt'), 'utf8')).toBe('the user\'s own')
+    expect(keeper.state().projects[0]?.blocked).toEqual({ reason: 'untracked' })
+  }, 30_000)
+
   it('never overwrites an ignored file the incoming commits track', async () => {
     const repository = await behind([{ 'built.txt': 'theirs' }])
     mkdirSync(join(repository.repo, '.git', 'info'), { recursive: true })

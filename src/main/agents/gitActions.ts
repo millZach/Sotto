@@ -50,6 +50,12 @@ export class GitActionRefusal extends Error {}
 const COMMIT_TIMEOUT_MS = 10 * 60_000
 const PUSH_TIMEOUT_MS = 10 * 60_000
 const PULL_TIMEOUT_MS = 30_000
+/**
+ * Keep main up to date's fast-forward is local work, the fetch being separate, and a kill during its checkout leaves part
+ * of the new tree on disk with HEAD where it was. So it is given as long as any checkout could need; only a hook that
+ * never returns reaches this, and by then the branch has moved.
+ */
+const FAST_FORWARD_TIMEOUT_MS = 30 * 60_000
 
 /** What `GitActions.fastForward` did. A refusal changed nothing; `moved` means the branch was no longer checked out. */
 export type GitFastForwardResult = { readonly status: 'fast-forwarded'; readonly before: string; readonly after: string } | { readonly status: 'up-to-date' } | { readonly status: 'moved' }
@@ -469,8 +475,19 @@ export class GitActions {
       const before = (await this.git(cwd, ['rev-parse', '--verify', 'HEAD^{commit}'])).trim()
       // Whatever the user's configuration says: never stash (merge.autoStash), and never overwrite an ignored file, which
       // Git otherwise replaces without asking when the incoming commits track it.
-      try { await this.git(cwd, ['merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', '--quiet', '--end-of-options', expected.target], { timeoutMs: PULL_TIMEOUT_MS }) }
-      catch (error) {
+      const merge = (): Promise<string> => this.git(cwd, ['merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', '--quiet', '--end-of-options', expected.target], { timeoutMs: FAST_FORWARD_TIMEOUT_MS })
+      try {
+        try { await merge() }
+        catch (error) {
+          // Untracked files that are each the target's own version, byte for byte, are what an earlier checkout cut off
+          // part way left behind. Removing them loses nothing, since the merge writes the same files back; a single
+          // file that differs leaves every one of them in place.
+          const refused = inTheWay(error instanceof Error ? error.message : '')
+          if (refused?.reason !== 'untracked' || !await this.onlyTargetCopies(cwd, expected.target, refused.files)) throw error
+          for (const file of refused.files) await rm(join(cwd, file), { force: true })
+          await merge()
+        }
+      } catch (error) {
         const detail = error instanceof Error ? error.message : ''
         const refused = inTheWay(detail)
         if (refused) return { status: 'refused', ...refused }
@@ -482,6 +499,29 @@ export class GitActions {
       const after = (await this.git(cwd, ['rev-parse', '--verify', 'HEAD^{commit}'])).trim()
       return before === after ? { status: 'up-to-date' } : { status: 'fast-forwarded', before, after }
     }, 'automatic-pull')
+  }
+
+  /**
+   * Whether every one of `files`, untracked in the checkout at `cwd`, holds exactly what `target` holds at that path, as
+   * Git would store it. False for an empty list, a path `target` lacks or a file Git cannot read, and when the tree is too
+   * large to read whole: anything short of certain reads as the user's.
+   */
+  private async onlyTargetCopies(cwd: string, target: string, files: readonly string[]): Promise<boolean> {
+    if (!files.length) return false
+    try {
+      const wanted = new Set(files)
+      const blobs = new Map<string, string>()
+      // Each entry is "<mode> <type> <id>" and a tab before its path; only blobs are compared.
+      for (const entry of (await this.git(cwd, ['ls-tree', '-r', '-z', '--full-tree', '--end-of-options', target])).split('\0')) {
+        const tab = entry.indexOf('\t')
+        const path = entry.slice(tab + 1)
+        const [, type, id] = entry.slice(0, tab).split(' ')
+        if (tab > 0 && type === 'blob' && id && wanted.has(path)) blobs.set(path, id)
+      }
+      if (blobs.size !== wanted.size) return false
+      const hashes = (await this.git(cwd, ['hash-object', '--stdin-paths'], { stdin: `${files.join('\n')}\n` })).trim().split(/\r?\n/u)
+      return hashes.length === files.length && files.every((file, index) => hashes[index] === blobs.get(file))
+    } catch { return false }
   }
 
   /**

@@ -24,7 +24,7 @@ Sotto already knows each project's folder and fetches `origin` in the background
 - a thread whose working copy is that checkout is working, waiting on an answer, being set up, running a Git action or holding queued work;
 - the remote cannot be reached.
 
-Sotto never switches a branch, stashes, resets, rebases, merges or forces. It never runs an install either.
+Sotto never switches a branch, stashes, resets, rebases, merges or forces. It never runs an install either. The fast-forward is given 30 minutes, since a checkout stopped part way leaves some of the new files on disk with the branch where it was. If one is stopped anyway, the untracked files then in the way are removed only when every one of them is byte for byte the incoming commit's version, and the fast-forward is tried once more; the merge writes the same files back, so nothing is lost. One file that differs leaves them all where they are, and the line says they are in the way.
 
 **3. What stopped it is said on the project row, quietly.** A muted line under the project's name in the Threads sidebar reads, for example, "main is 1,320 behind · local changes block the update · Show changes". **Show changes** lists what is in the way: the changed files, the untracked files Git named, or the local commits (**Show commits**). It has **Open folder** beside the list and nothing else, since Sotto does not undo the user's work. Zach picked Show changes over an Update now press. When another branch is checked out the line says so, with no press: "main is 38 behind · fix/tray-icon is checked out". A thread busy in the checkout, or a remote Sotto cannot reach, says nothing. The first is tried again a minute later, and for the second the last line stands. When nothing is in the way the line goes.
 
