@@ -1,5 +1,5 @@
-import { open } from 'node:fs/promises'
-import { join, resolve, sep } from 'node:path'
+import { open, stat } from 'node:fs/promises'
+import { dirname, join, resolve, sep } from 'node:path'
 import type { GitPullRequestSummary, GitStatus } from '../../shared/gitStatus'
 import { GIT_REFS_MAX_LIMIT, type GitRef, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
 import { GIT_CHANGED_FILES_MAX, type GitChangedFile, type GitChangedFiles } from '../../shared/gitChangedFiles'
@@ -169,7 +169,7 @@ const PULL_REQUEST_SETTLED_FRESH_MS = 15 * 60_000
 const PULL_REQUEST_BACKOFF_MS = 20_000
 const BACKOFF_CAP_MS = 15 * 60_000
 const DEFAULT_BRANCH_FRESH_MS = 5 * 60_000
-/** A folder read as no repository is taken at its word this long, so Git is not asked again every read; an `invalidate` reaching it, such as Initialize Git's, asks sooner. */
+/** A folder read as no repository is taken at its word this long, so Git is not asked again every read; an `invalidate` reaching it, such as Initialize Git's, or a `.git` appearing at or above it asks sooner. */
 const NO_REPOSITORY_FRESH_MS = 5 * 60_000
 /** A branch list is kept this long; any Git action drops it (T3's figure). */
 const REFS_FRESH_MS = 2 * 60_000
@@ -195,6 +195,14 @@ interface BranchLookup { readonly branch: string; readonly upstream: string | nu
 interface HeadTarget { readonly repository: GitHubRepository; readonly head: string; readonly headOwner: string; readonly crossRepository: boolean }
 
 const EMPTY: Omit<GitStatus, 'readAt'> = { isRepository: false, branch: null, upstream: null, hasRemote: false, defaultBranch: null, isDefaultBranch: false, dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null, pullRequest: null, fetchedAt: null }
+
+/** Whether a `.git` of any kind sits in `folder` or a folder above it: a folder with none cannot have become a repository. */
+async function gitMarkerAbove(folder: string): Promise<boolean> {
+  for (let candidate = resolve(folder);; candidate = dirname(candidate)) {
+    if (await stat(join(candidate, '.git')).then(() => true, () => false)) return true
+    if (dirname(candidate) === candidate) return false
+  }
+}
 
 /** Whether folder key `key` is `parent` or a folder inside it; both are `folderKey`s. */
 const within = (key: string, parent: string): boolean => key === parent || key.startsWith(parent.endsWith(sep) ? parent : parent + sep)
@@ -495,7 +503,7 @@ export class GitStatusReader implements GitStatusSource {
     // What `readRemote` asks about for this folder, unless a Git action in its repository has run since this read began.
     const remember = (known: Omit<KnownFolder, 'epoch' | 'at'>): void => { if (this.epochOf(known.common, cwd) <= epoch) this.known.set(cwd, { epoch, at: this.now(), ...known }) }
     const last = this.known.get(cwd)
-    if (last?.common === null && this.epochOf(null, cwd) <= last.epoch && this.now() - last.at < NO_REPOSITORY_FRESH_MS) { place.common = null; return { ...EMPTY, readAt } }
+    if (last?.common === null && this.epochOf(null, cwd) <= last.epoch && this.now() - last.at < NO_REPOSITORY_FRESH_MS && !await gitMarkerAbove(cwd)) { place.common = null; return { ...EMPTY, readAt } }
     let common: string
     try { common = (await this.git(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim(); place.common = common }
     catch (error) {
