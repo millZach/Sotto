@@ -223,6 +223,9 @@ import { registerSubagentIpc } from './agents/subagentIpc'
 import { registerUsageIpc } from './agents/usageIpc'
 import { MainActivityService, type MainActivityLogEvent } from './performance/mainActivityService'
 import { registerMainActivityIpc } from './performance/mainActivityIpc'
+import { registerMainCheckoutIpc } from './agents/mainCheckoutIpc'
+import type { MainCheckoutEvent } from './agents/mainCheckout'
+import { MAIN_CHECKOUT_CHANGED, MAIN_CHECKOUT_RENDERER_ARGUMENT } from '../shared/mainCheckout'
 import { fakeNotification } from './e2e/fakeNotification'
 import { createDesktopNotifier } from './notifications/desktopNotifier'
 import { registerNotificationIpc } from './notifications/notificationIpc'
@@ -351,6 +354,7 @@ type NativeDiagnostic =
   | 'owl-frames-unavailable'
   | 'owl-failed'
   | 'desktop-notification-failed'
+  | MainCheckoutEvent
   | DesktopDefaultsEvent
   | OwnServerEvent
   | OwnCleanupEvent
@@ -734,6 +738,9 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   await plainSettings.save(await plainSettings.get()).catch(() => console.warn('retired-voice-settings-save-failed'))
   await plainSettings.migrateProjectWorkingCopyDefaults(await loadHostIdentity(userDataPath))
   const startupSettings = await settings.get()
+  // Keep main up to date (ADR-0142): this computer's projects only, so only where the local host runs, and never in a
+  // design capture, whose fixture folders must look the same on every run.
+  const keepMainCurrentEnabled = owlFeatures['keep-main-current'] && startupSettings.localHostEnabled && process.env['SOTTO_DESIGN_CAPTURE'] !== '1'
   // The interface language (ADR-0123), read before the tray, the menu or a window shows a word. An end-to-end run reads
   // English as the computer's language, so every test and design capture reads English on any machine; the setting still
   // applies there, and SOTTO_E2E_SYSTEM_LANGUAGES stands in for the computer's list.
@@ -814,6 +821,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []),
         ...(nextPromptEnabled && startupSettings.localHostEnabled ? [NEXT_PROMPT_RENDERER_ARGUMENT] : []),
         ...(mainActivity ? [MAIN_ACTIVITY_RENDERER_ARGUMENT] : []),
+        ...(keepMainCurrentEnabled ? [MAIN_CHECKOUT_RENDERER_ARGUMENT] : []),
         ...(desktopNotificationsEnabled ? [DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT] : []),
         ...(watcherEnabled && crossMachineEnabled ? [WATCHER_MACHINES_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') && startupSettings.localHostEnabled ? [OPENCODE_RENDERER_ARGUMENT] : []),
@@ -900,7 +908,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   const windowShowing = (): boolean => BrowserWindow.getAllWindows().some(showing)
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart: owlFeatures['resume-after-restart'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
-    delegationEnabled, workerRolesEnabled, continueEnabled, threadStartsEnabled, pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
+    delegationEnabled, workerRolesEnabled, continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
     attachAnyFile: owlFeatures['attach-any-file'],
     ...(ownServers ? { ownServers: () => ownServers.list() } : {}),
     ...(nextPromptEnabled ? { nextPromptEnabled, nextPromptChanged: entry => { windows.sendToMain(NEXT_PROMPT_CHANGED, windowNextPrompt(localRuntime?.agentControl.hostId(), entry)) } } : {}),
@@ -1644,6 +1652,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       const grantDefaultChanged = settings.browserWithoutAsking !== workingCopySettings.browserWithoutAsking
       const babysittingChanged = settings.babysitPullRequests !== workingCopySettings.babysitPullRequests
       const workerRolesChanged = JSON.stringify(settings.workerRoles) !== JSON.stringify(workingCopySettings.workerRoles)
+      const previous = workingCopySettings
       workingCopySettings = settings
       menuBarOwl?.applySettings(settings)
       // A new interface language reaches the tray, the menu and both windows at once, with no restart (ADR-0123).
@@ -1663,6 +1672,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       // Hosts whose own threads delegate are told the new worker roles (#1310).
       if (workerRolesChanged) desktopDefaultsFollow?.rolesChanged()
       worktreeCleanup?.settingsChanged()
+      if (settings.keepMainCurrent !== previous.keepMainCurrent || JSON.stringify(settings.projectKeepMainCurrent) !== JSON.stringify(previous.projectKeepMainCurrent)) localRuntime.mainCheckout?.settingsChanged()
       localRuntime.watcher?.settingsChanged()
       phoneAccess.settingsChanged()
       if (grantDefaultChanged) browserService?.settingChanged()
@@ -1912,6 +1922,10 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       // A recording profiles the main window that asked, through its own debugger (ADR-0098).
       const cleanupMainActivity = registerMainActivityIpc(ipcMain, mainActivity, () => windows.getTrustedRenderers(),
         event => { const sender = BrowserWindow.getAllWindows().find(window => window.webContents === event.sender)?.webContents; return sender ? windowProfiler(sender.debugger) : null })
+      // Keep main up to date (ADR-0142): only while its Owl feature is on, so stable registers nothing.
+      const cleanupMainCheckout = registerMainCheckoutIpc(ipcMain, localRuntime.mainCheckout, () => windows.getTrustedRenderers(),
+        async path => { const error = await shell.openPath(path); if (error) throw new Error('Sotto could not open that folder.') })
+      const unsubscribeMainCheckout = localRuntime.mainCheckout?.subscribe(state => { windows.sendToMain(MAIN_CHECKOUT_CHANGED, state) })
       // OpenCode's sign-in (#1104): only while its Owl feature is on, so stable registers nothing.
       const cleanupOpenCodeSignIn = registerOpenCodeSignInIpc(ipcMain, heldProviders.has('opencode') ? undefined : localRuntime.opencodeSignIn, () => windows.getTrustedRenderers())
       // Cursor's sign-in from its tile (ADR-0128): only while its Owl feature is on, so stable registers nothing.
@@ -2151,6 +2165,8 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         cleanupContinue()
         cleanupNextPrompts()
         cleanupMainActivity()
+        cleanupMainCheckout()
+        unsubscribeMainCheckout?.()
         cleanupNotifications()
         cleanupOpenCodeSignIn()
         cleanupCursorSignIn()

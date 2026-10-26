@@ -36,6 +36,11 @@ msgstr ""
 msgid "(recommended)"
 msgstr ""
 
+#. placeholder {0}: blocked.ahead
+#: src/renderer/src/agents/MainCheckoutLine.tsx
+msgid "{0, plural, one {a local commit blocks the update} other {{commits} local commits block the update}}"
+msgstr ""
+
 #. placeholder {0}: extra.length
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "{0, plural, one {It also lists {names}, which is not added. To use it, remove the server and add it again.} other {It also lists {names}, which are not added. To use them, remove the server and add it again.}}"
@@ -491,6 +496,11 @@ msgstr ""
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "{label} details"
+msgstr ""
+
+#. {label} is Show changes or Show commits; {title} is the project.
+#: src/renderer/src/agents/MainCheckoutLine.tsx
+msgid "{label} in {title}"
 msgstr ""
 
 #. {label} is a diagram's kind, such as Flowchart: its Mermaid source.
@@ -1161,6 +1171,16 @@ msgstr ""
 msgid "+ {more} more waiting ({overflowKinds})"
 msgstr ""
 
+#. {branch} is a Git branch name, such as main; {behind} counts commits.
+#: src/renderer/src/agents/MainCheckoutLine.tsx
+msgid "<0>{branch}</0> is {behind} behind"
+msgstr ""
+
+#. {branch} is a Git branch name.
+#: src/renderer/src/agents/MainCheckoutLine.tsx
+msgid "<0>{branch}</0> is checked out"
+msgstr ""
+
 #. {sent} is the branch the last send went to; {branch} is the one the folder is on now.
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "<0>Branch changed, was {sent}.</0> Sending will continue on {branch}."
@@ -1205,6 +1225,10 @@ msgstr ""
 msgid "1–{suggestions} pick"
 msgstr ""
 
+#: src/renderer/src/agents/mainCheckoutLine.logic.ts
+msgid "a cherry-pick is in progress"
+msgstr ""
+
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 msgid "A client did not change"
 msgstr ""
@@ -1231,6 +1255,10 @@ msgstr ""
 msgid "A long prompt can take a few minutes. The turn stops waiting at {five} minutes."
 msgstr ""
 
+#: src/renderer/src/agents/mainCheckoutLine.logic.ts
+msgid "a merge is in progress"
+msgstr ""
+
 #: src/renderer/src/agents/ReplyQuoteButton.tsx
 msgid "A message carries at most {most} quotes. Send it or remove one first."
 msgstr ""
@@ -1241,6 +1269,14 @@ msgstr ""
 
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "A new worktree starts from a branch that exists. Choose one, or create the branch after the first send."
+msgstr ""
+
+#: src/renderer/src/agents/mainCheckoutLine.logic.ts
+msgid "a rebase is in progress"
+msgstr ""
+
+#: src/renderer/src/agents/mainCheckoutLine.logic.ts
+msgid "a revert is in progress"
 msgstr ""
 
 #: src/renderer/src/agents/ContinueThread.tsx
@@ -1320,6 +1356,11 @@ msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Add your own model server"
+msgstr ""
+
+#. A file added locally
+#: src/renderer/src/agents/mainCheckoutLine.logic.ts
+msgid "added"
 msgstr ""
 
 #. A changed file's Git status.
@@ -1442,6 +1483,10 @@ msgstr ""
 #. A model server that answers the OpenAI API but did not say which program it is.
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "An OpenAI-compatible server"
+msgstr ""
+
+#: src/renderer/src/agents/MainCheckoutLine.tsx
+msgid "and {more} more"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadOptions.tsx
@@ -1790,6 +1835,11 @@ msgstr ""
 msgid "Change project, now {projectTitle}"
 msgstr ""
 
+#. A lockfile the update changed
+#: src/renderer/src/agents/MainCheckoutLine.tsx
+msgid "changed"
+msgstr ""
+
 #. Before a count of files: Changed 3 files.
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "Changed"
@@ -2085,6 +2135,11 @@ msgstr ""
 msgid "Commands to update {name} by hand"
 msgstr ""
 
+#. A commit only this computer has
+#: src/renderer/src/agents/mainCheckoutLine.logic.ts
+msgid "commit"
+msgstr ""
+
 #. A Git action: commit the changes.
 #: src/renderer/src/agents/gitActionButton.logic.ts
 msgid "Commit"
@@ -2175,6 +2230,11 @@ msgstr ""
 
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "Computers"
+msgstr ""
+
+#. A file with a merge conflict
+#: src/renderer/src/agents/mainCheckoutLine.logic.ts
+msgid "conflict"
 msgstr ""
 
 #. A changed file's Git status.
@@ -2788,6 +2848,11 @@ msgstr ""
 msgid "Delegated work"
 msgstr ""
 
+#. A file deleted locally
+#: src/renderer/src/agents/mainCheckoutLine.logic.ts
+msgid "deleted"
+msgstr ""
+
 #. A file change, before the file's path.
 #: src/renderer/src/agents/threadActivityView.ts
 msgctxt "file change"
@@ -2820,6 +2885,10 @@ msgstr ""
 
 #: src/renderer/src/agents/NeedsYouQueue.tsx
 msgid "Deny in {title}"
+msgstr ""
+
+#: src/renderer/src/agents/MainCheckoutLine.tsx
+msgid "dependencies changed, run install"
 msgstr ""
 
 #. A worktree on no branch, named by its folder.
@@ -2913,6 +2982,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Dismiss all"
+msgstr ""
+
+#: src/renderer/src/agents/MainCheckoutLine.tsx
+msgid "Dismiss dependencies changed in {title}"
 msgstr ""
 
 #: src/renderer/src/agents/NeedsYouQueue.tsx
@@ -3511,6 +3584,11 @@ msgstr ""
 msgid "Help"
 msgstr ""
 
+#. Hides the list under a project
+#: src/renderer/src/agents/MainCheckoutLine.tsx
+msgid "Hide"
+msgstr ""
+
 #: src/renderer/src/agents/HostUpdates.tsx
 msgid "Hide commands"
 msgstr ""
@@ -3521,6 +3599,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadStart.tsx
 msgid "Hide the handover"
+msgstr ""
+
+#: src/renderer/src/agents/MainCheckoutLine.tsx
+msgid "Hide the list in {title}"
 msgstr ""
 
 #. A reasoning effort level.
@@ -3880,6 +3962,10 @@ msgstr ""
 msgid "Loading…"
 msgstr ""
 
+#: src/renderer/src/agents/MainCheckoutLine.tsx
+msgid "local changes block the update"
+msgstr ""
+
 #. Heading of a provider’s connection on this computer, in Settings > Providers.
 #: src/renderer/src/agents/CursorConnection.tsx
 #: src/renderer/src/agents/ProvidersSettings.tsx
@@ -3992,6 +4078,11 @@ msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Models found"
+msgstr ""
+
+#. A file with local changes
+#: src/renderer/src/agents/mainCheckoutLine.logic.ts
+msgid "modified"
 msgstr ""
 
 #. A changed file's Git status.
@@ -4277,6 +4368,10 @@ msgstr ""
 #. Stands for a question in a saved form that was left unanswered.
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
 msgid "No answer"
+msgstr ""
+
+#: src/renderer/src/agents/MainCheckoutLine.tsx
+msgid "no branch is checked out"
 msgstr ""
 
 #: src/renderer/src/agents/BranchToolbar.tsx
@@ -4634,6 +4729,7 @@ msgstr ""
 
 #. A keyboard hint: Enter opens the highlighted folder.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
+#: src/renderer/src/agents/MainCheckoutLine.tsx
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Open folder"
 msgstr ""
@@ -4716,6 +4812,10 @@ msgstr ""
 #. {sourceName} is a model source, such as Anthropic.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Open the {sourceName} sign-in page in your browser"
+msgstr ""
+
+#: src/renderer/src/agents/MainCheckoutLine.tsx
+msgid "Open the {title} folder"
 msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
@@ -5416,6 +5516,11 @@ msgstr ""
 msgid "Rename thread"
 msgstr ""
 
+#. A file renamed locally
+#: src/renderer/src/agents/mainCheckoutLine.logic.ts
+msgid "renamed"
+msgstr ""
+
 #. A changed file's Git status.
 #: src/renderer/src/agents/gitActionButton.logic.ts
 msgid "Renamed"
@@ -5896,8 +6001,16 @@ msgstr ""
 msgid "Show all waiting threads"
 msgstr ""
 
+#: src/renderer/src/agents/mainCheckoutLine.logic.ts
+msgid "Show changes"
+msgstr ""
+
 #: src/renderer/src/agents/HostUpdates.tsx
 msgid "Show commands"
+msgstr ""
+
+#: src/renderer/src/agents/mainCheckoutLine.logic.ts
+msgid "Show commits"
 msgstr ""
 
 #: src/renderer/src/agents/diagrams/MermaidDiagram.tsx
@@ -6189,6 +6302,10 @@ msgstr ""
 msgid "Sotto could not finish that, so nothing was changed. Try again."
 msgstr ""
 
+#: src/renderer/src/agents/MainCheckoutLine.tsx
+msgid "Sotto could not open that folder."
+msgstr ""
+
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Sotto could not open that page. Nothing else changed. Try again."
 msgstr ""
@@ -6207,6 +6324,10 @@ msgstr ""
 
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
 msgid "Sotto could not read saved answers."
+msgstr ""
+
+#: src/renderer/src/agents/MainCheckoutLine.tsx
+msgid "Sotto could not read the changes. Open the folder to look."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadStart.tsx
@@ -7443,9 +7564,18 @@ msgstr ""
 msgid "Unsettled"
 msgstr ""
 
+#. A file Git does not track
+#: src/renderer/src/agents/mainCheckoutLine.logic.ts
+msgid "untracked"
+msgstr ""
+
 #. A changed file's Git status.
 #: src/renderer/src/agents/gitActionButton.logic.ts
 msgid "Untracked"
+msgstr ""
+
+#: src/renderer/src/agents/MainCheckoutLine.tsx
+msgid "untracked files are in the way"
 msgstr ""
 
 #. A keyboard hint: Backspace goes to the parent folder.
@@ -7515,6 +7645,11 @@ msgstr ""
 
 #: src/renderer/src/agents/HostUpdates.tsx
 msgid "Update when they finish"
+msgstr ""
+
+#. {branch} is a Git branch name, such as main.
+#: src/renderer/src/agents/MainCheckoutLine.tsx
+msgid "Updated <0>{branch}</0>"
 msgstr ""
 
 #. One part of a list of what a turn did, starting lowercase.
@@ -7796,6 +7931,18 @@ msgstr ""
 
 #: src/renderer/src/agents/threadGreeting.logic.ts
 msgid "What are we building?"
+msgstr ""
+
+#: src/renderer/src/agents/MainCheckoutLine.tsx
+msgid "What blocks the update"
+msgstr ""
+
+#: src/renderer/src/agents/MainCheckoutLine.tsx
+msgid "What changed"
+msgstr ""
+
+#: src/renderer/src/agents/MainCheckoutLine.tsx
+msgid "What changed in {title}"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadTranscript.tsx
