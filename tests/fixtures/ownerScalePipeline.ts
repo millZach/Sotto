@@ -570,8 +570,10 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
     ownerLookups: () => lookups,
     watcherRoomRecords: () => roomRecords,
     resetCounts: () => { broadcasts = 0; lookups = 0; roomRecords = 0; shadows.reset() },
-    // Watcher's observe and wake-up passes, checked against the whole passes in verifying mode, on Owl (#925 step 5).
+    // Watcher's observe and wake-up passes, checked against the whole passes in verifying mode, on Owl (#925 step 5), and
+    // the window's broadcasts read in part, checked against the whole walk (#925 step 6).
     threadChanges: () => { const report = shadows.report(); return { ...report, checked: { ...report.checked, 'coordinator changes': control.verifiedChanges,
+      'window broadcast': broadcaster.threadEncodes.verified,
       ...watcher ? { 'Watcher observe passes': watcher.verifiedObserves, 'Watcher wake-up passes': watcher.wakes.verifiedPasses } : {} } } },
     stop,
   }
