@@ -1866,6 +1866,61 @@ it('lets go of a moved branch once reconciling finds the start failed with no th
   } finally { vi.restoreAllMocks() }
 }, 60_000)
 
+for (const answer of ['accepted', 'uncertain'] as const) {
+  it(`keeps a lost start’s moved branch when reconciling reads its receipt as ${answer} (#1033)`, async () => {
+    const f = await fromBranch()
+    const refs = async () => (await git('git', ['-C', f.project.path, 'for-each-ref', 'refs/sotto'])).stdout.trim()
+    const watcher = f.watcher as unknown as { lostStartMoves: Map<string, unknown>; reconcileRemote(hostId?: string): Promise<void> }
+    // The start is made on the paired machine, and its answer never reaches this computer.
+    const control = f.socket.watcherControl.bind(f.socket)
+    vi.spyOn(f.socket, 'watcherControl').mockImplementationOnce(async (request, ...rest) => {
+      expect(await control(request, ...rest)).toMatchObject({ status: 'ok' })
+      throw new Error('synthetic-lost-answer')
+    })
+    // The paired machine's receipt for the start reads as `answer`: the stand-in provider never confirms a first prompt,
+    // so a real start there reads uncertain, and an accepted one is staged.
+    const read = f.socket.watcherRead.bind(f.socket)
+    let operationId: string | undefined
+    const reported = (value: unknown): unknown => {
+      if (Array.isArray(value)) return value.map(reported)
+      if (!value || typeof value !== 'object') return value
+      const item = Object.fromEntries(Object.entries(value).map(([name, field]) => [name, reported(field)]))
+      return operationId && (item['id'] === operationId || item['operationId'] === operationId) && 'deliveryState' in item ? { ...item, deliveryState: answer } : item
+    }
+    const reads = vi.spyOn(f.socket, 'watcherRead').mockImplementation(async request => reported(await read(request)))
+    try {
+      const started = await f.call('start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId, workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
+      expect(started).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN' })
+      operationId = (started as { receipt: { operationId: string } }).receipt.operationId
+      reads.mockClear()
+      await watcher.reconcileRemote(f.pairing.hostId)
+      expect(reads).toHaveBeenCalled()
+      expect((f.watcher as unknown as { record(): { operations: { id: string; deliveryState: string }[] } }).record().operations
+        .find(operation => operation.id === operationId)?.deliveryState).toBe(answer)
+      // An accepted start's thread owns the branch, and its entry is done with. An uncertain one may yet have made the
+      // thread, so its entry waits for a later reconcile. Either way the branch stays.
+      expect(watcher.lostStartMoves.size).toBe(answer === 'accepted' ? 0 : 1)
+      expect(await refs()).not.toBe('')
+    } finally { vi.restoreAllMocks() }
+  }, 60_000)
+}
+
+it('lets go of a timed-out start’s moved branch once the paired machine shows it never had the start (#1033)', async () => {
+  const f = await fromBranch()
+  const refs = async () => (await git('git', ['-C', f.project.path, 'for-each-ref', 'refs/sotto'])).stdout.trim()
+  const watcher = f.watcher as unknown as { lostStartMoves: Map<string, unknown>; timedOutStarts: Set<string> }
+  // The request for the start times out before it reaches the paired machine, which so never makes the thread.
+  vi.spyOn(f.socket, 'watcherControl').mockImplementationOnce(async () => { throw Object.assign(new Error('synthetic-timeout'), { timedOut: true }) })
+  try {
+    const started = await f.call('start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId, workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
+    expect(started).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN' })
+    expect(watcher.timedOutStarts.size).toBe(1)
+    expect(await refs()).not.toBe('')
+    await expect.poll(refs, { timeout: 30_000 }).toBe('')
+    expect(watcher.lostStartMoves.size).toBe(0)
+  } finally { vi.restoreAllMocks() }
+}, 60_000)
+
 it('keeps a lost start’s moved branch for the next reconcile when this computer has no host ID for a moment (#1033)', async () => {
   const f = await fromBranch()
   const refs = async () => (await git('git', ['-C', f.project.path, 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/sotto'])).stdout.trim()
