@@ -127,7 +127,7 @@ enum Words {
     static func duration(_ ms: Double?) -> String? {
         guard let ms, ms >= 1000 else { return nil }
         let seconds = Int(ms / 1000)
-        return seconds < 60 ? "\(seconds)s" : "\(seconds / 60)m \(seconds % 60)s"
+        return StepRun.clock(seconds)
     }
 }
 
@@ -141,6 +141,7 @@ struct FeedbackBanner: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, Space.s3)
+                    .paragraphDirection()
                 Button { model.feedback = nil } label: {
                     Image(systemName: "xmark").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.muted)
                         .frame(width: 44, height: 44).contentShape(Rectangle())
@@ -180,6 +181,7 @@ struct ComputerBanner: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Can’t reach \(model.name(hostID))").font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
                     Text("Work carries on there. Your drafts are kept.").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                        .paragraphDirection()
                 }
                 Spacer(minLength: 0)
                 Button("Reconnect") { Task { await model.connect(hostID) } }.buttonStyle(PlainStyle(compact: true))

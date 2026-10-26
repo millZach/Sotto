@@ -18,15 +18,20 @@ public enum FileLimits {
     public static let restageAfter = PhotoLimits.restageAfter
 }
 
-/// The desktop's own sentences for a file that can't be attached (src/shared/agents.ts), so the iPhone says what it says.
+/// The desktop's own sentences for a file that can't be attached (src/shared/agents.ts), so the iPhone says what it says,
+/// in the interface language (ADR-0123).
 public enum FileWords {
-    public static let tooLarge = "Each file must be 25 MB or smaller. Nothing was attached. Choose a smaller file."
-    public static let tooMany = "Attach up to 8 files at a time. Nothing was attached."
-    public static let tooLargeInTotal = "Attachments must total 50 MB or less. Nothing was attached. Remove a file or choose smaller ones."
-    public static let full = "A reply can carry 8 attachments. Remove one to add another."
-    public static let unreadable = "This file couldn’t be read, so it wasn’t added. If it’s in iCloud, try again once it has downloaded."
-    public static let tooSlow = "This file didn’t arrive within two minutes, so it wasn’t added. If it’s in iCloud, try again once it has downloaded."
-    public static let empty = "This file is empty, so it wasn’t added. Choose another file."
+    public static let tooLarge = String(localized: "Each file must be 25 MB or smaller. Nothing was attached. Choose a smaller file.", bundle: .module)
+    public static let tooMany = String(localized: "Attach up to 8 files at a time. Nothing was attached.", bundle: .module)
+    public static let tooLargeInTotal = String(localized: "Attachments must total 50 MB or less. Nothing was attached. Remove a file or choose smaller ones.", bundle: .module)
+    public static let full = String(localized: "A reply can carry 8 attachments. Remove one to add another.", bundle: .module,
+                                    comment: "Attachments are photos and files together")
+    /// Some of the photos chosen fitted beside the files already in the reply box.
+    public static let othersNotAdded = String(localized: "A reply can carry 8 attachments, so the others weren’t added.", bundle: .module,
+                                              comment: "Attachments are photos and files together")
+    public static let unreadable = String(localized: "This file couldn’t be read, so it wasn’t added. If it’s in iCloud, try again once it has downloaded.", bundle: .module)
+    public static let tooSlow = String(localized: "This file didn’t arrive within two minutes, so it wasn’t added. If it’s in iCloud, try again once it has downloaded.", bundle: .module)
+    public static let empty = String(localized: "This file is empty, so it wasn’t added. Choose another file.", bundle: .module)
 }
 
 /// A staged file's handle (ADR-0131): what the host answered the last `stage-file-part` with, and what a reply carries in
@@ -61,8 +66,8 @@ public enum FileSupport: Equatable, Sendable {
     public func reason(computer: String) -> String? {
         switch self {
         case .available: return nil
-        case .offline: return "Reconnect to \(computer) to attach files."
-        case .needsUpdate: return "This computer cannot keep files yet. Update Sotto there to attach them."
+        case .offline: return String(localized: "Reconnect to \(computer) to attach files.", bundle: .module, comment: "%@ is the computer's name, such as forge")
+        case .needsUpdate: return String(localized: "This computer cannot keep files yet. Update Sotto there to attach them.", bundle: .module)
         }
     }
 }
@@ -155,12 +160,24 @@ public enum Files {
     public static func digest(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
-    /// The desktop's size words (formatAttachmentSize): bytes, whole KB, then MB with one decimal under 10.
+    /// The desktop's size words (formatAttachmentSize): bytes, whole KB, then MB with one decimal under 10, in the
+    /// interface language's units and the locale's digits.
     public static func size(_ bytes: Int) -> String {
-        if bytes < 1024 { return "\(max(0, bytes)) B" }
-        if bytes < 1024 * 1024 { return "\(max(1, Int((Double(bytes) / 1024).rounded()))) KB" }
+        if bytes < 1024 {
+            let count = max(0, bytes)
+            return String(localized: "\(count) B", bundle: .module, comment: "A file's size in bytes, such as 512 B")
+        }
+        if bytes < 1024 * 1024 {
+            let count = max(1, Int((Double(bytes) / 1024).rounded()))
+            return String(localized: "\(count) KB", bundle: .module, comment: "A file's size in kilobytes, such as 180 KB")
+        }
         let megabytes = Double(bytes) / (1024 * 1024)
-        return megabytes < 10 ? String(format: "%.1f MB", megabytes) : "\(Int(megabytes.rounded())) MB"
+        guard megabytes < 10 else {
+            let count = Int(megabytes.rounded())
+            return String(localized: "\(count) MB", bundle: .module, comment: "A file's size in whole megabytes, such as 25 MB")
+        }
+        let tenths: String = ((megabytes * 10).rounded() / 10).formatted(.number.precision(.fractionLength(1)).grouping(.never))
+        return String(localized: "\(tenths) MB", bundle: .module, comment: "A file's size in megabytes under 10, with one decimal, such as 2.4 MB")
     }
     public static func kind(of name: String) -> FileKind {
         switch (name as NSString).pathExtension.lowercased() {

@@ -79,13 +79,20 @@ public enum PhotoSupport: Equatable, Sendable {
     public func reason(computer: String, watcher: Bool = false) -> String? {
         switch self {
         case .available: return nil
-        case .offline: return "Reconnect to \(computer) to attach photos."
-        case .needsUpdate: return watcher ? "Update Sotto on \(computer) to send photos to Watcher from this iPhone."
-            : "Update Sotto on \(computer) to send photos from this iPhone."
-        case .modelCannot: return watcher ? "Watcher’s model can’t take photos. Change Watcher’s model on \(computer) to attach them."
-            : "This thread’s model can’t take photos. Change the model on \(computer) to attach them."
-        case .modelUnknown: return "\(computer) hasn’t said whether \(watcher ? "Watcher’s" : "this thread’s") model takes photos. Reconnect and try again."
-        case .noWatcher: return "Watcher isn’t running on \(computer). Start it there to attach photos."
+        case .offline: return String(localized: "Reconnect to \(computer) to attach photos.", bundle: .module, comment: "%@ is the computer's name, such as forge")
+        case .needsUpdate:
+            return watcher
+                ? String(localized: "Update Sotto on \(computer) to send photos to Watcher from this iPhone.", bundle: .module, comment: "%@ is the computer's name, such as forge")
+                : String(localized: "Update Sotto on \(computer) to send photos from this iPhone.", bundle: .module, comment: "%@ is the computer's name, such as forge")
+        case .modelCannot:
+            return watcher
+                ? String(localized: "Watcher’s model can’t take photos. Change Watcher’s model on \(computer) to attach them.", bundle: .module, comment: "%@ is the computer's name, such as forge")
+                : String(localized: "This thread’s model can’t take photos. Change the model on \(computer) to attach them.", bundle: .module, comment: "%@ is the computer's name, such as forge")
+        case .modelUnknown:
+            return watcher
+                ? String(localized: "\(computer) hasn’t said whether Watcher’s model takes photos. Reconnect and try again.", bundle: .module, comment: "%@ is the computer's name, such as forge")
+                : String(localized: "\(computer) hasn’t said whether this thread’s model takes photos. Reconnect and try again.", bundle: .module, comment: "%@ is the computer's name, such as forge")
+        case .noWatcher: return String(localized: "Watcher isn’t running on \(computer). Start it there to attach photos.", bundle: .module, comment: "%@ is the computer's name, such as forge")
         }
     }
 }

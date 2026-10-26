@@ -39,6 +39,7 @@ private struct StepHeader: View {
             Text("Step \(step) of 2").font(.subheadline).foregroundStyle(Palette.muted)
             Text(title).font(.figtree(28, .title, .bold)).multilineTextAlignment(.center).accessibilityAddTraits(.isHeader)
             Text(detail).foregroundStyle(Palette.muted).multilineTextAlignment(.center)
+                .paragraphDirection()
         }
     }
 }
@@ -49,6 +50,7 @@ private struct PairFeedback: View {
         if let feedback = model.pairFeedback {
             Text(feedback).font(.subheadline).foregroundStyle(Palette.warning).multilineTextAlignment(.center)
                 .accessibilityAddTraits(.updatesFrequently)
+                .paragraphDirection()
         }
     }
 }
@@ -69,10 +71,10 @@ struct NameStep: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 24) {
-                    StepHeader(step: 1, title: "Add computer",
-                               detail: "Read its name in Sotto on that computer: Settings › Hosts & phones. For a computer without a screen, first turn on Let phones reach it in Sotto on your main computer: Settings › Hosts & phones, then Phones on its row. Then use its name on your tailnet.")
+                    StepHeader(step: 1, title: String(localized: "Add computer"),
+                               detail: String(localized: "Read its name in Sotto on that computer: Settings › Hosts & phones. For a computer without a screen, first turn on Let phones reach it in Sotto on your main computer: Settings › Hosts & phones, then Phones on its row. Then use its name on your tailnet."))
                     VStack(spacing: 6) {
-                        FieldLabel(text: "Computer name on your tailnet")
+                        FieldLabel(text: String(localized: "Computer name on your tailnet"))
                         TextField("forge", text: $name).keyboardType(.URL).textContentType(.URL)
                             .textInputAutocapitalization(.never).autocorrectionDisabled()
                             .submitLabel(.next).onSubmit(find).focused($focused).fieldSurface()
@@ -81,9 +83,9 @@ struct NameStep: View {
                     PairFeedback()
                 }.padding(.horizontal, 24).padding(.top, 32)
             }.scrollDismissesKeyboard(.interactively)
-            Button(model.working ? "Finding it…" : "Next", action: find).buttonStyle(ActionStyle(wide: true))
+            Button(model.working ? String(localized: "Finding it…", comment: "Pairing step 1 is looking for the computer by its name.") : String(localized: "Next", comment: "Goes on to pairing step 2."), action: find).buttonStyle(ActionStyle(wide: true))
                 .disabled(model.working || !model.storageReady || name.trimmingCharacters(in: .whitespaces).isEmpty)
-                .accessibilityLabel(model.working ? "Finding the computer" : "Find this computer")
+                .accessibilityLabel(model.working ? String(localized: "Finding the computer") : String(localized: "Find this computer"))
                 .padding(.horizontal, 24).padding(.bottom, 12)
         }
         .onAppear { focused = true }
@@ -103,7 +105,7 @@ struct CodeStep: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 24) {
-                    StepHeader(step: 2, title: "Enter the pairing code", detail: detail)
+                    StepHeader(step: 2, title: String(localized: "Enter the pairing code"), detail: detail)
                     ZStack {
                         // The field takes the typing; the boxes show it. VoiceOver reads the field.
                         TextField("", text: $code).keyboardType(.asciiCapable).textContentType(.oneTimeCode)
@@ -117,9 +119,9 @@ struct CodeStep: View {
                     PairFeedback()
                 }.padding(.horizontal, 24).padding(.top, 32)
             }.scrollDismissesKeyboard(.interactively)
-            Button(model.working ? "Pairing…" : "Pair", action: pair).buttonStyle(ActionStyle(wide: true))
+            Button(model.working ? String(localized: "Pairing…", comment: "This iPhone is pairing with a computer.") : String(localized: "Pair", comment: "Pairs this iPhone with the computer using the code."), action: pair).buttonStyle(ActionStyle(wide: true))
                 .disabled(model.working || code.count != PairingCode.length)
-                .accessibilityLabel(model.working ? "Pairing" : "Pair with \(found.name)")
+                .accessibilityLabel(model.working ? String(localized: "pair-button.pairing", defaultValue: "Pairing", comment: "This iPhone is pairing with a computer.") : String(localized: "Pair with \(found.name)", comment: "%@ is the computer’s name."))
                 .padding(.horizontal, 24).padding(.bottom, 12)
         }
         .onAppear { focused = true }
@@ -129,7 +131,7 @@ struct CodeStep: View {
         }
     }
     private var detail: String {
-        "In Sotto on \(found.name): Settings › Hosts & phones › Pair a phone. For a computer without a screen, it is in Sotto on your main computer: Settings › Hosts & phones, then Phones on its row, then Pair a phone. A code works once, for five minutes."
+        String(localized: "In Sotto on \(found.name): Settings › Hosts & phones › Pair a phone. For a computer without a screen, it is in Sotto on your main computer: Settings › Hosts & phones, then Phones on its row, then Pair a phone. A code works once, for five minutes.", comment: "%@ is the computer’s name.")
     }
     private func pair() {
         guard code.count == PairingCode.length else { return }
@@ -158,7 +160,7 @@ private struct CodeBoxes: View {
         let characters = Array(code)
         HStack(spacing: 5) {
             ForEach(0..<PairingCode.length, id: \.self) { index in
-                if index == 4 { Text("–").foregroundStyle(Palette.muted).frame(width: 10) }
+                if index == 4 { Text(verbatim: "–").foregroundStyle(Palette.muted).frame(width: 10) }
                 let current = focused && index == min(characters.count, PairingCode.length - 1)
                 Text(index < characters.count ? String(characters[index]) : " ")
                     .font(.system(size: 24, weight: .semibold, design: .monospaced))
