@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   createE2EGlobalShortcuts,
+  E2E_UNCAUGHT_EXIT_CODE,
+  failE2EOnUncaughtException,
   isTrustedMainE2ESender,
   resolveE2EConfiguration,
 } from '../../../src/main/e2e/e2eBoundary'
@@ -83,5 +85,26 @@ describe('development-only E2E admission', () => {
     expect(shortcuts.register('Alt+Ctrl+9', callback)).toBe(false)
     shortcuts.unregister('Space+Shift+CommandOrControl')
     expect(shortcuts.isRegistered?.('CommandOrControl+Shift+Space')).toBe(false)
+  })
+})
+
+describe('an uncaught exception in an e2e-launched main (#1577)', () => {
+  it('writes the error to stderr and exits, so no native box is shown', () => {
+    const listeners: ((error: unknown) => void)[] = []
+    const written: string[] = []
+    const exits: number[] = []
+    failE2EOnUncaughtException({ on: (_event, listener) => listeners.push(listener) }, text => written.push(text), code => exits.push(code))
+    expect(listeners).toHaveLength(1)
+    listeners[0]!(new TypeError('Object has been destroyed'))
+    expect(written.join('')).toMatch(/^\[Sotto\] e2e-uncaught-exception TypeError: Object has been destroyed/u)
+    expect(exits).toEqual([E2E_UNCAUGHT_EXIT_CODE])
+  })
+
+  it('still exits when writing the error fails', () => {
+    const listeners: ((error: unknown) => void)[] = []
+    const exits: number[] = []
+    failE2EOnUncaughtException({ on: (_event, listener) => listeners.push(listener) }, () => { throw new Error('stderr closed') }, code => exits.push(code))
+    expect(() => listeners[0]!('thrown text')).toThrow('stderr closed')
+    expect(exits).toEqual([E2E_UNCAUGHT_EXIT_CODE])
   })
 })

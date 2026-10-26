@@ -33,6 +33,26 @@ export function resolveE2EConfiguration(
   return Object.freeze({ scenario: scenario.data, userDataPath })
 }
 
+/** The exit code an e2e-launched main ends with after an uncaught exception, so the test that launched it fails. */
+export const E2E_UNCAUGHT_EXIT_CODE = 70
+
+/**
+ * An e2e-launched main never shows Electron's native uncaught-exception box (#1577). With no listener, Electron calls
+ * `dialog.showErrorBox`, which lands on the desktop of whoever runs the suite and blocks main until it is dismissed, so
+ * the test hangs to its deadline instead of failing. Here the error goes to stderr, where Playwright shows it, and main
+ * exits. Only an e2e launch installs this; a packaged build never resolves an e2e configuration.
+ */
+export function failE2EOnUncaughtException(
+  target: { on(event: 'uncaughtException', listener: (error: unknown) => void): unknown },
+  write: (text: string) => void,
+  exit: (code: number) => void,
+): void {
+  target.on('uncaughtException', (error) => {
+    const detail = error instanceof Error ? error.stack ?? `${error.name}: ${error.message}` : String(error)
+    try { write(`[Sotto] e2e-uncaught-exception ${detail}\n`) } finally { exit(E2E_UNCAUGHT_EXIT_CODE) }
+  })
+}
+
 export interface E2ENativeState {
   clipboardText: string
   pasteAttempts: number
