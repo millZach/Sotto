@@ -1,6 +1,6 @@
 # Thread-store writes and stored-thread reads off main (#1457)
 
-The plan behind ADR-0016's amendment of October 26, 2026, **proposed**: the thread store's writes, and reading back a stored thread's activity, move to one store worker. Nothing here is built until Zach accepts the amendment.
+The plan behind ADR-0016's amendment of October 26, 2026, accepted the same day: the thread store's writes, and reading back a stored thread's activity, move to one store worker.
 
 ## Zach's picks, October 26, 2026
 

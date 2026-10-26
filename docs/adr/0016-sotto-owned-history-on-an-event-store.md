@@ -310,7 +310,7 @@ An adapter must know which threads changed. Every path that changes a thread's s
 
 ## Amendment: the store worker writes and reads stored threads back (October 26, 2026, #1457)
 
-**Proposed.** Zach picked these on October 26, 2026. Nothing below is built until he accepts this amendment. The plan, with what main relies on today and the steps, is in `docs/plans/store-worker.md`.
+**Accepted October 26, 2026.** Zach picked these on October 26, 2026, and accepted this amendment the same day. The plan, with what main relies on today and the steps, is in `docs/plans/store-worker.md`.
 
 The October 23 amendment took the log's checkpoints off main and left two parts of #1451 open. A publish still commits its events on main, inside `publishNow`: 0.65 s of a minute at 16:54 on October 23 (0.1.41-owl.20261023.5), and on Windows one save can still wait about 0.85 s while the checkpoint worker flushes a large file on the same disk. Opening a stored thread still reads and parses its whole activity on main: 0.61 s for one thread of 2,000 records, about 10 MB.
 
