@@ -80,9 +80,9 @@ const ENDED_KINDS: ReadonlySet<WatcherAttentionKind> = new Set(['merged', 'close
 /**
  * What Sotto has seen of a pull request's state while it ran, whichever read said it, this host's or a paired one's:
  * whether it first met it as a thread's link already merged or closed, whose merge or close is then no news, whether any
- * read said it merged, and when it saw it close. In memory only, as attention is.
+ * read said it merged, the state the latest read left it in, and when it saw it close. In memory only, as attention is.
  */
-interface PullRequestLife { linkedEnded?: true; merged?: true; closedAt?: number }
+interface PullRequestLife { linkedEnded?: true; merged?: true; state?: NonNullable<PullRequestObservation['state']>; closedAt?: number }
 
 /** Bounded in-memory facts only. Never keep raw errors, file paths, tool inputs, output or review bodies. */
 export class WatcherEvidenceStore {
@@ -209,22 +209,26 @@ export class WatcherEvidenceStore {
   private heldFacts(target: WatcherThreadTarget): WatcherAttentionFact[] {
     const facts: WatcherAttentionFact[] = [], key = targetKey(target), entries = this.entries.get(key)
     const add = (pr: string, kind: WatcherAttentionKind, detail = '') => facts.push({ pr, kind, key: JSON.stringify([pr, kind, detail]), returns: 0 })
-    const ended = new Set<string>()
-    for (const item of entries?.values() ?? []) if (item.source === 'github' && item.url && item.availability === 'available'
-      && (item.pullRequestState === 'merged' || item.pullRequestState === 'closed')) ended.add(pullRequestKey(item.url) ?? item.url)
+    // Each pull request's state is its newest reading across this host's slot and a paired host's, a merge in either
+    // being final: a slot left closed by an older read never keeps a reopened pull request ended.
+    const newest = new Map<string, { state: NonNullable<WatcherEvidence['pullRequestState']>; at: number }>()
+    for (const item of entries?.values() ?? []) if (item.source === 'github' && item.url && item.availability === 'available' && item.pullRequestState !== undefined) {
+      const pr = pullRequestKey(item.url) ?? item.url, at = Date.parse(item.observedAt), kept = newest.get(pr)
+      if (!kept || kept.state !== 'merged' && (item.pullRequestState === 'merged' || at >= kept.at)) newest.set(pr, { state: item.pullRequestState, at })
+    }
+    const ended = new Map<string, 'merged' | 'closed'>()
+    for (const [pr, { state }] of newest) if (state !== 'open') ended.set(pr, state)
     const passed = new Set<string>(), heads = new Map<string, Set<string>>()
     for (const item of entries?.values() ?? []) {
       if (item.source !== 'github' || !item.url || item.availability !== 'available') continue
       const pr = pullRequestKey(item.url) ?? item.url
-      if (ended.has(pr)) {
-        if ((item.pullRequestState === 'merged' || item.pullRequestState === 'closed') && !this.lives.get(key)?.get(pr)?.linkedEnded) add(pr, item.pullRequestState)
-        continue
-      }
+      if (ended.has(pr)) continue
       if (item.headId) heads.set(pr, (heads.get(pr) ?? new Set()).add(item.headId))
       if (item.checksState === 'failed' || item.checksState === 'passed') add(pr, `checks-${item.checksState}`, item.headId ?? '')
       if (item.checksState === 'passed') passed.add(JSON.stringify([pr, item.headId ?? '']))
       if (item.githubReviewApproved === true) add(pr, 'approved')
     }
+    for (const [pr, state] of ended) if (!this.lives.get(key)?.get(pr)?.linkedEnded) add(pr, state)
     for (const [pr, said] of this.attending.get(key) ?? []) {
       if (ended.has(pr)) continue
       // Every check passing already says the required ones did.
@@ -411,15 +415,16 @@ export class WatcherEvidenceStore {
    * The state a read leaves a pull request in (#1146). Merged is final, since GitHub never unmerges, so a read that says
    * otherwise is an older answer, from this host or a paired one, and a new commit's read that says nothing of its state
    * keeps it merged (`lost`: the new head cleared the state). A read that says open within WATCHER_STATE_FLIP_MS of Sotto
-   * seeing it close is an older answer too.
+   * seeing it close, through either slot, is an older answer too.
    */
   private stateRead(target: WatcherThreadTarget, read: PullRequestObservation, before: WatcherEvidence['pullRequestState'], lost: boolean): PullRequestObservation['state'] {
     const life = this.life(target, read.url), now = this.now()
     if (read.state === undefined) return life.merged && lost ? 'merged' : undefined
     const state = before === 'merged' || life.merged ? 'merged'
-      : before === 'closed' && read.state === 'open' && life.closedAt !== undefined && now - life.closedAt < WATCHER_STATE_FLIP_MS ? 'closed' : read.state
+      : (before === 'closed' || life.state === 'closed') && read.state === 'open' && life.closedAt !== undefined && now - life.closedAt < WATCHER_STATE_FLIP_MS ? 'closed' : read.state
     if (state === 'merged') life.merged = true
-    if (state === 'closed' && before !== 'closed') life.closedAt = now
+    if (state === 'closed' && before !== 'closed' && life.state !== 'closed') life.closedAt = now
+    life.state = state
     return state
   }
   private life(target: WatcherThreadTarget, url: string): PullRequestLife {

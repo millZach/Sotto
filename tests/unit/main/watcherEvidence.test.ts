@@ -239,3 +239,26 @@ it('keeps a pull request merged through a new commit’s read and a paired host�
     url: merged, headId: 'head-b', fact: 'pull-request-observed', pullRequestState: 'open' })
   expect(states()).toEqual(['merged', 'merged'])
 })
+it('takes the newest reading across this host’s slot and a paired host’s when they disagree on a reopen (#1146)', () => {
+  let clock = Date.parse(centerTime)
+  const store = new WatcherEvidenceStore(() => clock), prUrl = 'https://github.com/o/r/pull/6'
+  const at = () => new Date(clock).toISOString()
+  const local = (state: 'open' | 'closed') => store.pullRequest(centerTarget, { url: prUrl, head: 'head', observedAt: at(), availability: 'available', state })
+  const paired = (state: 'open' | 'closed') => store.paired({ id: `paired-${clock}`, target: centerTarget, source: 'github', observedAt: at(), freshness: 'fresh',
+    availability: 'available', url: prUrl, headId: 'head', fact: 'pull-request-observed', pullRequestState: state })
+  const kinds = () => [...store.attentionByPullRequest(centerTarget).values()].flatMap(set => [...set]).sort()
+  local('open'); clock += 60_000; local('closed')
+  expect(kinds()).toEqual(['closed'])
+  // The paired host says open a minute after the close: an older answer, held closed in its slot as in this one.
+  clock += 60_000; paired('open')
+  expect(kinds()).toEqual(['closed'])
+  // Reopened for good: the paired slot's open reading is newer than this slot's close, so its checks failing are news,
+  // though this host's slot still says closed.
+  clock += 10 * 60_000; paired('open')
+  clock += 60_000; store.pullRequest(centerTarget, { url: prUrl, head: 'head', observedAt: at(), availability: 'available', checks: 'failed', checkCount: 1 })
+  expect(store.read(centerTarget).filter(item => item.pullRequestState !== undefined).map(item => item.pullRequestState).sort()).toEqual(['closed', 'open'])
+  expect(kinds()).toEqual(['checks-failed'])
+  // This host's slot closing it again, newer still, ends it again, and is told as the close it already was.
+  clock += 60_000; local('closed')
+  expect(kinds()).toEqual(['closed'])
+})
