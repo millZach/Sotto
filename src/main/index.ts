@@ -223,6 +223,8 @@ import { SecureSettings } from './agents/secureSettings'
 import { registerSubagentIpc } from './agents/subagentIpc'
 import { registerUsageIpc } from './agents/usageIpc'
 import { MainActivityService, type MainActivityLogEvent } from './performance/mainActivityService'
+import { HangWatchdog, WindowHangWatch, type HangWatchdogLogEvent } from './performance/hangWatchdog'
+import { saveHangRecording, updateHangRecording } from './performance/hangRecording'
 import { registerMainActivityIpc } from './performance/mainActivityIpc'
 import { registerMainCheckoutIpc } from './agents/mainCheckoutIpc'
 import type { MainCheckoutEvent } from './agents/mainCheckout'
@@ -321,6 +323,7 @@ type NativeDiagnostic =
   | 'omarchy-theme-refresh-failed'
   | 'shell-pill-refresh-failed'
   | MainActivityLogEvent
+  | HangWatchdogLogEvent
   | LinuxAutostartEvent
   | BootstrapDiagnostic
   | NativeRuntimeDiagnostic
@@ -636,25 +639,43 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
  * build reads neither override.
  */
 function createMainActivity(userDataPath: string, version: string): MainActivityService {
-  const testing = e2eConfiguration !== null && !app.isPackaged
-  const override = (name: string, max: number): number | undefined => {
-    const value = testing ? Number(process.env[name]) : Number.NaN
-    return Number.isInteger(value) && value > 0 && value <= max ? value : undefined
-  }
-  const windowSeconds = override('SOTTO_E2E_MAIN_LOOP_WINDOW_SECONDS', 600)
-  const durationMs = override('SOTTO_E2E_ACTIVITY_RECORDING_MS', 600_000)
-  const devOrigin = app.isPackaged ? undefined : parseOrigin(process.env.ELECTRON_RENDERER_URL)
+  const windowSeconds = e2eOverride('SOTTO_E2E_MAIN_LOOP_WINDOW_SECONDS', 600)
+  const durationMs = e2eOverride('SOTTO_E2E_ACTIVITY_RECORDING_MS', 600_000)
+  const { directory, appRoots, devOrigins } = recordingPlaces(userDataPath)
   return new MainActivityService({
-    directory: join(userDataPath, 'performance-recordings'),
+    directory,
     clock: { now: () => performance.now(), setInterval: (callback, ms) => setInterval(callback, ms), clearInterval: handle => clearInterval(handle as ReturnType<typeof setInterval>) },
     ...(windowSeconds ? { windowSeconds } : {}), ...(durationMs ? { durationMs } : {}),
     mainProfiler: mainProcessProfiler,
-    appRoots: [app.getAppPath(), ...(app.isPackaged ? [] : [process.cwd()])],
-    ...(devOrigin ? { devOrigins: [devOrigin] } : {}),
+    appRoots,
+    ...(devOrigins.length ? { devOrigins } : {}),
     sottoVersion: version, platform: process.platform,
     revealFile: path => shell.showItemInFolder(path),
     log: logOperational,
   })
+}
+
+/** A development e2e run's override of a wait; a packaged build reads none. */
+function e2eOverride(name: string, max: number): number | undefined {
+  const value = e2eConfiguration !== null && !app.isPackaged ? Number(process.env[name]) : Number.NaN
+  return Number.isInteger(value) && value > 0 && value <= max ? value : undefined
+}
+
+/** Where recordings go, and the app's folders and development server whose scripts a recording keeps by place. */
+function recordingPlaces(userDataPath: string): { directory: string; appRoots: string[]; devOrigins: string[] } {
+  const devOrigin = app.isPackaged ? undefined : parseOrigin(process.env.ELECTRON_RENDERER_URL)
+  return { directory: join(userDataPath, 'performance-recordings'), appRoots: [app.getAppPath(), ...(app.isPackaged ? [] : [process.cwd()])],
+    devOrigins: devOrigin ? [devOrigin] : [] }
+}
+
+/**
+ * The watch on main from its own thread, and Quit's backstop (#1581): part of main-freeze, as the minute it extends is.
+ * Development e2e runs may shorten its waits.
+ */
+function startHangWatchdog(userDataPath: string, version: string): HangWatchdog | undefined {
+  const hangMs = e2eOverride('SOTTO_E2E_MAIN_HANG_MS', 60_000), quitForceMs = e2eOverride('SOTTO_E2E_QUIT_FORCE_MS', 120_000)
+  return HangWatchdog.start({ ...recordingPlaces(userDataPath), sottoVersion: version, platform: process.platform,
+    ...(hangMs ? { hangMs } : {}), ...(quitForceMs ? { quitForceMs } : {}) }, logOperational)
 }
 
 function parseOrigin(url: string | undefined): string | undefined {
@@ -704,6 +725,10 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   const mainActivity = owlFeatures['main-freeze'] ? createMainActivity(userDataPath, appRunningVersion) : null
   mainActivity?.start()
   app.on('will-quit', () => mainActivity?.dispose())
+  const hangWatchdog = mainActivity ? startHangWatchdog(userDataPath, appRunningVersion) : undefined
+  // First of every before-quit listener: from the moment Quit is received, a stuck quit is ended rather than waited on.
+  app.prependListener('before-quit', () => hangWatchdog?.quitReceived())
+  app.on('will-quit', () => hangWatchdog?.dispose())
   // Notifications when a thread has finished everything or needs the user (ADR-0117): an Owl feature, on a Mac that can
   // show them. Anywhere else main builds nothing, passes no renderer argument and registers no channel.
   const desktopNotificationsEnabled = owlFeatures['desktop-notifications'] && profile.desktopNotifications && Notification.isSupported()
@@ -1182,6 +1207,27 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   })
   const unsubscribeRequestDrafts = requestDrafts.onChanged(owner => windows.sendToMain(REQUEST_DRAFT_CHANGED, owner))
   mainActivity?.subscribe(state => { windows.sendToMain(MAIN_ACTIVITY_CHANGED, state) })
+  // The watch on the main window (#1581): whether it stopped answering while main kept going.
+  const windowHangMs = e2eOverride('SOTTO_E2E_WINDOW_HANG_MS', 60_000)
+  const hangDirectory = recordingPlaces(userDataPath).directory
+  const windowHangs = mainActivity ? new WindowHangWatch({
+    target: () => {
+      const contents = windows.getMainWebContents()
+      const window = contents ? BrowserWindow.fromWebContents(contents as WebContents) : null
+      return window && !window.isDestroyed() && window.isVisible() && !window.isMinimized() ? window.webContents : null
+    },
+    now: () => performance.now(),
+    setInterval: (callback, ms) => setInterval(callback, ms), clearInterval: handle => clearInterval(handle as ReturnType<typeof setInterval>),
+    processes: () => app.getAppMetrics().map(metric => ({ type: metric.type, cpuPercent: Math.round(metric.cpu.percentCPUUsage * 10) / 10,
+      workingSetKb: metric.memory.workingSetSize, privateKb: metric.memory.privateBytes ?? null })),
+    mainLoop: () => { const { blockedShare, longestFreezeMs, freezesOver100ms, bars } = mainActivity.state().reading; return { blockedShare, longestFreezeMs, freezesOver100ms, bars } },
+    save: record => saveHangRecording(hangDirectory, record),
+    update: (name, record) => updateHangRecording(hangDirectory, name, record),
+    log: logOperational, sottoVersion: appRunningVersion, platform: process.platform,
+    ...(windowHangMs ? { hangMs: windowHangMs } : {}),
+  }) : null
+  windowHangs?.start()
+  app.on('will-quit', () => windowHangs?.stop())
   const cleanRetiredHistory = async (): Promise<void> => {
     const [chats, answers, remoteDrafts] = await Promise.allSettled([
       Promise.resolve().then(() => retiredChatHistory.privacyChanged()),
@@ -1475,6 +1521,8 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     // the reason on its update card.
     restartRefused: () => {
       windows.cancelQuit()
+      // Sotto goes on: the Quit stamp the restart left is taken back, so a later stop of main is not taken for a stuck quit.
+      hangWatchdog?.quitCancelled()
       void windows.showMain().catch(() => logOperational('native-main-show-failed'))
     },
     ...(updatesSupported ? { createUpdater: createElectronUpdaterAdapter } : updateStandIn ? { createUpdater: () => e2eUpdater(updateStandIn, undefined, closeWindowsLikeInstaller) } : {}),
