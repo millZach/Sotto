@@ -177,13 +177,28 @@ export async function sweepPartialActivityRecordings(directory: string, fs: Reco
  * cannot be removed now is tried again at the next save. Returns what was removed.
  */
 export async function pruneActivityRecordings(directory: string, kept = ACTIVITY_RECORDINGS_KEPT, fs: RecordingFileSystem = recordingFileSystem): Promise<readonly string[]> {
+  return keepNewestRecordings(directory, RECORDING_NAME, PARTIAL, kept, fs)
+}
+
+/**
+ * Removes all but the newest `kept` folders `recording` matches, and every folder `partial` matches: one kind of
+ * recording at a time, so activity and hang recordings never push each other out. Never throws; returns what was removed.
+ */
+export async function keepNewestRecordings(directory: string, recording: RegExp, partial: RegExp, kept: number, fs: RecordingFileSystem = recordingFileSystem): Promise<readonly string[]> {
   let entries: string[]
   try { entries = await fs.readdir(directory) } catch { return [] }
-  const recordings = entries.filter(name => RECORDING_NAME.test(name)).sort()
-  const remove = [...recordings.slice(0, Math.max(0, recordings.length - kept)), ...entries.filter(name => PARTIAL.test(name))]
+  const recordings = entries.filter(name => recording.test(name)).sort()
+  const remove = [...recordings.slice(0, Math.max(0, recordings.length - kept)), ...entries.filter(name => partial.test(name))]
   const removed: string[] = []
   for (const name of remove) if (await removeEntry(fs, directory, name)) removed.push(name)
   return removed
+}
+
+/** `name`, or `name-2`, `name-3` and so on: the first that no folder under `directory` has yet. */
+export async function freeRecordingName(directory: string, name: string, fs: RecordingFileSystem = recordingFileSystem): Promise<string> {
+  let free = name
+  for (let attempt = 2; await exists(fs, join(directory, free)); attempt += 1) free = `${name}-${attempt}`
+  return free
 }
 
 export interface SavedActivityRecording {
@@ -231,8 +246,7 @@ export async function saveActivityRecording(directory: string, name: string, pro
   const contents = [JSON.stringify(profiles.main), ...(profiles.window ? [JSON.stringify(profiles.window)] : []), `${JSON.stringify(full, null, 2)}\n`]
   try { await fs.mkdir(directory) } catch { throw new ActivityRecordingSaveError(null) }
   await sweepPartialActivityRecordings(directory, fs)
-  let folderName = name
-  for (let attempt = 2; await exists(fs, join(directory, folderName)); attempt += 1) folderName = `${name}-${attempt}`
+  const folderName = await freeRecordingName(directory, name, fs)
   const partialName = `${folderName}.partial`
   const partial = join(directory, partialName), folder = join(directory, folderName)
   let published = false
