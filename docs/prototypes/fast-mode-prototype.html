@@ -1,0 +1,299 @@
+<!doctype html>
+<!-- THROWAWAY PROTOTYPE - where fast mode lives in the thread composer, for Claude Code and Codex threads.
+     Four directions, each shown off, on, with its control open, on a Codex thread and on a model without fast mode.
+     Real size (1 CSS pixel = 1 app pixel) on a laptop; scaled to fit on a phone. Synthetic data, outside every entrypoint.
+     URL: ?v=A|B|C|D &w=1280|820 &mode=dark|light -->
+<html lang="en" data-mode="dark">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sotto fast mode in the composer (prototype)</title>
+<style>
+@font-face{font-family:Figtree;font-weight:300 900;font-display:swap;src:url(Figtree.ttf) format("truetype"),url(../../apps/ios/Sotto/Resources/Figtree.ttf) format("truetype")}
+/* Theme roles as the default Sotto theme paints them. Colour comes from a role, never from the component. */
+:root{color-scheme:dark;--ah:183;
+  --canvas:oklch(.115 .008 265);--surface:oklch(.145 .008 265);--elevated:oklch(.2 .008 265);--sunken:oklch(.155 .008 265);
+  --card:oklch(.185 .008 265);--hairline:oklch(.27 .012 265);--field-border:oklch(.33 .018 265);
+  --text:oklch(.985 .005 280);--text2:oklch(.86 .01 270);--muted:oklch(.72 .014 265);--faint:oklch(.6 .012 270);
+  --accent:oklch(.714 .104 var(--ah));--accent-text:oklch(.83 .08 var(--ah));--accent-wash:oklch(.3 .045 var(--ah));
+  --hover:color-mix(in srgb,var(--accent-wash) 55%,transparent);--selected:color-mix(in srgb,var(--accent-wash) 80%,transparent);
+  --activity:var(--accent);--on-accent:oklch(.15 .01 265);
+  --shadow:rgb(0 0 0/.55);--claude:#e3b58e;--codex:#d7dbe1;--chrome:oklch(.17 .006 265);--chrome-text:oklch(.92 .006 270)}
+:root[data-mode=light]{color-scheme:light;
+  --canvas:oklch(.978 .004 85);--surface:oklch(.99 .003 85);--elevated:oklch(.995 .002 85);--sunken:oklch(.945 .008 85);
+  --card:color-mix(in oklab,oklch(.235 .014 75) 4%,oklch(.978 .004 85));--hairline:oklch(.89 .01 80);--field-border:oklch(.84 .014 80);
+  --text:oklch(.235 .014 75);--text2:oklch(.36 .014 75);--muted:oklch(.5 .014 75);--faint:oklch(.56 .015 78);
+  --accent:oklch(.53 .095 var(--ah));--accent-text:oklch(.43 .08 var(--ah));--accent-wash:oklch(.92 .03 var(--ah));
+  --on-accent:oklch(.99 .003 85);--shadow:rgb(20 24 22/.16);--claude:#b8743c;--codex:#5d6470;--chrome:oklch(.93 .006 85);--chrome-text:oklch(.25 .014 75)}
+*{box-sizing:border-box}html,body{margin:0}
+body{font:14px/1.45 Figtree,system-ui,sans-serif;color:var(--chrome-text);background:var(--chrome);padding-bottom:96px}
+button{font:inherit;color:inherit;cursor:pointer;background:none;border:0;padding:0}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- The review page (not part of the design) ---------- */
+.rv-head{position:sticky;top:0;z-index:30;display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:12px 16px;background:var(--chrome);border-bottom:1px solid var(--hairline)}
+.rv-head h1{margin:0 auto 0 0;font-size:16px;font-weight:600}.rv-head h1 small{font-weight:400;color:var(--muted);margin-left:8px}
+.rv-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;width:100%}
+.rv-row span{font-size:12px;color:var(--muted);margin-right:2px}
+.rv-row button{border:1px solid var(--hairline);border-radius:6px;padding:6px 11px;font-size:13px;color:var(--muted)}
+.rv-row button[aria-pressed=true]{background:var(--text);color:var(--canvas);border-color:var(--text)}
+.rv-body{padding:16px}
+.rv-intro{max-width:900px;margin:0 0 8px;color:var(--text2)}.rv-intro b{color:var(--text)}.rv-intro ul{margin:6px 0 0;padding-left:18px}
+.rv-scene{margin:26px 0 8px;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.rv-scene em{font-style:normal;text-transform:none;letter-spacing:0;font-weight:400}
+.fit{max-width:100%;overflow:hidden}
+.stage{border-radius:8px;outline:1px solid var(--hairline);background:var(--canvas);transform-origin:0 0;width:max-content}
+.switcher{position:fixed;left:50%;bottom:14px;z-index:40;transform:translateX(-50%);display:flex;align-items:center;gap:6px;padding:6px;border-radius:12px;background:#111;color:#fff;box-shadow:0 6px 24px rgb(0 0 0/.5);font-size:13px;max-width:calc(100vw - 16px)}
+.switcher button{background:#2a2a2a;color:#fff;border-radius:8px;width:40px;height:36px;flex:none}.switcher div{padding:0 8px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ---------- The thread pane at real size ---------- */
+.pane{position:relative;width:var(--pw);padding:18px 0 18px;background:var(--canvas);color:var(--text)}
+.col{width:min(760px,calc(100% - 40px));margin:0 auto}
+.msg{margin:0 0 12px;color:var(--text2);font-size:14px;line-height:1.55}
+.msg .who{display:block;color:var(--muted);font-size:12px;margin-bottom:2px}
+.mark{display:inline-grid;place-items:center;width:15px;font-size:13px;line-height:1;flex:none}
+.mark.claude{color:var(--claude)}.mark.codex{color:var(--codex)}
+.ico{display:inline-grid;place-items:center;width:16px;height:16px;flex:none}
+.ico svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ico.sm svg{width:12px;height:12px}
+.chev{display:inline-grid;place-items:center;flex:none}.chev svg{width:12px;height:12px;opacity:.7;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* The composer card (ADR-0110): filled, 16px corners, no border in any state. */
+.cmp{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr);padding:14px 16px 10px;border:0;border-radius:16px;background:var(--card)}
+.cmp>.text{grid-column:1/-1;min-height:74px;color:var(--text);font-size:15px;line-height:1.5}
+.cmp>.text.ph{color:var(--muted)}
+.cmp>.text .slash{color:var(--accent-text)}
+.attach{grid-column:1;align-self:center;margin:4px 4px 0 -6px}
+.foot{grid-column:2;display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:4px;min-width:0}
+.meta{display:flex;flex:1;flex-wrap:wrap;align-items:center;gap:2px 2px;min-width:0}
+.send{display:grid;place-items:center;width:28px;height:28px;border-radius:6px;background:var(--activity);color:var(--on-accent);flex:none}
+.send svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.25;stroke-linecap:round;stroke-linejoin:round}
+.iconbtn{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:6px;color:var(--muted);flex:none}
+.iconbtn:hover{background:var(--hover);color:var(--text)}
+/* The option chips as text buttons (ADR-0113). */
+.chip{position:relative;display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 7px;border-radius:6px;color:var(--muted);font-size:13px;white-space:nowrap;flex:none}
+.chip.model{color:var(--text2)}
+.chip:hover,.chip[aria-expanded=true]{background:var(--hover);color:var(--text)}
+.chip .val{overflow:hidden;text-overflow:ellipsis}
+.chip .perm-ico{display:none}
+.pane[data-w='820'] .chip.perm .val{display:none}.pane[data-w='820'] .chip.perm .perm-ico{display:inline-grid}
+
+/* Fast mode's mark: the bolt in the theme's accent when on; a muted outline when it can be turned on. */
+.bolt svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linejoin:round}
+.bolt.on{color:var(--accent-text)}.bolt.on svg{fill:currentColor}
+.bolt.small svg{width:12px;height:12px}
+
+/* A · its own toggle beside the model */
+.fastbtn{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:6px;color:var(--muted);flex:none}
+.fastbtn:hover{background:var(--hover);color:var(--text)}
+.fastbtn[aria-pressed=true]{color:var(--accent-text)}.fastbtn[aria-pressed=true] svg{fill:currentColor}
+.fastbtn[aria-pressed=false] svg{opacity:.75}
+
+/* The tooltip the way the app's native title shows it, drawn so the review can read it. */
+.tip{position:absolute;z-index:6;bottom:calc(100% + 8px);left:0;width:max-content;max-width:300px;padding:7px 10px;border-radius:7px;background:var(--elevated);border:1px solid var(--field-border);box-shadow:0 10px 30px var(--shadow);color:var(--text2);font-size:12.5px;line-height:1.4;white-space:normal}
+.tip b{color:var(--text);font-weight:600}
+
+/* Popovers: the model menu, the effort card, the slash list. */
+.pop{position:absolute;z-index:5;bottom:calc(100% + 6px);border:1px solid var(--field-border);border-radius:14px;background:var(--elevated);box-shadow:0 16px 48px var(--shadow);color:var(--text)}
+.mm{left:0;display:grid;grid-template-columns:52px minmax(0,1fr);width:336px}
+.mm .rail{display:flex;flex-direction:column;gap:4px;padding:8px 6px;border-right:1px solid var(--hairline);background:var(--surface);border-radius:14px 0 0 14px}
+.mm .rail span{position:relative;display:grid;place-items:center;width:40px;height:40px;border-radius:10px;font-size:16px}
+.mm .rail span.sel{background:var(--selected)}
+.mm .rail span.sel::before{content:'';position:absolute;left:-6px;top:10px;bottom:10px;width:2px;border-radius:0 2px 2px 0;background:var(--activity)}
+.mm .panel{display:flex;flex-direction:column;min-width:0}
+.mm .search{display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;border-bottom:1px solid var(--hairline);color:var(--faint);font-size:13px}
+.mm .list{padding:6px}
+.mm .opt{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:32px;padding:6px 10px;border-radius:8px;color:var(--text2);font-size:13px}
+.mm .opt.sel{color:var(--activity)}
+.mm .opt small{color:var(--muted);font-size:11.5px;margin-left:6px}
+.mm .note{margin:0;padding:8px 12px 10px;border-top:1px solid var(--hairline);color:var(--muted);font-size:12px;line-height:1.4}
+/* B · the Fast row under the list */
+.fastrow{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:2px 8px;margin:0 6px 6px;padding:8px 10px;border-radius:8px;border-top:1px solid var(--hairline);border-top-left-radius:0;border-top-right-radius:0}
+.fastrow:hover{background:var(--hover)}
+.fastrow .t{color:var(--text);font-size:13px}
+.fastrow small{grid-column:2/4;color:var(--muted);font-size:11.5px;line-height:1.35}
+.fastrow[aria-disabled=true] .t,.fastrow[aria-disabled=true] .bolt{opacity:.5}
+.switch{position:relative;width:30px;height:18px;border-radius:9px;background:var(--field-border);flex:none}
+.switch::after{content:'';position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--text);transition:left .12s}
+.switch[aria-checked=true]{background:var(--activity)}.switch[aria-checked=true]::after{left:14px;background:var(--on-accent)}
+.fastrow[aria-disabled=true] .switch{opacity:.4}
+
+/* C · inside the effort card */
+.ec{left:0;width:300px;padding:14px 14px 12px}
+.ec .word{margin:0;font-size:20px;font-weight:500;letter-spacing:-.2px}
+.ec .line{margin:2px 0 12px;color:var(--muted);font-size:12.5px}
+.ec .track{position:relative;height:22px;border-radius:11px;background:var(--sunken)}
+.ec .fill{position:absolute;inset:0 auto 0 0;width:66%;border-radius:11px;background:color-mix(in srgb,var(--accent) 35%,transparent)}
+.ec .thumb{position:absolute;top:2px;left:calc(66% - 18px);width:18px;height:18px;border-radius:50%;background:var(--text)}
+.ec .ends{display:flex;justify-content:space-between;margin-top:6px;color:var(--faint);font-size:11px}
+.ec .opts{display:grid;gap:4px;margin-top:12px;padding-top:10px;border-top:1px solid var(--hairline)}
+.ec .row{display:flex;align-items:center;gap:8px;min-height:30px;padding:0 6px;border-radius:7px;color:var(--text2);font-size:12.5px}
+.ec .row:hover{background:var(--hover)}
+.ec .row .box{display:grid;place-items:center;width:15px;height:15px;border-radius:4px;border:1.5px solid var(--field-border);flex:none}
+.ec .row[aria-checked=true] .box{border-color:var(--activity);background:var(--activity);color:var(--on-accent)}
+.ec .row .box svg{width:10px;height:10px;stroke:currentColor;fill:none;stroke-width:3}
+.ec .row small{margin-left:auto;color:var(--muted);font-size:11.5px}
+
+/* D · the slash list and the indicator */
+.sl{left:-1px;right:-1px;padding:6px 6px 2px;border-radius:14px}
+.sl .o{display:grid;grid-template-columns:minmax(0,max-content) minmax(0,1fr) auto;align-items:baseline;gap:12px;min-height:36px;padding:8px;border-radius:8px}
+.sl .o.act{background:var(--accent-wash)}
+.sl .o b{font-weight:500;color:var(--text)}.sl .o span{color:var(--muted);font-size:13px}
+.sl .o[aria-disabled=true] b,.sl .o[aria-disabled=true] span:first-of-type{opacity:.55}
+.sl .o .scope{padding:1px 7px;border-radius:5px;background:var(--sunken);color:var(--text2);font-size:12px}
+.sl .f{display:flex;min-height:30px;align-items:center;margin-top:2px;padding:2px 8px 0;border-top:1px solid var(--hairline);color:var(--muted);font-size:12px}
+.indicator{display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 7px;border-radius:6px;color:var(--accent-text);font-size:13px;font-weight:600;flex:none}
+.indicator:hover{background:var(--hover)}
+.indicator .x{opacity:0;width:12px}.indicator:hover .x{opacity:.8}
+.indicator .x svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2}
+
+.callout{margin:10px 0 0;padding:9px 12px;border-radius:8px;background:var(--surface);color:var(--text2);font-size:13px;max-width:760px}
+.callout b{color:var(--text)}
+</style>
+</head>
+<body>
+<header class="rv-head">
+  <h1>Fast mode in the composer <small>prototype · nothing in the app has changed</small></h1>
+  <div class="rv-row" id="vars"></div>
+  <div class="rv-row" id="opts"></div>
+</header>
+<main class="rv-body" id="body"></main>
+<div class="switcher"><button id="prev" aria-label="Previous direction">‹</button><div id="sw"></div><button id="next" aria-label="Next direction">›</button></div>
+<script>
+const q = new URLSearchParams(location.search)
+const st = { v: q.get('v') || 'A', w: +(q.get('w') || (innerWidth < 700 ? 820 : 1280)), mode: q.get('mode') || 'dark' }
+const VARS = {
+  A: 'A · A bolt beside the model',
+  B: 'B · A Fast row in the model menu',
+  C: 'C · Part of the effort card',
+  D: 'D · /fast and an indicator',
+}
+const INTRO = {
+  A: 'A one-press toggle after the model chip. Off it is a muted outline bolt; on it fills in the accent. It is absent on a model without fast mode. Its tooltip says what it does and what it costs.',
+  B: 'No new control in the row. Fast mode is a switch under the model list, because it belongs to the model. When it is on, the model chip carries a small filled bolt after the name. On a model without it, the row stays but is dimmed and says why.',
+  C: 'Fast mode sits with how the model thinks: a checkbox under the effort slider, beside Ultrathink. When it is on, the effort chip reads "High" with a small bolt. On a model without it, the row is not there.',
+  D: 'Nothing new in the row until it is on. Type /fast to turn it on, as in Claude Code and Codex themselves. Then a "Fast" indicator sits after the chips; press it to turn fast mode off. On a model without it, /fast is listed but dimmed.',
+}
+const PATH = {
+  zap: 'M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z',
+  chev: 'm6 9 6 6 6-6', clip: 'm16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551',
+  shield: 'M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z',
+  up: 'm5 12 7-7 7 7M12 19V5', check: 'M20 6 9 17l-5-5', x: 'M18 6 6 18M6 6l12 12', search: 'm21 21-4.34-4.34M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z',
+}
+const svg = (d, cls = 'ico') => `<span class="${cls}" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="${d}"/></svg></span>`
+const bolt = (on, small) => `<span class="bolt${on ? ' on' : ''}${small ? ' small' : ''}" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="${PATH.zap}"/></svg></span>`
+const chev = svg(PATH.chev, 'chev')
+const CL = '<span class="mark claude" aria-hidden="true">✳</span>', CX = '<span class="mark codex" aria-hidden="true">◎</span>'
+
+/* The models each scene is on. Which models offer fast mode is the provider's answer; these follow the research note. */
+const M = {
+  opus: { mark: CL, name: 'Opus 5.5', provider: 'Claude Code', fast: true, effort: 'High' },
+  sol: { mark: CX, name: 'GPT-6.1 Sol', provider: 'Codex', fast: true, effort: 'High' },
+  sonnet: { mark: CL, name: 'Sonnet 5.5', provider: 'Claude Code', fast: false, effort: 'High' },
+}
+const COST = { 'Claude Code': 'Up to 2.5x faster output, at twice the price per token.', Codex: '2x speed, using more of your plan’s usage.' }
+const tipText = (m, on) => on ? `<b>Fast mode is on for this thread.</b> ${COST[m.provider]} Press to turn it off.` : `<b>Fast mode is off.</b> ${COST[m.provider]} Press to turn it on for this thread.`
+
+const SCENES = [
+  { key: 'off', title: 'Off', note: 'A new thread: fast mode starts off.', model: 'opus', on: false },
+  { key: 'on', title: 'On', note: 'Turned on for this thread. It stays on until you turn it off.', model: 'opus', on: true },
+  { key: 'open', title: 'The control open', note: 'Where the press happens, with the cost said once.', model: 'opus', on: true, open: true },
+  { key: 'codex', title: 'On, Codex thread', note: 'The same control on a Codex model.', model: 'sol', on: true },
+  { key: 'none', title: 'A model without fast mode', note: 'Fast mode is Opus only on Claude Code (Opus 5.5, 5 and 4.8). Every current Codex model has it.', model: 'sonnet', on: false, open: true },
+]
+
+function modelMenu(m, on, withFastRow) {
+  const models = m.provider === 'Codex'
+    ? [['GPT-6.1 Sol', 'Recommended', m.name === 'GPT-6.1 Sol'], ['GPT-6 Astra', '', false], ['GPT-6 Luna', '', false]]
+    : [['Opus 5.5', 'Recommended', m.name === 'Opus 5.5'], ['Sonnet 5.5', '', m.name === 'Sonnet 5.5'], ['Haiku 5.5', '', false]]
+  const fast = withFastRow ? (m.fast
+    ? `<div class="fastrow" role="switch" aria-checked="${on}">${bolt(on, true)}<span class="t">Fast mode</span><span class="switch" aria-checked="${on}"></span><small>${COST[m.provider]} This thread only.</small></div>`
+    : `<div class="fastrow" aria-disabled="true">${bolt(false, true)}<span class="t">Fast mode</span><span class="switch" aria-checked="false"></span><small>${m.name} does not offer fast mode. Opus 5.5 does.</small></div>`) : ''
+  return `<div class="pop mm" role="dialog" aria-label="Model"><div class="rail"><span class="${m.provider === 'Claude Code' ? 'sel' : ''}">${CL}</span><span class="${m.provider === 'Codex' ? 'sel' : ''}">${CX}</span></div>
+    <div class="panel"><div class="search">${svg(PATH.search)}Search ${m.provider} models</div>
+    <div class="list">${models.map(([n, s, sel]) => `<div class="opt${sel ? ' sel' : ''}"><span>${n}${s ? `<small>${s}</small>` : ''}</span>${sel ? svg(PATH.check, 'ico sm') : ''}</div>`).join('')}</div>
+    ${fast}<p class="note">This thread stays with ${m.provider}.</p></div></div>`
+}
+function effortCard(m, on) {
+  const fast = m.fast ? `<div class="row" role="checkbox" aria-checked="${on}"><span class="box">${on ? `<svg viewBox="0 0 24 24"><path d="${PATH.check}"/></svg>` : ''}</span>${bolt(on, true)}Fast output<small>Higher price</small></div>` : ''
+  const ultra = m.provider === 'Claude Code' ? `<div class="row" aria-checked="false"><span class="box"></span>Add Ultrathink to prompt</div>` : ''
+  return `<div class="pop ec" role="dialog" aria-label="Reasoning effort"><p class="word">High</p><p class="line">Takes longer and catches more.</p>
+    <div class="track"><div class="fill"></div><div class="thumb"></div></div><div class="ends"><span>Faster</span><span>More thorough</span></div>
+    ${fast || ultra ? `<div class="opts">${fast}${ultra}</div>` : ''}
+    ${m.fast && on ? `<p class="line" style="margin:8px 6px 0">${COST[m.provider]} This thread only.</p>` : ''}</div>`
+}
+function slashList(m) {
+  return `<div class="pop sl" role="listbox" aria-label="Commands">
+    <div class="o act"${m.fast ? '' : ' aria-disabled="true"'}><b>${bolt(false, true)} /fast</b><span>${m.fast ? 'Turn fast mode on for this thread. ' + COST[m.provider] : `${m.name} does not offer fast mode.`}</span><span class="scope">Sotto</span></div>
+    <div class="o"><b>/compact</b><span>Summarise the conversation to free up context</span><span class="scope">${m.provider}</span></div>
+    <div class="f">↑↓ to choose · Enter to run · Esc to close</div></div>`
+}
+
+function composer(variant, sc) {
+  const m = M[sc.model], on = sc.on && m.fast, open = sc.open
+  let modelChip = `<button class="chip model" aria-label="Model: ${m.name}"${variant === 'B' && open ? ' aria-expanded="true"' : ''}>${m.mark}<span class="val">${m.name}</span>${variant === 'B' && on ? bolt(true, true) : ''}${chev}</button>`
+  if (variant === 'B' && open) modelChip = `<span style="position:relative;display:inline-flex">${modelChip}${modelMenu(m, on, true)}</span>`
+  let effort = `<button class="chip" aria-label="Thread reasoning effort"${variant === 'C' && open ? ' aria-expanded="true"' : ''}><span class="val">${m.effort}</span>${variant === 'C' && on ? bolt(true, true) : ''}${chev}</button>`
+  if (variant === 'C' && open) effort = `<span style="position:relative;display:inline-flex">${effort}${effortCard(m, on)}</span>`
+  const perm = `<button class="chip perm" aria-label="Thread permissions: Allow edits"><span class="perm-ico">${svg(PATH.shield)}</span><span class="val">Allow edits</span>${chev}</button>`
+  let fast = ''
+  if (variant === 'A' && m.fast) {
+    fast = `<span style="position:relative;display:inline-flex"><button class="fastbtn" aria-pressed="${on}" aria-label="Fast mode" title="">${bolt(on)}</button>${open ? `<span class="tip">${tipText(m, on)}</span>` : ''}</span>`
+  }
+  if (variant === 'D' && on && !open) fast = `<span style="position:relative;display:inline-flex"><button class="indicator" aria-label="Fast mode is on. Press to turn it off.">${bolt(true, true)}Fast<span class="x">${svg(PATH.x, 'ico sm')}</span></button></span>`
+  const typingSlash = variant === 'D' && open
+  const text = typingSlash ? `<div class="text"><span class="slash">/fa</span></div>` : `<div class="text ph">What would you like to do next?</div>`
+  return `${typingSlash ? slashList(m) : ''}<div class="cmp">${text}<button class="iconbtn attach" aria-label="Attach images">${svg(PATH.clip)}</button>
+    <div class="foot"><div class="meta">${modelChip}${variant === 'A' ? fast : ''}${effort}${perm}${variant === 'D' ? fast : ''}</div>
+    <button class="send" aria-label="Send prompt"><svg viewBox="0 0 24 24"><path d="${PATH.up}"/></svg></button></div></div>`
+}
+
+function pane(variant, sc) {
+  const m = M[sc.model], pw = st.w === 820 ? 560 : 1000
+  const room = sc.open ? (variant === 'B' ? 250 : variant === 'C' ? 190 : variant === 'D' ? 110 : 70) : 0
+  return `<div class="pane" data-w="${st.w}" style="--pw:${pw}px"><div class="col">
+    <div class="msg"><span class="who">You</span>Make the Usage index wrap into a grid when the window is narrow.</div>
+    <div class="msg"><span class="who">${m.provider === 'Codex' ? 'Codex' : 'Claude'}</span>Done. The index becomes a two-column grid under 780 pixels, and the chart follows the room.</div>
+    <div style="height:${room}px"></div>
+    <div style="position:relative">${composer(variant, sc)}</div></div></div>`
+}
+
+function note(variant, sc) {
+  const m = M[sc.model]
+  if (sc.key !== 'none') return ''
+  const say = { A: 'The bolt is not drawn, so the row is exactly today’s.', B: 'The row stays, dimmed, and names a model that has it.', C: 'The checkbox is not drawn; Ultrathink stays.', D: '/fast is listed but dimmed, with why.' }[variant]
+  return `<p class="callout"><b>${m.name}:</b> ${say} Switching a fast thread to a model without it keeps the choice for later: it comes back on when the thread goes back to a model that has it.</p>`
+}
+
+function fit() {
+  for (const box of document.querySelectorAll('.fit')) {
+    const stage = box.firstElementChild, w = stage.scrollWidth, avail = box.clientWidth
+    const k = Math.min(1, avail / w)
+    stage.style.transform = k < 1 ? `scale(${k})` : ''
+    box.style.height = k < 1 ? `${stage.scrollHeight * k}px` : ''
+  }
+}
+
+function render() {
+  document.documentElement.dataset.mode = st.mode
+  const btn = (k, v, l) => `<button data-k="${k}" data-v="${v}" aria-pressed="${String(st[k]) === String(v)}">${l}</button>`
+  document.getElementById('vars').innerHTML = '<span>Direction</span>' + Object.entries(VARS).map(([k, l]) => btn('v', k, l)).join('')
+  document.getElementById('opts').innerHTML = '<span>Window</span>' + btn('w', 1280, '1280 × 800') + btn('w', 820, '820 × 560 minimum') + '<span style="margin-left:10px">Mode</span>' + btn('mode', 'dark', 'Dark') + btn('mode', 'light', 'Light')
+  document.getElementById('sw').textContent = VARS[st.v]
+  const v = st.v
+  document.getElementById('body').innerHTML = `<div class="rv-intro"><b>${VARS[v]}.</b> ${INTRO[v]}
+    <ul><li>Per thread. A new thread starts with it off; it stays on until you turn it off.</li><li>Shown for Claude Code and Codex models that offer it; nothing changes for other providers.</li><li>No warning and no nag: the cost is said in the control's own words, once.</li></ul></div>
+    ${SCENES.map(sc => `<h2 class="rv-scene">${sc.title} <em>· ${sc.note}</em></h2><div class="fit"><div class="stage">${pane(v, sc)}</div></div>${note(v, sc)}`).join('')}`
+  for (const b of document.querySelectorAll('[data-k]')) b.onclick = () => set(b.dataset.k, b.dataset.v)
+  requestAnimationFrame(fit)
+}
+function set(k, v) { st[k] = k === 'w' ? +v : v; const u = new URL(location.href); u.searchParams.set(k, v); history.replaceState(null, '', u); render() }
+const keys = Object.keys(VARS)
+const step = d => set('v', keys[(keys.indexOf(st.v) + d + keys.length) % keys.length])
+document.getElementById('prev').onclick = () => step(-1)
+document.getElementById('next').onclick = () => step(1)
+addEventListener('keydown', e => { if (e.target.closest('input,textarea,[contenteditable]')) return; if (e.key === 'ArrowLeft') step(-1); if (e.key === 'ArrowRight') step(1) })
+addEventListener('resize', fit)
+render()
+</script>
+</body>
+</html>
