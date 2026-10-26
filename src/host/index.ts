@@ -113,6 +113,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   const resumeAfterRestart = owlFeatures['resume-after-restart']
   const streamingPublishCost = owlFeatures['streaming-publish-cost']
   const threadStartsEnabled = owlFeatures['continue-agent-thread']
+  // Deleting settled threads (ADR-0140): a desktop deletes this host's threads only where this answer turns it on.
+  const clearThreadsEnabled = owlFeatures['clear-threads']
   const pullRequestViewEnabled = owlFeatures['iphone-pull-request-view']
   // A thread's link to the thread that delegated to it reaches clients only where delegation is on. This host's own
   // threads delegate on this machine only where Work across machines is on (#1310), below.
@@ -145,7 +147,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     let peersConnected = (): boolean => false
     const pairing = new PairedClients(directory)
     const runtime = await createAgentRuntime({
-      observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, attachAnyFile, settings: () => startup, writingSettings: () => settings.get(),
+      observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, attachAnyFile, clearThreadsEnabled,
+      clearLog: (event, detail) => options.log?.(`${event} ${detail}`), settings: () => startup, writingSettings: () => settings.get(),
       // This host's own threads delegate on this machine (#1310) where its Owl answer turns on Work across machines, held to
       // the desktop defaults the last desktop still paired here with an answers grant sent, read at every start, so a desktop
       // forgotten or revoked stops counting at once and after a restart (ADR-0074 decision 3).

@@ -26,6 +26,7 @@ import { isThreadFailureText } from '../../../shared/threadFailures'
 import { usePendingSettings } from './pendingSettings'
 import { hasDraftContent, submissionStatus, useSubmissions, type ThreadDraftStore } from './threadDraftStore'
 import { ThreadBranchNotice, useSettleThread } from './ThreadWorkingCopy'
+import { useDeleteThread } from './DeleteThread'
 import type { ThreadRow } from './threadFacts'
 import { ThreadTranscript } from './ThreadTranscript'
 import { ThreadWebLinks } from '../tools/webLinks'
@@ -340,6 +341,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const recovery: PaneMenuItem[] = [
     ...(!rowConnected ? [{ id: 'reconnect', label: t`Reconnect`, icon: <Plug size={15} aria-hidden="true" />, disabled: state.connection === 'connecting', run: () => void command({ type: 'connect', ...reconnect }) }] : []),
   ]
+  // Delete thread… (ADR-0140; Owl only): a settled thread's last item, after its own rule, since it cannot be taken back.
+  const { items: removal, dialog: deleteDialog } = useDeleteThread(row, state, command, { ownPane })
   const focusAnswerComposer = (): void => { document.getElementById(promptId)?.focus() }
   const title = thread.title, provider = row.provider
   // A key typed in the transcript is the start of a message: the composer takes it, and comes back full to show it.
@@ -373,13 +376,14 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         {/* T3's Git action: the quick action its status decides, the chevron with the rest (ADR-0027). */}
         {!closed ? <GitActionButton thread={thread} command={command} noticeSlot={gitNoticeSlot} onExplainedError={setGitExplained} /> : null}
         {actions}
-        <PaneMenu groups={[naming, continuing, context, shelf, recovery]} />
+        <PaneMenu groups={[naming, continuing, context, shelf, recovery, removal]} />
       </div>
       {onClose ? <button type="button" className="pane-action thread-pane__close tt-focusable" data-pane-close aria-label={t({ message: `Close ${title} pane`, comment: '{title} is a thread\'s title.' })} title={t`Close pane`} onClick={onClose}><X size={16} aria-hidden="true" /></button> : null}
     </header>}
     {/* Delegated by the thread that started this one, a link back (ADR-0081; Owl only). */}
     {ownPane ? null : <DelegatedBy thread={thread} state={state} command={command} />}
     {settleDialog}
+    {deleteDialog}
     {thread.historySaveNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.historySaveNotice}</p> : null}
     {thread.requestNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.requestNotice}</p> : null}
     {error && error !== thread.requestNotice && !deliveryExplains && !answerExplains && !settingsExplains && !turnExplains && error !== toolbarExplained && error !== gitExplained ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}

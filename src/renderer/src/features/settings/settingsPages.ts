@@ -63,7 +63,7 @@ export function settingsSectionHome(id: SettingsSectionId): { readonly page: Set
 }
 
 /** What has to be on for a setting to show: dictation itself, or an Owl feature that holds it back. */
-export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'cross-machine-work' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers'
+export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'cross-machine-work' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers' | 'keep-main-current' | 'clear-threads'
 
 /**
  * The attribute that marks a setting's control on its page with the setting's id: Find a setting lands on a control by
@@ -152,6 +152,8 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'browser-previews', label: msg`Show the browser when an agent opens a page`, section: 'settings-browser', words: 'test iphone' },
     { id: 'browser-without-asking', label: msg`Let agents use the browser without asking`, section: 'settings-browser', words: 'permission' },
     { id: 'visuals-in-threads', label: msg`Let agents draw visuals in threads`, section: 'settings-browser', words: 'diagrams' },
+    { id: 'clear-settled-threads-after', label: msg`Clear settled threads after`, section: 'settings-agents', words: 'delete old threads history automatically', gate: 'clear-threads' },
+    { id: 'clear-threads-now', label: msg`Clear now`, section: 'settings-agents', words: 'delete old settled threads history', gate: 'clear-threads' },
 
     { id: 'shortcut-new-thread', label: msg`New thread shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey new thread' },
     { id: 'shortcut-settle', label: msg`Settle thread shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey settle archive' },
@@ -190,6 +192,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'proactive-panels', label: msg`Proactive panels`, section: 'settings-git', words: 'changes' },
     { id: 'git-fetch-interval', label: msg`Git fetch interval`, section: 'settings-git', words: 'background' },
     { id: 'git-auto-pull', label: msg`Automatically pull`, section: 'settings-git', words: 'fetch' },
+    { id: 'keep-main-current', label: msg`Keep main up to date`, section: 'settings-git', words: 'pull fetch fast-forward behind default branch', gate: 'keep-main-current' },
 
     { id: 'watcher-settles', label: msg`Settle finished threads`, section: 'settings-watcher', gate: 'watcher' },
     { id: 'watcher-compact-at', label: msg`Compact Watcher at`, section: 'settings-watcher', words: 'compaction context tokens conversation size cost', gate: 'watcher' },

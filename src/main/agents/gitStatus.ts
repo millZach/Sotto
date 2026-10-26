@@ -576,18 +576,35 @@ export class GitStatusReader implements GitStatusSource {
   }
 
   /**
+   * Keep main up to date's fetch (ADR-0142): the fetch a remote read runs, shared with one under way in the repository,
+   * but run whatever the fetch interval says, since that switch asked for it, and even within a fetch's freshness, since it
+   * runs only every 15 minutes or because a pull request merged since. A failed fetch still waits out its backoff.
+   * Resolves whether the repository's `origin` refs are as fresh as a fetch can make them now: false for a folder held
+   * for removal, one that is no repository or has no `origin`, and one whose last fetch failed and waits out its backoff.
+   */
+  async fetchRemote(cwd: string): Promise<boolean> {
+    if (this.isHeld(this.folderKey(cwd))) return false
+    let common: string
+    try { common = (await this.git(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim() } catch { return false }
+    if (!(await this.git(cwd, ['remote']).catch(() => '')).split('\n').some(line => line.trim() === 'origin')) return false
+    await this.fetchIfStale(common, cwd, { whateverTheInterval: true, evenIfFresh: true })
+    const record = this.fetches.get(common)
+    return record !== undefined && record.failures === 0 && record.fetchedAt !== null
+  }
+
+  /**
    * A `git fetch` of `origin`, one per repository at a time, run in the folder that asked so Git resolves its remote
    * as a terminal there would, and writing no `FETCH_HEAD`: a fetch that wrote it beside a pull in the same checkout
    * could leave that pull two heads to choose from. A fetch begun before the last `invalidate` may predate what a Git action since then pushed or merged, so it does not set
    * when the next one is due, and a caller after the `invalidate` waits for it and fetches again rather than share it
    * or run beside it.
    */
-  private fetchIfStale(common: string, cwd: string): Promise<void> {
-    if (this.options.fetchIntervalMs() <= 0) return Promise.resolve()
+  private fetchIfStale(common: string, cwd: string, options: { readonly whateverTheInterval?: boolean; readonly evenIfFresh?: boolean } = {}): Promise<void> {
+    if (options.whateverTheInterval !== true && this.options.fetchIntervalMs() <= 0) return Promise.resolve()
     const record = this.fetches.get(common) ?? { failures: 0, nextAt: 0, fetchedAt: null }
     this.fetches.set(common, record)
-    if (record.inFlight) return this.epochOf(common) <= record.inFlight.epoch ? record.inFlight.done : record.inFlight.done.then(() => this.fetchIfStale(common, cwd))
-    if (this.now() < record.nextAt) return Promise.resolve()
+    if (record.inFlight) return this.epochOf(common) <= record.inFlight.epoch ? record.inFlight.done : record.inFlight.done.then(() => this.fetchIfStale(common, cwd, options))
+    if (this.now() < record.nextAt && !(options.evenIfFresh === true && record.failures === 0)) return Promise.resolve()
     const epoch = this.counter
     const fetch = (): Promise<string> => this.git(cwd, ['fetch', '--quiet', '--no-tags', ...this.fetchHeadFlag ? ['--no-write-fetch-head'] : [], 'origin'],
       { timeoutMs: FETCH_TIMEOUT_MS, env: QUIET_GIT_ENV })

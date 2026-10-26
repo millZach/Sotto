@@ -37,6 +37,7 @@ export const OWL_FEATURES = [
   { id: 'cleanup-model', name: 'Choose the AI cleanup model and mode', owlSince: '2026-10-23', owner: 'docs/adr/0122-the-cleanup-model-can-be-chosen-on-owl.md', sentToStable: false },
   { id: 'interface-language', name: 'Interface language', owlSince: '2026-10-23', owner: 'docs/adr/0123-sottos-interface-speaks-the-computers-language.md', sentToStable: false },
   { id: 'own-model-servers', name: 'Your own model servers', owlSince: '2026-10-23', owner: 'docs/adr/0124-your-own-model-server-is-a-model-source.md', sentToStable: false },
+  { id: 'clear-threads', name: 'Clear settled threads', owlSince: '2026-10-23', owner: 'docs/adr/0140-settled-threads-can-be-cleared.md', sentToStable: false },
   { id: 'composer-shrink', name: 'Slim composer while reading back', owlSince: '2026-10-23', owner: 'docs/adr/0125-the-composer-slims-while-the-user-reads-back.md', sentToStable: false },
   { id: 'attach-any-file', name: 'Attach any file', owlSince: '2026-10-24', owner: 'docs/adr/0131-any-file-can-be-attached.md', sentToStable: false },
   { id: 'reply-quote', name: 'Quote a reply in the prompt', owlSince: '2026-10-24', owner: 'docs/adr/0129-words-from-a-reply-can-be-quoted-in-the-next-prompt.md', sentToStable: false },
@@ -47,6 +48,7 @@ export const OWL_FEATURES = [
   { id: 'needs-you-queue', name: 'Needs you in the Threads sidebar', owlSince: '2026-10-24', owner: 'docs/adr/0135-the-threads-sidebar-opens-on-needs-you.md', sentToStable: false },
   { id: 'folder-peek', name: 'Peek inside a closed folder', owlSince: '2026-10-24', owner: 'docs/plans/collapsed-folder-peek.md', sentToStable: false },
   { id: 'run-command', name: 'Run a command from a reply', owlSince: '2026-10-25', owner: 'docs/adr/0139-a-command-in-a-reply-runs-in-the-terminal-drawer.md', sentToStable: false },
+  { id: 'keep-main-current', name: 'Keep main up to date', owlSince: '2026-10-23', owner: 'docs/adr/0142-sotto-keeps-each-projects-main-up-to-date.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
 export type OwlFeatureId = typeof OWL_FEATURES[number]['id']

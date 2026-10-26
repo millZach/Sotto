@@ -215,6 +215,25 @@ describe('thread store', () => {
     expect(reopened.store.messageCount('kept')).toBe(0)
   })
 
+  it('forgets many threads in one transaction and one scrub, leaving the rest (ADR-0140)', async () => {
+    const f = await store()
+    f.store.replaceThreadMessages('kept', [message('k0', 'user', 'Keep this one')])
+    f.store.replaceThreadMessages('first', [message('a0', 'user', 'Clear the first')])
+    f.store.replaceThreadMessages('second', [message('b0', 'user', 'Clear the second')])
+    f.store.forgetMany(['first', 'second', 'first'])
+    expect(f.store.readMessages('first').messages).toEqual([])
+    expect(f.store.readMessages('second').messages).toEqual([])
+    expect(f.store.readMessages('kept').messages).toHaveLength(1)
+    const saved = await onDisk(f.root)
+    expect(saved).not.toContain('Clear the first')
+    expect(saved).not.toContain('Clear the second')
+    expect(saved).toContain('Keep this one')
+    // Nothing to forget changes nothing.
+    f.store.forgetMany([])
+    expect(f.store.readMessages('kept').messages).toHaveLength(1)
+    f.store.close()
+  })
+
   it.each(['forget', 'becomeEphemeral'] as const)('erases chosen option labels from disk on %s while retaining attribution', async transition => {
     const f = await store()
     const attribution = { clientId: 'window-1', transport: 'ipc' as const }

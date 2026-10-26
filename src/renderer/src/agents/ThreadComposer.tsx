@@ -396,11 +396,11 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   // The next prompt (ADR-0132; Owl only): offered while the thread is at rest and the user's to write to, for the turn
   // that just ended, and gone the moment anything is sent, queued or asked.
   const app = useOptionalApp()
-  const nextOn = useOwlFeature('next-prompt') && app?.settings?.nextPromptSuggestions !== false && !watcher
+  const nextOn = useOwlFeature('next-prompt') && app?.settings?.nextPromptSuggestions !== false
   const nextEntry = useNextPrompt(nextOn ? threadId : null)
   const nextAnchor = lastUserMessageIdOf(row.thread) ?? ''
   const next: NextPrompt | null = nextEntry?.prompt && nextEntry.afterUserMessageId === nextAnchor && !working && !answering
-    && !permission && row.thread.requests.length === 0 && editable && continuing === undefined && row.connected && !sendInFlight && !localAdmissions
+    && !permission && row.thread.requests.length === 0 && editable && continuing === undefined && handover === null && row.connected && !sendInFlight && !localAdmissions
     && followupsFor(state, threadId).length === 0 && !isThreadClosed(row.thread) ? nextEntry.prompt : null
   const dictating = DICTATING.has(app?.dictation?.status ?? 'idle')
   // Tab, Up and the digits answer only where the dictation hotkey does not already mean them.

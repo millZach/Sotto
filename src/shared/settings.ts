@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { clearSettledThreadsAfterDaysSchema, type ClearSettledThreadsAfterDays } from './threadClear'
 import { OMARCHY_THEME_ID, omarchyThemeSchema, type OmarchyTheme } from './themes/omarchy'
 
 import { DEFAULT_HOTKEY } from './constants'
@@ -218,6 +219,14 @@ export interface AppSettings {
    * and behind with nothing of its own ahead, each time it reads the remote status (T3 Code's rule).
    */
   gitAutoPull: boolean
+  /**
+   * Keep main up to date (ADR-0142, an Owl feature): every 15 minutes and after a pull request merges, the host
+   * fast-forwards each project's checkout to its remote's default branch when that branch is checked out and nothing
+   * of the user's is in the way. On by default where the feature is on.
+   */
+  keepMainCurrent: boolean
+  /** Explicit project overrides of Keep main up to date, by the same key as the working-copy defaults; an absent key follows it. */
+  projectKeepMainCurrent: Record<string, 'on' | 'off'>
   /** The merge method a pull request's merge starts on; `last` reuses `lastMergeMethod`. */
   defaultMergeMethod: DefaultMergeMethod
   /** The merge method chosen last, kept while `defaultMergeMethod` is `last`. */
@@ -239,6 +248,12 @@ export interface AppSettings {
    * the worktree cleanup's hourly schedule. Settling removes no folder unless a cleanup rule says so.
    */
   autoSettleMergedThreads: boolean
+  /**
+   * 30 days by default; null is Never. A number of days, and this computer's settled threads quiet longer than that are
+   * cleared on their own at start, every hour and when it changes, beside the worktree cleanup (ADR-0140). Saved on every
+   * track; only Owl acts on it until the feature goes to stable.
+   */
+  clearSettledThreadsAfterDays: ClearSettledThreadsAfterDays
   /** Off by default. On, Changes opens on its own after a turn that changed at least 3 files or 50 lines. */
   proactivePanels: boolean
   reducedMotion: ReducedMotion
@@ -467,6 +482,8 @@ const fieldSchemas = {
   worktreeCleanup: worktreeCleanupRulesSchema,
   gitFetchIntervalSeconds: z.union([z.literal(0), z.literal(15), z.literal(30), z.literal(60), z.literal(300)]),
   gitAutoPull: z.boolean(),
+  keepMainCurrent: z.boolean(),
+  projectKeepMainCurrent: z.record(z.string().min(1).max(256), z.enum(['on', 'off'])),
   defaultMergeMethod: z.enum(DEFAULT_MERGE_METHODS),
   lastMergeMethod: z.enum(GIT_MERGE_METHODS),
   diffLayout: z.enum(['stacked', 'split']),
@@ -476,6 +493,7 @@ const fieldSchemas = {
   gitWritingInstructions: z.string().max(GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS),
   followPullRequestTemplates: z.boolean(),
   autoSettleMergedThreads: z.boolean(),
+  clearSettledThreadsAfterDays: clearSettledThreadsAfterDaysSchema,
   proactivePanels: z.boolean(),
   pullRequestText: z.boolean(),
   commitMessages: z.boolean(),
@@ -572,6 +590,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   gitFetchIntervalSeconds: 30,
   // Off: a pull changes the user's folder, so it happens on their word until they say otherwise.
   gitAutoPull: false,
+  // On: a fast-forward of a checkout on its default branch with nothing of the user's in the way loses nothing (ADR-0142).
+  keepMainCurrent: true,
+  projectKeepMainCurrent: {},
   // T3's defaults: the method chosen last, starting from a plain merge.
   defaultMergeMethod: 'last',
   lastMergeMethod: 'merge',
@@ -584,6 +605,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   followPullRequestTemplates: true,
   // Off: nothing moves in the sidebar on its own until the user asks for it.
   autoSettleMergedThreads: false,
+  // 30 days, Zach's pick on October 25, 2026 (ADR-0140); Never stays a choice.
+  clearSettledThreadsAfterDays: 30,
   // Off: nothing opens on its own until the user asks for it (ADR-0027).
   proactivePanels: false,
   pullRequestText: true,
@@ -738,6 +761,8 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     worktreeCleanup: parseField(persisted, 'worktreeCleanup', defaults),
     gitFetchIntervalSeconds: parseField(persisted, 'gitFetchIntervalSeconds', defaults),
     gitAutoPull: parseField(persisted, 'gitAutoPull', defaults),
+    keepMainCurrent: parseField(persisted, 'keepMainCurrent', defaults),
+    projectKeepMainCurrent: parseField(persisted, 'projectKeepMainCurrent', defaults),
     defaultMergeMethod: parseField(persisted, 'defaultMergeMethod', defaults),
     lastMergeMethod: parseField(persisted, 'lastMergeMethod', defaults),
     diffLayout: parseField(persisted, 'diffLayout', defaults),
@@ -747,6 +772,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     gitWritingInstructions: parseField(persisted, 'gitWritingInstructions', defaults),
     followPullRequestTemplates: parseField(persisted, 'followPullRequestTemplates', defaults),
     autoSettleMergedThreads: parseField(persisted, 'autoSettleMergedThreads', defaults),
+    clearSettledThreadsAfterDays: parseField(persisted, 'clearSettledThreadsAfterDays', defaults),
     proactivePanels: parseField(persisted, 'proactivePanels', defaults),
     pullRequestText: parseField(persisted, 'pullRequestText', defaults),
     commitMessages: parseField(persisted, 'commitMessages', defaults),

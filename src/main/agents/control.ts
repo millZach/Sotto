@@ -75,6 +75,8 @@ import { withoutLegacyManagement, type HostAnswerTarget, type HostAttachmentFile
 import { agentCommandSchema } from '../../shared/agents'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
 import type { DelegationCommand, DelegationControlHooks } from './delegation'
+import { threadClearHold, threadDelegators, type ThreadClearFacts } from './threadClearing'
+import { quietLongerThan, THREAD_CLEAR_MAX, threadClearKeptWords, threadQuietSince, type ThreadClearKept, type ThreadClearKeptReason, type ThreadClearPreview } from '../../shared/threadClear'
 import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord, type WatcherThreadTarget } from '../../shared/watcher'
 import { isImageAttachment, parsePublicProviderEntityId, threadProviderOf } from '../../shared/agents'
 import { isResumeNoteText } from '../../shared/restartResume'
@@ -92,20 +94,74 @@ const EMPTY_ACTIVITIES: AgentActivity[] = []
 const EMPTY_MODELS: AgentModel[] = []
 const EMPTY_THREADS: AgentThread[] = []
 /**
- * The host snapshot's threads by ID and by position, for the very list they were read from (#925). An accept of thread
- * changes keeps it up to date as it patches the list; any other list is indexed afresh the first time it is read.
+ * The coordinator's host snapshot's threads, read without a walk of its list (ADR-0016, #925 step 5): Watcher's and
+ * delegation's passes look threads up here rather than search the list for each. Only ever for the host snapshot it was
+ * asked of (`AgentControl.hostThreadsOf`), and only while the coordinator holds that snapshot.
  */
-interface HostThreadIndex {
-  /** The list the host snapshot carries. */
-  list: readonly AgentThread[]
-  /** The same threads in a list of the index's own, which a change copies and replaces threads in. */
-  raw: AgentThread[]
-  readonly byId: Map<string, AgentThread>
-  readonly at: Map<string, number>
+export interface HostThreadsView {
+  /** The thread with this ID, the first a search of the list finds. */
+  thread(id: string): AgentThread | undefined
+  /** Where the thread with this ID is in the list, the first place a search finds it. */
+  position(id: string): number | undefined
+  /** The threads that name this one as the thread that delegated them (ADR-0081), in no order. */
+  delegatedFrom(parentId: string): ReadonlySet<string> | undefined
+  /** Watcher's conversations, current and earlier. */
+  readonly watcherKinds: ReadonlySet<string>
+  /** Whether a thread names a host other than this one, which a look-up by this host's ID would not find as a search does. */
+  readonly foreign: boolean
+}
+/**
+ * What an accept of thread changes changed in the host snapshot (#925 step 5), handed to Watcher with the snapshot it
+ * made. Each thread it does not name is the very record `from` listed, in the same place.
+ */
+export interface HostThreadsChange {
+  /** The host snapshot the change was made from. A reader that last read another reads this one whole. */
+  readonly from: AgentHostSnapshot
+  /** The threads shown again, in display order: the records the host snapshot now lists. */
+  readonly threads: readonly AgentThread[]
+  /** Each named thread's record as `from` listed it; a thread `from` did not list has none. */
+  readonly previous: ReadonlyMap<string, AgentThread>
+}
+/**
+ * The host snapshot's threads by ID and by position, for the very list they were read from (#925). An accept of thread
+ * changes keeps it up to date as it patches the list; any other list is indexed afresh the first time it is read. It is
+ * also how Watcher and delegation read the host's threads without a walk of the list (`HostThreadsView`, #925 step 5).
+ */
+class HostThreadIndex implements HostThreadsView {
+  readonly byId = new Map<string, AgentThread>()
+  readonly at = new Map<string, number>()
   /** Threads that carry hidden wake-ups, which the detail broadcast keeps projections for. */
-  readonly hidden: Set<string>
+  readonly hidden = new Set<string>()
   /** Watcher's conversations, shown again whenever Watcher's requests move. */
-  readonly watcherKinds: Set<string>
+  readonly watcherKinds = new Set<string>()
+  /** The threads each thread delegated to, by its ID. */
+  private readonly children = new Map<string, Set<string>>()
+  /** Threads that name a host other than the host snapshot's own. */
+  private readonly elsewhere = new Set<string>()
+  /**
+   * `list` is the list the host snapshot carries; `raw` the same threads in a list of the index's own, which a change
+   * copies and replaces threads in. `hostId` is the host snapshot's own.
+   */
+  constructor(public list: readonly AgentThread[], public raw: AgentThread[], readonly hostId: string | undefined) {}
+  get foreign(): boolean { return this.elsewhere.size > 0 }
+  thread(id: string): AgentThread | undefined { return this.byId.get(id) }
+  position(id: string): number | undefined { return this.at.get(id) }
+  delegatedFrom(parentId: string): ReadonlySet<string> | undefined { return this.children.get(parentId) }
+  /** Notes what a thread newly read into the index says, `previous` being the record it replaced, if any. */
+  note(thread: AgentThread, previous?: AgentThread): void {
+    if (thread.hiddenWakeUpMessageIds?.length) this.hidden.add(thread.id); else this.hidden.delete(thread.id)
+    if (isWatcherKind(thread)) this.watcherKinds.add(thread.id); else this.watcherKinds.delete(thread.id)
+    if (thread.hostId !== undefined && thread.hostId !== this.hostId) this.elsewhere.add(thread.id); else this.elsewhere.delete(thread.id)
+    if (previous?.delegatedBy === thread.delegatedBy) return
+    if (previous?.delegatedBy !== undefined) {
+      const siblings = this.children.get(previous.delegatedBy)
+      siblings?.delete(thread.id)
+      if (siblings?.size === 0) this.children.delete(previous.delegatedBy)
+    }
+    if (thread.delegatedBy === undefined) return
+    const siblings = this.children.get(thread.delegatedBy)
+    if (siblings) siblings.add(thread.id); else this.children.set(thread.delegatedBy, new Set([thread.id]))
+  }
 }
 const isWatcherKind = (thread: AgentThread): boolean => thread.kind === 'watcher' || thread.kind === 'watcher-history'
 /**
@@ -148,10 +204,6 @@ class PositionQueue {
     this.held.delete(top)
     return top
   }
-}
-function noteIndexed(index: HostThreadIndex, thread: AgentThread): void {
-  if (thread.hiddenWakeUpMessageIds?.length) index.hidden.add(thread.id); else index.hidden.delete(thread.id)
-  if (isWatcherKind(thread)) index.watcherKinds.add(thread.id); else index.watcherKinds.delete(thread.id)
 }
 /** The history every thread record a broadcast lists stands on: frozen, as the records that share it are. */
 const BROADCAST_MESSAGES = Object.freeze([]) as unknown as AgentMessage[]
@@ -518,6 +570,17 @@ export class AgentControl {
   }
   /** Whether a message is a brief delegation sent, so Watcher never takes it for the user's own message. */
   delegationMessage(messageId: string): boolean { return this.delegationHooks?.ownsMessage?.(messageId) === true }
+  /**
+   * What `delegationMessage` answers from, as a number that moves when a message stops being a brief, delegation is
+   * turned on or off, or another delegation takes its place (#925 step 5).
+   */
+  delegationBriefsRevision(): number {
+    const hooks = this.delegationHooks
+    if (hooks !== this.briefsHooks) { this.briefsHooks = hooks; this.briefsHooksTurn++ }
+    return this.briefsHooksTurn * 1_000_000_000 + (hooks?.briefsRevision?.() ?? 0)
+  }
+  private briefsHooks: DelegationControlHooks | undefined
+  private briefsHooksTurn = 0
   updateWatcher(update: (record: WatcherRecord) => void): Promise<void> {
     if (this.dependencies.watcherEnabled !== true) throw new Error('Watcher is available in Sotto Owl.')
     this.mutateWatcher(update)
@@ -881,6 +944,9 @@ export class AgentControl {
   private readonly detailSnapshots = new Map<string, AgentThreadDetail>()
   /** Threads already asked about this run, so a failure is not retried on every provider frame. */
   private readonly titled = new Set<string>()
+  /** Clearing commands and the automatic rule, one at a time (ADR-0140). */
+  private clearing: Promise<unknown> = Promise.resolve()
+  private readonly deletedListeners = new Set<(threadIds: readonly string[]) => void>()
   private readonly titleWrites = new Set<Promise<void>>()
   /** Set once closing has stopped waiting for title writes: a title that comes back after the final save is let go. */
   private titleWritesLetGo = false
@@ -945,6 +1011,10 @@ export class AgentControl {
     installedProviders?: () => Promise<readonly ProviderId[]>
     /** Continuing agents as threads and forking at a reply (#1028): the Owl list's answer, read once at start. Absent fails closed. */
     threadStartsEnabled?: boolean
+    /** Clearing settled threads (ADR-0140): the Owl list's answer, read once at start. Absent fails closed. */
+    clearThreadsEnabled?: boolean
+    /** What clearing did, as stable event names with a count or a reason's code; never a title, path or branch. */
+    logClear?: (event: 'threads-cleared' | 'thread-clear-kept', detail: string) => void
     /** Times a held prototype question and the minute after a send-back (ADR-0108); injectable so tests own the clock. */
     prototypeQuestionTimer?: (run: () => void, ms: number) => () => void
     /** The next prompt (ADR-0132): told when a thread starts or finishes, and when the user sends it something. Absent while its Owl feature is off. */
@@ -1240,6 +1310,186 @@ export class AgentControl {
     if (!this.failuresSeen.dismiss(failures.filter(item => this.threadAvailable(item.threadId)), this.state.host.threads)) return
     this.publish()
     void this.persist().catch(() => undefined)
+  }
+  /**
+   * Called with the IDs of threads deleted on this host (ADR-0140), once their records are gone, so a service that keeps
+   * something of them (delegation, answer drafts) lets it go too.
+   */
+  onThreadsDeleted(listener: (threadIds: readonly string[]) => void): () => void {
+    this.deletedListeners.add(listener)
+    return () => { this.deletedListeners.delete(listener) }
+  }
+  /**
+   * What the clearing check needs of the coordinator, made once for a whole list or clear, so checking each thread costs
+   * nothing per other thread. The threads and projects are read as they are now; who delegated and what Watcher watches
+   * are read once.
+   */
+  private clearFacts(): ThreadClearFacts {
+    const state = this.state
+    const watched = new Set(this.watcherHooks?.watchedThreadIds?.() ?? [])
+    return { get threads() { return state.host.threads }, delegators: threadDelegators(state.host.threads), get projects() { return state.host.projects },
+      hidden: id => !this.threadAvailable(id),
+      pending: id => this.hasPendingThreadWork(id) || this.outbox.some(item => item.threadId === id),
+      watched: id => watched.has(id) }
+  }
+  /** Why the coordinator keeps this thread back from clearing now, or null (ADR-0140 decision 3). */
+  private clearHold(threadId: string, facts = this.clearFacts()): ThreadClearKeptReason | null {
+    return threadClearHold(this.threadById(threadId), facts)
+  }
+  private clearKept(item: { readonly threadId: string; readonly reason: ThreadClearKeptReason }, titles: ReadonlyMap<string, { title: string; projectTitle: string }>): ThreadClearKept {
+    const named = titles.get(item.threadId)
+    return { threadId: item.threadId, title: named?.title ?? '', projectTitle: named?.projectTitle ?? '', reason: item.reason }
+  }
+  private clearTitles(): Map<string, { title: string; projectTitle: string }> {
+    const projects = new Map(this.state.host.projects.map(project => [project.id, project.title]))
+    return new Map(this.state.host.threads.map(thread => [thread.id, { title: thread.title.slice(0, 512), projectTitle: (projects.get(thread.projectId) ?? '').slice(0, 512) }]))
+  }
+  /**
+   * This host's settled threads quiet longer than `days`, oldest first, with when each went quiet (ADR-0140 decision 2).
+   * Hidden threads are not among them: they are not this run's to show or clear.
+   */
+  private settledThreadsOlderThan(days: number): { thread: AgentThread; quietSince: number }[] {
+    const now = Date.now()
+    const projects = new Map(this.state.host.projects.map(project => [project.id, project]))
+    return this.state.host.threads.flatMap(thread => {
+      if (!this.threadAvailable(thread.id) || thread.kind === 'watcher' || thread.kind === 'watcher-history') return []
+      const quietSince = threadQuietSince(thread, projects.get(thread.projectId))
+      return quietSince !== undefined && quietLongerThan(quietSince, days, now) ? [{ thread, quietSince }] : []
+    }).sort((a, b) => a.quietSince - b.quietSince)
+  }
+  /** One clearing command at a time, outside every lane: the workspace takes each thread's own lane as it deletes it. */
+  private clearSerially<T>(work: () => Promise<T>): Promise<T> {
+    const task = this.clearing.then(work, work)
+    this.clearing = task.catch(() => undefined)
+    return task
+  }
+  /** A clearing command's answer: the shell as it is now, built only when a clearing command answers, with its outcome. */
+  private clearReply(outcome: Partial<AgentState>): AgentState { return { ...this.shell(), ...outcome } }
+  private clearCommand(command: Extract<AgentCommand, { type: 'preview-delete-thread' | 'delete-thread' | 'preview-clear-threads' | 'clear-threads' }>): Promise<AgentState> {
+    if (this.dependencies.clearThreadsEnabled !== true) return Promise.resolve(this.clearReply({ error: 'Deleting threads is not available in this version of Sotto. Nothing was deleted.' }))
+    const host = this.dependencies.host
+    if (!host.deleteThreads || !host.previewThreadDeletion) return Promise.resolve(this.clearReply({ error: 'This host cannot delete threads. Nothing was deleted. Update it and try again.' }))
+    return this.clearSerially(async () => {
+      try {
+        if (command.type === 'preview-delete-thread') {
+          const kept = this.clearHold(command.threadId)
+          const preview = kept ? { kept, worktree: null } : await host.previewThreadDeletion!(command.threadId, false)
+          return this.clearReply({ error: null, threadDeletePreview: { threadId: command.threadId, kept: preview.kept, worktree: preview.worktree } })
+        }
+        if (command.type === 'preview-clear-threads') {
+          const titles = this.clearTitles()
+          const facts = this.clearFacts()
+          const go: ThreadClearPreview['go'] = []
+          const kept: ThreadClearKept[] = []
+          for (const { thread, quietSince } of this.settledThreadsOlderThan(command.olderThanDays)) {
+            if (go.length + kept.length >= THREAD_CLEAR_MAX) break
+            const held = this.clearHold(thread.id, facts)
+            const preview = held ? { kept: held, worktree: null } : await host.previewThreadDeletion!(thread.id, true)
+            if (preview.kept) { kept.push(this.clearKept({ threadId: thread.id, reason: preview.kept }, titles)); continue }
+            const named = titles.get(thread.id)
+            go.push({ threadId: thread.id, title: named?.title ?? '', projectTitle: named?.projectTitle ?? '', quietSince: new Date(quietSince).toISOString(), removesWorktree: preview.worktree !== null })
+          }
+          return this.clearReply({ error: null, threadClearPreview: { olderThanDays: command.olderThanDays, go, kept } })
+        }
+        if (command.type === 'delete-thread') {
+          const titles = this.clearTitles()
+          const title = titles.get(command.threadId)?.title ?? ''
+          const result = await host.deleteThreads!([command.threadId], { automatic: false, hold: id => this.clearHold(id),
+            worktree: { ...command.confirmedIgnored ? { confirmedIgnored: command.confirmedIgnored } : {}, ...command.confirmedItems ? { confirmedItems: command.confirmedItems } : {},
+              ...command.confirmedRepositories ? { confirmedRepositories: command.confirmedRepositories } : {} } })
+          if (!result.deleted.length) {
+            const kept = result.kept[0]
+            if (kept) this.logClear('thread-clear-kept', kept.reason)
+            const error = !kept ? `Sotto could not find “${title}”. Nothing was deleted.`
+              : kept.error ? `“${title}” was not deleted. ${kept.error}`
+                : `“${title}” was not deleted: ${threadClearKeptWords(kept.reason)}. Nothing was deleted.`
+            this.publish()
+            return this.clearReply({ error })
+          }
+          await this.forgetDeletedThreads(result.deleted)
+          this.logClear('threads-cleared', String(result.deleted.length))
+          this.state.notice = `Deleted “${title}”.`
+          this.publish()
+          return this.clearReply({ error: null })
+        }
+        return await this.clearThreads(command.threadIds, command.olderThanDays, false)
+      } catch (error) {
+        return this.clearReply({ error: error instanceof Error ? error.message : 'Sotto could not delete these threads. Nothing was deleted. Try again.' })
+      }
+    })
+  }
+  /**
+   * Deletes those of `threadIds` that still qualify: settled, quiet longer than `olderThanDays`, and kept back by nothing
+   * (ADR-0140). Each is checked again as it is deleted. `automatic` is the rule's run, which says nothing on screen.
+   */
+  private async clearThreads(threadIds: readonly string[], olderThanDays: number, automatic: boolean): Promise<AgentState> {
+    const host = this.dependencies.host
+    const titles = this.clearTitles()
+    const old = new Set(this.settledThreadsOlderThan(olderThanDays).map(item => item.thread.id))
+    // One that changed since the list was made is kept and says why; one already gone is no one's to report.
+    const facts = this.clearFacts()
+    const asked = [...new Set(threadIds)].filter(id => this.threadById(id) !== undefined && (old.has(id) || this.clearHold(id, facts) !== null))
+    // Checked again as each goes: a thread active again since the list was made is no longer old, and is kept as working.
+    const stillOld = (id: string): boolean => {
+      const thread = this.threadById(id)
+      const quietSince = thread ? threadQuietSince(thread, this.state.host.projects.find(project => project.id === thread.projectId)) : undefined
+      return quietSince !== undefined && quietLongerThan(quietSince, olderThanDays, Date.now())
+    }
+    const result = await host.deleteThreads!(asked, { automatic: true, hold: id => this.clearHold(id, facts) ?? (stillOld(id) ? null : 'working') })
+    if (result.deleted.length) await this.forgetDeletedThreads(result.deleted)
+    // The hourly rule keeps the same threads back hour after hour, so it logs only a run that cleared something.
+    if (!automatic || result.deleted.length) this.logClear('threads-cleared', String(result.deleted.length))
+    if (!automatic) for (const item of result.kept) this.logClear('thread-clear-kept', item.reason)
+    const count = result.deleted.length
+    if (!automatic) this.state.notice = count === 1 ? 'Cleared 1 thread.' : `Cleared ${count} threads.`
+    this.publish()
+    return this.clearReply({ error: null, threadClearResult: { cleared: count, kept: result.kept.slice(0, THREAD_CLEAR_MAX).map(item => this.clearKept(item, titles)) } })
+  }
+  /**
+   * Clear settled threads after (ADR-0140 decision 2): this host's settled threads quiet longer than `days` are cleared on
+   * their own. It runs nothing while the Owl feature is off, and says nothing on screen; the log has the count. `keep` is
+   * asked of each thread nothing else keeps back, such as whether GitHub has an open pull request for its branch now.
+   */
+  clearSettledThreads(days: number, keep?: (thread: AgentThread) => Promise<ThreadClearKeptReason | null>): Promise<void> {
+    if (this.dependencies.clearThreadsEnabled !== true || this.disposed || !this.dependencies.host.deleteThreads || days <= 0) return Promise.resolve()
+    return this.clearSerially(async () => {
+      const facts = this.clearFacts()
+      const ids: string[] = []
+      for (const { thread } of this.settledThreadsOlderThan(days)) {
+        // One already kept back is asked about again as it goes, and kept; only one that could go is asked about.
+        if (keep && this.clearHold(thread.id, facts) === null && await keep(thread) !== null) continue
+        ids.push(thread.id)
+      }
+      if (ids.length) await this.clearThreads(ids, days, true)
+    }).catch(() => { this.logClear('threads-cleared', 'failed') })
+  }
+  private logClear(event: 'threads-cleared' | 'thread-clear-kept', detail: string): void {
+    try { this.dependencies.logClear?.(event, detail) } catch { /* Logging never stops a clear. */ }
+  }
+  /**
+   * What the coordinator kept of deleted threads goes too (ADR-0140 decision 4): their drafts, delivery receipts, queued
+   * wake-ups and queue receipts, attachment previews, and the composer when it was theirs.
+   * Listeners then forget their own records of them.
+   */
+  private async forgetDeletedThreads(threadIds: readonly string[]): Promise<void> {
+    const gone = new Set(threadIds)
+    const kept = <T extends { readonly threadId?: string | undefined | null }>(items: T[] | undefined): T[] | undefined => items?.filter(item => !item.threadId || !gone.has(item.threadId))
+    this.state.threadDrafts = kept(this.state.threadDrafts)
+    this.state.deliveries = kept(this.state.deliveries)
+    this.state.deliveredDrafts = kept(this.state.deliveredDrafts)
+    this.state.obsoleteDrafts = kept(this.state.obsoleteDrafts)
+    if (this.state.followupReceipts) this.state.followupReceipts = kept(this.state.followupReceipts)
+    this.deliveredPromptDigests = this.deliveredPromptDigests.filter(item => !gone.has(item.threadId))
+    for (const threadId of threadIds) { this.emptyDraftRevisions.delete(threadId); this.titled.delete(threadId) }
+    if (this.state.draftThreadId && gone.has(this.state.draftThreadId)) this.clearDraft()
+    if (this.state.activeThreadId && gone.has(this.state.activeThreadId)) this.state.activeThreadId = null
+    this.viewedThreadIds = this.viewedThreadIds.filter(id => !gone.has(id))
+    await this.followupStore.forgetThreads(gone).catch(() => undefined)
+    this.syncFollowups()
+    await this.attachmentPreviews.forgetThreads(gone).catch(() => undefined)
+    await this.maintainAttachments().catch(() => undefined)
+    for (const listener of this.deletedListeners) { try { listener(threadIds) } catch { /* Each listener keeps its own record. */ } }
+    await this.persist().catch(() => { this.state.error = 'Agent state could not be saved. Restore access to local storage and retry.' })
   }
   /**
    * `setAsideIgnored` is for a change the user makes, such as Watcher's model or provider: a prompt the user set aside is
@@ -3286,7 +3536,9 @@ export class AgentControl {
   command(command: AgentCommand, client: ClientIdentity = this.localClient): Promise<AgentState> {
     const reply = this.commandShell(command, client)
     let whole = this.sharedWholeStateReplies.get(reply)
-    if (!whole) { whole = reply.then(shell => ({ ...this.get(), error: shell.error, ...(shell.worktreeReclaimPreview ? { worktreeReclaimPreview: shell.worktreeReclaimPreview } : {}) })); this.sharedWholeStateReplies.set(reply, whole) }
+    if (!whole) { whole = reply.then(shell => ({ ...this.get(), error: shell.error, ...(shell.worktreeReclaimPreview ? { worktreeReclaimPreview: shell.worktreeReclaimPreview } : {}),
+      ...(shell.threadDeletePreview ? { threadDeletePreview: shell.threadDeletePreview } : {}), ...(shell.threadClearPreview ? { threadClearPreview: shell.threadClearPreview } : {}),
+      ...(shell.threadClearResult ? { threadClearResult: shell.threadClearResult } : {}) })); this.sharedWholeStateReplies.set(reply, whole) }
     return whole
   }
   /**
@@ -3513,6 +3765,7 @@ export class AgentControl {
     if (command.type === 'update-client' || command.type === 'queue-client-updates' || command.type === 'cancel-client-updates' || command.type === 'check-client-updates' || command.type === 'dismiss-client-updates') return this.providerCommand(command)
     if (command.type === 'refresh-thread-skills') return this.refreshThreadSkills(command.threadId, command.forceReload)
     if (command.type === 'start-thread-session') return this.startThreadSession(command.threadId)
+    if (command.type === 'preview-delete-thread' || command.type === 'delete-thread' || command.type === 'preview-clear-threads' || command.type === 'clear-threads') return this.clearCommand(command)
     if (command.type === 'preview-reclaim-thread-worktree') {
       const preview = this.dependencies.host.previewThreadWorktreeReclaim
       if (!preview) return Promise.resolve({ ...this.shell(), error: 'Checking this worktree is unavailable. Nothing was removed. Update this host and try again.' })
@@ -5401,15 +5654,23 @@ export class AgentControl {
     this.state.draft = ''; this.state.draftThreadId = null; this.state.draftRequestId = null; this.state.composing = false
   }
   private hasDraft(): boolean { return Boolean(this.state.draft.trim() || this.state.draftAttachments?.length) }
-  /** Lets Watcher read the threads and the queue as they stand, with Sotto's own sends known as its own. */
-  private observeWatcher(snapshot: AgentHostSnapshot): void {
+  /**
+   * Lets Watcher read the threads and the queue as they stand, with Sotto's own sends known as its own. `changed` says
+   * what an accept of thread changes changed, so Watcher reads only that and what its own record names (#925 step 5).
+   */
+  private observeWatcher(snapshot: AgentHostSnapshot, changed?: HostThreadsChange): void {
     if (this.disposed) return
     // Watcher's pass runs for every update, and asks which messages Sotto sent only of a head that may be a takeover, so the
     // set is gathered from the outbox and every delivery only when it is first asked.
     let known: Set<string> | undefined
     this.watcherHooks?.observe(snapshot, { has: id => (known ??= new Set([...this.outbox.flatMap(item => item.messageId ? [item.messageId] : []),
-      ...(this.state.deliveries ?? []).flatMap(item => item.messageId ? [item.messageId] : [])])).has(id) })
+      ...(this.state.deliveries ?? []).flatMap(item => item.messageId ? [item.messageId] : [])])).has(id) }, changed)
   }
+  /**
+   * The host snapshot's threads by look-up (`HostThreadsView`), for Watcher and delegation, when `snapshot` is the one the
+   * coordinator holds now; undefined for any other, which its reader searches as it always did.
+   */
+  hostThreadsOf(snapshot: Readonly<AgentHostSnapshot>): HostThreadsView | undefined { return snapshot === this.state.host ? this.indexed() : undefined }
   /**
    * Takes a whole host snapshot in: a publication of a host without thread changes, a command's read, the coordinator's
    * own snapshot taken again, or (`fromChanges`) the host's thread changes taken in whole. Only that last leaves the next
@@ -5527,11 +5788,15 @@ export class AgentControl {
     // only removes threads lets go of what was kept for them too.
     this.prototypeReady.letGo(gone)
     const shown = this.prototypeQuestions.decorate({ ...this.state.host, threads: [...marked.values()].sort(byPosition) }, gone, settled).threads
+    // Each named thread's record as the list held it, for Watcher, read before the list is patched (#925 step 5).
+    const from = this.state.host, previous = new Map<string, AgentThread>()
+    for (const id of named) { const held = index.byId.get(id); if (held) previous.set(id, held) }
+    for (const id of gone) { const held = index.byId.get(id); if (held) previous.set(id, held) }
     const list = this.patchHostThreads(index, map, named, shown, gone, changes.placements !== undefined && changes.placements.length > 0)
     this.state.host = { ...this.state.host, threads: list }
     this.hostFromChanges = this.state.host
     this.hostListFromChanges = list
-    this.accepted(this.state.host, connecting, { threads: shown, gone })
+    this.accepted(this.state.host, connecting, { threads: shown, gone, from, previous })
     if (this.verifyingChanges) this.verifyChanges(map)
   }
   /**
@@ -5548,7 +5813,7 @@ export class AgentControl {
     let list: AgentThread[]
     if (inPlace) {
       const raw = index.raw.slice()
-      for (const thread of shown) { raw[index.at.get(thread.id)!] = thread; index.byId.set(thread.id, thread); noteIndexed(index, thread) }
+      for (const thread of shown) { const previous = index.byId.get(thread.id); raw[index.at.get(thread.id)!] = thread; index.byId.set(thread.id, thread); index.note(thread, previous) }
       list = this.hostThreadList(raw)
       index.raw = raw; index.list = list
       // The broadcast that follows lists again only the threads replaced since the list it was made from.
@@ -5560,11 +5825,11 @@ export class AgentControl {
     }
     const records = new Map(shown.map(thread => [thread.id, thread]))
     const raw: AgentThread[] = []
-    const rebuilt: HostThreadIndex = { list: raw, raw, byId: new Map(), at: new Map(), hidden: new Set(), watcherKinds: new Set() }
+    const rebuilt = new HostThreadIndex(raw, raw, this.state.host.hostId)
     for (const id of map.ids()) {
       const thread = named.has(id) ? records.get(id) : gone.has(id) ? undefined : index.byId.get(id)
       if (!thread || rebuilt.byId.has(id)) continue
-      rebuilt.byId.set(id, thread); rebuilt.at.set(id, raw.length); noteIndexed(rebuilt, thread)
+      rebuilt.byId.set(id, thread); rebuilt.at.set(id, raw.length); rebuilt.note(thread)
       raw.push(thread)
     }
     list = this.hostThreadList(raw)
@@ -5607,13 +5872,13 @@ export class AgentControl {
   /** The host's threads by ID and position, for the host snapshot's list as it is now. */
   private indexed(): HostThreadIndex {
     const list = this.state.host.threads
-    if (this.hostIndex?.list === list) return this.hostIndex
-    const index: HostThreadIndex = { list, raw: [], byId: new Map(), at: new Map(), hidden: new Set(), watcherKinds: new Set() }
+    if (this.hostIndex?.list === list && this.hostIndex.hostId === this.state.host.hostId) return this.hostIndex
+    const index = new HostThreadIndex(list, [], this.state.host.hostId)
     for (let position = 0; position < list.length; position++) {
       const thread = list[position]!
       index.raw.push(thread)
       if (index.byId.has(thread.id)) continue
-      index.byId.set(thread.id, thread); index.at.set(thread.id, position); noteIndexed(index, thread)
+      index.byId.set(thread.id, thread); index.at.set(thread.id, position); index.note(thread)
     }
     this.hostIndex = index
     return index
@@ -5624,9 +5889,9 @@ export class AgentControl {
    * What taking a host snapshot in does once the snapshot is shown, whole or by a change. `changed` names, for a change,
    * the threads it showed again and the threads that went: only those are tracked, every other being as it was.
    */
-  private accepted(snapshot: AgentHostSnapshot, connecting: boolean, changed?: { readonly threads: readonly AgentThread[]; readonly gone: ReadonlySet<string> }): void {
-    this.observeWatcher(snapshot)
-    if (!this.disposed) this.delegationHooks?.observe(snapshot)
+  private accepted(snapshot: AgentHostSnapshot, connecting: boolean, changed?: HostThreadsChange & { readonly gone: ReadonlySet<string> }): void {
+    this.observeWatcher(snapshot, changed)
+    if (!this.disposed) this.delegationHooks?.observe(snapshot, this.hostThreadsOf(snapshot))
     const shownThread = (id: string): AgentThread | undefined => snapshot === this.state.host ? this.threadById(id) : snapshot.threads.find(thread => thread.id === id)
     if (snapshot.connected && this.state.activeThreadId && this.threadAvailable(this.state.activeThreadId) && !shownThread(this.state.activeThreadId)) {
       const selected = snapshot.threads.find(thread => thread.id === this.state.draftThreadId) ?? snapshot.threads.find(thread => !isThreadClosed(thread))

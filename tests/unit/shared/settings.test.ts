@@ -93,6 +93,8 @@ const customSettings = {
   worktreeCleanup: { afterDays: 30, merged: true, onSettle: false, unchanged: true },
   gitFetchIntervalSeconds: 60,
   gitAutoPull: true,
+  keepMainCurrent: false,
+  projectKeepMainCurrent: { workshop: 'on' },
   defaultMergeMethod: 'rebase',
   lastMergeMethod: 'squash',
   diffLayout: 'split',
@@ -102,6 +104,7 @@ const customSettings = {
   gitWritingInstructions: 'Subjects in the past tense.',
   followPullRequestTemplates: false,
   autoSettleMergedThreads: true,
+  clearSettledThreadsAfterDays: 90,
   proactivePanels: true,
   pullRequestText: false,
   commitMessages: false,
@@ -210,6 +213,11 @@ describe('settings', () => {
       autoSettleMergedThreads: null, proactivePanels: 'sometimes',
     }
     expect(parseSettings({ ...unusable, gitFetchIntervalSeconds: 60 })).toMatchObject({ ...DEFAULT_SETTINGS, gitFetchIntervalSeconds: 60 })
+  })
+  it('keeps main up to date by default, and keeps each project\'s own answer while dropping one it cannot read (ADR-0142)', () => {
+    expect(parseSettings({})).toMatchObject({ keepMainCurrent: true, projectKeepMainCurrent: {} })
+    expect(parseSettings({ keepMainCurrent: false, projectKeepMainCurrent: { sotto: 'off', boiler: 'on' } })).toMatchObject({ keepMainCurrent: false, projectKeepMainCurrent: { sotto: 'off', boiler: 'on' } })
+    expect(parseSettings({ keepMainCurrent: 'yes', projectKeepMainCurrent: { sotto: 'sometimes' } })).toMatchObject({ keepMainCurrent: true, projectKeepMainCurrent: {} })
   })
   it('starts a merge on the chosen method, or the one used last, and remembers a choice only under Last selected', () => {
     expect(initialMergeMethod({ defaultMergeMethod: 'last', lastMergeMethod: 'squash' })).toBe('squash')
@@ -424,6 +432,8 @@ describe('settings', () => {
       worktreeCleanup: { afterDays: null, merged: false, onSettle: false, unchanged: false },
       gitFetchIntervalSeconds: 30,
       gitAutoPull: false,
+      keepMainCurrent: true,
+      projectKeepMainCurrent: {},
       defaultMergeMethod: 'last',
       lastMergeMethod: 'merge',
       diffLayout: 'stacked',
@@ -433,6 +443,7 @@ describe('settings', () => {
       gitWritingInstructions: '',
       followPullRequestTemplates: true,
       autoSettleMergedThreads: false,
+      clearSettledThreadsAfterDays: 30,
       proactivePanels: false,
       pullRequestText: true,
       commitMessages: true,

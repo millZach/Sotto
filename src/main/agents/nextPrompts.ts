@@ -68,6 +68,12 @@ export function recentExchanges(messages: readonly AgentMessage[], max = NEXT_PR
   return exchanges.length > 0 ? exchanges : null
 }
 
+/** The turn answered a wake-up Sotto sent, by the host's own record of the send, never by its text. */
+function answersWakeUp(thread: AgentThread): boolean {
+  const id = lastUserMessageIdOf(thread)
+  return id !== null && (thread.wakeUpMessageIds?.includes(id) === true || thread.messages.some(message => message.id === id && message.wakeUp === true))
+}
+
 /**
  * Next prompts for this computer's threads (ADR-0132). When a turn ends, the thread's own provider is asked on the side
  * (ADR-0026) what the user will most likely type next; the answer is held in memory for that thread and told to the
@@ -91,9 +97,10 @@ export class NextPrompts implements NextPromptHooks {
   }
 
   finished(thread: AgentThread): void {
-    // A turn the user stopped or that failed did not end on an answer. Watcher's own threads are its, and a delegated
-    // thread's next message comes from the thread that delegated to it (ADR-0081), not the user.
-    if (this.closed || thread.kind === 'watcher' || thread.kind === 'watcher-history' || thread.delegatedBy !== undefined
+    // A turn the user stopped or that failed did not end on an answer. A past Watcher conversation takes no more messages,
+    // Watcher answering Sotto's own news answered nothing the user typed, and a delegated thread's next message comes from
+    // the thread that delegated to it (ADR-0081), not the user.
+    if (this.closed || thread.kind === 'watcher-history' || thread.kind === 'watcher' && answersWakeUp(thread) || thread.delegatedBy !== undefined
       || thread.lastTurn?.status === 'interrupted' || thread.lastTurn?.status === 'failed') return
     const held = this.hold(thread.id)
     this.supersede(held)

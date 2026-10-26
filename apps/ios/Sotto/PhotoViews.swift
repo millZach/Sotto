@@ -181,8 +181,9 @@ private struct FullPhoto: View {
             if let image {
                 Image(image, scale: 1, label: Text("Photo: \(name)")).resizable().scaledToFit()
             } else if missing {
-                Text("This photo couldn’t be loaded from \(model.name(key.ref.hostID)). Nothing was lost. Try again when it’s connected.")
+                Text("This photo couldn’t be loaded from \(model.name(key.ref.hostID)). Nothing was lost. Try again when it’s connected.", comment: "%@ is the computer’s name.")
                     .multilineTextAlignment(.center).foregroundStyle(Palette.muted).padding(32)
+                    .paragraphDirection()
             } else { ProgressView() }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -233,7 +234,7 @@ private struct DraftPhotoView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .accessibilityElement()
             .accessibilityLabel("Photo \(number) of \(count)")
-            .accessibilityValue(photo.preparing ? "Getting it ready" : photo.staging ? "Sending it to the computer" : "Ready")
+            .accessibilityValue(photo.preparing ? String(localized: "Getting it ready", comment: "Accessibility value: a photo in the reply box is being prepared.") : photo.staging ? String(localized: "Sending it to the computer", comment: "Accessibility value: a photo in the reply box is being sent to the computer.") : String(localized: "Ready", comment: "Accessibility value: a photo in the reply box is ready to send."))
             Button(action: remove) {
                 Image(systemName: "xmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Palette.canvas)
                     .frame(width: 22, height: 22).background(Palette.ink.opacity(0.85), in: Circle())
@@ -284,9 +285,9 @@ struct AttachPhotosButton: View {
                 .foregroundStyle(reason == nil || (!watcher && fileReason == nil) ? Palette.ink : Palette.muted)
                 .background(Palette.raised, in: Circle())
         }
-        .accessibilityLabel(watcher ? "Attach photos" : "Attach photos or files")
-        .accessibilityHint(watcher ? reason ?? "Choose photos from the library, or take one with the camera."
-            : [reason, fileReason].compactMap { $0 }.first ?? "Choose photos from the library, take one with the camera, or choose files.")
+        .accessibilityLabel(watcher ? String(localized: "Attach photos") : String(localized: "Attach photos or files"))
+        .accessibilityHint(watcher ? reason ?? String(localized: "Choose photos from the library, or take one with the camera.")
+            : [reason, fileReason].compactMap { $0 }.first ?? String(localized: "Choose photos from the library, take one with the camera, or choose files."))
         .accessibilityIdentifier(watcher ? "watcher-attach-photos" : "thread-attach-photos")
         .photosPicker(isPresented: $choosing, selection: $picked, maxSelectionCount: max(1, room),
                       selectionBehavior: .ordered, matching: .images, preferredItemEncoding: .current)
@@ -319,14 +320,17 @@ struct AttachPhotosButton: View {
     private var room: Int { PhotoLimits.count - model.photos(box).count - model.files(box).count }
     private var reason: String? {
         if let reason = model.photoSupport(box).reason(computer: model.name(box.hostID), watcher: watcher) { return reason }
-        if model.preparingSends.contains(box.id) { return watcher ? "Your message is being sent." : "Your reply is being sent." }
+        if model.preparingSends.contains(box.id) {
+            return watcher ? String(localized: "Your message is being sent.", comment: "A message to Watcher is on its way, so its photos can't change")
+                : String(localized: "Your reply is being sent.")
+        }
         if room > 0 { return nil }
-        return model.files(box).isEmpty ? "\(box.carrier) can carry \(PhotoLimits.count) photos." : FileWords.full
+        return model.files(box).isEmpty ? box.photoLimitWords : FileWords.full
     }
     private var fileReason: String? {
         guard case .thread(let ref) = box else { return nil }
         if let reason = model.fileSupport(ref).reason(computer: model.name(box.hostID)) { return reason }
-        if model.preparingSends.contains(box.id) { return "Your reply is being sent." }
+        if model.preparingSends.contains(box.id) { return String(localized: "Your reply is being sent.") }
         return room > 0 ? nil : FileWords.full
     }
     /// A photo chosen in Files goes as a photo, made ready as one from the library is, and is refused in the photos' own
@@ -355,7 +359,7 @@ struct AttachPhotosButton: View {
     private func openCamera() {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .denied, .restricted:
-            model.photoNotices[box.id] = "Sotto can’t use the camera. Turn it on in Settings › Sotto › Camera."
+            model.photoNotices[box.id] = String(localized: "Sotto can’t use the camera. Turn it on in Settings › Sotto › Camera.")
         default: shooting = true
         }
     }

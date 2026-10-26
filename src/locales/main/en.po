@@ -2172,6 +2172,10 @@ msgstr "This checkpoint has no completed file snapshot."
 msgid "This checkpoint no longer matches the selected native thread and working copy."
 msgstr "This checkpoint no longer matches the selected native thread and working copy."
 
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This clear could not be read. Nothing was deleted."
+msgstr "This clear could not be read. Nothing was deleted."
+
 #: src/main/tools/cloudIphone/service.ts
 msgid "This cloud iPhone request already changed or expired. Ask again."
 msgstr "This cloud iPhone request already changed or expired. Ask again."
@@ -2203,6 +2207,10 @@ msgstr "This computer pairs with a host only through its SSH connection. Nothing
 #: src/main/hosts/hostFailureWords.ts
 msgid "This computer pairs with a host only through its SSH connection. Nothing was sent. Connect again over SSH."
 msgstr "This computer pairs with a host only through its SSH connection. Nothing was sent. Connect again over SSH."
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This computer runs no threads of its own here, so there is nothing to clear. Nothing was deleted."
+msgstr "This computer runs no threads of its own here, so there is nothing to clear. Nothing was deleted."
 
 #: src/main/hosts/hostFailureWords.ts
 msgid "This computer's OpenSSH is too old. Nothing was saved. Sotto needs OpenSSH 8.4 or later. Update OpenSSH on this computer, then add the host again."
@@ -2281,6 +2289,14 @@ msgstr "This host connection was closed."
 #: src/main/hosts/hostFailureWords.ts
 msgid "This host connection was closed. Nothing was saved."
 msgstr "This host connection was closed. Nothing was saved."
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This host could not check the thread. Nothing was deleted. Check its connection and try again."
+msgstr "This host could not check the thread. Nothing was deleted. Check its connection and try again."
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This host could not check the thread. Nothing was deleted. Try again."
+msgstr "This host could not check the thread. Nothing was deleted. Try again."
 
 #: src/main/hosts/desktopHostRouter.ts
 msgid "This host could not check the worktree. Nothing was removed. Check its connection or update the host and try again."
@@ -2625,6 +2641,10 @@ msgstr "Turn on the local host in Settings > Hosts & phones and restart Sotto be
 #: src/main/themes/openVsx.ts
 msgid "Type up to 100 characters to search."
 msgstr "Type up to 100 characters to search."
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "Update {host} to delete its threads. Nothing was deleted."
+msgstr "Update {host} to delete its threads. Nothing was deleted."
 
 #: src/main/agents/socketHostService.ts
 #: src/main/hosts/desktopHostRouter.ts

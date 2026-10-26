@@ -1,5 +1,6 @@
 import { join } from 'node:path'
-import type { ProviderId } from '../../shared/agents'
+import type { AgentThread, ProviderId } from '../../shared/agents'
+import type { ThreadClearKeptReason } from '../../shared/threadClear'
 import type { AppSettings } from '../../shared/settings'
 import { babysitEndedReasonSchema, type BabysitEndedReason } from '../../shared/babysitting'
 import { ShortTextWriter } from '../llm/shortTextWriter'
@@ -26,6 +27,8 @@ import { heldProvidersOption, type HeldProviders } from '../../shared/heldProvid
 import { ConfiguredProviderHost } from './providerSwitch'
 import { SottoThreadHost, ThreadRegistry } from './threads'
 import { WorkspaceHost } from './workspace'
+import { MainCheckoutKeeper, type MainCheckoutEvent } from './mainCheckout'
+import type { PullRequestObservation } from './watcherEvidence'
 import { WatcherService, type WatcherAutoSettleEvent } from './watcher'
 import { WatcherPhoneService } from './watcherPhone'
 import { WatcherToolServer } from './watcherTools'
@@ -47,7 +50,7 @@ import { wakeUpPartDue, type BabysitNews } from './babysitNews'
 import { GitPullRequests } from './gitPullRequests'
 import { commitMessageWriter } from '../llm/commitMessage'
 import { pullRequestTextWriter } from '../llm/pullRequestText'
-import { WorktreeCleanup, type WorktreeCleanupDependencies } from './worktreeCleanup'
+import { WorktreeCleanup, type SharedGitHub, type WorktreeCleanupDependencies } from './worktreeCleanup'
 import { IdleCompaction } from './idleCompaction'
 import { RestartResume } from './restartResume'
 import type { AgentHost } from './host'
@@ -85,6 +88,15 @@ export interface AgentRuntimeOptions {
   continueEnabled?: boolean
   /** The Owl list's answer for continuing an agent as its own thread and forking at a reply (#1028), read once. Absent fails closed. */
   threadStartsEnabled?: boolean
+  /** Clearing settled threads (ADR-0140): the Owl list's answer, read once at start. Absent, nothing is deleted. */
+  clearThreadsEnabled?: boolean
+  /** What clearing did, as stable event names with a count or a reason's code. */
+  clearLog?: (event: 'threads-cleared' | 'thread-clear-kept', detail: string) => void
+  /**
+   * Keep main up to date (ADR-0142): the Owl list's answer, read once by the process owner, and its log of stable event
+   * names. Absent fails closed, and a headless host builds none whatever it says.
+   */
+  keepMainCurrent?: { readonly log?: (event: MainCheckoutEvent) => void }
   /** The Owl list's answer for the iPhone's pull request sheet (#1281), read once. Absent fails closed. */
   pullRequestViewEnabled?: boolean
   /** The Owl list's answer for the iPhone's Agents view (ADR-0103), read once by the process owner. Absent fails closed. */
@@ -160,7 +172,10 @@ export interface AgentRuntimeOptions {
     log?: (event: GitHubRateLimitEvent | BabysitEvent) => void }
   /** What the worktree cleanup (ADR-0041) may reach beyond the workspace: GitHub for the merged rule and Auto-settle
    * merged threads, and a log of stable event names. Without `pullRequestMerged` neither fires; the other rules read only the repository. */
-  worktreeCleanup?: Pick<WorktreeCleanupDependencies, 'pullRequestMerged' | 'log'>
+  worktreeCleanup?: Pick<WorktreeCleanupDependencies, 'pullRequestMerged' | 'log'> & {
+    /** GitHub's open pull requests' branches, which Clear settled threads after asks before a thread goes (ADR-0140). */
+    readonly openPullRequestBranches?: (repositoryRoot: string, github?: SharedGitHub) => Promise<ReadonlySet<string>>
+  }
   /**
    * Babysitting (ADR-0061). `agentTool` is the desktop's switch, read live: while it is on, this computer's Claude Code,
    * Codex and Grok Build threads have Sotto's pull request tools, so a wake-up tells the agent to stop with them. A
@@ -173,6 +188,14 @@ export interface AgentRuntimeOptions {
 }
 
 /** The provider stack both Electron main and a plain Node host own. No client transport lives here. */
+/**
+ * Whether this runtime clears its settled threads on its own (ADR-0140 decision 7): only on Owl, and never as a headless
+ * host. A host has no Settings to choose Clear settled threads after in, so the 30-day default read from its own file
+ * would delete threads no one asked it to, whatever the desktop chose. A desktop's Delete thread… still reaches it.
+ */
+export function clearsOnItsOwn(options: Pick<AgentRuntimeOptions, 'clearThreadsEnabled' | 'runsAs'>): boolean {
+  return options.clearThreadsEnabled === true && options.runsAs !== 'headless-host'
+}
 export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const { directory, credentials } = options
   // This machine's host facts: its operating system is read now, once; memory only when facts are asked for (#1031).
@@ -252,10 +275,22 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   })
   agentHost.setBranchNameWriter(threadBranchWriter(shortTextWriter, options.writingSettings))
   // T3's Git actions (ADR-0027): the commit message and pull request text are the same side calls the forms use.
-  if (gitStatus) agentHost.setGitActions(new GitActions({ status: gitStatus, ...(gitRun ? { run: gitRun } : {}), ...(gitHubHosts ? { hosts: gitHubHosts } : {}),
+  const gitActions = gitStatus ? new GitActions({ status: gitStatus, ...(gitRun ? { run: gitRun } : {}), ...(gitHubHosts ? { hosts: gitHubHosts } : {}),
     writeCommitMessage: commitMessageWriter(shortTextWriter, options.writingSettings),
     writePullRequestText: pullRequestTextWriter(shortTextWriter, options.writingSettings),
-    followPullRequestTemplates: async () => (await options.writingSettings()).followPullRequestTemplates }))
+    followPullRequestTemplates: async () => (await options.writingSettings()).followPullRequestTemplates }) : undefined
+  if (gitActions) agentHost.setGitActions(gitActions)
+  // Keep main up to date (ADR-0142): this computer's own projects, every 15 minutes and when a pull request merges. A
+  // headless host's projects wait for a follow-up that carries the line to its clients.
+  const mainCheckout = options.keepMainCurrent && options.runsAs !== 'headless-host' && gitStatus && gitActions
+    ? new MainCheckoutKeeper({ host: agentHost, status: gitStatus, actions: gitActions, directory, ...(gitRun ? { run: gitRun } : {}),
+      ...(options.keepMainCurrent.log ? { log: options.keepMainCurrent.log } : {}),
+      enabled: projectId => {
+        const settings = options.settings()
+        const own = settings.projectKeepMainCurrent[projectId]
+        return own === undefined ? settings.keepMainCurrent : own === 'on'
+      } }) : undefined
+  if (mainCheckout) agentHost.onPullRequestMerged(url => mainCheckout.pullRequestMerged(url))
   // The branch's pull request as a Tools surface (ADR-0027): read and acted on through the same gh.
   if (gitStatus) agentHost.setGitPullRequests(new GitPullRequests({ ...(gitRun ? { run: gitRun } : {}), ...(gitHubRateLimit ? { rateLimit: gitHubRateLimit } : {}), ...(gitHubHosts ? { hosts: gitHubHosts } : {}) }))
   const turns = new TurnRecorder({ directory, resolveSession: id => { const binding = threadRegistry?.byThread(id); return binding ? { provider: binding.provider, sessionId: binding.sessionId } : undefined },
@@ -279,6 +314,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     directory, host: agentHost, credentials, turns, watcherEnabled: options.watcherEnabled ?? false,
     heldProviders: held, streamingPublishCost: options.streamingPublishCost ?? false, ...(usage ? { usage } : {}),
     ...(options.threadStartsEnabled === true ? { threadStartsEnabled: true } : {}),
+    ...(options.clearThreadsEnabled === true ? { clearThreadsEnabled: true } : {}),
+    ...(options.clearLog ? { logClear: options.clearLog } : {}),
     historyEnabled: options.historyEnabled,
     ...(options.observeActiveThread === undefined ? {} : { observeActiveThread: options.observeActiveThread }),
     ...(options.authority ? { authority: options.authority } : {}),
@@ -339,6 +376,11 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       warning: count => machineWorkingThreadsWarning(count, 'this machine'),
       machines: hostDelegationMachines(() => agentControl.hostId(), facts, () => agentControl.watcherSnapshot().threads) })
   }
+  // A cleared thread's finished delegations and links go with it (ADR-0140 decision 4), on the desktop and on a host alike.
+  if (delegation) {
+    const record = delegation
+    agentControl.onThreadsDeleted(threadIds => { void record.forgetThreads(new Set(threadIds)) })
+  }
   // Continuing a thread on another provider (ADR-0089): the desktop's own threads only, so a headless host builds none.
   const continuation = options.continueEnabled === true && options.runsAs !== 'headless-host'
     ? new ContinueService({ control: agentControl, host: agentHost }) : undefined
@@ -353,10 +395,16 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // Auto-settle merged threads rides the same sweep: it asks GitHub the way the merged rule does, on the same hour.
   // The merged check spends the same sign-in's points as the status reader, and asks as its timer does (#820).
   const merged = options.worktreeCleanup?.pullRequestMerged
+  const openPullRequests = options.worktreeCleanup?.openPullRequestBranches
   const github = gitHubRateLimit && gitHubHosts ? { rateLimit: gitHubRateLimit, hosts: gitHubHosts } : undefined
+  // Clear settled threads after (ADR-0140) rides the same hour, on the computer whose setting it is, and only on Owl:
+  // never a headless host's, which has no Settings to choose it in (clearsOnItsOwn).
   const worktreeCleanup = new WorktreeCleanup({ host: agentHost, rules: () => options.settings().worktreeCleanup,
     autoSettleMerged: () => options.settings().autoSettleMergedThreads, ...options.worktreeCleanup,
-    ...merged && github ? { pullRequestMerged: (repositoryRoot: string, branch: string) => merged(repositoryRoot, branch, github) } : {} })
+    ...clearsOnItsOwn(options) ? { clearSettledThreads: { afterDays: () => options.settings().clearSettledThreadsAfterDays,
+      clear: (days: number, keep?: (thread: AgentThread) => Promise<ThreadClearKeptReason | null>) => agentControl.clearSettledThreads(days, keep) } } : {},
+    ...merged && github ? { pullRequestMerged: (repositoryRoot: string, branch: string) => merged(repositoryRoot, branch, github) } : {},
+    ...openPullRequests && github ? { openPullRequestBranches: (repositoryRoot: string) => openPullRequests(repositoryRoot, github) } : {} })
   // A paired client's Files, Changes and Agents for this host's threads (ADR-0025, October 5 amendment): reads only, over
   // the same working copies the desktop's own tools resolve. The headless host and the desktop's phone listener serve them.
   const toolReads = threadToolReads({ resolveBinding: threadId => agentControl.filesBinding(threadId), subagents: agentHost })
@@ -370,9 +418,13 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const SAID_ENDINGS: ReadonlySet<BabysitEndReason> = new Set(babysitEndedReasonSchema.options)
   const babysitRun = options.babysitting?.run ?? gitRun
   const babysitter = gitHubRateLimit && options.gitStatus ? new Babysitter({ store: agentHost, deliver: deliverWakeUp, rateLimit: gitHubRateLimit,
-    ...(watcher ? { observed: read => watcher.pullRequestObserved(read) } : {}),
+    ...(watcher || mainCheckout ? { observed: (read: PullRequestObservation) => {
+      watcher?.pullRequestObserved(read)
+      if (read.state === 'merged') mainCheckout?.pullRequestMerged(read.url)
+    } } : {}),
     ...(babysitRun ? { run: babysitRun } : {}), ...(options.gitStatus.log ? { log: options.gitStatus.log } : {}),
     ended: async (threadId, url, reason) => {
+      if (reason === 'merged') mainCheckout?.pullRequestMerged(url)
       if (SAID_ENDINGS.has(reason)) await agentHost.recordBabysitEnded(threadId, url, reason as BabysitEndedReason).catch(() => undefined)
       if (QUIET_ENDINGS.has(reason)) await agentControl.withdrawWakeUp(threadId, url, { tool: babysitTool(threadId) }).catch(() => undefined)
     } }) : undefined
@@ -438,6 +490,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const prepareForShutdown = (): Promise<void> => {
     if (preparingForShutdown) return preparingForShutdown
     worktreeCleanup.dispose()
+    void mainCheckout?.close()
     void babysitter?.close().catch(() => undefined)
     preparingForShutdown = stopProviders().finally(() => agentHost.flush())
     return preparingForShutdown
@@ -449,6 +502,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       // A babysitting pass finishes the pull request it is on, and records what it told, the same way.
       stopWatcher()
       await worktreeCleanup.close()
+      if (mainCheckout) await mainCheckout.close()
       if (babysitter) await babysitter.close()
       toolReads.dispose()
       try { await stopProviders(); await preparingForShutdown } finally { usage?.close(); await agentHost.close() }
@@ -471,6 +525,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     continuation?.close()
     const closingWatcherTools = watcherTools?.close()
     void babysitter?.close()
+    void mainCheckout?.close()
     agentControl.dispose()
     await Promise.allSettled([reasoner.close?.(), shortTextWriter.close(), ...Object.values(providers).map(provider => provider.closed?.()), ...(closingWatcherTools ? [closingWatcherTools] : [])])
     agentHost.dispose()
@@ -489,6 +544,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     prompts: { threadPrompts: (threadId, beforeMessageId) => agentHost.threadPrompts(threadId, beforeMessageId) },
     ...(options.threadStartsEnabled === true ? { threadStarts: { startHandover: (threadId: string) => agentHost.startHandover(threadId) } } : {}),
     ...(options.pullRequestViewEnabled === true ? { pullRequestView: true } : {}),
+    ...(options.clearThreadsEnabled === true ? { threadDelete: true } : {}),
     ...(options.attachAnyFile === true ? { fileStaging: true } : {}),
     // The iPhone's Agents view (ADR-0103): delegated threads only where delegation runs, which on a headless host is only
     // where Work across machines is on (#1310).
@@ -497,6 +553,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.runsAs === 'headless-host' && watcher ? { watcher } : {}),
     ...(options.runsAs !== 'headless-host' && watcher ? { watcherPhone: new WatcherPhoneService(agentControl, watcher, crossMachine) } : {}) })
   babysitter?.begin()
+  mainCheckout?.start()
   // Signing Sotto's OpenCode in to model sources (#1104): only where its adapter runs, so a held OpenCode has none.
   const opencodeSignIn = providers.opencode instanceof OpenCodeHost ? providers.opencode.signIn : undefined
   // The user's own model servers reach the same OpenCode (ADR-0124), only where it runs and they were asked for.
@@ -517,5 +574,5 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     signedOut: async () => { await agentControl.command({ type: 'disconnect', provider: 'cursor' }) },
   }) : undefined
   idleCompaction.start()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, cursorSignIn, prepareForShutdown, close }
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, cursorSignIn, prepareForShutdown, close }
 }

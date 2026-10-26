@@ -39,6 +39,11 @@ msgstr ""
 msgid "“{target}” already has light and dark palettes. Pick another name."
 msgstr ""
 
+#. placeholder {0}: MAIN_CHECKOUT_INTERVAL_MS / 60_000
+#: src/renderer/src/features/settings/GitSettings.tsx
+msgid "{0, plural, one {# minute} other {# minutes}}"
+msgstr ""
+
 #. placeholder {0}: choice.working
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "{0, plural, one {# working} other {# working}}"
@@ -88,12 +93,28 @@ msgstr ""
 msgid "{chosen, plural, one {The role you chose is back on its default.} other {The # roles you chose are back on their defaults.}}"
 msgstr ""
 
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "{cleared, plural, one {Cleared # thread.} other {Cleared # threads.}}"
+msgstr ""
+
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "{cleared, plural, one {Cleared # thread.} other {Cleared # threads.}} {changed, plural, one {# thread changed since the list was made and was kept.} other {# threads changed since the list was made and were kept.}}"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "{count, plural, one {# provider} other {# providers}}"
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsFind.tsx
 msgid "{count, plural, one {# setting found} other {# settings found}}"
+msgstr ""
+
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "{count, plural, one {# thread goes} other {# threads go}}"
+msgstr ""
+
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "{count, plural, one {Clear # thread} other {Clear # threads}}"
 msgstr ""
 
 #: src/renderer/src/features/settings/TailscaleConnect.tsx
@@ -132,6 +153,7 @@ msgstr ""
 msgid "{days, plural, one {{shownDays} day ago} other {{shownDays} days ago}}"
 msgstr ""
 
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "{days, plural, one {# day} other {# days}}"
 msgstr ""
@@ -174,6 +196,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "{fileName}: too large"
+msgstr ""
+
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "{folders, plural, one {Removes the one worktree folder these threads made. Branches and their commits stay.} other {Removes the # worktree folders these threads made. Branches and their commits stay.}}"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
@@ -1015,6 +1041,14 @@ msgstr ""
 msgid "Answer SSH's question for {name}"
 msgstr ""
 
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "any age"
+msgstr ""
+
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "Any age"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostSetupView.tsx
 msgid "Anything the agent installed on {name} stays there, and the thread {thread} stays in your Threads list."
 msgstr ""
@@ -1214,6 +1248,7 @@ msgstr ""
 msgid "Can't use now"
 msgstr ""
 
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 #: src/renderer/src/features/settings/HostBootStart.tsx
 #: src/renderer/src/features/settings/HostDialog.tsx
 #: src/renderer/src/features/settings/HostProviderAgent.tsx
@@ -1347,6 +1382,10 @@ msgstr ""
 msgid "Checked with run.cloud before it is saved."
 msgstr ""
 
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "Checking settled threads…"
+msgstr ""
+
 #: src/renderer/src/features/settings/TailscaleConnect.tsx
 msgid "Checking Tailscale on this computer…"
 msgstr ""
@@ -1456,9 +1495,39 @@ msgstr ""
 msgid "Clear history?"
 msgstr ""
 
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Clear now"
+msgstr ""
+
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "Clear now…"
+msgstr ""
+
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "Clear settled threads"
+msgstr ""
+
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Clear settled threads after"
+msgstr ""
+
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "Clear threads"
+msgstr ""
+
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Clear transcript history"
+msgstr ""
+
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "Clearing threads"
+msgstr ""
+
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "Clearing…"
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
@@ -1880,6 +1949,10 @@ msgstr ""
 msgid "Defaults, in order"
 msgstr ""
 
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "Deletes a settled thread’s history once it has been quiet this long. Never clears one with uncommitted work or an open pull request. Checked every hour."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 msgid "Details<0> of why {name} did not update</0>"
 msgstr ""
@@ -2130,6 +2203,10 @@ msgstr ""
 msgid "Error text"
 msgstr ""
 
+#: src/renderer/src/features/settings/GitSettings.tsx
+msgid "Every {keepMainEvery} and after a pull request merges, each project’s folder moves forward to its remote’s default branch when that branch is checked out and has no local changes. Sotto never stashes, resets or rebases."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostConnectionChoice.tsx
 msgid "Every connection signs in over SSH, and Tailscale may ask you to approve it each time."
 msgstr ""
@@ -2283,6 +2360,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostSetupView.tsx
 msgid "For a machine without the host yet. The agent installs it, fixes what is missing and adds the host. It works in a new thread, and you answer each command it wants to run."
+msgstr ""
+
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "For settled threads on this computer. A cleared thread can’t be brought back."
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
@@ -2649,6 +2730,10 @@ msgstr ""
 msgid "its account"
 msgstr ""
 
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "Its messages and activity leave Sotto and can’t be brought back."
+msgstr ""
+
 #: src/renderer/src/features/settings/NotificationSettings.tsx
 msgid "Its turn has ended and nothing it started is still going."
 msgstr ""
@@ -2682,6 +2767,11 @@ msgstr ""
 msgid "Keep local history"
 msgstr ""
 
+#: src/renderer/src/features/settings/GitSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Keep main up to date"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "Keep phone"
@@ -2697,6 +2787,14 @@ msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Keep the small dictation sliver on screen between sessions. Click it to dictate."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProjectThreadDefaults.tsx
+msgid "Keep this project's main up to date"
+msgstr ""
+
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "Kept"
 msgstr ""
 
 #. The run.cloud key, a secret that lets Sotto use the service.
@@ -3013,6 +3111,7 @@ msgid "Needs you"
 msgstr ""
 
 #. Remove idle worktrees after: never
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Never"
 msgstr ""
@@ -3134,12 +3233,20 @@ msgstr ""
 msgid "No setting matches “{search}”."
 msgstr ""
 
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "No settled thread on this computer has been quiet that long."
+msgstr ""
+
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "No shortcut"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "No supported open-source themes found. Try a broader search."
+msgstr ""
+
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "None of them can go yet."
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
@@ -3257,9 +3364,11 @@ msgid "now {installed}"
 msgstr ""
 
 #. A switch that is off.
+#. Keep this project's main up to date: off
 #. The Git fetch interval: never fetch
 #: src/renderer/src/features/settings/GitSettings.tsx
 #: src/renderer/src/features/settings/HostsSettings.tsx
+#: src/renderer/src/features/settings/ProjectThreadDefaults.tsx
 msgid "Off"
 msgstr ""
 
@@ -3294,7 +3403,9 @@ msgid "Omarchy setup"
 msgstr ""
 
 #. A switch that is on.
+#. Keep this project's main up to date: on
 #: src/renderer/src/features/settings/HostsSettings.tsx
+#: src/renderer/src/features/settings/ProjectThreadDefaults.tsx
 msgid "On"
 msgstr ""
 
@@ -3735,6 +3846,10 @@ msgstr ""
 msgid "Project folder"
 msgstr ""
 
+#: src/renderer/src/features/settings/GitSettings.tsx
+msgid "Projects stay where they are until you pull. A project can turn it on for itself in Threads, Project defaults."
+msgstr ""
+
 #. A Settings page, named in its rail and its heading. Other messages name it as "Settings > Providers".
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -3755,6 +3870,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Put the focused thread on the Settled shelf. Its delegated threads go with it, and Settle asks about its worktree first, as the button does."
+msgstr ""
+
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "Quiet longer than"
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
@@ -3940,6 +4059,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Removes a thread's worktree folder once it has been idle this long. The branch stays, sending brings the folder back, and uncommitted work is never removed."
+msgstr ""
+
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "Removes the worktree folder it made. Its branch and commits stay."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
@@ -4253,6 +4376,10 @@ msgstr ""
 msgid "Settle thread shortcut"
 msgstr ""
 
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "Settled threads on this computer quiet longer than"
+msgstr ""
+
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Settles a thread once its pull request merges, checking GitHub through gh hourly. Folders follow the worktree rules under Application."
 msgstr ""
@@ -4476,8 +4603,16 @@ msgstr ""
 msgid "Sotto could not check Tailscale on this computer. Nothing was changed. Come back to this window to check again."
 msgstr ""
 
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "Sotto could not confirm the clear. Threads still listed under Settled were not deleted."
+msgstr ""
+
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "Sotto could not find mise on {host}, so it will not run the update itself."
+msgstr ""
+
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "Sotto could not list the settled threads. Nothing was deleted. Close this and try again."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -4570,6 +4705,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Sotto needs a newer version."
+msgstr ""
+
+#: src/renderer/src/features/settings/GitSettings.tsx
+msgid "Sotto never fetches for threads, even before a Git action. Ahead and behind use the last fetch. Keep main up to date still fetches each project every {keepMainEvery}."
 msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx
@@ -5474,6 +5613,10 @@ msgstr ""
 msgid "The window sweeps when you move between Dictate or Threads and Watcher's room, and the owl rides the sweep to its new place. Off, the window changes at once. Reduced motion always changes it at once."
 msgstr "La fenêtre passe d’un balayage quand vous vous déplacez entre Dictate ou Threads et la salle de Watcher, et la chouette suit le balayage jusqu’à sa nouvelle place. Désactivé, la fenêtre change aussitôt. Avec les animations réduites, elle change toujours aussitôt."
 
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "Their messages and activity leave Sotto and can’t be brought back."
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Theme file"
 msgstr ""
@@ -5586,6 +5729,14 @@ msgstr ""
 #: src/renderer/src/features/settings/SettingsView.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Threads"
+msgstr ""
+
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "Threads kept"
+msgstr ""
+
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "Threads that go"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostDialog.tsx
@@ -5743,6 +5894,10 @@ msgstr ""
 msgid "Unlock the SSH connection to {name}"
 msgstr ""
 
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "Untitled thread"
+msgstr ""
+
 #. A button that updates one agent client on a host.
 #. Updates an installed theme extension
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
@@ -5856,6 +6011,14 @@ msgstr ""
 msgid "Updating…"
 msgstr ""
 
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "Usage keeps its numbers. Its provider keeps its own copy of the session."
+msgstr ""
+
+#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
+msgid "Usage keeps its numbers. Providers keep their own copies of the sessions."
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/EffortColor.tsx
 msgid "Use {color} as the effort color"
 msgstr ""
@@ -5902,6 +6065,14 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Use SSH only"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProjectThreadDefaults.tsx
+msgid "Use the Git setting (Off)"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProjectThreadDefaults.tsx
+msgid "Use the Git setting (On)"
 msgstr ""
 
 #. {month} is the name of a month, such as October.
