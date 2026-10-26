@@ -46,8 +46,11 @@ describe('notes of thread lists made in place', () => {
     expect(earlier.at(-1)!.deref()).toBe(latest)
   })
 
-  it('reads a snapshot whole once the one it was made from has gone', async () => {
+  it('finds the snapshot a reader holds though the ones between it and the latest have gone (#925 step 6)', async () => {
+    // The window's broadcast skips the publishes a coalesced send passed over, and nothing holds those: the chain from the
+    // latest back to the one it was last sent must not depend on when they are collected.
     const reader: { held?: object } = {}
+    const between: WeakRef<object>[] = []
     let latest: object | undefined
     ;(() => {
       const held = { threads: [] }
@@ -56,12 +59,34 @@ describe('notes of thread lists made in place', () => {
       for (let index = 0; index < 3; index++) {
         const host = { threads: [] }
         noteThreadsReplaced(host, previous, [index])
+        between.push(new WeakRef(host))
         previous = host
       }
       latest = previous
     })()
     await turn(); gc(); await turn(); gc()
-    // The reader still holds the snapshot it made something of, but the ones between it and the latest have gone.
-    expect(threadsReplacedSince(latest!, reader.held!)).toBeUndefined()
+    expect(between.slice(0, -1).filter(ref => ref.deref() !== undefined).length, 'snapshots between still alive').toBe(0)
+    expect([...threadsReplacedSince(latest!, reader.held!)!].sort()).toEqual([0, 1, 2])
+  })
+
+  it('reads whole past the steps a note carries, or from a snapshot noted nowhere', () => {
+    const first = { threads: [] }
+    let previous: object = first
+    const chain: object[] = [first]
+    for (let index = 0; index < 9; index++) {
+      const host = { threads: [] }
+      noteThreadsReplaced(host, previous, [index])
+      chain.push(host)
+      previous = host
+    }
+    expect([...threadsReplacedSince(previous, chain[1]!)!].sort()).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
+    expect(threadsReplacedSince(previous, first)).toBeUndefined()
+    expect(threadsReplacedSince(previous, chain[5]!, 2)).toBeUndefined()
+    expect([...threadsReplacedSince(previous, chain[7]!, 2)!].sort()).toEqual([7, 8])
+    // A snapshot made afresh, noted nowhere, breaks the chain for every reader after it.
+    const fresh = { threads: [] }
+    const after = { threads: [] }
+    noteThreadsReplaced(after, fresh, [0])
+    expect(threadsReplacedSince(after, previous)).toBeUndefined()
   })
 })
