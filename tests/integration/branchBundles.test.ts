@@ -223,6 +223,19 @@ describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8
     expect(branchMoveWords.tooLarge(300 * 1024 * 1024)).toBe('This branch needs 300 MiB to move, and one move carries at most 256 MiB. Nothing was moved.')
   })
 
+  it('refuses a branch over the cap before writing any bundle, from what its objects take on disk', async () => {
+    git(machines.laptop, 'switch', '-q', '-c', 'big')
+    const commit = await commitFile(machines.laptop, 'blob.bin', incompressible(256 * 1024))
+    const ran: string[][] = []
+    const run: RunGitCommand = (cwd, command, args, options) => { ran.push([...args]); return runGitStatusCommand(cwd, command, args, options) }
+    const laptop = new BranchBundles({ ...machines.data('laptop'), maxBytes: 32 * 1024, run })
+    const refusal = await laptop.prepare({ repository: machines.laptop, moveId: randomUUID(), commit, bases: [] })
+    expect(refusal).toMatchObject({ type: 'refused', reason: 'too-large' })
+    // Nothing was bundled: `git bundle create` never ran, so the data folder was never filled first.
+    expect(ran.some(args => args[0] === 'bundle')).toBe(false)
+    expect(await readdir(machines.data('laptop').stagingDirectory)).toEqual([])
+  })
+
   it('discards a transfer cut off, or one that did not arrive whole, and lands nothing', async () => {
     git(machines.laptop, 'switch', '-q', '-c', 'big')
     const commit = await commitFile(machines.laptop, 'blob.bin', incompressible(3 * 1024 * 1024))
