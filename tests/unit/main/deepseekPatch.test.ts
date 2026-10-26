@@ -30,6 +30,11 @@ describe('the DeepSeek Harness overlay (ADR-0138)', () => {
     expect(patch).toContain('provider: "own-abc123"\n    model: "deepseek-v4-flash"')
   })
 
+  it('retries a route at most once and never after a timeout, so a stalled server is not sent the prompt again', () => {
+    const patch = deepseekPatch([SERVER])!
+    expect(patch).toContain('retryPolicy:\n          mode: normal\n          maxRetries: 1\n          retryableCodes: [SERVER, TRANSPORT, RATE_LIMIT]')
+  })
+
   it('gives a thinking model its effort levels and a plain one none, with outputs Sotto derives the OpenCode way', () => {
     const patch = deepseekPatch([SERVER])!
     expect(patch).toContain('contextWindow: 1048576')
