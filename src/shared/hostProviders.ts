@@ -56,7 +56,7 @@ export type ProviderSignInStage = z.infer<typeof providerSignInStageSchema>
  * the host's own OpenCode over the host connection (`opencode-sign-in`, #1107).
  */
 export const PROVIDER_SIGN_IN_SHAPES: Readonly<Record<ProviderId, ProviderSignInShape | null>> = {
-  codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null, muse: null, opencode: null, cursor: 'page',
+  codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null, muse: null, opencode: null, cursor: 'page', deepseek: null,
 }
 /** What Devin's tile says to run on the host: its sign-in for a machine reached over SSH, where a browser cannot come back to it. */
 export const DEVIN_SIGN_IN_COMMAND = 'devin auth login --force-manual-token-flow'
@@ -81,6 +81,7 @@ export const PROVIDER_INSTALL_GUIDES: Readonly<Record<ProviderId, string>> = {
   // OpenCode 2's guide: opencode.ai/docs installs OpenCode 1, which Sotto refuses (ADR-0087).
   opencode: 'https://opencode.ai/v2/docs/',
   cursor: 'https://cursor.com/docs/cli/installation',
+  deepseek: 'https://github.com/deepseek-ai/deepseek-harness',
 }
 
 /**
@@ -90,7 +91,7 @@ export const PROVIDER_INSTALL_GUIDES: Readonly<Record<ProviderId, string>> = {
  * versions printed on `claude.ai`, and Cursor's `https://cursor.com/loginDeepControl`. A page anywhere else is not opened, and the sign-in says to finish it on the host.
  */
 export const PROVIDER_SIGN_IN_PAGES: Readonly<Record<ProviderId, readonly string[]>> = {
-  codex: ['auth.openai.com'], grok: ['accounts.x.ai'], claude: ['claude.com', 'claude.ai'], devin: [], muse: [], opencode: [], cursor: ['cursor.com'],
+  codex: ['auth.openai.com'], grok: ['accounts.x.ai'], claude: ['claude.com', 'claude.ai'], devin: [], muse: [], opencode: [], cursor: ['cursor.com'], deepseek: [],
 }
 export function isProviderSignInPage(provider: ProviderId, value: string): boolean {
   if (value.length > 4096 || /\s/u.test(value)) return false

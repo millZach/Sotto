@@ -1,0 +1,120 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: a thread whose turn is over but that still has something running for it (babysitting a pull request,
+  a provider watch) shows the plain idle ring, the same as a thread that is truly done. Its row says
+  "Babysitting #1537" in words; the collapsed rail has no words, so it says nothing. What should the ring show
+  for "not ready for you, still going in the background"?
+
+  Picked October 25, 2026: d, hourglass, for babysitting and monitoring tasks; a monitoring task alone says Monitoring. Built in
+  agents/ThreadSidebar.tsx (StatusRing) from rowStatus's `background`.
+
+  Cause in the code: the ring's data-state is 'done' for these threads. The rail ring also drops data-unseen, so
+  "Just finished" looks idle on the rail too. Every variant below fixes both.
+
+  Variants on ?variant=a|b|c|d, and the bar at the top:
+   a  Orbit.       The idle ring with one small dot that circles it slowly (6s a lap). Static: the dot sits at
+                   the top right.
+   b  Dashed.      A dashed ring in the activity colour that turns slowly (8s). Static: dashed, not turning.
+   c  Breathing.   The idle ring in the activity colour, fading in and out (3s). Static: half strength.
+   d  Hourglass.   A 10px hourglass glyph in place of the ring. Never moves.
+
+  Each column shows every state, so the new one can be read against Working and Done.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Rail ring for background work - prototype</title>
+<style>
+  :root { --bg:#050607; --sidebar:#1d1f20; --selected:#2c403c; --hair:#3a3d3f; --text:#eef0ef; --text2:#c2c7c4; --muted:#8b928e; --hover:rgb(255 255 255/6%); --focus:#e8ece9; --activity:#e8ece9; --attention:#f0b45c; --success:#6fcf97; }
+  :root[data-theme=light] { --bg:#fafaf9; --sidebar:#eef0ee; --selected:#dbe8e3; --hair:#c9cfcc; --text:#161a18; --text2:#3f4642; --muted:#5f6763; --hover:rgb(0 0 0/5%); --focus:#2b7a66; --activity:#2b7a66; --attention:#9a5b00; --success:#25834f; }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--text); font:14px/1.4 Figtree, "Segoe UI", system-ui, sans-serif; }
+  button { font:inherit; color:inherit; }
+  :focus-visible { outline:2px solid var(--focus); outline-offset:1px; }
+  .bar { display:flex; flex-wrap:wrap; gap:6px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--hair); }
+  .bar button { border:1px solid var(--hair); background:transparent; border-radius:6px; padding:4px 10px; cursor:pointer; }
+  .bar button[aria-pressed=true] { background:var(--selected); border-color:var(--focus); }
+  .bar .sep { width:1px; height:20px; background:var(--hair); margin:0 6px; }
+  .note { padding:10px 16px 0; color:var(--muted); max-width:760px; }
+  .stage { display:flex; gap:28px; padding:16px; }
+
+  /* The rail, as the Threads sidebar draws it. */
+  .rail { width:56px; background:var(--sidebar); border:1px solid var(--hair); border-radius:8px; padding:12px 0; display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .tile { position:relative; width:32px; height:34px; border:1px solid var(--hair); border-radius:7px; background:transparent; cursor:pointer; font-size:14px; }
+  .tile:hover { background:var(--hover); }
+  .tile[aria-current] { background:var(--selected); border-color:var(--focus); }
+  .tile .ring { position:absolute; right:-1px; bottom:-1px; background-color:var(--sidebar); }
+
+  /* The expanded rows, so the same mark can be read next to its words. */
+  .rows { flex:1; max-width:360px; background:var(--sidebar); border:1px solid var(--hair); border-radius:8px; padding:6px; }
+  .row { display:grid; grid-template-columns:16px minmax(0,1fr); gap:2px 8px; align-items:center; padding:7px 8px; border-radius:6px; }
+  .row[data-current] { background:var(--selected); }
+  .row .title { font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row .status { grid-column:2; font-size:12px; color:var(--muted); }
+  .row .status[data-s=working] { color:var(--activity); }
+  .row .status[data-s=needs] { color:var(--attention); }
+  .row .status[data-s=background], .row .status[data-s=unseen] { color:var(--text2); }
+
+  /* Today's ring, unchanged. */
+  .ring { display:block; width:10px; height:10px; justify-self:center; border:1.5px solid var(--hair); border-radius:50%; }
+  .ring[data-s=working] { border:0; background:conic-gradient(var(--activity) 0 32%, color-mix(in srgb, var(--activity) 22%, transparent) 32% 100%) !important; mask:radial-gradient(circle, transparent 38%, #000 42%); }
+  .ring[data-s=needs] { border:2px solid var(--attention); }
+  .ring[data-s=unseen] { border:1.5px solid var(--success); background:radial-gradient(circle, var(--success) 0 28%, transparent 30%) var(--sidebar) !important; }
+  .motion .ring[data-s=working] { animation:spin 1.5s linear infinite; }
+  @keyframes spin { to { rotate:360deg; } }
+
+  /* a: Orbit. */
+  [data-variant=a] .ring[data-s=background] { position:relative; border-color:color-mix(in srgb, var(--activity) 55%, transparent); }
+  [data-variant=a] .ring[data-s=background]::after { content:''; position:absolute; inset:-1.5px; border-radius:50%; background:radial-gradient(circle at 50% 0, var(--activity) 0 1.9px, transparent 2.2px); rotate:45deg; }
+  [data-variant=a].motion .ring[data-s=background]::after { animation:spin 6s linear infinite; }
+  /* b: Dashed. */
+  [data-variant=b] .ring[data-s=background] { border:1.5px dashed var(--activity); }
+  [data-variant=b].motion .ring[data-s=background] { animation:spin 8s linear infinite; }
+  /* c: Breathing. */
+  [data-variant=c] .ring[data-s=background] { border-color:var(--activity); opacity:.55; }
+  [data-variant=c].motion .ring[data-s=background] { animation:breathe 3s ease-in-out infinite; }
+  @keyframes breathe { 0%,100% { opacity:.3; } 50% { opacity:1; } }
+  /* d: Hourglass. */
+  [data-variant=d] .ring[data-s=background] { border:0; border-radius:0; background:var(--activity); mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 22h14M5 2h14M17 22v-4.17a2 2 0 0 0-.59-1.42L12 12l-4.41 4.41A2 2 0 0 0 7 17.83V22M7 2v4.17a2 2 0 0 0 .59 1.42L12 12l4.41-4.41A2 2 0 0 0 17 6.17V2'/%3E%3C/svg%3E") center/contain no-repeat; }
+  .tile .ring[data-s=background] { background-color:var(--sidebar); }
+  [data-variant=d] .tile .ring[data-s=background] { background-color:var(--activity); }
+</style>
+</head>
+<body>
+<div class="bar" role="toolbar" aria-label="Prototype controls">
+  <button data-v="a">a Orbit</button><button data-v="b">b Dashed</button><button data-v="c">c Breathing</button><button data-v="d">d Hourglass</button>
+  <span class="sep"></span>
+  <button id="theme" aria-pressed="false">Light</button>
+  <button id="motion" aria-pressed="false">Reduce motion</button>
+</div>
+<p class="note">"Arc" (selected) is babysitting PR #1537: its turn is over but Sotto will wake it when CI finishes. Today it shows the empty idle ring. Compare it with "Fix rail" (Working) and "Settle docs" (Done).</p>
+<main class="stage motion" id="stage">
+  <nav class="rail" aria-label="Threads" id="rail"></nav>
+  <ul class="rows" id="rows" style="list-style:none;margin:0"></ul>
+</main>
+<script>
+  const threads = [
+    ['Fix rail advance', 'working', 'Working'],
+    ['Arc ring redesign', 'background', 'Babysitting #1537', true],
+    ['build host', 'needs', 'Needs your approval'],
+    ['folder peek', 'unseen', 'Just finished'],
+    ['Feed', 'background', 'Watching a command'],
+    ['Settle docs', 'done', 'Done'],
+  ]
+  const rail = document.getElementById('rail'), rows = document.getElementById('rows'), stage = document.getElementById('stage')
+  for (const [title, s, word, current] of threads) {
+    rail.insertAdjacentHTML('beforeend', `<button class="tile" title="${title} · ${word}" aria-label="${title}" ${current ? 'aria-current="page"' : ''}><span aria-hidden="true">${title[0]}</span><span class="ring" data-s="${s}" aria-hidden="true"></span></button>`)
+    rows.insertAdjacentHTML('beforeend', `<li class="row" ${current ? 'data-current' : ''}><span class="ring" data-s="${s}" aria-hidden="true"></span><span class="title">${title}</span><span class="status" data-s="${s}">${word}</span></li>`)
+  }
+  const pick = v => { stage.dataset.variant = v; document.querySelectorAll('[data-v]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === v))); history.replaceState(null, '', `?variant=${v}`) }
+  pick(new URLSearchParams(location.search).get('variant') || 'a')
+  document.querySelectorAll('[data-v]').forEach(b => b.onclick = () => pick(b.dataset.v))
+  const toggle = (id, fn) => { const b = document.getElementById(id); b.onclick = () => { const on = b.getAttribute('aria-pressed') !== 'true'; b.setAttribute('aria-pressed', String(on)); fn(on) } }
+  toggle('theme', on => document.documentElement.dataset.theme = on ? 'light' : '')
+  toggle('motion', on => stage.classList.toggle('motion', !on))
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) document.getElementById('motion').click()
+</script>
+</body>
+</html>

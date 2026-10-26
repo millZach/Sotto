@@ -66,6 +66,7 @@ describe('independent provider settings', () => {
     expect(within(screen.getByRole('button', { name: 'Codex' })).getByText('Connected')).toBeInTheDocument()
     expect(screen.getByRole('switch', { name: 'Check for client updates' })).toHaveAttribute('aria-checked', 'true')
     // Every press names this computer, so none reaches forge.
+    openRow('Codex')
     fireEvent.click(screen.getByRole('button', { name: 'Disconnect Codex' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'disconnect', provider: 'codex', hostId: LOCAL }))
     fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
@@ -106,6 +107,7 @@ describe('independent provider settings', () => {
       ? { ...provider, connection: 'error' as const, problem: 'signed-out' as const, error: 'Could not connect Codex. Sign in to Codex on this machine, then connect it again.' } : provider)
     const { command } = provide(state)
     render(<ProvidersSettings />)
+    openRow('Codex')
     fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'check-client-updates' }))
     expect(command).toHaveBeenNthCalledWith(1, { type: 'refresh', provider: 'codex' })
@@ -160,7 +162,12 @@ describe('independent provider settings', () => {
     render(<ProvidersSettings />)
     const codex = screen.getByRole('button', { name: 'Codex' })
     const claude = screen.getByRole('button', { name: 'Claude Code' })
-    // Codex's row is open to begin with, showing its connection, client and models in place; the others are closed.
+    // Every row starts closed.
+    expect(screen.queryByRole('region', { name: /details$/u })).toBeNull()
+    expect(codex).toHaveAttribute('aria-expanded', 'false')
+    expect(codex).not.toHaveAttribute('aria-controls')
+    // Codex's row opens in place, showing its connection, client and models; the others stay closed.
+    fireEvent.click(codex)
     expect(codex).toHaveAttribute('aria-expanded', 'true')
     const panel = screen.getByRole('region', { name: 'Codex details' })
     expect(codex).toHaveAttribute('aria-controls', panel.id)
@@ -206,7 +213,7 @@ describe('independent provider settings', () => {
     fireEvent.keyDown(shown.at(-1)!, { key: 'Home' })
     expect(shown[0]).toHaveFocus()
     // Moving opens nothing, and the switch beside a header keeps its own keys.
-    expect(screen.getAllByRole('region', { name: /details$/u })).toHaveLength(1)
+    expect(screen.queryAllByRole('region', { name: /details$/u })).toHaveLength(0)
     const toggle = screen.getByRole('switch', { name: 'Enable Codex' })
     toggle.focus()
     fireEvent.keyDown(toggle, { key: 'ArrowDown' })
@@ -235,7 +242,7 @@ describe('independent provider settings', () => {
     state.host.providers![1] = { ...state.host.providers![1]!, connection: 'error', error: 'Sign in to Claude Code.' }
     const { command } = provide(state)
     render(<ProvidersSettings />)
-    // The error shows under Claude Code's row while it is closed, with Codex's open.
+    // The error shows under Claude Code's row while it is closed.
     expect(screen.getByRole('button', { name: 'Claude Code' })).toHaveAttribute('aria-expanded', 'false')
     expect(screen.getByRole('alert')).toHaveTextContent('Sign in to Claude Code.')
     expect(within(screen.getByRole('button', { name: 'Claude Code' })).getByText('Needs attention')).toBeInTheDocument()
@@ -309,6 +316,7 @@ describe('the installed client, in provider settings', () => {
       command: 'npm install -g @openai/codex@latest', canInstall: true, checkedAt: new Date().toISOString(), state: 'idle' }]
     const { command } = provide(state)
     render(<ProvidersSettings />)
+    openRow('Codex')
     expect(screen.getByText('0.155.1 is installed; 0.156.0 is published. Your threads keep working while it installs.')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Update' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'update-client', provider: 'codex' }))
@@ -344,6 +352,7 @@ describe('the installed client, in provider settings', () => {
       canInstall: true, checkedAt: new Date().toISOString(), state: 'failed', step: 1, failure: 'not-listed', error: 'mise does not list Codex 0.164.0 yet.' }]
     provide(state)
     render(<ProvidersSettings />)
+    openRow('Codex')
     expect(screen.getByText('0.163.0 is installed. mise does not list 0.164.0 yet, even with its cache cleared, so Sotto did not install it. Try again later.')).toBeTruthy()
   })
 
@@ -354,6 +363,7 @@ describe('the installed client, in provider settings', () => {
       canInstall: false, checkedAt: new Date().toISOString(), state: 'idle' }]
     provide(state)
     render(<ProvidersSettings />)
+    openRow('Codex')
     expect(screen.getByText(/newer than the 0\.150\.0 Sotto has checked/u)).toBeTruthy()
   })
 
@@ -364,6 +374,7 @@ describe('the installed client, in provider settings', () => {
       command: 'npm install -g @openai/codex@latest', canInstall: true, checkedAt: new Date().toISOString(), state: 'idle' }]
     const { command } = provide(state)
     render(<ProvidersSettings />)
+    openRow('Codex')
     expect(screen.getByText(/0\.156\.0 is published\. Your threads keep working while it installs\./u)).toBeTruthy()
     expect(screen.queryByText(/stops/u)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Update' }))

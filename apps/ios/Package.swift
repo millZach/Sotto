@@ -17,6 +17,8 @@ modelTests.append(.testTarget(name: "SottoConnectionTests", dependencies: ["Sott
         + otherAppFiles.filter { $0 != "HostConnection.swift" }.map { "Sotto/" + $0 },
     sources: ["Sotto/HostConnection.swift", "Tests/SottoConnectionTests"]))
 #endif
-let package = Package(name: "SottoCore", platforms: [.iOS(.v17), .macOS(.v13)],
+// SottoCore's own words (a failure it names, a step's verb) come from its String Catalog, in the interface language
+// the app runs in (ADR-0123). The app's words are in `Sotto/Resources/Localizable.xcstrings`.
+let package = Package(name: "SottoCore", defaultLocalization: "en", platforms: [.iOS(.v17), .macOS(.v13)],
     products: [.library(name: "SottoCore", targets: ["SottoCore"])],
-    targets: [.target(name: "SottoCore"), .testTarget(name: "SottoCoreTests", dependencies: ["SottoCore"])] + modelTests)
+    targets: [.target(name: "SottoCore", resources: [.process("Resources")]), .testTarget(name: "SottoCoreTests", dependencies: ["SottoCore"])] + modelTests)

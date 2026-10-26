@@ -6,6 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { build } from 'esbuild'
 import { _electron as electron } from '@playwright/test'
 import { describe, expect, it } from 'vitest'
+import { bundleDesktopMain } from '../fixtures/desktopMainBundle'
 import { median, PERF_BENCH } from '../fixtures/perfBench'
 
 describe.skipIf(!PERF_BENCH)('actual Electron Watcher room pipeline (#991)', () => {
@@ -35,7 +36,9 @@ describe.skipIf(!PERF_BENCH)('actual Electron Watcher room pipeline (#991)', () 
       const completion=createRoomCompletion(()=>window.bench.endCpu().cpuMs);
       window.completeRoom=(target,timeout)=>completion.wait(target,timeout);
       window.room=null;window.bench.onRoom((value,revision)=>{window.room=value;completion.receive(value,revision)})};window.restart();`, resolveDir: process.cwd() }, bundle: true, platform: 'browser', outfile: page })
-    await build({ stdin: { contents: `import {app,BrowserWindow,ipcMain} from 'electron';
+    // Main's half runs main's own Watcher room and socket client, whose words are messages, so it is built as main is.
+    await bundleDesktopMain('watcherRoomPipelineMain.ts', main, { external: ['electron'], contents: `import './src/main/interfaceLanguage';
+      import {app,BrowserWindow,ipcMain} from 'electron';
       import {measureWatcherRoom} from './tests/fixtures/watcherRoomPipeline';let window;
       app.setPath('userData',${JSON.stringify(join(root, 'profile'))});
       ipcMain.handle('get',()=>{throw Error('Unexpected shell recovery')});
@@ -43,8 +46,7 @@ describe.skipIf(!PERF_BENCH)('actual Electron Watcher room pipeline (#991)', () 
       ipcMain.handle('measure',async(_event,{streamCount,enabled})=>{await window.webContents.executeJavaScript('window.restart()');return measureWatcherRoom(window,streamCount,enabled)});
       app.whenReady().then(async()=>{window=new BrowserWindow({show:false,webPreferences:{preload:${JSON.stringify(preload)},contextIsolation:true,sandbox:false}});
       await window.loadURL('data:text/html,<title>Watcher room pipeline fixture</title>');
-      await window.webContents.executeJavaScript(require('node:fs').readFileSync(${JSON.stringify(page)},'utf8'))});`, resolveDir: process.cwd() },
-      bundle: true, platform: 'node', external: ['electron', 'node-pty', 'sherpa-onnx-node'], outfile: main })
+      await window.webContents.executeJavaScript(require('node:fs').readFileSync(${JSON.stringify(page)},'utf8'))});` })
     let app: Awaited<ReturnType<typeof electron.launch>> | undefined
     try {
       app = await electron.launch({ args: [main], env: Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined && entry[0] !== 'ELECTRON_RUN_AS_NODE')) })

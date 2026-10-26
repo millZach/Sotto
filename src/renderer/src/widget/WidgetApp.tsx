@@ -19,6 +19,9 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react'
+import type { I18n, MessageDescriptor } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 
 import type {
   SottoWidgetBridge,
@@ -51,72 +54,74 @@ const IDLE_HOVER_SETTLE_MS = 220
 const DISMISS_GRACE_MS = 500
 const PREVIEW_NOW = 13_340
 
-const processingLabels: Record<WidgetProcessingStage, string> = {
-  'preparing-audio': 'Preparing audio',
-  'loading-model': 'Starting the speech model',
-  transcribing: 'Transcribing',
-  'delivering-output': 'Delivering text',
+const processingLabels: Record<WidgetProcessingStage, MessageDescriptor> = {
+  'preparing-audio': msg`Preparing audio`,
+  'loading-model': msg`Starting the speech model`,
+  transcribing: msg`Transcribing`,
+  'delivering-output': msg`Delivering text`,
 }
 
 function errorCopyFor(
   copy: PlatformCopy,
+  i18n: I18n,
 ): Record<WidgetErrorCode, { readonly title: string; readonly detail: string }> {
+  const modelNotReady = i18n._(msg({ message: 'Model not ready', comment: 'The speech model that turns dictation into text has not finished loading.' }))
   return {
     MIC_PERMISSION_DENIED: {
-      title: 'Microphone blocked',
+      title: i18n._(msg`Microphone blocked`),
       detail: copy.widgetMicrophoneBlockedDetail,
     },
     MIC_DEVICE_NOT_FOUND: {
-      title: 'No microphone found',
-      detail: 'Connect a microphone and try again.',
+      title: i18n._(msg`No microphone found`),
+      detail: i18n._(msg`Connect a microphone and try again.`),
     },
     MIC_NOT_SET_UP: {
-      title: 'No microphone set up',
+      title: i18n._(msg`No microphone set up`),
       detail: MICROPHONE_NOT_SET_UP_DETAIL,
     },
     SPEECH_MODEL_NOT_READY: {
-      title: 'Model not ready',
+      title: modelNotReady,
       detail: SPEECH_MODEL_NOT_READY_DETAIL,
     },
     MIC_START_FAILED: {
-      title: 'Microphone unavailable',
-      detail: 'Check the selected microphone and try again.',
+      title: i18n._(msg`Microphone unavailable`),
+      detail: i18n._(msg`Check the selected microphone and try again.`),
     },
     RECORDING_FAILED: {
-      title: 'Recording stopped',
-      detail: 'Check your microphone and try again.',
+      title: i18n._(msg`Recording stopped`),
+      detail: i18n._(msg`Check your microphone and try again.`),
     },
     NO_SPEECH: {
-      title: 'No speech detected',
-      detail: 'Speak closer to the microphone and try again.',
+      title: i18n._(msg`No speech detected`),
+      detail: i18n._(msg`Speak closer to the microphone and try again.`),
     },
     TRANSCRIPTION_MODEL_NOT_READY: {
-      title: 'Model not ready',
+      title: modelNotReady,
       detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_MODEL_NOT_READY,
     },
     TRANSCRIPTION_FAILED: {
-      title: 'Couldn’t transcribe',
+      title: i18n._(msg`Couldn’t transcribe`),
       detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_FAILED,
     },
     OUTPUT_UNAVAILABLE: {
-      title: 'Output unavailable',
-      detail: 'Open Sotto and try again.',
+      title: i18n._(msg`Output unavailable`),
+      detail: i18n._(msg`Open Sotto and try again.`),
     },
     OUTPUT_FAILED: {
-      title: 'Couldn’t copy text',
-      detail: 'Try again from the Sotto app.',
+      title: i18n._(msg`Couldn’t copy text`),
+      detail: i18n._(msg`Try again from the Sotto app.`),
     },
     DESKTOP_CLIPBOARD_UNAVAILABLE: {
-      title: 'Text kept in Sotto',
-      detail: 'The desktop clipboard could not be updated. Open Sotto, then Dictate. Use Copy text or select the text there.',
+      title: i18n._(msg`Text kept in Sotto`),
+      detail: i18n._(msg`The desktop clipboard could not be updated. Open Sotto, then Dictate. Use Copy text or select the text there.`),
     },
     HISTORY_FAILED: {
-      title: 'Saved to clipboard',
-      detail: 'Local history was not updated.',
+      title: i18n._(msg`Saved to clipboard`),
+      detail: i18n._(msg`Local history was not updated.`),
     },
     SETTINGS_UNAVAILABLE: {
-      title: 'Settings unavailable',
-      detail: 'Open Sotto to restore settings.',
+      title: i18n._(msg`Settings unavailable`),
+      detail: i18n._(msg`Open Sotto to restore settings.`),
     },
   }
 }
@@ -135,7 +140,8 @@ function WidgetAnnouncements({
   readonly snapshot: WidgetSnapshot | null
   readonly platform: SottoPlatform
 }): ReactNode {
-  const copy = snapshot === null || snapshot.status === 'idle' ? null : getCopy(snapshot, platform)
+  const { i18n } = useLingui()
+  const copy = snapshot === null || snapshot.status === 'idle' ? null : getCopy(snapshot, platform, i18n)
   const assertiveCopy = snapshot?.status === 'error' ? copy : null
   const politeCopy = snapshot?.status === 'error' ? null : copy
 
@@ -186,54 +192,60 @@ export function formatElapsedTime(startedAt: number, now: number): string {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }
 
-function getCopy(snapshot: WidgetSnapshot, platform: SottoPlatform): WidgetCopy {
+function getCopy(snapshot: WidgetSnapshot, platform: SottoPlatform, i18n: I18n): WidgetCopy {
   const copy = platformCopy(platform)
   switch (snapshot.status) {
     case 'idle':
       return {
-        tone: 'idle', title: 'Ready', detail: platform === 'linux' ? 'F9 to talk' : formatAccelerator(snapshot.shortcut, platform, 'display'),
+        tone: 'idle', title: i18n._(msg({ message: 'Ready', comment: 'The floating widget is waiting for dictation to start.' })), detail: platform === 'linux' ? i18n._(msg`F9 to talk`) : formatAccelerator(snapshot.shortcut, platform, 'display'),
         icon: <Mic aria-hidden="true" size={22} strokeWidth={2.2} />,
       }
     case 'requesting-permission':
       return {
-        tone: 'permission', title: 'Waiting for microphone', detail: copy.widgetPermissionPromptDetail,
+        tone: 'permission', title: i18n._(msg`Waiting for microphone`), detail: copy.widgetPermissionPromptDetail,
         icon: <ShieldAlert aria-hidden="true" size={22} strokeWidth={2.1} />,
       }
-    case 'listening':
+    case 'listening': {
+      const shortcut = formatAccelerator(snapshot.shortcut, platform, 'display')
       return {
-        tone: 'listening', title: 'Listening', detail: platform === 'linux' ? 'Release F9 or press Super+Ctrl+X to finish' : `${formatAccelerator(snapshot.shortcut, platform, 'display')} to finish`,
+        tone: 'listening', title: i18n._(msg`Listening`), detail: platform === 'linux' ? i18n._(msg`Release F9 or press Super+Ctrl+X to finish`) : i18n._(msg({ message: `${shortcut} to finish`, comment: '{shortcut} is the dictation keyboard shortcut, as in "Ctrl+Shift+Space".' })),
         icon: <Mic aria-hidden="true" size={22} strokeWidth={2.2} />,
       }
+    }
     case 'processing':
       return {
-        tone: 'processing', title: processingLabels[snapshot.stage],
+        tone: 'processing', title: i18n._(processingLabels[snapshot.stage]),
         detail: copy.widgetProcessingDetail,
         icon: <CircleEllipsis aria-hidden="true" size={23} strokeWidth={2.1} />,
       }
     case 'success':
       return {
         tone: 'success',
-        title: snapshot.output === 'pasted' ? 'Pasted' : 'Copied — paste manually',
-        detail: snapshot.output === 'pasted' ? 'Text delivered' : platform === 'linux' ? 'Super+V to paste in apps and terminals' : 'Clipboard is ready',
+        title: snapshot.output === 'pasted' ? i18n._(msg`Pasted`) : i18n._(msg`Copied — paste manually`),
+        detail: snapshot.output === 'pasted' ? i18n._(msg`Text delivered`) : platform === 'linux' ? i18n._(msg`Super+V to paste in apps and terminals`) : i18n._(msg`Clipboard is ready`),
         icon: <Check aria-hidden="true" size={23} strokeWidth={2.4} />,
       }
     case 'cancelled':
       return {
-        tone: 'cancelled', title: 'Cancelled', detail: 'Nothing was copied',
+        tone: 'cancelled', title: i18n._(msg({ message: 'Cancelled', comment: 'Dictation was cancelled.' })), detail: i18n._(msg`Nothing was copied`),
         icon: <X aria-hidden="true" size={23} strokeWidth={2.2} />,
       }
     case 'error': {
-      const entry = errorCopyFor(copy)[snapshot.code]
+      const entry = errorCopyFor(copy, i18n)[snapshot.code]
       // A kept recording makes the whole pill Try again; what went wrong rides
       // in the tooltip and the announcement.
       if (snapshot.kept === true && isTranscriptionErrorCode(snapshot.code)) {
         // After a Try again that failed too, the pill says so rather than
         // looking as though nothing happened.
         const again = snapshot.retried === true
+        const problem = entry.title
+        const kept = TRANSCRIPTION_KEPT_DETAIL[snapshot.code]
         return {
           tone: 'error',
-          title: again ? 'Failed again · retry' : 'Click to try again',
-          detail: `${again ? 'Try again failed too. ' : ''}${entry.title}. ${TRANSCRIPTION_KEPT_DETAIL[snapshot.code]}`,
+          title: again ? i18n._(msg`Failed again · retry`) : i18n._(msg`Click to try again`),
+          detail: again
+            ? i18n._(msg({ message: `Try again failed too. ${problem}. ${kept}`, comment: '{problem} is a short title such as "Couldn’t transcribe"; {kept} says the recording was kept.' }))
+            : i18n._(msg({ message: `${problem}. ${kept}`, comment: '{problem} is a short title such as "Couldn’t transcribe"; {kept} says the recording was kept.' })),
           icon: <RotateCcw aria-hidden="true" size={23} strokeWidth={2.2} />,
         }
       }
@@ -324,6 +336,7 @@ export function WidgetApp({
   dragCancellationVersion,
   visibilityGeneration = 0,
 }: WidgetAppProps): ReactNode {
+  const { t, i18n } = useLingui()
   const isIdle = snapshot.status === 'idle'
   const kept = snapshot.status === 'error' && snapshot.kept === true
   // The × takes the place esc held while the work ran. A click in its first
@@ -399,7 +412,7 @@ export function WidgetApp({
     return (
       <aside
         className="widget-shell"
-        aria-label="Sotto dictation status"
+        aria-label={t`Sotto dictation status`}
         data-status="idle"
         data-tone="idle"
         data-orientation={orientation}
@@ -432,9 +445,9 @@ export function WidgetApp({
           {/* The resting sliver is a bare bar; hovering expands it in place
               and reveals the click-to-dictate prompt overlaid on it. */}
           <span className="widget-sliver__prompt">
-            <span className="widget-sliver__prompt-action">Click to dictate</span>
+            <span className="widget-sliver__prompt-action">{t`Click to dictate`}</span>
             <span className="widget-sliver__prompt-keys">
-              {platform === 'linux' ? 'F9 to talk' : formatAccelerator(snapshot.shortcut, platform, 'display')}
+              {platform === 'linux' ? t`F9 to talk` : formatAccelerator(snapshot.shortcut, platform, 'display')}
             </span>
           </span>
         </div>
@@ -442,16 +455,17 @@ export function WidgetApp({
     )
   }
 
-  const copy = getCopy(snapshot, platform)
+  const copy = getCopy(snapshot, platform, i18n)
   const isListening = snapshot.status === 'listening'
   const isProcessing = snapshot.status === 'processing'
   const progress = isProcessing ? Math.round(Math.max(0, Math.min(1, snapshot.progress)) * 100) : 0
 
+  const progressOf = copy.title
   const progressBar = isProcessing && (
     <span
       className="widget-progress"
       role="progressbar"
-      aria-label={`${copy.title} progress`}
+      aria-label={t({ message: `${progressOf} progress`, comment: '{progressOf} is what the widget is doing, as in "Transcribing".' })}
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={progress}
@@ -462,7 +476,7 @@ export function WidgetApp({
     </span>
   )
   const stopAction = isListening && (
-    <WidgetAction label="Stop dictation" tone="stop" onClick={onStop}>
+    <WidgetAction label={t`Stop dictation`} tone="stop" onClick={onStop}>
       <Square aria-hidden="true" size={10} fill="currentColor" />
     </WidgetAction>
   )
@@ -470,7 +484,7 @@ export function WidgetApp({
     <button
       type="button"
       className="widget-esc"
-      aria-label="Cancel dictation"
+      aria-label={t`Cancel dictation`}
       tabIndex={-1}
       onMouseDown={preventFocus}
       onPointerDown={stopPointerPropagation}
@@ -486,7 +500,7 @@ export function WidgetApp({
   // holding the key system-wide while an error waits would take it from every app.
   const dismissAction = snapshot.status === 'error' && (
     <WidgetAction
-      label={kept ? 'Discard recording' : 'Dismiss'}
+      label={kept ? t`Discard recording` : t`Dismiss`}
       onClick={() => { if (Date.now() - errorShownAt.current >= DISMISS_GRACE_MS) onDismiss?.() }}
     >
       <X aria-hidden="true" size={11} strokeWidth={2.6} />
@@ -505,7 +519,7 @@ export function WidgetApp({
   return (
     <aside
       className="widget-shell"
-      aria-label="Sotto dictation status"
+      aria-label={t`Sotto dictation status`}
       data-status={snapshot.status}
       data-tone={copy.tone}
       data-orientation={orientation}

@@ -2,8 +2,8 @@ import { fillPrompt, promptField } from './support/prompt'
 /**
  * Idle compaction in the built app (ADR-0127). The real Claude adapter runs over the fake CLI in `tests/fixtures/`. A turn
  * ends with a reply whose context is 250,000 tokens, dated 54½ minutes ago, as a thread left quiet that long would read.
- * Sotto's own sweep sends `/compact` with nobody pressing anything, the line under the composer says Sotto did it, and
- * its Turn off opens Claude Code's page in Settings › Providers with the switch in focus.
+ * Sotto's own sweep sends `/compact` with nobody pressing anything, and the transcript's boundary says the context was
+ * compacted. Nothing is said under the composer: Zach had that line removed (ADR-0127).
  *
  *   npm run build && npx playwright test tests/e2e/idle-compaction.spec.ts
  */
@@ -24,7 +24,7 @@ const evidence = evidenceDirectory('artifacts/idle-compaction')
 const compactions = async (root: string): Promise<number> => (await fakeClaudeRecords(root))
   .filter(record => record.method === 'user' && (record.params?.frame as { message?: { content?: unknown } } | undefined)?.message?.content === '/compact').length
 
-test('Sotto compacts a quiet Claude thread on its own, says so, and Turn off leads to the switch', async () => {
+test('Sotto compacts a quiet Claude thread on its own, and only the transcript says so', async () => {
   test.setTimeout(240_000)
   const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-idle-compaction-' })).directory
   const root = join(profile, 'native-fixture')
@@ -88,17 +88,22 @@ test('Sotto compacts a quiet Claude thread on its own, says so, and Turn off lea
     await expect.poll(() => compactions(claude), { timeout: 75_000 }).toBe(1)
     await act({ type: 'raw', frame: { type: 'system', subtype: 'compact_boundary', session_id: launch!.session, uuid: randomUUID(), compact_metadata: { trigger: 'manual', pre_tokens: 250_000, post_tokens: 41_000 } } })
     await act({ type: 'raw', frame: { type: 'result', subtype: 'success', session_id: launch!.session, is_error: false, result: '' } })
-    const line = pane.getByRole('status').filter({ hasText: 'Sotto compacted this idle thread before its cache expired.' })
-    await expect(line).toBeVisible({ timeout: 30_000 })
-    const turnOff = pane.getByRole('button', { name: 'Turn off idle compaction in Settings' })
-    await expect(turnOff).toBeVisible()
+    await expect.poll(() => page.evaluate(id => window.sotto!.agents!.get().then(state => {
+      const compaction = state.host.threads.find(thread => thread.id === id)?.compaction
+      return compaction ? `${compaction.status} ${compaction.idle === true}` : null
+    }), threadId), { timeout: 30_000 }).toBe('completed true')
+    const boundary = transcript.getByText(/Context compacted/).first()
+    await expect(boundary).toBeVisible()
+    const meta = pane.locator('.thread-pane__meta')
+    await expect(meta.getByRole('status')).toHaveCount(0)
+    await expect(meta.getByRole('button', { name: 'Turn off idle compaction in Settings' })).toHaveCount(0)
     expect(await page.evaluate(() => window.sotto!.agents!.get().then(state => state.error ?? null))).toBeNull()
 
     for (const [width, height] of [[1280, 800], [820, 560]] as const) {
       await resizeWindow(launched, width, height)
       for (const appearance of ['dark', 'light'] as const) {
         await page.evaluate(appearance => window.sotto!.updateSettings({ appearance }), appearance)
-        await expect(line).toBeVisible()
+        await expect(boundary).toBeVisible()
         expect(await pane.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
         await page.screenshot({ path: join(evidence, `thread-${appearance}-${width}.png`), animations: 'disabled' })
       }
@@ -108,23 +113,6 @@ test('Sotto compacts a quiet Claude thread on its own, says so, and Turn off lea
     await page.waitForTimeout(35_000)
     expect(await compactions(claude)).toBe(1)
 
-    // Turn off, by keyboard: Claude Code's page, with the switch in focus, and Space turns it off.
-    await resizeWindow(launched, 1280, 800)
-    await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'dark' }))
-    await turnOff.focus()
-    await page.keyboard.press('Enter')
-    const toggle = page.getByRole('switch', { name: 'Compact idle threads' })
-    await expect(toggle).toBeFocused({ timeout: 10_000 })
-    await expect(toggle).toHaveAttribute('aria-checked', 'true')
-    await page.screenshot({ path: join(evidence, 'settings-claude-code-1280.png'), animations: 'disabled' })
-    await page.keyboard.press('Space')
-    await expect(toggle).toHaveAttribute('aria-checked', 'false')
-    await expect.poll(() => page.evaluate(() => window.sotto!.getSettings().then(settings => settings.compactIdleThreads))).toBe(false)
-    for (const [width, height] of [[820, 560]] as const) {
-      await resizeWindow(launched, width, height)
-      await expect(toggle).toBeVisible()
-      await page.screenshot({ path: join(evidence, `settings-claude-code-off-${width}.png`), animations: 'disabled' })
-    }
     expect(await readFile(join(claude, 'violations.jsonl'), 'utf8').catch(() => '')).toBe('')
   } finally {
     if (launched) await closeSotto(launched)

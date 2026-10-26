@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AttachmentPreviews, ATTACHMENT_PREVIEW_RETENTION_MS, MAX_ATTACHMENT_PREVIEW_BYTES } from '../../../src/main/agents/attachmentPreviews'
+import { hostAttachmentFileSchema } from '../../../src/shared/hostProtocol'
 import { AttachmentStore, inlineStager } from '../../../src/main/agents/attachmentStore'
 import { AgentControl } from '../../../src/main/agents/control'
 
@@ -316,5 +317,47 @@ describe('coordinator attachment dispatch boundary', () => {
     expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).draftAttachments).toEqual([image])
     await f.host.acknowledge()
     expect(attachment(f.control.get().host)?.preview).toBeUndefined()
+  })
+})
+
+describe('a sent file for the iPhone’s Quick Look (ADR-0131, October 25 amendment)', () => {
+  it('hands a part of a file its message carries, never an image, and only for that thread and message', async () => {
+    const root = await directory()
+    const content = new AttachmentStore(root, { acceptsFiles: true }); await content.load()
+    const pdf = await content.stage({ name: 'quarterly-report.pdf', mimeType: 'application/pdf', bytes: Buffer.from('%PDF-1.7 report') })
+    const png = await content.stage({ name: 'Screenshot.png', mimeType: 'image/png', bytes: PIXEL_PNG })
+    const store = new AttachmentPreviews(root, content, () => true); await store.load()
+    await store.remember('workshop', 'message', 'command', [png, pdf])
+    const source = await snapshot()
+    await expect(store.filePart(source, { threadId: 'workshop', messageId: 'message', attachmentId: pdf.id, part: 0 })).resolves.toEqual({
+      name: 'quarterly-report.pdf', mimeType: 'application/pdf', sizeBytes: 15, digest: pdf.digest, part: 0, parts: 1,
+      data: Buffer.from('%PDF-1.7 report').toString('base64'),
+    })
+    // An image is `preview`'s, and anything the message does not carry is nobody's.
+    await expect(store.filePart(source, { threadId: 'workshop', messageId: 'message', attachmentId: png.id, part: 0 })).resolves.toBeNull()
+    await expect(store.filePart(source, { threadId: 'workshop', messageId: 'message', attachmentId: 'other', part: 0 })).resolves.toBeNull()
+    await expect(store.filePart(source, { threadId: 'workshop', messageId: 'different', attachmentId: pdf.id, part: 0 })).resolves.toBeNull()
+    const other = structuredClone(source); other.threads[0]!.messages[0]!.commandId = 'different'
+    await expect(store.filePart(other, { threadId: 'workshop', messageId: 'message', attachmentId: pdf.id, part: 0 })).resolves.toBeNull()
+  })
+
+  it('cuts a 20 MiB file into 8 MiB parts that join back into its exact bytes, reading it whole only once', async () => {
+    const root = await directory()
+    const content = new AttachmentStore(root, { acceptsFiles: true }); await content.load()
+    const bytes = Buffer.alloc(20 * 1024 * 1024)
+    for (let index = 0; index < bytes.length; index += 997) bytes[index] = index % 253
+    const handle = await content.stage({ name: 'build-output.zip', mimeType: 'application/zip', bytes })
+    const store = new AttachmentPreviews(root, content, () => true); await store.load()
+    await store.remember('workshop', 'message', 'command', [handle])
+    const source = await snapshot()
+    const whole = vi.spyOn(content, 'read')
+    const part = (index: number) => store.filePart(source, { threadId: 'workshop', messageId: 'message', attachmentId: handle.id, part: index })
+    const parts = [(await part(0))!, (await part(1))!, (await part(2))!]
+    expect(parts.map(item => [item.part, item.parts])).toEqual([[0, 3], [1, 3], [2, 3]])
+    expect(parts[0]).toMatchObject({ name: 'build-output.zip', mimeType: 'application/zip', sizeBytes: bytes.length, digest: handle.digest })
+    expect(Buffer.concat(parts.map(item => Buffer.from(item.data, 'base64'))).equals(bytes)).toBe(true)
+    for (const item of parts) expect(hostAttachmentFileSchema.safeParse(item).success).toBe(true)
+    expect(whole).toHaveBeenCalledTimes(1)
+    await expect(part(3)).resolves.toBeNull()
   })
 })

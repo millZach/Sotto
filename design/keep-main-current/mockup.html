@@ -1,0 +1,185 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Keep main up to date — mock-up (prototype, throwaway)</title>
+<!-- PROTOTYPE. Three variants of the blocked notice on a Threads sidebar project row, switchable with ?variant=A|B|C,
+     and the two switches it adds to Settings. Answers fixed by Zach: every 15 minutes and after a merge, notice on the
+     project row, a global and a per-project switch, "Show changes" only. -->
+<style>
+:root{--canvas:#0e0e0e;--bg:#161616;--side:#1b1b1b;--sunk:#202020;--elev:#262626;--hair:#2e2e2e;--text:#ececec;--text2:#c9c9c9;--muted:#9a9a9a;--faint:#6f6f6f;
+  --warn:#e6b45c;--warnwash:#e6b45c1a;--ok:#8fc79a;--acc:#e8dcc4;--accbg:#c9b98f;--hover:#ffffff0a}
+body.light{--canvas:#e9e7e2;--bg:#fbfaf7;--side:#f3f1ec;--sunk:#ebe8e2;--elev:#ffffff;--hair:#dcd8d0;--text:#1d1c1a;--text2:#3a3833;--muted:#5f5b53;--faint:#8a857b;
+  --warn:#8a5a00;--warnwash:#b7791f1a;--ok:#2f6b3a;--acc:#5b4a22;--accbg:#8a7340;--hover:#0000000a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--canvas);color:var(--text);font:14px/1.45 Figtree,"Segoe UI",system-ui,sans-serif;padding:20px 20px 110px}
+h1{font-size:18px;margin:0 0 4px}p.lead{color:var(--muted);margin:0 0 14px;max-width:820px;font-size:13px}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 18px}
+.controls label{font-size:12px;color:var(--muted)}
+select,button{font:inherit}
+.controls select{background:var(--sunk);color:var(--text);border:1px solid var(--hair);border-radius:7px;padding:5px 8px;font-size:13px}
+.stage{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start}
+.panel-title{font-size:12px;color:var(--muted);margin:0 0 6px;text-transform:none}
+/* sidebar */
+.side{width:300px;max-width:100%;background:var(--side);border:1px solid var(--hair);border-radius:10px;padding:10px 8px;min-height:420px}
+.search{height:30px;border-radius:7px;background:var(--sunk);color:var(--faint);font-size:12.5px;padding:6px 10px;margin:0 2px 12px}
+.folder{margin:0 0 14px}
+.head{display:flex;align-items:center;border-radius:7px;position:relative}
+.head:hover{background:var(--hover)}
+.toggle{flex:1;display:flex;align-items:center;gap:6px;min-height:28px;padding:0 8px 0 6px;border:0;background:transparent;color:var(--text);font-size:14.5px;font-weight:500;text-align:left;cursor:pointer;min-width:0;border-radius:7px}
+.toggle svg{flex:none;color:var(--muted)}
+.title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.count{margin-left:auto;color:var(--muted);font-size:12px}
+.rows{list-style:none;margin:0;padding:0}
+.row{display:flex;align-items:center;gap:8px;padding:5px 8px 5px 26px;border-radius:7px;color:var(--text2);font-size:13.5px}
+.row:hover{background:var(--hover)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex:none}.dot.work{background:var(--acc)}
+.age{margin-left:auto;color:var(--faint);font-size:12px}
+.tbtn{border:0;background:transparent;color:var(--acc);padding:0;font-size:12.5px;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.tbtn:focus-visible,.toggle:focus-visible,.chip:focus-visible,.x:focus-visible{outline:2px solid var(--accbg);outline-offset:2px}
+/* variant A: a line under the head */
+.lineA{padding:1px 8px 6px 26px;font-size:12.5px;color:var(--muted);line-height:1.4}
+.lineA .behind{color:var(--warn)}
+.lineA.ok .behind{color:var(--ok)}
+/* variant B: a count beside the head, opening a small sheet */
+.chip{border:0;background:transparent;color:var(--warn);font-size:12px;font-weight:600;padding:2px 6px;border-radius:6px;cursor:pointer;margin-right:4px;white-space:nowrap}
+.chip:hover{background:var(--warnwash)}.chip.ok{color:var(--ok)}
+.sheet{margin:4px 4px 8px 22px;background:var(--elev);border:1px solid var(--hair);border-radius:9px;padding:10px 12px;font-size:12.5px;color:var(--text2);box-shadow:0 6px 20px #0005}
+/* variant C: a filled card first in the project's list */
+.card{margin:2px 4px 6px 22px;background:var(--warnwash);border-radius:9px;padding:9px 10px 9px 12px;font-size:12.5px;color:var(--text2);display:grid;grid-template-columns:1fr auto;gap:2px 8px}
+.card.ok{background:color-mix(in srgb,var(--ok) 12%,transparent)}
+.card b{color:var(--text);font-weight:600}
+.x{border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:15px;line-height:1;padding:0 2px;grid-row:1;grid-column:2;align-self:start}
+.files{margin:6px 0 2px;padding:0;list-style:none;font-family:ui-monospace,Consolas,monospace;font-size:11.5px;color:var(--text2)}
+.files li{padding:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.files .k{color:var(--muted);display:inline-block;width:68px;font-family:Figtree,system-ui,sans-serif}
+.more{color:var(--muted);font-size:12px}
+/* settings */
+.settings{width:560px;max-width:100%;background:var(--bg);border:1px solid var(--hair);border-radius:10px;padding:16px 20px}
+.settings h2{font-size:15px;margin:0 0 2px}.settings .crumb{font-size:12px;color:var(--muted);margin:0 0 14px}
+.group{border-top:1px solid var(--hair);padding:12px 0 4px}.group h3{font-size:13px;margin:0 0 8px;color:var(--text2)}
+.t{display:grid;grid-template-columns:38px 1fr;gap:12px;margin:10px 0}
+.track{width:36px;height:20px;border-radius:10px;background:#3a3a3a;position:relative;border:0;cursor:pointer;padding:0}
+.track:after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#ddd;transition:left .15s}
+.track[aria-checked=true]{background:var(--accbg)}.track[aria-checked=true]:after{left:18px;background:#1b1b1b}
+body.reduced .track:after{transition:none}
+.t strong{font-size:13px;font-weight:600}.t span{display:block;color:var(--muted);font-size:12.5px}
+.field{margin:10px 0}.field b{font-size:13px;display:block;font-weight:600}.field span{display:block;color:var(--muted);font-size:12.5px;margin-bottom:4px}
+.field select{background:var(--sunk);color:var(--text);border:1px solid var(--hair);border-radius:7px;padding:6px 8px;font-size:12.5px;width:100%;max-width:340px}
+.disclose{font-size:13px;color:var(--text2);margin:8px 0 4px}
+.dim{opacity:.4}
+/* switcher */
+.switcher{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);display:flex;align-items:center;gap:4px;background:#f4f1ea;color:#111;border-radius:999px;padding:5px;box-shadow:0 8px 28px #000a;font-size:13px;z-index:9}
+.switcher button{border:0;background:#111;color:#f4f1ea;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:15px}
+.switcher span{padding:0 10px;font-weight:600;white-space:nowrap}
+@media (max-width:640px){body{padding:12px 10px 100px}.stage>div{width:100%}.side,.settings{width:100%}.switcher span{font-size:12px;padding:0 6px}}
+</style></head><body>
+<h1>Keep main up to date: mock-up</h1>
+<p class="lead">Every 15 minutes, and right after a pull request merges, Sotto fetches each project's checkout and fast-forwards its default branch, but only when that branch is checked out, has no local changes and nothing is working there. When it can't, the project row says so. Pick a variant with the bar at the bottom (or ← →), and a state below.</p>
+<div class="controls">
+  <label for="state">State</label>
+  <select id="state">
+    <option value="changes">Local changes block it</option>
+    <option value="untracked">An untracked file is in the way</option>
+    <option value="merge">A merge is in progress</option>
+    <option value="branch">Another branch is checked out</option>
+    <option value="deps">Just updated, dependencies changed</option>
+    <option value="current">Up to date (nothing shown)</option>
+  </select>
+  <label for="theme">Theme</label>
+  <select id="theme"><option value="dark">Dark</option><option value="light">Light</option></select>
+  <label><input type="checkbox" id="reduced"> Reduced motion</label>
+</div>
+<div class="stage">
+  <div><p class="panel-title">Threads sidebar</p><nav class="side" id="side" aria-label="Threads"></nav></div>
+  <div><p class="panel-title">Settings</p><section class="settings" id="settings"></section></div>
+</div>
+<div class="switcher" role="group" aria-label="Prototype variant">
+  <button type="button" id="prev" aria-label="Previous variant">←</button><span id="label"></span><button type="button" id="next" aria-label="Next variant">→</button>
+</div>
+<script>
+const VARIANTS = { A: 'Line under the project', B: 'Count that opens a sheet', C: 'Card first in the list' }
+const KEYS = Object.keys(VARIANTS)
+const params = new URLSearchParams(location.search)
+let variant = KEYS.includes(params.get('variant')) ? params.get('variant') : 'A'
+let state = params.get('state') || 'changes'
+let open = false, dismissed = false
+const settings = { global: true, project: 'inherit' }
+const chevron = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"/></svg>'
+const folderIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>'
+const STATES = {
+  changes: { behind: '1,320 behind', reason: 'local changes block the update', short: '↓ 1,320', files: [['modified', 'src/main/index.ts'], ['modified', 'package.json'], ['deleted', 'docs/old-notes.md'], ['modified', 'src/renderer/src/App.tsx']], more: 3, kind: 'Changes' },
+  untracked: { behind: '12 behind', reason: 'an untracked file would be overwritten', short: '↓ 12', files: [['untracked', 'scripts/release-check.mjs']], more: 0, kind: 'In the way' },
+  merge: { behind: '4 behind', reason: 'a merge is in progress', short: '↓ 4', files: [['conflict', 'src/shared/settings.ts']], more: 0, kind: 'Merge' },
+  branch: { behind: '38 behind', reason: 'fix/tray-icon is checked out', short: '↓ 38', files: null, more: 0 },
+  deps: { ok: true, behind: 'Updated main', reason: 'dependencies changed, run install', short: 'Install', files: [['changed', 'package-lock.json']], more: 0, kind: 'Changed' },
+  current: null,
+}
+function shown() { return settings.global && settings.project !== 'off' || settings.project === 'on' }
+function filesList(s) {
+  if (!s.files) return ''
+  return `<ul class="files" aria-label="${s.kind === 'Changed' ? 'What changed' : 'What blocks the update'}">${s.files.map(([k, f]) => `<li><span class="k">${k}</span>${f}</li>`).join('')}</ul>`
+    + (s.more ? `<div class="more">and ${s.more} more</div>` : '')
+    + (s.ok ? '' : `<button type="button" class="tbtn" style="margin-top:4px">Open folder</button>`)
+}
+function sentence(s) { return `<span class="behind">main is ${s.behind}</span> · ${s.reason}` }
+function notice(s) {
+  if (!s || !shown() || (s.ok && dismissed)) return { head: '', body: '' }
+  const action = s.files ? (s.ok ? 'What changed' : 'Show changes') : ''
+  const toggleBtn = action ? `<button type="button" class="tbtn" aria-expanded="${open}" data-act="toggle">${open ? 'Hide' : action}</button>` : ''
+  const dismiss = s.ok ? `<button type="button" class="x" aria-label="Dismiss dependencies changed" data-act="dismiss">×</button>` : ''
+  const words = s.ok ? `<span class="behind">Updated main</span> · ${s.reason}` : sentence(s)
+  if (variant === 'A') return { head: '', body: `<div class="lineA${s.ok ? ' ok' : ''}">${words}${toggleBtn ? ' · ' + toggleBtn : ''}${dismiss ? ' ' + dismiss : ''}${open ? filesList(s) : ''}</div>` }
+  if (variant === 'B') return {
+    head: `<button type="button" class="chip${s.ok ? ' ok' : ''}" aria-expanded="${open}" data-act="toggle" aria-label="${s.ok ? 'Updated main, dependencies changed' : `main is ${s.behind}, ${s.reason}`}">${s.short}</button>`,
+    body: open ? `<div class="sheet" role="dialog" aria-label="main">${words}${filesList(s)}${s.ok ? `<div style="margin-top:6px"><button type="button" class="tbtn" data-act="dismiss">Dismiss</button></div>` : ''}</div>` : '' }
+  return { head: '', body: `<div class="card${s.ok ? ' ok' : ''}"><div><b>${s.ok ? 'Updated main' : `main is ${s.behind}`}</b><br>${s.ok ? 'Dependencies changed. Run install.' : cap(s.reason) + '.'}${toggleBtn ? '<br>' + toggleBtn : ''}${open ? filesList(s) : ''}</div>${dismiss}</div>` }
+}
+const cap = t => t[0].toUpperCase() + t.slice(1)
+function renderSide() {
+  const n = notice(STATES[state])
+  document.getElementById('side').innerHTML = `<div class="search">Search threads</div>
+  <div class="folder"><div class="head"><button type="button" class="toggle" aria-expanded="true">${folderIcon}<span class="title">Sotto</span></button>${n.head}<span class="count" style="padding-right:8px">3</span></div>
+    ${n.body}
+    <ul class="rows"><li class="row"><i class="dot work"></i>Keep main up to date<span class="age">now</span></li><li class="row"><i class="dot"></i>Fix dictation silent tail<span class="age">2h</span></li><li class="row"><i class="dot"></i>Owl sky at night<span class="age">1d</span></li></ul></div>
+  <div class="folder"><div class="head"><button type="button" class="toggle" aria-expanded="true">${folderIcon}<span class="title">boiler-controls</span></button><span class="count" style="padding-right:8px">1</span></div>
+    <ul class="rows"><li class="row"><i class="dot"></i>Pull sheet for unit 4<span class="age">3d</span></li></ul></div>`
+}
+function renderSettings() {
+  const inherit = `Use the Git setting (${settings.global ? 'On' : 'Off'})`
+  document.getElementById('settings').innerHTML = `<h2>Git</h2><p class="crumb">Settings › Git › In the background</p>
+  <div class="group"><h3>In the background</h3>
+    <div class="field"><b>Git fetch interval</b><span>Every 30 seconds, while a window is in front.</span><select disabled><option>30 seconds</option></select></div>
+    <div class="t"><button type="button" class="track" role="switch" aria-checked="false" aria-label="Automatically pull"></button><div><strong>Automatically pull</strong><span>Pull the default branch of a thread you're looking at when it is behind and clean.</span></div></div>
+    <div class="t"><button type="button" class="track" role="switch" aria-checked="${settings.global}" id="global" aria-label="Keep main up to date"></button><div><strong>Keep main up to date</strong>
+      <span>${settings.global ? 'Every 15 minutes and after a pull request merges, each project\u2019s checkout moves forward to its remote\u2019s default branch when that branch is checked out and has no local changes. Sotto never stashes, resets or rebases.' : 'Projects stay where they are. Each project row still says how far behind its default branch is.'}</span></div></div>
+  </div>
+  <p class="panel-title" style="margin-top:14px">Settings › Threads › Project defaults</p>
+  <div class="group"><div class="disclose">▾ Project defaults</div>
+    <div class="field"><b>Project</b><select disabled><option>Sotto — D:\\Talk to Text Application</option></select></div>
+    <div class="field"><b>New threads in this project work in</b><select disabled><option>Use global default (New worktree)</option></select></div>
+    <div class="field"><b>Keep this project's main up to date</b><select id="project">
+      <option value="inherit"${settings.project === 'inherit' ? ' selected' : ''}>${inherit}</option><option value="on"${settings.project === 'on' ? ' selected' : ''}>On</option><option value="off"${settings.project === 'off' ? ' selected' : ''}>Off</option></select></div>
+  </div>`
+  document.getElementById('global').onclick = () => { settings.global = !settings.global; render() }
+  document.getElementById('project').onchange = e => { settings.project = e.target.value; render() }
+}
+function render() {
+  renderSide(); renderSettings()
+  document.getElementById('label').textContent = `${variant} — ${VARIANTS[variant]}`
+  const url = new URL(location.href); url.searchParams.set('variant', variant); url.searchParams.set('state', state); history.replaceState(null, '', url)
+}
+document.getElementById('side').addEventListener('click', e => {
+  const act = e.target.closest('[data-act]')?.dataset.act
+  if (act === 'toggle') { open = !open; render(); document.querySelector('[data-act=toggle]')?.focus() }
+  if (act === 'dismiss') { dismissed = true; open = false; render() }
+})
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && open) { open = false; render(); document.querySelector('[data-act=toggle]')?.focus(); return }
+  if (e.target.matches('input,textarea,select,[contenteditable]')) return
+  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { const i = KEYS.indexOf(variant); variant = KEYS[(i + (e.key === 'ArrowRight' ? 1 : KEYS.length - 1)) % KEYS.length]; open = false; render() }
+})
+document.getElementById('prev').onclick = () => { variant = KEYS[(KEYS.indexOf(variant) + KEYS.length - 1) % KEYS.length]; open = false; render() }
+document.getElementById('next').onclick = () => { variant = KEYS[(KEYS.indexOf(variant) + 1) % KEYS.length]; open = false; render() }
+const stateSelect = document.getElementById('state'); stateSelect.value = state
+stateSelect.onchange = e => { state = e.target.value; open = false; dismissed = false; render() }
+document.getElementById('theme').onchange = e => document.body.classList.toggle('light', e.target.value === 'light')
+document.getElementById('reduced').onchange = e => document.body.classList.toggle('reduced', e.target.checked)
+render()
+</script></body></html>

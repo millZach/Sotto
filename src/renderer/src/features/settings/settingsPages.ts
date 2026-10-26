@@ -19,6 +19,7 @@ export const SETTINGS_PAGES = [
   settingsPage('settings-capture', msg({ message: 'Dictation', comment: 'A Settings page, named in its rail and its heading. Other messages name it as "Settings > Dictation".' }), 0),
   settingsPage('settings-formatting', msg({ message: 'Cleanup', comment: 'A Settings page, named in its rail and its heading: AI cleanup of dictated text. Other messages name it as "Settings > Cleanup".' }), 0),
   settingsPage('settings-agents', msg({ message: 'Threads', comment: 'A Settings page, named in its rail and its heading: settings for threads. Other messages name it as "Settings > Threads".' }), 1),
+  settingsPage('settings-keyboard', msg({ message: 'Keyboard', comment: 'A Settings page, named in its rail and its heading: the keyboard shortcuts for working in threads. Other messages name it as "Settings > Keyboard".' }), 1),
   settingsPage('settings-git', msg({ message: 'Git & worktrees', comment: 'A Settings page, named in its rail and its heading. Other messages name it as "Settings > Git & worktrees".' }), 1),
   settingsPage('settings-watcher', 'Watcher', 1),
   settingsPage('settings-providers', msg({ message: 'Providers', comment: 'A Settings page, named in its rail and its heading. Other messages name it as "Settings > Providers".' }), 2),
@@ -41,6 +42,7 @@ export const SETTINGS_GROUPS = {
   'settings-browser': 'settings-agents',
   'settings-worktrees': 'settings-git',
   'settings-phones': 'settings-hosts',
+  'settings-new-workers': 'settings-watcher',
   'settings-history': 'settings-privacy',
   'settings-updates': 'settings-privacy',
 } as const satisfies Record<string, SettingsPageId>
@@ -61,7 +63,7 @@ export function settingsSectionHome(id: SettingsSectionId): { readonly page: Set
 }
 
 /** What has to be on for a setting to show: dictation itself, or an Owl feature that holds it back. */
-export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers'
+export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'cross-machine-work' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers' | 'keep-main-current'
 
 /**
  * The attribute that marks a setting's control on its page with the setting's id: Find a setting lands on a control by
@@ -151,6 +153,25 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'browser-without-asking', label: msg`Let agents use the browser without asking`, section: 'settings-browser', words: 'permission' },
     { id: 'visuals-in-threads', label: msg`Let agents draw visuals in threads`, section: 'settings-browser', words: 'diagrams' },
 
+    { id: 'shortcut-new-thread', label: msg`New thread shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey new thread' },
+    { id: 'shortcut-settle', label: msg`Settle thread shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey settle archive' },
+    { id: 'shortcut-restore', label: msg`Restore settled thread shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey restore settled' },
+    { id: 'shortcut-open-beside', label: msg`Open beside shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey pane beside' },
+    { id: 'shortcut-next-thread', label: msg`Next thread shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey next thread' },
+    { id: 'shortcut-previous-thread', label: msg`Previous thread shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey previous thread' },
+    { id: 'shortcut-next-waiting', label: msg`Next thread waiting on you shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey waiting needs you question permission' },
+    { id: 'shortcut-zoom-pane', label: msg`Zoom pane shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey zoom pane' },
+    { id: 'shortcut-close-pane', label: msg`Close pane shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey close pane' },
+    { id: 'shortcut-focus-prompt', label: msg`Focus the prompt shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey focus prompt composer' },
+    { id: 'shortcut-stop-turn', label: msg`Stop the running turn shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey stop interrupt turn' },
+    { id: 'shortcut-add-selection', label: msg`Add selection to prompt shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey quote selection prompt' },
+    { id: 'shortcut-changes', label: msg`Changes shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey changes diff tools' },
+    { id: 'shortcut-terminal-drawer', label: msg`Terminal drawer shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey terminal drawer' },
+    { id: 'shortcut-branch', label: msg`Branch shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey branch bar' },
+    { id: 'shortcut-working-copy', label: msg`Working copy shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey working copy worktree' },
+    { id: 'shortcut-previous-working-copy', label: msg`Previous working copy shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey previous working copy' },
+    { id: 'shortcut-restore-defaults', label: msg`Restore shortcut defaults`, section: 'settings-keyboard', words: 'keyboard keys hotkey reset defaults' },
+
     { id: 'worktree-idle-cleanup', label: msg`Remove idle worktrees after`, section: 'settings-worktrees', words: 'cleanup days' },
     { id: 'worktree-cleanup-settled', label: msg`Remove a worktree when its thread is settled`, section: 'settings-worktrees', words: 'cleanup' },
     { id: 'worktree-cleanup-landed', label: msg`Remove a worktree once its commits are in the default branch`, section: 'settings-worktrees', words: 'cleanup' },
@@ -169,8 +190,11 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'proactive-panels', label: msg`Proactive panels`, section: 'settings-git', words: 'changes' },
     { id: 'git-fetch-interval', label: msg`Git fetch interval`, section: 'settings-git', words: 'background' },
     { id: 'git-auto-pull', label: msg`Automatically pull`, section: 'settings-git', words: 'fetch' },
+    { id: 'keep-main-current', label: msg`Keep main up to date`, section: 'settings-git', words: 'pull fetch fast-forward behind default branch', gate: 'keep-main-current' },
 
     { id: 'watcher-settles', label: msg`Settle finished threads`, section: 'settings-watcher', gate: 'watcher' },
+    { id: 'watcher-compact-at', label: msg`Compact Watcher at`, section: 'settings-watcher', words: 'compaction context tokens conversation size cost', gate: 'watcher' },
+    { id: 'new-workers', label: msg`Where new workers start`, section: 'settings-new-workers', words: 'machine computer host forge default worker placement', gate: 'cross-machine-work' },
     { id: 'worker-roles', label: msg`Worker roles`, section: 'settings-watcher', words: 'model building research review', gate: 'worker-roles' },
 
     { id: 'own-model-servers', label: msg`Your own model servers`, section: 'settings-providers', words: 'local self-hosted ollama lm studio vllm sglang llama.cpp tailnet opencode add server', gate: 'own-model-servers' },
@@ -196,7 +220,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     ...platform === 'darwin' ? [{ id: 'menu-bar-owl', label: msg`Menu bar owl`, section: 'settings-appearance', words: 'tray icon body eyes colour color', gate: 'menu-bar-owl' } as const] : [],
     { id: 'contrast', label: msg`Contrast`, section: 'settings-appearance' },
     { id: 'reduced-motion', label: msg`Reduced motion`, section: 'settings-appearance', words: 'animation' },
-    { id: 'night-falls', label: msg`Night falls between Threads and Watcher`, section: 'settings-appearance', words: 'transition animation watcher room', gate: 'night-falls' },
+    { id: 'night-falls', label: msg`Night falls between Dictate or Threads and Watcher`, section: 'settings-appearance', words: 'transition animation watcher room dictate', gate: 'night-falls' },
     { id: 'night-falls-look', label: msg`Night falls look`, section: 'settings-appearance', words: 'transition animation stars band look', gate: 'night-falls' },
     { id: 'night-falls-speed', label: msg`Night falls speed`, section: 'settings-appearance', words: 'transition animation slower faster', gate: 'night-falls' },
     { id: 'launch-at-startup', label: copy.settingsLaunchAtStartupLabel, section: 'settings-privacy', words: 'startup login' },

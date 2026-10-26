@@ -8,7 +8,7 @@ import './watcher.css'
 
 /**
  * Night falls (Drake's pick on October 23, 2026, variant 9 of `docs/prototypes/watcher-room-transition-prototype.html`):
- * moving between Threads and Watcher's room, a band of flickering text characters sweeps across the window. The room
+ * moving between Dictate or Threads and Watcher's room, a band of flickering text characters sweeps across the window. The room
  * being opened shows behind the band and the one being left ahead of it, edged in character cells, and the owl of the
  * room switch rides the band from the sidebar foot to the dock under Watcher's composer (or back). Built on the View
  * Transitions API: the page being left is a still snapshot and the one opened is live, so App keeps rendering one page.
@@ -228,7 +228,7 @@ function paintBand(ctx: CanvasRenderingContext2D, u: number, elapsed: number, wi
 }
 
 export interface NightFallsOptions {
-  /** True moving into Watcher's room (the band sweeps left to right), false moving back to Threads. */
+  /** True moving into Watcher's room (the band sweeps left to right), false moving back to Dictate or Threads. */
   readonly forward: boolean
   /** 0.5 is half speed, 2 twice as fast. */
   readonly speed: number
@@ -258,13 +258,13 @@ export function nightFallsShipped(update: UpdateStatus | null | undefined): bool
 
 /**
  * The run a move from page `from` to page `to` plays, or null where the page swaps at once: the move is not between
- * Threads and Watcher's room, this build has no night falls, its switch is off, or no run can play here (reduced motion,
- * or no view transitions), in which case the look is never read. Settings not yet read play the band at speed 1, as the
- * defaults do.
+ * Dictate or Threads and Watcher's room, this build has no night falls, its switch is off, or no run can play here
+ * (reduced motion, or no view transitions), in which case the look is never read. Settings not yet read play the band
+ * at speed 1, as the defaults do.
  */
 export function nightFallsRun(from: string, to: string, update: UpdateStatus | null | undefined,
   settings: Pick<AppSettings, 'roomTransition' | 'roomTransitionSpeed' | 'roomTransitionLook'> | null | undefined): NightFallsOptions | null {
-  const betweenRooms = (from === 'threads' && to === 'watcher') || (from === 'watcher' && to === 'threads')
+  const betweenRooms = (to === 'watcher' && (from === 'threads' || from === 'home')) || (from === 'watcher' && (to === 'threads' || to === 'home'))
   if (!betweenRooms || !nightFallsShipped(update) || !nightFallsAvailable() || settings?.roomTransition === false) return null
   return { forward: to === 'watcher', speed: settings?.roomTransitionSpeed ?? 1, look: settings?.roomTransitionLook ?? 'band' }
 }

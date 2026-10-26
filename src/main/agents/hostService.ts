@@ -7,7 +7,7 @@ import { watcherResultForHostV1, type WatcherIdentity } from '../../shared/watch
 import type { WatcherService } from './watcher'
 import type { WatcherPhoneService } from './watcherPhone'
 
-import { HOST_CANNOT_STAGE_SCREENSHOTS, type ProviderId, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThread, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { HOST_CANNOT_STAGE_SCREENSHOTS, type ProviderId, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThread, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentProject } from '../../shared/agents'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
@@ -20,10 +20,11 @@ import type { HostThreadDelegations } from '../../shared/agentsView'
 import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import { listHostFolders } from './hostFolders'
 import type { HostThreadToolReads } from './threadToolReads'
-import type { HostAnswerTarget, HostErrorCode } from '../../shared/hostProtocol'
+import type { HostAnswerTarget, HostAttachmentFile, HostAttachmentFileRequest, HostErrorCode } from '../../shared/hostProtocol'
 import { mayGrantLocally, REMOTE_PERMISSION_DENIED } from './authority'
 import type { HostMachineReport } from '../../shared/hostFacts'
-import { hostMachineReport, type HostFactsSource } from './hostFacts'
+import type { ProjectOrigins } from '../../shared/workerMachine'
+import type { DesktopDefaultsInput, DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
 import type { QuestionPageTarget } from './questionPages'
 import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery, type UsageProviderId } from '../../shared/usageDashboard'
 
@@ -104,6 +105,19 @@ export interface HostService {
   /** The host reports its machine's host facts and how many of its threads are running (#1031); without it they read unknown. */
   readonly supportsHostFacts?: boolean
   hostFacts?(): Promise<HostMachineReport>
+  /**
+   * The host reports the GitHub repository of each of its projects (#1032), present only when its Owl answer turns on Work
+   * across machines; without it a desktop cannot match this machine's projects by repository.
+   */
+  readonly supportsProjectOrigins?: boolean
+  projectOrigins?(): Promise<ProjectOrigins>
+  /**
+   * The host runs delegation for its own threads and keeps the desktop defaults a desktop sends it (#1310), present only
+   * on a headless host whose Owl answer turns on Work across machines. On a desktop's connection to such a host,
+   * `desktopDefaults` sends them; on the host, it keeps them for the client that sent them.
+   */
+  readonly supportsHostDelegation?: boolean
+  desktopDefaults?(defaults: DesktopDefaultsInput, client?: ClientIdentity): Promise<DesktopDefaultsReceipt>
   /** The host continues agents as threads and forks at a reply (#1028): it takes `continue-agent` and reads `startHandover`. */
   readonly supportsThreadStarts?: boolean
   /** The host keeps which failed threads have been seen and takes `dismiss-failures` (ADR-0092); without it its failed
@@ -154,6 +168,8 @@ export interface HostService {
   /** A page was opened by its token, which clears the prototype-ready mark it belongs to (ADR-0108). */
   questionPageOpened?(token: string): void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
+  /** One part of a sent attached file a message carries, for the iPhone's Quick Look (ADR-0131); null for anything else. */
+  attachmentFile?(request: HostAttachmentFileRequest): Promise<HostAttachmentFile>
   /** Keeps an image's bytes on this host once and answers with the handle a draft carries instead (ADR-0031). */
   stageAttachment?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
   /** A staged image's bytes, for a composer restoring a chip it has no copy of; null once the host no longer keeps it. */
@@ -235,6 +251,7 @@ export interface LocalHostControl {
   questionPage?(token: string): QuestionPageTarget | undefined
   questionPageOpened?(token: string): void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult>
+  attachmentFile?(request: HostAttachmentFileRequest): Promise<HostAttachmentFile>
   stageAttachment?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
   attachmentContent?(digest: string): Promise<AgentAttachmentContent | null>
   gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
@@ -281,8 +298,8 @@ export class LocalHostService implements HostService {
   private readonly mayClearUsage: (client: ClientIdentity) => boolean
 
   /** `tools` are the runtime's reads of its threads' Files, Changes and Agents, for a paired client (ADR-0025, October 5 amendment). */
-  /** `facts` is this machine's host facts, read the same way on the desktop and on a headless host (#1031). */
-  constructor(private readonly options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService; facts?: HostFactsSource
+  /** `facts` reads this machine's report, the same way on the desktop and on a headless host (#1031). */
+  constructor(private readonly options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService; facts?: () => Promise<HostMachineReport>
     /** Continuing agents and forking at a reply (#1028), present only when the host's Owl answer turns them on. */
     threadStarts?: { startHandover(threadId: string): { readonly text: string } | undefined }
     /** The prompts the thread store holds above a pane's window, for the message scrubber (ADR-0109). */
@@ -295,7 +312,11 @@ export class LocalHostService implements HostService {
      * The iPhone's Agents view (ADR-0103), present only when the host's Owl answer turns it on. `delegations` is there only
      * where delegation runs (ADR-0081); without it a thread has no delegated threads to read.
      */
-    agentsView?: { delegations?(threadId: string, threads: readonly AgentThread[]): HostThreadDelegations } }) {
+    agentsView?: { delegations?(threadId: string, threads: readonly AgentThread[]): HostThreadDelegations }
+    /** Each project's GitHub origin (#1032), present only when the host's Owl answer turns on Work across machines. */
+    projectOrigins?: (projects: readonly AgentProject[]) => Promise<ProjectOrigins>
+    /** Where a headless host keeps the desktop defaults (#1310), present only where it runs delegation for its own threads. */
+    desktopDefaults?: { record(clientId: string, defaults: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> } }) {
     this.control = options.control
     this.supportsBabysitting = options.babysitting === true
     this.eventSource = options.events
@@ -307,6 +328,18 @@ export class LocalHostService implements HostService {
 
   get supportsHostFacts(): boolean { return this.options.facts !== undefined }
   get supportsThreadStarts(): boolean { return this.options.threadStarts !== undefined }
+  get supportsProjectOrigins(): boolean { return this.options.projectOrigins !== undefined }
+  get supportsHostDelegation(): boolean { return this.options.desktopDefaults !== undefined }
+  /** Keeps a desktop's defaults for the client that sent them; the socket listener admits only a recorded desktop. */
+  desktopDefaults(defaults: DesktopDefaultsInput, client: ClientIdentity): Promise<DesktopDefaultsReceipt> {
+    if (!this.options.desktopDefaults) return Promise.reject(new Error('This host does not keep desktop defaults.'))
+    return this.options.desktopDefaults.record(client.clientId, defaults)
+  }
+  /** Read from the projects as the host last published them, without copying them. */
+  projectOrigins(): Promise<ProjectOrigins> {
+    if (!this.options.projectOrigins) return Promise.reject(new Error('This host does not report the repositories of its projects.'))
+    return this.options.projectOrigins(this.view().host.projects)
+  }
   get supportsPullRequestView(): boolean { return this.options.pullRequestView === true }
   get supportsAgentsView(): boolean { return this.options.agentsView !== undefined }
   get supportsFileStaging(): boolean { return this.options.fileStaging === true }
@@ -327,7 +360,7 @@ export class LocalHostService implements HostService {
   }
   hostFacts(): Promise<HostMachineReport> {
     if (!this.options.facts) return Promise.reject(new Error('This host does not report its machine facts.'))
-    return hostMachineReport(this.options.facts, this.control.shell().host.threads)
+    return this.options.facts()
   }
 
   usageRead(query: UsageLocalQuery): Promise<UsageLocalHostRead> {
@@ -388,6 +421,7 @@ export class LocalHostService implements HostService {
   questionPage(token: string): QuestionPageTarget | undefined { return this.control.questionPage?.(token) }
   questionPageOpened(token: string): void { this.control.questionPageOpened?.(token) }
   async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> { return await this.control.attachmentPreview?.(request) ?? null }
+  async attachmentFile(request: HostAttachmentFileRequest): Promise<HostAttachmentFile> { return await this.control.attachmentFile?.(request) ?? null }
   stageAttachment(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle> {
     if (!this.control.stageAttachment) return Promise.reject(new Error(HOST_CANNOT_STAGE_SCREENSHOTS))
     return this.control.stageAttachment(image)

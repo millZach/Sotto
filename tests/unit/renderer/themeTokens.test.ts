@@ -118,6 +118,7 @@ describe('main-window theme tokens', () => {
       expect(contrast(color('provider-ink'), color(`provider-${provider}`)), `${provider} badge`).toBeGreaterThanOrEqual(4.5)
     }
     expect(contrast(color('provider-ink'), color('provider-cursor-badge')), 'cursor badge').toBeGreaterThanOrEqual(4.5)
+    expect(contrast(color('provider-ink'), color('provider-deepseek-badge')), 'deepseek badge').toBeGreaterThanOrEqual(4.5)
   })
 
   it.each(combinations)('%s mode of %s draws Cursor’s mark at 3:1 wherever it sits', (mode, id) => {
@@ -249,7 +250,7 @@ describe('main-window theme tokens', () => {
     const css = tokensCss.replace(/\/\*[\s\S]*?\*\//gu, '')
     expect(css).not.toMatch(/data-accent/u)
     const derived = tokenBlocks.find(block => block.selectors.length === 1 && block.selectors[0] === ':root' && block.declarations.has('--tt-canvas'))!
-    const constants = new Set(['--tt-success', '--tt-provider-codex', '--tt-provider-claude', '--tt-provider-grok', '--tt-provider-devin', '--tt-provider-opencode', '--tt-provider-cursor', '--tt-provider-muse', '--tt-provider-opencode-badge', '--tt-provider-cursor-badge', '--tt-provider-ink', ...CHART_SERIES.map(name => `--tt-${name}`), '--tt-chart-other', '--tt-backdrop', '--tt-shadow-sm', '--tt-shadow-lg', '--tt-shadow-overlay', '--tt-shadow-color'])
+    const constants = new Set(['--tt-success', '--tt-provider-codex', '--tt-provider-claude', '--tt-provider-grok', '--tt-provider-devin', '--tt-provider-opencode', '--tt-provider-cursor', '--tt-provider-muse', '--tt-provider-opencode-badge', '--tt-provider-cursor-badge', '--tt-provider-deepseek-badge', '--tt-provider-ink', ...CHART_SERIES.map(name => `--tt-${name}`), '--tt-chart-other', '--tt-backdrop', '--tt-shadow-sm', '--tt-shadow-lg', '--tt-shadow-overlay', '--tt-shadow-color'])
     for (const [name, value] of derived.declarations) {
       // A relative colour from a theme role (`oklch(from var(…) …)`) is derived, not a literal.
       if (constants.has(name) || !/^(#|rgb\(|oklch\((?!from (var|color-mix)\())/u.test(value)) continue
@@ -281,7 +282,10 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/features/settings/hostBoot.css',
       'src/renderer/src/features/settings/hostProviders.css',
       'src/renderer/src/features/settings/workerRoles.css',
+      'src/renderer/src/features/settings/workerMachine.css',
+      'src/renderer/src/features/settings/watcherCompaction.css',
       'src/renderer/src/features/settings/dictationShortcuts.css',
+      'src/renderer/src/features/settings/threadShortcuts.css',
       'src/renderer/src/features/settings/menuBarOwl.css',
       'src/renderer/src/features/settings/languagePicker.css',
       'src/renderer/src/agents/hostBadge.css',
@@ -316,6 +320,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/screenshots.css',
       'src/renderer/src/agents/reviewComments.css',
       'src/renderer/src/agents/replyQuotes.css',
+      'src/renderer/src/agents/runCommand.css',
       'src/renderer/src/agents/visualCard.css',
       'src/renderer/src/agents/delegation.css',
       'src/renderer/src/agents/messageScrubber.css',

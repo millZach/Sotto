@@ -47,6 +47,7 @@ describe('a plan a provider reported', () => {
         { text: 'Run the suite', status: 'pending' },
       ] }),
     ] }))
+    fireEvent.click(within(transcript).getByRole('button', { name: 'Working, 1 step so far' }))
     const row = within(transcript).getByRole('button', { name: /^Plan, 1 of 3 done/u })
     fireEvent.click(row)
     const steps = within(transcript).getByRole('list', { name: 'Plan, 1 of 3 done' })

@@ -36,8 +36,12 @@ public struct ThreadModel: Decodable, Identifiable, Equatable, Sendable {
             return modes.map { ThreadPermission(id: $0.id, name: $0.name, asks: $0.asks,
                                                grants: $0.allows != "nothing", providerOwned: true) }
         }
-        let labels = ["approval-required": "Ask before actions", "auto-accept-edits": "Allow edits",
-                      "auto": "Allow actions", "full-access": "Full access"]
+        let labels: [String: String] = [
+            "approval-required": String(localized: "Ask before actions", bundle: .module, comment: "A new thread's permission: the agent asks before it acts"),
+            "auto-accept-edits": String(localized: "Allow edits", bundle: .module, comment: "A new thread's permission: the agent may edit files without asking"),
+            "auto": String(localized: "Allow actions", bundle: .module, comment: "A new thread's permission: the agent may act without asking"),
+            "full-access": String(localized: "Full access", bundle: .module, comment: "A new thread's permission: the agent may do anything without asking"),
+        ]
         return (runtimeModes ?? []).compactMap { id in
             labels[id].map { ThreadPermission(id: id, name: $0, asks: nil,
                                              grants: id != "approval-required", providerOwned: false) }
@@ -59,10 +63,23 @@ public struct FolderCrumb: Decodable, Sendable { public let name: String; public
 public struct FolderListing: Decodable, Sendable {
     public let path: String?; public let home: String; public let separator: String
     public let crumbs: [FolderCrumb]; public let folders: [HostFolder]; public let truncated: Bool
-    /// Use the host's spelling, including drive roots; never apply iPhone URL/path rules.
+    /// Use the host's spelling, including drive roots; never apply iPhone URL/path rules. This is the title a new
+    /// project is registered under, which the computer keeps and shows, so it stays English (ADR-0123).
     public var projectName: String {
         let name = crumbs.last?.name ?? "Project"
         return name.hasSuffix(":") ? String(name.dropLast()) + " drive" : name == "/" ? "Root" : name
+    }
+    /// The same name as New thread shows it before the project exists, in the interface language: "C drive", "Root".
+    public var shownName: String {
+        guard let name = crumbs.last?.name else {
+            return String(localized: "Project", bundle: .module, comment: "Stands in for a folder's name when the computer gave none")
+        }
+        if name.hasSuffix(":") {
+            let letter = String(name.dropLast())
+            return String(localized: "\(letter) drive", bundle: .module, comment: "A Windows drive as a project's name; %@ is its letter, such as C")
+        }
+        if name == "/" { return String(localized: "Root", bundle: .module, comment: "The top folder of a Mac or Linux computer, /, as a project's name") }
+        return name
     }
 }
 public enum FolderResult: Decodable, Sendable {

@@ -6,3 +6,6309 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "X-Generator: @lingui/cli\n"
 "Language: te\n"
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "— not reported"
+msgstr ""
+
+#. Watcher's own reason, in its words, between the quotation marks
+#: src/renderer/src/watcher/WatcherOwnChange.tsx
+msgid "“{reason}”"
+msgstr ""
+
+#. placeholder {0}: entry.starting
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "{0, plural, one {# placed here, starting} other {# placed here, starting}}"
+msgstr ""
+
+#. placeholder {0}: working.length - NAMED
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "{0, plural, one {and # more} other {and # more}}"
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "{about}, {system}. No account with Sotto and no telemetry.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{activeThreads, plural, one {{detail} · {sessions} provider session} other {{detail} · {sessions} provider sessions}}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{all} tokens in all"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "{authority} (memory does not grant permission)"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{busiestCount, plural, one {{shown} prompt} other {{shown} prompts}}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{cachedTokens} of {inputTokens} input tokens were read from cache. They count as input, not on top of it."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{calm}, nothing wrong. Show every machine"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "{clients, plural, one {# client} other {# clients}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOwnChange.tsx
+msgid "{count, plural, =1 {Hide the file} other {Hide the {files} files}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherWatched.tsx
+msgid "{count, plural, =1 {It is watched for a request: if you send to it yourself, Watcher stops sending to it.} other {They are watched for a request: if you send to one yourself, Watcher stops sending to it.}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherWatched.tsx
+msgid "{count, plural, =1 {It stays watched until you stop it.} other {Each stays watched until you stop it.}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOwnChange.tsx
+msgid "{count, plural, =1 {Show the file} other {Show the {files} files}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "{count, plural, =1 {Stop the thread Watcher started?} other {Stop the # threads Watcher started?}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherWatched.tsx
+msgid "{count, plural, =1 {Watcher keeps this thread going on its own and brings you its questions and permissions.} other {Watcher keeps these {count} threads going on its own and brings you their questions and permissions.}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "{count, plural, one {{name}, # thread} other {{name}, # threads}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "{count, plural, one {{project} on {computer}, # thread} other {{project} on {computer}, # threads}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "{count, plural, one {{project}, # thread} other {{project}, # threads}}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{count, plural, one {{range}: {shown} prompt} other {{range}: {shown} prompts}}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{count, plural, one {{shown} prompt in this range} other {{shown} prompts in this range}}"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{count, plural, one {# more machine. Show every machine} other {# more machines. Show every machine}}"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{count, plural, one {# more} other {# more}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "{count, plural, one {Stop # thread} other {Stop # threads}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "{count, plural, one {Stop all threads Watcher started, # thread} other {Stop all threads Watcher started, # threads}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "{count, plural, one {Stopped # thread.} other {Stopped # threads.}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "{count, plural, one {Watched, # thread} other {Watched, # threads}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOwnChange.tsx
+msgid "{count, plural, one {Watcher changed {files} file itself.} other {Watcher changed {files} files itself.}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "{cpus, plural, one {# CPU} other {# CPUs}}"
+msgstr ""
+
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "{date}: {amount}"
+msgstr ""
+
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "{day}: {wpm} wpm"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{dayPrompts, plural, one {{shown} prompt in all} other {{shown} prompts in all}}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{dayPrompts, plural, one {{shown} prompt} other {{shown} prompts}}"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "{days, plural, one {# day} other {# days}}"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "{days, plural, one {read {shownDays} day ago} other {read {shownDays} days ago}}"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "{days, plural, one {Read {shownDays} day ago} other {Read {shownDays} days ago}}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{days}, {from} to {to}"
+msgstr ""
+
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "{dictationCount, plural, one {words in {dictations} dictation} other {words in {dictations} dictations}}"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "{failedCount, plural, one {# update did not finish} other {# updates did not finish}}"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "{failedNames} did not update."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "{figure} prompts"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "{figure} tokens"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainActivityParts.tsx
+msgid "{files, plural, one {{fileCount} file, {size}} other {{fileCount} files, {size}}}"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "{finished} of {total} done"
+msgstr ""
+
+#: src/renderer/src/features/starting/startingView.ts
+#: src/renderer/src/features/updates/updateAll.ts
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "{first} and {last}"
+msgstr ""
+
+#. Two or more computers a stop waits on
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "{first} and {next}"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "{first} and {second}"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{free} available"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{free} available. Short on memory"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{free} of {all} available"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{free} of {all} available. Short on memory"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "{host} restarted before {name} updated. Nothing was changed. Try again."
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "{host}’s {name}"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "{host}’s host"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageCharts.tsx
+msgid "{input} input tokens, including {read} cache read and {write} cache write, then {output} output tokens."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{input} input, {output} output"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageCharts.tsx
+msgid "{label} Use Left and Right to read one day; Escape goes back to the whole range."
+msgstr ""
+
+#. A group of Watcher’s state and how many items it holds
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "{label}, {count}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageSubscriptions.tsx
+msgid "{label}: {left}% of the allowance left"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageSubscriptions.tsx
+msgid "{label}: {left}% of the allowance left, {timePercent}% of the window's time left"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageSubscriptions.tsx
+msgid "{label}: use not reported"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageSubscriptions.tsx
+msgid "{label}: use not reported, {timePercent}% of the window's time left"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{label}. Open Subscriptions"
+msgstr ""
+
+#: src/renderer/src/features/dictate/journalFacts.ts
+msgid "{language}, {model}, in {app}. Kept on this computer only."
+msgstr ""
+
+#: src/renderer/src/features/dictate/journalFacts.ts
+msgid "{language}, {model}. Kept on this computer only."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "{languages}. {size}, from GitHub."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "{languages}. Ready."
+msgstr ""
+
+#: src/renderer/src/features/performance/MainActivityParts.tsx
+msgid "{left} seconds left"
+msgstr ""
+
+#: src/renderer/src/features/dictate/journalFacts.ts
+msgid "{length}, {wordCount} at {wpm} wpm."
+msgstr ""
+
+#: src/renderer/src/features/dictate/journalFacts.ts
+msgid "{length}, {wordCount}."
+msgstr ""
+
+#. {line} is "12 prompts" or "12 prompts, 3 of them wake-ups"
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{line} · {fromSubagents} of the tokens from subagents"
+msgstr ""
+
+#. {line} is "12 prompts" on the Usage page's Where you work
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{line}, {wakeUps} of them wake-ups"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "{long}, so far"
+msgstr ""
+
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "{longestStreak, plural, one {Longest # day} other {Longest # days}}"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "{lower} window"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{machines, plural, one {# machine} other {# machines}}"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{minutes, plural, one {the last minute} other {the last # minutes}}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "{model} from {provider}"
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "{model} is on a server added with a key, which OpenCode keeps and Sotto does not, so Mercury 2 cleans up instead. Choose another."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "{model}, from {provider}"
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "{modelName} on this computer"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherGlance.tsx
+#: src/renderer/src/watcher/WatcherNightScene.tsx
+msgid "{more} more"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{more} more in <0>Models</0>"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "{more} more need you. Show all threads"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{name} {tail}"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "{name} did not update. Nothing was changed. Settings → Hosts & phones shows what the installer said on {host}."
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "{name} did not update. Nothing was changed. Settings → Providers shows what the installer said."
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "{name} didn't report any limits."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{name} does not report how busy its processors are, so Watcher treats its load as unknown, not idle."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{name} does not report the memory a new process could have, so Watcher treats its memory as unknown, not plentiful."
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "{name} hasn't reported its limits on {host} yet."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "{name} is not connected. Connect it in Settings, under Hosts & phones."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "{name} is not connected. It is where new workers start, so until it connects they start on this computer, and Watcher says so. Connect it in Settings, under Hosts & phones."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "{name} is offline. Its figures appear when it reconnects."
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "{name} isn't connected on {host}."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "{name} limits read just now"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "{name} reports when this resets, not how much is used."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{name} runs an older Sotto host that does not report its load. Watcher treats it as unknown, never idle. Update it in Settings, under Hosts & phones."
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "{name} runs Sotto host {to}."
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "{name} was not updated."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "{name}, by {maker}"
+msgstr ""
+
+#. A filter on the Usage page and its current choice: "Date range: Last 30 days"
+#: src/renderer/src/features/usage/UsageMenu.tsx
+msgid "{name}: {current}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{name}: {left}% left in the {noun}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{name}: {left}% left in the {noun}, resets {resetsLong}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{name}: limits can't be read yet"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{name}: no reading from {from}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{name}: use not reported, the {noun} resets {resetsLong}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "{name}'s history appears after its host update."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "{name}'s limits could not be read again. The last reading is still shown. Try Read again."
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "{name}'s limits couldn't be read on {host}. Nothing was changed. Read again to try once more."
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "{name}'s limits haven't been read on {host} yet."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "{name}’s load and what runs there"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{name}’s memory changed during the reading, so Watcher treats it as unknown until the next one."
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "{named} window"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "{oldCount, plural, one {{oldNames} counts only its Sotto threads until its host update.} other {{oldNames} count only their Sotto threads until their hosts update.}}"
+msgstr ""
+
+#: src/renderer/src/features/starting/startingView.ts
+msgid "{pendingCount, plural, one {{names} has not answered in 10 seconds. Sotto keeps trying in the background.} other {{names} have not answered in 10 seconds. Sotto keeps trying in the background.}}"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "{pillText}. Show updates"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{placePromptCount, plural, one {{placePrompts} prompt} other {{placePrompts} prompts}}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{placeTokens} tokens"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "{promptTotal, plural, one {{name}, {provider}: {shown} prompt, {rowTokens} tokens, {rowCache} from cache} other {{name}, {provider}: {shown} prompts, {rowTokens} tokens, {rowCache} from cache}}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "{promptTotal, plural, one {{name}, {provider}: {shown} prompt, tokens not reported} other {{name}, {provider}: {shown} prompts, tokens not reported}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "{provider} cannot compact"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "{provider} cannot compact, so each message rereads all of it."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPermissionChip.tsx
+msgid "{provider} decides what to ask you about."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "{provider} doesn't report tokens."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "{ready} of {total} ready. Settings › Providers manages them later."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{rest} more in <0>Models</0>"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{rowInput} input"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{rowTokens} tokens · {rowCache} from cache"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "{said}. Its turn to merge."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "{said}. Ready to merge, waiting for its turn."
+msgstr ""
+
+#: src/renderer/src/features/dictate/journalFacts.ts
+msgid "{seconds, plural, one {# second} other {# seconds}}"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{seconds, plural, one {the last second} other {the last # seconds}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "{settledCount, plural, one {Settled, # thread} other {Settled, # threads}}"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{share} busy over {span}"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{share} busy over {span}. Busy"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{shown}. Show {name}’s load and what runs there."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{shown}. Show this computer’s load and what runs there."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/ThreadsTour.tsx
+msgid "{shownStop} of {shownStops}"
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "{slug} on {server}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{sottoShare} in Sotto"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{starting, plural, one {# starting} other {# starting}}"
+msgstr ""
+
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "{streak, plural, one {#-day streak} other {#-day streak}}"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "{text} for {model}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageSubscriptions.tsx
+msgid "{timePercent}% of the time left"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "{title} may still be running."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "{title} no longer waits on you."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "{title}, details"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "{title}: {about}. Show details"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "{topShare} of prompts"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOwnChange.tsx
+msgid "{unnamed, plural, one {and {more} file more} other {and {more} files more}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "{unsureCount, plural, =1 {One may still be running.} other {# may still be running.}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "{used} of {point}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "{used} of {point}, close to the point."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "{used} of {point}."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageSubscriptions.tsx
+msgid "{used}% used, past the allowance."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "{waiting, plural, one {# needs you} other {# need you}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "{waiting} waiting"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "{waitingCount, plural, =1 {One is waiting on {hosts} to confirm.} other {# are waiting on {hosts} to confirm.}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "{waitingCount, plural, =1 {One is waiting to confirm.} other {# are waiting to confirm.}}"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "{waitingCount, plural, one {{waitingNames} is waiting for its threads. If Sotto restarts first, Update all offers it again.} other {{waitingNames} are waiting for their threads. If Sotto restarts first, Update all offers them again.}}"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "{waitingCount, plural, one {{waitingNames} updates once its threads finish.} other {{waitingNames} update once their threads finish.}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "{watching, plural, =1 {{working, plural, one {Watcher still watches one of your threads, and the thread it started keeps working.} other {Watcher still watches one of your threads, and the threads it started keep working.}}} other {{working, plural, one {Watcher still watches your {watching} threads, and the thread it started keeps working.} other {Watcher still watches your {watching} threads, and the threads it started keep working.}}}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "{watching, plural, =1 {Watcher still watches one of your threads.} other {Watcher still watches your # threads.}}"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "{when}, in {away}"
+msgstr ""
+
+#. A computer's, in "Still reading {scanningList} history"
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "{whose}'s"
+msgstr ""
+
+#: src/renderer/src/features/dictate/journalFacts.ts
+msgid "{words, plural, one {{shown} word} other {{shown} words}}"
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "{words} · {wpm} wpm"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "{working, plural, one {# thread on {name} is working. It updates once they finish.} other {# threads on {name} are working. It updates once they finish.}}"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{working, plural, one {# working} other {# working}}"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "{working, plural, one {Installs {ready}. # working thread here stops and resumes after.} other {Installs {ready}. # working threads here stop and resume after.}}"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "{working, plural, one {Installs {ready}. # working thread here stops; drafts and history stay.} other {Installs {ready}. # working threads here stop; drafts and history stay.}}"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "{working, plural, one {Stop # thread and update} other {Stop # threads and update}}"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "{working, plural, one {Stop # thread on {host} and update its host now} other {Stop # threads on {host} and update its host now}}"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "{working, plural, one {Stop # thread on {host}. Its host still updates once its clients have.} other {Stop # threads on {host}. Its host still updates once its clients have.}}"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "{working, plural, one {Stop # thread} other {Stop # threads}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "{working, plural, one {The thread Watcher started keeps working.} other {The threads Watcher started keep working.}}"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "{working, plural, one {Updates once its # thread finishes and its clients have.} other {Updates once its # threads finish and its clients have.}}"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "{working, plural, one {Updates once its # thread finishes.} other {Updates once its # threads finish.}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "{working} working"
+msgstr ""
+
+#: src/renderer/src/features/dictate/journalFacts.ts
+msgid "{wpm} wpm"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "#{number} {step}, {title}. Show details"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "<0>{count}</0>. New workers start here."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "<0>{left}%</0> left"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "<0>{modelsShown}</0> {modelCount, plural, one {model} other {models}} · <1>{promptsShown}</1> {promptCount, plural, one {prompt} other {prompts}} · <2>{tokensShown}</2> tokens · {range}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "<0>{sottoShare}</0> of tokens and <1>{sottoPromptShare}</1> of prompts were in Sotto."
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "<0>Ready.</0> {size} on this computer."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "A dash means the provider didn't report that number. It isn't zero. A ≥ means some records left a number out, so the figure is at least that."
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "A downloaded file did not match the published one, so Sotto deleted it."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "a new thread"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "A project is a folder your agents work in, usually a Git repository. Threads start in it."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "A safe local field for testing your clipboard or shortcut."
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "A speech model transcribes your speech on this computer. Choose it in Settings → Dictation, under Speech model: Parakeet Ultra, by Moondream, which setup suggests, or Parakeet v3 or v2, by NVIDIA, each downloaded once (about 670 MB) when you choose it, and on an Apple silicon Mac the Core ML models FluidAudio keeps are offered too. Settings shows whether the chosen one is ready."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "A thread"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "a thread no longer here"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "A thread no longer here"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/ThreadsTour.tsx
+msgid "A thread shows the agent's work, and the questions and permissions it asks you to answer."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherWatched.tsx
+msgid "A thread you watch stays watched until you stop it. One watched for a request stops when you send to it yourself."
+msgstr ""
+
+#. Heading over the running version and what Sotto sends where
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "About"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "about {percent}%"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "About <0>{average}</0> a day"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "About <0>{perPrompt}</0> tokens per prompt"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "About these numbers"
+msgstr ""
+
+#. The macOS Privacy & Security pane, as System Settings names it
+#: src/renderer/src/components/OpenSystemSettingsButton.tsx
+msgid "Accessibility"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Account-wide, as each provider reports it."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Active shortcut"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Activity counts the work on each computer: Sotto threads, the subagents they start, and Claude Code and Codex used outside Sotto. Grok Build, Devin, Muse and OpenCode are counted in Sotto only."
+msgstr ""
+
+#: src/renderer/src/features/performance/MainFreezeNotice.tsx
+msgid "Activity recording saved"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainFreezeNotice.tsx
+msgid "Activity recording saved. Hide it"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainFreezeNotice.tsx
+msgid "Activity recording saved. Show it"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/ComputersStep.tsx
+msgid "Add a computer"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/ComputersStep.tsx
+msgid "Add another computer"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/ProjectStep.tsx
+msgid "Add another folder"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainActivityParts.tsx
+msgid "Added to a new thread's composer. It is sent when you send."
+msgstr ""
+
+#. First-run setup: the group of steps about coding agents
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Agents"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "AI cleanup is optional; turn it on in Settings → Cleanup."
+msgstr ""
+
+#. The Journal chip that shows transcripts from every app
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "All"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "All computers"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "All model details"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "All models"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "All providers"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOverview.tsx
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "All threads"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "All threads, {count}. Show the list"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "All time"
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Allow microphone access if asked"
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Allow microphone access if asked, then test again."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Allow microphone access if asked."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Allow microphone access in System Settings."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Allow microphone access in Windows Settings."
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Allowed: {action}"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Already on this computer:"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Always confirm: {action}"
+msgstr ""
+
+#: src/renderer/src/features/memory/Questionnaire.tsx
+msgid "Always confirm: {confirmed}."
+msgstr ""
+
+#. Mid-sentence, after the dictation language: "English, an earlier model."
+#: src/renderer/src/features/dictate/journalFacts.ts
+msgid "an earlier model"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageCharts.tsx
+msgid "an unreported number of"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "an unreported share"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Answer your threads from your iPhone"
+msgstr ""
+
+#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
+#: src/renderer/src/watcher/constellation.ts
+msgid "answered"
+msgstr ""
+
+#. How a message Watcher sent went
+#: src/renderer/src/watcher/constellation.ts
+msgid "Answered"
+msgstr ""
+
+#. Mid-sentence, after "Always confirm:" or in a list joined by semicolons, so it starts in lower case where the language has one
+#: src/renderer/src/features/memory/questions.ts
+msgid "answering permissions from a paired client"
+msgstr ""
+
+#: src/renderer/src/features/memory/Questionnaire.tsx
+msgid "Answers are preferences. Only the confirmation choices create policies; they grant no new permissions."
+msgstr ""
+
+#: src/renderer/src/features/updates/updateControlLogic.ts
+msgid "Any dictation or agent work in progress will be interrupted. Make sure you are ready before continuing."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/ThreadsTour.tsx
+msgid "Anything you skipped in setup waits here, with your shortcut, microphone and keys."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/LookStep.tsx
+msgid "Appearance"
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Approve access in macOS"
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Approve access in Windows"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "Asks permission: {asks}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPermissionChip.tsx
+msgid "Asks you before it edits a file or runs a command that changes something."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "Asks: {asks}"
+msgstr ""
+
+#. Before a token figure some records left out
+#: src/renderer/src/features/usage/UsageCharts.tsx
+msgid "at least"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "at least {all} tokens in all"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "at least {input} input, {output} output"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageCharts.tsx
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "at least {shown}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "At least <0>{perPrompt}</0> tokens per prompt"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainActivityParts.tsx
+msgid "Attach to a thread"
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. Transcripts and the numbers the Dictate room counts stay on this computer."
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Authority"
+msgstr ""
+
+#: src/renderer/src/languages.ts
+msgid "Automatic (detect language)"
+msgstr ""
+
+#: src/renderer/src/languages.ts
+msgid "Automatic language"
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Automatic paste needs two macOS permissions: System Settings > Privacy & Security > Accessibility, and System Settings > Privacy & Security > Automation, where Sotto must be allowed to control System Events. Until both are granted, transcripts are copied to the clipboard instead and you can paste them manually with ⌘V. After an update, if paste still fails, remove Sotto from the Accessibility list and add it again."
+msgstr ""
+
+#. The macOS Privacy & Security pane, as System Settings names it
+#: src/renderer/src/components/OpenSystemSettingsButton.tsx
+msgid "Automation"
+msgstr ""
+
+#: src/renderer/src/features/memory/Questionnaire.tsx
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+#: src/renderer/src/features/onboarding/ThreadsTour.tsx
+msgid "Back"
+msgstr ""
+
+#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
+#: src/renderer/src/watcher/constellation.ts
+msgid "background work running"
+msgstr ""
+
+#: src/renderer/src/watcher/constellation.ts
+msgid "Background work running"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Bars"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainActivityParts.tsx
+msgid "blocked"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Busiest hour"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Busiest: <0>{busiestDays} around {busiestHour}</0>, {busiestPrompts} in this range"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "busy"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "By model"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "By provider"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "Cache"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageCharts.tsx
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "Cache read"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Cache reads"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageCharts.tsx
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "Cache write"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Can't be started"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherWatched.tsx
+msgid "Can’t reach it"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Can't read limits"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Cancel"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
+msgid "Cancel code"
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Cancel recording"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Cancel update"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Cancel update, and leave {target} on {from}"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Cancelled."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHandover.tsx
+msgid "Carried {carried}."
+msgstr ""
+
+#: src/renderer/src/features/memory/Questionnaire.tsx
+msgid "Change"
+msgstr ""
+
+#: src/renderer/src/features/memory/Questionnaire.tsx
+msgid "Change {topic} answer"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/LookStep.tsx
+msgid "Change it any time, or make your own theme, in Settings › Appearance."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "Change where new workers start"
+msgstr ""
+
+#: src/renderer/src/App.tsx
+msgid "Changes save as you make them."
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "ChatGPT through Codex"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Check again"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateControlLogic.ts
+msgid "Check for updates"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Check that the microphone above is the one you speak into, then say something."
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Check the download"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Check your microphone"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Checking"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "checking for its update"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateControlLogic.ts
+msgid "Checking for updates…"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
+msgid "Checking Tailscale on this computer…"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Checking the releases page for its update…"
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "Checking the speech model"
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "Checking the speech model…"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Checking which threads are Watcher’s…"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Checking…"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "checks failed"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "checks passed"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "checks running"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "checks unknown"
+msgstr ""
+
+#: src/renderer/src/languages.ts
+msgid "Chinese"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/ProjectStep.tsx
+msgid "Choose a folder"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Choose a project folder"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Choose a range of a year or less to see each day. The totals still cover the whole range."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Choose a speech model"
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Choose All to see every transcript."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Choose an end date on or after the start date."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Choose dates"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Choose how Sotto looks"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Choose one in Settings → Dictation, under Speech model."
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "Claude Code subscription"
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Cleanup model"
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Cleanup models"
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Clear all transcripts"
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Clear history"
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Clear history?"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Clear saved usage"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Clear saved usage?"
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Clear search"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Clear usage…"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainFreezeNotice.tsx
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Close"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "Close {name}’s panel"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "Close details"
+msgstr ""
+
+#: src/renderer/src/components/WindowControls.tsx
+msgid "Close Sotto to tray"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "Close this computer’s panel"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Close to {point}."
+msgstr ""
+
+#: src/renderer/src/features/performance/MainFreezeNotice.tsx
+msgid "Close: the recording stays in its folder"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "Codex app"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "Codex in VS Code"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "Codex plugin in Claude Code"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Codex, Claude Code or Grok Build"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Codex, Claude Code, Grok Build or Muse"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Coding agents"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "comes last"
+msgstr ""
+
+#: src/renderer/src/features/memory/questions.ts
+msgid "Commit timing, pull requests, reviews, and when to ask about merging."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Compact context"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Compacting"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Compacting now"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Compacting Watcher’s conversation."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Compacting."
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Completed dictation text"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Completed text to recover"
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Compositor bindings live in Hyprland, not in Sotto. Once Sotto’s bindings are installed, change them in Settings › Dictation: press a shortcut, hold the new keys and let go, and Sotto rewrites its bindings and reloads Hyprland."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Computer"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Computer {number}"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Confidence"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Connect"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Connect {provider}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Connect {providers} in Settings, under Providers, to start Watcher."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/ProjectStep.tsx
+msgid "Connect a coding agent first: a project starts its threads with one. Go back to Coding agents, or skip this and add a project from the sidebar later."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/ProjectStep.tsx
+msgid "Connect a coding agent to add another project. Go back to Coding agents, or add one from the sidebar later."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Connect it to use it on this computer."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Connect or enable an input device in System Settings > Sound, then try again."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Connect or enable an input device in Windows Settings > System > Sound, then try again."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Connect or enable an input device in your sound settings, then try again."
+msgstr ""
+
+#: src/renderer/src/features/starting/StartingScreen.tsx
+msgid "connecting"
+msgstr ""
+
+#: src/renderer/src/features/starting/startingView.ts
+msgid "Connecting {connecting}"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Connecting the agents on this computer…"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Connecting to your microphone."
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Connecting..."
+msgstr ""
+
+#. Follows a token count: how much of the model’s context Watcher uses
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "context"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "context, compacts at {point}"
+msgstr ""
+
+#: src/renderer/src/features/memory/Questionnaire.tsx
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Continue"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Continue with the handover"
+msgstr ""
+
+#. The tab that shows Watcher’s own conversation
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Conversation"
+msgstr ""
+
+#. A transcript copy button, after it copied
+#: src/renderer/src/features/dictate/Journal.tsx
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Copied"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Copied."
+msgstr ""
+
+#. Copies a transcript
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Copy"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Copy commands"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Copy failed. Your text is still here. Try again or select and copy it."
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Copy it when you are ready. It stays here until you dismiss it or close Sotto."
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Copy text"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Copy the commands that update {name}"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Copy the commands that update {name} on {host}"
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Copy transcript"
+msgstr ""
+
+#: src/renderer/src/features/updates/useUpdateFlow.ts
+msgid "Could not check for updates"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Could not copy"
+msgstr ""
+
+#: src/renderer/src/features/updates/useUpdateFlow.ts
+msgid "Could not download update"
+msgstr ""
+
+#: src/renderer/src/features/updates/useUpdateFlow.ts
+msgid "Could not install update"
+msgstr ""
+
+#: src/renderer/src/components/OpenRouterKeyField.tsx
+msgid "Could not reach OpenRouter."
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Could not reach OpenRouter. The saved choice still works. Try Refresh."
+msgstr ""
+
+#: src/renderer/src/features/memory/useMemory.ts
+msgid "Could not read memory. Try again."
+msgstr ""
+
+#: src/renderer/src/features/memory/useMemory.ts
+msgid "Could not save memory. Try again."
+msgstr ""
+
+#. Before a thread’s name on a receipt card
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "Could not send to"
+msgstr ""
+
+#. Before a thread’s name on a receipt card
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "Could not settle"
+msgstr ""
+
+#. Before a thread’s name on a receipt card
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "Could not start"
+msgstr ""
+
+#. Before a thread’s name on a receipt card
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "Could not stop"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "Counted, so the next start sees it"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "CPU"
+msgstr ""
+
+#. Colour scheme
+#: src/renderer/src/features/onboarding/LookStep.tsx
+msgid "Dark"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Date range"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Dates and hours use this computer's time zone, {zone}."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "Days used"
+msgstr ""
+
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "Days with dictation over the last {weekCount} weeks: {days} of them, darker on days with more words"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Decisions it noted"
+msgstr ""
+
+#. The cleanup model or mode Sotto chooses itself
+#. The cleanup model or mode Sotto chooses itself
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Default"
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Default is the model Sotto tested for cleanup. If the chosen one fails or runs long, Mercury 2 steps in, or Default when Mercury 2 is the one chosen."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "delegated by {parent}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "delegated by another thread"
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Delete"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Delete memory"
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Delete saved transcript"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Delete this memory and all its past versions? This cannot be undone."
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Delete transcript"
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Delete transcript?"
+msgstr ""
+
+#. Mid-sentence, after "Always confirm:" or in a list joined by semicolons, so it starts in lower case where the language has one
+#: src/renderer/src/features/memory/questions.ts
+msgid "deleting or making irreversible changes"
+msgstr ""
+
+#: src/renderer/src/features/memory/questions.ts
+msgid "Deleting or making irreversible changes"
+msgstr ""
+
+#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
+#: src/renderer/src/watcher/constellation.ts
+msgid "delivered"
+msgstr ""
+
+#. How a message Watcher sent went
+#: src/renderer/src/watcher/constellation.ts
+msgid "Delivered"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "Devin account"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Devin doesn't report tokens, so its <0>{devinShown}</0> {devinPrompts, plural, one {prompt} other {prompts}} aren't in these totals."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Devin doesn't report tokens. Prompts are still counted."
+msgstr ""
+
+#. The room switch: the page you dictate on
+#: src/renderer/src/components/AppShell.tsx
+msgid "Dictate"
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Dictate something and it will be kept here, on this computer."
+msgstr ""
+
+#. First-run setup: the group of steps about dictation
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Dictation"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Dictation needs attention."
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Dictation still works. Reopen Sotto to try reading them again."
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "did not finish"
+msgstr ""
+
+#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
+#: src/renderer/src/watcher/constellation.ts
+msgid "did not reach it"
+msgstr ""
+
+#: src/renderer/src/watcher/constellation.ts
+msgid "Did not reach it"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Discard recording"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "Disconnected"
+msgstr ""
+
+#: src/renderer/src/App.tsx
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+#: src/renderer/src/watcher/WatchControls.tsx
+msgid "Dismiss"
+msgstr ""
+
+#: src/renderer/src/App.tsx
+msgid "Dismiss dictionary save notice"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Dismiss text"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Dismiss the results of Update all"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Dismiss: hide these until something new is published"
+msgstr ""
+
+#: src/renderer/src/features/memory/questions.ts
+msgid "Do you prefer particular agents for certain work?"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHandover.tsx
+msgid "Don’t hand over: start the new Watcher without it"
+msgstr ""
+
+#. Read after an update step's title: the step has finished
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "done"
+msgstr ""
+
+#. An Omarchy setup piece that is set up
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+#: src/renderer/src/features/onboarding/ThreadsTour.tsx
+msgid "Done"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Download {name}"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Download {to}"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateControlLogic.ts
+msgid "Download failed for {version}. Click to retry."
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Downloaded. It installs when Sotto restarts."
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "Downloaded. Starting the speech model…"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Downloading · {percent}%"
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "Downloading · {progress}"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Downloading speech model"
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "Downloading the speech model · {progress}"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateControlLogic.ts
+msgid "Downloading update ({percent}%)"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Downloads now, and installs when Sotto restarts."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherBeside.tsx
+msgid "Drag to resize · Double-click to even"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Draw the days as"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainActivityParts.tsx
+msgid "Each bar is one second of the last minute; taller means main was blocked longer."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Each model, {valuesWhen}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Each model's days couldn't be read. Nothing was lost, and the totals above still count them."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Each model's provider"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Each model's provider, and what Other holds"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Each provider, {valuesWhen}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Each provider's days couldn't be read. Nothing was lost, and the totals above still count them."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Each stops its current turn and keeps the work it has done. Threads you started or took over keep running."
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Edit"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Edit memory"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPermissionChip.tsx
+msgid "Edits files and runs any command without asking, anywhere on this computer."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPermissionChip.tsx
+msgid "Edits files without asking. Asks before a command that changes something."
+msgstr ""
+
+#. First-run setup: the group of steps about other computers and the iPhone
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Elsewhere"
+msgstr ""
+
+#: src/renderer/src/languages.ts
+msgid "English"
+msgstr ""
+
+#: src/renderer/src/components/OpenRouterKeyField.tsx
+msgid "Enter your OpenRouter API key first."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Every step after this one can be skipped and finished later in Settings."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Everywhere"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Evidence"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Expired"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Expires"
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Fastest: least thinking, {time} s."
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Fastest: the model’s own thinking, {time} s."
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Fastest: thinking off, {time} s."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOwnChange.tsx
+msgid "Files Watcher changed"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "Filter threads"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Finish setup"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "First project"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Fold"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Fold updates into a button"
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Follow macOS or minimize non-essential motion."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Follow the system or minimize non-essential motion."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Follow Windows or minimize non-essential motion."
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "Free up about 700 MB, then try again."
+msgstr ""
+
+#: src/renderer/src/features/performance/MainActivityParts.tsx
+msgid "freezes over 100 ms"
+msgstr ""
+
+#: src/renderer/src/languages.ts
+msgid "French"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "From"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHandover.tsx
+msgid "From <0>{fromTitle}</0> on {provider}. Context, not a new request."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "From cache"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHandover.tsx
+msgid "From the last Watcher, on {provider}. Context, not a new request."
+msgstr ""
+
+#: src/renderer/src/watcher/constellation.ts
+msgid "Gave #{number} its merge turn"
+msgstr ""
+
+#: src/renderer/src/languages.ts
+msgid "German"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Get started"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
+msgid "Get the iPhone beta"
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Getting started"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Give F9 to Sotto"
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Global shortcut"
+msgstr ""
+
+#. Short tag on a pull request chip: its turn to merge
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "GO"
+msgstr ""
+
+#. A pull request’s place in Watcher’s merge turns, in capitals as a tag: its turn to merge
+#. A tag in capitals on a moving mark in Watcher’s picture: a pull request’s turn to merge
+#: src/renderer/src/watcher/constellation.ts
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "GO MERGE"
+msgstr ""
+
+#. A tag in capitals on a moving mark in Watcher’s picture: a pull request’s turn to merge
+#: src/renderer/src/watcher/constellation.ts
+msgid "GO MERGE #{number}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "Go to the permission from {title} in this conversation"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "Go to the question from {title} in this conversation"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "Grok subscription"
+msgstr ""
+
+#. The tag on a message that carries a handover
+#: src/renderer/src/watcher/WatcherHandover.tsx
+msgid "Handover"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHandover.tsx
+msgid "Handover from {fromTitle}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHandover.tsx
+msgid "Handover from the last Watcher"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHandover.tsx
+msgid "Handover of the last Watcher"
+msgstr ""
+
+#. The page link: the Help page
+#: src/renderer/src/components/AppShell.tsx
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Help"
+msgstr ""
+
+#: src/renderer/src/features/memory/Questionnaire.tsx
+msgid "Here’s what Sotto will remember"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHandover.tsx
+msgid "Hide it"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "Hide settled"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Hide the files it changes"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHandover.tsx
+msgid "Hide the handover"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "Hide what it said"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "Hide what it said, {title}"
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "History could not be cleared. Your saved transcripts are unchanged."
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "History is off. New dictations keep their numbers only; older transcripts stay here until you delete them."
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "History is off. New dictations keep their numbers only."
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Hold {held} anywhere to talk."
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Hold {held} to talk, or press {pressed} to start and stop."
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Hold {held} to talk."
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Hold {hold} to talk, or press {press} to start and stop, once Sotto’s compositor bindings are installed in Hyprland. The dictation button works too. To stop without transcribing, press Cancel on the floating widget."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Hold F9 to talk, then release it. Sotto copies your text, then pastes into the focused app or terminal. If paste does not get through, use Super+V, Omarchy’s universal paste."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Hold F9 to try it"
+msgstr ""
+
+#: src/renderer/src/features/memory/questions.ts
+msgid "How do you like work to get started?"
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "How OpenRouter picks a host. Nitro takes the fastest and may bill at priority rates. Floor takes the cheapest and may run slower."
+msgstr ""
+
+#: src/renderer/src/features/memory/questions.ts
+msgid "How should commits and reviews work?"
+msgstr ""
+
+#: src/renderer/src/features/memory/questions.ts
+msgid "How should Sotto keep you in the loop?"
+msgstr ""
+
+#. A group of threads in Watcher’s room, and a thread’s status
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "Idle"
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "If another application owns a shortcut, Sotto keeps your previous working shortcut active. In Settings › Dictation, press the shortcut, then hold the keys you want instead and let go."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "If recording cannot start, check that your microphone is connected and not muted. Choose an available input in Sotto Settings, then test again."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "If recording cannot start, open System Settings, then Privacy & Security, then Microphone, and allow Sotto. Choose an available input in Sotto Settings."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "If recording cannot start, open Windows Settings, then Privacy or Privacy & security, then Microphone, and allow desktop apps. Choose an available input in Sotto Settings."
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Importance"
+msgstr ""
+
+#: src/renderer/src/features/memory/questions.ts
+msgid "Importing past conversations, retention, export, and deletion. This answer does not enable imports or change your settings."
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "in progress"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "in Sotto"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "In Sotto"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
+msgid "In the app, tap Add computer, enter {machine}, then this code. It works once and expires in {expiresIn}."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
+msgid "In the app, tap Add computer, enter this computer’s name on your tailnet, then this code. It works once and expires in {expiresIn}."
+msgstr ""
+
+#. Follows “Open” and a pull request’s title: where it opens
+#: src/renderer/src/watcher/WatcherBeside.tsx
+msgid "in Tools on the Threads page"
+msgstr ""
+
+#. After a token figure
+#: src/renderer/src/features/usage/UsageCharts.tsx
+msgid "input"
+msgstr ""
+
+#: src/renderer/src/features/usage/usageChartSeries.ts
+#: src/renderer/src/features/usage/UsageModels.tsx
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Input"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "input + output"
+msgstr ""
+
+#: src/renderer/src/features/usage/usageChartSeries.ts
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Input and output"
+msgstr ""
+
+#. The macOS Privacy & Security pane, as System Settings names it
+#: src/renderer/src/components/OpenSystemSettingsButton.tsx
+msgid "Input Monitoring"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Input tokens weren't reported in this range, so the share from cache can't be worked out."
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Install beside {from}"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateControlLogic.ts
+msgid "Install failed for {version}. Click to retry."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Install guide"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
+msgid "Install the beta"
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Install the next sotto-bin package with sudo pacman -U. Once sotto-bin is in a package repository, omarchy update brings it."
+msgstr ""
+
+#: src/renderer/src/features/updates/updateControlLogic.ts
+msgid "Install update {version} and restart Sotto?"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Installed, but Sotto could not start it."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Installed. Sign in to it, then check again."
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Installs {ready}."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Issues filed"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHandover.tsx
+msgid "It carries {carried} and leaves out {leftOut}."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHandover.tsx
+msgid "It carries {carried}."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOwnChange.tsx
+msgid "It gave no reason."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "It runs on your own {providers} account, with that provider’s own tools. It hands changes to your threads rather than making them itself, and only you answer a thread’s questions and permissions."
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "It stopped at {progress}."
+msgstr ""
+
+#: src/renderer/src/features/performance/MainFreezeNotice.tsx
+msgid "It was blocked {blocked} of the last minute. The longest freeze was {longest}. Threads, typing and the window may lag until it recovers."
+msgstr ""
+
+#: src/renderer/src/languages.ts
+msgid "Italian"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "Its last turn failed."
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Its place on the bar, in ~/.config/omarchy/shell.json."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Its provider cannot compact"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Its provider cannot compact, so each message rereads all of it."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Its provider has not reported its context yet."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "Its pull requests"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOwnChange.tsx
+msgid "Its reason:"
+msgstr ""
+
+#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
+#: src/renderer/src/watcher/constellation.ts
+msgid "its turn failed"
+msgstr ""
+
+#: src/renderer/src/watcher/constellation.ts
+msgid "Its turn failed"
+msgstr ""
+
+#: src/renderer/src/languages.ts
+msgid "Japanese"
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Keep history"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHandover.tsx
+msgid "Keep local history is off, so it holds only what Sotto kept since it last started."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHandover.tsx
+msgid "Keep local history was off, so it held only what Sotto had kept since it last started."
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Keep transcript"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Keep usage"
+msgstr ""
+
+#: src/renderer/src/components/OpenRouterKeyField.tsx
+msgid "Key saved"
+msgstr ""
+
+#: src/renderer/src/components/OpenRouterKeyField.tsx
+msgid "Key verified."
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Keyboard"
+msgstr ""
+
+#. A group of threads in Watcher’s room, and a thread’s status: its work is being merged
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "Landing"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Last 30 days"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Last 7 days"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Last 90 days"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Last confirmed"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "last turn failed"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOverview.tsx
+#: src/renderer/src/watcher/WatcherWatched.tsx
+msgid "Last turn failed"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "Last used"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Last. Sotto asks before it restarts."
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Later"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Later: fold this card. The update control keeps the download."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Launch at sign-in could not be updated."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Launch when Windows starts"
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Launch when you sign in"
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Launch when your Mac starts"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Leave my keys alone"
+msgstr ""
+
+#. What is left of a subscription's limit, under its percentage
+#. What is left of a subscription's window, after its percentage
+#. What is left of a subscription's window, after its percentage
+#: src/renderer/src/features/usage/UsageOverview.tsx
+#: src/renderer/src/features/usage/UsageSubscriptions.tsx
+msgid "left"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Left alone"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHandover.tsx
+msgid "Left out {leftOut}."
+msgstr ""
+
+#. The streak calendar legend: fewer words
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "Less"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
+msgid "Let phones connect"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
+msgid "Lets your iPhone reach this computer over your tailnet. Only phones you pair can connect."
+msgstr ""
+
+#. Colour scheme
+#: src/renderer/src/features/onboarding/LookStep.tsx
+msgid "Light"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageSubscriptions.tsx
+msgid "Limits come from each provider and count all use of the account, in Sotto or anywhere else. The thin mark on each bar shows how much of that window's time is left."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Limits come from each provider and count all use of the account, in Sotto or anywhere else. Two computers' readings are shown side by side, never added. OpenCode doesn't report account limits, so it isn't on Subscriptions."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Lines"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Listening."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Listening. Say something."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "load unknown"
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Loading models…"
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Loading transcripts."
+msgstr ""
+
+#: src/renderer/src/features/starting/startingView.ts
+msgid "Loading your threads"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainActivityParts.tsx
+msgid "longest freeze"
+msgstr ""
+
+#. First-run setup: the step that chooses how Sotto looks
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Look"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Looking for speech models on this computer…"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Lowest: {lowestName}, {lowestWindow}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "Machines and what works on each"
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "macOS may ask for access."
+msgstr ""
+
+#: src/renderer/src/features/dictate/journalFacts.ts
+msgid "MAI-Transcribe-2 model"
+msgstr ""
+
+#: src/renderer/src/features/performance/PerformanceSettings.tsx
+msgid "Main is keeping up. It was blocked {blocked} of the last minute, and the longest freeze was {longest}."
+msgstr ""
+
+#: src/renderer/src/features/performance/MainFreezeNotice.tsx
+msgid "Main is slow"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainFreezeNotice.tsx
+msgid "Main is slow: blocked {blocked} of the last minute. Hide details"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainFreezeNotice.tsx
+msgid "Main is slow: blocked {blocked} of the last minute. Show details"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainFreezeNotice.tsx
+msgid "Main process"
+msgstr ""
+
+#: src/renderer/src/features/performance/PerformanceSettings.tsx
+msgid "Main process, last minute"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainActivityParts.tsx
+msgid "Main was blocked {blocked} of the last minute; the longest freeze was {longest}."
+msgstr ""
+
+#: src/renderer/src/features/performance/PerformanceSettings.tsx
+msgid "Main was blocked {blocked} of the last minute. The longest freeze was {longest}. Threads, typing and the window may lag until it recovers."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/LookStep.tsx
+msgid "Match {system}"
+msgstr ""
+
+#: src/renderer/src/components/WindowControls.tsx
+msgctxt "window size"
+msgid "Maximize"
+msgstr ""
+
+#: src/renderer/src/components/WindowControls.tsx
+msgid "Maximize Sotto"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "may slow down"
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Measure again"
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Measuring {chosenName}. Sotto cleans up a built-in sample on the server, never your dictation."
+msgstr ""
+
+#. The page link: the Memory page
+#: src/renderer/src/components/AppShell.tsx
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "Memory"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Memory has not loaded."
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Memory ID"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Memory inspector"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Memory is unavailable. Restart Sotto and try again."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "Merge turns"
+msgstr ""
+
+#. Short tag on a pull request chip
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "merged"
+msgstr ""
+
+#. A pull request’s place in Watcher’s merge turns, in capitals as a tag
+#. A tag in capitals on a moving mark in Watcher’s picture
+#: src/renderer/src/watcher/constellation.ts
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "MERGED"
+msgstr ""
+
+#. A tag in capitals on a moving mark in Watcher’s picture
+#: src/renderer/src/watcher/constellation.ts
+msgid "MERGED #{number}"
+msgstr ""
+
+#. First-run setup: the microphone step
+#. The macOS Privacy & Security pane, as System Settings names it
+#. The microphone picker
+#: src/renderer/src/components/OpenSystemSettingsButton.tsx
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Microphone"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Microphone {number}"
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Microphone access"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Microphone access is blocked."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Microphone access is blocked. Allow access if asked, then test again."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Microphone access is blocked. Turn on Sotto in System Settings > Privacy & Security > Microphone, then test again."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Microphone access is off. Check System Settings > Privacy & Security > Microphone, then try again."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Microphone access is off. Check Windows privacy settings, then try again."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Microphone access is off. Check your microphone access, then try again."
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Microphone activity"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Microphone level"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Microphone needed"
+msgstr ""
+
+#: src/renderer/src/features/dictation/dictationController.ts
+msgid "Microphone permission was denied."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Microphone test skipped. Dictation waits until you run the test in Settings."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Microphone test skipped. Run it in Settings when you want to dictate."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Microphones are unavailable. Check System Settings > Privacy & Security > Microphone."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Microphones are unavailable. Check Windows privacy settings."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Microphones are unavailable. Check your input device, then test again."
+msgstr ""
+
+#: src/renderer/src/components/WindowControls.tsx
+msgid "Minimize Sotto"
+msgstr ""
+
+#. How OpenRouter picks a host for cleanup
+#. How OpenRouter picks a host for cleanup
+#. The room switch between Dictate, Watcher and Threads
+#: src/renderer/src/components/AppShell.tsx
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Mode"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "Model"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Models"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "Models appear here after your next prompt."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "models Usage doesn't list"
+msgstr ""
+
+#. The streak calendar legend: more words
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "More"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "More than ten threads are working on {name}. It may slow down. Nothing is stopped or held back."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "More than ten threads are working on this computer. This computer may slow down or use its battery faster. Nothing is stopped or held back."
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "More transcript actions"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "More usage actions"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "most on {peakDay}, <0>{peakCount}</0>"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Most used model"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "Muse subscription"
+msgstr ""
+
+#: src/renderer/src/features/memory/questions.ts
+msgid "Name a model and the work it suits, or say you have no preference."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Needs attention"
+msgstr ""
+
+#. A group of threads in Watcher’s room: they wait on the user
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "Needs you"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Needs your choice"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/ThreadsTour.tsx
+msgid "New thread"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/ProjectStep.tsx
+msgid "New threads share the project folder. Choose New worktree when you start one to give it a checkout of its own."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "New Watcher"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "New Watcher on {model}."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/ThreadsTour.tsx
+msgid "Next"
+msgstr ""
+
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "No app noted yet. Sotto notes the app it pastes into."
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "No current memories. Past versions are still available."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "No dated activity in this range."
+msgstr ""
+
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "no dictation"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "No end date"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "No history from {from} yet"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "No input tokens in this range, so none came from cache."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "No limits read"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "No microphone is set up."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "No microphone was found."
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "No model matches."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "No models in this range"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "No models recorded yet"
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "No models yet."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "No other threads yet. Threads you or Watcher start show here."
+msgstr ""
+
+#: src/renderer/src/features/memory/Questionnaire.tsx
+msgid "No preference"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageCharts.tsx
+msgid "No prompts in this range"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "No prompts in this range."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "No prompts of their own. Your Sotto threads started them."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "No prompts yet"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "No pull request is ready to merge."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "No reading from {from}"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "No reading yet. Muse reports its limits after a Muse turn runs on {host}."
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "No saved policies. Existing permission checks still apply."
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "No setting passed the test cleanups on {chosenName}, so Mercury 2 cleans up instead. Change the server, then measure again."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "No Sotto account, no telemetry"
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "No speech model chosen"
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "No speech model chosen yet. Choose one above."
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "No speech model is chosen."
+msgstr ""
+
+#: src/renderer/src/features/dictation/dictationController.ts
+msgid "No speech was detected."
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "No speech was detected. Try again a little closer to the microphone."
+msgstr ""
+
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "No streak yet"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+#: src/renderer/src/features/usage/UsageSubscriptions.tsx
+msgid "No subscription readings on the selected computers."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "No thread matches “{typed}”."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageCharts.tsx
+msgid "No token counts in this range"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "No token counts in this range."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "no tokens"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "No tokens in this range"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "No tokens in this range."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "No tokens of its own"
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "No transcripts from {chosenApp}."
+msgstr ""
+
+#. A group of Watcher’s state with nothing in it
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "None"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "None ready yet. Threads need at least one; Settings › Providers has them later too."
+msgstr ""
+
+#: src/renderer/src/features/starting/StartingScreen.tsx
+msgid "not answering"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Not checked yet"
+msgstr ""
+
+#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
+#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
+#: src/renderer/src/watcher/constellation.ts
+msgid "not confirmed"
+msgstr ""
+
+#: src/renderer/src/watcher/constellation.ts
+msgid "Not confirmed"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "Not confirmed yet"
+msgstr ""
+
+#: src/renderer/src/features/starting/StartingScreen.tsx
+#: src/renderer/src/watcher/machineWords.ts
+msgid "not connected"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Not connected"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Not everything updated"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Not found on this computer."
+msgstr ""
+
+#: src/renderer/src/watcher/constellation.ts
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "Not in this window"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Not installed"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Not matched for these prompts"
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Not measured yet. Measure again finds the fastest setting for this server."
+msgstr ""
+
+#: src/renderer/src/App.tsx
+#: src/renderer/src/features/memory/Questionnaire.tsx
+#: src/renderer/src/features/performance/MainFreezeNotice.tsx
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Not now"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Not now: hide these updates until something new is published"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainFreezeNotice.tsx
+msgid "Not now: hide this until main recovers and freezes again"
+msgstr ""
+
+#. Usage, inside a sentence after a middle dot: "37% left · not read yet"
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "not read yet"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "Not read yet"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Not recorded"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "not reported"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageCharts.tsx
+msgid "Not reported"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Not reported yet."
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Not set up"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Not signed in"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Not tested yet."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNightScene.tsx
+msgid "Not working now"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "Not your default machine. Watcher says why in its reply."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "Not your default, {name}. Watcher says why in its reply."
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Nothing answered at {server}. Nothing was changed. Check the server is on and this computer can reach it, then measure again."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Nothing heard yet."
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Nothing here yet."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Nothing in this range."
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "Nothing is lost; Try again picks up where it stopped."
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "Nothing is lost. Choose another model, or reinstall it in the app that downloaded it."
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Nothing matches “{searched}”."
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Nothing needs a restart."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Nothing on the selected computers can be cleared."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Nothing recorded yet"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "nothing waiting"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Nothing was stopped"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Now {installed}."
+msgstr ""
+
+#: src/renderer/src/App.tsx
+msgid "Numeric usage stays on each computer."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "of input"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "of input tokens"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "of tokens · {sottoPromptShare} of prompts"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Omarchy defaults"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Omarchy in both columns of Settings › Appearance, with Match Linux."
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Omarchy setup"
+msgstr ""
+
+#. Follows a thread’s name: the computer it runs on
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "on {computer}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageSubscriptions.tsx
+msgid "On {where}: <0>{left}%</0> left, {windowName} · {age}"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "One line at the end of ~/.config/hypr/bindings.lua, after a backup copy."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "One line by model: {names}."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "One line by provider: {names}."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "One shortcut from speech to text"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/ComputersStep.tsx
+msgid "Only using this computer? Skip this. Settings › Hosts & phones adds one any time."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
+#: src/renderer/src/watcher/WatcherOverview.tsx
+#: src/renderer/src/watcher/WatcherPicture.tsx
+#: src/renderer/src/watcher/WatcherWatched.tsx
+msgctxt "Open a thread"
+msgid "Open"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "Open {title} at its failed turn"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
+#: src/renderer/src/watcher/WatcherNightScene.tsx
+#: src/renderer/src/watcher/WatcherOverview.tsx
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+#: src/renderer/src/watcher/WatcherWatched.tsx
+msgid "Open {title} beside Watcher"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherBeside.tsx
+msgid "Open {title} in Threads"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "Open {title} to answer its permission"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "Open {title} to answer its question"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "Open {title} to review its prototype"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "Open beside Watcher"
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Open directly in the menu bar when Sotto launches."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Open directly in the tray when Sotto launches."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherBeside.tsx
+msgid "Open in Threads"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+#: src/renderer/src/features/dictate/Journal.tsx
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Open Settings"
+msgstr ""
+
+#: src/renderer/src/features/starting/startingView.ts
+msgid "Open Sotto now"
+msgstr ""
+
+#: src/renderer/src/features/starting/startingView.ts
+msgid "Open Sotto without {names}"
+msgstr ""
+
+#: src/renderer/src/components/OpenSystemSettingsButton.tsx
+msgid "Open System Settings"
+msgstr ""
+
+#: src/renderer/src/components/OpenSystemSettingsButton.tsx
+msgid "Open System Settings at Privacy & Security, {paneName}"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Open the {provider} install guide"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "Open the prototype"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "Open the prototype, {name}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOverview.tsx
+#: src/renderer/src/watcher/WatcherPicture.tsx
+#: src/renderer/src/watcher/WatcherWatched.tsx
+msgid "Open to answer"
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Open Windows Settings > Privacy & security > Microphone, allow desktop apps, then try again."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
+msgid "Opened in your browser"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Opening the microphone…"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Opening Watcher…"
+msgstr ""
+
+#: src/renderer/src/components/OpenRouterKeyField.tsx
+msgid "OpenRouter API key"
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "OpenRouter did not send its models. The saved choice still works. Try Refresh."
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "OpenRouter no longer lists this model, so Mercury 2 cleans up instead. Choose another."
+msgstr ""
+
+#: src/renderer/src/components/OpenRouterKeyField.tsx
+msgid "OpenRouter rejected this key."
+msgstr ""
+
+#: src/renderer/src/components/OpenRouterKeyField.tsx
+msgid "OpenRouter returned an error."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
+msgid "Opens Apple's TestFlight page in your browser. Install TestFlight on the iPhone first."
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "or press <0/> again"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "or press <0/> in any app"
+msgstr ""
+
+#: src/renderer/src/features/usage/usageChartSeries.ts
+msgid "Other"
+msgstr ""
+
+#: src/renderer/src/features/usage/usageChartSeries.ts
+msgid "Other ({count})"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "Other apps"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Other computers"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Other holds {list}."
+msgstr ""
+
+#: src/renderer/src/watcher/constellation.ts
+msgid "Other threads"
+msgstr ""
+
+#. After a token figure
+#: src/renderer/src/features/usage/UsageCharts.tsx
+msgid "output"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageCharts.tsx
+#: src/renderer/src/features/usage/usageChartSeries.ts
+#: src/renderer/src/features/usage/UsageModels.tsx
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Output"
+msgstr ""
+
+#: src/renderer/src/features/dictation/dictationController.ts
+msgid "Output is unavailable."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Outside Sotto"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Overview"
+msgstr ""
+
+#: src/renderer/src/components/AppShell.tsx
+msgid "Pages"
+msgstr ""
+
+#: src/renderer/src/watcher/constellation.ts
+#: src/renderer/src/watcher/WatcherAsks.tsx
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Paired computer"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
+msgid "Paired phones, and the name they show for this computer, are in Settings › Hosts & phones."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
+msgid "Pairing code"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
+msgid "Pairing code {spokenCode}"
+msgstr ""
+
+#: src/renderer/src/features/dictate/journalFacts.ts
+msgid "Parakeet model"
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Paste fallback"
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Paste manually"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Paste or type here"
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Paste permissions"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Paste test"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Pasted into {deliveredApp}."
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Pasted."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Pastes into the focused window, terminals included. If it doesn’t arrive, press Super+V."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Per day"
+msgstr ""
+
+#. The kind of request a card in Watcher’s conversation holds
+#. Why a thread needs the user, after its name
+#: src/renderer/src/watcher/WatcherAsks.tsx
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "permission"
+msgstr ""
+
+#. A tag on a moving mark in Watcher’s picture: a permission request going to the user
+#: src/renderer/src/watcher/constellation.ts
+msgid "Permission"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Permission boundaries"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Permission request"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "Permission request from {title}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Permission request in a thread it delegated to"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
+msgid "Phone access could not be changed. Nothing was changed. Try again."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
+msgid "Phone access could not be saved. Nothing was changed. Try again."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
+msgid "Phone access needs the local host, which is off. Turn on Run the local host in Settings › Hosts & phones, then restart Sotto."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Pick its model and what it may do without asking below, then send what you want done first. That message starts it."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Pick light or dark and a theme. The window and the owl follow your choice."
+msgstr ""
+
+#: src/renderer/src/features/memory/questions.ts
+msgid "Planning first, architecture decisions, new dependencies, branches, and worktrees."
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Policies"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Policies are separate from memory. Editing a preference does not change a permission."
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Policy details"
+msgstr ""
+
+#: src/renderer/src/languages.ts
+msgid "Portuguese"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "PR #{number} open"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Preferences stay on this computer. Sotto does not send them to any provider."
+msgstr ""
+
+#: src/renderer/src/App.tsx
+msgid "Preparing Sotto..."
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Press {press} to start and stop, once Sotto’s compositor bindings are installed in Hyprland. The dictation button works too. To stop without transcribing, press Cancel on the floating widget."
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Press {press} to stop. Sotto copies your text. Paste with Super+V, Omarchy’s universal paste."
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Press {press} to stop. Sotto copies, then pastes into the focused window on Hyprland."
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Press {pressed} anywhere to talk."
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Press {pressed} to start and stop."
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Press <0/> anywhere to begin, then press it again to finish. Press Escape to cancel an active recording without transcribing."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Press a shortcut and speak, and your words arrive as text wherever you were typing. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Press it to start and again to finish. Your text is always copied before Sotto pastes it."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Press Test microphone, then say a few words."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNightScene.tsx
+msgid "Press to see every watched thread on Watched."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Presses ⌘V in the app you were using. Some apps block it."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Presses Ctrl+V in the app you were using. Some apps block it."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Previous microphone (unavailable)"
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Privacy"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Project: {scope}"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/ProjectStep.tsx
+msgid "Projects"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/ThreadsTour.tsx
+msgid "Projects and threads"
+msgstr ""
+
+#: src/renderer/src/features/usage/usageChartSeries.ts
+#: src/renderer/src/features/usage/UsageModels.tsx
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Prompts"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Prompts are what you, Watcher and wake-ups sent. Subagents add tokens but no prompts. A prompt counts under the model that served it."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "prompts not reported"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "Prompts per day"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Prompts per day, {range}."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Prompts you sent, by weekday and hour. Use the arrow keys to read one hour."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "prototype to review"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "Prototype to review"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Prototype to review in a thread it delegated to"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Provider"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "Provider sessions"
+msgstr ""
+
+#: src/renderer/src/features/starting/StartingScreen.tsx
+msgid "Providers and hosts"
+msgstr ""
+
+#. Mid-sentence, after "Always confirm:" or in a list joined by semicolons, so it starts in lower case where the language has one
+#: src/renderer/src/features/memory/questions.ts
+msgid "publishing or sending work outside Sotto"
+msgstr ""
+
+#: src/renderer/src/features/memory/questions.ts
+msgid "Publishing or sending work outside Sotto"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "pull request #{number}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "Pull request #{number}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "Pull request #{number}, {checks}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "pull request #{number}, {state}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "Pull request #{number}, closed"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "Pull request #{number}, merged"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "Pull request open"
+msgstr ""
+
+#. The kind of request a card in Watcher’s conversation holds
+#. Why a thread needs the user, after its name
+#: src/renderer/src/watcher/WatcherAsks.tsx
+#: src/renderer/src/watcher/WatcherGlance.tsx
+msgid "question"
+msgstr ""
+
+#. A tag on a moving mark in Watcher’s picture: a question going to the user
+#. What a thread waits on the user for, in Watcher’s state
+#: src/renderer/src/watcher/constellation.ts
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Question"
+msgstr ""
+
+#: src/renderer/src/features/memory/Questionnaire.tsx
+msgid "Question {step} of 9"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "Question from {title}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Question in a thread it delegated to"
+msgstr ""
+
+#. A group of threads in Watcher’s room, and a thread’s status: nothing has happened for a while
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "Quiet"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Ranking is incomplete"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Ranking is incomplete. There are more models than Usage lists, so the models drawn may not be those with the most prompts. Other counts the rest."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Ranking is incomplete. There are more models than Usage lists, so the models drawn may not be those with the most tokens. Other counts the rest."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "Read"
+msgstr ""
+
+#. Usage, inside a sentence after a middle dot
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "read {hours} h ago"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "Read {hours} h ago"
+msgstr ""
+
+#. Usage, inside a sentence after a middle dot
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "read {minutes} min ago"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "Read {minutes} min ago"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageSubscriptions.tsx
+msgid "Read {name} limits again"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageSubscriptions.tsx
+msgid "Read again"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHandover.tsx
+msgid "Read it"
+msgstr ""
+
+#. Usage, inside a sentence after a middle dot: "37% left · read just now"
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "read just now"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "Read just now"
+msgstr ""
+
+#: src/renderer/src/App.tsx
+msgid "Read more"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHandover.tsx
+msgid "Read the handover, word for word"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageSubscriptions.tsx
+msgid "Reading {name} limits"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Reading each model's days…"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Reading each provider's days…"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHandover.tsx
+msgid "Reading it…"
+msgstr ""
+
+#: src/renderer/src/features/performance/PerformanceSettings.tsx
+msgid "Reading main's numbers…"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Reading memory…"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Reading usage…"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageSubscriptions.tsx
+msgid "Reading…"
+msgstr ""
+
+#. Read after a provider or host name on the starting screen
+#. Read after the Restart Sotto step: it can run now
+#: src/renderer/src/features/starting/StartingScreen.tsx
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "ready"
+msgstr ""
+
+#. A coding agent on this computer is connected
+#. The starting screen once every provider and host has connected
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+#: src/renderer/src/features/starting/startingView.ts
+msgid "Ready"
+msgstr ""
+
+#. A tag in capitals on a moving mark in Watcher’s picture: a pull request joined the merge queue
+#. Short tag on a pull request chip: in the merge queue
+#: src/renderer/src/watcher/constellation.ts
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "READY"
+msgstr ""
+
+#. A tag in capitals on a moving mark in Watcher’s picture: a pull request joined the merge queue
+#: src/renderer/src/watcher/constellation.ts
+msgid "READY #{number}"
+msgstr ""
+
+#. A group of threads in Watcher’s room
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "Ready for review"
+msgstr ""
+
+#. A pull request’s place in Watcher’s merge turns, in capitals as a tag
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "READY TO MERGE"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Ready when you are."
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Reason"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "Reconnecting"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainFreezeNotice.tsx
+#: src/renderer/src/features/performance/PerformanceSettings.tsx
+msgid "Record a minute"
+msgstr ""
+
+#: src/renderer/src/features/performance/PerformanceSettings.tsx
+msgid "Record a minute again"
+msgstr ""
+
+#: src/renderer/src/features/performance/PerformanceSettings.tsx
+msgid "Record a minute of activity"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainActivityParts.tsx
+msgid "Record a minute saves the function names and timings of main and the window on this computer. No sound, nothing you dictated or typed, and nothing leaves this computer."
+msgstr ""
+
+#: src/renderer/src/features/performance/PerformanceSettings.tsx
+msgid "Record another minute"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainActivityParts.tsx
+msgid "Recording"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainFreezeNotice.tsx
+msgid "Recording a minute"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainFreezeNotice.tsx
+msgid "Recording a minute, {left} seconds left. Hide the recording"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainFreezeNotice.tsx
+msgid "Recording a minute, {left} seconds left. Show the recording"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainActivityParts.tsx
+msgid "Recording main and the window. Keep using Sotto as you were, so the minute catches the slowness."
+msgstr ""
+
+#: src/renderer/src/features/performance/MainFreezeNotice.tsx
+msgid "Recording not saved"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainFreezeNotice.tsx
+msgid "Recording saved"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Recording time {elapsed}"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainFreezeNotice.tsx
+msgid "Recording, {left} s"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Records from before the clear never come back. New work counts afterward."
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Recovered transcript"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Refresh memory"
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Refresh models"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Release {hold}, or press {press} to stop. Sotto copies your text. Paste with Super+V, Omarchy’s universal paste."
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Release {hold}, or press {press} to stop. Sotto copies, then pastes into the focused window on Hyprland."
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Remove"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Remove {short}"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Remove all"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Remove the usage figures saved on {clearingList}?"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Removing"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "Reopen Sotto to try again."
+msgstr ""
+
+#: src/renderer/src/features/memory/questions.ts
+msgid "Repeated tasks, project conventions, focus time, and habits worth remembering."
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Replaced by"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Replacement memory"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "Reply: “{reply}”"
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Reset safely"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageSubscriptions.tsx
+msgid "Reset time not reported"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "resets {resets}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageSubscriptions.tsx
+msgid "Resets {resets}"
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Resetting settings reopens first-run setup, but does not clear transcript history. Delete a transcript, or use Clear history in the Dictate room or in Settings, when you want to remove saved text."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherBeside.tsx
+msgid "Resize panes"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Resource"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Restart {name}’s host"
+msgstr ""
+
+#: src/renderer/src/App.tsx
+msgid "Restart and install"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Restart now"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Restart Sotto"
+msgstr ""
+
+#: src/renderer/src/features/updates/useUpdateFlow.ts
+msgid "Restart Sotto from the update control to install it."
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Restart Sotto now and install {ready}"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Restart to finish"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Restarts {name}’s host, so its threads are unavailable for a few seconds."
+msgstr ""
+
+#: src/renderer/src/components/WindowControls.tsx
+msgctxt "window size"
+msgid "Restore"
+msgstr ""
+
+#: src/renderer/src/components/WindowControls.tsx
+msgid "Restore Sotto"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Review current replacement"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Revoked"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Room left"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Room left on each subscription"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Run agents on another computer"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Save memory"
+msgstr ""
+
+#: src/renderer/src/features/memory/Questionnaire.tsx
+msgid "Save preferences"
+msgstr ""
+
+#. A Journal day or time label for a transcript whose date is unknown
+#. A Journal day or time label for a transcript whose date is unknown
+#: src/renderer/src/features/dictate/journalFacts.ts
+msgid "Saved"
+msgstr ""
+
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "saved against typing at {typingWpm} wpm"
+msgstr ""
+
+#: src/renderer/src/App.tsx
+msgid "Saved answer cleanup could not finish. The original file was preserved. Repair local storage, then restart Sotto to try again."
+msgstr ""
+
+#: src/renderer/src/App.tsx
+msgid "Saved chat history could not be fully cleared. Some local chat data was left in place. Repair local storage, then save Settings or restart Sotto to try again."
+msgstr ""
+
+#: src/renderer/src/features/performance/MainActivityParts.tsx
+msgid "Saved on this computer, in Sotto's activity recordings folder."
+msgstr ""
+
+#: src/renderer/src/features/performance/MainActivityParts.tsx
+msgid "Saved on this computer, in Sotto's activity recordings folder. Only main was recorded; the window could not be."
+msgstr ""
+
+#: src/renderer/src/features/memory/Questionnaire.tsx
+msgid "Saved on this computer. Sotto does not send them to any provider."
+msgstr ""
+
+#: src/renderer/src/features/dictate/journalFacts.ts
+msgid "Saved transcript"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Saved usage figures were cleared on the selected computers."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Saving setup..."
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+#: src/renderer/src/features/memory/Questionnaire.tsx
+msgid "Saving…"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Say what to start or check. Sending starts Watcher."
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Scope"
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Search models"
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Search transcripts"
+msgstr ""
+
+#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
+#: src/renderer/src/watcher/constellation.ts
+msgid "sending"
+msgstr ""
+
+#. How a message Watcher sent went: still on its way
+#: src/renderer/src/watcher/constellation.ts
+msgid "Sending"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHandover.tsx
+msgid "Sending starts the new Watcher with a <0>handover</0> of the last one, from {provider}."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHandover.tsx
+msgid "Sending starts the new Watcher with a <0>handover</0> of the last one."
+msgstr ""
+
+#. Before a thread’s name on a receipt card
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "Sending to"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Sent from"
+msgstr ""
+
+#. Before a thread’s name on a receipt card
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "Sent to"
+msgstr ""
+
+#: src/renderer/src/watcher/constellation.ts
+msgid "Sent to it"
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Servers added with a key are not listed. OpenCode keeps the key, not Sotto, so cleanup cannot use it."
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Set up {firstShort}"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Set up {firstShort} and {secondShort}"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Set up all three"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Set up by hand"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Set up Sotto in Omarchy"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Set up Sotto in Omarchy in the next step, then hold F9 to talk. Sotto copies your words, then pastes them into the focused app or terminal. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Set up the keys in Settings › Dictation when you’re ready. You can still dictate with Sotto’s button. If paste does not get through, use Super+V, Omarchy’s universal paste."
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Set working preferences"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Setting up"
+msgstr ""
+
+#. The page link: the Settings page
+#. The page link: the Settings page
+#: src/renderer/src/components/AppShell.tsx
+#: src/renderer/src/features/onboarding/ThreadsTour.tsx
+msgid "Settings"
+msgstr ""
+
+#: src/renderer/src/features/dictation/dictationController.ts
+msgid "Settings are unavailable."
+msgstr ""
+
+#. A thread Watcher settled, in a list of what is true of it
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "settled"
+msgstr ""
+
+#. Before a thread’s name on a receipt card
+#. The fold of finished threads at the end of Idle
+#: src/renderer/src/watcher/WatcherOverview.tsx
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "Settled"
+msgstr ""
+
+#: src/renderer/src/watcher/constellation.ts
+msgid "Settled it"
+msgstr ""
+
+#. Before a thread’s name on a receipt card
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "Settling"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Setup could not be saved. Your choices are intact; please try again."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Setup progress: step {stepNumber} of {stepCount}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "Shift-click opens a thread in Threads. <0>Esc</0> closes."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "short on memory"
+msgstr ""
+
+#: src/renderer/src/features/memory/questions.ts
+msgid "Short or detailed replies, spoken summaries, progress updates, and when to interrupt you."
+msgstr ""
+
+#. First-run setup: the dictation shortcut step
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Shortcut"
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Shortcut conflicts"
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Shortcuts for working in threads — New thread, Settle, and the rest — are listed in Settings › Keyboard, where each can be changed."
+msgstr ""
+
+#: src/renderer/src/App.tsx
+msgid "Shortcuts, privacy, and troubleshooting."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "Shortened here. Open the thread for the rest."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgctxt "Usage chart"
+msgid "Show"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "Show {settledCount} settled"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
+msgid "Show a pairing code"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNightScene.tsx
+msgid "Show every watched thread"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainActivityParts.tsx
+msgid "Show in folder"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Show on the chart"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Show past versions"
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Show the 7 days before"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Show the files it changes"
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Show transcripts from"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "Show what it said"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "Show what it said, {title}"
+msgstr ""
+
+#: src/renderer/src/features/performance/PerformanceSettings.tsx
+msgid "Shows a notice in the window's top row while main is blocked for more than half of the last minute."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Signed in"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "Since {since}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageSubscriptions.tsx
+msgid "Since this window began: <0>{shown}</0> {prompts, plural, one {prompt} other {prompts}} and <1>{tokensShown}</1> tokens on {computer}, <2>{sottoShown}</2> of them in Sotto."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageSubscriptions.tsx
+msgid "Since this window began: <0>{shown}</0> {prompts, plural, one {prompt} other {prompts}} in Sotto."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageSubscriptions.tsx
+msgid "Since this window began: no prompts in Sotto."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageSubscriptions.tsx
+msgid "Since this window began: nothing on {computer}."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Skip for now"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/ThreadsTour.tsx
+msgid "Skip tour"
+msgstr ""
+
+#. Mid-sentence, after "Always confirm:" or in a list joined by semicolons, so it starts in lower case where the language has one
+#: src/renderer/src/features/memory/questions.ts
+msgid "skipping or weakening verification"
+msgstr ""
+
+#: src/renderer/src/features/memory/questions.ts
+msgid "Skipping or weakening verification"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Some computers could not confirm that usage was cleared. Review the current figures before trying again."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "Some computers have more models than one read returns. The table shows the models returned; the totals still count every model."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Some recent usage could not be saved. Provider work goes on; repair local storage, then restart Sotto."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Some token counts in this range weren't reported in full, so the share from cache can't be worked out."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Some usage figures were cleared. Some computers could not confirm that usage was cleared. Review the current figures before trying again."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Some usage figures were cleared. Usage changed while the question was open. Review the current figures, then choose Clear usage again."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "Sort by"
+msgstr ""
+
+#: src/renderer/src/components/AppShell.tsx
+msgid "Sotto application"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Sotto can run threads on another PC, a Mac or a Linux box over Tailscale or SSH, and show them here."
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "Sotto can't read {name}'s limits yet."
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "Sotto can't read {name}'s limits yet. Devin shows them in its own usage settings."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Sotto can't read these limits yet"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Sotto can’t tell what stopped"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Sotto cannot install these itself."
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Sotto cannot update this install. Update it the way you installed it."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Sotto compacts Watcher’s conversation once it passes {point}, between turns."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Sotto connects every agent installed on this computer, each signed in with your own account."
+msgstr ""
+
+#: src/renderer/src/App.tsx
+msgid "Sotto copied the transcript instead of pasting it. Automatic paste needs Sotto allowed in System Settings > Privacy & Security > Accessibility, and allowed to control System Events under System Settings > Privacy & Security > Automation. After an update, if paste still fails, remove Sotto from the Accessibility list and add it again."
+msgstr ""
+
+#: src/renderer/src/App.tsx
+msgid "Sotto copied the transcript instead of pasting it. Paste it with ⌘V. Automatic paste needs Sotto allowed to control System Events in System Settings > Privacy & Security > Automation."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Sotto copies your text, then pastes into the focused window on Hyprland, terminals included. If paste does not get through, use Super+V, Omarchy’s universal paste for apps and terminals. Release any held keys first."
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Sotto could not check Omarchy setup. Your files were left alone. Try again."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Sotto could not check your coding agents. Nothing was changed. Press Check again."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Sotto could not connect it."
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Sotto could not finish measuring. Nothing was changed. Measure again."
+msgstr ""
+
+#: src/renderer/src/App.tsx
+msgid "Sotto could not finish starting"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Sotto could not install the update. {problem} Try again, or restart from the update control."
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Sotto could not install the update. Nothing was changed. Try again, or restart from the update control."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHandover.tsx
+msgid "Sotto could not put the handover away, so it still goes with your next message. Nothing was sent. Press X to try again."
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Sotto could not reach the update. Nothing was changed. Try again."
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Sotto could not reach the update. Nothing was installed."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPermissionChip.tsx
+msgid "Sotto could not reach Watcher to change its permissions. It stays on {permissions}."
+msgstr ""
+
+#: src/renderer/src/watcher/watcherRoom.tsx
+msgid "Sotto could not reach Watcher, so {title} is not watched. Try again."
+msgstr ""
+
+#: src/renderer/src/watcher/watcherRoom.tsx
+msgid "Sotto could not reach Watcher, so {title} is still watched. Try again."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "Sotto could not reach Watcher, so no new Watcher was started. Try again."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHandover.tsx
+msgid "Sotto could not reach Watcher, so nothing was sent. Send your message again."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "Sotto could not reach Watcher, so nothing was started. Try again."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Sotto could not reach Watcher. Nothing was stopped. Try again."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "Sotto could not read {name}’s load just now. Watcher treats it as unknown, never idle. It reads again when you open this."
+msgstr ""
+
+#: src/renderer/src/App.tsx
+msgid "Sotto could not read its saved keys. The encrypted file was preserved. Add your keys again in Settings."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
+msgid "Sotto could not read phone access. Nothing was changed. You can turn it on later in Settings › Hosts & phones."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Sotto could not read the decisions, rules and issues Watcher kept. Nothing kept was lost. Sotto reads them again when Watcher next asks for them."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHandover.tsx
+msgid "Sotto could not read the handover. Nothing was sent. Press Read it to try again."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Sotto could not read the saved OpenRouter key. Nothing was deleted. Enter the key again in Settings → Cleanup."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Sotto could not read the saved OpenRouter key. Nothing was deleted. Quit and reopen Sotto, then allow Keychain access when macOS asks, or enter the key again in Settings → Cleanup."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Sotto could not read the saved OpenRouter key. Nothing was deleted. Unlock your keyring and reopen Sotto, or enter the key again in Settings → Cleanup."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "Sotto could not read this computer’s load just now. Watcher treats it as unknown, never idle. It reads again when you open this."
+msgstr ""
+
+#: src/renderer/src/watcher/watcherRoom.tsx
+msgid "Sotto could not read Watcher. Nothing was changed. Reopen Sotto to try again."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/ComputersStep.tsx
+msgid "Sotto could not read your hosts. Nothing was changed. You can add a computer later in Settings › Hosts & phones."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Sotto could not save that microphone. The previous one is still selected."
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "Sotto could not save the model on this computer."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Sotto could not start compacting Watcher’s conversation. Nothing was lost. Try again."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Sotto could not start Watcher. Nothing was started, and your message is still here. Try again."
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "Sotto could not switch to that model, so nothing changed. It may no longer be on this computer; choose it again or another one."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Sotto could not switch to this computer, so it checked nothing. Press Check again."
+msgstr ""
+
+#: src/renderer/src/App.tsx
+msgid "Sotto could not use wl-clipboard. It used its own clipboard instead, so other apps may not see the text. Install wl-clipboard, then copy again."
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Sotto did not start the host on {name}, so it cannot restart it. Update it there with these commands."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageSubscriptions.tsx
+msgid "Sotto doesn't read {name}'s use outside Sotto."
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Sotto has no saved memories yet."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Sotto has no word yet on this computer’s agents. Press Check again."
+msgstr ""
+
+#: src/renderer/src/features/starting/startingView.ts
+msgid "Sotto has not loaded your threads in 10 seconds. It keeps trying."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Sotto heard you. Your microphone works."
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Sotto in the Omarchy bar, and a pill with Stop and Cancel while you talk."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Sotto is clipboard first: successful text is always copied. Automatic paste may be blocked in elevated, protected, or password fields and applications with custom input handling. When that happens, paste manually with Ctrl+V."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Sotto is clipboard first: successful text is always copied. Automatic paste may be blocked in secure input fields and applications with custom input handling. When that happens, paste manually with ⌘V."
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Sotto is set up in Omarchy."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/ComputersStep.tsx
+msgid "Sotto lists the computers on your tailnet and the hosts in your SSH configuration, and sets Sotto up on the one you choose."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Sotto looks for new releases on GitHub and installs them itself."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Sotto lost the answer, so the stop may or may not have reached these threads. Open each one to see whether its turn stopped, and press Stop all again for any still running."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Sotto never updates itself on Linux. New versions come through pacman."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Sotto opens the microphone only while you dictate or run this test."
+msgstr ""
+
+#: src/renderer/src/App.tsx
+msgid "Sotto restored default settings after a local settings file could not be read. The original file was preserved."
+msgstr ""
+
+#: src/renderer/src/App.tsx
+msgid "Sotto started with an empty history after its local history file could not be read. The original file was preserved."
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "Sotto threads"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Sotto turns your voice into text on this computer. Your audio never leaves it."
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Sotto’s choice"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Sotto’s colours change with omarchy theme set."
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Sotto's download"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Sotto’s keys, its owl in the bar and the Omarchy theme."
+msgstr ""
+
+#: src/renderer/src/features/performance/MainFreezeNotice.tsx
+msgid "Sotto's main process is slow"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "Sotto's subagents"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Source"
+msgstr ""
+
+#: src/renderer/src/languages.ts
+msgid "Spanish"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Speak, then paste into any window"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Speech model"
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "Speech model could not be saved"
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "Speech model download"
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "Speech model download did not match"
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "Speech model download stopped"
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "Speech model is no longer on this computer"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Speech model needed"
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "Speech model would not start"
+msgstr ""
+
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "Speed, last 30 days"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Stacked by model: {names}."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Stacked by provider: {names}."
+msgstr ""
+
+#. First-run setup: the group of steps that begins it
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Start"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "Start a new Watcher with a handover of this one"
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Start and stop"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Start dictation"
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Start or stop dictation"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Start Watcher"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Start Watcher and send"
+msgstr ""
+
+#. Before a thread’s name on a receipt card
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "Started"
+msgstr ""
+
+#: src/renderer/src/watcher/constellation.ts
+msgid "Started it"
+msgstr ""
+
+#. Before a thread’s name on a receipt card
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "Starting"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "Starting a new Watcher…"
+msgstr ""
+
+#. Mid-sentence, after "Always confirm:" or in a list joined by semicolons, so it starts in lower case where the language has one
+#: src/renderer/src/features/memory/questions.ts
+msgid "starting new spending"
+msgstr ""
+
+#: src/renderer/src/features/memory/questions.ts
+msgid "Starting new spending"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Starting speech model"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Starting the download…"
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "Starting the speech model"
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "Starting the speech model…"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Starting Watcher…"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Starting…"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/ThreadsTour.tsx
+msgid "Starts a thread in the selected project. Type your message, or hold F9 to speak it with Sotto’s Hyprland bindings."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/ThreadsTour.tsx
+msgid "Starts a thread in the selected project. Type your message, or press {shortcut} and speak it."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Starts and stops dictation from anywhere in macOS."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Starts and stops dictation from anywhere in Windows."
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "State"
+msgstr ""
+
+#: src/renderer/src/watcher/constellation.ts
+msgid "Steered its turn"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Step {number} of 4 · {title}"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Step {number} of 4 · {title} · Restarts once {name}’s clients have."
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Step {number} of 4 · {title} once its clients have"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Step {stepNumber} of {stepCount} · {stepTitle}"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Steps, in order"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Still reading {pendingList}…"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Still reading {scanningList} history. The figures fill in as it reads."
+msgstr ""
+
+#. Stops the dictation that is recording
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Stop"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Stop all"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Stop all threads Watcher started"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Stop all, show its progress"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Stop all, show what it did"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Stop requested for {title}. Waiting on {hosts} to confirm."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Stop requested for {title}. Waiting to confirm."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Stop requested. Waiting for it to confirm."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Stop requested. Waiting on {computer} to confirm."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Stop test"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Stop the threads Watcher started?"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherWatched.tsx
+msgid "Stop watching"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherWatched.tsx
+msgid "Stop watching {title}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatchControls.tsx
+msgid "Stop watching: Watcher lets this thread be"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainFreezeNotice.tsx
+#: src/renderer/src/features/performance/PerformanceSettings.tsx
+msgid "Stop without saving"
+msgstr ""
+
+#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
+#: src/renderer/src/watcher/constellation.ts
+msgid "stopped"
+msgstr ""
+
+#. Before a thread’s name on a receipt card
+#. How a message Watcher sent went: the thread’s turn stopped
+#: src/renderer/src/watcher/constellation.ts
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "Stopped"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Stopped {stopped} of {count}."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Stopped {title}."
+msgstr ""
+
+#: src/renderer/src/watcher/constellation.ts
+msgid "Stopped it"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Stopped."
+msgstr ""
+
+#. Before a thread’s name on a receipt card
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "Stopping"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Stopping…"
+msgstr ""
+
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "Streak"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "Subagent and review work: tokens, but no prompts of its own."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Subagents: <0>{subAgentTokens}</0> of these tokens."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Subscription limits could not be read again. Your saved figures are still here."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Subscriptions"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Supersede"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Superseded"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "System"
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "System default"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Tags"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Talk to your computer and your coding agents"
+msgstr ""
+
+#: src/renderer/src/features/performance/PerformanceSettings.tsx
+msgid "Tell me when main freezes"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Test again"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Test again after changing the microphone."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Test microphone"
+msgstr ""
+
+#: src/renderer/src/features/memory/questions.ts
+msgid "Tests, visual checks, and the evidence you want before calling work finished."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/LookStep.tsx
+msgid "That look could not be saved. Your previous look is still on. Choose it again to retry."
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "That server or model is no longer in Your own model servers, so Mercury 2 cleans up instead. Choose another."
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "The {name} update on {host} stopped before it finished. Nothing was changed. Try again."
+msgstr ""
+
+#: src/renderer/src/features/performance/MainFreezeNotice.tsx
+msgid "The activity recording was not saved. Hide why"
+msgstr ""
+
+#: src/renderer/src/features/performance/MainFreezeNotice.tsx
+msgid "The activity recording was not saved. Show why"
+msgstr ""
+
+#: src/renderer/src/components/OpenRouterKeyField.tsx
+msgid "The API key could not be saved."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "The beta reads and answers threads on your computers, questions included. It needs Tailscale on the iPhone and on this computer."
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "The desktop clipboard could not be updated. Your text is kept below. Use Copy text to try again, or select and copy it yourself."
+msgstr ""
+
+#: src/renderer/src/features/dictation/dictationController.ts
+msgid "The desktop clipboard could not be updated. Your text is kept in Sotto. Open Dictate to copy it again or select it."
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "The download did not finish. Nothing was installed."
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "The download did not finish. Nothing was installed. Try again."
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "The download stopped: Sotto could not reach GitHub, or GitHub did not send the file."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherHandover.tsx
+msgid "The handover, word for word"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "The installer finished, but {name} still reports {installed}."
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "The installer finished. Connect {name} to see the version it runs now."
+msgstr ""
+
+#. A piece of the Omarchy setup, named inside "Set up …", "Remove …" and "Try … again"
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "the keys"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "The last conversation is in Watcher history on the Threads page."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "The last reading is {ago}, older than a minute, so Watcher treats {name}’s load as unknown, not idle."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "The last reading is {ago}, older than a minute, so Watcher treats this computer’s load as unknown, not idle."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "The login item could not be updated."
+msgstr ""
+
+#: src/renderer/src/features/dictation/dictationController.ts
+msgid "The microphone could not be started."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "The microphone test could not start."
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "The model is downloaded, but the speech engine would not start on this computer."
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "The model’s files are no longer on this computer."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "The new Watcher could not be started. Nothing was sent, and the last conversation is in Watcher history on the Threads page."
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "The Omarchy theme"
+msgstr ""
+
+#: src/renderer/src/App.tsx
+msgid "The OpenRouter key could not be stored securely. Enter it again in Settings → Cleanup."
+msgstr ""
+
+#: src/renderer/src/components/OpenRouterKeyField.tsx
+msgid "The OpenRouter key could not be stored securely. Enter it again."
+msgstr ""
+
+#. A piece of the Omarchy setup, named inside "Set up …", "Remove …" and "Try … again"
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "the owl"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "The owl in the bar"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "The owl watches a thread until you press it again."
+msgstr ""
+
+#: src/renderer/src/features/dictation/dictationController.ts
+msgid "The recording could not be completed."
+msgstr ""
+
+#: src/renderer/src/features/dictation/dictationController.ts
+msgid "The selected microphone is unavailable."
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "The selected microphone is unavailable. Choose another microphone in Settings."
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "The speech engine would not start this model on this computer."
+msgstr ""
+
+#: src/renderer/src/App.tsx
+msgid "The speech model"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "The speech model is not ready yet."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "The test passes once Sotto hears your voice."
+msgstr ""
+
+#. A piece of the Omarchy setup, named inside "Set up …", "Remove …" and "Try … again"
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "the theme"
+msgstr ""
+
+#: src/renderer/src/features/dictation/dictationController.ts
+msgid "The transcript could not be delivered."
+msgstr ""
+
+#: src/renderer/src/features/dictation/dictationController.ts
+msgid "The transcript was delivered but history could not be updated."
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "The window {host} last read ended at {clock}. Read again for the new one."
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "The window {host} last read ended on {day}. Read again for the new one."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/LookStep.tsx
+msgid "Theme"
+msgstr ""
+
+#: src/renderer/src/features/memory/Questionnaire.tsx
+msgid "These choices become explicit policies. Leaving a box unchecked grants no permission."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "This build cannot reach Watcher yet. Nothing was started. A later Sotto build adds it."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "This clears every date, provider, model and app on those computers, including figures outside the current filters. Thread history, subscription limits and the clients' own records stay as they are."
+msgstr ""
+
+#. This computer, in the middle of a sentence
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "this computer"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+#: src/renderer/src/features/usage/usagePresentation.ts
+#: src/renderer/src/features/usage/UsageView.tsx
+#: src/renderer/src/watcher/constellation.ts
+#: src/renderer/src/watcher/machineWords.ts
+#: src/renderer/src/watcher/WatcherAsks.tsx
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "This computer"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "This computer does not report how busy its processors are, so Watcher treats its load as unknown, not idle."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "This computer does not report the memory a new process could have, so Watcher treats its memory as unknown, not plentiful."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "This computer runs an older Sotto host that does not report its load. Watcher treats it as unknown, never idle. Update it in Settings, under Hosts & phones."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "This computer’s load and what runs there"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "This computer’s local host is off, so Sotto can’t run agents here and checked nothing. Turn on Run the local host in Settings › Hosts & phones, then restart Sotto."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "This computer’s memory changed during the reading, so Watcher treats it as unknown until the next one."
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "This memory changed in another window. Your unsaved wording is still here. Review its current replacement before saving."
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "This memory was deleted. Your unsaved wording is still here to copy."
+msgstr ""
+
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "This month"
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "This permanently removes every saved transcript, and the numbers the Dictate room counts, from this computer. Your settings are unchanged."
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "This removes the transcript and its numbers from this computer. It cannot be undone."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "This Watcher is new, so there is nothing to hand over yet."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "This window does not list this thread."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "This work wasn't matched to a model."
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Thread {threadId}: {ref}"
+msgstr ""
+
+#. The room switch and page links: the Threads page
+#. The room switch and page links: the Threads page
+#. The room switch and page links: the Threads page
+#: src/renderer/src/components/AppShell.tsx
+#: src/renderer/src/features/onboarding/ThreadsTour.tsx
+msgid "Threads"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Threads keep working while clients update."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Three changes to your Omarchy settings. Remove any of them later in Settings › Dictation."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Through"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "Through {through}"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "to do"
+msgstr ""
+
+#: src/renderer/src/features/dictate/journalFacts.ts
+#: src/renderer/src/features/dictate/JournalStats.tsx
+#: src/renderer/src/features/usage/UsageCharts.tsx
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "Today"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "today {clock}, in {span}"
+msgstr ""
+
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "Today, {date}: {amount}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Tokens"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "Tokens by kind"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "tokens not reported"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Tokens not reported"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "Tokens per day"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Tokens per day, {range}."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "Tokens per prompt"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Too old to use"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Total"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Total tokens are input plus output. Cache reads and writes are part of input, not extra."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Transcribed on this computer by the speech model you choose"
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Transcribed on this computer, never saved"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Transcribing..."
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Transcript copied."
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Transcript could not be copied. Try again."
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Transcript could not be deleted. Try again or keep the transcript."
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Transcript from {when}, {words}"
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Transcription"
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Transcripts"
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Transcripts could not be loaded."
+msgstr ""
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Troubleshooting"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Try {short} again"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "Try a longer range or another provider."
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+#: src/renderer/src/features/usage/UsageView.tsx
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "Try again"
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "Try again checks the files, downloads any that went bad, and starts it again."
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "Try again downloads that file again."
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Try again failed too. {detail}"
+msgstr ""
+
+#: src/renderer/src/components/SpeechModelStatus.tsx
+msgid "Try again starts it again."
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Try again to update {name}"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Try again to update {name} on {host}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "Try again, or check its provider in Settings, under Providers."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Try again, or choose another microphone."
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Try another word, or choose All."
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Try another word, or clear the search."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Try microphone again"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "Trying again…"
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Turn on Sotto in System Settings > Privacy & Security > Microphone, then test again."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Turned off"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Turning speech into text."
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Type"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageCharts.tsx
+#: src/renderer/src/features/usage/UsageModels.tsx
+msgid "Uncached input"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Under <0>1</0> a day"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "under 1%"
+msgstr ""
+
+#: src/renderer/src/watcher/WatchControls.tsx
+msgid "Undo"
+msgstr ""
+
+#: src/renderer/src/watcher/WatchControls.tsx
+msgid "Undo: stop watching {title}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatchControls.tsx
+msgid "Undo: watch {title} again"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "unknown"
+msgstr ""
+
+#: src/renderer/src/App.tsx
+msgid "Unsent remote draft storage could not be updated. Draft text may not be saved, and older disk copies may remain. Keep a copy before quitting. Repair local storage, then save Settings or restart Sotto to try again."
+msgstr ""
+
+#: src/renderer/src/App.tsx
+msgid "Unsent remote drafts could not be read. The original file was preserved. Repair local storage, then restart Sotto to try again."
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Update {host}’s host"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Update {name}"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateControlLogic.ts
+msgid "Update {version} downloaded. Click to restart and install."
+msgstr ""
+
+#: src/renderer/src/features/updates/updateControlLogic.ts
+msgid "Update {version} ready to download"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Update all"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Update all: {summary}"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateControlLogic.ts
+msgid "Update check failed. Update {version} is still offered. Click to download."
+msgstr ""
+
+#: src/renderer/src/features/updates/updateControlLogic.ts
+msgid "Update checks run in the installed Windows app and in Sotto Owl on a Mac."
+msgstr ""
+
+#: src/renderer/src/features/updates/useUpdateFlow.ts
+msgid "Update downloaded"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Update it yourself with {command}."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Update it, then check again."
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Update ready"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Update the owl"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Update the owl?"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Updated"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "Updates"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Updates once {name}’s clients have."
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Updating"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Updating · {finished} of {total}"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Updating restarts the bar for a moment."
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Updating, step {step} of {steps}…"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Updating…"
+msgstr ""
+
+#. The page link: the Usage page
+#: src/renderer/src/components/AppShell.tsx
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Usage"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Usage changed while the question was open. Review the current figures, then choose Clear usage again."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Usage could not be cleared. Your saved figures may remain. Try again."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Usage could not be read from {from}. Nothing was changed. Try again in a moment."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Usage could not be read from {from}. Your saved figures were not changed."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Usage could not be read. Your saved figures were not changed."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Usage is not available in this build."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Usage keeps only numbers, dates, model names and app names. Deleting a thread or turning History off leaves it as it is; Clear usage removes it."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Usage measures"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Usage starts counting again with your next prompt."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Usage views"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Use {name}"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Use not reported"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Use not reported · resets {resets}"
+msgstr ""
+
+#: src/renderer/src/components/OpenRouterKeyField.tsx
+msgid "Used only for AI cleanup and kept in your system’s credential store."
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Valid from"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Valid until"
+msgstr ""
+
+#: src/renderer/src/components/OpenRouterKeyField.tsx
+msgid "Verify key"
+msgstr ""
+
+#: src/renderer/src/components/OpenRouterKeyField.tsx
+msgid "Verifying..."
+msgstr ""
+
+#. The tab that shows what Watcher is doing as a picture
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Visualize"
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Voxtype has these keys now. Sotto takes them over; Voxtype stays installed."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "Wait for Watcher to finish before starting a new one."
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "Waiting"
+msgstr ""
+
+#: src/renderer/src/features/starting/startingView.ts
+msgid "Waiting for {names}"
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "waiting for its threads"
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Waiting for the update before it."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Waiting on you"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNightScene.tsx
+msgid "Waiting on you. Press to answer."
+msgstr ""
+
+#: src/renderer/src/features/updates/updateAll.ts
+msgid "Waiting to hear from {hostName}…"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Waits for Watcher’s turn to end"
+msgstr ""
+
+#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
+#: src/renderer/src/watcher/constellation.ts
+msgid "waits for your turn there"
+msgstr ""
+
+#: src/renderer/src/watcher/constellation.ts
+msgid "Waits for your turn there"
+msgstr ""
+
+#: src/renderer/src/watcher/WatchControls.tsx
+msgctxt "Put a thread under Watcher's watch"
+msgid "Watch"
+msgstr ""
+
+#: src/renderer/src/watcher/WatchControls.tsx
+msgid "Watch {title}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherWatched.tsx
+msgid "Watch a thread"
+msgstr ""
+
+#: src/renderer/src/watcher/WatchControls.tsx
+msgid "Watch: Watcher keeps this thread going until you stop it"
+msgstr ""
+
+#: src/renderer/src/watcher/WatchControls.tsx
+msgid "Watch: Watcher watches this thread from your first message until you stop it"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherOwl.tsx
+msgid "Watched by Watcher"
+msgstr ""
+
+#: src/renderer/src/watcher/WatchControls.tsx
+msgid "Watched: Watcher watches this thread from your first message. Press again to leave it unwatched"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "Watcher could not be started. Nothing was sent."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Watcher had no threads to stop. Nothing was stopped."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherStopAll.tsx
+msgid "Watcher has no running threads to stop."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "Watcher has sent it nothing yet."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Watcher is a thread that starts and briefs your other threads, and keeps an eye on them while they work."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherWatched.tsx
+msgid "Watcher is sending to it now."
+msgstr ""
+
+#: src/renderer/src/watcher/WatchControls.tsx
+msgid "Watcher is watching <0>{title}</0>."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherWatched.tsx
+msgid "Watcher last sent to it at {at}."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Watcher message"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherWatched.tsx
+msgid "Watcher settled it at {at}."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherWatched.tsx
+msgid "Watcher started it at {at}."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherWatched.tsx
+msgid "Watcher stopped it at {at}."
+msgstr ""
+
+#: src/renderer/src/watcher/WatchControls.tsx
+msgid "Watcher stopped watching <0>{title}</0>."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherWatched.tsx
+msgid "Watcher watches no threads yet. Press the owl on a thread, here in All threads or on Threads, and Watcher keeps it going until you stop it."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Watcher’s context"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Watcher’s context and state"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherWatched.tsx
+msgid "Watcher’s last try at {at} did not reach it."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherWatched.tsx
+msgid "Watcher’s last try at {at} is not confirmed."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Watcher’s model"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPermissionChip.tsx
+msgid "Watcher’s permissions"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Watcher’s room"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Watcher’s state"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Watcher’s view"
+msgstr ""
+
+#. The threads Watcher watches, a group of its state
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Watching"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherWatched.tsx
+msgid "Watching since {since}. Nothing sent yet."
+msgstr ""
+
+#. A subscription window inside a sentence: "37% left, week"
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "week"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "Week"
+msgstr ""
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "weekly window"
+msgstr ""
+
+#. First-run setup: the first step
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Welcome"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Welcome to Sotto"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "What {title} said last"
+msgstr ""
+
+#: src/renderer/src/features/memory/questions.ts
+msgid "What are your preferences for keeping history?"
+msgstr ""
+
+#: src/renderer/src/features/memory/questions.ts
+msgid "What makes a change ready for you?"
+msgstr ""
+
+#: src/renderer/src/features/memory/Questionnaire.tsx
+msgid "What should Sotto always confirm?"
+msgstr ""
+
+#: src/renderer/src/features/memory/questions.ts
+msgid "What should Sotto know about your workday?"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "What Sotto remembers"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "What Watcher did"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "What Watcher last did with it"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherPermissionChip.tsx
+msgid "When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "when you send the most"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "When you work"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Where"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Where you work"
+msgstr ""
+
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "Where, last 30 days"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsagePerDay.tsx
+msgid "Whole range"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "Why Sotto remembers this"
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Windows default"
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Windows may ask for access."
+msgstr ""
+
+#: src/renderer/src/platformCopy.ts
+msgid "Windows startup could not be updated."
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "With Sotto’s compositor bindings: hold {hold} to talk, or press {press}. Automatic paste works on Hyprland, terminals included. If needed, use Super+V, Omarchy’s universal paste."
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "With Sotto’s compositor bindings: press {press} to talk. Automatic paste works on Hyprland, terminals included. If needed, use Super+V, Omarchy’s universal paste."
+msgstr ""
+
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "Words per minute on the {dayCount} of the last 30 days you dictated, from {slowestWpm} to {fastestWpm}, fastest on {fastestDay}, against your usual {usual}."
+msgstr ""
+
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "Words per minute on the {dayCount} of the last 30 days you dictated, from {slowestWpm} to {fastestWpm}, fastest on {fastestDay}."
+msgstr ""
+
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "words so far"
+msgstr ""
+
+#. A group of threads in Watcher’s room, and a thread’s status
+#. A thread’s status
+#: src/renderer/src/watcher/WatcherNightScene.tsx
+#: src/renderer/src/watcher/WatcherOverview.tsx
+msgid "Working"
+msgstr ""
+
+#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
+#: src/renderer/src/watcher/constellation.ts
+msgid "working on it"
+msgstr ""
+
+#: src/renderer/src/watcher/constellation.ts
+msgid "Working on it"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+#: src/renderer/src/features/memory/Questionnaire.tsx
+msgid "Working preferences"
+msgstr ""
+
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "wpm today"
+msgstr ""
+
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "wpm, usual {usual}"
+msgstr ""
+
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "wpm, your usual"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Write what Watcher should do first"
+msgstr ""
+
+#: src/renderer/src/features/dictate/journalFacts.ts
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "Yesterday"
+msgstr ""
+
+#. The user, at the foot of Watcher’s picture
+#: src/renderer/src/watcher/WatcherPicture.tsx
+msgid "You"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "You answered {title} in your own words."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "You answered {title}: {words}."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "You answered {title}."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/ProjectStep.tsx
+msgid "You can add more projects from the sidebar at any time."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "You can continue while it downloads. Dictation works as soon as it finishes. AI cleanup is optional; turn it on in Settings → Cleanup."
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "You chose this in working preferences"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "You sent <0>{sent}</0>, Watcher <1>{watcher}</1> and wake-ups <2>{wakeUps}</2>."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherWatched.tsx
+msgid "You sent here yourself. Until that turn ends, Watcher can only steer it."
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "You set this policy"
+msgstr ""
+
+#: src/renderer/src/features/memory/MemoryInspector.tsx
+msgid "You told Sotto"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "You took over {thread}. Watcher stopped sending to it."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "You turned it off on this computer. Connect it to use it here."
+msgstr ""
+
+#: src/renderer/src/features/omarchy/OmarchySetup.tsx
+msgid "You’ll try F9 in the Shortcut step, once the speech model is downloaded."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Your audio never leaves this computer"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/AgentsStep.tsx
+msgid "Your browser did not open. Go to {guide} to install it."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
+msgid "Your browser did not open. On your iPhone, go to {betaAddress} instead."
+msgstr ""
+
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "your busiest hour"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Your coding agents"
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Your completed text is below. Copy it again, or select and copy it yourself."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/ComputersStep.tsx
+msgid "Your computers"
+msgstr ""
+
+#: src/renderer/src/App.tsx
+msgid "Your data was not changed. Close and reopen Sotto, then try again."
+msgstr ""
+
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "Your dictation"
+msgstr ""
+
+#: src/renderer/src/features/memory/Questionnaire.tsx
+msgid "Your existing permission boundaries stay in place."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Your first message starts Watcher on {modelName}, with your own {accountProvider} account."
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Your own servers"
+msgstr ""
+
+#: src/renderer/src/App.tsx
+msgid "Your preferences, with their history."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/ThreadsTour.tsx
+msgid "Your projects and their threads are listed here. Add project brings in another folder."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Your rules"
+msgstr ""
+
+#: src/renderer/src/features/dictate/JournalStats.tsx
+msgid "Your speed shows here once you have dictated on two days."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageView.tsx
+msgid "Your subscriptions, and the work on each computer, in Sotto and outside it."
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Your text is still here"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "your thread"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/Onboarding.tsx
+msgid "Your threads go only to each agent's own provider"
+msgstr ""
+
+#: src/renderer/src/features/dictate/Journal.tsx
+msgid "Your transcripts on this computer are being read."
+msgstr ""
+
+#: src/renderer/src/features/updates/UpdateAllCard.tsx
+msgid "yours to do"
+msgstr ""

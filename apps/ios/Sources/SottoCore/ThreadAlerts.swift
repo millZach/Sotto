@@ -80,18 +80,19 @@ public struct ThreadWatch: Sendable {
 
     private static func alert(_ event: Event, thread: ThreadSummary, ref: ThreadRef, computer: String) -> ThreadAlert {
         let agent = AgentNames.name(thread.providerId)
-        let title = thread.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "A thread" : thread.title
+        let title = thread.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? String(localized: "A thread", bundle: .module, comment: "An alert's title for a thread with no title") : thread.title
         switch event {
         case .request(let request):
             let permission = request.kind == "permission"
-            let body = permission ? "\(agent) is asking for permission on \(computer)." : "\(agent) is asking a question on \(computer)."
+            let body = permission ? String(localized: "\(agent) is asking for permission on \(computer).", bundle: .module, comment: "The first %@ is the agent's name, such as Codex; the second is the computer's name")
+                : String(localized: "\(agent) is asking a question on \(computer).", bundle: .module, comment: "The first %@ is the agent's name, such as Codex; the second is the computer's name")
             return ThreadAlert(ref: ref, kind: permission ? .permission : .question, title: title, body: body,
                                id: ref.id + "/request/" + request.id)
         case .finished:
-            return ThreadAlert(ref: ref, kind: .finished, title: title, body: "\(agent) finished on \(computer).",
+            return ThreadAlert(ref: ref, kind: .finished, title: title, body: String(localized: "\(agent) finished on \(computer).", bundle: .module, comment: "The first %@ is the agent's name, such as Codex; the second is the computer's name"),
                                id: ref.id + "/finished/" + UUID().uuidString)
         case .failed:
-            return ThreadAlert(ref: ref, kind: .failed, title: title, body: "\(agent) stopped with an error on \(computer).",
+            return ThreadAlert(ref: ref, kind: .failed, title: title, body: String(localized: "\(agent) stopped with an error on \(computer).", bundle: .module, comment: "The first %@ is the agent's name, such as Codex; the second is the computer's name"),
                                id: ref.id + "/failed/" + UUID().uuidString)
         }
     }
@@ -101,6 +102,7 @@ public struct ThreadWatch: Sendable {
 public enum AgentNames {
     public static func name(_ providerID: String?) -> String {
         ["claude": "Claude Code", "codex": "Codex", "grok": "Grok Build", "devin": "Devin", "muse": "Muse", "opencode": "OpenCode",
-         "cursor": "Cursor"][providerID ?? ""] ?? "The agent"
+         "cursor": "Cursor"][providerID ?? ""]
+            ?? String(localized: "The agent", bundle: .module, comment: "Stands in for an agent's name when Sotto doesn't know its provider")
     }
 }

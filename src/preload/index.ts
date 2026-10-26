@@ -6,7 +6,7 @@ import { mapHostReferences, parseHostEntityKey } from '../shared/clientIdentity'
 
 import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
   WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, WATCHER_START_NEW, WATCHER_READ_MERGE_TURNS, watcherContinueHandoverRequestSchema, watcherHandoverReadSchema, watcherMergeTurnsReadSchema,
-  WATCHER_RENDERER_ARGUMENT, watcherOpenRequestSchema, watcherRoomResultSchema,
+  WATCHER_READ_MACHINES, WATCHER_MACHINES_RENDERER_ARGUMENT, watcherMachinesReadSchema, WATCHER_RENDERER_ARGUMENT, watcherOpenRequestSchema, watcherRoomResultSchema,
   watcherPrepareStopAllResultSchema, watcherStopAllRequestSchema, watcherStopAllResultSchema,
   watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, type WatcherBridge } from '../shared/watcherRoom'
 import { watcherRoomChanges } from './watcherRoomChanges'
@@ -28,8 +28,14 @@ import {
   addRequestSchema, addResultSchema, checkRequestSchema, checkResultSchema, checkSavedRequestSchema, OWN_SERVERS_ADD, OWN_SERVERS_CHECK, OWN_SERVERS_CHECK_SAVED,
   OWN_SERVERS_LIST, OWN_SERVERS_REMOVE, OWN_SERVERS_RENDERER_ARGUMENT, ownServerListSchema, removeRequestSchema, removeResultSchema, type OwnServersBridge,
 } from '../shared/ownModelServers'
+import {
+  OWN_SERVER_CLEANUP_MEASURE, OWN_SERVER_CLEANUP_MEASURED, OWN_SERVER_CLEANUP_RENDERER_ARGUMENT, ownCleanupChoiceSchema, ownCleanupMeasuredListSchema,
+  ownCleanupMeasureResultSchema, type OwnServerCleanupBridge,
+} from '../shared/ownServerCleanup'
 import { NEXT_PROMPT_CHANGED, NEXT_PROMPT_READ, NEXT_PROMPT_RENDERER_ARGUMENT, nextPromptEntriesSchema, nextPromptEntrySchema, type NextPromptBridge } from '../shared/nextPrompt'
 import { CONTINUE_READ, CONTINUE_START, CONTINUE_RENDERER_ARGUMENT, continueReadRequestSchema, continueReadSchema, continueStartRequestSchema, continueStartSchema, type ContinueBridge } from '../shared/continueThread'
+import { MAIN_CHECKOUT_CHANGED, MAIN_CHECKOUT_CHANGES, MAIN_CHECKOUT_COMMAND, MAIN_CHECKOUT_READ, MAIN_CHECKOUT_RENDERER_ARGUMENT, mainCheckoutChangesSchema, mainCheckoutCommandSchema,
+  mainCheckoutStateSchema, type MainCheckoutBridge } from '../shared/mainCheckout'
 import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_COMMAND, MAIN_ACTIVITY_READ, MAIN_ACTIVITY_RENDERER_ARGUMENT, mainActivityCommandSchema, mainActivityStateSchema, type MainActivityBridge } from '../shared/mainActivity'
 import { INTERFACE_LANGUAGE_CHANGED, INTERFACE_LANGUAGE_GET, interfaceLanguageStateSchema, parseInterfaceLanguageArgument, type InterfaceLanguageBridge } from '../shared/interfaceLanguageBridge'
 import type { InterfaceLanguageState } from '../shared/interfaceLanguages'
@@ -359,6 +365,8 @@ export function createSottoBridge(
   mainActivityEnabled = false,
   /** Notifications when a thread has finished or needs the user (ADR-0117): only while the Owl feature is on, on a Mac that can show them. */
   desktopNotificationsEnabled = false,
+  /** The machines line and Settings' Where new workers start (#1032): only while Watcher and Work across machines are on. */
+  watcherMachinesEnabled = false,
   /** Cursor's sign-in from its tile (ADR-0128): only while Cursor's Owl feature is on. */
   cursorEnabled = false,
   /** The interface language as the window was made (ADR-0123): only while the `interface-language` Owl feature is on. */
@@ -367,6 +375,10 @@ export function createSottoBridge(
   ownServersEnabled = false,
   /** Next prompts after a finished turn (ADR-0132): only while the `next-prompt` Owl feature is on and this computer runs threads. */
   nextPromptEnabled = false,
+  /** AI cleanup on the user's own model servers (ADR-0136): only while its Owl feature runs, with the two it builds on. */
+  ownServerCleanupEnabled = false,
+  /** Keep main up to date (ADR-0142): only while the `keep-main-current` Owl feature is on and the local host runs. */
+  mainCheckoutEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -440,10 +452,20 @@ export function createSottoBridge(
       checkSaved: request => invokeParsed(renderer, OWN_SERVERS_CHECK_SAVED, checkResultSchema, checkSavedRequestSchema.parse(request)),
       remove: request => invokeParsed(renderer, OWN_SERVERS_REMOVE, removeResultSchema, removeRequestSchema.parse(request)),
     }) } : {}),
+    ...(ownServerCleanupEnabled ? { ownServerCleanup: Object.freeze<OwnServerCleanupBridge>({
+      measure: choice => invokeParsed(renderer, OWN_SERVER_CLEANUP_MEASURE, ownCleanupMeasureResultSchema, ownCleanupChoiceSchema.parse(choice)),
+      measured: () => invokeParsed(renderer, OWN_SERVER_CLEANUP_MEASURED, ownCleanupMeasuredListSchema),
+    }) } : {}),
     ...(mainActivityEnabled ? { mainActivity: Object.freeze<MainActivityBridge>({
       read: () => invokeParsed(renderer, MAIN_ACTIVITY_READ, mainActivityStateSchema),
       command: command => invokeParsed(renderer, MAIN_ACTIVITY_COMMAND, mainActivityStateSchema, mainActivityCommandSchema.parse(command)),
       onChanged: listener => subscribe(renderer, MAIN_ACTIVITY_CHANGED, mainActivityStateSchema, listener),
+    }) } : {}),
+    ...(mainCheckoutEnabled ? { mainCheckout: Object.freeze<MainCheckoutBridge>({
+      read: () => invokeParsed(renderer, MAIN_CHECKOUT_READ, mainCheckoutStateSchema),
+      changes: projectId => invokeParsed(renderer, MAIN_CHECKOUT_CHANGES, mainCheckoutChangesSchema, z.string().min(1).max(256).parse(projectId)),
+      command: command => invokeParsed(renderer, MAIN_CHECKOUT_COMMAND, mainCheckoutStateSchema, mainCheckoutCommandSchema.parse(command)),
+      onChanged: listener => subscribe(renderer, MAIN_CHECKOUT_CHANGED, mainCheckoutStateSchema, listener),
     }) } : {}),
     // Notifications (ADR-0117): only while the Owl list turns them on and this Mac can show them, so no other window has this bridge.
     ...(interfaceLanguage ? { interfaceLanguage: createInterfaceLanguageBridge(renderer, interfaceLanguage) } : {}),
@@ -474,6 +496,7 @@ export function createSottoBridge(
       dismissHandover: () => invokeParsed(renderer, WATCHER_DISMISS_HANDOVER, watcherRoomResultSchema),
       startNew: () => invokeParsed(renderer, WATCHER_START_NEW, watcherRoomResultSchema),
       readMergeTurns: () => invokeParsed(renderer, WATCHER_READ_MERGE_TURNS, watcherMergeTurnsReadSchema),
+      ...(watcherMachinesEnabled ? { readMachines: () => invokeParsed(renderer, WATCHER_READ_MACHINES, watcherMachinesReadSchema) } : {}),
     }) } : {}),
     hosts: Object.freeze<import('../shared/hosts').HostsBridge>({ get: () => renderer.invoke(HOSTS_GET) as Promise<HostsState>, command: command => renderer.invoke(HOSTS_COMMAND, hostsCommandSchema.parse(command)) as Promise<HostsState>, onChanged: listener => subscribe(renderer, HOSTS_CHANGED, trustedState<HostsState>('hosts'), listener),
       devices: () => renderer.invoke(HOSTS_DEVICES) as Promise<HostDeviceList>, tailscale: () => renderer.invoke(HOSTS_TAILSCALE) as Promise<TailscaleSummary>,
@@ -705,8 +728,9 @@ export function exposeRendererBridge(
     context.exposeInMainWorld('sotto', createSottoBridge(renderer, platform, arguments_.includes(WATCHER_RENDERER_ARGUMENT), arguments_.includes(USAGE_RENDERER_ARGUMENT),
       arguments_.includes(DELEGATION_RENDERER_ARGUMENT), arguments_.includes(CONTINUE_RENDERER_ARGUMENT), arguments_.includes(OPENCODE_RENDERER_ARGUMENT),
       arguments_.includes(OPENCODE_HOSTS_RENDERER_ARGUMENT), arguments_.includes(MAIN_ACTIVITY_RENDERER_ARGUMENT), arguments_.includes(DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT),
-      arguments_.includes(CURSOR_RENDERER_ARGUMENT),
-      parseInterfaceLanguageArgument(arguments_), arguments_.includes(OWN_SERVERS_RENDERER_ARGUMENT), arguments_.includes(NEXT_PROMPT_RENDERER_ARGUMENT)))
+      arguments_.includes(WATCHER_MACHINES_RENDERER_ARGUMENT), arguments_.includes(CURSOR_RENDERER_ARGUMENT),
+      parseInterfaceLanguageArgument(arguments_), arguments_.includes(OWN_SERVERS_RENDERER_ARGUMENT), arguments_.includes(NEXT_PROMPT_RENDERER_ARGUMENT),
+      arguments_.includes(OWN_SERVER_CLEANUP_RENDERER_ARGUMENT), arguments_.includes(MAIN_CHECKOUT_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'widget') {

@@ -1,5 +1,5 @@
-import { open } from 'node:fs/promises'
-import { join, resolve, sep } from 'node:path'
+import { open, stat } from 'node:fs/promises'
+import { dirname, join, resolve, sep } from 'node:path'
 import type { GitPullRequestSummary, GitStatus } from '../../shared/gitStatus'
 import { GIT_REFS_MAX_LIMIT, type GitRef, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
 import { GIT_CHANGED_FILES_MAX, type GitChangedFile, type GitChangedFiles } from '../../shared/gitChangedFiles'
@@ -169,6 +169,8 @@ const PULL_REQUEST_SETTLED_FRESH_MS = 15 * 60_000
 const PULL_REQUEST_BACKOFF_MS = 20_000
 const BACKOFF_CAP_MS = 15 * 60_000
 const DEFAULT_BRANCH_FRESH_MS = 5 * 60_000
+/** A folder read as no repository is taken at its word this long, so Git is not asked again every read; an `invalidate` reaching it, such as Initialize Git's, or a `.git` appearing at or above it asks sooner. */
+const NO_REPOSITORY_FRESH_MS = 5 * 60_000
 /** A branch list is kept this long; any Git action drops it (T3's figure). */
 const REFS_FRESH_MS = 2 * 60_000
 interface RefsSnapshot { at: number; locals: Array<{ name: string; date: number; worktreePath: string | null }>; remotes: Array<{ name: string; remote: string; date: number }>; defaultBranch: string | null; hasRemote: boolean }
@@ -185,14 +187,22 @@ interface FetchRecord { failures: number; nextAt: number; fetchedAt: number | nu
  * GitHub host it was asked of, so the timer can keep it without asking anything while that host is paused.
  */
 interface PullRequestRecord { epoch: number; failures: number; nextAt: number; value: GitPullRequestSummary | null; tip: string | null; host?: string }
-/** What the last read of a folder found that its remote half asks about, and the `invalidate` count it was read under. */
-interface KnownFolder { readonly epoch: number; readonly common: string | null; readonly hasRemote: boolean; readonly branch: string | null; readonly upstream: string | null; readonly isDefaultBranch: boolean; readonly tip: string | null }
+/** What the last read of a folder found that its remote half asks about, the `invalidate` count it was read under, and when. */
+interface KnownFolder { readonly epoch: number; readonly at: number; readonly common: string | null; readonly hasRemote: boolean; readonly branch: string | null; readonly upstream: string | null; readonly isDefaultBranch: boolean; readonly tip: string | null }
 /** The branch a pull request is looked up for, as a read found it: its name, its upstream, whether it is the default branch, and its tip. */
 interface BranchLookup { readonly branch: string; readonly upstream: string | null; readonly isDefaultBranch: boolean; readonly tip: string | null }
 /** Where a branch's pull requests are asked about: the repository gh reads pull requests from, and the head's name and repository. */
 interface HeadTarget { readonly repository: GitHubRepository; readonly head: string; readonly headOwner: string; readonly crossRepository: boolean }
 
 const EMPTY: Omit<GitStatus, 'readAt'> = { isRepository: false, branch: null, upstream: null, hasRemote: false, defaultBranch: null, isDefaultBranch: false, dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null, pullRequest: null, fetchedAt: null }
+
+/** Whether a `.git` of any kind sits in `folder` or a folder above it: a folder with none cannot have become a repository. */
+async function gitMarkerAbove(folder: string): Promise<boolean> {
+  for (let candidate = resolve(folder);; candidate = dirname(candidate)) {
+    if (await stat(join(candidate, '.git')).then(() => true, () => false)) return true
+    if (dirname(candidate) === candidate) return false
+  }
+}
 
 /** Whether folder key `key` is `parent` or a folder inside it; both are `folderKey`s. */
 const within = (key: string, parent: string): boolean => key === parent || key.startsWith(parent.endsWith(sep) ? parent : parent + sep)
@@ -491,7 +501,9 @@ export class GitStatusReader implements GitStatusSource {
     const epoch = this.counter
     const readAt = new Date(this.now()).toISOString()
     // What `readRemote` asks about for this folder, unless a Git action in its repository has run since this read began.
-    const remember = (known: Omit<KnownFolder, 'epoch'>): void => { if (this.epochOf(known.common, cwd) <= epoch) this.known.set(cwd, { epoch, ...known }) }
+    const remember = (known: Omit<KnownFolder, 'epoch' | 'at'>): void => { if (this.epochOf(known.common, cwd) <= epoch) this.known.set(cwd, { epoch, at: this.now(), ...known }) }
+    const last = this.known.get(cwd)
+    if (last?.common === null && this.epochOf(null, cwd) <= last.epoch && this.now() - last.at < NO_REPOSITORY_FRESH_MS && !await gitMarkerAbove(cwd)) { place.common = null; return { ...EMPTY, readAt } }
     let common: string
     try { common = (await this.git(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim(); place.common = common }
     catch (error) {
@@ -564,18 +576,35 @@ export class GitStatusReader implements GitStatusSource {
   }
 
   /**
+   * Keep main up to date's fetch (ADR-0142): the fetch a remote read runs, shared with one under way in the repository,
+   * but run whatever the fetch interval says, since that switch asked for it, and even within a fetch's freshness, since it
+   * runs only every 15 minutes or because a pull request merged since. A failed fetch still waits out its backoff.
+   * Resolves whether the repository's `origin` refs are as fresh as a fetch can make them now: false for a folder held
+   * for removal, one that is no repository or has no `origin`, and one whose last fetch failed and waits out its backoff.
+   */
+  async fetchRemote(cwd: string): Promise<boolean> {
+    if (this.isHeld(this.folderKey(cwd))) return false
+    let common: string
+    try { common = (await this.git(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim() } catch { return false }
+    if (!(await this.git(cwd, ['remote']).catch(() => '')).split('\n').some(line => line.trim() === 'origin')) return false
+    await this.fetchIfStale(common, cwd, { whateverTheInterval: true, evenIfFresh: true })
+    const record = this.fetches.get(common)
+    return record !== undefined && record.failures === 0 && record.fetchedAt !== null
+  }
+
+  /**
    * A `git fetch` of `origin`, one per repository at a time, run in the folder that asked so Git resolves its remote
    * as a terminal there would, and writing no `FETCH_HEAD`: a fetch that wrote it beside a pull in the same checkout
    * could leave that pull two heads to choose from. A fetch begun before the last `invalidate` may predate what a Git action since then pushed or merged, so it does not set
    * when the next one is due, and a caller after the `invalidate` waits for it and fetches again rather than share it
    * or run beside it.
    */
-  private fetchIfStale(common: string, cwd: string): Promise<void> {
-    if (this.options.fetchIntervalMs() <= 0) return Promise.resolve()
+  private fetchIfStale(common: string, cwd: string, options: { readonly whateverTheInterval?: boolean; readonly evenIfFresh?: boolean } = {}): Promise<void> {
+    if (options.whateverTheInterval !== true && this.options.fetchIntervalMs() <= 0) return Promise.resolve()
     const record = this.fetches.get(common) ?? { failures: 0, nextAt: 0, fetchedAt: null }
     this.fetches.set(common, record)
-    if (record.inFlight) return this.epochOf(common) <= record.inFlight.epoch ? record.inFlight.done : record.inFlight.done.then(() => this.fetchIfStale(common, cwd))
-    if (this.now() < record.nextAt) return Promise.resolve()
+    if (record.inFlight) return this.epochOf(common) <= record.inFlight.epoch ? record.inFlight.done : record.inFlight.done.then(() => this.fetchIfStale(common, cwd, options))
+    if (this.now() < record.nextAt && !(options.evenIfFresh === true && record.failures === 0)) return Promise.resolve()
     const epoch = this.counter
     const fetch = (): Promise<string> => this.git(cwd, ['fetch', '--quiet', '--no-tags', ...this.fetchHeadFlag ? ['--no-write-fetch-head'] : [], 'origin'],
       { timeoutMs: FETCH_TIMEOUT_MS, env: QUIET_GIT_ENV })

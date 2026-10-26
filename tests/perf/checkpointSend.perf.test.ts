@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
-import { build } from 'esbuild'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { bundleDesktopMain } from '../fixtures/desktopMainBundle'
 import { median, PERF_BENCH, round } from '../fixtures/perfBench'
 
 /**
@@ -33,15 +33,15 @@ describe.skipIf(!PERF_BENCH)("the checkpoint step of a send (timing benchmark; r
     root = await mkdtemp(join(tmpdir(), 'sotto-checkpoint-send-'))
     for (const label of ['before', 'after']) {
       const outfile = join(root, `${label}.mjs`)
-      await build({ entryPoints: ['tests/fixtures/checkpointSendBench.ts'], bundle: true, platform: 'node', format: 'esm', outfile,
+      // The bench runs main's checkpoint code, whose words are messages, so it is built as main is (desktopMainBundle.ts).
+      await bundleDesktopMain('tests/fixtures/checkpointSendBench.ts', outfile, { format: 'es',
         // Main's modules name their own folder as CommonJS does; an ES module has to define it.
-        banner: { js: "import { fileURLToPath as sottoFileUrl } from 'node:url'; import { dirname as sottoDirname } from 'node:path'; const __filename = sottoFileUrl(import.meta.url); const __dirname = sottoDirname(__filename);" },
-        plugins: label === 'before' ? [{ name: 'fixed-baseline', setup(builder) {
-          builder.onLoad({ filter: /\.[cm]?tsx?$/ }, args => {
-            const path = relative(resolve('.'), args.path).replaceAll('\\', '/')
-            if (!path.startsWith('src/')) return undefined
-            return { contents: execFileSync('git', ['show', `${BASE}:${path}`], { encoding: 'utf8' }), loader: 'ts' }
-          })
+        banner: "import { fileURLToPath as sottoFileUrl } from 'node:url'; import { dirname as sottoDirname } from 'node:path'; const __filename = sottoFileUrl(import.meta.url); const __dirname = sottoDirname(__filename);",
+        plugins: label === 'before' ? [{ name: 'fixed-baseline', enforce: 'pre', load(id) {
+          const path = relative(resolve('.'), id.split('?')[0]!).replaceAll('\\', '/')
+          if (!path.startsWith('src/') || !/\.[cm]?tsx?$/u.test(path)) return null
+          // A file the baseline did not have yet, such as main's interface language, is read as it is now.
+          try { return execFileSync('git', ['show', `${BASE}:${path}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) } catch { return null }
         } }] : [],
       })
       bundles[label] = outfile

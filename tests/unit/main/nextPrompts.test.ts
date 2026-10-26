@@ -310,7 +310,7 @@ describe('the Owl gate', () => {
   async function built(options: Partial<AgentRuntimeOptions>) {
     const root = await mkdtemp(join(tmpdir(), 'sotto-next-prompt-gate-')); roots.push(root)
     const credentials = await testCredentials(root, { mode: 'unavailable' })
-    const providers = { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost() }
+    const providers = { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(), deepseek: new E2EAgentHost() }
     const runtime = await createAgentRuntime({ directory: root, credentials, settings: () => DEFAULT_SETTINGS, writingSettings: async () => DEFAULT_SETTINGS,
       historyEnabled: () => true, openExternal: async () => undefined, reasoner: e2eAgentReasoner, providers, ...options })
     const answer = runtime.nextPrompts

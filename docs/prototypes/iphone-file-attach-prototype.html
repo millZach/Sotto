@@ -1,0 +1,1031 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway: attaching files from the iPhone reply box, three variants switched by ?variant=
+  Question: how does the iPhone attach a file to a reply, and how does it show it before and after sending?
+  Variants: A Pills (files are one-line pills under the photos, as on the desktop), B Rows (each file is a row across
+  the top of the reply box), C Stack (files fold into one chip that opens a sheet listing them).
+  Also ?state=ready|adding|large|many|host|textonly, ?open=quicklook|desktop, ?theme=light, ?width=320, ?zoom=0.75.
+  Every phone is live: press +, then Files, pick some, Open, remove one, Send, then press a sent file. Changing the
+  variant, the state or how a sent file opens starts the phones again.
+  Settled already: a + button opens a menu, photos wait inside the reply box above the words and stand above them
+  once sent (ADR-0031, October 3 amendment). Limits (ADR-0131): a file at most 25 MB, a reply at most 8 attachments
+  and 50 MB in all, photos 10 MB each and 20 MB between them. Files reach the computer through its file-staging
+  feature, in parts. Colours are the iPhone's default Sotto palette (apps/ios/Sotto/ThemePalettes.swift) as --tt-*
+  tokens. Figtree (OFL-1.1) is inlined from src/shared/fonts/figtree-latin.woff2, so the file makes no network
+  requests. No host calls, no persistence: open the file in a browser.
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Files from the iPhone: reply box prototype</title>
+<style>
+@font-face { font-family: Figtree; font-style: normal; font-weight: 300 900; font-display: swap; src: url(data:font/woff2;base64,d09GMgABAAAAAE68ABQAAAAAnJQAAE5KAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGoI0G6hGHIY4P0hWQVKFZAZgP1NUQVSBHCcqAIUEL2oRCAr5BN8eC4QUADDgIgE2AiQDiCQEIAWHQgeIaAwHG0CMB2Ruzj+i9Gb12Xunc3hhwo2h9zgYGdxnFNJpPSqa/f9/TG6MoT2g2X9gpAglMo1quFjbo3Y3vLua3qiN5u7gXYeNmV0Hh0HYYxGWsrICCUaXbQcyilFkrKowNteGqyLIQK7Y5SA4KLFTTmMcfNlhKjB3OnPjZ/W9r+FnEi98XGRkRUFX99sH+lCCofinZEqmZMoLHnTG9R8OzxVvega4k6MRcsITj3P1Zn6SpmmqmGyxrohxJsqeen6xE1HO1VhYJT/w2+x9WkriQ0uVfEAMEBliIRZiFHONte2UVVuX5VXtct0XrltX4fJc6FSooFUtsvqG95OPkiiMwPEbhdFohBHoJaoffuuZd5eFDYCRKcikvsNSXxFS+ZQlhdAUxiDUSbvD09z+WT/AmIQSOZZ5t4ttt9t2q2RrxihxkhZoAwYqVgJ2gwFGYvzqGPzO+mCSgVofBGWO/HoUu3deshw017eV32SVbFVOYsaaUTxMQszQhw2DD6OV8yFn9X/a+/ef3i1/bkIq95CasOJCXTITyKw42/Jc4Df8Vl2mfzf/O8Frck3bJ+Ksif3tl0mgz0S20ytWp4pZIWgESYgohJAgYe+L++XdLYWkL/CpA2BLbsJOGLpa29AaqUKXEkiNLp5e3JG3vQO2wcbVQv6vpta1vjr9JGXImjzP9HIHtNsaVAbuiXb5BHwjfPdSVSut6rLGbdpIsp3IdkAOtmQnT3ZI1lA77CxlsuQB4grMvI6Hetge9ALQDRjfffZwuBFcDqfl4f+XObtvb6r81FlFk6tyIhwIhdAYM8ynTR6ld9W6R3MiUaIpThxFxRqEhv/nOZnu4gQHYp0X/USj4kAgTTj/aW3VnX288sEnId7KxIjZxyTEpYpFEvHEWrx4qRyUk7TM6ns3JohDKM1p/Q9ZsxqQ0M8t1rOch5HGCCGGaRxCwBSpZb1/P4v9fv8zu4Lac5WMU0hGSt7X54Vgdl0eytx7m1IE8dznq02tO4Kh4IVdzuT3wFENwf93naICQhUehBpyCC1MECZJhjCbA8JcWRDWkQthA0UQNlMLYVcNELpMhXCwGRCOMgvCMRZC+MYVCEOGGJZZzrDaCCOIIuKKiyAI4CO4DFlmudVGCHAwPDAJ0A6ohAcUQYmdhyG5j7nzOAEC9+Ae2wgnkAJB1hiWl+rqqqYb7U63Z1wqyoqq6SGeQAgqKCqllzFYHIFUgWK4RmcwBqsLEAx08gJK205CsvsuQMAYQbi1P+uPgLnka1sAEwcgjp096ryun00B12JyIH7a9VAPKNfo0hveGTjuO1eXfFQ8cviCevdInHNuLToRVO76L+edNQz35GXYJXj6230Fdg2Cs2haHFhtijvrLryC8xk6B+04n/nK7Z8ZFWGciQ6cNj9kN2g+ZT4A2wr7i4M/ZM6ZA/jJ+BALEvLiU4rN+OP4cbyD1KHsdabS1MP4U6Z/TTv5a9b5mN7QE4zfhQvjQizIQi8uBXcx/CB8nIObYBp6CN2ALrBjbH83tFGeS0x923stbDqskczYAow8O1e2FPEjMeQPl+A5sydR5Q3ArLfU2cXpp/FftB929wXA7Mz77Q7Bfb7J+5KWTWxu9UPdLhXmX9vtj58yfzj9bqex1cksmpnEGKZvSrGcUr/5Ddln1bo3uyDuH6tTp3N/0NfexLJ6nAK7IuQz7KEf+kb1ktadfDzVU5CGK+fHdz8udQe1NqX84w2fnN+/kid/QL9f+esS8Py6FGnfNJWL0y8I6jnYpKBv/QfDWCLZvH18arMuHzNu1PygPtCImpulU79hPpkuXy5OCPu072uO0oPr11bQhVU9CR4ak1Etd8N4JDhEOMawJS1ca98/DzT3F5WsUHVXwqQDn9c6Ht/rRJ5l5wlaXXrmKpuFjHhW5hm3p1Oj822mKJ5yRsGj5bOIxXPL/mCEalvbEIHqG5Zn+U+xPyme4jHvzdSdaDb10bD+CD3ReE7rgdICMiOPV7B3umZXJMr7R2dfy6QdXqKUxsdnnMijM6rXbfeNR4eMHVJsHU51R09dspVjnqo7G51FbI/7GuqVEYqJmdujySJKrcXE1BPDGR9OESjYOHYloYURQeB0XMKikqqy/oRg+sG4s8R7gY1jQUyIxr6avHgDmRz+HLRtcMOpJ1heCyb7i8A7TjJ3FB95v5VhbaAcN5afKwN+hefCST4c5KL5/DMvLnvEuzKxFDX1z0340MzoKL/IBvJcPjF4vGwrXpnXpnjoodun4dWxzbq+IP5EkrKLf7KUtk4GfEgLi1j58GvtaOltO6eEG0JJk/ndNkZUpnBgS+Ui4uYjWe2ndIKvJd7ouWZjNME0L+0y0zxpgAlvAfA/I31LqWTjFo5ZHHTKAnfPA6Hz38eO/x1RbPf+wNe5CEeaBc/RPZF+XukfUCHwUCHwWCHwYiHwciHwakt5w+HygdNnlOxMcWngWt3DM1VyO/D38azF9y+ozlohszskSY0goPyvCQh7ywZMBMgf+bmOffbNiWOJHWQVSbQGvXK9czf/7NzWrX0t6OhbuG9dI/J8eXfCnYrgq7cIbiE46JDTzrjghtuohnNjlwy+F6++qtLoDHe9xO+5PD4sEIrEEh1Z88sdGhmbeO+bXwiy2fDrkRBcPeDY92nKtBmz5swj51+2A7x6u2gMhMURiCQyhUqjM5jjFkiW2Zx0vfTgwwKhSJxJQprdkpmUKrVGz2SB0PRX+AA1b4Hwy+ldHYLMUf3VD8A/1nE7wO3lrtAYCIsjEElkCpVGZzC5PD4sEIrE0tpg4xzoRjPhxCMVNAbC4ghEEplCpdEZzHFrWM9nc9L10oMPC4QicSYJaXZLZlKq1Bq9Uy2IZh9DI+MyGXb+GTvDml3tojEQFkcgksgUKo3OYHJ5fFggFIml4y1wHX1DI+OTNxGPP3BH7AwigV3QGAiLIxBJZAqVRmcwxy2gA2xOusbjw4IMEYkzSUizWzKTUqXW6HXmG2eccca15KT7V4DKtyADERPOXy4AOR/qjDNYxZHoypQqtUbPpEO4zBcvG84NHUFjICyOQCSRKVQanTE0W5oJ61CFk66XHnxYIBSJM0lIs1syk1Kl1uiNt0ACfUMj41OTQfQwIBFIMKA8h1qYMJ8xZ1cMjYyXAlIRCLHGoLJ7HImuTKlSa/RMngTq3gJhk3q4HXjdKKUZlqXRzK97GnQZoBkdqZ+GRsYtg6bO8zVAgio0BsLiCEQSmUKl0RnMsFY6bE64KwMeHxYIReJMEtLslsykVKk1eh+zMqu1RLa1MI1C8KNKR4blAECLG+7zRTtjeGsXNAbC4ghEEplCpdEZzEvPgBxQaklPfFggFImlnaEGDBgw0PmGqHi6xULMsueQzvznQnmaArxlbQj69b7y02a+MrP2WqExEBZHIJLIFCqNzmByeXxYIBSJpRsAjUBCldxbOGo6+Co34vRTwPbMdUTv7xx0wQ1rXnL9soAF2BWwG2B/QBfgEMChgMMAhwOOABwPEEyQeR6hgaZ/odFoNBqNRqPRaDQajUYbNKLRaDQajTY83LUAAAD4aKoRqnmoJf0t2M3+uixxiEMd5nBHOL79u7uCsMipBAEZBAABWgE5CEPCVMgD8Xmz6/91mnSUFwuPRF7ji3CW0F30aApl333woNA99KLqoc7XWzbBg0KbBxqdnpQfXLqLR4Ik/uOjd/xm2iSnfD8R3g2Cvb7nFcx+XJQ5RLaNh6H+SYkzGL+SQj3Kn/XzBgIvXG/wvxo0BWS/ybhHTWsOoMCzKykpJSQHTFdDipA0ywNyd4R8TrW0rtrz5cykzwV/W+9Hv7A4n50G0VMKN6Ayn7sXqxSh30eAB4tujwcoJVQMQgHCJDHPFA+d52vCh8apC6ErLAXpf6MmXstP+cQxKqHCBpplNz/JG1Dw4tCNcDQJIYWEgLcDIgJejdBMYStnSfm5qWoNyc3bkZlwNRKeHvAMxOZH4PghYZS+4rDSztLO/V3o3OU6t8jzSY86w02aKmK5ZdAJ/lMrW6hWJpWk71ZCxwEqJeetOjFU8kfjbfgkj4pHJ7vvMQjk2Vl6SwoVtkpgwhW/gcl5U3jmyaaRjMpamCSyk1u74ueiiGFmRIAS6f61SKKUXrYLxigj5OSIrDaKg97PZ9yWG2VKLYqCMFfamhHuO1eVNpU3l0izWFqopYhnJmeRiCVrUhMhiiMOjwhbPH0VGk15JtFWvXguowwjq1QoU4Uyb7KS0VKQwVEkEERkFhSFSs4wi6vBYBmf7w2dkAcdULTi60oJiRX07R/mObQ4fKSCyKwjSQ3wnm/JoOfhk0eHhkoEOoPeVp6lHE7Nb3Cz+WsCSs6SIsyX1VXL1R0LPk70AST+AJS9p8tW/zrtnB63kiMEELj4nDiaRNASw/KCHFebLaPd6SHOlaNr0Q3Tx+agPL7gh2d5u+BLSuksDpcvEIokcghGUFxLGimz1WZ3+IOhcKQikayq+dfwzkjLrLZ59ej11aXrd7SQGRH09FUDNkrbZFf2Unly6AjsBzgQ+ZVo3iGwG6P1rdl4ozDv6wFcAEAGdTugCI/4EooGULbXDnfM76QlAP6tuCDBZzluz8wpW1CtRtoMed1gihWVc4E6nT9XQhnM9s7o9s6ceO/CUbRWnk6vGVapASlZp/1nDACB4PbrfVte2KGI5NO4E6W6mdtMn45WEwqDVyogaYigh368zaNAoB6DyVIttlxUJlMrW/cu7NJBjGP84ptifbG52FosFecV1y7e0UJvOa9lc2tGa1UcQ5oiG5cfrZSTS0NgzMTXxdpiY+y5f1b/ATYBALHcjgHsyMKRy0cuG9Y6eofHZgHgm+evPHrlxSu/utK3d773N70rev4rxvK9gABzAFu7pB8g50teCOnrHZ+ud1jvlG2u+d/HTvvXf7a6bbXdVtlujbUeuK/PRmcgBKRIk6USD5+AlIycgpJaPIyFlU3CBOF1pdlnh/2eeD4IC6YLIXfygGJBJaqba42ZMsw2mjyZH/ehFjPZbP/Pa75uPfZ67E4bXHHDVTf1Oh/gMwsc88jFkPjSQ39ZFhz/+cTmkLnVQsf97jd/2ISE4uDjkiBJSAUWNg4JIRExJq30NLSMdO4ySGaXKImL2Wu8RvHIlC5DFp+iCc/tVylTroLfOOFJT1bfwj3hDBHTTDdXExlv0uAIPzA9HHkQAuS6CpXIBD0ImcmSOvYCBPHZB0lSAnauRKYkBBmcn5YM9OtMVnIPeCIyHweYYqgiFHrMqkqK4p7nEAUgqIWf6QyQvQZU/QEcBV0FgKKYOCHsq5C0CeXwFjQc6xh5sjbkKZ8d6gtJKhG67q/6qu/QuBocucNSSoQVtVJqiAxizCvqpZlRgBJJTKNmdzvCiWFaygQ69PJQklDt0MJU8+YuDgxjMQ2OUZAKjbwOkDsaJUcvnPIg1LpmcJPKAjrTxXBkqYBNasGIzjVOVLfqFgUNzGdNqSlAcgkicgULMiQMZ2Q1bCg792WUx9o7FQXLAYa+w1McTcNpaPvOefRSWpiBLnu84dOiUx/ud/p22yLD4igIcfnats5OohwYpiSJldKyINXjtLv7rLs4ujBYPAZBJs3Y7rCJoDA0jlNTrZsss5O+/LNx23f380nMYYwa2JE9CkrTD3TGfucVENUNpTwmD5nznGizHnM6MKlZSdRd6lEf+L38Lpp/tEDVRhwbWAUdbXt/5JQLZ95miyABlMm7IWAyLKTQZxFB8/N5+hOrfOk/JTEzPSn9Pv5S//+6V7pmxZmZhn34JKL4Mfe1auU56hUYZc2vMfvSnhFNtojwN4JVkz4Z2/hP0tCnffTGrOhCTBCJu56GbSLAZtBIZmAp6HHh/O1zlOTllKyIGA7Yn2vLSb+6cT0UFivJmDAaSvYdw9AwjzgEVG8MawTYGvKqZBv6zXljABA1ylTyjmTNjpSI9fJkxe/4RUX/fvwMjGewYdot6RYcIt5dUPpbdS3XFRtRul0OuFO3qbA8ewCj0iWcKHubDoqNdtH+5kFoOYJkK6vUleoozWQsufA9mTUulLq7w2KaKBg5gnY/dOSPAIc04TbtjdgQxyh60N37fBu6uKcL2kNUIxJlL2Kb2fYNUDxIE8WoLaRfBxMGLPiULzvbm1ekgToF6xQnqSQcRIQG1QH8hn34bD6ctQqcUlw8EhAWoetn24CHtetVtfTU8Mmz9yinNc9VOmy5dT5rx2PULDnjwoPrlp4DAas4E4jSvMOX/tbc7MGlTuXqLyrvMWpxK1bcPtwRr/N8mEywVd4sqKaspigQAO5xC17MqDu2VhhMp4DrxilcnaenFm98lmOw+WpOaMosrE1vD1xdN1/zh7+uO2ye+8JCIAGSIYrrXbS+Bkf0bnzmUlN9zcWVfjjpRdna2KNvfY5UfzoziGFIihukpVQXkCOzxUrD3f2MjIWxiX7zqG7ZRaAmGRPiYopNS7epq/3Qz2b8Fi2aqa9nL9nToU+378KGx+g+MepuePUBTBG76MjRCDjbcHIBDrtbifDDqemiGsLojHRGHLIG/Yy+0DuLvb5DK8im6aIc6VuFjdbsp7nie9F1KnkGigXJFkO20GrP6wT7zKxlZ/vOhiZpxg1iq2Iq8msKOj0vNSufeuO6jU3nzboFTKn3xzIEQEn9YZt7Mr/ofdnce7PU3nLWCqcqK9KcviaVho/h8wQy+t4HKK5xOvm+ZgmGQ9gUpBgMCGYAJpSWynDYIET9KsWLtC2CW58ER4SGj822tHNPb6QMXQRvxnFKjb5Ja/mNqXIzHqYOlLyXVaefNZFk8RoS0faWbQ2zkGaq2edc7DB5gMTDKUG24OMldFfFOoaoyRaORVm5DWjkXKfFuzazYHiU6ss6AtCLkvLdMveoTMnIdQlmLdoZv2w4YdLsbGK2raEmCN21h5Zvd5u3OSm9OMbETTPJM/Xg71LjnFnLzJbX9RPrVt0RqYliZsKY393JW368NN1zu9MWuRDcCqdxq6/JaDXWw7cu25a0e7M2kDP2Zua3R6TWSYkDEYVaL4x4ZIsF28lML9tNpXpK/rqR093T2SHG13RXGv7vJphWTd/1Cf4eJI7O5vdeKYlTchyj8uRGuodTs85I1ofHumpO5ZowHNFgg0339Dndpda2UfoyNxqwQJRojIlmim/bKGup/QcuJiVvVd87Q0n5JlLuaREJ12KqTTqr3Jb8bZ0sVnCKM3c1di+6BrImpvdF8HrJv/FHP/+FsV3GlIkhM1VIU6N8oLx1Pu55wCbJo72WebhfP1yfTfkX7VP0EuJS8Glbjfrdgy8d2g0mEzrQbWUMZiG+A1GqvS/LqNcxRFfjr47YLnznHNL2Z3IsBHthvGTCWIIuY/LeGNOp2aTbdChIGWKNv8FCs6TWAc633TPhrV/No2nIIycnPt/TgEYE2WxThfNuuGmXht2lPra5J/uHnuvzSCtklD11IrvQoxY0O8eCc03Ev55rlPm+QhiRsRiDML+HIPpP/v7d8hO4z3HlzWHDQnVJVdX+INR2PaGtS/+whn6zSVnjLePNM0I7fi50mfq0tNWsU+CcrtY0KL+6dWJLmeVlRhEJ+ZLVWSjiETfvZ2Ww2Wjxe/YHk09FDao7VCrvsphTzuspx2KMNmF0hTNuWwiocyr/oA7olE6n2+EOJD2VCsvouvBaVYrXNXzIRJaex/oXNb6fXWm8NtUQHIczFmM+EsXY48vqHCFbDIRrgSAlEzEhzIp1k7PbIwBMYmmL2DKNUROGerLxjogi/poajED3GhwJD/d1xjqyPl3c6RHCZ31B4NLgAPWLWLiu3icODHUoE4bk0AQx6FsnZpzg2BfSea+O830o2RwiJWdhl/Iq5iEa1Ij0+9htS6AxcHGfBUMYe1VBalZufOUhem1H+B7ikU7dzRZku1c3WO2FdWB2rOFIrR4JOoNZH968uILs7c6Woh8UTApX7OMHhMS3nZ8WEsmn3pOZVZnKyJlFcl/iJ8476nnnjiRr+FbMp2FXYtEIIG/thBYVbx3w6PeCrVBQmTOwb61uVnPUtZP2UemgAmuXYzf/uXkL6bZ3g7TiIXJUDKE3zKfTnJHXE8z9ZVG3z20rX9IG0ga2PUR9/2AoluFDN79ZuOKN45w/D0FBePh1UzVf6cNgsWswhPhRTO6r5BvPoectHj1OJsyB7dh5gtLjGj/p2A6WpVfviAX2p1Ll+7fHqrAWXtTeQVitRJQhcc13GLvDEeOqhQ63NMqxmhzEloi3VQjCwy8mNoa8/dPqgtvGcGIDshGKC0xu9nQcB444fZlCG4FLi2LoB9pCM2uGN5tQYYNfN1LPu6VLUakafJueOhCL7Z8+I+DoLaWcXhbSHB3rNSsDhYLgCoe9OxIipuegpVVNNJnPYt9hIVf3WgeoGSagoxDhs/aj9g0+fJ+Kqy4Zn1lCa6NNnns6Zd1k2rTVWRZcKNnzbXwprdj1mPXabS8hFrGsDEm5+RHxBcL26SBXHggP4+VWv1OE4ksdOQFCn6k22+lDX1Sw4P8FRJEXLP5/oXur7Zq/nJgaygOYq9HAgdQMT9ui1dXbY/79qZT/wNZoEnG1OwxQwsbueQR/mmEe1ft/p04fWNgWWdEGhNVDrpqhiYczJzmG28GGhvKD22LV8XV+14E5c4Jrjz+K2GdRuu6aGrJ7DmWXvNO4OhLhcSx0erhN+fN/nayFVElCK0uGYPR8mvE8ZgtSpkjQtB1Ug2Fi/nbRE254vNwJZjS2vo6OAV7OLVkWTsxXWOMfDruwY10k6uaIXPlPNTVfaWz+g16vhU51f4YrVDG10VNLZJ/mU0eKKic+uVoWPsohmGyST0a8pu1Ak46Fcv7uPTU4sZoyx2opVBUnrRnU5LedArFRXtFWP8tYLcINmw4HqnDKGjCpYT3USNGm57Q0aJTK0AwleNh5A30K/aQTEpPsc0lyjn2EGMFk0YgcxQKODJufKbt+Tjspcun+fe6i8iWLgIQ5RD45Z3DVs4bAR68Pea+GB8LEufD13ss7Q75T7vNukPa79yJc+ALreZY94iQOPCt6TgRIjL8vsb3g16RNlmUAO/qC6Tm0kH7KgdvpoSq32VrlCW0Z49K5DMI7yqDeoZvC0QeV/Bne8fBYY52NF5AYWGU2VcFa8ycSESEHnReeDCbyvfOkEgPTGByXUGhrk+0LQi/cqKhlGL6430cKanY3hqFZqdV8cxOpmeNwqOc0kJSpyiBvd20ZW1FT70HdqoYixgNP8WdKh5hN6dkioYMtMQEoHQlDz4+OIMN42fMPAULWksgchx2Z60UOpcKlEMbVakEcnQqJVcE947DYogCq9ENgdTOZGjWvYymvRAl5FaLY5yHFMZ8CgnyQ2/ZOkxFMTK9OnWt3IHN2TiIR6EYZPoyMjtyIQPckFteAj4psUoVLIYjv3KIw7qp8hEm1+S2+8TElON6p41dmPfqmRrCeYK+SrFI25nY517s0khQEeQ4siYxakGqO0uPxMbXoWgJO4A6j1UQbeuzdyU1nJaT4TnjnNfD0y0JbJrTFMziWmFim8HBFYRN8PaJEyFodMttmQ1prCRKJyK8H8ftBYmYjLHnKuMIojnEjFnkTKRdEMFwY/dOkYBjPXu0RwmhIJKsFvqk4KGOVk0U8k6u+YhRw/YL/wvE5PrE+fc6uJ9za9gPx1BhX0RHvTiTNnpTjcrvRBlivbRFtQ1z99Efn5jvPiR3Hx3oCp3O/H8PA9otqtKnezJNi5SqeyY2h3qpm0FqEgzJ6+W6mlqqvGJXRoqfvWOMRqkBXarS4Suoj3DgXZcXgz/ZNPw+WOk/FI8POMZEWa5Jt+Y0qO/Bjuz0r80eWucuKz985UnYjQvu6MOkwDe//6L5rUM/+KRb8goeeS/AUsMBdJDdrc0A/EE8ps8831irgKy18DiPuGE9ONhv4xog9xjfkTLhR+dv7MuUz3Clp44/TDAJLmVBIOEtBwZOIIhCT4HhUIi9XqcX+gQASwFG5u5JvlGASi0eHEm7KJDKNNdiK3+JiTotG47JhT4L/ITjMenUYDvfhfXvgPWrOO9zxdRVdZ1QAgIREsjrLjdMXcU3cruLVHhG4/NLPmounLpzSxlJw8djPeE/f2r4ut2vNLnx299Rrent6Qdol3PHH5o6bnbvNR3+8OMqy9sV1x0HVy53FjqQVuobYlfs+4jQXTlw8of1lLVGqCcgUSDcKr5aiazQwuLOe0AuPPyvI/fk6n/Qlrk5noQ6sf0K5ly/Yq6znB42y7M8LGLtZPy1Sm8GlbqGBzaJEIhYVOwV6f9DY9tCzBzk5QiHH8CRSAU+6qz1m2J9KeXx2urJSJ4LHHPLucFiwOPHgPyfwUW2rm8dBM099MB8fBjhKb36Hv6f9QNKYy6ogmUKhvnRwHTHh6ihrXIjoq+RQSCWHKhfvmH2Ob2KnUEBOF9vyU4zfnyLbOLZwQCeH9bWlhjQkLd6qxUphslRYWNyXOWCuNWTz8LhY6ZEpUDv1wBjVa9B4rRzMHCSlule0j7enbR+U/vB/ACXpbG+2VXz4/voavsReEbPZozErx1ka7i9saERlWT8/q8+i62tVaC1JYjX1KmBMt1TCqsSUhcY4a62xIiFG5bUlCxt+s4kYzS2Xn7hybHGjxWqo34xqAmitSI9IbVyeTSrlWQX7pF3BmrTJqIGiyo4OdARNdABZurlZogmgGmP8yGeQF1LB5dViQlclVpWroNz67EhJrEG1gSaJGfHUOTTaUOKBPPTvedzvW5EyagzqYXXQZjTQUsPpDIFxI9YEuKdovfxkUi/TyK5WmSkL8UTIuYIuZAHyVmONSs3dUbpX7jZ9IH34NfbqwAci7TB4TJPaIV6S0PEqbZBUZoWioiN4ScFTYjRMmbCwWISAifqPBnRP7XLDB3eIVJmz6usz9DwwiXw1c+rUSgfi/Cq7cEUZfXnd3zNarrF0diPECGNW+KveoS+kn32iAutoCr3g2brzUwuYx0qmLh3FmCyaJHMWvs5hBb4NvSScLE4U5VaXZpN3jYcJWiHrZGkJ45YtVwiCPW8Nc6s+psv8XLgnvsSgOwiGaHktL74RmDKQw/qWyXyPme05tTD7g0+R9wOavI+6fnBlFaosFkTjcYCrNISECqKwIsvf/wKn+Cc7XvhOBoxVjE4+fOlNLvdlIQdz235lfMtkfscYcT+MbwE29dbcj4emJ1NIkbQN3KGZvFoF7DWYJG2AFel9RCnYrOKSHA4np6R4Cvsu/UJB0QCdPlBUcCGHsKqlMquWIKxamdSmBl/Tij/qoAuezVChuiJffoPL+VjE9qRDdXBBBJZn+ftvFb7C/J7B+I45RjGY/3H8g6GCA0BiQubxzM8VCGZBD03Gh2DWTs4AWu/ufs2vN5ZPKHpurTf/Jl4VP1dk0+ck2++qC4MXBKaIW68tdxtkNuHtzYl1pJVIyuEIhsrDMcWd+cV3s3ZmPbeCUixMBgIlu6unPQ1MHir9/Ur+1ZP5+Sev0HyYen8E8J74mgV1yx4wx0zrahjcK+T2I7+7R9wHAendfmcOqG0cUqDr8pGwLHxvJAu2PdwJmOibrNeSk8u0IOwz3LdFAmw8IkAAA2FRZK9yIhtEV6vfsa3j7wkE+buj13eI920b+X0+L7/ftkFIgNZqQkRYN2SW11ewWzd+T3xjXVdjBQO1OI4WwLwMzuE0ODChWfulFK3cRktGjXk2quDOYMKX2gnNATjtsIFB5i55VipCq9pWCXRenalg9ZyM0UnJw5XonTXurZ35w5OqIlQVXnPoKtwxqK5e1o2aaWYUnK3+vaUbbLMsH1ptDjZeZXB56h8TaX5lwt73cIj3kKmvx4HnEoSU77QB4suxH2pOrmDUK3XH9AsW6o/V1emPLliQPNbFd+lbF6iP1jlFbT4DRFtluRZXYu/sODLDSCHT42josbjiephckLsks6y8MK4OKzYnGrpQV2gjmmpAN4fD6BZ42YiFuInM4utbmnN9hYa47ykdrsK41yB3CAUupULg4WcTIExEI0K5VykuM11hW+V3wtJi/iYhq5ZV7Lk9d93fUu9Hk1tWWghvIZ9LUmyB2Mbk60Vsrl6PpiyypV+8yoHtBlwVYxkoRhIlKjyb1nnBx0+jIViW1BKyZAhC0fMlcRpBkwUvra+iOAqwMOotZfbfO5ctkWnwnuMw3+P3N9r1qDnuDsko+r217E88PL44yWV+Huq3Z3i9Em08WPmPzES/vI62bPZWhup7FvNdwe56iRQqbKW/nHnxFT1PqtgH9NmDHRkenxD0ptk64eoquNNmo1VdnZgt37WqOlBVVWrfD/lk4hCKyl32yiBpUK565L/3aKMCNjo0asoJl2z9Zmvno0gIFqamANRV4YhjVS4QWOmIViQsmC5AdQZOcs1mbhJWcSuBE6ZZyaqVKpibxCKYpU1AUFJLQJViaolaSWih5HuYYWbUCTq5BX9fbpytVM9QNuxAsx9lT3krVwmCK9c8q9Ee1Hc/XLmfPKghfNoZXYgB6ZoBBm4xLqoZDPR8CNxGR6S+CxWdKSk+UVR4orjkDKh++yf0J6rjl9HLCOIuSmDssGN4avLjjMukYcws4Jn5PB5l4Qk0zeNTo8U3L93u5dVR1HLXU+LpUnGdWMSPc+l0yxUTNc1s+lDaO7dX9+XyTLINMKeYKll7bs/5I+gm3CG1TOLFiEnf7/JxuYTY31BRrwlxm9atEAWVasKqVkg3fkVMrMiuqVVJJK6EpHbRLGwWmJvuXhAznuHcrPkxlyTKM9t17r9UBMVg4HGHAjdbsarCrmEa2SrqX3e2xRsRbpqgOKU42XV+7wI7WpD9ct4JF+Y6hkgDIQmCBMTSEPElZragqMWGHRvBRvqwSUEUaNji+0tMeSNuwv3wlsKv8NUi9+itPbmFPCj7cChbSyHXfBu5/e8dpFfBnPHIQtuBBo9nmtcWsOo83rb8xtf2XKZsTONs9ACNLcgGZP3I7WsBn6c0T3SQFmutfSR49cvsAcePILeRW4j8tvyf03cgO0AHD6lHVMlepBdUfJPjGHlv/q8T815PQvTHZfRSt/Ldkoz8N9yw/K0xoGf2PkrfRy3YRZH9FBiV7kk2g9ZFo91RYbbXrGANDePHR9NEI2OiO/BfqPlhyPnzUM8koYHLsoglLHM0hYFqlohZltJ7XLVYrOZyHKc32mFO7IFwsLuCWWu+zT33rzx/BOlBPvj93Cz/GMwSD73gR7KVtp7czf/IH/cDQPSD3pRjBgA2d0cgU92xuLx9MfhI/TlF6R9Llywc5W9bZBwt/6jnSMB+ldhS0svC6buEwtV0nLXGXALelufMnTs1oJxcXc7Uul1vFyabw2Rx2MCP5TNnKMdngCw4e35vfu6vJ1RMzBhNh6V/Y3hP+lH5YsZlwPt9ES3ju5yC1IoCw7NHxzyXx1xW3dHasjt7sB70s9tNjVFwJUAAErziD/6iVlMPPvlz/n3yl5Q++RB7HmqHKTe0wCO6iKKxQ8PHjMUKxiINgp+D8beyL+MzILUD1KhyTHhD1UNHL9V4RbW+rVYG7zIBu5mAS0zAZE0dM4jG3fO0+RwUZ3AH5/lRzkvjDB0uwy5yJGojzxlYHRs8oQHoxRe48rJjWKrIi3Wbrf2IN0EfGHw9YF/GRw1rKg6MxrbkN2P8iwEpscFTGjDwTWj801jSw+MBmtg82YSWFwODxAYPb6jBB6EWvxFzXgx8wfz50StZNCxLxklru7TXSkezdE6U13X/RjPgEgBnI78+mm/NL/xOv/f4g/5Y60+wGTLA6/0b5uhU/MFov0YMSHBVngYeO/aarOH3nOgNzJQU64c/cZV3dT2CVTUGu0ntMZLWDFmU2flNBIc7YDoS9zwE90yR1ieSJ6zpe2ogbk73vAd/uxy6v4q1WLmj04t8eMTgdzgccf8/jh8BGPX10M2VzsbR3+ELW07g8X9pud03j3PHUX4FgGFAAHrmqf/mdEbYMHk78rt9Ju337RMGMhxti5Fkw+1Bv+R5cVN+r++Q4sYoZt9woQPZ3eBOdLW+GWFDjVJoqjelDSOtFvpr6hSbwbZsu7iP3dzx3BupTuqlgg5lOMQhMxT4ABfX4G02gDS3nwHJGR6Qkx9iu/0Wl6TpCiqo+XtY08f/lvfJ3f12SHPWDVhg1VsnJO+Tu3FUpcZX9iQB9pCxblmRdj9QKOPWUGOsxqayBcR2hYC28MDmhux39axoRsthgJeyFA/I3JaxmvRDfcrhs/AK9CsVisgtZNpYxoP3wJ5m/LZ/a2PlYoi69g8sC3UvhTC5Uo/e2jKrdD7y7PPfmGwqGK7laQGSZOfU3Z4pAchZsDnTMpXQPOX8bmc3PofqZ0HuudJD7J3dzHUDXeRId0B6dQ5bIVU3rHj7wI8srdaCrp15i/7PYXy1f5EQQFDQMcUA6AQA5OlYOWXIV6bWAkvtd9yDMKW55Dz5K2l87/ZNS1vbti53awQNtWXYvAuuZrP31X7e8m3YmfVSZ6bjtvjP4mfhvzA/mc+an1kEhKOEywk3ED5FqCA0E1qdM87Djm3FEYUEiQeIU8QriJvW+zYGjZCcpMWkA7YTtgu267b7dqo4ijyO3ECOkOeSWxNPJV5KvJX4237H/tiBk1SpF+UblCrKZMp0ynxKh3/ef8p/yX/LjzleOF3Ws4t/4Chz4pAQoSjFKCmSJ7vJydInj8kbEhRctEZrb21a622zrdIaMGMSulDGQ3gS7+L/OIMlbCKEBLLAQUFAE1GlatrVpB5t0gE9q7iNmcpKzNpD9rS9Yu/aJ3bK5s1jXvNa3ii3+7GbPNN38F4/6QuecCEsLGV1lpylZ9lZLlZmClOdcF7P+zkdT7zJhS/EBnthy9hWdho7p4GG+mf5c3D+b9VJL9xrro2bxh33n77vVU7QTAqoIcxMvuBdTrNOEmKjPAnPyZu2zr0wzxIrrjZd8C/42RbZ5DTn2eaDfugJz7mi0XvDQLeNBHxqAeHqXw/29rjoT/N/Oah61wO/+GsNmw3HaQ34tABynYPFkf3CQBdMa36f6jDkfZ4qouJul8xL5GL/HvuK2GvEdvxVqGN+Jo1ogoTp8x2y+mHpDnQw6mjgcn7izVV/QUkHz7wr43f/GbZfApuunAskkb+E9hjS4akqUZSYNk7LJVsnPfr+Fe1Of2Hh6Xe73NfFSTDW9vSlWTOPw+HzGDMr30jFb8Bl0fUKUwh/nEAIvPk2u86SdONUb0Kj0y27LyZ7B/Lr4LVAMqxEZ/+Y0qpYQLWn7f4/Hzyz7OUnoPk/BlSzp3cPF3mNUuqMEiBnIq2o4r0sWO11MUQimmSN1hClbz0hE55zaU+CTKVQwLpB9KS2m1ET03lw3/Pau7olkFNIUwwRhLnVvkJbZ7Rb8F22f2XZi4+nX/x4RS8X9Ftzb1rTW5qDCMU2Jbzjuw0a218y9C3lwP8MkrxNhDRp8rG32GGHHXYi5d5lvRYGbHnwygbssGuIQMvoT7T7y8vHUE5zeDQa/xnXwhxiBDyXJDsmsekSUomoVa/M/A8WoCIbDeU0RdKNotkufNl64tKzWXbEV4d7ms16EnwmI26PF/mfXiBJPM2Ac3AHQHrqhlR58W70c5CytJlfJD/hfOZy04hUnzE6961lrZb13SCkZxv/EIhBLvYdwGX9OeD6km1Pa98OFtbU3Sd2/+8y5MrTNC5ZaEqyPzRXCQ1UfEqlpRk5XWUpaaNX8a5fnUFFzR7BMx2/Jp2Ghj2M34/S7p2MKNGN/FQMJ6mW+S21JTlKkqCjN8MLneZwAwSt7hh7vJMmz5uCz7U2kQE7npUEHbfDVWNQBUrkCL9XcXk4dPKBe/jGYA0AsSPrAlMtiDL47BM4TYgBHJPE3UKZoZWIVSBOlP4E+R1j41prHfhpRCzI37cjJ53dn47t8RUeiJHAIlVR8JOVr12iX+l9/5/rK25vjCwz8KFVPQmQ4u2fzQCcgRAjJGBBgBAZajUpIb3dcPC0rq5YK2pNw2y3F8eyVc9lRVkEpF4mBgAVAZLgnTEC534/78wRtealSUMOBBBt+pd9LvxUF5Jb2yLHNZoDiFSA/cMZuIteakeqBVJrbJDt+Ug6OkcSOwPdUOdPouRcfX3AeTKn1ZIsfuEoEdSniSQpIXqQj51yaYHT6wOXTF6XuPLslUPJPeuWZ3D7Dc3C1PdPxE68+sYUdGvDcrhUA9u/rtIz1mNT2UEP5Vsl+IexThNHWypTiXiBwwbffPJjYJeBEJVxNXJ/aS8bVyQYP57xMmc3FLAkwo81KkVQpK2v3r+ZoOreTPiXlwCNx/7T1hToUb1dhGkZMhr10afrg7fCp6EJyJouUPc2KdYCj6lNiJYDQZSPnKiP8qBemh6JVKbHfnd+WBe99/+evRDtFX0R31OT5gtzU7bsoEaPrQv+Xc4J4nSFMlAM3gytfgkIWbc1TeN4LgHHfv4MAsCqSl7iSx9z9xyNyTOptt3cYCd/M1o9stwtGq/2XziaFlJSpWDI71+NGC0roFpRRxxpNDwFPILbJnA23Y9lNdSFR8U9j29FYkWWU60Co68mMfcNdrRZ6ddhaoOCi2+7O6IFXCfO7Qkl9qyJ+biP+Mhykd1GjcvkEaJvaVycocryb+iIRsIAL6wTTYwGbX4De+1sq9b+XGgaMK2C6eBaiwa540+Fbk6S9SWOSwyhZP/9pD8afqqp+PdaXw5xh0B+6AyDLrfVP18Mg7GHN+zq44NsyMxfnQOWqz/i7r6r5GzjRkDvVhyyTu67vbFjSPQZxSJLw2CnTBz+NKxjuM1dQiZ6YWPkZJv9HyBbmiygWH7CEIl3ii5tGE7o9Lpf+UNzM1RVICKa35800FYnwUSQFsgfrDMan+ywl/Vl0PdFT9Pud8/DpvNHHeWEClBQ3okAdAJiCFhrMmPrJBtOy3QDbwbkBlNfpWoEJAbMbLxJsYo+zFZRdanVLVCDgtlhDjwXgbwNQXCngouWur1koTTeAo6+Fk5/ltGiIHV0jL1RId0r5XBEMVTp/qsPmK4iSMhA1NG/Evk90BupmvJPELgAY3Y4CwirEQi/LzjlK1GqpS5gsLRQArnr2SnVEE9FW9S5HeZWfwswnfV/7os5rs64ORKuLkxixaQSgo38rnyh6+IHpYqUtXBNlkeibSOZhmOyhlpRSKcnTalCJU3FsAku3CrjKEanzMoVLYnSxcLrL20tITxTdU3M/GOrKd6mtsKQDeIyHgvALYWJcZe6jn64EAU6AoQrCuLFi/BlQTkfxMvlsXSIjMIYC0uYZrawDQ/FmfRDkQTZoYrcwusFTYVaHwmM8wvbjvnGUejgPvb7jyrgLhbzYXRiGCNhDsfvZ90IfPy1TUxUPxPz7eUf+KsQlg1/2qC8FjzxO3Y0H6hwLpw91AdzGiFxtLF4IR4v0y4C54hY1Tglm50shcipYiEGYPuHUwtoTHX9CjK3VofhBM5hSpa/axgTIWxLK6kqv7ag3G1LTrLZkpLp23P0BYI2KS/CSFtBe0CobYDI1r2XlX4uO0qFvKhYArQKo37VU1VIVhA2j/kypDy/YlrHAZotA6S38CC9sPRRaD4uAtWcGcdRmSpjDLoPzQ4gHOXb6CgiSiTdSwSZXVvcfmPS36tb+YGnwQvJfiEoqfpgA4cZ1AOfWYujA5JrSdTQUXGZBZFDi/lPRu/NfYhFn6BAOcsjmzPGzKFqrnbX8Wzmox8/XPaun165jimOGRfQojxqxzA0RYy8nBkvWthT37wtBnPrVOxjw3W4bfoFVUxuLOLtQGc851aueD5cqnd6WomTWaIspzpgSlcuped0djw7dpNlZjvrv3LkTulwUHmUvG62Na324V81atcSVevFXq+e1EAiE2waNPzQL3EKCHtnQLo93aXyKnJXIO3XvdCVY5vbbPX1FlzNd16j5RJ+tfWDLcoiL5gIU5l1Ar0nhX4DgjJW+qG8b6L2CkJ/E0guqMsl1CRxE2iqnAxUm5jkC5llMFAIMIugl2+Hh6oaGlXuvHn3x5nlALzUrY6muDGjAUmppB10SvxD2S2ZHijcW4XAPHm3aLyJnFfJJa8JPWAJzZg+o8YCClYz0tXa/Q319XXQlBlJhkPoldFzEd4S2WQVzPGY7t/mhnT40twn6DZXMutCc80FLFeTX/4powLpmamYxbJRjep+e+33GPJYGQrTXZoF5LL304sfPP5ksq/T5FAR8Bljcs0v1C/HA1UulIrLWCnXGIWnJzjEpjjya+crta/IgEIaRnyKqcQe/WcdU4iaClHB1jOoQtP5Jino+v0AQGf9/SA1l9OVsCqKriuM1jFw9mgs7P+JviTSQiJLPXdToNJtBcFIJfBem03dHJmGBc426SAxERSrcyQ2YWN79YFR/RewgUSU/o74cejFP2e1POgcvwaYZy0wxoLbMHLlyRnEiLgJcAL+ZGnh+t3qmsri0sLC4qLsQFZ29iFTCTPPUozOqtywIjV0oyBhZUillkq+GBe4btuUNZID2xJlpVUFo7yOeLN5vbWHNdNWHnJeQz8lrK4GQsT5GSf97JmEOo7riPF/ftdYf/xQs+F0+9Xi40s+QKJ6D4LOStvK+w7aODWhlk1Q9dLpEBFx9HyzQiPzotRe4/Vx0cgrDeN90RW6YhVUYyDm8V4dcCSZ9qQHC699tzKY5tHn2NzlIdLeAm03ZJYrUZq5W0dQw388OFQihBwBgvLOgfZPn1zPdese256Nm5Jp9VgnjtVVfUljQ2NQD0pWOyOHdp3Oc0Fle7Y7RbkSej+ZGZd7ZsaJrDG1ob6qqmEhsR1bh53T/c8ulmZ8rlwj7yQczyUvI11p4lLVqKk1KwVnhBAQciLhVVqW1VnQWAQYphaJOCS3HXvVtuuTPPCgje1gSBqpShlXxXBLK/jX4T3DN/1CLpdmkSThxMRnbY1nP5cuhYvvQl1Jo2hZqPNsg0xxMCmp1hpocuw2zIyJlRQgYnZssNk9bs5HLzP7FZZJ7ZSrtQ2p9dT6GZbERXtSJJZIzk127NBQgyYUELxdZPB8kxs3LVysUX5vhsMRj0eiIIPd7qLjO4oWtVV6BohFpn+5XlkRXNom4rD5XLrZqmyEkq+L/oeuVmUIF3mrcWPH+cGWq9PqFC01GZRfjjcYPI3PNBuMYk+mFFKZNZtNfrru3n6kv7FThMea0SQR9LbcrTTGEv1WzZfHUMsFN6f8u+oJ0YM1IZ6xvL4N06dFsBduqWqiz7ATSxhbGENosMC6af9f46+mnh9NAr+1nKzsA+Nquw0PeWDWzE/7mI13TYe2FbZbJ/3doBMyqEWRCMBLj4wBcpqMN3kvAr7OuE/aKjSp5nugkDQ6ueUBs31cMMeXmoAxGv9N7/93JvTSxbu6F2ZZ1mcGItMi9nmPr6K2dbLGmobYuH6ymoMjdNb/IudMACGI4G0A15zRmc41MG01asn7DazfwcpDsevo+6Uyb/BMUflAUCG1kYUe8ILKZTKD8e4CooKixWIVMG3Ul6hmknBBq3LSJZ69PT8C8CNAZJWJo5lFVcGwUQgtSgUIYzi/rQgRpU5oY6pXDba7DMy4/Zy3fSTQnhL4qZ85xoRAgjBCmsSrSJvpwFnSmNFK9uveDMVn9xxtnpC5W2+GdjCCYGm8eKcbUBY541lex1VvjmgKPXUDFVZzjWltWvu5SDTtxg5Kk2siM58r+ogqKb8cw3Zas2A9f7Ccr830EhCx6Ljfm1dTy6I0Kmjgg4+hfXN+GympcEcOh/vWvXstlY2NZqE6F6Y1IuS2Y98pSJah988yijiUGOXTJ666JY2IzuErO/JV1saXWVKhJKcm2rapEYOU2SOxt9dNqDuzyCcw6c1zRBPqi1xw9ps788brzzw1z7ioPF1Zo6gKrcZbKGaTPrQfWbpKd5GNr8UVpfccopytB+F7jfPcdLCwTWxmo4XfZHIG42+Ye7SObZ4T1X0iX252Rq7DqIZYyoJYa0fZ8c7kYCOyKawbk7A3FiRg2rXzR+kOkSphCfeyEsK2qdAK07x4q5S0cJxK+0zt9mVMnlRYkKTXqpTQSGNNRSt/alZIU1xOyJ4TB0pmbdXCcikcpVxqBPw68CJV+kqLEnWhmSBGYPzuhVqaHF7AEmFZ1RaOH0UD//a5Db/8wV4R74V9EYhnEXTlXBhsBoK8DW0tHJkuE7FOshjiyBT4H/4Wd1Eild7JFeiOKVNo1WqRSMoefvmKzoHxuZLldxwtLla8cimm4ikjUgFamSUOwcXcnqKxpIcfPrQpAexrq28mURgTbVhuj5FuBUMT4tXCK2d37qQ43e2Vg8QJuWviXGgmuuSE/LZr3gJKNjnKE3mJNMEqiEId4TvuUq/yTsZQxqXuddud3jWPn8rUjYRsLJXArGdO/TC5SqJWgDIzkVZAvoK7LfUcgjGxqJlga1/IdfLjhtY3tTk6lZziHyCadpMyIBdkx55bGUSQAS73lln9XE75cw7s/bDzof1C4UaOKpC0jI21PNbSWOkpVgCufw8YaXja49SMqRGZLJFPOWSJHg/8DInYn1PwMXuKONlUAF3k9mMEBSQodl1QNDax919v0grT945/L6BFRwD3pLZP1MfKpbUxigaGbQR6XeQ/HEQMH8RCqlCRiI4eL5omtvBehTYhoLckOweahi22sQE2Ed/jdSeteJnS6YBhW/kahcZsoZgTIuajJl9mZQfacUYs4WVbjGIATa8kA6BRNJ2oGfQoHw+VxRlN2VjP1SGybFqy8KgfHRm5Ck3UsKInXdYhQQ+KmGrTAWLtRezEBJcdqpDcKOWRHqVpht4BT5KKyxPhryni9xUalsfdlCRINW6cwzWTn23ll7siuYjMHZEDGTvyhqA3N0TXboHbN1Ao7PAaVYy8XIyouJeecMUdF15lrESXuQSlWQGtiU2FEIMha0cpu6QSQxIUCUXOl5aqEkv/6Otm4wrlTYJHsi66BVTmx3tg8H+5WQKviXTdSDY7UFyCRaUSsGKHoEheLabUOgGjOwcY1lptWapS9RONJ6JBZBsRgUYRgRABWzcJSS5wtkzFNsNAeHuD4LvxwP/KOGcXHBaZP/kC7IOR214hSmlqbjzdy7Ajz/E2hU8rDEm+8T2mZjdB2uslRkymWC2KQL/qHr5kSMZGpbWwUMqyXem9Cq4XTmbjm+QO2cSXIVDlOeshno3wOHQ+hzJsy+u4a4ij9AkxNTI5ynpVVgyfxh2hBoatiFZNFCWqZJqSE170bm+1VSAPGfUEtF4LOkMnozgFqRuqjguf/f0r7RMBFSiXFhnPDijrA7mnMgZCBYZBepT3z9OL6IM7GJDl0pOFz03Za/U1inxQYVXOW1TF0zC72KmM4o2YN4D7o7jYCn6L8SA3ngfJpTJX1V6pSg1OFyXoUIwoRx2ByFYC0GKj7505u5l/FeQ3Z9+DYEtXyQzOKnGpEc2gy+WH6IlU2noq5rhVPLLXpsJka5459SMPomMw4vnoLU2cDruXtxOWRk7eQ8FQkL8d+p6PXYtN0f2G/FUNoGK4WDgAyGCHYsTtqWeNqTh8u5AukQdMa7652jdgyt3tuQ+sZW67iBwU20p5+aGHmxRyg9pAWV95R+PrrNA6fYECAVJUIAEWFGPAZ+kmIpV+EPO8BE//X0wwLu5LGqOUhHg4yltVgWloDThVng0F7ZT6ehhXVlBoZqqh7astcUxLnIGWSAYjZpFbEeE5v5gDLNZ+pZJHLLJRYaglmfHcERcbT8an9Rn3e/EXW3PvY8bcVt5OQLlE/QQwLTfc6OSKi6EN0YSKlILpLrgOHINj88tcm7JkBiySsUhtrihYfrerstqoJRY1wgSirr2kLxYyzA0twGLh+x/TuQsX2Ww8bHtMwITchCQdvW4/zPzficMyoIegj73F0W8lxgHRdpsf3JR81Q3L7KgTRDkk1qwKQ409jWIYGUfbZSZUDYF8+QKQTsGl3eChkZ+zUYAzKKmyphPXXBpb/Wb+RllPuCNdYinHUMEvVonAcwFZkIhIuQ3+ccj3Oi+ES0B5gXFlrQOxIBzXYcixCL07nrNSE5k5LRMdkli1T5Ybk6FgsPSNe5dnwDkYPyIYBAdsrAyOiEhZOg8IyKMQjN6LI5RaT22QPVepWOywyqBGr/bP7p1zWdqBP4/yNs654KpNOvZ9y3DarfLQvpY7FpwLrvna8AtyDUhviWw/KQNeAD875c1VKeDlDZjc38r7HMTdYrN3TV+DLHgB/AeqWRE5uQuTyS9B69LRoSaw+5Teb4C/nHhvySLYIw97YeR7aYK9ATB8bhtU22NFx4ydq7KgWvpXzx2c3e0wrtp7AYhukXvwk4y0ZZwXnjOVpJZkwHNgV7S79nEPdRPmD6P8T17o0PWQsGcx6kXiiOdFdWf4lbKLyv3JJiB4FZh5NwuadhxDFhxJgEATVp7WHXCGQgEmIYIhR+88rRjhmMR0FTfPuDteIftQOZ/SbRPxeEkKPimse1b78TYBj0gZi+VyMV5HE93sNBze3vIfGDdnIgkh5NQYpJWlezf3uFEJsiY2mxoOruUBc3RWVo4PZX6vwsp9Ev9wN0gHwFCrjUVxvkpQu7OxLCUxqNIypUkCkzTRsHqpd2m3HxHZBhElZWowxrgyKzRcA45Bkun0bakGCoixNXgzlTVXoKsXC+BhOTQLYYRgOtpjuPWv76TUIs1qHl0aJJrPeE9uWEnW/YljsLTfgK/XtZ6DIOngdAhw5D5IXQfIVldZXGmRFzp1bCBE3BeptMC+GeQvxcBq4eLvAqtnt7Y1NPjJx1RP+s+sOilc3faGEfS5H/w7JRVqOc3jaXEgHFk9vckCBn7wzX4FdT6+tGle7N19NBLP4K/9tp4ku1A5TC1Gh5EAXfbuKJeE2kjnSElWchGOEmSuST80Ql5MvZz1JHqjKo1UJmD2+F+8lND7WRIV7EyoupAuYC+laVeBZE6WEj5eC8r20jnqEHV5v4PetbO4qISXSRaW8RLJsPSjF80ydLVK079ZtcrZvrRzGaF7RXWJlmY9nqV7PMOTGc8pvI3XsmRDlxAPSBgNcARus3lGGxA9bHmYEjC0suNy3DYgOFYHrgse//714hwD0F5000piAVVASh8DCx5/4kc3RASsdilfYEH7gpTCf22jpMYrKR0QE6IlYHBYVQSNkmxqRk+7Ms3zEFnT+Dj0mqyZ9nvOKDR4yEOYch8jSFasa3Vdk0ZaisiSBKalG5IoMBTdGEGsaWhNtdmUBYFj7zmSbCIqKaGa0/WDcZSqOgcCHE61GXLXo1ITDQuhhcpuh0Qmdz7sABnd+Hn2eWEkOGeu4PsgHb2R5Odn4ATLWrhKk0kZrdxj4DNjKUyEiCNiKcclfwPAX4l52EVaGAa6zcrkojYcktDWnC8C6WeuLV4fZV2fesz70FgbE7tLhnnTdOpbcyZGoif59A9unmaT0ZXG1oxS7xkZfW0Wpt84Mldx8565UGM7dm/FGMDvkQ5XOx/ux7Yu/H8X4WIdFx6huEEBcNtsDUc/vZDz/7809Dn6HCYKp1YZ1Tj5vSLp0ObT1ES0WCyREZI8w7XIV7fktAbZULWxV/Fxw7bF7e2DUrgPxyOQoPgMadWVFUnigUwknSnxvMqhSfk1mYW/rjFEOlQ6qVzGIXSgIRdK8uPb8gYZuhlRU2aorv5le0Rrctc0YajQKKOONaD+LhzyPlenNcsdQaE9e+R5KbWy9tW/THablLMikcgEX4qcRwFD9eKhqoVQGEJ+vN6kEvoiVkSBOsXrPfizHE6sZV1d3am01OsFAYsGtrGopflBxd2ezyq7+BGdF2KfSeIX/Mb607QPjs6rjHdIjxxSndDhInRwwaD+KeigTdKA5HhdQWsEFlqcUut1dyq3n5pbbyTtb86c6uh7f8u1A1JAHfSB8nO9fwOgIUJ/8vKzYHxB+EsQM4S78jQB/vc4+Td7sUHXx18CKEvkVg5Lrx2U3XT/tR/9o8hGEKZYxE+mqDTdz4+P51NrNX7vTCY+yjGf3qzKIrm2uqk30KWl6cSDACAByGBBMUwrfdmQIAjN439HXBi/xksNgDLvz2vh+DXai25Bepp9NOv7WLL/Lkd7k17ITjtZf9XsG3fMDQF6/waU9APmJNkoPQAa6jGjvB087Kaem3ai0pGyBnt4O7OmpDg0utCfV/hcGUj0TymAbXzP13w9sW+9x294TD+XwfrIyWewdOkNZ0JIvGoaimXHMmuVMpNKfI5cFH2yfMPIYF5ySP1mMOgAyp4nkLCoIWrOy/tUOev3y58x48/mv1/I1PJsEGUStZotjqsvedvMmYB6ECACNRgiQYAS6ruJ+UDwSPhSnsdlsbuyAhifjwXq6wPIsNTo2NiPMxnRbzSy0zsKCKQ3VasZt2vgHg00A3qKdJslS/cgBa+3AAkmnO9NehcPGOcO6j8oYj69DIoseufLS9qde+ix82duuKxAmxE8c13b14xPh3nN6iR4cwqUzaEXFIzGIuXHOf2ebrVMLvQ8s2s4uojHXIeztUyXacmBLrpYF7xmXd1XDse4QVIqCzTtXit3+VyJLu9QX7srTpt0i3F0fLbDg35u5uILO3U3fTD0uYHznNWMv8wEoT3ZzmY3NFODtqG8A5bVGWKa4owQceb7CUDQ0fEdENtBY3jnmzmJ5Apgt4GXf1T+2kxjmBpNkbv7RAS1IUFVLYaCUKhAjdGSmKIrzAqGgun08v8eUhuhWSmFmqr8lUJ5QxUKUR6b2jfcjXXUXkgeWUSQpnZaPsZQSfYvFZ2ifBK55+rljqCWrUh1UrVYiIs2z7BHpUJlNOK24xRrG7318zJJGGkpkBVkEkE6lCm06us16uxTLjEh1u97DbE3GjsgHRpdohvb4HsfDfEp8m839Rs8lx32JufJUShXtcVJWqbwDP5eWabAwet15pCSGFYeZ5JZMPcy430EHyhQuv8eOH/uTHT/l/DmFwBf/FLWA/DDiZl225a3uis8HwE8FACBb+ZhOUeuBLOegXckX8KS1BeE24W6DJjvD6Z7CvcoO1uWzvsTNm+JMAEJi66jxw2hELRuIMaDFCc0pR9PoxsLFwmuPJn01AlMyzKYGAZ2ZtbVVQ8uRiFM/kI3cVSKqi8KheqfqOahoG4ib/zK6mHPMyYGVsvB6lNQCQx8UPRo5B1pJBMVmhS4xEcoRrbAvGxCzXcnixOHGSQaOa7AicAq2K2mp5UFMxUkuM40FwjCQe6IZCrICRYfz2sEWhN3qMkgga4KygtTroz+l2nJI09zXRcn8dcyqierRFYb82DdIhtbObA2cDNezkxlDNAFfmiAJKiBAITAY3enizriPSiFvExkzZt5ZhpLmlyVUvK8xbReeEU0zo3CNZrlhK3WPsXbDWJ5t3R7wDPszsDc4/PExHrZoxG+8dxPWw5BDdk8T7g4PXydiSrwxY6InQHEN7SUuzrgbAzkEWjKuTHRnsXcIbdwYdB/sPDWaoxkV78ppTAtrlAFVUhaYCP3ulRC7e3lkrl53XLkQ02HrSCyHMQeHHsvR1Q+rGLBOjj6NrSp7KUS6BJqQAXMTc1LoRm6Uu/ye7eXzV2JoN17LTLTukooXADin0jY+YTvZWAaHAVMfnd+Y3cYCBHZAVUq2JMjqhMAbxFIXx8EJMk2SOyLjBByw2br41mv4CSBW3IpY1KS/w4rGXkgbJiSTqcjZq7Ik8GTg+EMsyKelEeV3P4EQnGcfsCTcjrhgU6dhFM0uxUOCfksnKbRznCGnJXhLEUfhHMo9IXzhJrDBRy14QoqrnAlKlPCVcT4rJpyMPIaVGBLLV4zQbM8M00wVZNJfJo05D2nq1MHkykwwTFlXVncnGMuwyaQtbRrCOcqFjd4R0iUL1PnNTGIwR6RolAE4WPM8lpWuQiUYuWzzMBLqCKENba1hWuyxD4yYgYXK2tJnXWa1StrLlKUaI7NmJilsMXpGrSUq2KVeWi6GUS2UMHOwjY47evoNAHFAnKOqJK+wCsVmVLBs+CyecVEjmrUtWUUygXqKsqyoGRaTE58UuHmDLOQ4C3At6xgQKW5QZOw6ywTWUxyJmYVonP+FGFTEILmcw+bx6qedhjhSF5QfCW7D7MkgXb7g+NlE60wyUof0dIJ07vLoM4+BxxkZBLP7JDDjjgKC/5bQt3+enbHHNfgpI+tslqiB5Ikf7OozCmn9brPSOWSxu2+UbI1BWxye92v+VEOnxa57vGLYFE77RvQu50102xzQuAoRSGK8U2mPrxzlZpngYXm+8kia5R5qFyFSm+rUm2xVm2WqBEyWq0+W43xne9xv9WV/o2i/jeWkIYsviQlkJSEkpaMZCUXO07c0HjxEyRMlDhJ0uKSJU+RMlXqNLbrt9RQtOnSw8uYjNhiaSKzDIHrqfzsH29i4FGQHlPxWNZaJxONkF2N5+H1r/+st8FGm/zpLzvtQiSgTQynesO73vGeDuPc0WkHskzwuq5gmPztsUcoKMl9aqkJMmJBkcnZSsheYkkll5IjZ6m5fCDL+8657LwLepL2dVLkN+EgXOgXHYpaQdQytUh2bmclzh490OY4LUvL6wJpzZz75duK2mi2LMKX+naYW/H5htbJaM79dI3Ehs7gaM9eZ0QreiGBNudCwp5Fp+DkW+TLUHNemogEvl8qJ6WZSq8QKVR9oeqniBRd8vEogSYCRYdKoZlCIdBJh6pDodDM58rTxG5GeWnMcjdE7eMeHK7tJYUbuqEFPgEcenRii3T0wpyuQZncn720tLj6HI4H85qmHPYrkjTxQndbl6kNBq6THdjIh7jM/fVm3G9NIC+l1oZzQWTbyYJ5zErL0vqRHnCVsg8QpwmPbg/SNlHWUotv4ssVuggAAAA=) format('woff2'); }
+
+/* The iPhone's Sotto palette, dark and light (ThemePalettes.swift, sottoDark and sottoLight). */
+:root, [data-theme='dark'] {
+  color-scheme: dark;
+  --tt-canvas: #040507; --tt-surface: #090a0e; --tt-raised: #111316; --tt-overlay: #18191d;
+  --tt-text: #f9fafd; --tt-muted: #a0a5ae; --tt-placeholder: #94979e; --tt-border: #2a2f39;
+  --tt-accent: #47b8a9; --tt-on-accent: #070f0e; --tt-accent-text: #6bc3b6;
+  --tt-bubble: #14171e; --tt-bubble-ink: #f9fafd; --tt-danger-text: #ff7673; --tt-code: #0b0c10;
+  --tt-sheet: #18191d; --tt-island: #000000;
+  --tt-scrim: rgb(0 0 0 / 0.5); --tt-shadow: rgb(0 0 0 / 0.45);
+  /* The page around the phones. */
+  --tt-page: #0d0e11; --tt-page-raised: #17181c; --tt-page-line: #2c2e35; --tt-page-text: #eceef2; --tt-page-muted: #a7abb4; --tt-bezel: #000000;
+}
+[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: #f9f8f5; --tt-surface: #fdfcf9; --tt-raised: #f2f0ec; --tt-overlay: #efece8;
+  --tt-text: #221d17; --tt-muted: #68625b; --tt-placeholder: #6f6961; --tt-border: #d5d0c8;
+  --tt-accent: #007d74; --tt-on-accent: #fdfcf9; --tt-accent-text: #1e665e;
+  --tt-bubble: #ebe7df; --tt-bubble-ink: #221d17; --tt-danger-text: #b5312e; --tt-code: #f3f2ee;
+  --tt-sheet: #fdfcf9; --tt-island: #000000;
+  --tt-scrim: rgb(24 18 10 / 0.3); --tt-shadow: rgb(60 48 30 / 0.2);
+  --tt-page: #e6e3dd; --tt-page-raised: #f4f2ee; --tt-page-line: #cdc8bf; --tt-page-text: #1f1b16; --tt-page-muted: #57524b; --tt-bezel: #16171a;
+}
+:root {
+  /* Derived the way Design.swift derives them: the ink at a low opacity. */
+  --tt-hairline: color-mix(in srgb, var(--tt-text) 10%, transparent);
+  --tt-fill-soft: color-mix(in srgb, var(--tt-text) 7%, transparent);
+  --tt-fill-ring: color-mix(in srgb, var(--tt-text) 18%, transparent);
+  --tt-glass: color-mix(in srgb, var(--tt-surface) 84%, transparent);
+  --tt-menu-gap: color-mix(in srgb, var(--tt-text) 7%, var(--tt-sheet));
+  /* A picture's own pixels and a PDF's page: the same in both themes. */
+  --tt-photo-bg: #1b2431; --tt-photo-bar: #273244; --tt-photo-side: #151c27; --tt-photo-line: #56627a;
+  --tt-photo-accent: #4cc3b2; --tt-photo-warn: #f0a43a; --tt-photo-board: #ece9e1; --tt-photo-ink: #2e2e33; --tt-photo-red: #d9484c;
+  --tt-paper: #fbfaf7; --tt-paper-ink: #24211c; --tt-paper-muted: #5d5850; --tt-paper-line: #dcd8d0; --tt-paper-head: #eeebe5;
+  /* The prototype's own bar, not part of the design. */
+  --tt-proto-bg: #0b0b0d; --tt-proto-text: #f4f4f6; --tt-proto-muted: #b9bcc4; --tt-proto-hover: #24252b; --tt-proto-focus: #6ee7d8;
+  --z: 1;
+}
+body[data-width='375'] { --pw: 375px; --ph: 812px; }
+body[data-width='320'] { --pw: 320px; --ph: 693px; }
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; padding-bottom: calc(150px + env(safe-area-inset-bottom)); background: var(--tt-page); color: var(--tt-page-text); font: 15px/1.5 Figtree, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; -webkit-font-smoothing: antialiased; }
+button, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--tt-accent-text); outline-offset: 2px; }
+svg { display: block; flex: none; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* ---------- the page ---------- */
+.top { max-width: 1240px; padding: 28px 32px 20px; }
+.kicker { margin: 0 0 6px; color: var(--tt-page-muted); font-size: 13px; letter-spacing: .02em; }
+h1 { margin: 0 0 10px; font-size: 28px; font-weight: 650; letter-spacing: -.02em; line-height: 1.2; }
+.lede { margin: 0 0 6px; max-width: 880px; }
+.lede--muted { color: var(--tt-page-muted); }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; margin: 18px 0 8px; }
+.group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.glabel { color: var(--tt-page-muted); font-size: 13px; }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border: 1px solid var(--tt-page-line); border-radius: 11px; background: var(--tt-page-raised); }
+.seg button { min-height: 40px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-page-muted); font-size: 13.5px; font-weight: 500; cursor: pointer; }
+.seg button:hover { color: var(--tt-page-text); }
+.seg button[aria-pressed='true'] { background: var(--tt-page); color: var(--tt-page-text); box-shadow: 0 1px 2px var(--tt-shadow); }
+.plain { min-height: 40px; padding: 0 14px; border: 1px solid var(--tt-page-line); border-radius: 10px; background: transparent; color: var(--tt-page-text); font-size: 13.5px; font-weight: 500; cursor: pointer; }
+.plain:hover { background: var(--tt-page-raised); }
+.scenario { margin: 6px 0 0; max-width: 880px; }
+.notes { display: grid; gap: 10px; max-width: 980px; margin-top: 14px; }
+.pnote { margin: 0; padding: 10px 14px; border: 1px dashed var(--tt-page-line); border-radius: 10px; color: var(--tt-page-muted); font-size: 13.5px; line-height: 1.5; }
+.pnote b { color: var(--tt-page-text); font-weight: 600; }
+.opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; margin-top: 8px; }
+.opt { padding: 10px 12px; border: 1px solid var(--tt-page-line); border-radius: 9px; }
+.opt[data-on='true'] { border-color: var(--tt-accent-text); }
+.opt p { margin: 4px 0 0; }
+
+.board { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 40px 32px; padding: 8px 32px 0; }
+.cell { width: calc((var(--pw) + 20px) * var(--z)); margin: 0; }
+.frame { zoom: var(--z); width: calc(var(--pw) + 20px); padding: 10px; border-radius: 56px; background: var(--tt-bezel); box-shadow: 0 30px 60px -30px var(--tt-shadow); }
+.cap { margin-top: 12px; font-size: 14px; }
+.cap b { display: block; font-weight: 600; }
+.cap span { display: block; color: var(--tt-page-muted); font-size: 13.5px; line-height: 1.45; }
+
+/* ---------- inside the phone ---------- */
+.phone { position: relative; isolation: isolate; display: flex; flex-direction: column; width: var(--pw); height: var(--ph); overflow: hidden; border-radius: 46px; background: var(--tt-canvas); color: var(--tt-text); font: 15.5px/1.45 Figtree, ui-sans-serif, system-ui, -apple-system, sans-serif; }
+.phone :focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; }
+.sb { position: relative; z-index: 45; flex: none; display: flex; align-items: center; justify-content: space-between; height: 50px; padding: 4px 30px 0 40px; font-size: 16px; font-weight: 600; }
+.sb__icons { display: flex; align-items: center; gap: 6px; }
+.island { position: absolute; left: 50%; top: 11px; width: 118px; height: 34px; border-radius: 20px; background: var(--tt-island); transform: translateX(-50%); }
+body[data-width='320'] .sb { padding: 4px 22px 0 30px; }
+body[data-width='320'] .island { width: 100px; }
+.nav { flex: none; display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 4px; height: 44px; padding: 0 14px 0 6px; }
+.nav__back { display: grid; place-items: center; width: 44px; height: 44px; color: var(--tt-accent-text); }
+.nav__title { overflow: hidden; font-size: 16px; font-weight: 600; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.nav__pill { padding: 3px 10px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: var(--tt-fill-soft); color: var(--tt-muted); font-size: 12px; font-weight: 600; }
+.home { position: absolute; left: 50%; bottom: 8px; z-index: 50; width: 128px; height: 5px; border-radius: 3px; background: var(--tt-text); opacity: .85; transform: translateX(-50%); pointer-events: none; }
+
+/* The conversation */
+.convo { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 14px; padding: 8px 16px 14px; overflow-y: auto; scrollbar-width: none; }
+.convo::-webkit-scrollbar { display: none; }
+.spacer { flex: 1 0 0; }
+.msg-user { align-self: flex-end; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; width: calc(100% - 48px); }
+.bubble { max-width: 100%; padding: 10px 14px; border: 1px solid color-mix(in srgb, var(--tt-accent) 12%, transparent); border-radius: 20px 20px 6px 20px; background: var(--tt-bubble); color: var(--tt-bubble-ink); overflow-wrap: anywhere; }
+.msg-agent p { margin: 0; }
+.who { display: flex; align-items: center; gap: 8px; margin: 0 0 6px !important; color: var(--tt-muted); font-size: 12px; font-weight: 600; }
+.mark { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 6px; background: color-mix(in srgb, var(--tt-accent) 22%, transparent); color: var(--tt-accent-text); font-size: 10px; font-weight: 700; }
+
+/* A name cut in the middle, so the extension stays. */
+.cut { display: flex; min-width: 0; white-space: nowrap; }
+.cut__head { min-width: 1em; overflow: hidden; text-overflow: ellipsis; }
+.cut__head:empty { display: none; }
+.cut__tail { flex: none; }
+
+/* Sent photos and files */
+.sphoto { display: block; flex: none; max-width: 100%; padding: 0; overflow: hidden; border: 0; border-radius: 16px; background: var(--tt-raised); cursor: zoom-in; }
+.sphoto > svg { width: 100%; height: 100%; }
+.spills { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; max-width: 100%; margin: 0; padding: 0; list-style: none; }
+.spills > li { display: flex; max-width: 100%; }
+.spill { position: relative; display: flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; height: 36px; padding: 0 12px 0 10px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-fill-soft); color: var(--tt-text); font-size: 13.5px; text-align: left; }
+button.spill { cursor: pointer; }
+button.spill::before { content: ''; position: absolute; inset: -4px 0; }
+.spill > svg { color: var(--tt-muted); }
+.spill__size { flex: none; color: var(--tt-muted); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.shint { margin: 0; color: var(--tt-muted); font-size: 13px; text-align: right; }
+.scards { display: flex; flex-direction: column; gap: 6px; width: min(100%, 280px); margin: 0; padding: 0; list-style: none; }
+.scards > li { display: flex; }
+
+/* File rows: B in the reply box, B's sent cards, and C's sheets */
+.frows { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.frow { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 4px 0 4px 8px; overflow: hidden; border: 0; border-radius: 14px; background: var(--tt-fill-soft); color: var(--tt-text); text-align: left; }
+.scards .frow { min-height: 56px; padding-right: 12px; border: 1px solid var(--tt-hairline); }
+.sheet .frow { padding-right: 4px; }
+.sheet .frow--plain, .sheet button.frow { padding-right: 12px; }
+button.frow { cursor: pointer; }
+.frow > svg { color: var(--tt-muted); }
+.frow__icon { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 9px; background: var(--tt-raised); color: var(--tt-muted); }
+.frow__text { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+.frow__name { font-size: 14.5px; font-weight: 500; }
+.frow__meta { overflow: hidden; color: var(--tt-muted); font-size: 12.5px; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.frow__bar { position: absolute; left: 0; bottom: 0; width: calc(var(--p, 0) * 1%); height: 3px; background: var(--tt-accent); }
+.xbtn { flex: none; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--tt-muted); cursor: pointer; }
+.xbtn:disabled { opacity: .5; cursor: default; }
+
+/* The reply box */
+.dockwrap { position: relative; z-index: 5; flex: none; margin: 2px 10px 26px; }
+.dockwrap--menu { z-index: 22; }
+.dock { padding: 6px; border: 1px solid var(--tt-hairline); border-radius: 26px; background: var(--tt-glass); -webkit-backdrop-filter: blur(20px) saturate(1.4); backdrop-filter: blur(20px) saturate(1.4); box-shadow: 0 8px 18px -6px var(--tt-shadow); }
+.dock--full { border-radius: 22px; }
+.dock:has(.field:focus) { border-color: color-mix(in srgb, var(--tt-accent) 55%, transparent); box-shadow: 0 0 18px -2px color-mix(in srgb, var(--tt-accent) 35%, transparent); }
+.dock__row { display: flex; align-items: flex-end; gap: 8px; }
+.dock__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.dock__body > :first-child:not(.field) { margin-top: 4px; }
+.dock__top { display: flex; flex-direction: column; gap: 6px; padding: 2px 0 6px; }
+.dock__note { padding: 0 8px 6px; }
+.field { display: block; width: 100%; min-height: 44px; max-height: 154px; margin: 0; padding: 11px 0; overflow-y: auto; border: 0; outline: 0; resize: none; background: transparent; color: var(--tt-text); font: 16px/22px Figtree, ui-sans-serif, system-ui, -apple-system, sans-serif; }
+.field::placeholder { color: var(--tt-placeholder); opacity: 1; }
+.field:focus-visible { outline: 0; }
+.field:disabled { color: var(--tt-muted); }
+.rb { flex: none; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: var(--tt-raised); color: var(--tt-text); cursor: pointer; }
+.plus[aria-expanded='true'] { background: var(--tt-overlay); box-shadow: inset 0 0 0 2px var(--tt-accent); }
+.plus:disabled { color: var(--tt-muted); cursor: default; }
+.send { background: var(--tt-fill-soft); color: var(--tt-muted); }
+.send--on { background: var(--tt-accent); color: var(--tt-on-accent); }
+.send[aria-disabled='true'] { cursor: default; }
+.spin { width: 18px; height: 18px; border: 2.5px solid color-mix(in srgb, var(--tt-on-accent) 30%, transparent); border-top-color: var(--tt-on-accent); border-radius: 50%; }
+.notice { margin: 0; color: var(--tt-danger-text); font-size: 13.5px; line-height: 1.4; overflow-wrap: anywhere; }
+
+/* Photos waiting in the box, at their own shape, 88 pt tall */
+.strip { display: flex; gap: 6px; margin: 0; padding: 0; overflow-x: auto; list-style: none; scrollbar-width: none; }
+.strip::-webkit-scrollbar { display: none; }
+.thumb { position: relative; flex: none; height: 88px; overflow: hidden; border-radius: 12px; background: var(--tt-surface); }
+.thumb > svg.shot { width: 100%; height: 100%; }
+.veil { position: absolute; inset: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--tt-canvas) 55%, transparent); }
+.thumb__x { position: absolute; top: 0; right: 0; display: flex; align-items: flex-start; justify-content: flex-end; width: 44px; height: 44px; padding: 5px; border: 0; background: transparent; cursor: pointer; }
+.xdot { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: color-mix(in srgb, var(--tt-text) 85%, transparent); color: var(--tt-canvas); }
+
+/* Progress */
+.ring { flex: none; display: block; width: 18px; height: 18px; border-radius: 50%; background: conic-gradient(var(--tt-accent) calc(var(--p, 0) * 1%), var(--tt-fill-ring) 0); -webkit-mask: radial-gradient(circle, transparent 5px, var(--tt-text) 5.5px); mask: radial-gradient(circle, transparent 5px, var(--tt-text) 5.5px); }
+.ring--lg { width: 28px; height: 28px; -webkit-mask: radial-gradient(circle, transparent 9px, var(--tt-text) 10px); mask: radial-gradient(circle, transparent 9px, var(--tt-text) 10px); }
+.bar { display: block; height: 4px; margin: 12px 0 8px; overflow: hidden; border-radius: 2px; background: var(--tt-fill-ring); }
+.bar > span { display: block; width: calc(var(--p, 0) * 1%); height: 100%; background: var(--tt-accent); }
+
+/* A: pills */
+.pills { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.pill { display: flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0; height: 36px; padding-left: 8px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-fill-soft); font-size: 13.5px; }
+.pill__icon { display: grid; color: var(--tt-muted); }
+.pill__size { flex: none; color: var(--tt-muted); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pill__x { position: relative; flex: none; display: grid; place-items: center; width: 40px; height: 34px; padding: 0; border: 0; border-radius: 0 9px 9px 0; background: transparent; color: var(--tt-muted); cursor: pointer; }
+.pill__x::before { content: ''; position: absolute; inset: -5px 0 -5px -4px; }
+.pill__x:disabled { opacity: .5; cursor: default; }
+
+/* C: the stack chip */
+.stack { display: flex; align-self: flex-start; align-items: center; gap: 6px; max-width: 100%; min-height: 44px; padding: 0 8px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-fill-soft); color: var(--tt-text); font-size: 14px; text-align: left; cursor: pointer; }
+.msg-user .stack { align-self: flex-end; }
+.stack__icon { display: grid; place-items: center; width: 20px; color: var(--tt-muted); }
+.stack__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stack__text b { font-weight: 600; }
+.stack > svg:last-child { color: var(--tt-muted); }
+
+/* The + menu */
+.menu { position: absolute; left: 0; bottom: calc(100% + 8px); width: 250px; max-width: 100%; overflow: hidden; border: 1px solid var(--tt-hairline); border-radius: 14px; background: var(--tt-sheet); box-shadow: 0 20px 50px var(--tt-shadow); }
+.menu__group + .menu__group { border-top: 8px solid var(--tt-menu-gap); }
+.mi { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 48px; padding: 0 16px; border: 0; background: transparent; color: var(--tt-text); font-size: 17px; text-align: left; cursor: pointer; }
+.mi + .mi { border-top: 1px solid var(--tt-hairline); }
+.mi:hover { background: var(--tt-fill-soft); }
+.mi:focus-visible { outline-offset: -2px; }
+.mi[aria-disabled='true'] { color: var(--tt-muted); cursor: default; }
+.mi[aria-disabled='true']:hover { background: transparent; }
+.mi__why { margin: 0; padding: 2px 16px 12px; color: var(--tt-muted); font-size: 13px; line-height: 1.4; }
+
+/* Sheets: the Files picker stand-in and C's lists */
+.scrim { position: absolute; inset: 0; z-index: 20; background: var(--tt-scrim); }
+.scrim--clear { background: transparent; }
+.sheet { position: absolute; left: 0; right: 0; top: 56px; bottom: 0; z-index: 30; display: flex; flex-direction: column; border-radius: 14px 14px 0 0; background: var(--tt-sheet); box-shadow: 0 -12px 40px var(--tt-shadow); }
+.sheet--short { top: auto; max-height: calc(100% - 120px); }
+.grabber { flex: none; width: 36px; height: 5px; margin: 6px auto 0; border-radius: 3px; background: var(--tt-fill-ring); }
+.sheet__bar { flex: none; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 4px; padding: 2px 6px; border-bottom: 1px solid var(--tt-hairline); }
+.sheet__bar > :first-child { justify-self: start; }
+.sheet__bar > :last-child { justify-self: end; }
+.sheet__title { margin: 0; font-size: 17px; font-weight: 600; text-align: center; white-space: nowrap; }
+.tbtn { min-height: 44px; padding: 0 10px; border: 0; border-radius: 10px; background: transparent; color: var(--tt-accent-text); font-size: 17px; cursor: pointer; }
+.tbtn--strong { font-weight: 600; }
+.tbtn:disabled { color: var(--tt-muted); cursor: default; }
+.sheet__scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 12px; }
+.sheet__foot { flex: none; margin: 0; padding: 10px 16px 30px; border-top: 1px solid var(--tt-hairline); color: var(--tt-muted); font-size: 13px; text-align: center; }
+.sheet__foot--tight { padding-bottom: 10px; }
+.sheet__actions { flex: none; padding: 0 12px 30px; }
+.wide { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 48px; border: 0; border-radius: 14px; background: var(--tt-fill-soft); color: var(--tt-accent-text); font-size: 16px; font-weight: 600; cursor: pointer; }
+.wide:disabled { color: var(--tt-muted); cursor: default; }
+.pk__group { margin: 12px 4px 6px; color: var(--tt-muted); font-size: 13px; font-weight: 600; }
+.pk__group:first-child { margin-top: 4px; }
+.pk__list { margin: 0; padding: 0; overflow: hidden; border-radius: 12px; background: var(--tt-fill-soft); list-style: none; }
+.pk { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 60px; padding: 8px 12px; border: 0; background: transparent; color: var(--tt-text); text-align: left; cursor: pointer; }
+.pk__list li + li .pk { border-top: 1px solid var(--tt-hairline); }
+.pk:focus-visible { outline-offset: -2px; }
+.pk__check { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border: 1.5px solid var(--tt-muted); border-radius: 50%; color: var(--tt-on-accent); }
+.pk[aria-pressed='true'] .pk__check { border-color: var(--tt-accent); background: var(--tt-accent); }
+.pk__tile { flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; width: 34px; height: 42px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: var(--tt-raised); color: var(--tt-muted); }
+.pk__tile b { font-size: 8.5px; font-weight: 700; letter-spacing: .04em; }
+.pk__text { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+.pk__name { overflow: hidden; font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.pk__meta { color: var(--tt-muted); font-size: 13px; }
+
+/* Quick Look */
+.look { position: absolute; inset: 0; z-index: 40; display: flex; flex-direction: column; background: var(--tt-surface); }
+.look__bar { flex: none; display: grid; grid-template-columns: 72px minmax(0, 1fr) 72px; align-items: center; padding: 50px 6px 6px; border-bottom: 1px solid var(--tt-hairline); background: var(--tt-sheet); }
+.look__bar > .tbtn { justify-self: start; }
+.look__title { min-width: 0; display: flex; flex-direction: column; align-items: center; }
+.look__title h2 { max-width: 100%; margin: 0; font-size: 15px; font-weight: 600; }
+.look__title span { color: var(--tt-muted); font-size: 12px; }
+.look__body { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; padding: 18px 16px 40px; overflow: auto; }
+.look__wait { width: min(260px, 100%); margin: auto; text-align: center; }
+.look__wait p { margin: 0; }
+.look__wait .muted { color: var(--tt-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.look__text { width: 100%; margin: 0; padding: 14px; border-radius: 12px; background: var(--tt-code); color: var(--tt-text); font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.look__none { display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 260px; margin: auto; color: var(--tt-muted); text-align: center; }
+.look__none p { margin: 0; }
+.look__none b { color: var(--tt-text); font-weight: 600; overflow-wrap: anywhere; }
+.look__photo { width: 100%; margin: auto 0; overflow: hidden; border-radius: 4px; }
+.look__photo > svg { width: 100%; height: auto; }
+.paper { display: flex; flex-direction: column; gap: 7px; width: min(320px, 100%); aspect-ratio: 8.5 / 11; padding: 22px 20px; border-radius: 3px; background: var(--tt-paper); color: var(--tt-paper-ink); font-size: 10px; line-height: 1.4; box-shadow: 0 8px 24px var(--tt-shadow); }
+.paper__h { font-size: 15px; font-weight: 700; }
+.paper__sub, .paper__pg { color: var(--tt-paper-muted); }
+.paper__sec { margin-top: 6px; font-size: 11px; font-weight: 700; }
+.paper__pg { margin-top: auto; text-align: center; }
+.pl { display: block; height: 5px; border-radius: 3px; background: var(--tt-paper-line); }
+.paper table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.paper th, .paper td { padding: 3px 4px; border-bottom: 1px solid var(--tt-paper-line); text-align: right; }
+.paper th:first-child, .paper td:first-child { text-align: left; }
+.paper th { background: var(--tt-paper-head); font-weight: 600; }
+
+/* ---------- the prototype's variant bar (not part of the design) ---------- */
+.vbar { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom)); z-index: 100; display: flex; align-items: center; gap: 6px; width: min(660px, calc(100% - 20px)); padding: 6px; border-radius: 18px; background: var(--tt-proto-bg); color: var(--tt-proto-text); box-shadow: 0 12px 36px var(--tt-shadow); outline: 1px solid color-mix(in srgb, var(--tt-proto-text) 14%, transparent); transform: translateX(-50%); }
+.vbar button { flex: none; width: 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; color: inherit; font-size: 18px; cursor: pointer; }
+.vbar button:hover { background: var(--tt-proto-hover); }
+.vbar button:focus-visible { outline: 2px solid var(--tt-proto-focus); outline-offset: 1px; }
+.vbar__lab { flex: 1; min-width: 0; line-height: 1.3; text-align: center; }
+.vbar__lab b { display: block; font-size: 14px; font-weight: 600; }
+.vbar__lab span { display: block; color: var(--tt-proto-muted); font-size: 12.5px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .spin { animation: spin .8s linear infinite; }
+  .menu.is-new { animation: pop .16s ease-out; }
+  .sheet.is-new { animation: rise .26s cubic-bezier(.2, .8, .2, 1); }
+  .look.is-new { animation: fade .2s ease-out; }
+  .seg button, .mi, .plain, .vbar button { transition: background-color 120ms ease, color 120ms ease; }
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pop { from { opacity: 0; transform: scale(.94); transform-origin: bottom left; } }
+@keyframes rise { from { transform: translateY(100%); } }
+@keyframes fade { from { opacity: 0; } }
+
+/* On a phone the page drops the bezel, so the prototype looks the way it would on the device. */
+@media (max-width: 460px) {
+  .top { padding: 18px 16px 12px; }
+  .board { gap: 28px; padding: 0; }
+  .cell { width: 100%; }
+  .frame { zoom: 1; width: auto; padding: 0; border-radius: 0; background: transparent; box-shadow: none; }
+  .phone { width: min(var(--pw), 100vw); margin: 0 auto; border-radius: 0; }
+  .cap { padding: 0 16px; }
+}
+@media (pointer: coarse) { .seg button, .plain { min-height: 44px; } }
+</style>
+</head>
+<body data-width="375">
+<header class="top">
+  <p class="kicker" id="kicker"></p>
+  <h1 id="vname"></h1>
+  <p class="lede" id="thesis"></p>
+  <p class="lede lede--muted" id="good"></p>
+  <p class="lede lede--muted" id="cost"></p>
+  <div class="controls" id="controls" aria-label="Prototype controls"></div>
+  <p class="scenario" id="scenario"></p>
+  <div class="notes" id="notes"></div>
+</header>
+<main class="board" id="board" aria-label="The thread on the iPhone, step by step"></main>
+<nav class="vbar" aria-label="Variants">
+  <button type="button" id="prev" aria-label="Previous variant">&larr;</button>
+  <span class="vbar__lab"><b id="vlab"></b><span id="vline"></span></span>
+  <button type="button" id="next" aria-label="Next variant">&rarr;</button>
+</nav>
+<script>
+'use strict'
+const KB = 1024, MB = 1024 * 1024
+const RATE = 3 * MB // roughly what a phone sends its computer each second, for the stand-in progress
+const LIMIT = { count: 8, file: 25 * MB, total: 50 * MB }
+const COMPUTER = 'Studio PC'
+const SAY = {
+  large: 'Each file must be 25 MB or smaller. Nothing was attached. Choose a smaller file.',
+  many: 'Attach up to 8 files at a time. Nothing was attached.',
+  total: 'Attachments must total 50 MB or less. Nothing was attached. Remove a file or choose smaller ones.',
+  host: 'This computer cannot keep files yet. Update Sotto there, then attach them again. Nothing was attached.',
+  hostMenu: 'This computer cannot keep files yet. Update Sotto there to attach them.',
+  images: 'This model does not read images.',
+  full: 'A reply can carry 8 attachments.',
+  sending: 'Your reply is being sent.',
+}
+const FILES = {
+  f1: { name: 'quarterly-report.pdf', size: 2.4 * MB, when: 'Today, 08:12', group: 'Today' },
+  f2: { name: 'server.log', size: 180 * KB, when: 'Today, 07:58', group: 'Today' },
+  f3: { name: 'build-output.zip', size: 8.7 * MB, when: 'Today, 07:40', group: 'Today' },
+  f4: { name: 'notes.txt', size: 3 * KB, when: 'Today, 07:31', group: 'Today' },
+  f5: { name: 'screen-recording.mov', size: 64 * MB, when: 'Yesterday', group: 'Earlier' },
+  f6: { name: 'schema.sql', size: 46 * KB, when: 'Yesterday', group: 'Earlier' },
+  f7: { name: 'config.yml', size: 2 * KB, when: 'Oct 21', group: 'Earlier' },
+  f8: { name: 'crash-trace.txt', size: 12 * KB, when: 'Oct 20', group: 'Earlier' },
+}
+const ORDER = Object.keys(FILES)
+const DRAFT_TEXT = 'Here’s the report, last night’s log and the build. Section 3 doesn’t match the log.'
+const FIRST_REPLY = 'Section 3 counts orders the log shows as refunded. I’m checking the query that builds it.'
+const FILE_TEXT = {
+  'server.log': '2026-10-23 23:58:02 INFO  orders.sync  started, 2026-07-01 to 2026-09-30\n2026-10-23 23:58:04 INFO  orders.sync  fetched 48,213 orders\n2026-10-23 23:58:05 WARN  refunds      412 refunds arrived after their order closed\n2026-10-23 23:58:05 INFO  dashboard    q3 totals rebuilt from orders only\n2026-10-23 23:58:06 INFO  orders.sync  done in 4.1 s',
+  'notes.txt': 'Q3 check\n- Section 3 total: 1,284,330\n- The log says 412 refunds landed late\n- Does the dashboard take refunds off?',
+  'schema.sql': 'create table refunds (\n  id integer primary key,\n  order_id integer not null,\n  amount_cents integer not null,\n  created_at text not null\n);',
+  'config.yml': 'dashboard:\n  quarter: 2026-Q3\n  net_refunds: false\n  currency: USD',
+  'crash-trace.txt': 'Thread 0 crashed:\n0  OrdersSync  reconcile(_:) + 212\n1  OrdersSync  run() + 88\n2  libdispatch  _dispatch_call_block_and_release + 32',
+}
+
+const STATES = {
+  ready: { label: 'Ready', line: 'one photo and three files, and nothing going wrong.' },
+  adding: { label: 'Adding', line: 'a file is still on its way to the computer.' },
+  large: { label: 'One too large', line: 'the user chose a 64 MB recording with two other files.' },
+  many: { label: 'Too many', line: 'the reply holds six attachments, and the user chose three more.' },
+  host: { label: 'Can’t keep files', line: 'Studio PC runs a Sotto that keeps photos but not files.' },
+  textonly: { label: 'Text-only model', line: 'the thread’s model reads text only, so it takes files but not photos.' },
+}
+const VARIANTS = {
+  A: {
+    name: 'Pills',
+    line: 'Files are one-line pills under the photos, inside the words’ column, as on the desktop.',
+    thesis: 'Photos wait as they do today. Under them, each file is a one-line pill: a type icon, the name cut in the middle so the extension stays, the size and a remove button. Sent files are the same pills, standing above your words.',
+    good: 'Good at: a file looks the same on the iPhone as on the desktop. Three files take two or three short lines.',
+    cost: 'Costs: at 320 pt the words’ column is about 180 pt wide, so most names are cut to a few letters and the extension. A file on its way has room only for a percentage.',
+  },
+  B: {
+    name: 'Rows',
+    line: 'Each file is a full-width row across the top of the reply box, with its type and size.',
+    thesis: 'The reply box opens up: the photos, then one row per file, run the full width of the box above the + button, the words and Send. A row has an icon, the name, its type and size, and a remove button. Sent files are the same rows, as cards above your words.',
+    good: 'Good at: room for the whole name, the type and progress in words (“Sending · 3.9 of 8.7 MB”). The easiest of the three to read and to press.',
+    cost: 'Costs: three files add about 170 pt, so on a small phone the thread above shrinks to a few lines. Photos move out of the words’ column, a small change from the October 3 pick.',
+  },
+  C: {
+    name: 'Stack',
+    line: 'Files fold into one chip, “3 files · 11.3 MB”, that opens a sheet listing them.',
+    thesis: 'Photos wait as they do today. However many files there are, they fold into one chip under the photos: “3 files · 11.3 MB”. A press opens a sheet that lists them with remove buttons and Add files. Sent files are one chip too, opening the same list.',
+    good: 'Good at: the reply box stays almost as small as today whatever is attached, and the sheet has room for whole names and the limits.',
+    cost: 'Costs: what is attached is one press away, before and after sending. Removing a file takes two presses, and a refusal points at a chip rather than at a file.',
+  },
+}
+const SCENES = [
+  { key: 'menu', title: 'The + menu' },
+  { key: 'picker', title: 'Choosing files' },
+  { key: 'draft', title: 'Waiting to send' },
+  { key: 'sent', title: 'In the thread' },
+  { key: 'look', title: 'Opened in Quick Look', only: 'quicklook' },
+]
+const OPEN_TEXT = {
+  quicklook: `A press on a sent file brings it from ${COMPUTER}, up to 25 MB, with progress, then shows it in the iOS Quick Look preview, which reads PDFs, text and pictures. It needs a new host request, since attachment-content answers for images only (ADR-0131), and the file on the phone while it is open: Quick Look reads a file, and today nothing a reply carries is written to disk on the iPhone. It would sit in the app’s temporary folder and go when the preview closes.`,
+  desktop: `Nothing new on the host or the phone. A sent file shows its name, type and size in the variant’s shape and says it opens on ${COMPUTER}, as the iPhone says today with “(open on the desktop)”. The photo above it still opens full screen.`,
+}
+const STATE_NOTES = {
+  ready: 'Try it in any phone: press +, choose Files, pick a few, then Open. screen-recording.mov (64 MB) is over the limit, and all eight with a photo is too many.',
+  adding: 'Held at 45% so you can look at it. Files you add yourself go up live, and Send waits for them, as it waits for photos today.',
+  large: 'Press Open in phone 2 to get the same refusal live.',
+  many: 'Press Open in phone 2 to get the same refusal live.',
+  host: '<b>Wording to settle.</b> The refusal ends “then attach them again”, which reads well after a choice was refused but not in the menu, before any choice. The menu here says “Update Sotto there to attach them.” Today’s photo reason names the computer instead: “Update Sotto on Studio PC to send photos from this iPhone.”',
+  textonly: '<b>Wording to settle.</b> Today the iPhone says “This thread’s model can’t take photos. Change the model on Studio PC to attach them.” This state uses the desktop’s shorter sentence, “This model does not read images.” One of them should win on both.',
+}
+
+/* ---------- icons ---------- */
+const FILE_PATH = '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>'
+const P = {
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  up: '<path d="M12 19V5"/><path d="M5 12l7-7 7 7"/>',
+  x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  back: '<path d="M15 18l-6-6 6-6"/>',
+  chev: '<path d="M9 6l6 6-6 6"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  photo: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/>',
+  camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+  folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  file: FILE_PATH,
+  text: FILE_PATH + '<path d="M9 13h6M9 17h6M9 9h1"/>',
+  code: FILE_PATH + '<path d="M10 12.5L8 15l2 2.5M14 12.5l2 2.5-2 2.5"/>',
+  archive: FILE_PATH + '<path d="M11 4v1.5M11 8v1.5M11 12v1.5"/><circle cx="11" cy="17" r="1.6"/>',
+  video: '<rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10.5l5-3v9l-5-3z"/>',
+  stack: '<path d="M9 3h6l4 4v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M15 3v4h4"/><path d="M4 7v12a2 2 0 0 0 2 2h8"/>',
+}
+const ic = (n, s = 20, w = 2) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${P[n]}</svg>`
+const SIGNAL = '<svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor" aria-hidden="true" focusable="false"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5" width="3" height="7" rx="1"/><rect x="10" y="2" width="3" height="10" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>'
+const BATTERY = '<svg width="27" height="13" viewBox="0 0 27 13" aria-hidden="true" focusable="false"><rect x=".5" y=".5" width="23" height="12" rx="3.5" fill="none" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="17" height="9" rx="2" fill="currentColor"/><rect x="25" y="4.5" width="1.5" height="4" rx=".75" fill="currentColor" opacity=".4"/></svg>'
+/* Stand-in photos: a dashboard screenshot and a whiteboard, drawn from the photo tokens. */
+function shot(look) {
+  if (look === 'board') return '<svg class="shot" viewBox="0 0 90 120" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false"><rect width="90" height="120" style="fill:var(--tt-photo-board)"/><path d="M12 24h40M12 34h58M12 44h30" stroke-width="3" stroke-linecap="round" style="stroke:var(--tt-photo-ink)"/><circle cx="58" cy="80" r="16" fill="none" stroke-width="3" style="stroke:var(--tt-photo-red)"/><path d="M14 72l18 16M32 72L14 88" stroke-width="3" stroke-linecap="round" style="stroke:var(--tt-photo-ink)"/></svg>'
+  return '<svg class="shot" viewBox="0 0 160 120" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false"><rect width="160" height="120" style="fill:var(--tt-photo-bg)"/><rect width="160" height="14" style="fill:var(--tt-photo-bar)"/><rect y="14" width="34" height="106" style="fill:var(--tt-photo-side)"/><rect x="42" y="22" width="50" height="6" rx="3" style="fill:var(--tt-photo-line)"/><rect x="42" y="32" width="32" height="4" rx="2" style="fill:var(--tt-photo-line)"/><path d="M44 102L66 84L86 90L108 62L128 72L152 40" fill="none" stroke-width="3" style="stroke:var(--tt-photo-accent)"/><rect x="112" y="22" width="40" height="13" rx="3" style="fill:var(--tt-photo-warn)"/><rect x="42" y="108" width="110" height="1.5" style="fill:var(--tt-photo-line)"/></svg>'
+}
+
+/* ---------- small helpers ---------- */
+const $ = id => document.getElementById(id)
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+// The desktop's rule (formatAttachmentSize): bytes, whole KB, then MB with one decimal under 10.
+function size(bytes) {
+  if (bytes < KB) return `${Math.round(bytes)} B`
+  if (bytes < MB) return `${Math.max(1, Math.round(bytes / KB))} KB`
+  const mb = bytes / MB
+  return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`
+}
+function partSize(item) {
+  const a = size(item.size * item.progress), b = size(item.size)
+  return a.endsWith(' MB') && b.endsWith(' MB') ? `${a.slice(0, -3)} of ${b}` : `${a} of ${b}`
+}
+// A total is a new number the desktop never shows, so it keeps one decimal up to 100 MB: "3 files · 11.3 MB".
+function totalSize(bytes) {
+  if (bytes < 10 * MB || bytes >= 100 * MB) return size(bytes)
+  return `${(bytes / MB).toFixed(1).replace(/\.0$/, '')} MB`
+}
+const pct = item => Math.round(item.progress * 100)
+const ext = name => { const m = /\.([^./]+)$/.exec(name); return m ? m[1].toUpperCase() : 'FILE' }
+function kindIcon(name) {
+  const e = ext(name).toLowerCase()
+  if (['zip', 'gz', 'tgz', 'tar', '7z', 'rar'].includes(e)) return 'archive'
+  if (['sql', 'yml', 'yaml', 'json', 'js', 'ts', 'py', 'swift', 'sh'].includes(e)) return 'code'
+  if (['mov', 'mp4', 'm4v'].includes(e)) return 'video'
+  if (['pdf', 'txt', 'log', 'md', 'csv', 'rtf'].includes(e)) return 'text'
+  return 'file'
+}
+/** A name as a head that may be cut and a tail that keeps the extension and two letters before it. */
+function cut(name, cls = '') {
+  const dot = name.lastIndexOf('.')
+  const at = dot > 0 ? Math.max(0, dot - 2) : Math.max(0, name.length - 4)
+  return `<span class="cut ${cls}" title="${esc(name)}"><span class="cut__head">${esc(name.slice(0, at))}</span><span class="cut__tail">${esc(name.slice(at))}</span></span>`
+}
+const countFiles = n => n === 1 ? '1 file' : `${n} files`
+const isFile = i => i.kind === 'file'
+const isPhoto = i => i.kind === 'photo'
+const total = list => list.reduce((sum, i) => sum + i.size, 0)
+const fileMeta = f => f.progress < 1 ? `Sending · ${partSize(f)}` : `${ext(f.name)} · ${size(f.size)}`
+
+let seq = 0
+const mkFile = (id, extra) => Object.assign({ uid: `u${++seq}`, kind: 'file', id, name: FILES[id].name, size: FILES[id].size, progress: 1 }, extra)
+const mkPhoto = (n, extra) => Object.assign({ uid: `u${++seq}`, kind: 'photo', name: `Photo ${n + 1}`, size: (n % 2 ? 2.1 : 1.4) * MB, look: n % 2 ? 'board' : 'dash', progress: 1 }, extra)
+
+/* ---------- what the prototype is showing ---------- */
+const params = new URLSearchParams(location.search)
+const pick = (value, allowed, fallback) => allowed.includes(value) ? value : fallback
+const S = {
+  variant: pick((params.get('variant') || '').toUpperCase(), Object.keys(VARIANTS), 'A'),
+  state: pick(params.get('state'), Object.keys(STATES), 'ready'),
+  open: pick(params.get('open'), ['quicklook', 'desktop'], 'quicklook'),
+  theme: pick(params.get('theme'), ['dark', 'light'], 'dark'),
+  width: pick(params.get('width'), ['375', '320'], '375'),
+  zoom: pick(params.get('zoom'), ['1', '0.75'], '1'),
+}
+let phones = []
+
+/* Why a menu choice is off, as the reply box's + button checks it today (ADR-0031), with files beside photos. */
+function photosOff(p) {
+  if (S.state === 'textonly') return SAY.images
+  if (p.sending) return SAY.sending
+  return p.draft.length >= LIMIT.count ? SAY.full : null
+}
+function filesOff(p) {
+  if (S.state === 'host') return SAY.hostMenu
+  if (p.sending) return SAY.sending
+  return p.draft.length >= LIMIT.count ? SAY.full : null
+}
+
+/** Where each phone starts, for the state the State control names. */
+function preset(key) {
+  const st = S.state, textOnly = st === 'textonly'
+  const p = { key, overlay: null, draft: [], text: '', notice: '', picked: new Set(), sent: [], look: null, sending: false, opener: null, lookOpener: null, lookFrom: null, sheetMsg: null, fresh: null, scrollEnd: true }
+  const readySet = () => textOnly ? [mkFile('f1'), mkFile('f2'), mkFile('f3')] : [mkPhoto(0), mkFile('f1'), mkFile('f2'), mkFile('f3')]
+  const sixSet = () => [mkPhoto(0), mkPhoto(1), mkFile('f1'), mkFile('f2'), mkFile('f3'), mkFile('f4')]
+  if (key === 'menu') { p.overlay = 'menu'; p.draft = textOnly ? [] : [mkPhoto(0)] }
+  if (key === 'picker') {
+    p.overlay = 'picker'; p.opener = 'plus'
+    p.draft = st === 'many' ? sixSet() : textOnly ? [] : [mkPhoto(0)]
+    p.picked = new Set(st === 'large' ? ['f1', 'f2', 'f5'] : st === 'many' ? ['f6', 'f7', 'f8'] : ['f1', 'f2', 'f3'])
+  }
+  if (key === 'draft') {
+    p.text = DRAFT_TEXT
+    if (st === 'ready' || st === 'textonly') p.draft = readySet()
+    if (st === 'adding') { p.draft = readySet(); Object.assign(p.draft[3], { progress: 0.45, frozen: true }) }
+    if (st === 'large' || st === 'host') { p.draft = [mkPhoto(0)]; p.notice = SAY[st] }
+    if (st === 'many') { p.draft = sixSet(); p.notice = SAY.many }
+  }
+  if (key === 'sent' || key === 'look') {
+    p.sent = [{ text: DRAFT_TEXT, items: readySet(), reply: FIRST_REPLY }]
+    if (key === 'look') {
+      const f = p.sent[0].items.find(i => i.id === 'f1')
+      p.overlay = 'look'; p.look = { msg: 0, uid: f.uid, progress: 1 }; p.lookOpener = `open-${f.uid}`
+      // In C a sent file is opened from its message's list, so Done goes back to the list.
+      if (S.variant === 'C') { p.lookFrom = 'sentfiles'; p.sheetMsg = 0 }
+    }
+  }
+  return p
+}
+
+function caption(key) {
+  const st = S.state, v = S.variant, ql = S.open === 'quicklook'
+  if (key === 'menu') {
+    if (st === 'host') return 'Files is off and says why. Photo library and Camera still work.'
+    if (st === 'textonly') return 'Photo library and Camera are off and say why. Files still works.'
+    return 'The + button now offers Files beside Photo library and Camera. Press Files to open the picker.'
+  }
+  if (key === 'picker') {
+    if (st === 'large') return 'screen-recording.mov is 64 MB, over the 25 MB a file may be. Press Open to get the refusal.'
+    if (st === 'many') return 'The reply already holds two photos and four files; three more make nine. Press Open to get the refusal.'
+    if (st === 'host') return 'The same picker, as it was before the computer said it can’t keep files. Press Open to get the refusal.'
+    return 'A stand-in for the iOS Files picker, which hands Sotto only what was chosen. Choose several, then Open.'
+  }
+  if (key === 'draft') {
+    const ready = {
+      A: 'One photo and three files wait above the words. Each file is a pill with its size and a remove button.',
+      B: 'One photo and three files wait above the words. Each file is a row across the box, with its type and size.',
+      C: 'One photo and three files wait above the words. The files are one chip; press it to see them.',
+    }
+    return {
+      ready: ready[v],
+      adding: `build-output.zip is on its way to ${COMPUTER}. Send now and the reply goes when it arrives.`,
+      large: 'Nothing from that choice was attached. The photo that was already waiting stays.',
+      many: 'Nothing from that choice was attached. Remove some, or send these first.',
+      host: `${COMPUTER} restarted on an older Sotto while the files were on their way. The photo stays; the files were not attached.`,
+      textonly: 'This thread’s model reads text only. Files still wait and go; there is no photo.',
+    }[st]
+  }
+  if (key === 'sent') {
+    if (v === 'C') return `Sent. The photo stands above the words and the files as one chip that opens their list${ql ? ', where a press opens a file in Quick Look.' : `, which says they open on ${COMPUTER}.`}`
+    return ql ? 'Sent. The photo stands above the words with the files under it. Press a file to open it in Quick Look.' : `Sent. The photo stands above the words and opens full screen; the files say they open on ${COMPUTER}.`
+  }
+  return `Quick Look, once quarterly-report.pdf has come from ${COMPUTER}. Done goes back to ${v === 'C' ? 'the list of files' : 'the thread'}.`
+}
+
+/* ---------- drawing a phone ---------- */
+function phoneHTML(p) {
+  const sheetOpen = ['picker', 'files', 'sentfiles', 'look'].includes(p.overlay)
+  const behind = p.overlay ? ' inert' : ''
+  return `<div class="sb" aria-hidden="true"><span>9:41</span><span class="island"></span><span class="sb__icons">${SIGNAL}${BATTERY}</span></div>
+  <div class="nav"${behind}><span class="nav__back" aria-hidden="true">${ic('back', 24, 2.4)}</span><span class="nav__title">Q3 numbers check</span><span class="nav__pill" aria-hidden="true">Done</span></div>
+  <section class="convo" aria-label="Conversation" data-scroll="convo"${behind}>${thread(p)}</section>
+  ${dock(p, sheetOpen)}
+  ${overlay(p)}
+  <div class="home" aria-hidden="true"></div>`
+}
+
+const agent = text => `<div class="msg-agent"><p class="who"><span class="mark" aria-hidden="true">C</span>Claude Code</p><p>${esc(text)}</p></div>`
+function thread(p) {
+  return `<div class="spacer"></div>
+  <div class="msg-user"><div class="bubble">The Q3 numbers in the dashboard look off. Can you take a look?</div></div>
+  ${agent('I can. Send me the quarterly report and last night’s server log, and I’ll compare them with what the dashboard shows.')}
+  ${p.sent.map((m, mi) => sentHTML(p, m, mi) + agent(m.reply)).join('')}`
+}
+
+function sentHTML(p, m, mi) {
+  const ql = S.open === 'quicklook'
+  const photos = m.items.filter(isPhoto), files = m.items.filter(isFile)
+  const photoHTML = photos.map(x => `<button type="button" class="sphoto" data-act="open" data-msg="${mi}" data-uid="${x.uid}" data-k="open-${x.uid}" aria-label="Open photo ${esc(x.name)}" style="${x.look === 'board' ? 'width:150px;aspect-ratio:3/4' : 'width:220px;aspect-ratio:4/3'}">${shot(x.look)}</button>`).join('')
+  let fileHTML = ''
+  if (files.length && S.variant === 'A') {
+    fileHTML = `<ul class="spills" aria-label="${countFiles(files.length)}">${files.map(f => {
+      const inner = `${ic(kindIcon(f.name), 16)}${cut(f.name)}<span class="spill__size">${size(f.size)}</span>`
+      return ql ? `<li><button type="button" class="spill" data-act="open" data-msg="${mi}" data-uid="${f.uid}" data-k="open-${f.uid}" aria-label="Open ${esc(f.name)}">${inner}</button></li>` : `<li class="spill">${inner}</li>`
+    }).join('')}</ul>${ql ? '' : `<p class="shint">Open these files on ${COMPUTER}.</p>`}`
+  }
+  if (files.length && S.variant === 'B') fileHTML = `<ul class="scards" aria-label="${countFiles(files.length)}">${files.map(f => sentRow(f, mi)).join('')}</ul>`
+  if (files.length && S.variant === 'C') fileHTML = stackChip({ act: 'sentchip', files, key: `sentchip-${mi}`, msg: mi })
+  return `<div class="msg-user">${photoHTML}${fileHTML}${m.text ? `<div class="bubble">${esc(m.text)}</div>` : ''}</div>`
+}
+
+/** A sent file as a row: a button that opens Quick Look, or a plain row that says where it opens. */
+function sentRow(f, mi) {
+  const icon = `<span class="frow__icon">${ic(kindIcon(f.name), 20)}</span>`
+  if (S.open === 'quicklook') return `<li><button type="button" class="frow" data-act="open" data-msg="${mi}" data-uid="${f.uid}" data-k="open-${f.uid}" aria-label="Open ${esc(f.name)}">${icon}<span class="frow__text">${cut(f.name, 'frow__name')}<span class="frow__meta">${ext(f.name)} · ${size(f.size)}</span></span>${ic('chev', 16, 2.4)}</button></li>`
+  return `<li class="frow frow--plain">${icon}<span class="frow__text">${cut(f.name, 'frow__name')}<span class="frow__meta">${ext(f.name)} · ${size(f.size)} · open on ${COMPUTER}</span></span></li>`
+}
+
+/** C's chip: every file in one press-to-see button. */
+function stackChip({ act, files, key, msg, lock = '' }) {
+  const going = files.filter(f => f.progress < 1)
+  const label = `Show ${countFiles(files.length)}, ${totalSize(total(files))}${going.length ? `, ${going.length} still sending` : ''}`
+  const lead = going.length ? `<span class="ring" data-prog="${going[0].uid}" style="--p:${pct(going[0])}"></span>` : ic('stack', 20)
+  return `<button type="button" class="stack" data-act="${act}" data-k="${key}"${msg != null ? ` data-msg="${msg}"` : ''} aria-haspopup="dialog" aria-label="${esc(label)}"${lock}><span class="stack__icon">${lead}</span><span class="stack__text"><b>${countFiles(files.length)}</b> · ${totalSize(total(files))}</span>${ic('chev', 14, 2.4)}</button>`
+}
+
+function canSend(p) { return !p.sending && Boolean(p.text.trim() || p.draft.length) }
+
+function dock(p, sheetOpen) {
+  const menuOpen = p.overlay === 'menu'
+  const lock = menuOpen ? ' inert' : ''
+  const off = p.sending ? ' disabled' : ''
+  const photos = p.draft.filter(isPhoto), files = p.draft.filter(isFile)
+  const plus = `<button type="button" class="rb plus" data-act="plus" data-k="plus" aria-label="Attach photos or files" aria-expanded="${menuOpen}" aria-controls="${p.pid}-menu"${off}>${ic('plus', 22, 2.2)}</button>`
+  const ready = canSend(p)
+  const send = `<button type="button" class="rb send${ready || p.sending ? ' send--on' : ''}" data-act="send" data-k="send" aria-label="${p.sending ? 'Sending reply' : 'Send reply'}"${ready ? '' : ' aria-disabled="true"'}${lock}>${p.sending ? '<span class="spin" aria-hidden="true"></span>' : ic('up', 20, 2.4)}</button>`
+  const strip = photos.length ? `<ul class="strip" aria-label="Photos in this reply" data-scroll="strip"${lock}>${photos.map(x => thumb(p, x)).join('')}</ul>` : ''
+  const notice = p.notice ? `<p class="notice" role="alert"${lock}>${esc(p.notice)}</p>` : ''
+  const field = `<textarea class="field" data-k="text" rows="1" aria-label="Reply to this thread" placeholder="Reply to this thread"${off}${lock}>${esc(p.text)}</textarea>`
+  let inner
+  if (S.variant === 'B') {
+    const rows = files.length ? `<ul class="frows" aria-label="Files in this reply"${lock}>${files.map(f => draftRow(p, f)).join('')}</ul>` : ''
+    inner = `${strip || rows ? `<div class="dock__top">${strip}${rows}</div>` : ''}${notice ? `<div class="dock__note">${notice}</div>` : ''}<div class="dock__row">${plus}<div class="dock__body">${field}</div>${send}</div>`
+  } else {
+    const fileBits = !files.length ? '' : S.variant === 'A' ? pills(p, files, lock) : stackChip({ act: 'chip', files, key: 'chip', lock })
+    inner = `<div class="dock__row">${plus}<div class="dock__body">${strip}${fileBits}${notice}${field}</div>${send}</div>`
+  }
+  const full = p.draft.length || p.notice
+  return `<div class="dockwrap${menuOpen ? ' dockwrap--menu' : ''}"${sheetOpen ? ' inert' : ''}><div class="dock${full ? ' dock--full' : ''}">${inner}</div>${menuOpen ? menu(p) : ''}</div>${menuOpen ? '<div class="scrim scrim--clear" data-act="scrim" aria-hidden="true"></div>' : ''}`
+}
+
+const thumb = (p, x) => `<li class="thumb" style="width:${x.look === 'board' ? 66 : 117}px">${shot(x.look)}${x.progress < 1 ? `<span class="veil"><span class="ring ring--lg" data-prog="${x.uid}" style="--p:${pct(x)}"></span></span>` : ''}<button type="button" class="thumb__x" data-act="rm" data-uid="${x.uid}" data-k="rm-${x.uid}" aria-label="Remove ${esc(x.name)}"${p.sending ? ' disabled' : ''}><span class="xdot">${ic('x', 11, 3)}</span></button></li>`
+
+function pills(p, files, lock) {
+  return `<ul class="pills" aria-label="Files in this reply"${lock}>${files.map(f => {
+    const lead = f.progress < 1 ? `<span class="ring" data-prog="${f.uid}" style="--p:${pct(f)}"></span>` : `<span class="pill__icon">${ic(kindIcon(f.name), 16)}</span>`
+    const sizeText = f.progress < 1 ? `${pct(f)}%` : size(f.size)
+    return `<li class="pill">${lead}${cut(f.name)}<span class="pill__size" data-progtext="${f.uid}" data-fmt="pct">${sizeText}</span><button type="button" class="pill__x" data-act="rm" data-uid="${f.uid}" data-k="rm-${f.uid}" aria-label="Remove ${esc(f.name)}"${p.sending ? ' disabled' : ''}>${ic('x', 14, 2.4)}</button></li>`
+  }).join('')}</ul>`
+}
+
+/** A waiting file as a row with its own remove button: B's reply box and C's sheet. */
+function draftRow(p, f) {
+  return `<li class="frow"><span class="frow__icon">${ic(kindIcon(f.name), 20)}</span><span class="frow__text">${cut(f.name, 'frow__name')}<span class="frow__meta" data-progtext="${f.uid}" data-fmt="long">${fileMeta(f)}</span></span><button type="button" class="xbtn" data-act="rm" data-uid="${f.uid}" data-k="rm-${f.uid}" aria-label="Remove ${esc(f.name)}"${p.sending ? ' disabled' : ''}>${ic('x', 16, 2.2)}</button>${f.progress < 1 ? `<span class="frow__bar" data-prog="${f.uid}" style="--p:${pct(f)}"></span>` : ''}</li>`
+}
+
+function menu(p) {
+  const pr = photosOff(p), fr = filesOff(p), same = Boolean(pr && pr === fr)
+  const whyP = `${p.pid}-why-photos`, whyF = same ? whyP : `${p.pid}-why-files`
+  const item = (act, label, icon, why, whyId) => `<button type="button" class="mi" data-act="${why ? 'noop' : act}" data-k="${act}"${why ? ` aria-disabled="true" aria-describedby="${whyId}"` : ''}><span>${label}</span>${ic(icon, 22)}</button>`
+  return `<div class="menu${p.fresh === 'menu' ? ' is-new' : ''}" id="${p.pid}-menu" role="group" aria-label="Attach">
+    <div class="menu__group">${item('menu-photos', 'Photo library', 'photo', pr, whyP)}${item('menu-camera', 'Camera', 'camera', pr, whyP)}${pr && !same ? `<p class="mi__why" id="${whyP}">${esc(pr)}</p>` : ''}</div>
+    <div class="menu__group">${item('menu-files', 'Files', 'folder', fr, whyF)}${fr ? `<p class="mi__why" id="${whyF}">${esc(fr)}</p>` : ''}</div>
+  </div>`
+}
+
+function overlay(p) {
+  if (p.overlay === 'picker') return pickerHTML(p)
+  if (p.overlay === 'files') return filesSheet(p, p.draft.filter(isFile), true)
+  if (p.overlay === 'sentfiles') return filesSheet(p, p.sent[p.sheetMsg].items.filter(isFile), false)
+  if (p.overlay === 'look') return lookHTML(p)
+  return ''
+}
+
+/* A stand-in for UIDocumentPickerViewController with several allowed: Cancel, Open, a check on each choice. */
+function pickerHTML(p) {
+  const n = p.picked.size
+  const row = id => {
+    const f = FILES[id], on = p.picked.has(id)
+    return `<li><button type="button" class="pk" data-act="pick" data-id="${id}" data-k="pk-${id}" aria-pressed="${on}" aria-label="${esc(f.name)}, ${size(f.size)}"><span class="pk__check" aria-hidden="true">${on ? ic('check', 14, 3) : ''}</span><span class="pk__tile" aria-hidden="true">${ic(kindIcon(f.name), 16)}<b>${ext(f.name)}</b></span><span class="pk__text"><span class="pk__name">${esc(f.name)}</span><span class="pk__meta">${size(f.size)} · ${f.when}</span></span></button></li>`
+  }
+  const group = g => `<h3 class="pk__group">${g}</h3><ul class="pk__list">${ORDER.filter(id => FILES[id].group === g).map(row).join('')}</ul>`
+  return `<div class="scrim" data-act="scrim" aria-hidden="true"></div>
+  <section class="sheet${p.fresh === 'picker' ? ' is-new' : ''}" role="dialog" aria-modal="true" aria-labelledby="${p.pid}-pk">
+    <div class="grabber" aria-hidden="true"></div>
+    <div class="sheet__bar"><button type="button" class="tbtn" data-act="pk-cancel" data-k="pk-cancel">Cancel</button><h2 class="sheet__title" id="${p.pid}-pk">Recents</h2><button type="button" class="tbtn tbtn--strong" data-act="pk-open" data-k="pk-open"${n ? '' : ' disabled'}>Open</button></div>
+    <div class="sheet__scroll" data-scroll="sheet">${group('Today')}${group('Earlier')}</div>
+    <p class="sheet__foot" role="status">${n ? `${n} selected` : 'Nothing selected'}</p>
+  </section>`
+}
+
+/* C's sheet: the waiting files with remove buttons and Add files, or a sent message's files. */
+function filesSheet(p, files, waiting) {
+  const ql = S.open === 'quicklook'
+  const title = waiting ? `${countFiles(files.length)} in this reply` : countFiles(files.length)
+  const rows = files.map(f => waiting ? draftRow(p, f) : sentRow(f, p.sheetMsg)).join('')
+  const foot = waiting ? `${p.draft.length} of ${LIMIT.count} attachments · ${totalSize(total(p.draft))} of 50 MB` : ql ? `${totalSize(total(files))} in all` : `Open these files on ${COMPUTER}.`
+  const addOff = filesOff(p)
+  return `<div class="scrim" data-act="scrim" aria-hidden="true"></div>
+  <section class="sheet sheet--short${p.fresh === p.overlay ? ' is-new' : ''}" role="dialog" aria-modal="true" aria-labelledby="${p.pid}-fs">
+    <div class="grabber" aria-hidden="true"></div>
+    <div class="sheet__bar"><span></span><h2 class="sheet__title" id="${p.pid}-fs">${title}</h2><button type="button" class="tbtn tbtn--strong" data-act="sheet-done" data-k="sheet-done">Done</button></div>
+    <div class="sheet__scroll" data-scroll="sheet"><ul class="frows">${rows}</ul></div>
+    <p class="sheet__foot${waiting ? ' sheet__foot--tight' : ''}">${esc(foot)}</p>
+    ${waiting ? `<div class="sheet__actions"><button type="button" class="wide" data-act="sheet-add" data-k="sheet-add"${addOff ? ` disabled aria-describedby="${p.pid}-addwhy"` : ''}>${ic('folder', 18)}Add files</button>${addOff ? `<p class="mi__why" id="${p.pid}-addwhy" style="padding:8px 4px 0">${esc(addOff)}</p>` : ''}</div>` : ''}
+  </section>`
+}
+
+function lookHTML(p) {
+  const x = p.sent[p.look.msg].items.find(i => i.uid === p.look.uid)
+  const loaded = p.look.progress >= 1
+  const kind = x.kind === 'photo' ? 'Photo' : ext(x.name)
+  const body = loaded ? lookContent(x) : `<div class="look__wait" role="status"><p>Getting ${esc(x.name)} from ${COMPUTER}</p><span class="bar"><span data-lookprog style="--p:${Math.round(p.look.progress * 100)}"></span></span><p class="muted" data-looktext>${partSize({ size: x.size, progress: p.look.progress })}</p></div>`
+  return `<section class="look${p.fresh === 'look' ? ' is-new' : ''}" role="dialog" aria-modal="true" aria-labelledby="${p.pid}-lk">
+    <div class="look__bar"><button type="button" class="tbtn tbtn--strong" data-act="look-done" data-k="look-done">Done</button><div class="look__title"><h2 id="${p.pid}-lk">${cut(x.name)}</h2><span>${kind} · ${size(x.size)}</span></div><span></span></div>
+    <div class="look__body" data-scroll="look">${body}</div>
+  </section>`
+}
+
+function lookContent(x) {
+  if (x.kind === 'photo') return `<div class="look__photo" role="img" aria-label="${esc(x.name)}">${shot(x.look)}</div>`
+  const e = ext(x.name)
+  if (e === 'PDF') return `<div class="paper" role="img" aria-label="Page 1 of ${esc(x.name)}"><span class="paper__h">Q3 2026 report</span><span class="paper__sub">Orders, refunds and revenue, July to September</span><i class="pl" style="width:96%"></i><i class="pl" style="width:88%"></i><i class="pl" style="width:92%"></i><i class="pl" style="width:58%"></i><span class="paper__sec">3. Orders by month</span><table><tr><th>Month</th><th>Orders</th><th>Refunds</th></tr><tr><td>July</td><td>15,902</td><td>131</td></tr><tr><td>August</td><td>16,447</td><td>149</td></tr><tr><td>September</td><td>15,864</td><td>132</td></tr><tr><td>Total</td><td>48,213</td><td>412</td></tr></table><i class="pl" style="width:94%"></i><i class="pl" style="width:81%"></i><i class="pl" style="width:70%"></i><span class="paper__pg">Page 1 of 12</span></div>`
+  if (FILE_TEXT[x.name]) return `<pre class="look__text">${esc(FILE_TEXT[x.name])}</pre>`
+  return `<div class="look__none">${ic(kindIcon(x.name), 48, 1.5)}<p><b>${esc(x.name)}</b></p><p>The iPhone can’t show what’s inside this file. Open it on ${COMPUTER}.</p></div>`
+}
+
+/** Draws a phone again, keeping where it was scrolled and, when focus was inside it, what had focus. */
+function renderPhone(p, focus) {
+  const root = $(p.pid)
+  if (!root) return
+  const active = document.activeElement
+  const inside = Boolean(active && active !== document.body && root.contains(active))
+  let key = typeof focus === 'string' ? focus : null, selection = null
+  if (!focus && inside && active.dataset && active.dataset.k) {
+    key = active.dataset.k
+    if (active.tagName === 'TEXTAREA') selection = [active.selectionStart, active.selectionEnd]
+  }
+  const scrolls = {}
+  root.querySelectorAll('[data-scroll]').forEach(el => { scrolls[el.dataset.scroll] = [el.scrollTop, el.scrollLeft] })
+  root.innerHTML = phoneHTML(p)
+  p.fresh = null
+  root.querySelectorAll('[data-scroll]').forEach(el => { const s = scrolls[el.dataset.scroll]; if (s) { el.scrollTop = s[0]; el.scrollLeft = s[1] } })
+  const convo = root.querySelector('.convo')
+  if (p.scrollEnd) { convo.scrollTop = convo.scrollHeight; p.scrollEnd = false }
+  fit(root.querySelector('.field'))
+  if (!focus && !inside) return
+  let el = typeof focus === 'function' ? focus(root) : key ? root.querySelector(`[data-k="${key}"]`) : null
+  if (!el || el.disabled) el = root.querySelector('[data-k="plus"]:not([disabled])') || root.querySelector('[data-k="send"]')
+  if (el) {
+    el.focus({ preventScroll: true })
+    if (selection && el.setSelectionRange) el.setSelectionRange(selection[0], selection[1])
+  }
+}
+function fit(field) {
+  if (!field) return
+  field.style.height = 'auto'
+  if (field.scrollHeight) field.style.height = `${Math.min(field.scrollHeight, 154)}px`
+}
+
+/* ---------- what a press does ---------- */
+function addPhoto(p, camera) {
+  const n = p.draft.filter(isPhoto).length
+  const photo = mkPhoto(n, { progress: 0 })
+  if (camera) photo.name = 'Camera photo'
+  p.draft.splice(n, 0, photo)
+  p.notice = ''
+}
+/* The same checks, in the same order, as the desktop composer: how many, then each file, then all of them. */
+function addFiles(p, ids) {
+  const files = ids.map(id => FILES[id])
+  if (!files.length) return
+  if (S.state === 'host') { p.notice = SAY.host; return }
+  if (p.draft.length + files.length > LIMIT.count) { p.notice = SAY.many; return }
+  if (files.some(f => f.size > LIMIT.file)) { p.notice = SAY.large; return }
+  if (total(p.draft) + total(files) > LIMIT.total) { p.notice = SAY.total; return }
+  p.notice = ''
+  ids.forEach(id => p.draft.push(mkFile(id, { progress: 0 })))
+}
+function removeItem(p, uid) {
+  const root = $(p.pid)
+  const scope = () => root.querySelector('.sheet') || root.querySelector('.dockwrap')
+  const before = [...scope().querySelectorAll('[data-act="rm"]')]
+  const at = before.findIndex(b => b.dataset.uid === uid)
+  p.draft = p.draft.filter(i => i.uid !== uid)
+  p.notice = ''
+  if (p.overlay === 'files' && !p.draft.some(isFile)) p.overlay = null
+  // Focus stays with the list: the next remove button, else the one before, else Done or the + button.
+  renderPhone(p, () => {
+    const after = [...scope().querySelectorAll('[data-act="rm"]')]
+    return after[at] || after[at - 1] || root.querySelector('[data-k="sheet-done"]') || root.querySelector('[data-k="plus"]')
+  })
+}
+function send(p) {
+  if (!canSend(p)) return
+  if (p.draft.some(i => i.progress < 1)) {
+    // As with photos today: the reply waits for what is still on its way, then goes.
+    p.sending = true
+    p.draft.forEach(i => { i.frozen = false })
+    renderPhone(p, 'send')
+    return
+  }
+  commit(p)
+}
+function commit(p) {
+  const items = p.draft
+  const root = $(p.pid), inside = Boolean(root && root.contains(document.activeElement))
+  p.sent.push({ text: p.text.trim(), items, reply: items.some(isFile) ? 'Got them. Reading the files now.' : 'Got it. Looking now.' })
+  Object.assign(p, { draft: [], text: '', notice: '', sending: false, overlay: null, scrollEnd: true })
+  // A reply that went after waiting for a file takes focus back only if focus is still in this phone.
+  renderPhone(p, inside ? 'text' : null)
+}
+function openOverlay(p, name, focusKey) {
+  p.overlay = name
+  p.fresh = name
+  renderPhone(p, focusKey)
+}
+function closeTop(p) {
+  const was = p.overlay
+  if (!was) return
+  if (was === 'look' && p.lookFrom) { const back = p.lookFrom; p.lookFrom = null; p.overlay = back; renderPhone(p, p.lookOpener); return }
+  p.overlay = null
+  renderPhone(p, was === 'look' ? p.lookOpener : was === 'menu' ? 'plus' : p.opener || 'plus')
+}
+function openLook(p, msg, uid, key) {
+  const item = p.sent[msg].items.find(i => i.uid === uid)
+  p.lookFrom = p.overlay === 'sentfiles' ? 'sentfiles' : null
+  p.lookOpener = key
+  p.look = { msg, uid, progress: isPhoto(item) ? 1 : 0 }
+  openOverlay(p, 'look', 'look-done')
+}
+function firstMenuKey(p) { return photosOff(p) && !filesOff(p) ? 'menu-files' : 'menu-photos' }
+
+function act(p, name, el) {
+  switch (name) {
+    case 'plus':
+      if (p.overlay === 'menu') closeTop(p)
+      else openOverlay(p, 'menu', firstMenuKey(p))
+      break
+    case 'menu-photos': case 'menu-camera':
+      addPhoto(p, name === 'menu-camera'); p.overlay = null; renderPhone(p, 'plus'); break
+    case 'menu-files':
+      p.picked = new Set(); p.opener = 'plus'; openOverlay(p, 'picker', 'pk-cancel'); break
+    case 'pick': {
+      const id = el.dataset.id
+      if (p.picked.has(id)) p.picked.delete(id); else p.picked.add(id)
+      renderPhone(p, `pk-${id}`)
+      break
+    }
+    case 'pk-cancel': closeTop(p); break
+    case 'pk-open': {
+      const ids = ORDER.filter(id => p.picked.has(id))
+      p.picked = new Set(); p.overlay = null
+      addFiles(p, ids)
+      renderPhone(p, S.variant === 'C' && !p.notice && p.draft.some(isFile) ? 'chip' : 'plus')
+      break
+    }
+    case 'rm': removeItem(p, el.dataset.uid); break
+    case 'chip': p.opener = 'chip'; openOverlay(p, 'files', 'sheet-done'); break
+    case 'sentchip': p.sheetMsg = Number(el.dataset.msg); p.opener = el.dataset.k; openOverlay(p, 'sentfiles', 'sheet-done'); break
+    case 'sheet-add': p.picked = new Set(); p.opener = 'chip'; openOverlay(p, 'picker', 'pk-cancel'); break
+    case 'sheet-done': case 'look-done': case 'scrim': closeTop(p); break
+    case 'open': openLook(p, Number(el.dataset.msg), el.dataset.uid, el.dataset.k); break
+    case 'send': send(p); break
+  }
+}
+
+/* Stand-in progress: files on their way to the computer, and a file on its way back for Quick Look. */
+function tick() {
+  for (const p of phones) {
+    const root = $(p.pid)
+    if (!root) continue
+    let redraw = false
+    for (const i of p.draft) {
+      if (i.progress >= 1 || i.frozen) continue
+      i.progress = Math.min(1, i.progress + Math.max(0.1 / 0.6, (RATE * 0.1) / i.size))
+      if (i.progress >= 1) { redraw = true; continue }
+      root.querySelectorAll(`[data-prog="${i.uid}"]`).forEach(el => el.style.setProperty('--p', pct(i)))
+      root.querySelectorAll(`[data-progtext="${i.uid}"]`).forEach(el => { el.textContent = el.dataset.fmt === 'pct' ? `${pct(i)}%` : fileMeta(i) })
+    }
+    if (p.look && p.look.progress < 1) {
+      const item = p.sent[p.look.msg].items.find(i => i.uid === p.look.uid)
+      p.look.progress = Math.min(1, p.look.progress + Math.max(0.1 / 0.8, (2 * RATE * 0.1) / item.size))
+      if (p.look.progress >= 1) redraw = true
+      else {
+        root.querySelectorAll('[data-lookprog]').forEach(el => el.style.setProperty('--p', Math.round(p.look.progress * 100)))
+        root.querySelectorAll('[data-looktext]').forEach(el => { el.textContent = partSize({ size: item.size, progress: p.look.progress }) })
+      }
+    }
+    if (p.sending && p.draft.every(i => i.progress >= 1)) { commit(p); continue }
+    if (redraw) renderPhone(p)
+  }
+}
+
+/* ---------- the page ---------- */
+const GROUPS = [
+  { key: 'state', label: 'State', opts: Object.entries(STATES).map(([k, s]) => [k, s.label]) },
+  { key: 'open', label: 'Sent files', opts: [['quicklook', 'Open in Quick Look'], ['desktop', 'Open on the desktop']] },
+  { key: 'theme', label: 'Theme', opts: [['dark', 'Dark'], ['light', 'Light']] },
+  { key: 'width', label: 'Phone width', opts: [['375', '375 pt'], ['320', '320 pt']] },
+  { key: 'zoom', label: 'Size', opts: [['1', 'Actual'], ['0.75', 'Smaller']] },
+]
+function controlsHTML() {
+  return GROUPS.map(g => `<div class="group"><span class="glabel" id="g-${g.key}">${g.label}</span><div class="seg" role="group" aria-labelledby="g-${g.key}">${g.opts.map(([value, label]) => `<button type="button" data-set="${g.key}" data-val="${value}" aria-pressed="false">${esc(label)}</button>`).join('')}</div></div>`).join('')
+    + '<button type="button" class="plain" id="reset">Start again</button>'
+}
+function notesHTML() {
+  const ql = S.open === 'quicklook'
+  const opt = (on, title, text) => `<div class="opt" data-on="${on}"><b>${title}${on ? ' (shown)' : ''}</b><p>${esc(text)}</p></div>`
+  const extra = STATE_NOTES[S.state]
+  return `<div class="pnote"><b>Choose one: what a sent file does when pressed.</b> Switch with Sent files above.<div class="opts">${opt(ql, 'Open in Quick Look', OPEN_TEXT.quicklook)}${opt(!ql, 'Open on the desktop', OPEN_TEXT.desktop)}</div></div>${extra ? `<p class="pnote">${extra}</p>` : ''}`
+}
+function apply() {
+  document.documentElement.dataset.theme = S.theme
+  document.body.dataset.width = S.width
+  document.documentElement.style.setProperty('--z', S.zoom)
+  const v = VARIANTS[S.variant], keys = Object.keys(VARIANTS)
+  $('kicker').textContent = `PROTOTYPE · Files from the iPhone · ${keys.indexOf(S.variant) + 1} of ${keys.length}`
+  $('vname').textContent = `${S.variant}: ${v.name}`
+  $('thesis').textContent = v.thesis
+  $('good').textContent = v.good
+  $('cost').textContent = v.cost
+  $('scenario').textContent = `${STATES[S.state].label}: ${STATES[S.state].line}`
+  $('notes').innerHTML = notesHTML()
+  $('vlab').textContent = `${S.variant} · ${v.name}`
+  $('vline').textContent = v.line
+  document.querySelectorAll('[data-set]').forEach(b => b.setAttribute('aria-pressed', String(S[b.dataset.set] === b.dataset.val)))
+  const q = new URLSearchParams({ variant: S.variant, state: S.state })
+  if (S.open !== 'quicklook') q.set('open', S.open)
+  if (S.theme !== 'dark') q.set('theme', S.theme)
+  if (S.width !== '375') q.set('width', S.width)
+  if (S.zoom !== '1') q.set('zoom', S.zoom)
+  try { history.replaceState(null, '', `${location.pathname}?${q}`) } catch (_) { /* a sandboxed frame may refuse; the page still works */ }
+}
+function build() {
+  seq = 0
+  const scenes = SCENES.filter(s => !s.only || s.only === S.open)
+  phones = scenes.map((s, i) => Object.assign(preset(s.key), { pid: `ph${i + 1}`, scene: s, n: i + 1 }))
+  $('board').innerHTML = phones.map(p => `<figure class="cell"><div class="frame"><div class="phone" id="${p.pid}" role="region" aria-label="Phone ${p.n}: ${esc(p.scene.title)}"></div></div><figcaption class="cap"><b>${p.n} · ${esc(p.scene.title)}</b><span>${esc(caption(p.scene.key))}</span></figcaption></figure>`).join('')
+  phones.forEach(p => renderPhone(p))
+  apply()
+}
+function stepVariant(d) {
+  const keys = Object.keys(VARIANTS)
+  S.variant = keys[(keys.indexOf(S.variant) + d + keys.length) % keys.length]
+  build()
+}
+
+$('controls').innerHTML = controlsHTML()
+$('controls').addEventListener('click', e => {
+  const b = e.target.closest('button')
+  if (!b) return
+  if (b.id === 'reset') { build(); return }
+  const key = b.dataset.set
+  if (!key) return
+  S[key] = b.dataset.val
+  if (key === 'state' || key === 'open') build()
+  else { apply(); if (key === 'width') phones.forEach(p => renderPhone(p)) }
+})
+$('prev').addEventListener('click', () => stepVariant(-1))
+$('next').addEventListener('click', () => stepVariant(1))
+$('board').addEventListener('click', e => {
+  const el = e.target.closest('[data-act]')
+  const root = el && el.closest('.phone')
+  if (!root) return
+  const p = phones.find(x => x.pid === root.id)
+  if (p) act(p, el.dataset.act, el)
+})
+$('board').addEventListener('input', e => {
+  if (!e.target.matches('.field')) return
+  const root = e.target.closest('.phone'), p = phones.find(x => x.pid === root.id)
+  p.text = e.target.value
+  fit(e.target)
+  const b = root.querySelector('.send'), ready = canSend(p)
+  b.classList.toggle('send--on', ready || p.sending)
+  if (ready) b.removeAttribute('aria-disabled'); else b.setAttribute('aria-disabled', 'true')
+  const box = root.querySelector('.dock')
+  box.classList.toggle('dock--full', Boolean(p.draft.length || p.notice))
+})
+document.addEventListener('keydown', e => {
+  const t = e.target instanceof Element ? e.target : null
+  const root = t && t.closest('.phone')
+  const p = root && phones.find(x => x.pid === root.id)
+  if (e.key === 'Escape' && p && p.overlay) { e.preventDefault(); closeTop(p); return }
+  const menuEl = t && t.closest('.menu')
+  if (menuEl && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
+    const items = [...menuEl.querySelectorAll('.mi')], at = items.indexOf(t)
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : (at + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+    items[next].focus()
+    e.preventDefault()
+    return
+  }
+  if (t && t.closest('textarea, input, select, [contenteditable], .menu, .sheet, .look')) return
+  if (e.key === 'ArrowLeft') stepVariant(-1)
+  if (e.key === 'ArrowRight') stepVariant(1)
+})
+window.addEventListener('resize', () => phones.forEach(p => fit($(p.pid) && $(p.pid).querySelector('.field'))))
+build()
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => phones.forEach(p => fit($(p.pid).querySelector('.field'))))
+setInterval(tick, 100)
+</script>
+</body>
+</html>

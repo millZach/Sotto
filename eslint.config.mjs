@@ -111,6 +111,11 @@ export default tseslint.config(
       'artifacts/queued-steering/**',
       'artifacts/screenshot-resize-run/**',
       '.worktrees/**',
+      // The launch video's own package: its dependencies, captures and renders.
+      'marketing/launch-video/node_modules/**',
+      'marketing/launch-video/public/takes/**',
+      'marketing/launch-video/public/stills/**',
+      'marketing/launch-video/out/**',
       '.claude/tmp/**',
       // Agent worktrees are whole checkouts of this repository, so linting them would lint
       // every file twice and confuse the parser about which tsconfig root it is under.
@@ -121,6 +126,7 @@ export default tseslint.config(
       'artifacts/question-choices/**',
       'artifacts/composer-float/**',
       'artifacts/composer-shrink/**',
+      'artifacts/needs-you-queue/**',
       'artifacts/watcher-column/**',
       'artifacts/composer-slim-steady/**',
       'artifacts/scene-under-column/**',
@@ -244,6 +250,24 @@ export default tseslint.config(
         console: 'readonly',
         process: 'readonly',
         URL: 'readonly',
+        window: 'readonly',
+      },
+    },
+  },
+  {
+    // The launch video's capture scripts run in Node and hand callbacks to the Sotto window through Playwright.
+    files: ['marketing/launch-video/**/*.{mjs,cjs}'],
+    languageOptions: {
+      globals: {
+        __dirname: 'readonly',
+        console: 'readonly',
+        fetch: 'readonly',
+        process: 'readonly',
+        Request: 'readonly',
+        require: 'readonly',
+        Response: 'readonly',
+        setInterval: 'readonly',
+        setTimeout: 'readonly',
         window: 'readonly',
       },
     },

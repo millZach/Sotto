@@ -77,7 +77,9 @@
 .segmented-control { grid-area: control; display: inline-flex; align-items: center; justify-self: end; padding: 3px; border: 0; border-radius: 6px; gap: 2px; background: var(--tt-surface-sunken); }
 .settings-rows .segmented-control { background: var(--tt-card-inset); }
 .segmented-control button { min-height: 30px; padding: 2px 12px; border: 0; border-radius: 4px; font: inherit; font-size: 14px; white-space: nowrap; color: var(--tt-text-muted); background: none; cursor: pointer; }
-.segmented-control button:hover { color: var(--tt-text); }
+.segmented-control button:hover:not(:disabled) { color: var(--tt-text); }
+.segmented-control button:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
+.segmented-control button:disabled { opacity: .5; cursor: default; }
 /* Night falls' look: a line for each choice under the row's name, the choice's name leading its line. */
 .night-falls-look__line { display: block; }
 .night-falls-look__line > strong { color: var(--tt-text); font-weight: 600; }
@@ -111,12 +113,13 @@
 .settings-find__results ul { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
 .settings-find__results button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 8px 12px; border: 0; border-radius: 6px; color: var(--tt-text); background: transparent; text-align: left; font: inherit; font-size: 14px; line-height: 1.35; cursor: pointer; }
 .settings-find__results button:hover { background: var(--tt-sidebar-row-hover); }
+.settings-find__results button:active { background: var(--tt-hover-strong); }
 .settings-find__results small { color: var(--tt-text-muted); font-size: 12.5px; }
 .settings-find__empty { margin: 4px 12px; color: var(--tt-text-muted); font-size: 13.5px; line-height: 1.45; }
 /* A row of its own inside a group's card: the card's dividers already separate it. */
 .settings-view .settings-rows > .settings-danger-row { border-top: 0; }
 .settings-detail { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
-.settings-view .settings-scroll { flex: 1; min-width: 0; min-height: 0; padding: 42px 6vw 40px; overflow: auto; scroll-padding-top: 24px; }
+.settings-view .settings-scroll { flex: 1; min-width: 0; min-height: 0; padding: 40px 6vw 40px; overflow: auto; scroll-padding-top: 24px; }
 .settings-form { width: 100%; max-width: 790px; margin: 0 auto; }
 .settings-form > [hidden] { display: none !important; }
 .settings-form > [role='tabpanel']:not([hidden]) { animation: settings-arrive 180ms ease; }
@@ -178,9 +181,9 @@
 .settings-view .agent-voice-settings .agent-fields input, .settings-view .agent-voice-settings .agent-fields select { min-width: 0; font-size: 14px; }
 @keyframes settings-arrive { from { opacity: .6; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 @media (max-width: 1100px) {
-  .settings-view .settings-scroll { padding: 32px 35px; }
-  .settings-feedback { padding-inline: 35px; }
-  [data-platform='linux'] .settings-view .settings-feedback { padding-right: 35px; }
+  .settings-view .settings-scroll { padding: 32px 36px; }
+  .settings-feedback { padding-inline: 36px; }
+  [data-platform='linux'] .settings-view .settings-feedback { padding-right: 36px; }
 }
 @media (max-width: 900px) {
   .settings-sidebar h1 { font-size: 25px; margin-bottom: 20px; }
@@ -275,3 +278,7 @@
 .cleanup-model__name { overflow: hidden; color: var(--tt-text); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .cleanup-model__slug { overflow: hidden; color: var(--tt-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .cleanup-model__empty { padding: 8px 9px; color: var(--tt-text-muted); font-size: 13px; }
+/* The list's sections when the user's own servers are listed (ADR-0136), and Measure's line under the box. */
+.cleanup-model__section { padding: 8px 9px 4px; color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
+.cleanup-model__measure { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.cleanup-model__measure > .settings-remote-status { flex: 1 1 260px; margin: 0; }

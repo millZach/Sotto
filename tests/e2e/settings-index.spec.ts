@@ -6,7 +6,7 @@ import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaun
 import { evidenceDirectory } from '../fixtures/evidence'
 
 const evidence = evidenceDirectory('artifacts/settings-index')
-const categories = ['Dictation', 'Cleanup', 'Threads', 'Git & worktrees', 'Providers', 'Hosts & phones', 'Cloud iPhone', 'Appearance', 'Application'] as const
+const categories = ['Dictation', 'Cleanup', 'Threads', 'Keyboard', 'Git & worktrees', 'Providers', 'Hosts & phones', 'Cloud iPhone', 'Appearance', 'Application'] as const
 const sizes = [[1280, 800], [1600, 1000], [820, 560]] as const
 
 async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {

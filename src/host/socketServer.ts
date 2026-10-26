@@ -23,6 +23,8 @@ import { REMOTE_OPENCODE_SIGN_IN_OPERATIONS, REMOTE_SIGN_IN_OPERATIONS, remoteCo
 import type { HostSelfUpdate } from './selfUpdate'
 import { usageLocalClearResultSchema, usageLocalHostReadSchema, usageProvidersBeforeMuse, usageReadBeforeHistory, usageReadBeforeMuse, type UsageLocalHostRead } from '../shared/usageDashboard'
 import { hostMachineReportSchema } from '../shared/hostFacts'
+import { projectOriginsSchema, type ProjectOrigins } from '../shared/workerMachine'
+import { desktopDefaultsReceiptSchema } from '../shared/desktopDefaults'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { DEFLATE_RESPONSE, deflateOffered, SocketFrames } from './socketFrames'
 import { CutBodies } from '../shared/activityBodies'
@@ -101,7 +103,7 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  * `unknownProviders` are the providers whose host feature its hello did not accept (`PROVIDER_HOST_FEATURES`, #1107): it is
  * sent nothing of theirs, and their threads are hidden from it. Until its hello, that is every such provider.
  */
-interface Peer { unknownProviders: HeldProviders; hostUpdate: boolean; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget> }
+interface Peer { unknownProviders: HeldProviders; hostUpdate: boolean; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget> }
 /**
  * A desktop from before history import, or from before Muse and OpenCode were counted, is sent only the Usage read its
  * strict schemas know (ADR-0083).
@@ -243,6 +245,9 @@ export async function startSocketServer(options: SocketServerOptions) {
   const features = HOST_FEATURES.filter(feature => (feature !== 'provider-sign-in' || options.signIns !== undefined)
     && (feature !== 'opencode-sign-in' || options.opencodeSignIn !== undefined)
     && (!feature.startsWith('watcher-phone') || service.watcherPhone !== undefined && options.admin === false && options.watcherDesktops === undefined)
+    && (feature !== 'watcher-phone-machines' || service.watcherPhone?.offersMachines === true)
+    // Photos for Watcher need the host to stage them and to answer for them (October 23, 2026).
+    && (feature !== 'watcher-phone-photos' || service.stageAttachment !== undefined && service.attachmentPreview !== undefined)
     && (feature !== 'watcher-control' || service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-reads' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-standing-watch' || service.supportsWatcherStandingWatch === true && options.watcherDesktops !== undefined)
@@ -266,6 +271,12 @@ export async function startSocketServer(options: SocketServerOptions) {
     // Host facts are for a desktop placing work (#1031): a headless host offers them on both listeners, to desktops only,
     // and the desktop's own phone listener, which serves no desktop, never does.
     && (feature !== 'host-facts' || service.supportsHostFacts === true && service.hostFacts !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    // Project origins are for a desktop placing work (#1032), as host facts are, and only where the host's Owl answer
+    // turns on Work across machines.
+    && (feature !== 'project-origins' || service.supportsProjectOrigins === true && service.projectOrigins !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    // A host that runs delegation for its own threads (#1310) takes desktop defaults from recorded desktops on both
+    // listeners, only where its Owl answer turns on Work across machines. The desktop's own phone listener never lists it.
+    && (feature !== 'host-delegation' || service.supportsHostDelegation === true && service.desktopDefaults !== undefined && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
     // Continuing agents and forking (#1028) only where the host's Owl answer turns them on.
     && (feature !== 'thread-starts' || service.supportsThreadStarts === true && service.startHandover !== undefined)
     // The message scrubber's prompts above a pane's window (ADR-0109) are for a desktop; the desktop's own phone listener serves none.
@@ -283,12 +294,16 @@ export async function startSocketServer(options: SocketServerOptions) {
     // Branch moves (ADR-0105 decision 8) only where the host's Owl answer turns on cross-machine work, for recorded desktops.
     && (feature !== 'branch-moves' || options.branchMoves !== undefined && options.watcherDesktops !== undefined)
     // Attached files (ADR-0131) only where the host's Owl answer turns them on and it keeps attachments at all.
-    && (feature !== 'file-staging' || service.supportsFileStaging === true && service.stageAttachment !== undefined))
+    && (feature !== 'file-staging' || service.supportsFileStaging === true && service.stageAttachment !== undefined)
+    // A sent file's bytes for the iPhone's Quick Look go with file staging (ADR-0131, October 25 amendment).
+    && (feature !== 'attachment-files' || service.supportsFileStaging === true && service.attachmentFile !== undefined))
   /**
    * Each paired client's file on its way here, by its client ID, so a client holds one upload at a time however many
    * sockets it opens (ADR-0131). A part may come on any of its sockets; the upload goes when the last of them closes.
    */
   const uploads = new FileUploads<string>()
+  /** The paired clients with a sent file's part being read for them, so a client has one such read at a time however many sockets it opens. */
+  const fileReads = new Set<string>()
   const connected = (clientId: string): boolean => {
     for (const peer of peers) if (peer.client.clientId === clientId) return true
     return false
@@ -304,6 +319,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     .filter(feature => !feature.startsWith('watcher-') || feature.startsWith('watcher-phone') || options.watcherDesktops?.has(peer.client.clientId))
     .filter(feature => feature !== 'host-update' || mayUpdate(peer))
     .filter(feature => feature !== 'branch-moves' || (options.watcherDesktops?.has(peer.client.clientId) ?? false))
+    // Desktop defaults come only from a client the launch script recorded as a desktop (#1310).
+    .filter(feature => feature !== 'host-delegation' || options.watcherDesktops?.has(peer.client.clientId) === true)
   const watcherScopes = new WeakMap<Peer, WatcherHostRead>()
   const watcherRevisions = new WeakMap<Peer, string>()
   const offers = (peer: Peer, feature: (typeof HOST_FEATURES)[number]): boolean => featuresFor(peer).includes(feature)
@@ -386,6 +403,11 @@ export async function startSocketServer(options: SocketServerOptions) {
   const scopeOf = (peer: Peer): ProviderScope => ({ providers: peer.unknownProviders, thread: id => unknownProviderThread(peer, id), project: id => unknownProviderProject(peer, id) })
   /** A Watcher answer, projection, or phone state as this peer may be sent it: without a row of a provider it does not know. */
   const watcherFor = <T>(peer: Peer, value: T): T => peer.unknownProviders.size ? readWithoutProviders(value, scopeOf(peer)) : value
+  /** Watcher's phone page with the machines line, for a phone that accepted `watcher-phone-machines` (#1032). */
+  const withMachines = <T extends object>(peer: Peer, page: T): T => peer.watcherPhoneMachines && service.watcherPhone ? { ...page, machines: service.watcherPhone.machines() } : page
+  /** A phone answer carrying a page, with the machines line on its page for a phone that accepted it. */
+  const answerWithMachines = <T>(peer: Peer, answer: T): T => answer !== null && typeof answer === 'object' && 'state' in answer && answer.state !== null && typeof answer.state === 'object'
+    ? { ...answer, state: withMachines(peer, answer.state) } : answer
   /**
    * A Watcher request that names a thread, project or model of a provider this peer does not know is refused before the host
    * reads or acts on it, as one for a thread it was never sent is (#1107).
@@ -439,7 +461,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     // A client from before #480 reads the client updates' channel and state against the values it knows, and one it
     // does not know would make it refuse the whole shell: it is sent them as it knew them.
     // Watcher's phone state is the host's own, so it is filtered for this peer as the shell was (#1107).
-    const phoneState = peer.watcherPhone && service.watcherPhone ? watcherFor(peer, service.watcherPhone.state(options.mayAnswer?.(peer.client) ?? false, peer.watcherPhoneManage === true, peer.watcherPhoneSteer === true)) : undefined
+    const phoneState = peer.watcherPhone && service.watcherPhone ? watcherFor(peer, withMachines(peer, service.watcherPhone.state(options.mayAnswer?.(peer.client) ?? false, peer.watcherPhoneManage === true, peer.watcherPhoneSteer === true))) : undefined
     const projected = phoneState ? { ...own, watcher: phoneState, host: { ...own.host, threads: own.host.threads.map(thread => ({ ...thread,
       watchedByWatcher: phoneState.watchedThreads.some(row => row.target.hostId === hostId && row.target.threadId === thread.id && row.watched) })) } } : own
     // One from before mise's `not-listed` failure reads it as the installer's, for the same reason.
@@ -873,6 +895,14 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (!peer.watcherPhoneStop || !offers(peer, 'watcher-phone-stop-all')) throw new Refusal('invalid_request')
         return stopPreviewWithoutProviders(phone.prepareStop(peer.client), peer.unknownProviders)
       }
+      // One photo of a message in Watcher's conversation. Watcher's thread is hidden from a phone's `preview`, so this reads the
+      // current Watcher's alone, one image at a time on the same guard.
+      if (request.op === 'watcher-phone-preview') {
+        if (!offers(peer, 'watcher-phone-photos')) throw new Refusal('invalid_request')
+        if (peer.preview) throw new Refusal('busy')
+        peer.preview = true
+        try { return await phone.preview(request.request) } finally { peer.preview = false }
+      }
       const answer = await (async () => { switch (request.op) {
         case 'watcher-phone-set-permission':
         case 'watcher-phone-watch':
@@ -903,7 +933,15 @@ export async function startSocketServer(options: SocketServerOptions) {
           receipts.record(peer.client.clientId, request.id, { digest, receipt, task })
           return task
         }
-        case 'watcher-phone-read': await observe(); return phone.get(mayAnswer(), standing, steer)
+        case 'watcher-phone-read': {
+          // Read afresh only for a phone that negotiated the machines line (#1032): when its user opens a machine's numbers
+          // or Watcher placed work. Nothing reads on a timer.
+          if (request.machines === true) {
+            if (!peer.watcherPhoneMachines || !offers(peer, 'watcher-phone-machines')) throw new Refusal('invalid_request')
+            await phone.readMachines()
+          }
+          await observe(); return phone.get(mayAnswer(), standing, steer)
+        }
         case 'watcher-phone-remove-followup': {
           if (!steer || !offers(peer, 'watcher-phone-steer')) throw new Refusal('invalid_request')
           // As a management change: its outcome is kept under the request's ID, so a lost acknowledgement reads it and a
@@ -935,6 +973,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         case 'watcher-phone-send': {
           // Only a phone that negotiated steering may ask for a steer; an older phone's send is unchanged (#1229).
           if (request.request.delivery !== undefined && (!steer || !offers(peer, 'watcher-phone-steer'))) throw new Refusal('invalid_request')
+          if (request.request.images !== undefined && !offers(peer, 'watcher-phone-photos')) throw new Refusal('invalid_request')
           const digest = createHash('sha256').update(JSON.stringify([request.op, request.request])).digest('hex')
           const previous = receipts.get(peer.client.clientId, request.id)
           if (previous) {
@@ -987,8 +1026,10 @@ export async function startSocketServer(options: SocketServerOptions) {
           return phone.get(mayAnswer(), standing, steer)
         }
       } })()
+      // The machines line goes on every page an answer carries, Stop all's included: the iPhone takes that page whole.
+      const paged = answerWithMachines(peer, answer)
       // Stop all's result keeps a row for every thread its confirmation listed, so a phone hears which it could not stop.
-      return request.op === 'watcher-phone-stop-all' ? stopResultWithoutProviders(answer, scopeOf(peer)) : watcherFor(peer, answer)
+      return request.op === 'watcher-phone-stop-all' ? stopResultWithoutProviders(paged, scopeOf(peer)) : watcherFor(peer, paged)
     }
     if ('threadId' in request && request.threadId && hiddenThread(peer, request.threadId)) throw new Refusal('forbidden')
     if ('request' in request && request.request && 'threadId' in request.request && hiddenThread(peer, request.request.threadId as string)) throw new Refusal('forbidden')
@@ -1014,6 +1055,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.watcherPhoneStop = peer.watcherPhone && (request.accepts?.includes('watcher-phone-stop-all') ?? false) && offers(peer, 'watcher-phone-stop-all')
         peer.watcherPhoneManage = peer.watcherPhone && (request.accepts?.includes('watcher-phone-manage') ?? false) && offers(peer, 'watcher-phone-manage')
         peer.watcherPhoneSteer = peer.watcherPhone && (request.accepts?.includes('watcher-phone-steer') ?? false) && offers(peer, 'watcher-phone-steer')
+        peer.watcherPhoneMachines = peer.watcherPhone && (request.accepts?.includes('watcher-phone-machines') ?? false) && offers(peer, 'watcher-phone-machines')
         peer.watcherReads = (request.accepts?.includes('watcher-reads') ?? false) && offers(peer, 'watcher-reads'); peer.answerReceipts = (request.accepts?.includes('answer-receipts') ?? false) && offers(peer, 'answer-receipts')
         peer.usageHistory = (request.accepts?.includes('usage-history') ?? false) && offers(peer, 'usage-history')
         peer.retiredTerminals = request.accepts?.includes('terminals') ?? false
@@ -1140,6 +1182,19 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'host-facts':
         if (!offers(peer, 'host-facts') || !service.hostFacts) throw new Refusal('invalid_request')
         try { return hostMachineReportSchema.parse(await service.hostFacts()) } catch { throw new Refusal('unavailable') }
+      case 'project-origins': {
+        if (!offers(peer, 'project-origins') || !service.projectOrigins) throw new Refusal('invalid_request')
+        let read: ProjectOrigins
+        try { read = projectOriginsSchema.parse(await service.projectOrigins()) } catch { throw new Refusal('unavailable') }
+        // A project of a provider this peer does not know is not named to it (#1107).
+        return { projects: read.projects.filter(project => !unknownProviderProject(peer, project.projectId)) }
+      }
+      case 'desktop-defaults': {
+        // A recorded desktop's new-thread default and worker roles (#1310): settings, never a grant. Whether they may be used
+        // as sent is this host's `remote-answer` policy for that desktop, read at every delegated start.
+        if (!offers(peer, 'host-delegation') || !service.desktopDefaults) throw new Refusal('invalid_request')
+        try { return desktopDefaultsReceiptSchema.parse(await service.desktopDefaults(request.defaults, peer.client)) } catch { throw new Refusal('unavailable') }
+      }
       case 'host-update': {
         // A host update the host runs on itself (ADR-0088): a recorded desktop that may answer, after its hello, and only
         // on a host that can. Failures are answers in the launch script's own words, never a refusal.
@@ -1232,6 +1287,15 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (peer.preview) throw new Refusal('busy')
         peer.preview = true
         try { return await service.attachmentPreview?.(request.request) ?? null } finally { peer.preview = false }
+      // A part of a sent file, on the socket's one-at-a-time guard as a preview is, and one at a time for the paired client
+      // across all its sockets (ADR-0131, October 25 amendment).
+      case 'attachment-file': {
+        if (!offers(peer, 'attachment-files') || !service.attachmentFile) throw new Refusal('invalid_request')
+        const clientId = peer.client.clientId
+        if (peer.preview || fileReads.has(clientId)) throw new Refusal('busy')
+        peer.preview = true; fileReads.add(clientId)
+        try { return await service.attachmentFile(request.request) } finally { peer.preview = false; fileReads.delete(clientId) }
+      }
     }
   }
   const onMessage = (peer: Peer, text: string): void => {
@@ -1282,7 +1346,7 @@ export async function startSocketServer(options: SocketServerOptions) {
       if (carried || request.op.startsWith('watcher-phone-')) peer.shellSent = null
       // A revocation while an operation was pending also denies its response.
       if (!authenticated(peer)) { peer.frames.send({ v: 1, id: request.id, ok: false, error: { code: 'unauthenticated', message: errors.unauthenticated } }); peer.frames.close() }
-      else if (deliver(peer, response, request.op === 'detail' ? 'thread' : request.op === 'activity-body' ? 'body' : request.op === 'preview' || request.op === 'attachment-content' ? 'preview' : TOOL_READS.has(request.op) ? 'tool' : 'list')) {
+      else if (deliver(peer, response, request.op === 'detail' ? 'thread' : request.op === 'activity-body' ? 'body' : request.op === 'preview' || request.op === 'attachment-content' || request.op === 'attachment-file' ? 'preview' : TOOL_READS.has(request.op) ? 'tool' : 'list')) {
         if (carried) recordCatalog(peer, carried)
         if (!response.ok) return
         if (request.op === 'detail') {
@@ -1411,7 +1475,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const deflate = offered && compresses(clientId)
     stream.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n' + (deflate ? 'Sec-WebSocket-Extensions: ' + DEFLATE_RESPONSE + '\r\n' : '') + '\r\n')
     const frames = new SocketFrames(stream, false, text => onMessage(peer, text), { deflate })
-    const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, clientUpdateNotListed: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map() }
+    const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherPhoneMachines: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, clientUpdateNotListed: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map() }
     peers.add(peer)
     frames.startHeartbeat()
     frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); peers.delete(peer); if (!connected(peer.client.clientId)) uploads.drop(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })

@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { cleanSettingsHistory } from './settings/privacyCleanup'
 import { RetiredChatHistory } from './settings/retiredChats'
 import { registerHostQuitDrain, type HostQuitHandles } from './app/hostQuitDrain'
@@ -11,6 +12,7 @@ import { agentJobTools, HostSetupToolServer } from './hosts/hostSetupTools'
 import { VISUALIZE_TOOL, VisualToolServer } from './agents/visualTools'
 import { PullRequestToolServer } from './agents/pullRequestTools'
 import { DelegationToolServer } from './agents/delegationTools'
+import { DesktopDefaultsPush, followDesktopDefaults, type DesktopDefaultsEvent } from './hosts/desktopDefaults'
 import { registerDelegationIpc } from './agents/delegationIpc'
 import { registerContinueIpc } from './agents/continueThreadIpc'
 import { registerNextPromptIpc, windowNextPrompt } from './agents/nextPromptIpc'
@@ -191,7 +193,7 @@ import {
 import { APP_ID, APP_NAME } from '../shared/constants'
 import { getReleaseTrack, releaseTrackName } from '../shared/releaseTrack'
 import { hostReleaseVersion, updateHostReleaseVersion } from './hosts/hostReleaseVersion'
-import { WATCHER_CHANGED, WATCHER_RENDERER_ARGUMENT } from '../shared/watcherRoom'
+import { WATCHER_CHANGED, WATCHER_MACHINES_RENDERER_ARGUMENT, WATCHER_RENDERER_ARGUMENT } from '../shared/watcherRoom'
 import { runningVersion, owlFeaturesForRun } from './runningVersion'
 import { heldProvidersOf, releasesHeldProvider } from '../shared/heldProviders'
 import type { DictationCommand } from '../shared/contracts'
@@ -221,6 +223,9 @@ import { registerSubagentIpc } from './agents/subagentIpc'
 import { registerUsageIpc } from './agents/usageIpc'
 import { MainActivityService, type MainActivityLogEvent } from './performance/mainActivityService'
 import { registerMainActivityIpc } from './performance/mainActivityIpc'
+import { registerMainCheckoutIpc } from './agents/mainCheckoutIpc'
+import type { MainCheckoutEvent } from './agents/mainCheckout'
+import { MAIN_CHECKOUT_CHANGED, MAIN_CHECKOUT_RENDERER_ARGUMENT } from '../shared/mainCheckout'
 import { fakeNotification } from './e2e/fakeNotification'
 import { createDesktopNotifier } from './notifications/desktopNotifier'
 import { registerNotificationIpc } from './notifications/notificationIpc'
@@ -238,6 +243,9 @@ import { CURSOR_RENDERER_ARGUMENT } from '../shared/cursorSignIn'
 import { OWN_SERVERS_RENDERER_ARGUMENT } from '../shared/ownModelServers'
 import { OwnServers, type OwnServerEvent, type OwnServersOpenCode } from './ownModelServers/service'
 import { registerOwnServersIpc } from './ownModelServers/ipc'
+import { OwnCleanupMeasures, type OwnCleanupEvent } from './llm/ownServerCleanup'
+import { registerOwnServerCleanupIpc } from './llm/ownServerCleanupIpc'
+import { OWN_SERVER_CLEANUP_RENDERER_ARGUMENT, type OwnCleanupChoice } from '../shared/ownServerCleanup'
 import { SUBAGENTS_CHANGED } from '../shared/subagents'
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from './agents/control'
 import { createWatcherRoomDesktop } from './agents/watcherRoomDesktop'
@@ -346,7 +354,10 @@ type NativeDiagnostic =
   | 'owl-frames-unavailable'
   | 'owl-failed'
   | 'desktop-notification-failed'
+  | MainCheckoutEvent
+  | DesktopDefaultsEvent
   | OwnServerEvent
+  | OwnCleanupEvent
   | 'interface-language-load-failed'
 
 function logOperational(code: NativeDiagnostic): void {
@@ -680,6 +691,10 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   // The iPhone's Agents view (ADR-0103): offered to a paired iPhone only when the Owl list turns it on.
   const agentsViewEnabled = owlFeatures['iphone-agents-view']
   const continueEnabled = owlFeatures['continue-on-provider']
+  // Work across machines (ADR-0082): where new workers start, a start's machine or system, and the machines a delegating
+  // thread may list (#1032); this computer's live load and work placed but not started, and list_machines showing them
+  // (#1311). Stable reads no setting for it, offers none of it, samples nothing and asks no host for its projects' origins.
+  const crossMachineEnabled = owlFeatures['cross-machine-work']
   // Next prompts (ADR-0132): stable builds none, asks no provider and gives the window no bridge.
   const nextPromptEnabled = owlFeatures['next-prompt']
   // Main watches its own event loop and can record a minute of itself (#1233, ADR-0098): an Owl feature, so stable
@@ -723,6 +738,9 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   await plainSettings.save(await plainSettings.get()).catch(() => console.warn('retired-voice-settings-save-failed'))
   await plainSettings.migrateProjectWorkingCopyDefaults(await loadHostIdentity(userDataPath))
   const startupSettings = await settings.get()
+  // Keep main up to date (ADR-0142): this computer's projects only, so only where the local host runs, and never in a
+  // design capture, whose fixture folders must look the same on every run.
+  const keepMainCurrentEnabled = owlFeatures['keep-main-current'] && startupSettings.localHostEnabled && process.env['SOTTO_DESIGN_CAPTURE'] !== '1'
   // The interface language (ADR-0123), read before the tray, the menu or a window shows a word. An end-to-end run reads
   // English as the computer's language, so every test and design capture reads English on any machine; the setting still
   // applies there, and SOTTO_E2E_SYSTEM_LANGUAGES stands in for the computer's list.
@@ -736,11 +754,17 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   const applyInterfaceLanguage = (current: AppSettings): Promise<boolean> =>
     interfaceLanguage.apply(current).catch(() => { logOperational('interface-language-load-failed'); return false })
   await applyInterfaceLanguage(startupSettings)
-  // The user's own model servers (ADR-0124): an Owl feature run by this computer's OpenCode, so it exists only while the
-  // Owl list turns it on, OpenCode is not held and the local host runs. Otherwise main keeps the record untouched, gives
-  // OpenCode no server, passes no renderer argument and registers no channel.
-  const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && !heldProviders.has('opencode') && startupSettings.localHostEnabled
-    ? new OwnServers({ directory: userDataPath, openCode: (): OwnServersOpenCode | undefined => localRuntime?.ownServersOpenCode, log: event => { logOperational(event) } }) : undefined
+  // The user's own model servers (ADR-0124): an Owl feature run by this computer's OpenCode and DeepSeek Harness
+  // (ADR-0138), so it exists only while the Owl list turns it on, one of them is not held and the local host runs.
+  // Otherwise main keeps the record untouched, gives neither a server, passes no renderer argument and registers no channel.
+  const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && (!heldProviders.has('opencode') || !heldProviders.has('deepseek')) && startupSettings.localHostEnabled
+    ? new OwnServers({ directory: userDataPath, openCode: (): OwnServersOpenCode | undefined => localRuntime?.ownServersOpenCode, deepSeek: () => localRuntime?.ownServersDeepSeek, log: event => { logOperational(event) } }) : undefined
+  // AI cleanup on the user's own servers (ADR-0136): its own Owl entry, and only where both the cleanup model and Your own
+  // model servers exist this run. Otherwise the cleanup pass is given no server, no channel is registered, and the saved
+  // choice and measures are kept. E2E runs never reach a server.
+  const ownServerCleanup: OwnCleanupMeasures | undefined = ownServers && cleanupModelEnabled && owlFeatures['own-server-cleanup']
+    ? new OwnCleanupMeasures({ directory: userDataPath, servers: () => ownServers.list(), log: event => { logOperational(event) },
+      ...(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }) }) : undefined
   const omarchyResources = platform === 'linux' ? await findOmarchyResources(e2eConfiguration ? userDataPath : process.resourcesPath, join(__dirname, '../..')) : null
   let agentHistoryEnabled = startupSettings.historyEnabled
   const retiredChatHistory = new RetiredChatHistory(userDataPath, () => agentHistoryEnabled)
@@ -797,11 +821,14 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []),
         ...(nextPromptEnabled && startupSettings.localHostEnabled ? [NEXT_PROMPT_RENDERER_ARGUMENT] : []),
         ...(mainActivity ? [MAIN_ACTIVITY_RENDERER_ARGUMENT] : []),
+        ...(keepMainCurrentEnabled ? [MAIN_CHECKOUT_RENDERER_ARGUMENT] : []),
         ...(desktopNotificationsEnabled ? [DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT] : []),
+        ...(watcherEnabled && crossMachineEnabled ? [WATCHER_MACHINES_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') && startupSettings.localHostEnabled ? [OPENCODE_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') ? [OPENCODE_HOSTS_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('cursor') && startupSettings.localHostEnabled ? [CURSOR_RENDERER_ARGUMENT] : []),
-        ...(ownServers ? [OWN_SERVERS_RENDERER_ARGUMENT] : [])] : [])]
+        ...(ownServers ? [OWN_SERVERS_RENDERER_ARGUMENT] : []),
+        ...(ownServerCleanup ? [OWN_SERVER_CLEANUP_RENDERER_ARGUMENT] : [])] : [])]
       const window = new BrowserWindow(featureArguments.length
         ? { ...options, webPreferences: { ...options.webPreferences, additionalArguments: [...(options.webPreferences?.additionalArguments ?? []), ...featureArguments] } } : options)
       window.webContents.on('before-input-event', (_event, input) => {
@@ -875,18 +902,20 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   let windowBlurredAt = 0
   app.on('browser-window-focus', () => { windowBlurredAt = 0 })
   app.on('browser-window-blur', () => { windowBlurredAt = Date.now() })
-  const windowInFront = (): boolean => BrowserWindow.getAllWindows().some(window => window.getTitle() === buildName && window.isVisible() && !window.isMinimized()
+  const showing = (window: BrowserWindow): boolean => window.getTitle() === buildName && window.isVisible() && !window.isMinimized()
+  const windowInFront = (): boolean => BrowserWindow.getAllWindows().some(window => showing(window)
     && (window.isFocused() || (windowBlurredAt !== 0 && Date.now() - windowBlurredAt < 45_000)))
+  const windowShowing = (): boolean => BrowserWindow.getAllWindows().some(showing)
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart: owlFeatures['resume-after-restart'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
-    delegationEnabled, workerRolesEnabled, continueEnabled, threadStartsEnabled, pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled,
+    delegationEnabled, workerRolesEnabled, continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
     attachAnyFile: owlFeatures['attach-any-file'],
     ...(ownServers ? { ownServers: () => ownServers.list() } : {}),
     ...(nextPromptEnabled ? { nextPromptEnabled, nextPromptChanged: entry => { windows.sendToMain(NEXT_PROMPT_CHANGED, windowNextPrompt(localRuntime?.agentControl.hostId(), entry)) } } : {}),
     ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}),
     settings: () => workingCopySettings, writingSettings: () => settings.get(),
     historyEnabled: () => agentHistoryEnabled,
-    gitStatus: { fetchIntervalMs: () => workingCopySettings.gitFetchIntervalSeconds * 1000, foreground: windowInFront, ...(ghStandIn ? { ghStandIn } : {}), log: event => { logOperational(event) } },
+    gitStatus: { fetchIntervalMs: () => workingCopySettings.gitFetchIntervalSeconds * 1000, foreground: windowInFront, visible: windowShowing, ...(ghStandIn ? { ghStandIn } : {}), log: event => { logOperational(event) } },
     babysitting: { agentTool: () => workingCopySettings.babysitPullRequests },
     // A journey's Cursor sign-in page is written down for the spec to read, never opened in a browser.
     openExternal: url => cursorFixtureRoot ? appendFile(join(cursorFixtureRoot, 'opened-pages.txt'), `${url}
@@ -972,6 +1001,14 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   app.on('browser-window-blur', windowFocusChanged)
   windowFocusChanged()
   localRuntime.watcher?.useRemoteHosts(hostRouter.watcherHosts())
+  // Desktop defaults (#1310): this computer's new-thread default and, while worker roles are on, its worker roles, sent to
+  // each host whose own threads delegate there, when it connects and whenever either changes. Stable sends nothing.
+  const desktopDefaultsPush = crossMachineEnabled ? new DesktopDefaultsPush({ connections: () => hostRouter.remoteConnections(),
+    log: event => logOperational(event) }) : undefined
+  // The new-thread default is the one Settings applies, read from each state the router publishes, in place: this
+  // computer's while its host runs, the selected host's while it is off (ADR-0074). The roles are compared by identity.
+  const desktopDefaultsFollow = desktopDefaultsPush
+    ? followDesktopDefaults(desktopDefaultsPush, hostRouter, () => workerRolesEnabled ? workingCopySettings.workerRoles : undefined) : undefined
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.hostId()!, name: 'This computer', kind: 'local', service: hostService,
     detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request),
@@ -1017,10 +1054,10 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     hosts: { host: id => desktopHosts.jobHost(id), provider: (id, provider) => desktopHosts.providerStatus(id, provider),
       refresh: (id, provider) => desktopHosts.refreshProvider(id, provider),
       subscribe: listener => { const off = [hostRouter.subscribeChanges(listener), desktopHosts.subscribe(() => listener())]; return () => { for (const item of off) item() } } },
-    busy: (): string | undefined => { const setup = hostSetup.state(); return setup && (setup.phase === 'starting' || setup.phase === 'running') ? `An agent is setting up ${setup.name} now. Stop that setup first. Nothing was started.` : undefined } })
+    busy: (): string | undefined => { const setup = hostSetup.state(); return setup && (setup.phase === 'starting' || setup.phase === 'running') ? t`An agent is setting up ${{ host: setup.name }} now. Stop that setup first. Nothing was started.` : undefined } })
   const hostSetup: HostSetup = new HostSetup({ version: hostVersion,
     hosts: { check: connection => desktopHosts.check(connection), add: connection => desktopHosts.setupAdd(connection), forget: id => desktopHosts.forgetSaved(id),
-      attempt: id => desktopHosts.attempt(id), cancelAttempt: id => desktopHosts.cancelAttempt(id), savedAs: (target, port) => desktopHosts.savedAs(target, port) },
+      attempt: id => desktopHosts.attempt(id), attemptInEnglish: id => desktopHosts.attemptInEnglish(id), cancelAttempt: id => desktopHosts.cancelAttempt(id), savedAs: (target, port) => desktopHosts.savedAs(target, port) },
     threads: agentJobThreads, busy: (): string | undefined => providerJobs.busySentence() })
   const hostSetupTools = new HostSetupToolServer(agentJobTools(hostSetup, providerJobs))
   quitHandles.providerJobs = providerJobs
@@ -1043,7 +1080,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   const delegationService = 'delegation' in localRuntime ? localRuntime.delegation : undefined
   // Continue a thread on another provider (ADR-0089): an Owl feature, so stable builds no service and registers no bridge.
   const continueService = 'continuation' in localRuntime ? localRuntime.continuation : undefined
-  const delegationTools = delegationService ? new DelegationToolServer(delegationService, { roles: workerRolesEnabled }) : undefined
+  const delegationTools = delegationService ? new DelegationToolServer(delegationService, { roles: workerRolesEnabled, machines: crossMachineEnabled && watcherEnabled }) : undefined
   if (delegationTools) quitHandles.delegationTools = delegationTools
   agentHost.useThreadTools([hostSetupTools, visualTools, pullRequestTools, ...(delegationTools ? [delegationTools] : [])])
   // An interactive visual runs in a sealed page (ADR-0060): main serves it from this store, once per address. The session
@@ -1109,6 +1146,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   const terminalService = new TerminalService({ files, directory: userDataPath,
     projectFolder: projectId => agentControl.projects().find(project => project.id === projectId)?.path,
     acquireStart: workspace => agentHost.acquireTerminalStart(workspace.workingDirectory),
+    runCommandEnabled: owlFeatures['run-command'],
     emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } })
   const phoneAccess = new PhoneAccess({ directory: userDataPath, listener: { sottoVersion: hostVersion, delegation: delegationEnabled },
     service: startupSettings.localHostEnabled ? hostService : undefined,
@@ -1120,7 +1158,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   quitHandles.phoneAccess = phoneAccess
   void phoneAccess.start().catch(() => logOperational('phone-access-start-failed'))
   const requestDrafts: RequestDraftService = new RequestDraftService(userDataPath, owner => requestDraftOwnerState(owner, agentControl, hostRouter), async (target, decisionId) => {
-    if (target.kind !== 'thread') throw new Error('Standalone chats are no longer available.')
+    if (target.kind !== 'thread') throw new Error(t`Standalone chats are no longer available.`)
     const key = parseHostEntityKey(target.ownerId)
     if (key && key.hostId !== agentControl.hostId()) await hostRouter.refreshRequestDraft(target, decisionId)
     else await agentControl.refreshRequestDraft(key?.id ?? target.ownerId, target.requestId)
@@ -1323,6 +1361,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   const transcriptPolish = new TranscriptPolishService({
     getSettings: () => settings.forFormatting(),
     chosenModel: cleanupModelEnabled,
+    ...(ownServerCleanup ? { ownServer: (choice: OwnCleanupChoice) => ownServerCleanup.resolve(choice) } : {}),
     onDiagnostic: diagnosticsAppender('polish-diagnostics.jsonl'),
     ...(e2eConfiguration === null
       ? {}
@@ -1613,6 +1652,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       const grantDefaultChanged = settings.browserWithoutAsking !== workingCopySettings.browserWithoutAsking
       const babysittingChanged = settings.babysitPullRequests !== workingCopySettings.babysitPullRequests
       const workerRolesChanged = JSON.stringify(settings.workerRoles) !== JSON.stringify(workingCopySettings.workerRoles)
+      const previous = workingCopySettings
       workingCopySettings = settings
       menuBarOwl?.applySettings(settings)
       // A new interface language reaches the tray, the menu and both windows at once, with no restart (ADR-0123).
@@ -1621,11 +1661,18 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         installApplicationMenu()
         windows.sendToMain(INTERFACE_LANGUAGE_CHANGED, interfaceLanguage.current())
         windows.sendToWidget(INTERFACE_LANGUAGE_CHANGED, interfaceLanguage.current())
+        // Main's long-lived words follow at once: a host's connect failure, a host update's failure and Add host's question.
+        desktopHosts.languageChanged()
+        hostUpdates.languageChanged()
+        hostSetup.languageChanged()
       }
       // Each provider's own sub-agents follow the worker roles (#1042): Codex's role files are written again for the
       // threads' next loads. Only while that Owl feature is on does the runtime hold the table.
       if (workerRolesChanged && 'workerRoles' in localRuntime) localRuntime.workerRoles?.changed()
+      // Hosts whose own threads delegate are told the new worker roles (#1310).
+      if (workerRolesChanged) desktopDefaultsFollow?.rolesChanged()
       worktreeCleanup?.settingsChanged()
+      if (settings.keepMainCurrent !== previous.keepMainCurrent || JSON.stringify(settings.projectKeepMainCurrent) !== JSON.stringify(previous.projectKeepMainCurrent)) localRuntime.mainCheckout?.settingsChanged()
       localRuntime.watcher?.settingsChanged()
       phoneAccess.settingsChanged()
       if (grantDefaultChanged) browserService?.settingChanged()
@@ -1875,12 +1922,18 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       // A recording profiles the main window that asked, through its own debugger (ADR-0098).
       const cleanupMainActivity = registerMainActivityIpc(ipcMain, mainActivity, () => windows.getTrustedRenderers(),
         event => { const sender = BrowserWindow.getAllWindows().find(window => window.webContents === event.sender)?.webContents; return sender ? windowProfiler(sender.debugger) : null })
+      // Keep main up to date (ADR-0142): only while its Owl feature is on, so stable registers nothing.
+      const cleanupMainCheckout = registerMainCheckoutIpc(ipcMain, localRuntime.mainCheckout, () => windows.getTrustedRenderers(),
+        async path => { const error = await shell.openPath(path); if (error) throw new Error('Sotto could not open that folder.') })
+      const unsubscribeMainCheckout = localRuntime.mainCheckout?.subscribe(state => { windows.sendToMain(MAIN_CHECKOUT_CHANGED, state) })
       // OpenCode's sign-in (#1104): only while its Owl feature is on, so stable registers nothing.
       const cleanupOpenCodeSignIn = registerOpenCodeSignInIpc(ipcMain, heldProviders.has('opencode') ? undefined : localRuntime.opencodeSignIn, () => windows.getTrustedRenderers())
       // Cursor's sign-in from its tile (ADR-0128): only while its Owl feature is on, so stable registers nothing.
       const cleanupCursorSignIn = registerCursorSignInIpc(ipcMain, heldProviders.has('cursor') ? undefined : localRuntime.cursorSignIn, () => windows.getTrustedRenderers())
       // The user's own model servers (ADR-0124): only while their Owl feature is on, so stable registers nothing.
       const cleanupOwnServers = registerOwnServersIpc(ipcMain, ownServers, () => windows.getTrustedRenderers())
+      // Measure for AI cleanup on the user's own servers (ADR-0136): only while its Owl feature runs.
+      const cleanupOwnServerCleanup = registerOwnServerCleanupIpc(ipcMain, ownServerCleanup, () => windows.getTrustedRenderers())
       const checkpointIntegration = connectCheckpoints({ historyEnabled: () => agentHistoryEnabled, files, directory: userDataPath, host: agentHost, control: agentControl, registry: threadRegistry,
         report: () => { logOperational('checkpoint-unavailable') } })
       agentHost.setMutationGuard(checkpointIntegration.canMutate)
@@ -1955,7 +2008,8 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         chooseExportPath: async defaultName => {
           if (e2eConfiguration !== null) return join(userDataPath, defaultName)
           const parent = BrowserWindow.getAllWindows().find(window => window.webContents === windows.getMainWebContents())
-          const options = { defaultPath: defaultName, filters: [{ name: 'Theme', extensions: ['json'] }] }
+          const options = { defaultPath: defaultName, filters: [{ name: t({ message: 'Theme', comment: 'The file type a theme is exported as, in the save dialog' }), extensions: ['json'] }]
+ }
           const result = parent ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options)
           return result.canceled || !result.filePath ? null : result.filePath
         },
@@ -1973,7 +2027,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => windows.getTrustedRenderers(), { encodeReceipt: agentStateBroadcaster.encodeReceipt, windowRead: agentStateBroadcaster.windowRead, workingCopyOptions: projectId => { const key = parseHostEntityKey(projectId); if (key && key.hostId !== agentControl.hostId()) throw new Error('Working-copy choices are on the host machine. Use the existing project folder or create its worktree there.'); return agentHost.workingCopyOptions(key?.id ?? projectId) } })
       // An E2E run never leaves the app for System Settings.
       const systemSettingsOpener = e2eConfiguration === null ? createSystemSettingsOpener(platform, url => shell.openExternal(url)) : null
-      const desktopWatcher = createWatcherRoomDesktop({ watcherEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'],
+      const desktopWatcher = createWatcherRoomDesktop({ watcherEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'], machinesEnabled: crossMachineEnabled,
         watcher: localRuntime?.watcher, send: state => windows.sendToMain(WATCHER_CHANGED, state) })
       const cleanup = registerIpc(ipcMain, {
         ...(desktopWatcher ? { watcher: desktopWatcher.bridge } : {}),
@@ -2111,10 +2165,13 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         cleanupContinue()
         cleanupNextPrompts()
         cleanupMainActivity()
+        cleanupMainCheckout()
+        unsubscribeMainCheckout?.()
         cleanupNotifications()
         cleanupOpenCodeSignIn()
         cleanupCursorSignIn()
         cleanupOwnServers()
+        cleanupOwnServerCleanup()
         worktreeCleanup?.dispose()
         cleanupTools()
         browserService = undefined

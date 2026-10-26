@@ -12,7 +12,7 @@ import { HOST_FEATURES, hostVersionMismatch, type HostFeature, type HostOperatio
 import { owlFeaturesForTrack, type OwlFeatureId } from '../../src/shared/owlFeatures'
 import { getReleaseTrack } from '../../src/shared/releaseTrack'
 import { GitPullRequestRefusal } from '../../src/main/agents/gitPullRequests'
-import { HostFactsSource, hostMachineReport } from '../../src/main/agents/hostFacts'
+import { HostFactsSource, hostMachineReport, type MachineWork } from '../../src/main/agents/hostFacts'
 import { HOST_FACTS_REFRESH_MS } from '../../src/shared/hostFacts'
 import { syntheticModelCatalog } from '../fixtures/modelCatalog'
 import { rawPeer } from '../fixtures/rawHostPeer'
@@ -67,21 +67,29 @@ describe('host facts over the socket (#1031)', () => {
     expect((await client.hostFacts()).facts.observedAt).toBe(first.facts.observedAt)
   })
 
-  it('carries a fresh memory reading across the socket once the refresh window has passed, and the last one inside it', async () => {
+  it.each([true, false])('carries a fresh memory reading across the socket once the refresh window has passed, and the last one inside it, with Work across machines %s', async live => {
     let free = 9 * 1024 ** 3, at = Date.parse('2026-10-15T12:00:00.000Z')
-    const source = new HostFactsSource({ now: () => new Date(at), readFile: async () => 'PRETTY_NAME="Omarchy"\nVERSION_ID="4.0.4"\n',
+    const source = new HostFactsSource({ now: () => new Date(at), sleep: async () => undefined,
+      readFile: async path => path === '/proc/meminfo' ? `MemAvailable: ${free / 1024} kB\n` : 'PRETTY_NAME="Omarchy"\nVERSION_ID="4.0.4"\n',
       os: { platform: () => 'linux', release: () => '6.17.1', version: () => '#1 SMP', machine: () => 'x86_64', totalmem: () => 16 * 1024 ** 3, freemem: () => free, cpus: () => Array.from({ length: 16 }, () => ({})) } })
     const service: HostService = {
       shell: () => fixture.host.service.shell(), state: () => fixture.host.service.state(), threadDetail: id => fixture.host.service.threadDetail(id),
       command: (command, identity) => fixture.host.service.command(command, identity), events: () => [], subscribe: () => () => undefined,
-      supportsHostFacts: true, hostFacts: () => hostMachineReport(source, [{ status: 'running' }]),
+      supportsHostFacts: true, hostFacts: () => hostMachineReport(source, () => ({ threads: [{ id: 'a', status: 'running' }, { id: 'b', status: 'idle' }],
+        deliveries: [{ threadId: 'b', status: 'queued' }] }) as unknown as MachineWork, live),
     }
     const server = await startSocketServer({ service, pairing: fixture.host.pairing })
     try {
       const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Desktop')
       const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); fixture.clients.push(client)
       await client.connect()
-      expect(await client.hostFacts()).toMatchObject({ runningThreads: 1, facts: { os: { family: 'linux', name: 'Omarchy', version: '4.0.4' }, freeMemoryBytes: 9 * 1024 ** 3 } })
+      const answer = await client.hostFacts()
+      expect(answer).toMatchObject({ runningThreads: 1, facts: { os: { family: 'linux', name: 'Omarchy', version: '4.0.4' }, freeMemoryBytes: 9 * 1024 ** 3 } })
+      // Its live load and work placed but not started cross the socket with the facts only with Work across machines on
+      // (#1311); with it off the answer is the facts and running threads, as before.
+      if (live) expect(answer).toMatchObject({ placedNotStarted: 1,
+        load: { availableMemoryBytes: 9 * 1024 ** 3, windowStartAvailableMemoryBytes: 9 * 1024 ** 3, cpuBusyPercent: null, memoryPressurePercent: null } })
+      else expect(Object.keys(answer).sort()).toEqual(['facts', 'runningThreads'])
       free = 2 * 1024 ** 3; at += HOST_FACTS_REFRESH_MS - 1
       expect((await client.hostFacts()).facts.freeMemoryBytes).toBe(9 * 1024 ** 3)
       at += 1

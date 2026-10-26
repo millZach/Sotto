@@ -28,7 +28,7 @@ struct NewThreadSheet: View {
     private var busy: Bool { model.creatingHostID != nil }
     private var computerName: String { model.name(hostID) }
     private var project: Project? { model.projects(hostID).first { $0.id == projectID } }
-    private var projectTitle: String { folder?.projectName ?? project?.title ?? "Project" }
+    private var projectTitle: String { folder?.shownName ?? project?.title ?? String(localized: "Project", comment: "Stands in for a project's name when the computer gave none.") }
     private var projectPath: String? { folder?.path ?? project?.path }
 
     var body: some View {
@@ -101,10 +101,10 @@ struct NewThreadSheet: View {
 
     private var stepLabel: String {
         switch step {
-        case .computer: return "Step 1 of 3: computer"
-        case .project: return "Step 2 of 3: project"
-        case .folders: return "Step 2 of 3: folder"
-        case .options: return "Step 3 of 3: options"
+        case .computer: return String(localized: "Step 1 of 3: computer")
+        case .project: return String(localized: "Step 2 of 3: project")
+        case .folders: return String(localized: "Step 2 of 3: folder")
+        case .options: return String(localized: "Step 3 of 3: options")
         }
     }
 
@@ -129,8 +129,8 @@ struct NewThreadSheet: View {
 
     @ViewBuilder private var footer: some View {
         switch step {
-        case .computer: FooterHint(text: "Choose a computer to continue.")
-        case .project: FooterHint(text: "Choose a project to continue.")
+        case .computer: FooterHint(text: String(localized: "Choose a computer to continue."))
+        case .project: FooterHint(text: String(localized: "Choose a project to continue."))
         case .folders: EmptyView()
         case .options: openButton
         }
@@ -147,7 +147,7 @@ struct NewThreadSheet: View {
         } label: {
             HStack(spacing: Space.s2) {
                 if busy { ProgressView().tint(Palette.onAccent) }
-                Text(busy ? "Opening thread…" : "Open thread on \(computerName)").lineLimit(1)
+                (busy ? Text("Opening thread…") : Text("Open thread on \(computerName)")).lineLimit(1)
             }
         }
         .buttonStyle(ActionStyle(wide: true))
@@ -162,7 +162,7 @@ struct NewThreadSheet: View {
     private var computers: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                StepTitle(title: "Where should it run?", subtitle: "Threads run on a computer with Sotto open.")
+                StepTitle(title: String(localized: "Where should it run?"), subtitle: String(localized: "Threads run on a computer with Sotto open."))
                 VStack(spacing: Space.s2) {
                     ForEach(model.computers, id: \.hostID) { computer in
                         Button { chooseComputer(computer.hostID) } label: {
@@ -178,7 +178,7 @@ struct NewThreadSheet: View {
                 }
                 .padding(.top, Space.s5)
                 if !model.computers.contains(where: { model.online($0.hostID) }) {
-                    QuietLine(text: "Reconnect a computer in Computers before starting a thread.").padding(.top, Space.s4)
+                    QuietLine(text: String(localized: "Reconnect a computer in Computers before starting a thread.")).padding(.top, Space.s4)
                 }
             }
             .pagePadding()
@@ -189,9 +189,10 @@ struct NewThreadSheet: View {
         switch model.status(id) {
         case .online:
             let count = model.projects(id).count
-            return "Online · \(count) \(count == 1 ? "project" : "projects")"
-        case .connecting: return "Connecting…"
-        case .unreachable: return "Can’t be reached right now"
+            let projects = count == 1 ? String(localized: "1 project") : String(localized: "\(count) projects")
+            return String(localized: "Online · \(projects)", comment: "%@ is how many projects the computer has, such as 3 projects.")
+        case .connecting: return String(localized: "Connecting…")
+        case .unreachable: return String(localized: "Can’t be reached right now")
         }
     }
 
@@ -202,7 +203,7 @@ struct NewThreadSheet: View {
             VStack(alignment: .leading, spacing: 0) {
                 FlowLayout(spacing: Space.s2) { computerCrumb }
                     .padding(.bottom, Space.s5)
-                StepTitle(title: "Which project?", subtitle: "The thread works in this folder.")
+                StepTitle(title: String(localized: "Which project?"), subtitle: String(localized: "The thread works in this folder."))
                 connectionNotice
                 VStack(spacing: Space.s2) {
                     ForEach(model.projects(hostID)) { project in
@@ -216,7 +217,7 @@ struct NewThreadSheet: View {
                         .accessibilityIdentifier("new-thread-project-\(project.id)")
                     }
                     Button { go(.folders, forward: true) } label: {
-                        PickRow(title: "Browse another folder", detail: "Folders on \(computerName)") {
+                        PickRow(title: String(localized: "Browse another folder"), detail: String(localized: "Folders on \(computerName)", comment: "%@ is the computer's name.")) {
                             Image(systemName: "folder.badge.plus").font(.system(size: 17, weight: .medium)).foregroundStyle(Palette.accentText)
                         }
                     }
@@ -226,7 +227,7 @@ struct NewThreadSheet: View {
                 }
                 .padding(.top, Space.s5)
                 if !model.canBrowseFolders(hostID), model.online(hostID) {
-                    QuietLine(text: "Update Sotto on this computer to browse its folders.").padding(.top, Space.s3)
+                    QuietLine(text: String(localized: "Update Sotto on this computer to browse its folders.")).padding(.top, Space.s3)
                 }
             }
             .pagePadding()
@@ -236,7 +237,7 @@ struct NewThreadSheet: View {
     /// Its folder and how many threads it holds.
     private func projectDetail(_ project: Project) -> String? {
         let threads = model.lists.first { $0.hostID == hostID }?.threads.filter { $0.projectId == project.id }.count ?? 0
-        let count = threads == 0 ? nil : "\(threads) \(threads == 1 ? "thread" : "threads")"
+        let count: String? = threads == 0 ? nil : threads == 1 ? String(localized: "1 thread") : String(localized: "\(threads) threads")
         let parts = [project.path, count].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
@@ -248,27 +249,28 @@ struct NewThreadSheet: View {
             VStack(alignment: .leading, spacing: 0) {
                 FlowLayout(spacing: Space.s2) {
                     computerCrumb
-                    Crumb(symbol: "folder", text: projectTitle, label: "Change project, now \(projectTitle)") {
+                    Crumb(symbol: "folder", text: projectTitle, label: String(localized: "Change project, now \(projectTitle)", comment: "%@ is the project's name.")) {
                         go(folder == nil ? .project : .folders, forward: false)
                     }
                     .accessibilityIdentifier("new-thread-change-project")
                 }
                 .padding(.bottom, Space.s5)
-                StepTitle(title: "How should it work?", subtitle: optionsSubtitle)
+                StepTitle(title: String(localized: "How should it work?"), subtitle: optionsSubtitle)
                 if let projectPath {
-                    Text(projectPath).font(.system(.caption, design: .monospaced)).foregroundStyle(Palette.muted)
+                    Text(verbatim: projectPath).font(.system(.caption, design: .monospaced)).foregroundStyle(Palette.muted)
                         .textSelection(.enabled).padding(.top, Space.s2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 connectionNotice
                 if models.isEmpty {
-                    QuietLine(text: "No ready models on this computer. Connect a provider in Sotto there, then try again.").padding(.top, Space.s5)
+                    QuietLine(text: String(localized: "No ready models on this computer. Connect a provider in Sotto there, then try again.")).padding(.top, Space.s5)
                 } else {
                     fields.padding(.top, Space.s5)
                 }
                 if let feedback = model.creationFeedback {
                     Text(feedback).font(.sotto(.small)).foregroundStyle(Palette.warningText)
                         .fixedSize(horizontal: false, vertical: true)
+                        .paragraphDirection()
                         .padding(.top, Space.s4)
                         .accessibilityIdentifier("creation-feedback")
                 }
@@ -280,13 +282,13 @@ struct NewThreadSheet: View {
 
     private var optionsSubtitle: String {
         model.newThreadDefaults == NewThreadDefaults()
-            ? "These start from \(computerName)’s own choices."
-            : "These start from your new thread defaults."
+            ? String(localized: "These start from \(computerName)’s own choices.", comment: "%@ is the computer's name.")
+            : String(localized: "These start from your new thread defaults.")
     }
 
     private var fields: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            FieldBox(label: "Model", value: chosenModel.map(modelName) ?? "Choose a model", identifier: "new-thread-model") {
+            FieldBox(label: String(localized: "Model", comment: "The field for the model a new thread uses."), value: chosenModel.map(modelName) ?? String(localized: "Choose a model"), identifier: "new-thread-model") {
                 Picker("Model", selection: $modelID) {
                     if chosenModel == nil {
                         Text("Saved model unavailable — choose a model").tag(modelID).selectionDisabled(true)
@@ -295,14 +297,14 @@ struct NewThreadSheet: View {
                 }
             }
             if let chosenModel, let efforts = chosenModel.reasoningEfforts, !efforts.isEmpty {
-                FieldBox(label: "Effort", value: effort.isEmpty ? "Choose an effort" : effort.capitalized, identifier: "new-thread-effort") {
+                FieldBox(label: String(localized: "Effort", comment: "The field for how hard a new thread's model reasons."), value: effort.isEmpty ? String(localized: "Choose an effort") : effort.capitalized, identifier: "new-thread-effort") {
                     Picker("Effort", selection: $effort) {
                         ForEach(efforts, id: \.self) { Text($0.capitalized).tag($0) }
                     }
                 }
             }
             if let chosenModel { permissionField(chosenModel) }
-            FieldBox(label: "Working copy", value: workingCopy.title, identifier: "new-thread-working-copy") {
+            FieldBox(label: String(localized: "Working copy"), value: workingCopy.title, identifier: "new-thread-working-copy") {
                 Picker("Working copy", selection: $workingCopy) {
                     ForEach(WorkingCopy.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
@@ -314,7 +316,7 @@ struct NewThreadSheet: View {
     @ViewBuilder private func permissionField(_ chosen: ThreadModel) -> some View {
         let mayAnswer = model.mayAnswer(hostID)
         let current = chosen.permissions.first { $0.id == permissionID }
-        FieldBox(label: "Permissions", value: current?.name ?? "Choose a permission mode", identifier: "new-thread-permissions") {
+        FieldBox(label: String(localized: "Permissions", comment: "The field for the permission mode a new thread starts in."), value: current?.name ?? String(localized: "Choose a permission mode"), identifier: "new-thread-permissions") {
             Picker("Permissions", selection: chosenPermission) {
                 if current == nil { Text("Choose a permission mode").tag("") }
                 ForEach(chosen.permissions) { permission in
@@ -324,12 +326,12 @@ struct NewThreadSheet: View {
         }
         if let asks = current?.asks { FieldNote(text: asks) }
         if chosen.permissions.isEmpty {
-            FieldNote(text: "This model has no supported permission modes. Choose another model.")
+            FieldNote(text: String(localized: "This model has no supported permission modes. Choose another model."))
         } else if heldBack {
-            FieldNote(text: "\(computerName) hasn’t let this iPhone answer, so this thread starts by asking.", warm: true)
+            FieldNote(text: String(localized: "\(computerName) hasn’t let this iPhone answer, so this thread starts by asking.", comment: "%@ is the computer's name."), warm: true)
                 .accessibilityIdentifier("new-thread-permission-held-back")
         } else if !mayAnswer {
-            FieldNote(text: "This iPhone can start a thread that asks before acting. To answer its permissions here, turn on Can answer in this computer’s Settings › Hosts & phones.")
+            FieldNote(text: String(localized: "This iPhone can start a thread that asks before acting. To answer its permissions here, turn on Can answer in this computer’s Settings › Hosts & phones."))
         }
     }
 
@@ -350,7 +352,7 @@ struct NewThreadSheet: View {
     // MARK: Shared pieces
 
     private var computerCrumb: some View {
-        Crumb(symbol: "desktopcomputer", text: computerName, label: "Change computer, now \(computerName)") {
+        Crumb(symbol: "desktopcomputer", text: computerName, label: String(localized: "Change computer, now \(computerName)", comment: "%@ is the computer's name.")) {
             go(.computer, forward: false)
         }
         .accessibilityIdentifier("new-thread-change-computer")
@@ -361,6 +363,7 @@ struct NewThreadSheet: View {
             Text("Can’t reach \(computerName). Reconnect before opening a thread.")
                 .font(.sotto(.small)).foregroundStyle(Palette.warningText)
                 .fixedSize(horizontal: false, vertical: true)
+                .paragraphDirection()
                 .padding(.top, Space.s3)
         }
     }
@@ -411,11 +414,11 @@ struct NewThreadSheet: View {
 
 extension WorkingCopy {
     /// Where a new thread works, as New thread and Settings name it.
-    var title: String { self == .shared ? "Project folder" : "New worktree" }
+    var title: String { self == .shared ? String(localized: "Project folder") : String(localized: "New worktree") }
     var summary: String {
         self == .shared
-            ? "Works in the project’s own folder, beside its other threads."
-            : "Its own folder on a new branch, made when you send the first message."
+            ? String(localized: "Works in the project’s own folder, beside its other threads.")
+            : String(localized: "Its own folder on a new branch, made when you send the first message.")
     }
 }
 
@@ -458,11 +461,12 @@ private struct StepTitle: View {
     let subtitle: String
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text(title).font(.sotto(.title, .bold)).tracking(-0.4).foregroundStyle(Palette.ink)
+            Text(title).font(.sotto(.title, .bold)).headingTracking(-0.4).foregroundStyle(Palette.ink)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
             Text(subtitle).font(.sotto(.small)).foregroundStyle(Palette.muted)
                 .fixedSize(horizontal: false, vertical: true)
+                .paragraphDirection()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -570,6 +574,7 @@ private struct FieldNote: View {
         HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
             if warm { Light(tone: .warning, size: 7) }
             Text(text).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                .paragraphDirection()
         }
         .padding(.horizontal, Space.s1).padding(.bottom, Space.s2)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -583,6 +588,7 @@ private struct QuietLine: View {
         Text(text).font(.sotto(.small)).foregroundStyle(Palette.muted)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .paragraphDirection()
     }
 }
 
@@ -592,6 +598,7 @@ private struct FooterHint: View {
     var body: some View {
         Text(text).font(.sotto(.small)).foregroundStyle(Palette.muted)
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .paragraphDirection()
             .padding(.horizontal, Space.gutter).padding(.vertical, Space.s3)
             .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 1) }
     }
@@ -623,7 +630,7 @@ private struct ComputerFolderPicker: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.s4) {
-                StepTitle(title: "Folders on \(model.name(hostID))", subtitle: "Choose the folder the thread works in. Only folder names are read.")
+                StepTitle(title: String(localized: "Folders on \(model.name(hostID))", comment: "%@ is the computer's name."), subtitle: String(localized: "Choose the folder the thread works in. Only folder names are read."))
                 places
                 pathField
                 filterField
@@ -632,6 +639,7 @@ private struct ComputerFolderPicker: View {
                 }
                 if let problem {
                     Text(problem).font(.sotto(.small)).foregroundStyle(Palette.warningText).fixedSize(horizontal: false, vertical: true)
+                        .paragraphDirection()
                 }
                 if let listing, !loading, problem == nil { folders(listing) }
             }
@@ -706,7 +714,7 @@ private struct ComputerFolderPicker: View {
 
     @ViewBuilder private func folders(_ listing: FolderListing) -> some View {
         let shown = listing.folders.filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }
-        Text(listing.path ?? "Drives").font(.system(.caption, design: .monospaced)).foregroundStyle(Palette.muted)
+        Text(listing.path ?? String(localized: "Drives", comment: "Stands in for a folder path at the top level, where a computer lists its drives or roots.")).font(.system(.caption, design: .monospaced)).foregroundStyle(Palette.muted)
             .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
         if !shown.isEmpty {
             LazyVStack(spacing: 0) {
@@ -721,8 +729,8 @@ private struct ComputerFolderPicker: View {
             }
             .sottoCard(.plain)
         }
-        if listing.folders.isEmpty { QuietLine(text: "No subfolders here.") }
-        if listing.truncated { QuietLine(text: "Only the first 1,000 folders are listed. Enter a full path to open another.") }
+        if listing.folders.isEmpty { QuietLine(text: String(localized: "No subfolders here.")) }
+        if listing.truncated { QuietLine(text: String(localized: "Only the first 1,000 folders are listed. Enter a full path to open another.")) }
     }
 
     private func read(_ path: JSONValue?) { focusedField = nil; Task { await load(path) } }
@@ -734,8 +742,8 @@ private struct ComputerFolderPicker: View {
             guard requestID == current else { return }
             switch result {
             case .listed(let value): listing = value; path = value.path ?? ""; filter = ""
-            case .missing: problem = "This folder doesn’t exist. Nothing was added. Go Home or enter another path."
-            case .unreadable: problem = "This folder can’t be read. Nothing was added. Go Home or choose another folder."
+            case .missing: problem = String(localized: "This folder doesn’t exist. Nothing was added. Go Home or enter another path.")
+            case .unreadable: problem = String(localized: "This folder can’t be read. Nothing was added. Go Home or choose another folder.")
             }
         } catch { if requestID == current { problem = error.localizedDescription } }
     }
@@ -749,7 +757,7 @@ private struct FolderRow: View {
             Image(systemName: "folder").font(.system(size: 17, weight: .medium)).foregroundStyle(Palette.accentText)
                 .frame(width: 24).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(folder.name).font(.sotto(.body)).foregroundStyle(Palette.ink).multilineTextAlignment(.leading)
+                Text(verbatim: folder.name).font(.sotto(.body)).foregroundStyle(Palette.ink).multilineTextAlignment(.leading)
                 if folder.git { Text("Git repository").font(.sotto(.caption)).foregroundStyle(Palette.muted) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -771,12 +779,15 @@ struct CreationPendingRow: View {
         VStack(alignment: .leading, spacing: Space.s3) {
             HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
                 Light(tone: .warning)
-                Text("\(operation.kind == "create-project" ? "Project registration" : "Thread creation") on \(model.name(operation.hostID)) is unconfirmed.")
+                (operation.kind == "create-project" ? Text("Project registration on \(model.name(operation.hostID)) is unconfirmed.")
+                    : Text("Thread creation on \(model.name(operation.hostID)) is unconfirmed."))
                     .font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
                     .fixedSize(horizontal: false, vertical: true)
+                    .paragraphDirection()
             }
             Text("Nothing was resent. Check this computer before trying again.").font(.sotto(.small)).foregroundStyle(Palette.muted)
                 .fixedSize(horizontal: false, vertical: true)
+                .paragraphDirection()
             HStack(spacing: Space.s2) {
                 Button("Check again") { Task { await model.checkDelivery(operation.hostID) } }
                     .buttonStyle(PlainStyle(compact: true))

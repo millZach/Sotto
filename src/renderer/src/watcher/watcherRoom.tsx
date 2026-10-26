@@ -1,9 +1,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { msg } from '@lingui/core/macro'
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import { parseHostEntityKey } from '../../../shared/clientIdentity'
 import type { WatcherThreadTarget } from '../../../shared/watcher'
-import { isWatchedRow, newerWatcherRoom, type WatcherBridge, type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherMergeTurnsRead, type WatcherRoomResult, type WatcherRoomState } from '../../../shared/watcherRoom'
+import { isWatchedRow, newerWatcherRoom, type WatcherBridge, type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherMachinesRead, type WatcherMergeTurnsRead, type WatcherRoomResult, type WatcherRoomState } from '../../../shared/watcherRoom'
 import { useOptionalAgents } from '../agents/AgentContext'
+import type { LaterWords } from '../features/settings/laterWords'
 import { useWatcherEnabled } from '../state/watcherFeature'
 import { firstMessage, useFirstMessageDelivery } from './watcherFirstMessage'
 import { watchNotices } from './watchNotice'
@@ -19,14 +21,10 @@ export interface WatcherRoom {
   readonly status: WatcherRoomStatus
   readonly state: WatcherRoomState | null
   /** Main's refusal or a failed read, in plain words; the room shows it where its content would be. */
-  readonly error: string | null
+  readonly error: LaterWords | null
   /** The thread that is the current Watcher, once main names it and the window has its row. */
   readonly currentThreadId: string | null
   readonly watchedThreadIds: ReadonlySet<string>
-  /** Watched threads whose watching waits while the user's own turn there runs. */
-  readonly pausedThreadIds: ReadonlySet<string>
-  /** Watched threads under a standing watch, which lasts until the user stops it; the rest are watched for a request. */
-  readonly standingThreadIds: ReadonlySet<string>
   readonly open: WatcherBridge['open'] | null
   /** What Watcher may do without asking; null where the bridge cannot change it, and the room says it as a fact. */
   readonly setPermission: NonNullable<WatcherBridge['setPermission']> | null
@@ -43,6 +41,8 @@ export interface WatcherRoom {
   readonly stopAll: { readonly prepare: WatcherBridge['prepareStopAll']; readonly stop: WatcherBridge['stopAll'] } | null
   /** The merge queue and merge turns for Watcher's picture (#1339), read only while it shows. Null where the bridge offers none. */
   readonly readMergeTurns: (() => Promise<WatcherMergeTurnsRead>) | null
+  /** Each machine's facts and load, for the machines line and Settings (#1032). Null unless Work across machines is on. */
+  readonly readMachines: (() => Promise<WatcherMachinesRead>) | null
 }
 
 /** The bridge's three handover calls, together or not at all. */
@@ -69,7 +69,7 @@ const NONE: ReadonlySet<string> = new Set()
 /** Apart from the room, so a memoised sidebar row re-renders only when who is watched changes. */
 const WatchedThreadsContext = createContext<ReadonlySet<string>>(NONE)
 const WatchActionsContext = createContext<WatchActions | null>(null)
-const UNREADABLE = 'Sotto could not read Watcher. Nothing was changed. Reopen Sotto to try again.'
+const UNREADABLE = msg`Sotto could not read Watcher. Nothing was changed. Reopen Sotto to try again.`
 
 /** The window's row for a host's thread, whether this window keys threads by host or by their own IDs. */
 export function threadForTarget(state: AgentState | null, target: WatcherThreadTarget): AgentThread | undefined {
@@ -144,7 +144,7 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
   const agents = useOptionalAgents()
   const agentState = agents?.state ?? null
   const [state, setState] = useState<WatcherRoomState | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<LaterWords | null>(null)
   const [answered, setAnswered] = useState(false)
   const live = enabled && bridge !== undefined
   useEffect(() => {
@@ -169,12 +169,6 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
   const currentThreadId = current === null ? null : idOf(current.target) ?? null
   const watchedKey = state === null || agentState === null ? '' : JSON.stringify(watchedTargets(state).map(idOf).filter(Boolean))
   const watchedThreadIds = useMemo<ReadonlySet<string>>(() => watchedKey === '' ? NONE : new Set(JSON.parse(watchedKey) as string[]), [watchedKey])
-  const pausedKey = state === null || agentState === null ? '' : JSON.stringify(state.watchedThreads.filter(entry => entry.watched === true && entry.paused === true)
-    .map(entry => idOf(entry.target)).filter(Boolean))
-  const pausedThreadIds = useMemo<ReadonlySet<string>>(() => pausedKey === '' ? NONE : new Set(JSON.parse(pausedKey) as string[]), [pausedKey])
-  const standingKey = state === null || agentState === null ? '' : JSON.stringify(watchedRows(state).filter(entry => hasStandingWatch(state, entry.target))
-    .map(entry => idOf(entry.target)).filter(Boolean))
-  const standingThreadIds = useMemo<ReadonlySet<string>>(() => standingKey === '' ? NONE : new Set(JSON.parse(standingKey) as string[]), [standingKey])
   // A first message sent before Watcher existed goes to it from here, so leaving the room cannot lose it.
   useFirstMessageDelivery(enabled ? agents : null, currentThreadId)
   // A first message read back after a reload as started, when main then says there is no Watcher, goes back to the composer.
@@ -183,8 +177,9 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
   // The contract keeps these three optional for stand-ins written before them, so the room asks before offering them.
   // Main's own preload supplies all three.
   const manage = useMemo(() => {
-    const { setPermission, watchThread, unwatchThread, readHandover, continueWithHandover, dismissHandover, startNew, readMergeTurns } = live && bridge !== undefined ? bridge : {} as Partial<WatcherBridge>
+    const { setPermission, watchThread, unwatchThread, readHandover, continueWithHandover, dismissHandover, startNew, readMergeTurns, readMachines } = live && bridge !== undefined ? bridge : {} as Partial<WatcherBridge>
     return {
+      readMachines: readMachines === undefined ? null : () => readMachines.call(bridge),
       startNew: startNew === undefined ? null : () => startNew.call(bridge),
       readMergeTurns: readMergeTurns === undefined ? null : () => readMergeTurns.call(bridge),
       setPermission: setPermission === undefined ? null : (request: Parameters<typeof setPermission>[0]) => setPermission.call(bridge, request),
@@ -205,11 +200,11 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
     const watch = manage.watch
     if (!enabled || watch === null) return null
     const set = async (target: WatcherThreadTarget, title: string, watched: boolean): Promise<void> => {
-      let refusal: string | null
+      let refusal: LaterWords | null
       try {
         refusal = settle(await (watched ? watch.watchThread({ target }) : watch.unwatchThread({ target })))
       } catch {
-        refusal = watched ? `Sotto could not reach Watcher, so ${title} is not watched. Try again.` : `Sotto could not reach Watcher, so ${title} is still watched. Try again.`
+        refusal = watched ? msg`Sotto could not reach Watcher, so ${title} is not watched. Try again.` : msg`Sotto could not reach Watcher, so ${title} is still watched. Try again.`
       }
       watchNotices.show({ target, title, watched, refusal })
     }
@@ -225,7 +220,7 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
   }, [enabled, manage, settle])
   const value = useMemo<WatcherRoom | null>(() => !enabled ? null : {
     status: !live ? 'unavailable' : answered ? 'ready' : 'loading',
-    state, error, currentThreadId, watchedThreadIds, pausedThreadIds, standingThreadIds, settle,
+    state, error, currentThreadId, watchedThreadIds, settle,
     open: live ? request => bridge.open(request) : null,
     setPermission: manage.setPermission,
     watchThread: manage.watch?.watchThread ?? null,
@@ -233,8 +228,9 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
     handover: manage.handover,
     startNew: manage.startNew,
     readMergeTurns: manage.readMergeTurns,
+    readMachines: manage.readMachines,
     stopAll: live ? { prepare: () => bridge.prepareStopAll(), stop: request => bridge.stopAll(request) } : null,
-  }, [enabled, live, answered, state, error, currentThreadId, watchedThreadIds, pausedThreadIds, standingThreadIds, settle, bridge, manage])
+  }, [enabled, live, answered, state, error, currentThreadId, watchedThreadIds, settle, bridge, manage])
   return <WatcherRoomContext.Provider value={value}>
     <WatchedThreadsContext.Provider value={enabled ? watchedThreadIds : NONE}>
       <WatchActionsContext.Provider value={actions}>{children}</WatchActionsContext.Provider>
@@ -255,16 +251,6 @@ export function useWatchedThread(threadId: string): boolean {
 /** Watch and Stop watching, or null with the gate off or where the bridge offers neither. */
 export function useWatchActions(): WatchActions | null {
   return useContext(WatchActionsContext)
-}
-
-/** Whether a watched thread's watching waits while the user's own turn there runs. */
-export function useWatchPaused(threadId: string): boolean {
-  return useContext(WatcherRoomContext)?.pausedThreadIds.has(threadId) ?? false
-}
-
-/** Whether a watched thread is under a standing watch, rather than watched for a Watcher request alone. */
-export function useStandingWatch(threadId: string): boolean {
-  return useContext(WatcherRoomContext)?.standingThreadIds.has(threadId) ?? false
 }
 
 /** The window's ID for the current Watcher, which the Threads page leaves to Watcher's room. */

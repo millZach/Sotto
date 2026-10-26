@@ -64,6 +64,22 @@ describe('the coordinator\'s record of failures seen', () => {
     expect(seen(published.at(-1)!, 'workshop')).toBe(true)
   })
 
+  it('stamps when a request started waiting and when a failure was named, on the shell and the whole state (ADR-0135)', async () => {
+    const { host, control } = await start()
+    host.event({ type: 'permission', threadId: 'workshop', text: 'Run the build?' })
+    failTurn(host, 'docs')
+    const request = control.shell().host.threads.find(thread => thread.id === 'workshop')!.requests[0]!
+    expect(request.since).toBeDefined()
+    expect(Number.isFinite(Date.parse(request.since!))).toBe(true)
+    // The stamp is the one fact however a client reads the thread, and it does not move while the request stands.
+    expect(control.get().host.threads.find(thread => thread.id === 'workshop')!.requests[0]?.since).toBe(request.since)
+    expect(control.shell().host.threads.find(thread => thread.id === 'workshop')!.requests[0]?.since).toBe(request.since)
+    const failed = control.shell().host.threads.find(thread => thread.id === 'docs')!
+    expect(failed.failureId).toBeDefined()
+    expect(failed.failureSince).toBeDefined()
+    expect(Number.isFinite(Date.parse(failed.failureSince!))).toBe(true)
+  })
+
   it('sees a thread that fails while a client shows it', async () => {
     const { host, control, service } = await start()
     await service.command({ type: 'observe-threads', threadIds: ['workshop'] }, phones)

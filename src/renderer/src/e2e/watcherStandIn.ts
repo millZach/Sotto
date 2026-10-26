@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { handoverCountsSchema } from '../../../shared/agents'
 import { watcherIdentitySchema, type WatcherRefusal, type WatcherThreadTarget } from '../../../shared/watcher'
-import { stopAllRunning, watcherMergeTurnsReadSchema, watcherRoomStateSchema, type WatcherBridge, type WatcherRoomState } from '../../../shared/watcherRoom'
+import { stopAllRunning, watcherMachinesReadSchema, watcherMergeTurnsReadSchema, watcherRoomStateSchema, type WatcherBridge, type WatcherRoomState } from '../../../shared/watcherRoom'
 
 /** Where an end-to-end run leaves the projection the room should show, before it reloads the window. */
 export const WATCHER_STAND_IN_KEY = 'sotto.e2e.watcherRoom'
@@ -30,6 +30,8 @@ export const watcherStandInSeedSchema = z.object({
   startNewRefusal: z.string().optional(),
   /** What main reads for Watcher's picture (#1339); without it, the picture has no merge turns to read. */
   mergeTurns: watcherMergeTurnsReadSchema.optional(),
+  /** What main reads for the machines line and Settings (#1032); without it, the bridge offers no machines read. */
+  machines: watcherMachinesReadSchema.optional(),
   /**
    * Later projections, each published this long after the window first listens, so a run can watch the picture move:
    * a send delivered, a reply, a question for the user. Each replaces the parts of the projection it names.
@@ -119,6 +121,7 @@ export function createE2EWatcherBridge(): WatcherBridge | undefined {
     continueWithHandover: async () => ({ status: 'ok', state }),
     dismissHandover: async () => ({ status: 'ok', state: publish({ handover: null }) }),
     ...seed.mergeTurns ? { readMergeTurns: async () => seed.mergeTurns! } : {},
+    ...seed.machines ? { readMachines: async () => seed.machines! } : {},
     onChanged: listener => {
       // The script starts with the first listener, the room's own.
       if (listeners.size === 0 && !scripted) {
