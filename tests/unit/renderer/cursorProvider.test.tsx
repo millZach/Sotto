@@ -175,9 +175,10 @@ describe('Cursor’s provider row', () => {
   it('lists Cursor’s models under their makers, in Cursor’s order', async () => {
     vi.stubGlobal('sotto', { ...window.sotto, cursor: cursorBridge() })
     await mount({})
-    const list = within(await openCursor()).getByRole('group', { name: 'Cursor available models' })
-    expect(within(list).getAllByRole('heading', { level: 5 }).map(heading => heading.textContent)).toEqual(['Cursor', 'Anthropic', 'OpenAI'])
-    const names = (maker: string) => within(within(list).getByRole('list', { name: maker })).getAllByRole('listitem').map(item => item.querySelector('strong')?.textContent)
+    fireEvent.click(within(await openCursor()).getByRole('button', { name: /^Show Cursor models, /u }))
+    const list = screen.getByRole('dialog', { name: 'Cursor models' })
+    expect([...list.querySelectorAll('section')].map(section => section.getAttribute('aria-label'))).toEqual(['Cursor', 'Anthropic', 'OpenAI'])
+    const names = (maker: string) => within(within(list).getByRole('region', { name: maker })).getAllByRole('listitem').map(item => item.querySelector('b')?.textContent)
     // Cursor's own order, not newest first: Auto before Composer, and Sonnet 4.5 before 5.5.
     expect(names('Cursor')).toEqual(['Auto', 'Composer 2.5'])
     expect(names('Anthropic')).toEqual(['Claude Sonnet 4.5', 'Claude Sonnet 5.5'])
