@@ -12,7 +12,7 @@ import { hostCannotStageScreenshotsWords, inInterfaceLanguage, threadStartsUnsup
 import { randomUUID } from 'node:crypto'
 import { isAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
 import { agentCommandSchema, isImageAttachment, defaultNewThreadModelId, defaultThreadModelId, enabledThreadProviders, MAX_DELIVERED_DRAFTS, HOST_DISCONNECTED_BEFORE_FILES, SCREENSHOT_WRONG_TYPE, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentHostSnapshot, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
-import { threadsReplacedSince } from '../../shared/threadListPatches'
+import { noteThreadsReplaced, threadsReplacedSince } from '../../shared/threadListPatches'
 import { clientThreadId, hostEntityKey, mapHostReferences, parseHostEntityKey, projectClientAgentState, type ClientAgentStateProjection } from '../../shared/clientIdentity'
 import type { QuestionPageTarget } from '../agents/questionPages'
 import { desktopWindowClient, type ClientIdentity, type HostService, type RequestAnswerRecovery } from '../agents/hostService'
@@ -157,6 +157,11 @@ interface BuiltThreads {
   readonly available?: boolean
   readonly hostConnected?: boolean
   readonly providers?: AgentState['host']['providers']
+  /**
+   * When `made` is the last publication's list for this host, or was made from it in place: the positions whose record
+   * was made again. Absent when the host's threads were read whole (#925 step 6).
+   */
+  readonly remade?: readonly number[]
 }
 /** What the last publication made of one host's state, for the next build to reuse where nothing changed (#1335). */
 interface BuiltHost { readonly projection: ClientAgentStateProjection; readonly threads: BuiltThreads }
@@ -317,6 +322,11 @@ export class DesktopHostRouter {
   private published: AgentState | undefined
   /** What that publication made of each host's state. Nothing in it is written into, so a later build may hand it on. */
   private readonly built = new Map<string, BuiltHost>()
+  /**
+   * The host of the last state handed to subscribers, kept though `published` is let go, and each host's part of its
+   * thread list, in order: the next publication notes its list as made from this one's in place when it was (#925 step 6).
+   */
+  private windowList: { readonly host: AgentState['host']; readonly hosts: readonly { readonly hostId: string; readonly made: readonly AgentThread[] }[] } | undefined
   /** Hosts whose threads read Reconnecting: kept on the page while their host restarts for an update (ADR-0040). */
   private readonly reconnecting = new Set<string>()
   /** Provider identity is immutable for a thread; classify its gated details when its shell arrives. */
@@ -715,7 +725,7 @@ export class DesktopHostRouter {
       const projection = projectClientAgentState(original, last?.projection)
       const threads = this.windowThreads(connection, original, projection.output, multiple, last)
       if (publish) this.built.set(connection.hostId, { projection, threads })
-      return { connection, original, state: projection.output, threads: threads.made }
+      return { connection, original, state: projection.output, threads: threads.made, remade: threads.remade, before: last?.threads.made }
     })
     const selected = entries.find(item => item.connection.hostId === this.selectedHostId)
     const local = entries.find(item => item.connection.kind === 'local')
@@ -725,7 +735,7 @@ export class DesktopHostRouter {
     // entry too, so Update all lists them whichever host is selected (ADR-0077).
     const base = selected?.connection.kind === 'remote' ? withoutClientUpdates(named) : named
     const threads = entries.flatMap(entry => entry.threads)
-    return {
+    const state: AgentState = {
       ...base, clientScoped: true,
       connections: entries.map(({ connection }) => ({ hostId: connection.hostId, name: connection.name, kind: connection.kind, connected: connection.available?.() !== false })),
       host: { ...base.host, connected: threads.some(thread => thread.clientConnected) || entries.some(item => item.state.host.connected),
@@ -761,6 +771,32 @@ export class DesktopHostRouter {
       activeProjectId: this.selectedProjectId ?? base.activeProjectId,
       ...(this.notice ? { error: this.notice.message } : {}),
     }
+    if (publish) this.noteWindowThreads(state.host, entries)
+    return state
+  }
+  /**
+   * Notes a publication's thread list as made in place from the last publication's (#925 step 6), so the window's
+   * broadcast reads only the records made again. That holds when the same hosts stand in the same order with as many
+   * threads each, and each host's part is the last one's or was made from it in place: the positions are each host's
+   * remade positions, moved on by the threads of the hosts before it. A host added, removed or moved, a list of another
+   * length, or a host read whole notes nothing, and the broadcast reads the list whole.
+   */
+  private noteWindowThreads(host: AgentState['host'], entries: readonly { connection: DesktopHostConnection; threads: readonly AgentThread[]; remade: readonly number[] | undefined; before: readonly AgentThread[] | undefined }[]): void {
+    const last = this.windowList
+    this.windowList = { host, hosts: entries.map(entry => ({ hostId: entry.connection.hostId, made: entry.threads })) }
+    if (!last || last.hosts.length !== entries.length) return
+    const at: number[] = []
+    let offset = 0
+    for (let index = 0; index < entries.length; index++) {
+      const entry = entries[index]!, prior = last.hosts[index]!
+      if (entry.connection.hostId !== prior.hostId || entry.threads.length !== prior.made.length) return
+      if (entry.threads !== prior.made) {
+        if (entry.remade === undefined || entry.before !== prior.made) return
+        for (const position of entry.remade) at.push(offset + position)
+      }
+      offset += entry.threads.length
+    }
+    noteThreadsReplaced(host, last.host, at)
   }
   /**
    * One host's threads as the window is given them: each with its host's ID, name and kind, and whether the window shows
@@ -780,15 +816,16 @@ export class DesktopHostRouter {
       ? state.host.threads === before.from ? new Set<number>() : threadsReplacedSince(state.host, before.fromHost) : undefined
     if (replaced && before) {
       let made: AgentThread[] | undefined
+      const remade: number[] = []
       for (const index of replaced) {
         const thread = state.host.threads[index]!
         const clientConnected = windowConnected(connection, original.host, original.host.threads[index]!)
         const prior = before.made[index]!
         const record = before.from[index] === thread && prior.clientConnected === clientConnected ? prior
           : { ...thread, hostId: connection.hostId, hostLabel, remoteHost, clientConnected, ...(reconnecting ? { clientReconnecting: true } : {}) }
-        if (record !== prior) (made ??= before.made.slice())[index] = record
+        if (record !== prior) { (made ??= before.made.slice())[index] = record; remade.push(index) }
       }
-      return { from: state.host.threads, made: made ?? before.made, ...built }
+      return { from: state.host.threads, made: made ?? before.made, remade, ...built }
     }
     // Where each projected record was in that publication, asked only once a thread has moved.
     let positions: Map<AgentThread, number> | undefined
