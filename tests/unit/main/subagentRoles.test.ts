@@ -39,7 +39,9 @@ describe('Claude Code role agents', () => {
     for (const agent of Object.values(made.agents)) { expect(agent.description).toMatch(/^Use when /u); expect(agent.prompt).toContain('report') }
     // Research reads only, so it carries no MCP tool definitions, and stops sooner; the others keep every tool.
     expect(made.agents.sotto_research).toMatchObject({ tools: expect.arrayContaining(['Read', 'Grep', 'Glob', 'Bash', 'WebFetch', 'WebSearch']), maxTurns: 40 })
-    expect(made.agents.sotto_research!.tools).not.toContain('Edit')
+    for (const tool of ['Edit', 'Write', 'NotebookEdit']) expect(made.agents.sotto_research!.tools).not.toContain(tool)
+    expect(made.agents.sotto_research!.prompt).toContain('Do not change project files')
+    expect(made.agents.sotto_building!.prompt).not.toContain('Do not change project files')
     expect(made.agents.sotto_building).toMatchObject({ maxTurns: 60 })
     expect(made.agents.sotto_building).not.toHaveProperty('tools')
   })
