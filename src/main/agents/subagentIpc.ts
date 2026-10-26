@@ -1,3 +1,5 @@
+import { i18n } from '@lingui/core'
+import { msg, t } from '@lingui/core/macro'
 import { z } from 'zod'
 import { namesHostThread } from '../../shared/clientIdentity'
 import { SUBAGENTS_PAGE, SUBAGENTS_ASSIGNMENTS, subagentPageRequestSchema, subagentAssignmentsRequestSchema, type SubagentChange } from '../../shared/subagents'
@@ -5,7 +7,7 @@ import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } fro
 import type { HostThreadToolReads } from './threadToolReads'
 import type { WorkspaceHost } from './workspace'
 
-const UNAVAILABLE = 'Agents cannot reach the host machine from this window. Nothing was changed. Restart Sotto and try again.'
+const UNAVAILABLE = msg`Agents cannot reach the host machine from this window. Nothing was changed. Restart Sotto and try again.`
 
 /**
  * Observational history only; no child identity is accepted as a provider command target. A thread on a paired host is
@@ -14,17 +16,17 @@ const UNAVAILABLE = 'Agents cannot reach the host machine from this window. Noth
 export function registerSubagentIpc(ipc: IpcMainAdapter, host: Pick<WorkspaceHost, 'subagentPage' | 'subagentAssignments' | 'subscribeSubagents'>,
   senders: () => readonly TrustedIpcSender[], publish: (change: SubagentChange) => void, hosted?: Pick<HostThreadToolReads, 'subagentPage' | 'subagentAssignments'>): () => void {
   ipc.handle(SUBAGENTS_PAGE, (event, ...args) => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('Open Agents in the main Sotto window.')
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Agents in the main Sotto window.`)
     const [request] = z.tuple([subagentPageRequestSchema]).parse(args)
     if (!namesHostThread(request)) return host.subagentPage(request)
-    if (!hosted) throw new Error(UNAVAILABLE)
+    if (!hosted) throw new Error(i18n._(UNAVAILABLE))
     return hosted.subagentPage(request)
   })
   ipc.handle(SUBAGENTS_ASSIGNMENTS, (event, ...args) => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('Open Agents in the main Sotto window.')
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Agents in the main Sotto window.`)
     const [request] = z.tuple([subagentAssignmentsRequestSchema]).parse(args)
     if (!namesHostThread(request)) return host.subagentAssignments(request)
-    if (!hosted) throw new Error(UNAVAILABLE)
+    if (!hosted) throw new Error(i18n._(UNAVAILABLE))
     return hosted.subagentAssignments(request)
   })
   const unsubscribe = host.subscribeSubagents(publish)

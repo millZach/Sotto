@@ -10,7 +10,7 @@
 .browser-player__bar > svg { flex: none; color: var(--tt-text-muted); }
 .browser-player__title { font-weight: 600; font-size: 13px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .browser-player__host { margin-right: auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--tt-text-muted); font-size: 12px; font-family: var(--tt-font-mono); }
-.browser-player__bar .files-icon { width: 26px; height: 26px; }
+.browser-player__bar .files-icon { width: 26px; height: 26px; min-height: 26px; }
 
 .browser-player__frame { position: relative; flex: 1; min-height: 48px; background: var(--tt-code-bg); }
 .browser-player__viewport { position: absolute; inset: 0; }
@@ -31,12 +31,12 @@
 .browser-player__request { padding: 8px; border: 1px solid var(--tt-attention); border-radius: 10px; background: var(--tt-surface); }
 .browser-player__request p { margin: 0 0 6px; font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .browser-player__request-row { display: flex; flex-wrap: nowrap; gap: 4px; }
-.browser-player__request-row .tt-button { height: 26px; padding: 0 8px; font-size: 12px; white-space: nowrap; }
+.browser-player__request-row .tt-button { height: 26px; min-height: 26px; padding: 0 8px; font-size: 12px; white-space: nowrap; }
 
 .browser-player__grant { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; font-size: 12px; color: var(--tt-text-muted); }
 .browser-player__grant .browser-review-link { font-size: 12px; min-height: 24px; padding: 2px 6px; }
 
-.browser-player__grip { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; touch-action: none; }
+.browser-player__grip { position: absolute; right: 0; bottom: 0; width: 24px; height: 24px; cursor: nwse-resize; touch-action: none; }
 .browser-player__grip::after { content: ''; position: absolute; right: 4px; bottom: 4px; width: 6px; height: 6px; border-right: 1.5px solid var(--tt-text-muted); border-bottom: 1.5px solid var(--tt-text-muted); }
 .browser-player__grip:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
 

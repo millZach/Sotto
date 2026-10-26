@@ -2222,9 +2222,6 @@ msgid "connecting"
 msgstr ""
 
 #: src/renderer/src/agents/EmptyWorkspace.tsx
-msgid "Connecting..."
-msgstr ""
-
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Connecting…"
 msgstr ""

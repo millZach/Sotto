@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import { i18n } from '@lingui/core'
+import { i18n, setupI18n, type MessageDescriptor } from '@lingui/core'
 
 import { interfaceCatalogs, type CompiledCatalog } from '../shared/interfaceCatalogLoader'
 
@@ -24,6 +24,12 @@ const { english, messagesOf } = interfaceCatalogs(
   import.meta.glob<CompiledCatalog>(['../locales/main/*.po', '../locales/shared/*.po', '!../locales/*/en.po']),
 )
 i18n.loadAndActivate({ locale: SOURCE_INTERFACE_LANGUAGE, messages: english })
+/**
+ * English whatever the interface language, for what Sotto says to a model about something the user also sees: an agent
+ * setting a host up reads the host's failures in English while the dialog shows them in the interface language.
+ */
+const englishI18n = setupI18n({ locale: SOURCE_INTERFACE_LANGUAGE, messages: { [SOURCE_INTERFACE_LANGUAGE]: english } })
+export function inEnglish(words: MessageDescriptor): string { return englishI18n._(words) }
 
 export interface InterfaceLanguageOptions {
   /** The `interface-language` Owl answer read at start. Off, Sotto is English whatever the setting says. */

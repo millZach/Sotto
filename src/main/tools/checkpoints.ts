@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { setTimeout as delay } from 'node:timers/promises'
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -8,13 +9,43 @@ import type { FileWorkspace } from '../../shared/files'
 import { toolListRequestSchema } from '../../shared/tools'
 import { ToolOperations, fail, parse, workspace } from './common'
 import { checkoutIdentity } from '../agents/threadWorktrees'
-import { CheckpointCapture } from './checkpointCapture'
-import { LINK_MESSAGE, blobName, checkpointPathSchema, isInside } from './checkpointPaths'
+import { CheckpointCapture, shownCaptureMessage } from './checkpointCapture'
+import { blobName, checkpointPathSchema, isInside } from './checkpointPaths'
 import { CheckpointStore, type CheckpointRecord, type Snapshot } from './checkpointStore'
 import { CheckpointReferences } from './checkpointReferences'
 import type { CheckpointObservation } from '../agents/watcherEvidence'
 import type { CheckpointDependencies, CheckpointThread } from './checkpointTypes'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
+
+/**
+ * The reasons Sotto writes on a checkpoint. They are kept on disk with it and read by Watcher, so they stay English; the
+ * Changes panel shows each through `shownReason`, in the interface language shown when it reads them (ADR-0123).
+ */
+const REASON = {
+  INTERRUPTED: 'Checkpoint capture was interrupted before its completed file snapshot was saved. Later edits cannot be safely attributed to that turn.',
+  CAPTURE_UNAVAILABLE: 'File checkpoint capture was unavailable.',
+  OVERLAPPED: 'Other thread work overlapped in this shared working copy. Its files cannot be safely attributed to this turn.',
+  BINDING_CHANGED: 'The native conversation binding changed during this turn.',
+  SNAPSHOT_UNAVAILABLE: 'Completed file snapshot was unavailable.',
+  HISTORY_CHANGED: 'This turn changed Git history or staging. Review and restore it with Git.',
+  ROLLBACK_UNCONFIRMED: 'Native rollback has not been confirmed. Check recovery before continuing; Sotto will not send it again.',
+  REVERT_INTERRUPTED: 'Revert was interrupted. Check recovery to reconcile native history and finish restoring files.',
+} as const
+
+/** A checkpoint's reason as the Changes panel shows it: one Sotto wrote, in the interface language; any other as written. */
+function shownReason(reason: string): string {
+  switch (reason) {
+    case REASON.INTERRUPTED: return t`Checkpoint capture was interrupted before its completed file snapshot was saved. Later edits cannot be safely attributed to that turn.`
+    case REASON.CAPTURE_UNAVAILABLE: return t`File checkpoint capture was unavailable.`
+    case REASON.OVERLAPPED: return t`Other thread work overlapped in this shared working copy. Its files cannot be safely attributed to this turn.`
+    case REASON.BINDING_CHANGED: return t`The native conversation binding changed during this turn.`
+    case REASON.SNAPSHOT_UNAVAILABLE: return t`Completed file snapshot was unavailable.`
+    case REASON.HISTORY_CHANGED: return t`This turn changed Git history or staging. Review and restore it with Git.`
+    case REASON.ROLLBACK_UNCONFIRMED: return t`Native rollback has not been confirmed. Check recovery before continuing; Sotto will not send it again.`
+    case REASON.REVERT_INTERRUPTED: return t`Revert was interrupted. Check recovery to reconcile native history and finish restoring files.`
+  }
+  return shownCaptureMessage(reason)
+}
 
 const equal = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
 /** Whether no thread work or checkout change is active or pending. A thread whose `busy` was not checked counts as busy. */
@@ -48,7 +79,7 @@ export class CheckpointService extends ToolOperations {
       for (const record of records) {
         if (record.status === 'capturing' && !this.dependencies.preserveThread?.(record.threadId)) {
           record.status = 'unavailable'; record.unavailableReason = 'capture-unavailable'
-          record.reason = 'Checkpoint capture was interrupted before its completed file snapshot was saved. Later edits cannot be safely attributed to that turn.'
+          record.reason = REASON.INTERRUPTED
         }
         this.records.set(record.id, record)
       }
@@ -75,6 +106,12 @@ export class CheckpointService extends ToolOperations {
       }
       for (const record of latest.values()) this.publishObservation(record)
     })
+  }
+  /** The recovery notice as the Changes panel shows it, in the interface language shown now (ADR-0123). */
+  private shownRecoveryNotice(): string | undefined {
+    if (!this.recoveryNotice || !this.recoveryBackup) return undefined
+    const file = basename(this.recoveryBackup)
+    return t`Sotto set aside a checkpoint file it could not read as ${file} and kept the rest.`
   }
   private async refreshRecoveryNotice(): Promise<void> {
     if (!this.recoveryBackup) return
@@ -271,19 +308,19 @@ export class CheckpointService extends ToolOperations {
   private async safe(cwd: string, path: string): Promise<string> {
     parse(checkpointPathSchema, path)
     const root = await realpath(cwd), absolute = resolve(root, path)
-    if (!isInside(root, absolute)) return fail('blocked', 'A checkpoint path is outside the working folder.')
+    if (!isInside(root, absolute)) return fail('blocked', t`A checkpoint path is outside the working folder.`)
     let component = root
     for (const part of relative(root, absolute).split(sep)) {
       component = join(component, part)
       const info = await lstat(component).catch(error => { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error })
       if (!info) break
-      if (info.isSymbolicLink()) return fail('blocked', LINK_MESSAGE)
+      if (info.isSymbolicLink()) return fail('blocked', t`Checkpoint paths cannot follow symbolic links or directory junctions.`)
     }
     let candidate = absolute
     for (;;) {
       try {
         const info = await lstat(candidate)
-        if (info.isSymbolicLink() || !isInside(root, await realpath(candidate))) return fail('blocked', LINK_MESSAGE)
+        if (info.isSymbolicLink() || !isInside(root, await realpath(candidate))) return fail('blocked', t`Checkpoint paths cannot follow symbolic links or directory junctions.`)
         return absolute
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
@@ -314,7 +351,7 @@ export class CheckpointService extends ToolOperations {
     if (reason === undefined) {
       const release = await this.dependencies.acquireRead?.(threadId)
       try { before = await this.capture.snapshot(canonical, { reuse: true }) }
-      catch (error) { reason = error instanceof Error ? error.message : 'File checkpoint capture was unavailable.' }
+      catch (error) { reason = error instanceof Error ? error.message : REASON.CAPTURE_UNAVAILABLE }
       finally { release?.() }
     }
     // Asked after the capture, which notices when the folder's Git directory changed and forgets its checkout.
@@ -322,7 +359,7 @@ export class CheckpointService extends ToolOperations {
     const candidates = [...this.records.values()].filter(record => record.threadId !== threadId && record.status === 'capturing' && !this.dependencies.preserveThread?.(record.threadId))
     const sameCheckout = await Promise.all(candidates.map(record => this.sharesCheckout(record, checkout)))
     const overlapping = candidates.filter((_record, index) => sameCheckout[index])
-    const overlapReason = overlapping.length ? 'Other thread work overlapped in this shared working copy. Its files cannot be safely attributed to this turn.' : undefined
+    const overlapReason = overlapping.length ? REASON.OVERLAPPED : undefined
     for (const other of overlapping) { other.reason = overlapReason; other.unavailableReason = 'shared-checkout' }
     const record: CheckpointRecord = { id: randomUUID(), threadId, workspaceId: owner.workspaceId, cwd: canonical, checkout, providerId: thread.providerId, bindingId: thread.bindingId, beforeUsers: [...thread.userMessageIds], before, status: 'capturing', createdAt: new Date(this.dependencies.now?.() ?? Date.now()).toISOString() }
     if (overlapReason) { record.reason = overlapReason; record.unavailableReason = 'shared-checkout' }
@@ -339,16 +376,16 @@ export class CheckpointService extends ToolOperations {
     if (!record) return
     const thread = await this.dependencies.resolveThread(threadId, { historyOnly: true })
     if (!thread || (thread.running ?? thread.busy) !== false) return
-    if (!this.matches(record, thread) || !equal(thread.userMessageIds.slice(0, record.beforeUsers.length), record.beforeUsers)) { record.status = 'unavailable'; record.unavailableReason = 'capture-unavailable'; record.reason = 'The native conversation binding changed during this turn.'; await this.save(); this.publishObservation(record); return }
+    if (!this.matches(record, thread) || !equal(thread.userMessageIds.slice(0, record.beforeUsers.length), record.beforeUsers)) { record.status = 'unavailable'; record.unavailableReason = 'capture-unavailable'; record.reason = REASON.BINDING_CHANGED; await this.save(); this.publishObservation(record); return }
     if (thread.userMessageIds.length === record.beforeUsers.length) return
     await workspace(this.dependencies.files, threadId, record.workspaceId)
     const release = await this.dependencies.acquireRead?.(threadId)
     try { record.after = await this.capture.snapshot(record.cwd, { reuse: true }) }
-    catch (error) { record.status = 'unavailable'; record.unavailableReason = 'capture-unavailable'; record.reason = error instanceof Error ? error.message.slice(0, 2000) : 'Completed file snapshot was unavailable.'; await this.save(); this.publishObservation(record); return }
+    catch (error) { record.status = 'unavailable'; record.unavailableReason = 'capture-unavailable'; record.reason = error instanceof Error ? error.message.slice(0, 2000) : REASON.SNAPSHOT_UNAVAILABLE; await this.save(); this.publishObservation(record); return }
     finally { release?.() }
     record.afterUsers = [...thread.userMessageIds]
     record.status = record.reason ? 'unavailable' : 'ready'
-    if (record.before.index !== record.after.index || record.before.head !== record.after.head) { record.status = 'unavailable'; record.unavailableReason = 'capture-unavailable'; record.reason = 'This turn changed Git history or staging. Review and restore it with Git.' }
+    if (record.before.index !== record.after.index || record.before.head !== record.after.head) { record.status = 'unavailable'; record.unavailableReason = 'capture-unavailable'; record.reason = REASON.HISTORY_CHANGED }
     await this.save()
     this.publishObservation(record)
   }) }
@@ -369,7 +406,7 @@ export class CheckpointService extends ToolOperations {
   }
   private public(record: CheckpointRecord, thread: CheckpointThread | null): Checkpoint {
     const supported = !!thread?.rollbackSupported && this.matches(record, thread)
-    const reason = record.reason ?? (!supported ? thread?.unsupportedReason ?? 'This provider does not expose matching native conversation rollback.' : undefined)
+    const reason = record.reason !== undefined ? shownReason(record.reason) : !supported ? thread?.unsupportedReason ?? t`This provider does not expose matching native conversation rollback.` : undefined
     return { id: record.id, threadId: record.threadId, createdAt: record.createdAt, status: record.status === 'capturing' ? 'unavailable' : record.status, files: this.changes(record), supported, ...(reason ? { reason } : {}) }
   }
   checkpoints(payload: unknown) { return this.run(async () => {
@@ -378,14 +415,14 @@ export class CheckpointService extends ToolOperations {
     await this.refreshRecoveryNotice()
     const owner = await workspace(this.dependencies.files, request.threadId, request.workspaceId)
     const thread = await this.dependencies.resolveThread(request.threadId)
-    return { checkpoints: [...this.records.values()].filter(record => record.threadId === request.threadId && record.workspaceId === owner.workspaceId && record.status !== 'capturing').reverse().map(record => this.public(record, thread)), supported: thread?.rollbackSupported ?? false, ...((this.recoveryNotice || !thread?.rollbackSupported) ? { reason: [this.recoveryNotice, !thread?.rollbackSupported ? thread?.unsupportedReason ?? 'Native conversation rollback is unavailable for this provider.' : undefined].filter(Boolean).join(' ') } : {}) }
+    return { checkpoints: [...this.records.values()].filter(record => record.threadId === request.threadId && record.workspaceId === owner.workspaceId && record.status !== 'capturing').reverse().map(record => this.public(record, thread)), supported: thread?.rollbackSupported ?? false, ...((this.recoveryNotice || !thread?.rollbackSupported) ? { reason: [this.shownRecoveryNotice(), !thread?.rollbackSupported ? thread?.unsupportedReason ?? t`Native conversation rollback is unavailable for this provider.` : undefined].filter(Boolean).join(' ') } : {}) }
   }) }
   private async requested(payload: unknown): Promise<{ record: CheckpointRecord; thread: CheckpointThread; owner: FileWorkspace }> {
     const request = parse(checkpointRequestSchema, payload)
     await this.load()
     const owner = await workspace(this.dependencies.files, request.threadId, request.workspaceId)
     const record = this.records.get(request.checkpointId), thread = await this.dependencies.resolveThread(request.threadId)
-    if (!record || !thread || record.workspaceId !== owner.workspaceId || !this.matches(record, thread)) return fail('workspace-changed', 'This checkpoint no longer matches the selected native thread and working copy.')
+    if (!record || !thread || record.workspaceId !== owner.workspaceId || !this.matches(record, thread)) return fail('workspace-changed', t`This checkpoint no longer matches the selected native thread and working copy.`)
     return { record, thread, owner }
   }
   inspectCheckpoint(payload: unknown) { return this.run(async () => {
@@ -401,16 +438,16 @@ export class CheckpointService extends ToolOperations {
   private async blob(hash: string | undefined): Promise<Buffer | null> {
     if (!hash) return null
     const bytes = await readFile(join(this.dependencies.directory, 'blobs', hash))
-    if (blobName(bytes) !== hash) return fail('blocked', 'A checkpoint file backup failed its integrity check.')
+    if (blobName(bytes) !== hash) return fail('blocked', t`A checkpoint file backup failed its integrity check.`)
     return bytes
   }
   private async checkFiles(record: CheckpointRecord, recovery = false): Promise<void> {
-    if (!record.after) return fail('blocked', 'This checkpoint has no completed file snapshot.')
+    if (!record.after) return fail('blocked', t`This checkpoint has no completed file snapshot.`)
     // Reads every file: this is the check that keeps a revert from overwriting later edits.
     const current = await this.capture.snapshot(record.cwd, { reuse: false })
-    if (current.head !== record.after.head || current.index !== record.after.index) return fail('blocked', 'Git history or staging changed after this checkpoint. Preserve those changes before reverting.')
+    if (current.head !== record.after.head || current.index !== record.after.index) return fail('blocked', t`Git history or staging changed after this checkpoint. Preserve those changes before reverting.`)
     for (const { path } of this.changes(record)) {
-      if (!equal(current.files[path], record.after.files[path]) && !(recovery && equal(current.files[path], record.before.files[path]))) return fail('blocked', `Later edits in ${path} would be overwritten. Preserve them before reverting.`)
+      if (!equal(current.files[path], record.after.files[path]) && !(recovery && equal(current.files[path], record.before.files[path]))) return fail('blocked', t`Later edits in ${path} would be overwritten. Preserve them before reverting.`)
       await this.blob(record.before.files[path]?.hash)
     }
   }
@@ -419,7 +456,7 @@ export class CheckpointService extends ToolOperations {
     for (const { path } of this.changes(record)) {
       const absolute = await this.safe(record.cwd, path), before = record.before.files[path]
       const current = await readFile(absolute).catch(error => { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error })
-      if (current && blobName(current) !== record.after?.files[path]?.hash && blobName(current) !== before?.hash) return fail('blocked', `Later edits in ${path} would be overwritten.`)
+      if (current && blobName(current) !== record.after?.files[path]?.hash && blobName(current) !== before?.hash) return fail('blocked', t`Later edits in ${path} would be overwritten.`)
       if (before) {
         const bytes = await this.blob(before.hash)
         await mkdir(dirname(absolute), { recursive: true })
@@ -436,33 +473,33 @@ export class CheckpointService extends ToolOperations {
     const parsed = parse(checkpointRevertSchema, payload)
     const { confirmed: _confirmed, ...request } = parsed; void _confirmed
     const { record, thread } = await this.requested(request)
-    if (!thread.rollbackSupported) return fail('blocked', thread.unsupportedReason ?? 'Matching native conversation rollback is unavailable.')
-    if (!idle(thread) || await this.isWorkspaceBlocked(thread.threadId)) return fail('blocked', 'Finish or resolve active and pending work before reverting.')
-    if (record.status !== 'ready' || !record.afterUsers || !equal(thread.userMessageIds, record.afterUsers)) return fail('blocked', 'Only the latest completed checkpoint with unchanged native history can be reverted.')
+    if (!thread.rollbackSupported) return fail('blocked', thread.unsupportedReason ?? t`Matching native conversation rollback is unavailable.`)
+    if (!idle(thread) || await this.isWorkspaceBlocked(thread.threadId)) return fail('blocked', t`Finish or resolve active and pending work before reverting.`)
+    if (record.status !== 'ready' || !record.afterUsers || !equal(thread.userMessageIds, record.afterUsers)) return fail('blocked', t`Only the latest completed checkpoint with unchanged native history can be reverted.`)
     this.locks.add(thread.threadId)
     let release: (() => void) | undefined
     try {
       release = await this.dependencies.acquireMutation?.(thread.threadId)
       await this.checkFiles(record)
       const guarded = await this.dependencies.resolveThread(thread.threadId, { mutationHeld: Boolean(release) })
-      if (!guarded || !idle(guarded) || !this.matches(record, guarded) || !equal(guarded.userMessageIds, record.afterUsers)) return fail('blocked', 'Thread work changed while checking the checkpoint. Review it again before reverting.')
+      if (!guarded || !idle(guarded) || !this.matches(record, guarded) || !equal(guarded.userMessageIds, record.afterUsers)) return fail('blocked', t`Thread work changed while checking the checkpoint. Review it again before reverting.`)
       await this.save()
-      if (!this.records.has(record.id)) return fail('blocked', 'This checkpoint expired or local history changed. No rollback was sent. Review the working copy.')
+      if (!this.records.has(record.id)) return fail('blocked', t`This checkpoint expired or local history changed. No rollback was sent. Review the working copy.`)
       record.status = 'reverting'; await this.save()
       let result: { accepted: boolean; uncertain?: boolean }
       try { result = await this.dependencies.rollback(thread.threadId, record.afterUsers.length - record.beforeUsers.length, record.afterUsers) }
       catch { result = { accepted: false } }
-      if (!result.accepted && !result.uncertain) { record.status = 'ready'; await this.save(); return fail('blocked', 'The provider rejected rollback. Files are unchanged; review the native thread before retrying.') }
+      if (!result.accepted && !result.uncertain) { record.status = 'ready'; await this.save(); return fail('blocked', t`The provider rejected rollback. Files are unchanged; review the native thread before retrying.`) }
       await this.dependencies.refresh(thread.threadId)
       const current = await this.dependencies.resolveThread(thread.threadId)
       if (!current || !this.matches(record, current) || !equal(current.userMessageIds, record.beforeUsers)) {
-        record.status = 'uncertain'; record.reason = 'Native rollback has not been confirmed. Check recovery before continuing; Sotto will not send it again.'; await this.save()
+        record.status = 'uncertain'; record.reason = REASON.ROLLBACK_UNCONFIRMED; await this.save()
         return this.public(record, current)
       }
       await this.restore(record)
       return this.public(record, current)
     } catch (error) {
-      if (record.status === 'reverting') { record.status = 'uncertain'; record.reason = 'Revert was interrupted. Check recovery to reconcile native history and finish restoring files.'; await this.save() }
+      if (record.status === 'reverting') { record.status = 'uncertain'; record.reason = REASON.REVERT_INTERRUPTED; await this.save() }
       throw error
     } finally { release?.(); this.locks.delete(thread.threadId); await this.save() }
   })) }
@@ -472,11 +509,11 @@ export class CheckpointService extends ToolOperations {
     try {
       const { record, thread } = await this.requested(payload)
       if (!['uncertain', 'reverting'].includes(record.status)) return this.public(record, thread)
-      if (!idle(thread)) return fail('blocked', 'Wait for active or pending work to finish before recovery.')
+      if (!idle(thread)) return fail('blocked', t`Wait for active or pending work to finish before recovery.`)
       release = await this.dependencies.acquireMutation?.(thread.threadId)
       await this.dependencies.refresh(thread.threadId)
       const current = await this.dependencies.resolveThread(thread.threadId)
-      if (!current || !this.matches(record, current) || !equal(current.userMessageIds, record.beforeUsers)) return fail('blocked', 'Native rollback is still unconfirmed. No files were changed and rollback was not sent again.')
+      if (!current || !this.matches(record, current) || !equal(current.userMessageIds, record.beforeUsers)) return fail('blocked', t`Native rollback is still unconfirmed. No files were changed and rollback was not sent again.`)
       await this.restore(record)
       return this.public(record, current)
     } finally { release?.(); await this.save() }

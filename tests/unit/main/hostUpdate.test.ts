@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { createHash } from 'node:crypto'
+import { i18n } from '@lingui/core'
 import { describe, expect, it, vi } from 'vitest'
 import { compareOwlHostTarget, HostUpdates, publishedAnswer, type HostUpdateCandidate, type HostUpdateClients, type HostUpdateHosts, type HostUpdateThreads } from '../../../src/main/hosts/hostUpdate'
 import type { SshHostUpdateOperation, SshHostUpdateOptions, SshHostUpdateResult } from '../../../src/main/hosts/sshLauncher'
@@ -323,6 +324,8 @@ describe('an update', () => {
     await updates.command(ID, 'update')
     await vi.waitFor(() => expect(one().failure?.message).toBe('The connection to forge closed while its host restarted, and it came back on 0.1.22.'))
     expect(one().failure?.kept).toBe('forge\'s threads are back. Nothing was lost.')
+    // Worded once for the stop and the language, so the panel's frequent reads do not word it again.
+    expect(one().failure).toBe(one().failure)
   })
   it('reads a restart sent over the host’s socket the way it reads one over SSH, with the same sentences (ADR-0088)', async () => {
     // The host's outcome said the new host started.
@@ -383,6 +386,11 @@ describe('an update', () => {
     expect(one().phase).toBe('failed')
     await updates.command(ID, 'update')
     expect(one()).toMatchObject({ phase: 'failed', error: 'forge is not connected, so nothing was updated. Switch it on in Settings > Hosts & phones, then try again.' })
+    // The panel is read on every change; the refusal and the failure are worded once, not on each read.
+    const worded = vi.spyOn(i18n, '_')
+    for (let read = 0; read < 25; read++) one()
+    expect(worded).not.toHaveBeenCalled()
+    worded.mockRestore()
   })
 })
 

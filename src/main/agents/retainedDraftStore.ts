@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { join } from 'node:path'
 import { readFile, readdir, unlink } from 'node:fs/promises'
 import { z } from 'zod'
@@ -176,7 +177,7 @@ export class RetainedDraftStore {
   put(edit: RetainedDraft): void {
     if (this.parksFeature(edit) || !this.acceptsEdit(edit)) return
     const key = owner(edit.hostId, edit.draft.threadId)
-    if (!this.edits.has(key) && this.edits.size >= 512) throw new Error('This computer has too many unsent remote drafts. Save or clear a draft before starting another.')
+    if (!this.edits.has(key) && this.edits.size >= 512) throw new Error(t`This computer has too many unsent remote drafts. Save or clear a draft before starting another.`)
     this.edits.set(key, retainedDraftSchema.parse(structuredClone(edit)))
     this.changed()
   }
@@ -216,7 +217,7 @@ export class RetainedDraftStore {
     const task = (async () => {
       await this.load()
       if (this.protectedUnread || this.loadFailure !== undefined && this.keepsHistory) {
-        throw new Error('Saved remote drafts could not be read. The original file was preserved. Repair local storage before saving draft text.', { cause: this.loadFailure })
+        throw new Error(t`Saved remote drafts could not be read. The original file was preserved. Repair local storage before saving draft text.`, { cause: this.loadFailure })
       }
       while (this.dirty) {
         this.dirty = false

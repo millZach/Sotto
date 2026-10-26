@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import type { AgentThreadPrompts, AgentThreadPromptsRequest } from '../../shared/threadPrompts'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { startsThread, THREAD_STARTS_UNSUPPORTED } from '../../shared/threadStarts'
@@ -7,10 +8,10 @@ import { watcherRoomInputs } from '../agents/watcherRoomInput'
 import { visibleWatcherState, watcherThreadVisible, withoutThreads } from '../../shared/watcherVisibility'
 import { parsePublicProviderEntityId, providerIdSchema } from '../../shared/agents'
 import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts } from '../../shared/watcherHost'
-import { WATCHER_DISABLED } from '../agents/watcherLaunchProfiles'
+import { hostCannotStageScreenshotsWords, inInterfaceLanguage, threadStartsUnsupportedWords, watcherDisabledWords } from '../../shared/interfaceWords'
 import { randomUUID } from 'node:crypto'
 import { isAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
-import { agentCommandSchema, isImageAttachment, defaultNewThreadModelId, defaultThreadModelId, enabledThreadProviders, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, HOST_DISCONNECTED_BEFORE_FILES, SCREENSHOT_WRONG_TYPE, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { agentCommandSchema, isImageAttachment, defaultNewThreadModelId, defaultThreadModelId, enabledThreadProviders, MAX_DELIVERED_DRAFTS, HOST_DISCONNECTED_BEFORE_FILES, SCREENSHOT_WRONG_TYPE, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { threadsReplacedSince } from '../../shared/threadListPatches'
 import { clientThreadId, hostEntityKey, mapHostReferences, parseHostEntityKey, projectClientAgentState, type ClientAgentStateProjection } from '../../shared/clientIdentity'
 import type { QuestionPageTarget } from '../agents/questionPages'
@@ -94,9 +95,10 @@ const droppedConnection = (error: unknown): boolean => error instanceof HostConn
 function dismissLeft(left: readonly { readonly name: string; readonly older: boolean }[]): string {
   const [first] = left
   if (left.length === 1 && first) return first.older
-    ? `${first.name} runs an older Sotto, so its threads still say Needs attention. Nothing was changed there. Update it in Settings > Hosts & phones, then press Dismiss all again.`
-    : `${first.name} did not answer, so its threads still say Needs attention. Nothing was changed there. Connect to it again, then press Dismiss all again.`
-  return `${left.map(item => item.name).join(', ')} kept their threads as they were, so those still say Needs attention. Nothing was changed there. Update or connect to each host in Settings > Hosts & phones, then press Dismiss all again.`
+    ? t`${{ host: first.name }} runs an older Sotto, so its threads still say Needs attention. Nothing was changed there. Update it in Settings > Hosts & phones, then press Dismiss all again.`
+    : t`${{ host: first.name }} did not answer, so its threads still say Needs attention. Nothing was changed there. Connect to it again, then press Dismiss all again.`
+  const hosts = left.map(item => item.name).join(', ')
+  return t`${hosts} kept their threads as they were, so those still say Needs attention. Nothing was changed there. Update or connect to each host in Settings > Hosts & phones, then press Dismiss all again.`
 }
 function withoutClientUpdates(state: AgentState): AgentState {
   const { clientUpdates: _updates, clientUpdateRun: _run, clientUpdatesDismissedAt: _dismissed, ...rest } = state
@@ -105,16 +107,29 @@ function withoutClientUpdates(state: AgentState): AgentState {
 }
 
 /** Which surface each tool read is for, as its refusals name it. */
-const TOOL_SURFACES: Record<keyof HostThreadToolReads, { readonly surface: string; readonly what: string }> = {
-  threadFiles: { surface: 'Files', what: 'files' }, threadFilePreview: { surface: 'Files', what: 'files' },
-  gitChanges: { surface: 'Changes', what: 'changes' }, gitReview: { surface: 'Changes', what: 'changes' },
-  subagentPage: { surface: 'Agents', what: 'agents' }, subagentAssignments: { surface: 'Agents', what: 'agents' },
+const TOOL_SURFACES: Record<keyof HostThreadToolReads, 'files' | 'changes' | 'agents'> = {
+  threadFiles: 'files', threadFilePreview: 'files', gitChanges: 'changes', gitReview: 'changes', subagentPage: 'agents', subagentAssignments: 'agents',
+}
+/** A tool read's refusals, one whole sentence per surface so each language can word it. */
+const toolReadRefusal = {
+  unavailable: (surface: typeof TOOL_SURFACES[keyof HostThreadToolReads]): string => surface === 'files'
+    ? t`Files is unavailable on this host. Nothing was changed. Check the host in Settings > Hosts & phones.`
+    : surface === 'changes' ? t`Changes is unavailable on this host. Nothing was changed. Check the host in Settings > Hosts & phones.`
+      : t`Agents is unavailable on this host. Nothing was changed. Check the host in Settings > Hosts & phones.`,
+  disconnected: (surface: typeof TOOL_SURFACES[keyof HostThreadToolReads]): string => surface === 'files'
+    ? t`This host is disconnected. Nothing was changed. Connect again to read its files.`
+    : surface === 'changes' ? t`This host is disconnected. Nothing was changed. Connect again to read its changes.`
+      : t`This host is disconnected. Nothing was changed. Connect again to read its agents.`,
+  failed: (surface: typeof TOOL_SURFACES[keyof HostThreadToolReads], host: string): string => surface === 'files'
+    ? t`${host} could not read this thread's files. Nothing was changed. Try again.`
+    : surface === 'changes' ? t`${host} could not read this thread's changes. Nothing was changed. Try again.`
+      : t`${host} could not read this thread's agents. Nothing was changed. Try again.`,
 }
 
 /** Files and Changes show a refusal where the answer would go, so a read the host could not make answers as one. */
 async function answeredAsRefusal<T extends { ok: boolean }>(read: () => Promise<T>): Promise<T | { ok: false; error: { code: 'unavailable'; message: string } }> {
   try { return await read() }
-  catch (error) { return { ok: false, error: { code: 'unavailable', message: (error instanceof Error ? error.message : '').slice(0, 2000) || 'The host could not be read. Nothing was changed. Try again.' } } }
+  catch (error) { return { ok: false, error: { code: 'unavailable', message: (error instanceof Error ? error.message : '').slice(0, 2000) || t`The host could not be read. Nothing was changed. Try again.` } } }
 }
 
 /**
@@ -151,7 +166,7 @@ type RequestDraftRecovery = Pick<RequestDraftService, 'heldThreadAnswers' | 'rec
 async function usageDeadline<T>(read: () => Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    return await Promise.race([read(), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Usage could not be read.')), 20000) })])
+    return await Promise.race([read(), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(t`Usage could not be read.`)), 20000) })])
   } finally { if (timer !== undefined) clearTimeout(timer) }
 }
 
@@ -166,7 +181,7 @@ export class DesktopHostRouter {
   /** Watcher, told when the user's answer to a host's card goes from here, so its news says the user answered it. */
   private readonly answerListeners = new Set<(hostId: string, threadId: string, requestId: string) => () => void>()
   watcherHosts(): WatcherRemoteHosts {
-    const allowed = () => { if (this.options.watcherEnabled !== true) throw new Error(WATCHER_DISABLED) }
+    const allowed = () => { if (this.options.watcherEnabled !== true) throw new Error(watcherDisabledWords()) }
     const connection = (id: string) => {
       allowed()
       const entry = this.hosts.get(id)?.connection
@@ -354,7 +369,7 @@ export class DesktopHostRouter {
   }
   async usageClear(input: UsageClearQuery, client: ClientIdentity = desktopWindowClient()): Promise<UsageClearResult[]> {
     const { hosts } = usageClearQuerySchema.parse(input)
-    if (new Set(hosts.map(host => host.hostId)).size !== hosts.length) throw new Error('Choose each computer once before clearing usage.')
+    if (new Set(hosts.map(host => host.hostId)).size !== hosts.length) throw new Error(t`Choose each computer once before clearing usage.`)
     const revisions = new Map(hosts.map(host => [host.hostId, host.expectedRevision]))
     return this.usageFanout<UsageClearResult>(hosts.map(host => host.hostId), async hostId => {
       const { connection, status } = this.usageStatus(hostId)
@@ -484,7 +499,7 @@ export class DesktopHostRouter {
     return off
   }
   add(connection: DesktopHostConnection): void {
-    if (this.hosts.has(connection.hostId)) throw new Error('This host is already connected.')
+    if (this.hosts.has(connection.hostId)) throw new Error(t`This host is already connected.`)
     const off = this.watch(connection)
     this.hosts.set(connection.hostId, { connection, off, run: ++this.runs })
     this.watcherChanged(connection.hostId)
@@ -551,7 +566,7 @@ export class DesktopHostRouter {
     return hostId !== undefined && (this.observedOn.get(hostId)?.includes(key?.id ?? threadId) ?? false)
   }
   select(hostId: string): void {
-    if (!this.hosts.has(hostId)) throw new Error('Connect this host before selecting it.')
+    if (!this.hosts.has(hostId)) throw new Error(t`Connect this host before selecting it.`)
     this.selectedHostId = hostId; this.selectedThreadId = null; this.selectedProjectId = null; this.selections++; this.emit()
   }
   /** A saved host was renamed: its threads and badges take the new name at once. */
@@ -734,9 +749,9 @@ export class DesktopHostRouter {
     const key = id ? parseHostEntityKey(id) : null
     const hostId = key?.hostId ?? this.selectedHostId
     const entry = hostId ? this.hosts.get(hostId) : undefined
-    if (!entry) throw new Error('Connect a host in Settings > Hosts & phones to continue.')
+    if (!entry) throw new Error(t`Connect a host in Settings > Hosts & phones to continue.`)
     const localId = key?.id ?? id
-    if (!this.watcherAvailable(entry.connection, localId)) throw new Error(WATCHER_DISABLED)
+    if (!this.watcherAvailable(entry.connection, localId)) throw new Error(watcherDisabledWords())
     return { connection: entry.connection, id: localId }
   }
   async threadDetail(threadId: string): Promise<AgentThreadDetail | null> {
@@ -951,7 +966,7 @@ export class DesktopHostRouter {
       if (!initialReoffered && !reoffered() && connection.service.requestAnswerRecovery?.(id!, target.providerId).completed.some(item =>
         item.decisionId === decisionId && item.requestId === target.requestId && item.questionsDigest === questionsDigest)) return
     }
-    if (!connection.service.checkRequestAnswer) throw new Error('Update the host before checking this unconfirmed answer. Your saved answer is kept.')
+    if (!connection.service.checkRequestAnswer) throw new Error(t`Update the host before checking this unconfirmed answer. Your saved answer is kept.`)
     await connection.service.checkRequestAnswer({ threadId: id!, providerId: target.providerId, requestId: target.requestId, questionsDigest }, desktopWindowClient())
   }
   async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> {
@@ -961,11 +976,11 @@ export class DesktopHostRouter {
   /** An image goes to the host that runs the thread it is for, or the selected host for the coordinator's composer. */
   async stageAttachment(request: AgentAttachmentStageRequest): Promise<AgentAttachmentHandle> {
     // Refused here as this computer's own store refuses it, before any host hears of it, whatever that host's own answer.
-    if (!isImageAttachment(request.mimeType) && this.options.attachAnyFile !== true) throw new Error(SCREENSHOT_WRONG_TYPE)
+    if (!isImageAttachment(request.mimeType) && this.options.attachAnyFile !== true) throw new Error(inInterfaceLanguage(SCREENSHOT_WRONG_TYPE))
     const { connection } = this.target(request.threadId ?? undefined)
-    if (!connection.stage) throw new Error(HOST_CANNOT_STAGE_SCREENSHOTS)
+    if (!connection.stage) throw new Error(hostCannotStageScreenshotsWords())
     if (connection.available?.() === false) {
-      throw new Error(isImageAttachment(request.mimeType) ? 'This host is disconnected. Connect again before attaching images. Nothing was attached.' : HOST_DISCONNECTED_BEFORE_FILES)
+      throw new Error(isImageAttachment(request.mimeType) ? t`This host is disconnected. Connect again before attaching images. Nothing was attached.` : HOST_DISCONNECTED_BEFORE_FILES)
     }
     return connection.stage({ name: request.name, mimeType: request.mimeType, bytes: request.bytes, ...(request.dimensions ? { dimensions: request.dimensions } : {}) })
   }
@@ -976,27 +991,27 @@ export class DesktopHostRouter {
   }
   async gitRefs(request: GitRefsRequest): Promise<GitRefsPage> {
     const { connection, id } = this.target(request.threadId)
-    if (!connection.gitRefs) throw new Error('Branches are unavailable on this host.')
-    if (connection.available?.() === false) throw new Error('This host is disconnected. Connect again to read its branches.')
+    if (!connection.gitRefs) throw new Error(t`Branches are unavailable on this host.`)
+    if (connection.available?.() === false) throw new Error(t`This host is disconnected. Connect again to read its branches.`)
     return connection.gitRefs({ ...request, threadId: id! })
   }
   async gitChangedFiles(request: GitChangedFilesRequest): Promise<GitChangedFiles> {
     const { connection, id } = this.target(request.threadId)
-    if (!connection.gitChangedFiles) throw new Error('Changed files are unavailable on this host.')
-    if (connection.available?.() === false) throw new Error('This host is disconnected. Connect again to read its changes.')
+    if (!connection.gitChangedFiles) throw new Error(t`Changed files are unavailable on this host.`)
+    if (connection.available?.() === false) throw new Error(t`This host is disconnected. Connect again to read its changes.`)
     return connection.gitChangedFiles({ ...request, threadId: id! })
   }
   async gitPullRequest(request: GitPullRequestRequest): Promise<GitPullRequestRead> {
     const { connection, id } = this.target(request.threadId)
-    if (!connection.gitPullRequest) throw new Error('Pull requests are unavailable on this host.')
-    if (connection.available?.() === false) throw new Error('This host is disconnected. Connect again to read its pull requests.')
+    if (!connection.gitPullRequest) throw new Error(t`Pull requests are unavailable on this host.`)
+    if (connection.available?.() === false) throw new Error(t`This host is disconnected. Connect again to read its pull requests.`)
     return connection.gitPullRequest({ ...request, threadId: id! })
   }
   /** The words of a started thread's handover, read on the thread's own host when the user asks to read them (#1028). */
   async startHandover(threadId: string): Promise<{ readonly text: string } | null> {
     const { connection, id } = this.target(threadId)
-    if (connection.service.supportsThreadStarts !== true || !connection.service.startHandover) throw new Error(THREAD_STARTS_UNSUPPORTED)
-    if (connection.available?.() === false) throw new Error('This host is disconnected. Connect again to read the handover. Nothing was sent.')
+    if (connection.service.supportsThreadStarts !== true || !connection.service.startHandover) throw new Error(threadStartsUnsupportedWords())
+    if (connection.available?.() === false) throw new Error(t`This host is disconnected. Connect again to read the handover. Nothing was sent.`)
     return connection.service.startHandover(id!)
   }
   /**
@@ -1006,7 +1021,7 @@ export class DesktopHostRouter {
   async activityBody(request: { readonly threadId: string; readonly activityId: string }): Promise<AgentActivity | null> {
     const { connection, id } = this.target(request.threadId)
     if (!connection.activityBody) return null
-    if (connection.available?.() === false) throw new Error('This host is disconnected. Nothing is lost. The rest shows when it reconnects.')
+    if (connection.available?.() === false) throw new Error(t`This host is disconnected. Nothing is lost. The rest shows when it reconnects.`)
     return connection.activityBody(id!, request.activityId)
   }
   /**
@@ -1021,10 +1036,10 @@ export class DesktopHostRouter {
   /** The folder browser names its host directly: it has no thread yet to carry a client-scoped key. */
   async hostFolders(request: HostFoldersClientRequest): Promise<HostFoldersResult> {
     const entry = this.hosts.get(request.hostId)
-    if (!entry) throw new Error('That computer is not connected. Nothing was changed. Connect it in Settings > Hosts & phones, then try again.')
+    if (!entry) throw new Error(t`That computer is not connected. Nothing was changed. Connect it in Settings > Hosts & phones, then try again.`)
     const { connection } = entry
-    if (connection.available?.() === false) throw new Error('This host is disconnected. Nothing was changed. Connect again to see its folders.')
-    if (!connection.hostFolders) throw new Error('This host cannot list its folders yet. Update Sotto on it, then try again.')
+    if (connection.available?.() === false) throw new Error(t`This host is disconnected. Nothing was changed. Connect again to see its folders.`)
+    if (!connection.hostFolders) throw new Error(t`This host cannot list its folders yet. Update Sotto on it, then try again.`)
     return connection.hostFolders(request.path === undefined ? {} : { path: request.path })
   }
   /**
@@ -1035,13 +1050,13 @@ export class DesktopHostRouter {
    */
   private async threadToolRead<K extends keyof HostThreadToolReads>(read: K, request: Parameters<HostThreadToolReads[K]>[0]): Promise<Awaited<ReturnType<HostThreadToolReads[K]>>> {
     const { connection, id } = this.target(request.threadId)
-    const { surface, what } = TOOL_SURFACES[read]
+    const surface = TOOL_SURFACES[read]
     const method = connection[read] as ((request: Parameters<HostThreadToolReads[K]>[0]) => ReturnType<HostThreadToolReads[K]>) | undefined
-    if (!method) throw new Error(`${surface} is unavailable on this host. Nothing was changed. Check the host in Settings > Hosts & phones.`)
-    if (connection.available?.() === false) throw new Error(`This host is disconnected. Nothing was changed. Connect again to read its ${what}.`)
+    if (!method) throw new Error(toolReadRefusal.unavailable(surface))
+    if (connection.available?.() === false) throw new Error(toolReadRefusal.disconnected(surface))
     let answer: Awaited<ReturnType<HostThreadToolReads[K]>>
     try { answer = await method({ ...request, threadId: id! }) }
-    catch (error) { throw new Error(error instanceof HostConnectionError ? error.message : `${connection.name} could not read this thread's ${what}. Nothing was changed. Try again.`, { cause: error }) }
+    catch (error) { throw new Error(error instanceof HostConnectionError ? error.message : toolReadRefusal.failed(surface, connection.name), { cause: error }) }
     return mapHostReferences(answer, value => hostEntityKey(connection.hostId, value))
   }
   async threadFiles(request: FileListRequest): Promise<FilesResult<FileListing>> { return answeredAsRefusal(() => this.threadToolRead('threadFiles', request)) }
@@ -1060,7 +1075,7 @@ export class DesktopHostRouter {
     const listing = await this.threadFiles({ threadId: request.threadId, path: folder, workspaceId: request.workspaceId })
     if (!listing.ok) return listing
     const listed = request.path === '' || listing.value.truncated || listing.value.entries.some(entry => entry.path === request.path && entry.kind !== 'unavailable')
-    if (!listed) return { ok: false, error: { code: 'path-unavailable', message: 'This path is unavailable or changed. Refresh Files and try again.' } }
+    if (!listed) return { ok: false, error: { code: 'path-unavailable', message: t`This path is unavailable or changed. Refresh Files and try again.` } }
     return { ok: true, value: { workspace: listing.value.workspace, path: request.path, absolutePath: hostAbsolutePath(listing.value.workspace.workingDirectory, request.path) } }
   }
   /** Copy path in Changes for a thread on a paired host, the same way, once the change list shows the same working folder. */
@@ -1077,7 +1092,7 @@ export class DesktopHostRouter {
     // Showing threads and Dismiss all both name threads on every host: each host hears only its own (ADR-0046, ADR-0092).
     if (type === 'observe-threads' || type === 'dismiss-failures') {
       const parsed = agentCommandSchema.parse(mapHostReferences(input, id => parseHostEntityKey(id)?.id ?? id))
-      if (parsed.type !== type) throw new Error(type === 'observe-threads' ? 'The viewed threads could not be read.' : 'The threads to dismiss could not be read.')
+      if (parsed.type !== type) throw new Error(type === 'observe-threads' ? t`The viewed threads could not be read.` : t`The threads to dismiss could not be read.`)
       // Dismiss all names each thread with the failure its row showed; showing names threads alone.
       const raw = type === 'observe-threads' ? (input as { threadIds: string[] }).threadIds.map(threadId => ({ threadId, failure: '' }))
         : (input as { failures: { threadId: string; failure: string }[] }).failures
@@ -1132,19 +1147,19 @@ export class DesktopHostRouter {
       }
       this.emit(); return this.shell()
     }
-    if (connection.kind === 'remote' && command.type === 'set-aside-send') return { ...this.shell(), error: 'Continue with a new message on the desktop that owns this thread. Nothing was changed.' }
+    if (connection.kind === 'remote' && command.type === 'set-aside-send') return { ...this.shell(), error: t`Continue with a new message on the desktop that owns this thread. Nothing was changed.` }
     if (connection.available?.() === false) {
       if (windowRead(command)) return this.shell()
-      throw new Error(`${connection.name} is disconnected. Nothing was sent. Try again once it reconnects.`)
+      throw new Error(t`${{ host: connection.name }} is disconnected. Nothing was sent. Try again once it reconnects.`)
     }
-    if (connection.kind === 'remote' && ['open-thread-folder', 'open-folder'].includes(command.type)) throw new Error('This folder is on the host machine. Open it there.')
+    if (connection.kind === 'remote' && ['open-thread-folder', 'open-folder'].includes(command.type)) throw new Error(t`This folder is on the host machine. Open it there.`)
     if (command.type === 'preview-reclaim-thread-worktree') {
       try {
         const result = await connection.service.command(command, client)
-        if (result.error || !result.worktreeReclaimPreview) return { ...this.shell(), error: 'This host could not check the worktree. Nothing was removed. Update the host and try again.' }
+        if (result.error || !result.worktreeReclaimPreview) return { ...this.shell(), error: t`This host could not check the worktree. Nothing was removed. Update the host and try again.` }
         return { ...this.shell(), error: null, worktreeReclaimPreview: result.worktreeReclaimPreview }
       } catch {
-        return { ...this.shell(), error: 'This host could not check the worktree. Nothing was removed. Check its connection or update the host and try again.' }
+        return { ...this.shell(), error: t`This host could not check the worktree. Nothing was removed. Check its connection or update the host and try again.` }
       }
     }
     // Read as values: a host's shell can be its live state, which the command is about to change.
@@ -1228,7 +1243,7 @@ export class DesktopHostRouter {
   private route(input: unknown): { connection: DesktopHostConnection; command: AgentCommand; hostNamed?: true } {
     const references = new Set<string>()
     mapHostReferences(input, value => { const key = parseHostEntityKey(value); if (key) references.add(key.hostId); return value })
-    if (references.size > 1) throw new Error('This action includes items from different hosts. Select items from one host.')
+    if (references.size > 1) throw new Error(t`This action includes items from different hosts. Select items from one host.`)
     const command = agentCommandSchema.parse(mapHostReferences(input, id => parseHostEntityKey(id)?.id ?? id))
     const named = heldProviderOfCommand(command, this.held)
     if (named) throw new Error(heldProviderRefusal(named))
@@ -1242,7 +1257,7 @@ export class DesktopHostRouter {
     if (HOST_NAMED_COMMANDS.has(command.type) && 'hostId' in command && command.hostId !== undefined) {
       const { hostId, ...forwarded } = command
       const named = this.hosts.get(hostId)?.connection
-      if (!named) throw new Error('This host is not connected. Connect it in Settings > Hosts & phones, then try again. Nothing was changed.')
+      if (!named) throw new Error(t`This host is not connected. Connect it in Settings > Hosts & phones, then try again. Nothing was changed.`)
       this.refuseHeld(forwarded, named)
       return { connection: named, command: forwarded, hostNamed: true }
     }
@@ -1251,7 +1266,7 @@ export class DesktopHostRouter {
     this.refuseHeld(command, connection)
     const threadId = 'threadId' in command ? command.threadId ?? undefined : command.type === 'send' ? command.draft?.threadId : undefined
     const defaultThread = command.type === 'send' || command.type === 'compose' ? connection.service.shell().draftThreadId ?? connection.service.shell().activeThreadId ?? undefined : undefined
-    if (!this.watcherAvailable(connection, threadId ?? defaultThread)) throw new Error(WATCHER_DISABLED)
+    if (!this.watcherAvailable(connection, threadId ?? defaultThread)) throw new Error(watcherDisabledWords())
     return { connection, command }
   }
   /**
@@ -1266,7 +1281,7 @@ export class DesktopHostRouter {
     if (local && keys.length > 0 && keys.every(key => (NEW_THREAD_DEFAULT_FIELDS as readonly string[]).includes(key))) return { connection: local, command: forwarded }
     if (hostId === undefined) return { connection: this.target().connection, command: forwarded }
     const named = this.hosts.get(hostId)?.connection
-    if (!named) throw new Error('This host is not connected. Connect it in Settings > Hosts & phones, then try again. Nothing was changed.')
+    if (!named) throw new Error(t`This host is not connected. Connect it in Settings > Hosts & phones, then try again. Nothing was changed.`)
     return { connection: named, command: forwarded }
   }
   /**
