@@ -2003,6 +2003,35 @@ it('marks a read of a working watched thread that gives nothing its last read di
   expect(await f.call('read_thread', { target: first.target })).not.toHaveProperty('unchangedSince')
 })
 
+it('sums up in each read only the pull requests merged since the last, and lists open ones by what GitHub said (#1147)', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  const historyEpoch = randomUUID(), createdAt = new Date().toISOString()
+  vi.spyOn(f.workspace.host, 'watcherRead').mockResolvedValue({ historyEpoch, hasMore: false, earlierAvailable: false, activities: [],
+    messages: [{ position: 0, message: { id: `${historyEpoch}-0`, role: 'assistant' as const, text: 'Synthetic progress', createdAt } }] })
+  const url = (n: number) => `https://github.com/synthetic/project/pull/${n}`
+  // Each link still says open, as it was made; GitHub's reads say otherwise.
+  const links = [1, 2, 3].map(n => ({ number: n, url: url(n), title: `Synthetic ${n}`, state: 'open' as const, draft: false, source: 'created' as const, linkedAt: createdAt }))
+  const real = f.control.watcherSnapshot.bind(f.control)
+  vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
+    const snapshot = real()
+    return { ...snapshot, threads: snapshot.threads.map(thread => thread.id === first.target.threadId ? { ...thread, pullRequests: links } : thread) }
+  })
+  const github = (n: number, state: 'open' | 'merged') => f.service.pullRequestObserved({ url: url(n), head: `head-${n}`, observedAt: new Date().toISOString(),
+    availability: 'available', state, checks: 'unknown' })
+  github(1, 'merged'); github(2, 'open'); github(3, 'open')
+  const read = async () => await f.call('read_thread', { target: first.target }) as Record<string, unknown>
+  // The first read counts what was merged before it; the news told each merge as it came.
+  expect(await read()).toMatchObject({ status: 'ok', mergedPullRequests: 1, pullRequests: [{ number: 2, state: 'open' }, { number: 3, state: 'open' }] })
+  github(2, 'merged')
+  expect(await read()).toMatchObject({ mergedPullRequests: 1, pullRequests: [{ number: 2, state: 'merged' }, { number: 3, state: 'open' }] })
+  const again = await read()
+  expect(again).toMatchObject({ mergedPullRequests: 2, pullRequests: [{ number: 3, state: 'open' }] })
+  const roster = await f.call('list_threads', {}) as { rows: Record<string, unknown>[] }
+  expect(roster.rows.find(row => (row.target as { threadId: string }).threadId === first.target.threadId))
+    .toMatchObject({ pullRequests: [{ number: 3, state: 'open' }], mergedPullRequests: 2 })
+})
+
 it.each(['list_threads', 'list_projects', 'list_working_copies'] as const)('restarts an expired %s page using the returned restart cursor', async name => {
   const f = await fixture()
   if (name === 'list_projects') {

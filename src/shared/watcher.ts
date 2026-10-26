@@ -134,7 +134,9 @@ const slimRow = z.object({ target: watcherThreadTargetSchema, title: z.string().
   turnFailed: z.literal(true).optional(), takenOver: z.literal(true).optional(), automationStopped: z.literal(true).optional(),
   // A prototype the thread made waits for the user's review (ADR-0108): only the user can open it.
   prototypeReady: z.literal(true).optional(),
-  protected: z.literal(true).optional(), pullRequests: z.array(watcherPullRequestSummarySchema).max(50) }).strict()
+  protected: z.literal(true).optional(), pullRequests: z.array(watcherPullRequestSummarySchema).max(50),
+  // Open pull requests only (#1147): how many of the thread's others are merged or closed, said only when there are any.
+  mergedPullRequests: counter.optional(), closedPullRequests: counter.optional() }).strict()
 /** How much list_threads and read_thread say of each thread's evidence (#1191). */
 export const watcherDetailSchema = z.enum(['slim', 'full'])
 const staleHost = z.object({ hostId: z.uuid(), observedAt: time.nullable() }).strict()
@@ -303,6 +305,9 @@ export const watcherToolSchemas = {
       activities: z.array(z.object({ id, kind: z.enum(['turn', 'command', 'file-change', 'tool', 'reasoning', 'plan', 'subagent', 'status', 'compaction']),
         status: z.enum(['running', 'completed', 'failed', 'interrupted', 'unknown']), title: shortText, startedAt: time.optional(), completedAt: time.optional() }).strict()).max(100),
       evidence: z.array(watcherEvidenceSchema).max(100), pullRequests: z.array(watcherPullRequestSummarySchema).max(50).optional(),
+      // The desktop's alone (#1147): how many merged or closed pull requests a slim read's summaries leave out, since
+      // Watcher's last read of the thread already gave them so, or they were so before it first read the thread.
+      mergedPullRequests: counter.optional(), closedPullRequests: counter.optional(),
       historyEpoch: id, firstPosition: counter.nullable(), lastPosition: counter.nullable(),
       nextPosition: counter.nullable(), truncated: z.boolean(), earlierAvailable: z.boolean(), observedAt: time,
       // The desktop's alone (#1552): this read gave Watcher nothing its last read of the thread had not, since that time.
