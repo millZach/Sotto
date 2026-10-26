@@ -295,7 +295,7 @@ export function startFromRole(role: WorkerKind, choices: WorkerRoleChoices, mode
 export interface HeldPermission {
   readonly wanted: AgentRuntimeMode
   readonly startedOn: AgentRuntimeMode
-  readonly by?: 'new-thread-default' | 'delegating-thread' | 'paired-host' | 'not-told' | 'no-answer-grant'
+  readonly by?: 'new-thread-default' | 'delegating-thread' | 'paired-host' | 'not-told' | 'no-answer-grant' | 'answers-revoked'
   /** That limit's own mode when the model does not offer it, so the start took the nearest mode the model does. */
   readonly unoffered?: AgentRuntimeMode | undefined
 }
@@ -305,6 +305,7 @@ const HELD_BY: Readonly<Record<NonNullable<HeldPermission['by']>, string>> = {
   'paired-host': 'the most that host lets this computer give a thread there',
   'not-told': 'Ask for approval, since this machine has not been told the user\'s new-thread default yet',
   'no-answer-grant': 'Ask for approval, since this machine does not let the user\'s desktop answer permission requests here',
+  'answers-revoked': 'Ask for approval, since this machine no longer lets the user\'s desktop answer permission requests here',
 }
 /**
  * What a start by role says in its receipt, for the agent that asked to pass on: the role, what the request named in
@@ -330,6 +331,7 @@ export function roleStartNote(start: RoleStart, models: readonly AgentModel[], h
       : held.by === 'paired-host' ? `Its permission, ${wanted}, was held to ${startedOn}, the most that host lets this computer give a thread it starts there.`
       : held.by === 'not-told' ? `Its permission, ${wanted}, was held to ${startedOn}, since this machine has not been told the user's new-thread default yet. It is told when Sotto's desktop connects.`
       : held.by === 'no-answer-grant' ? `Its permission, ${wanted}, was held to ${startedOn}, since this machine does not let the user's desktop answer permission requests here.`
+      : held.by === 'answers-revoked' ? `Its permission, ${wanted}, was held to ${startedOn}, since this machine no longer lets the user's desktop answer permission requests here.`
         : `Its permission, ${wanted}, was held to the user's new-thread default, ${startedOn}.`)
   }
   return parts.join(' ')

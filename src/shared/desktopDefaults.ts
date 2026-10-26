@@ -34,9 +34,10 @@ export type DesktopDefaultsReceipt = z.infer<typeof desktopDefaultsReceiptSchema
  * Why a host holds a delegated thread to Ask for approval when the desktop's new-thread default is wider: it was never
  * told the default, or the desktop that told it may not answer there (no `remote-answer` grant, ADR-0025).
  */
-export type HostCeilingHold = 'not-told' | 'no-answer-grant'
+export type HostCeilingHold = 'not-told' | 'no-answer-grant' | 'answers-revoked'
 /** The sentence that says so, for a refusal, a receipt and a listing. */
 export const HOST_CEILING_HOLD_WORDS: Record<HostCeilingHold, string> = {
   'not-told': 'This machine has not been told your new-thread default yet, so a thread delegated here starts on Ask for approval until Sotto\'s desktop connects to it.',
   'no-answer-grant': 'This machine does not let your desktop answer permission requests here, so a thread delegated here starts on Ask for approval. To give it more, let your desktop answer permission requests on this machine first.',
+  'answers-revoked': 'This machine no longer lets your desktop answer permission requests here, so a thread delegated here starts on Ask for approval.',
 }
