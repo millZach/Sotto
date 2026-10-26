@@ -18,9 +18,10 @@ const BRANCH_MOVE_STEP_MS = 120_000
 /**
  * How long the desktop waits for a host's answer to one step of a branch move. `send-begin` creates the bundle and
  * `receive-finish` imports it, each allowed `BRANCH_BUNDLE_GIT_MS` on the host, so the desktop waits that and a minute more
- * rather than ending a move the host would still have finished.
+ * rather than ending a move the host would still have finished. A same-host `copy` (#1033) does both, so it is allowed both.
  */
 export function branchMoveStepTimeoutMs(action: string): number {
+  if (action === 'copy') return 2 * BRANCH_BUNDLE_GIT_MS + 60_000
   return action === 'send-begin' || action === 'receive-finish' ? BRANCH_BUNDLE_GIT_MS + 60_000 : BRANCH_MOVE_STEP_MS
 }
 /** The receiver's branch tips a sender may bundle against, newest first, so the bundle carries only what it lacks. */
