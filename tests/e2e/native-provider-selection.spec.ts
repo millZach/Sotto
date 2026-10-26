@@ -12,13 +12,16 @@ test('provider configuration and new-thread defaults have separate settings', as
     const providers = page.getByRole('list', { name: 'Thread providers', exact: true })
     for (const [index, label] of ['Codex', 'Claude Code', 'Grok Build'].entries()) {
       const header = providers.getByRole('button', { name: label, exact: true })
-      // Codex's row is open to begin with; each next row is reached with Down from the one before and opened with Enter.
+      // Every row starts closed. Codex's opens with Enter; each next row is reached with Down from the one before and opened with Enter.
       if (index > 0) {
         await providers.getByRole('button', { name: ['Codex', 'Claude Code'][index - 1]!, exact: true }).focus()
         await page.keyboard.press('ArrowDown')
         await expect(header).toBeFocused()
-        await page.keyboard.press('Enter')
+      } else {
+        await expect(providers.getByRole('region')).toHaveCount(0)
+        await header.focus()
       }
+      await page.keyboard.press('Enter')
       await expect(header).toHaveAttribute('aria-expanded', 'true')
       const panel = providers.getByRole('region', { name: `${label} details`, exact: true })
       await expect(providers.getByRole('region')).toHaveCount(1)

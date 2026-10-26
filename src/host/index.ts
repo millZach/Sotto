@@ -29,6 +29,8 @@ import { heldProvidersOf } from '../shared/heldProviders'
 import { heldOnHost } from '../shared/hostProviders'
 import { startedBySotto, type HostStartedBy } from '../shared/hostConnection'
 import { createHostSelfUpdate } from './selfUpdate'
+import { DelegationToolServer } from '../main/agents/delegationTools'
+import type { ScopedThreadTools } from '../main/agents/threadToolServer'
 
 export interface HeadlessHostOptions {
   dataDirectory: string
@@ -112,8 +114,9 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   const streamingPublishCost = owlFeatures['streaming-publish-cost']
   const threadStartsEnabled = owlFeatures['continue-agent-thread']
   const pullRequestViewEnabled = owlFeatures['iphone-pull-request-view']
-  // A host starts no delegation itself, but a thread's link to the thread that delegated to it reaches clients only on Owl.
-  const delegation = owlFeatures['thread-delegation']
+  // A thread's link to the thread that delegated to it reaches clients only where delegation is on. This host's own
+  // threads delegate on this machine only where Work across machines is on (#1310), below.
+  const delegation = owlFeatures['thread-delegation'] || owlFeatures['cross-machine-work']
   const agentsViewEnabled = owlFeatures['iphone-agents-view']
   // Work across machines (ADR-0082) only where the host's Owl answer turns it on: the host names its projects' GitHub
   // origins to a desktop placing work (#1032), and reads its live load and counts its work placed but not started
@@ -140,8 +143,14 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     const policy = memory ? new PolicyStore(memory) : undefined
     // A paired client with an open socket is the host's window in front: while none is connected, no remote is fetched.
     let peersConnected = (): boolean => false
+    const pairing = new PairedClients(directory)
     const runtime = await createAgentRuntime({
       observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, attachAnyFile, settings: () => startup, writingSettings: () => settings.get(),
+      // This host's own threads delegate on this machine (#1310) where its Owl answer turns on Work across machines, held to
+      // the desktop defaults the last desktop still paired here with an answers grant sent, read at every start, so a desktop
+      // forgotten or revoked stops counting at once and after a restart (ADR-0074 decision 3).
+      hostDelegation: { roles: owlFeatures['worker-roles'],
+        counts: clientId => pairing.isPaired(clientId) && (policy?.mayGrant({ clientId, user: 'Paired desktop', transport: 'socket' }).allowed ?? false) },
       historyEnabled: () => startup.historyEnabled,
       gitStatus: { fetchIntervalMs: () => startup.gitFetchIntervalSeconds * 1000, foreground: () => peersConnected(), log: event => options.log?.(event) },
       ...(policy ? { authority: policy } : {}),
@@ -160,7 +169,12 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       worktreeCleanup: { pullRequestMerged: githubPullRequestMerged, log: event => options.log?.(event) },
       claudeSettingsLog: event => options.log?.(event),
     })
-    const pairing = new PairedClients(directory)
+    // Sotto's tool servers for this host's own threads (#1310), on this machine's loopback with this host's own tokens. Only
+    // `sotto_delegate` so far; `sotto_visual` and `sotto_pull_requests` join this list, each as its own change. The browser
+    // stays the desktop's.
+    const threadTools: (ScopedThreadTools & { close(): Promise<void> })[] = runtime.delegation && crossMachineEnabled
+      ? [new DelegationToolServer(runtime.delegation, { roles: owlFeatures['worker-roles'], machines: true, place: 'this-machine' })] : []
+    if (threadTools.length) runtime.agentHost.useThreadTools(threadTools)
     // A provider signed in from a paired client's browser is connected here for that client (ADR-0037).
     const signIns = new ProviderSignIns({ ...(options.signInCommand ? { command: options.signInCommand } : {}), cursorConfigDirectory: join(directory, 'cursor', 'config'),
       connect: async (provider, clientId) => {
@@ -233,7 +247,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         // Serve comes up seconds after the host does, and may move: the descriptor follows its address.
         tailnet.subscribe(address => { if (describing && address !== recordedAddress) void writeDescriptor().catch(() => options.log?.('host-descriptor-write-failed')) })
       }
-    } catch (error) { signIns.close(); await phones?.close().catch(() => options.log?.('phone-access-close-failed')); await listener?.close(); await runtime.close(); throw error }
+    } catch (error) { signIns.close(); await phones?.close().catch(() => options.log?.('phone-access-close-failed')); await listener?.close(); await Promise.allSettled(threadTools.map(tools => tools.close())); await runtime.close(); throw error }
     // Started once the host is up; close drains a sweep in progress through the runtime, before its host closes.
     runtime.worktreeCleanup.start()
     let closing: Promise<void> | undefined
@@ -248,6 +262,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
           describing = false
           await descriptorWrites.catch(() => undefined)
           try { await listener?.close() } finally {
+            // No thread's tool call is taken once the host is closing; a call already running ends with its service.
+            await Promise.allSettled(threadTools.map(tools => tools.close()))
             try { await runtime.close() } finally {
               memory?.close()
               if (listener) {

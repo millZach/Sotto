@@ -9,7 +9,8 @@ import type { DeepSeekSandboxMode } from './deepseekRpc'
  * DeepSeek Harness's models and permission modes as Sotto names them (ADR-0138). The models are the user's own
  * keyless model servers, one entry per model, grouped by server the way OpenCode groups by model source; a model
  * ID is `<server ID>/<model ID>`, so a thread is never read as running on another provider's model, and the pair
- * the harness encodes in its `model` config option is exactly that. Images are not offered in this version.
+ * the harness encodes in its `model` config option is exactly that. A model reads images when its record says so and
+ * the harness, started with Sotto's overlay, advertised image prompts.
  */
 
 /** The permission modes a DeepSeek Harness thread offers: Automatic is not one of them. */
@@ -27,8 +28,11 @@ export function deepseekModelRoute(modelId: string): { serverId: string; model: 
   return { serverId: modelId.slice(0, cut), model: modelId.slice(cut + 1) }
 }
 
-/** The catalog's models, from the keyless servers of the user's own record. */
-export function deepseekCatalog(servers: readonly OwnServer[]): AgentModel[] {
+/**
+ * The catalog's models, from the keyless servers of the user's own record. `harnessImages` is whether the harness
+ * advertised image prompts; until it has, and when it said no, no model offers images.
+ */
+export function deepseekCatalog(servers: readonly OwnServer[], harnessImages = false): AgentModel[] {
   return keylessServers(servers).flatMap(server => server.models.map((model): AgentModel => ({
     id: `${server.id}/${model.id}`,
     provider: 'DeepSeek Harness',
@@ -36,6 +40,7 @@ export function deepseekCatalog(servers: readonly OwnServer[]): AgentModel[] {
     runtimeModes: [...DEEPSEEK_RUNTIME_MODES],
     ready: true,
     source: server.name,
+    ...(harnessImages && model.images ? { supportsImages: true } : {}),
     ...(model.thinking ? { reasoningEfforts: orderReasoningEfforts([...DEEPSEEK_REASONING_EFFORTS]), defaultReasoningEffort: DEEPSEEK_DEFAULT_EFFORT } : {}),
   })))
 }

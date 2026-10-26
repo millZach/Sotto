@@ -909,11 +909,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * single read rather than one per record, and threads working in one folder (ADR-0014) share it.
    */
   private readonly worktreeRefreshes = new Map<string, { readonly timer: ReturnType<typeof setTimeout>; readonly threads: Set<string> }>()
+  /** Threads whose re-read came due while no window showed; the Git status timer reads them once one shows again. */
+  private readonly refreshesOwed = new Set<string>()
   /** How many Git actions have changed a folder (`invalidateGitStatus`); an inspection begun before the last is not shared. */
   private gitChanges = 0
   /** Reads a folder's Git status the way T3 does; without one, records carry no status. */
   private gitStatus: GitStatusSource | undefined
-  private gitStatusOptions: { foreground: () => boolean; pollIntervalMs: () => number; autoPull: () => boolean } = { foreground: () => true, pollIntervalMs: () => 0, autoPull: () => false }
+  private gitStatusOptions: { foreground: () => boolean; visible: () => boolean; pollIntervalMs: () => number; autoPull: () => boolean } = { foreground: () => true, visible: () => true, pollIntervalMs: () => 0, autoPull: () => false }
   private gitStatusTimer: ReturnType<typeof setInterval> | undefined
   private gitStatusPolledAt = 0
   private gitStatusPolling = false
@@ -993,13 +995,21 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * Gives the workspace its Git status source. Status is read with the worktree after a turn, with the
    * remote on a refresh, and for the threads a window is looking at on a timer while that window is in
    * front, once per fetch interval; an interval of zero leaves the timer with nothing to do. `autoPull` is the
-   * Automatically pull setting, read at each remote read; absent, nothing is pulled on its own.
+   * Automatically pull setting, read at each remote read; absent, nothing is pulled on its own. `visible` is whether
+   * a window shows at all: a re-read after a turn waits for one, and absent, one always does.
    */
-  setGitStatus(source: GitStatusSource, options: { foreground?: () => boolean; pollIntervalMs: () => number; autoPull?: () => boolean; tickMs?: number }): void {
+  setGitStatus(source: GitStatusSource, options: { foreground?: () => boolean; visible?: () => boolean; pollIntervalMs: () => number; autoPull?: () => boolean; tickMs?: number }): void {
     this.gitStatus = source
-    this.gitStatusOptions = { foreground: options.foreground ?? (() => true), pollIntervalMs: options.pollIntervalMs, autoPull: options.autoPull ?? (() => false) }
+    this.gitStatusOptions = { foreground: options.foreground ?? (() => true), visible: options.visible ?? (() => true), pollIntervalMs: options.pollIntervalMs, autoPull: options.autoPull ?? (() => false) }
     if (this.gitStatusTimer) clearInterval(this.gitStatusTimer)
-    this.gitStatusTimer = setInterval(() => { void this.pollGitStatus() }, options.tickMs ?? GIT_STATUS_TICK_MS)
+    this.gitStatusTimer = setInterval(() => {
+      if (this.refreshesOwed.size && this.gitStatusOptions.visible()) {
+        const owed = [...this.refreshesOwed]
+        this.refreshesOwed.clear()
+        for (const threadId of owed) this.scheduleWorktreeRefresh(threadId)
+      }
+      void this.pollGitStatus()
+    }, options.tickMs ?? GIT_STATUS_TICK_MS)
     this.gitStatusTimer.unref?.()
   }
   setGitActions(actions: GitActions): void { this.gitActions = actions }
@@ -2893,6 +2903,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.historyRetryTimer = undefined
     for (const { timer } of this.worktreeRefreshes.values()) clearTimeout(timer)
     this.worktreeRefreshes.clear()
+    this.refreshesOwed.clear()
     if (this.gitStatusTimer) { clearInterval(this.gitStatusTimer); this.gitStatusTimer = undefined }
     // A roster that cannot reach the disk leaves the records unstripped, as the flush does.
     try { if (this.ready) { this.writeEvents(true); this.saveActivities(!this.rosterOnDisk(), true) } }
@@ -3534,6 +3545,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const threads = new Set([threadId])
     const timer = setTimeout(() => {
       this.worktreeRefreshes.delete(key)
+      // Nobody sees a re-read with no window showing, so it waits for one to show and then runs once.
+      if (!this.gitStatusOptions.visible()) { for (const id of threads) this.refreshesOwed.add(id); return }
       const round: RefreshRound = { firedAt: performance.now(), inspections: new Map() }
       for (const id of threads) void this.refreshWorktreeRecord(id, round)
     }, this.worktreeRefreshDelayMs)

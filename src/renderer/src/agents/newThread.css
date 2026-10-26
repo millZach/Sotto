@@ -4,6 +4,7 @@
 .new-thread-dialog__search > span { flex: 1; font-size: 14px; }
 .new-thread-dialog__search > svg { color: var(--tt-text-muted); }
 .new-thread-dialog__search input { flex: 1; min-width: 0; padding: 6px 0; border: 0; outline: none; background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; }
+.new-thread-dialog__search input:focus-visible { box-shadow: inset 0 -2px 0 var(--tt-focus-ring); border-radius: 2px; }
 .new-thread-dialog__search .tt-button { min-height: 28px; width: 28px; color: var(--tt-text-muted); }
 .new-thread-dialog__choices { padding: 0 9px 12px; max-height: min(440px, calc(100vh - 205px)); overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .new-thread-dialog__choices h3 { margin: 16px 12px 8px; color: var(--tt-text-muted); font-size: 11.5px; font-weight: 400; }
@@ -12,8 +13,9 @@
 .new-thread-choice strong { color: var(--tt-text-2); font-size: 13px; font-weight: 500; }
 .new-thread-choice small { font-size: 11.5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .new-thread-choice[data-highlighted], .new-thread-choice:hover, .new-thread-choice:focus-visible { background: var(--tt-hover-strong); outline: 0; }
+.new-thread-choice:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
 .new-thread-choice > svg:last-child { opacity: 0; }
-.new-thread-choice[data-highlighted] > svg:last-child, .new-thread-choice:hover > svg:last-child { opacity: 1; }
+.new-thread-choice[data-highlighted] > svg:last-child, .new-thread-choice:hover > svg:last-child, .new-thread-choice:focus-visible > svg:last-child { opacity: 1; }
 .new-thread-dialog__keys { display: flex; flex-wrap: wrap; gap: 16px; padding: 11px 18px; border-top: 1px solid var(--tt-hairline); background: var(--tt-surface); color: var(--tt-text-muted); font-size: 11px; }
 .new-thread-dialog__keys > span { display: flex; align-items: center; gap: 5px; }
 .new-thread-dialog__keys kbd { min-width: 20px; padding: 2px 5px; text-align: center; font: inherit; color: var(--tt-text-2); border-radius: 4px; background: var(--tt-kbd); }

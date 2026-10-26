@@ -124,6 +124,8 @@ describe('remote command allow-list', () => {
       'host-facts',
       // Each project's GitHub repository, read only by a desktop that lists project-origins, to place a worker (#1032).
       'project-origins',
+      // A recorded desktop's new-thread default and worker roles for host delegation (#1310): settings, never a grant.
+      'desktop-defaults',
       // A started thread's handover, read only on a listener that offers thread-starts, and only when the user asks (#1028).
       'start-handover',
       // A host update the host runs on itself: a recorded desktop whose remote-answer policy lets it answer (ADR-0088).
