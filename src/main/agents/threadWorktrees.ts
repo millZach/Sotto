@@ -1454,10 +1454,13 @@ export class ThreadWorktrees {
    */
   async inspectSharedFolder(folder: string): Promise<(metadata: AgentWorktree) => AgentWorktree> {
     const path = await existingWorkingDirectory(folder)
+    const noRepository = (metadata: AgentWorktree): AgentWorktree => ({ ...metadata, branch: undefined, dirty: false, status: 'ready', error: undefined })
+    // No `.git` on disk at or above the folder: Git would only refuse, so it is not asked.
+    if ((await checkoutOnDisk(path))?.root === null) return noRepository
     let repositoryRoot: string
     try { repositoryRoot = (await this.git(path, ['rev-parse', '--show-toplevel'])).trim() }
     catch (error) {
-      if (error instanceof Error && /not a git repository|Git is unavailable/u.test(error.message)) return metadata => ({ ...metadata, branch: undefined, dirty: false, status: 'ready', error: undefined })
+      if (error instanceof Error && /not a git repository|Git is unavailable/u.test(error.message)) return noRepository
       throw error
     }
     return this.sharedFolderRecord(path, repositoryRoot)

@@ -1,10 +1,13 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Download, Paperclip, X } from 'lucide-react'
+import { plural, t } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { AGENT_IMAGE_MIME_TYPES, AGENT_MAX_ATTACHMENT_BYTES, AGENT_MAX_ATTACHMENTS, AGENT_MAX_ATTACHMENTS_TOTAL_BYTES, AGENT_MAX_FILE_BYTES, AGENT_MAX_IMAGE_BYTES,
   agentAttachmentHandlesSchema, attachmentHandlesBytes, attachmentImagesBytes, attachmentMimeType, isImageAttachment,
   SCREENSHOT_TOO_LARGE, SCREENSHOT_WRONG_TYPE, SCREENSHOTS_TOO_LARGE_IN_TOTAL, type AgentAttachmentDimensions, type AgentAttachmentHandle, type AgentImageSize } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useOwlFeature } from '../state/owlFeature'
+import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import type { ScreenshotReadPort } from './threadDraftStore'
 import { prepareScreenshot, wasResized } from './screenshotResize'
 import { stageAttachedFile, stageImage, stagingReason, useThumbnail } from './stagedImages'
@@ -34,9 +37,15 @@ const screenshotName = (file: File): string => file.name || 'Screenshot.png'
 function addFailed(file: File, remaining: number, first: boolean, cause: unknown): string {
   const reason = stagingReason(cause)
   if (first && remaining === 1 && reason) return reason
-  const lost = remaining === 1 ? 'it was' : `it and the ${remaining - 1} after it were`
-  const next = reason?.replace(/ ?Nothing was attached\./u, '').trim() || `Try adding ${remaining === 1 ? 'it' : 'them'} again.`
-  return `Could not add ${screenshotName(file)}, so ${lost} not attached. ${next}`
+  // Main's reasons are English sentences; the one it adds about nothing being attached is said here already.
+  const next = reason?.replace(/ ?Nothing was attached\./u, '').trim() || plural(remaining, { one: 'Try adding it again.', other: 'Try adding them again.' })
+  const name = screenshotName(file)
+  const after = remaining - 1
+  if (after === 0) return t({ message: `Could not add ${name}, so it was not attached. ${next}`, comment: '{next} is why, or what to do next.' })
+  return plural(after, {
+    one: `Could not add ${name}, so it and the # after it were not attached. ${next}`,
+    other: `Could not add ${name}, so it and the # after it were not attached. ${next}`,
+  })
 }
 
 /** "3840 x 2160", joined by no-break spaces so a size is never split across the chip's lines, nor "to" from the size after it. */
@@ -44,20 +53,25 @@ const shownSize = ({ width, height }: AgentImageSize): string => `${width}\u00a0
 
 /** "Resized from 3840 by 2160 to 2576 by 1449 pixels": sizes only, for what a screen reader reads. */
 function resizedDescription({ original, sent }: AgentAttachmentDimensions): string {
-  return `Resized from ${original.width} by ${original.height} to ${sent.width} by ${sent.height} pixels`
+  return t`Resized from ${{ fromWidth: original.width }} by ${{ fromHeight: original.height }} to ${{ toWidth: sent.width }} by ${{ toHeight: sent.height }} pixels`
 }
 
 /** One attached image: its thumbnail, drawn in this window, or a placeholder with its name while the thumbnail is read and when there is none. */
 function Chip({ target, attachment, disabled, onRemove, removeLabel }: { readonly target: string | null; readonly attachment: AgentAttachmentHandle; readonly disabled: boolean; readonly onRemove: () => void
   readonly removeLabel?: string }): ReactNode {
+  const { t } = useLingui()
   const thumbnail = useThumbnail(target, attachment)
-  const remove = removeLabel ?? `Remove ${attachment.name}`
+  const name = attachment.name
+  const dimensions = wasResized(attachment.dimensions) ? attachment.dimensions : undefined
+  const from = dimensions === undefined ? '' : shownSize(dimensions.original)
+  const to = dimensions === undefined ? '' : shownSize(dimensions.sent)
+  const remove = removeLabel ?? t`Remove ${name}`
   return <figure>
     {thumbnail ? <img src={thumbnail} alt={attachment.name} /> : <span className="screenshot-previews__placeholder" role="img" aria-label={attachment.name} />}
     <figcaption title={attachment.name}>{attachment.name}</figcaption>
-    {wasResized(attachment.dimensions) && <small className="screenshot-previews__resized">
-      <span aria-hidden="true">Resized from {shownSize(attachment.dimensions.original)} to&nbsp;{shownSize(attachment.dimensions.sent)}</span>
-      <span className="tt-visually-hidden">{resizedDescription(attachment.dimensions)}</span></small>}
+    {dimensions !== undefined && <small className="screenshot-previews__resized">
+      <span aria-hidden="true"><Trans>Resized from {from} to&nbsp;{to}</Trans></span>
+      <span className="tt-visually-hidden">{resizedDescription(dimensions)}</span></small>}
     <button type="button" title={remove} aria-label={remove} disabled={disabled} onClick={onRemove}><X size={12} /></button>
   </figure>
 }
@@ -134,6 +148,8 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
   /** Reads that may outlive this input, as when the user moves to another thread while screenshots are read. */
   readonly reads?: ScreenshotReadPort
 }): ReactNode {
+  // Subscribes, so the words drawn here follow a change of interface language.
+  useInterfaceLanguageState()
   const anyFile = useOwlFeature('attach-any-file')
   const picker = useRef<HTMLInputElement>(null)
   const current = useRef(attachments)
@@ -180,11 +196,12 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
   }
   const addScreenshots = async (files: File[]): Promise<void> => {
     if (disabled || reading.current || pending) return
-    if (!supported) { setError('This model does not support screenshots. Choose a model with image support.'); return }
+    if (!supported) { setError(t`This model does not support screenshots. Choose a model with image support.`); return }
     setError(null)
-    if (files.length + current.current.length > AGENT_MAX_ATTACHMENTS) { setError(`Attach up to ${AGENT_MAX_ATTACHMENTS} screenshots at a time.`); return }
+    const most = AGENT_MAX_ATTACHMENTS
+    if (files.length + current.current.length > most) { setError(plural(most, { one: 'Attach up to # screenshot at a time.', other: 'Attach up to # screenshots at a time.' })); return }
     // Every refusal that the file sizes alone can decide comes before any file is read and staged.
-    try { files.forEach(checkImage) } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not read these screenshots.'); return }
+    try { files.forEach(checkImage) } catch (cause) { setError(cause instanceof Error ? cause.message : t`Could not read these screenshots.`); return }
     const total = attachmentHandlesBytes(current.current) + files.reduce((sum, file) => sum + file.size, 0)
     if (total > AGENT_MAX_ATTACHMENT_BYTES) { setError(SCREENSHOTS_TOO_LARGE_IN_TOTAL); return }
     await stageAll(files, file => stageFile(target, file), addFailed, () => SCREENSHOTS_TOO_LARGE_IN_TOTAL)
@@ -225,7 +242,7 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
     if (event.dataTransfer.files.length) { event.preventDefault(); void add([...event.dataTransfer.files]) }
   }}>
     {children}
-    {images.length > 0 && <div className="screenshot-previews" aria-label={anyFile ? words.attachedImages() : 'Attached screenshots'}>{images.map(attachment =>
+    {images.length > 0 && <div className="screenshot-previews" aria-label={anyFile ? words.attachedImages() : t`Attached screenshots`}>{images.map(attachment =>
       <Chip key={attachment.id} target={target} attachment={attachment} disabled={disabled || busy} onRemove={() => remove(attachment.id)}
         {...anyFile ? { removeLabel: words.removeAttachment(attachment.name) } : {}} />)}</div>}
     {files.length > 0 && <ul className="attached-files" aria-label={words.attachedFiles()}>{files.map(attachment =>
@@ -233,9 +250,9 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
     <div className="screenshot-input__tools">
       {anyFile
         ? <input ref={picker} type="file" multiple aria-label={words.pickerLabel()} hidden onChange={event => { const files = [...(event.target.files ?? [])]; event.target.value = ''; void add(files) }} />
-        : <input ref={picker} type="file" accept={AGENT_IMAGE_MIME_TYPES.join(',')} multiple aria-label="Screenshot files" hidden onChange={event => { const files = [...(event.target.files ?? [])]; event.target.value = ''; void add(files) }} />}
-      <Button type="button" variant="ghost" iconOnly aria-label={anyFile ? words.attachButton() : 'Attach screenshots'} disabled={disabled || busy || !supported} onClick={() => picker.current?.click()}><Paperclip size={16} /></Button>
-      {busy && <small role="status">{anyFile ? words.addingFiles() : 'Adding screenshots...'}</small>}
+        : <input ref={picker} type="file" accept={AGENT_IMAGE_MIME_TYPES.join(',')} multiple aria-label={t`Screenshot files`} hidden onChange={event => { const files = [...(event.target.files ?? [])]; event.target.value = ''; void add(files) }} />}
+      <Button type="button" variant="ghost" iconOnly aria-label={anyFile ? words.attachButton() : t`Attach screenshots`} disabled={disabled || busy || !supported} onClick={() => picker.current?.click()}><Paperclip size={16} /></Button>
+      {busy && <small role="status">{anyFile ? words.addingFiles() : <Trans>Adding screenshots...</Trans>}</small>}
       {(error ?? reads?.problem) && <small className="agent-error" role="alert">{error ?? reads?.problem}</small>}
     </div>
     {anyFile && dragging && <div className="screenshot-input__drop" role="status"><span><Download size={16} aria-hidden="true" />{words.dropToAttach()}</span></div>}

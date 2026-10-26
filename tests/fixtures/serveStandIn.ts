@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { createServer, request, type IncomingMessage, type ServerResponse } from 'node:http'
 import { connect, type Socket } from 'node:net'
+import { Transform } from 'node:stream'
 
 /**
  * A stand-in for Tailscale Serve in front of a host's tailnet listener (ADR-0053): a loopback HTTP proxy that carries
@@ -11,7 +12,9 @@ import { connect, type Socket } from 'node:net'
  * upstream, or while `answering` is `502`, it answers 502 the way Serve does with nothing behind it; `cut()` ends every
  * connection it carries, the way a lost network does. `cut-upgrade` carries everything but ends each socket as soon as the
  * host has accepted it, and `impostor` answers health as another host. `hold()` keeps each health request waiting until its
- * promise settles, so a connect stays under way. `requests` lists every path it was asked for.
+ * promise settles, so a connect stays under way. `cutWhen()` ends a socket the moment the host sends it bytes the test
+ * names, before they reach the desktop, the way a network lost just then does, once. `requests` lists every path it was
+ * asked for.
  */
 export async function serveStandIn(upstream: () => number | undefined, peer = '100.101.102.103') {
   let answering: 'proxy' | 502 | 'cut-upgrade' | 'impostor' = 'proxy'
@@ -20,6 +23,7 @@ export async function serveStandIn(upstream: () => number | undefined, peer = '1
   const target = (): number | undefined => answering === 502 ? undefined : upstream()
   const headers = (incoming: IncomingMessage) => ({ ...incoming.headers, 'x-forwarded-for': peer })
   let held: Promise<void> | undefined
+  let cutting: ((bytes: Buffer) => boolean) | undefined
   const server = createServer((incoming, response) => {
     requests.push(`${incoming.method ?? ''} ${incoming.url ?? ''}`)
     const gate = incoming.url === '/v1/health' ? held : undefined
@@ -51,7 +55,12 @@ export async function serveStandIn(upstream: () => number | undefined, peer = '1
       const lines = [`${incoming.method} ${incoming.url} HTTP/1.1`, ...Object.entries(headers(incoming)).flatMap(([name, value]) => (Array.isArray(value) ? value : [value]).map(item => `${name}: ${item}`))]
       host.write(lines.join('\r\n') + '\r\n\r\n')
       if (head.length) host.write(head)
-      client.pipe(host).pipe(client)
+      // What the host sends goes through a check that can cut the socket before any of it arrives.
+      const check = new Transform({ transform(chunk: Buffer, _encoding, done) {
+        if (cutting?.(chunk)) { cutting = undefined; client.destroy(); host.destroy(); done(); return }
+        done(null, chunk)
+      } })
+      client.pipe(host).pipe(check).pipe(client)
       // The host accepted the socket; a network that drops just then ends it before the session can use it.
       if (answering === 'cut-upgrade') host.once('data', () => setImmediate(() => { client.destroy(); host.destroy() }))
     })
@@ -70,6 +79,8 @@ export async function serveStandIn(upstream: () => number | undefined, peer = '1
     answer(value: 'proxy' | 502 | 'cut-upgrade' | 'impostor'): void { answering = value },
     /** Keeps health requests from now on waiting until `gate` settles, or none with no gate. */
     hold(gate: Promise<void> | undefined): void { held = gate },
+    /** Ends the next socket whose host sends bytes `bytes` says yes to, before those bytes reach the desktop. */
+    cutWhen(bytes: ((bytes: Buffer) => boolean) | undefined): void { cutting = bytes },
     /** Ends every connection it carries now. */
     cut(): void { for (const socket of open) socket.destroy() },
     close: async (): Promise<void> => {

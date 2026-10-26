@@ -1,4 +1,5 @@
 import React, { createContext, startTransition, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { msg } from '@lingui/core/macro'
 
 import type { AgentBridge, AgentCommand, AgentState, AgentThread, AgentThreadDetail, AgentThreadDetailUpdate } from '../../../shared/agents'
 import { applyAgentThreadDetailDelta, isAgentThreadDetailDelta } from '../../../shared/agentThreadDetail'
@@ -12,6 +13,8 @@ import { approximateDetailBytes } from './detailCacheSize'
 import { requestAnswerStore } from './requests/requestAnswers'
 import { answeredChoices } from './requests/answeredChoices'
 import { useWatcherEnabled } from '../state/watcherFeature'
+import { useInterfaceLanguageState } from '../state/interfaceLanguage'
+import { shownWords, type LaterWords } from './interfaceWords'
 import { visibleWatcherState, watcherThreadVisible } from './watcherVisibility'
 
 export interface AgentConnection {
@@ -25,14 +28,21 @@ export interface AgentConnection {
 const DETAIL_CACHE_LIMIT = 16
 /** At most one cache write per this long; the shell arrives as often as a provider streams. */
 const SHELL_CACHE_INTERVAL_MS = 2_000
+/** Commands that only ask what an action would do; their answers stay with the dialog that asked. */
+const PREVIEW_COMMANDS: ReadonlySet<AgentCommand['type']> = new Set(['preview-reclaim-thread-worktree', 'preview-delete-thread', 'preview-clear-threads'])
 /** Said when main gave no reason in words: a code, a schema failure or nothing at all. */
-const COMMAND_UNCONFIRMED = 'The action could not be confirmed. Your draft is retained; check the connection before retrying.'
+const COMMAND_UNCONFIRMED = msg`The action could not be confirmed. Your draft is retained; check the connection before retrying.`
 
-/** Main's own sentence for a command that failed, such as which host is disconnected, or the unconfirmed sentence. */
-export function commandFailure(error: unknown): string {
+/**
+ * Main's own sentence for a command that failed, such as which host is disconnected, or the unconfirmed sentence,
+ * kept as a message until it is shown.
+ */
+function commandFailureWords(error: unknown): LaterWords {
   const said = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (?:[A-Za-z]*Error: )?/u, '').trim() : ''
   return /^\S.*\s.*[.!?]$/su.test(said) && !isJson(said) ? said : COMMAND_UNCONFIRMED
 }
+/** The words of a failed command as shown now. */
+export function commandFailure(error: unknown): string { return shownWords(commandFailureWords(error)) }
 /** A schema failure's message is its issues as JSON; a host's name may still open a sentence with a bracket. */
 function isJson(text: string): boolean {
   try { JSON.parse(text); return true } catch { return false }
@@ -57,7 +67,9 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     channel: bridge?.threadDetail !== undefined || bridge?.onThreadDetail !== undefined,
   }), [bridge])
   const [snapshot, setSnapshot] = useState<{ session: typeof session; state: AgentState } | null>(null)
-  const [failure, setFailure] = useState<{ session: typeof session; error: string } | null>(null)
+  // Read when shown, so a change of language rewords it; the provider subscribes to the language for that alone.
+  useInterfaceLanguageState()
+  const [failure, setFailure] = useState<{ session: typeof session; error: LaterWords } | null>(null)
   /** When the newest state arrived, and when the dev console was last told what one cost. */
   const arrived = useRef<number | null>(null)
   const reported = useRef(0)
@@ -227,11 +239,12 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
           // a reply causes yields to the next keystroke instead of holding it (October 20, 2026: with a few hundred
           // threads that render took 60-70 ms, once per saved pause).
           const urgent = request.type !== 'save-thread-draft'
-          if (request.type !== 'preview-reclaim-thread-worktree' && version === session.observed) { commitPendingShell({ urgent }); receiveState(next, { urgent }) }
+          // A preview's answer belongs to the dialog that asked, never to the shared state (ADR-0041, ADR-0140).
+          if (!PREVIEW_COMMANDS.has(request.type) && version === session.observed) { commitPendingShell({ urgent }); receiveState(next, { urgent }) }
         }
         return visibleWatcherState(next, watcherEnabledRef.current)
       } catch (error) {
-        if (session.current) setFailure({ session, error: commandFailure(error) })
+        if (session.current) setFailure({ session, error: commandFailureWords(error) })
         return null
       }
     }
@@ -257,7 +270,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   }, [bridge, session, receiveState, commitPendingShell, detail, requestDetail])
   const threadDrafts = useMemo(() => new ThreadDraftStore(command), [command])
   const state = snapshot?.session === session ? snapshot.state : null
-  const error = failure?.session === session ? failure.error : null
+  const error = failure?.session === session ? shownWords(failure.error) : null
   const shownState = useMemo(() => visibleWatcherState(state, watcherEnabled), [state, watcherEnabled])
   useEffect(() => {
     const thread = state?.host.threads.find(candidate => candidate.id === state.activeThreadId)
@@ -296,7 +309,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     }
     void bridge?.get().then(next => {
       if (active && version === session.observed) receive(next, { urgent: true })
-    }).catch(() => { if (active) setFailure({ session, error: 'Agent controls are unavailable. Reopen Sotto to reconnect.' }) })
+    }).catch(() => { if (active) setFailure({ session, error: msg`Agent controls are unavailable. Reopen Sotto to reconnect.` }) })
     const flush = (): void => threadDrafts.flushAll()
     window.addEventListener('pagehide', flush)
     window.addEventListener('beforeunload', flush)

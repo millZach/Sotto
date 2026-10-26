@@ -17,12 +17,19 @@ import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { deferred } from '../fixtures/deferred'
+import { PIXEL_PNG } from '../fixtures/stagedImages'
 import { watcherRequestLine, watcherRequestNote } from '../../src/main/agents/watcherRequestNote'
 
+const GIB = 1024 ** 3
+/** This computer as its host facts read it: busy, with memory to spare (#1032). */
+const MACHINE_REPORT = { facts: { observedAt: new Date().toISOString(), os: { family: 'linux' as const, name: 'Omarchy', version: null }, architecture: 'x64',
+  totalMemoryBytes: 64 * GIB, freeMemoryBytes: null, logicalCpuCount: 24 }, runningThreads: 0, placedNotStarted: 0,
+  get load() { const at = new Date().toISOString(); return { observedAt: at, windowMs: 2_000, cpuBusyPercent: 93, loadAverage: null, availableMemoryBytes: 41 * GIB,
+    windowStartAvailableMemoryBytes: 41 * GIB, memoryPressurePercent: null } } }
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 /** `steers`: Watcher's provider takes a steer into its running turn, as Codex and Claude Code do and Grok Build does not. */
-async function fixture(phoneFeature = true, usageEnabled = false, steers = false) {
+async function fixture(phoneFeature = true, usageEnabled = false, steers = false, machines = false) {
   const workspace = await workspaceFixture()
   cleanups.push(workspace.remove)
   if (steers) workspace.adapters.codex.state.capabilities.steer = true
@@ -33,7 +40,8 @@ async function fixture(phoneFeature = true, usageEnabled = false, steers = false
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
     control: { watcherEnabled: true, ...(usage ? { usage } : {}), authority: { authorizes: () => ({ allowed: false, reason: 'no-policy' }),
       mayGrant: client => ({ allowed: client.transport === 'ipc' || canAnswer, reason: 'paired-client' }) } } })
-  const watcher = new WatcherService({ directory: workspace.root, host: workspace.host, control: f.control, historyEnabled: () => true })
+  const watcher = new WatcherService({ directory: workspace.root, host: workspace.host, control: f.control, historyEnabled: () => true,
+    ...machines ? { crossMachine: true, machineFacts: async () => MACHINE_REPORT, workerMachine: () => 'this-computer' as const } : {} })
   const tools = new WatcherToolServer(watcher); workspace.host.useWatcherTools(tools)
   cleanups.push(async () => { watcher.close(); await tools.close(); f.control.dispose(); await f.control.closed(); usage?.close(); await workspace.stop() })
   await f.control.start(); await f.control.commandShell({ type: 'connect', provider: 'codex' })
@@ -42,7 +50,7 @@ async function fixture(phoneFeature = true, usageEnabled = false, steers = false
   const project = f.control.shell().host.projects.find(row => row.providerId === 'codex')!
   expect(await watcher.open({ provider: 'codex', modelId: model.id })).toMatchObject({ status: 'ok' })
   const target = watcher.state().current!.target
-  const phone = new WatcherPhoneService(f.control, watcher)
+  const phone = new WatcherPhoneService(f.control, watcher, machines)
   const service = new LocalHostService({ control: f.control, ...(phoneFeature ? { watcherPhone: phone } : {}) })
   const pairing = new PairedClients(workspace.root); await pairing.load()
   const server = await startSocketServer({ service, pairing, admin: false, mayAnswer: () => canAnswer })
@@ -727,6 +735,45 @@ it('steers a phone message into Watcher’s running turn under the request it an
   await vi.waitFor(() => expect(f.phone.state(false).conversation.messages.find(message => message.id === second.messageId)?.text).toBe(newsText))
 })
 
+// Photos for Watcher from the phone (October 23, 2026): staged as a thread's are, sent with the words or alone.
+it('sends a phone’s photos to Watcher with or without words, now or next, and lets the phone draw them back', async () => {
+  const f = await fixture(), peer = await f.pair(STEER), clientId = peer.paired.clientId
+  f.workspace.adapters.codex.state.models[0]!.supportsImages = true
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(peer.hello).toMatchObject({ ok: true, result: { features: expect.arrayContaining(['watcher-phone-photos', 'attachment-staging']) } })
+  const stage = async (name: string) => (await peer.call('stage-' + name, { op: 'stage-attachment',
+    image: { name, mimeType: 'image/png', data: PIXEL_PNG.toString('base64') } })).result as { id: string; digest: string }
+  const photo = await stage('Photo 1.png')
+  const withPhotos = (draftId: ReturnType<typeof randomUUID>, text: string, images: unknown[], delivery?: 'steer') => {
+    const packet = f.send(clientId, draftId, text, delivery)
+    return { ...packet, request: { ...packet.request, images } }
+  }
+  // Neither words nor photos is nothing to send.
+  expect(await peer.call('empty', f.send(clientId, randomUUID(), ' '))).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+
+  // A photo alone, to Watcher at rest: it reaches Watcher's provider by its handle.
+  const draftId = randomUUID()
+  expect(await peer.call('photo', withPhotos(draftId, '', [photo]))).toMatchObject({ ok: true, result: { status: 'ok', draftId } })
+  expect(f.workspace.adapters.codex.commands.findLast(command => command.type === 'send')).toMatchObject({
+    attachments: [expect.objectContaining({ id: photo.id, digest: photo.digest })] })
+  // The phone's page marks the photo on the user's message, and the phone reads it back through Watcher alone.
+  const message = f.phone.state(false).conversation.messages.findLast(row => row.role === 'user')!
+  expect(message.attachments).toEqual([expect.objectContaining({ id: photo.id, name: 'Photo 1.png', preview: { available: true } })])
+  const preview = { op: 'watcher-phone-preview', request: { target: f.target, messageId: message.id, attachmentId: photo.id } }
+  expect(await peer.call('preview', preview)).toMatchObject({ ok: true, result: { dataUrl: `data:image/png;base64,${PIXEL_PNG.toString('base64')}` } })
+  expect(await peer.call('hidden-preview', { op: 'preview', request: { threadId: f.target.threadId, messageId: message.id, attachmentId: photo.id } }))
+    .toMatchObject({ ok: false, error: { code: 'forbidden' } })
+  expect(await peer.call('other-watcher', { ...preview, request: { ...preview.request, target: { ...f.target, threadId: randomUUID() } } }))
+    .toMatchObject({ ok: true, result: null })
+
+  // While Watcher works, words and a photo go next together when its provider takes no steer.
+  const second = await stage('Photo 2.png'), nextDraft = randomUUID(), nextText = 'Synthetic phone words with a photo'
+  expect(await peer.call('next', withPhotos(nextDraft, nextText, [second], 'steer'))).toMatchObject({ ok: true, result: { status: 'ok',
+    state: { followups: [{ draftId: nextDraft, text: nextText, status: 'queued' }] } } })
+  expect(f.control.shell().followups).toContainEqual(expect.objectContaining({ draftId: nextDraft, text: nextText,
+    attachments: [expect.objectContaining({ id: second.id, digest: second.digest })] }))
+})
+
 it('queues a phone message to go next when Watcher’s provider takes no steer, shows it on the page and removes it (#1229)', async () => {
   const f = await fixture(), peer = await f.pair(STEER), clientId = peer.paired.clientId
   await peer.call('ask', f.send(clientId))
@@ -834,6 +881,33 @@ it('refuses a send without a steer while Watcher works, saying why, and keeps an
   expect(f.control.shell().error).toBeNull()
 })
 
+it('sends the machines line only to a phone that accepts it, where Work across machines is on, and reads it afresh only when asked (#1032)', async () => {
+  const MACHINES = [...STEER, 'watcher-phone-machines']
+  // Without Work across machines, the feature is not offered and a fresh read is refused.
+  const off = await fixture(), plain = await off.pair(MACHINES)
+  expect((plain.hello.result as { features: string[] }).features).not.toContain('watcher-phone-machines')
+  expect((plain.hello.result as { shell: { watcher: { machines?: unknown } } }).shell.watcher.machines).toBeUndefined()
+  expect(await plain.call('fresh', { op: 'watcher-phone-read', machines: true })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+
+  const f = await fixture(true, false, false, true), phone = await f.pair(MACHINES), older = await f.pair(STEER)
+  expect(phone.hello).toMatchObject({ ok: true, result: { features: expect.arrayContaining(['watcher-phone-machines']) } })
+  // Before any read, This computer stands alone with its count and nothing of its load.
+  expect((phone.hello.result as { shell: { watcher: unknown } }).shell.watcher).toMatchObject({ machines: { readAt: null,
+    rows: [{ hostId: f.target.hostId, name: 'This computer', thisComputer: true, connected: true, working: 0, cpuState: null, memoryState: null, unknownWhy: null }] } })
+  // An iPhone that did not accept it is sent none, and may not ask for a fresh read.
+  expect((older.hello.result as { shell: { watcher: { machines?: unknown } } }).shell.watcher.machines).toBeUndefined()
+  expect(await older.call('older-fresh', { op: 'watcher-phone-read', machines: true })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+  // An ordinary read does not read the machines; a fresh one does, and every page after it carries that read.
+  const ordinary = watcherPhoneResultSchema.parse((await phone.call('read', { op: 'watcher-phone-read' })).result)
+  expect(ordinary).toMatchObject({ status: 'ok', state: { machines: { readAt: null } } })
+  const fresh = watcherPhoneResultSchema.parse((await phone.call('fresh', { op: 'watcher-phone-read', machines: true })).result)
+  if (fresh.status !== 'ok') throw new Error('The page was not read')
+  expect(fresh.state.machines?.readAt).toEqual(expect.any(String))
+  expect(fresh.state.machines?.rows).toEqual([expect.objectContaining({ name: 'This computer', cpuState: 'busy', memoryState: 'enough', system: 'Omarchy (Linux)',
+    logicalCpuCount: 24, cpuBusyPercent: 93, windowMs: 2_000, availableMemoryBytes: 41 * GIB, totalMemoryBytes: 64 * GIB, isDefault: true, unknownWhy: null, threads: [] })])
+  expect(watcherPhoneResultSchema.parse((await phone.call('again', { op: 'watcher-phone-read' })).result)).toMatchObject({ state: { machines: { readAt: fresh.state.machines!.readAt } } })
+})
+
 it('pushes a phone no shell whose only news is when Watcher\'s page was read, and pushes the next change whole', async () => {
   const f = await fixture(), peer = await f.pair()
   type Pushed = { state: { watcher?: { observedAt: string }; clientCapabilities?: { mayAnswer: boolean } } }
@@ -872,4 +946,33 @@ it('pushes a phone no shell whose only news is when Watcher\'s page was read, an
     await publish(); await received()
     expect(shells()).toHaveLength(3)
   } finally { vi.useRealTimers() }
+})
+
+it('knows the threads Watcher started from an index of its record, for the phone’s machines line (#1032)', async () => {
+  const f = await fixture(), peer = await f.pair()
+  await peer.call('send', f.send(peer.paired.clientId)); const worker = await f.start()
+  expect(f.watcher.startedByWatcher(worker.hostId, worker.threadId)).toBe(true)
+  expect(f.watcher.startedByWatcher(f.target.hostId, f.target.threadId)).toBe(false)
+  expect(f.watcher.startedByWatcher(worker.hostId, 'another-thread')).toBe(false)
+  // A change to something attribution does not read keeps the index: no walk of Watcher's history.
+  const walks = vi.spyOn(f.watcher as unknown as { indexWatcherStarts: (record: unknown) => unknown }, 'indexWatcherStarts')
+  const before = f.control.watcherRecordView()
+  await f.control.updateWatcher(next => { next.lastRuntimeMode = next.lastRuntimeMode === 'auto' ? 'approval-required' : 'auto' })
+  expect(f.control.watcherRecordView()).not.toBe(before)
+  expect(f.watcher.startedByWatcher(worker.hostId, worker.threadId)).toBe(true)
+  // Another start is read on its own, from where the index left off.
+  await f.finish(worker.threadId); await f.finish(f.target.threadId)
+  await peer.call('second', f.send(peer.paired.clientId)); const second = await f.start()
+  expect(f.watcher.startedByWatcher(second.hostId, second.threadId)).toBe(true)
+  expect(walks).not.toHaveBeenCalled()
+})
+
+it('keeps the machines line on the page Stop all answers with, which the iPhone takes whole (#1032)', async () => {
+  const f = await fixture(true, false, false, true), peer = await f.pair([...STEER, 'watcher-phone-machines'])
+  await peer.call('send', f.send(peer.paired.clientId)); const worker = await f.start()
+  const preview = await peer.call('preview', { op: 'watcher-phone-prepare-stop-all' })
+  const confirmationId = (preview.result as { confirmationId: string }).confirmationId
+  const stopped = await peer.call('stop', { op: 'watcher-phone-stop-all', confirmationId })
+  expect(stopped).toMatchObject({ ok: true, result: { status: 'ok', results: [{ target: worker, status: 'stopped' }],
+    state: { machines: { rows: [expect.objectContaining({ name: 'This computer', thisComputer: true })] } } } })
 })

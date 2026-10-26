@@ -43,6 +43,19 @@ export function ownBuiltActivity(activity: AgentActivity): AgentActivity {
   return activity
 }
 
+/**
+ * Owns a record its caller has just built and nobody else holds, whose every part is already owned, such as a thread
+ * record a layer renamed by spreading an owned one (#925): it is frozen where it is and its parts are shared, so handing
+ * on a thread costs the fields the layer changed rather than a copy. A record holding a part that is not owned is copied
+ * instead, since freezing that part would freeze it under whoever else holds it. A part the caller built too is owned
+ * first, with this.
+ */
+export function ownBuiltRecord<T extends object>(record: T): T {
+  for (const child of Object.values(record)) if (child !== null && typeof child === 'object' && !owned.has(child)) return immutableRecord(record)
+  own(record)
+  return record
+}
+
 function ownInPlace(value: unknown): void {
   if (value === null || typeof value !== 'object' || owned.has(value)) return
   for (const child of Object.values(value)) ownInPlace(child)

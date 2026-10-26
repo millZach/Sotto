@@ -210,12 +210,19 @@ extension Font {
     static func sotto(_ scale: TextScale, _ weight: Font.Weight = .regular) -> Font {
         .figtree(scale.size, scale.style, weight)
     }
+    /// Figtree draws Latin only. Every other script falls through, glyph by glyph, to the iPhone's own fonts, which
+    /// the root's typesetting language points at the interface language (ADR-0123). Urdu is set in the iPhone's
+    /// Nastaliq face, the way Urdu is written, rather than the Naskh shapes the fallback would give it.
     static func figtree(_ size: CGFloat, _ style: Font.TextStyle, _ weight: Font.Weight = .regular) -> Font {
+        let bold: Bool
         let face: String
         switch weight {
-        case .bold, .heavy, .black: face = "Figtree-Bold"
-        case .semibold, .medium: face = "Figtree-SemiBold"
-        default: face = "Figtree-Regular"
+        case .bold, .heavy, .black: face = "Figtree-Bold"; bold = true
+        case .semibold, .medium: face = "Figtree-SemiBold"; bold = true
+        default: face = "Figtree-Regular"; bold = false
+        }
+        if Interface.languageCode == "ur" {
+            return .custom(bold ? "NotoNastaliqUrdu-Bold" : "NotoNastaliqUrdu", size: size, relativeTo: style)
         }
         return .custom(face, size: size, relativeTo: style)
     }
@@ -435,17 +442,26 @@ struct ComputerDot: View {
 // MARK: - Elapsed time
 
 enum Elapsed {
-    /// "8s", "4m 07s", "1h 03m".
-    static func words(_ seconds: TimeInterval) -> String {
-        let total = max(0, Int(seconds))
-        let hours = total / 3600
-        let minutes = (total / 60) % 60
-        let rest = total % 60
-        if hours > 0 { return "\(hours)h \(twoDigits(minutes))m" }
-        if minutes > 0 { return "\(minutes)m \(twoDigits(rest))s" }
-        return "\(rest)s"
+    /// "8s", "4m 07s", "1h 03m", in the interface language's own short units (ADR-0123).
+    static func words(_ seconds: TimeInterval) -> String { StepRun.clock(Int(seconds)) }
+}
+
+// MARK: - Interface direction and type (ADR-0123)
+
+extension View {
+    /// Paragraph text Sotto writes (a description, an explanation, a notice's body) starts from the right edge of
+    /// its own box in Arabic and Urdu. The window around it keeps its English layout, so put this on the text, after
+    /// any frame that should flip with it. Short labels, code, paths, pairing codes and the terminal never take it.
+    func paragraphDirection() -> some View {
+        environment(\.layoutDirection, Interface.rightToLeft ? .rightToLeft : .leftToRight)
     }
-    private static func twoDigits(_ value: Int) -> String { value < 10 ? "0\(value)" : "\(value)" }
+}
+
+extension Text {
+    /// A heading's tight Figtree tracking, off for the scripts it would break: joined, Indic, Chinese and Japanese.
+    func headingTracking(_ amount: CGFloat) -> Text {
+        tracking(Interface.keepsTracking ? amount : 0)
+    }
 }
 
 /// Time since a moment, ticking each second.
@@ -670,7 +686,7 @@ struct PageHeading<Trailing: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s1) {
             HStack(alignment: .center, spacing: Space.s3) {
-                Text(title).font(.sotto(.display, .bold)).tracking(-0.6).foregroundStyle(Palette.ink)
+                Text(title).font(.sotto(.display, .bold)).headingTracking(-0.6).foregroundStyle(Palette.ink)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: Space.s2)
@@ -679,6 +695,7 @@ struct PageHeading<Trailing: View>: View {
             .frame(minHeight: 52)
             if let subtitle {
                 Text(subtitle).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                    .paragraphDirection()
             }
         }
     }
@@ -1054,10 +1071,10 @@ enum Loops {
 }
 
 /// A view whose loops Core Animation runs. Subclasses draw on `stage`, which fills the view, and say which animations
-/// loop on the stage's layer. They are added while the view is `running` and in a window, added afresh each time it
-/// enters a window, added again if missing when the app returns to the foreground, and rebuilt only when
-/// `loopSignature` changes, so new colours or a new height never restart a breath. It takes no touches and VoiceOver
-/// does not see it.
+/// loop on the stage's layer, or on another layer drawn on the stage that `loopLayer` names. They are added while the
+/// view is `running` and in a window, added afresh each time it enters a window, added again if missing when the app
+/// returns to the foreground, and rebuilt only when `loopSignature` changes, so new colours or a new height never
+/// restart a breath. It takes no touches and VoiceOver does not see it.
 class LoopingView: UIView {
     /// What subclasses draw on and the loops move. SwiftUI owns this view's own frame and transform; the stage is ours.
     let stage = UIView()
@@ -1088,6 +1105,8 @@ class LoopingView: UIView {
     func makeLoops() -> [String: CAAnimation] { [:] }
     /// What the loops are built from beyond their keys, such as a width they travel; a change rebuilds them.
     var loopSignature: [CGFloat] { [] }
+    /// The layer the loops run on: the stage's own, unless a subclass moves something drawn on the stage, such as a mask.
+    var loopLayer: CALayer { stage.layer }
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -1115,20 +1134,22 @@ class LoopingView: UIView {
             return
         }
         let signature = loopSignature
-        let missing = builtKeys.isEmpty || builtKeys.contains { stage.layer.animation(forKey: $0) == nil }
+        let layer = loopLayer
+        let missing = builtKeys.isEmpty || builtKeys.contains { layer.animation(forKey: $0) == nil }
         if !force && !missing && builtSignature == signature { return }
         stopLoops()
         let loops = makeLoops()
         for (key, animation) in loops {
-            stage.layer.add(animation, forKey: key)
+            layer.add(animation, forKey: key)
         }
         builtKeys = Array(loops.keys)
         builtSignature = signature
     }
 
     private func stopLoops() {
+        let layer = loopLayer
         for key in builtKeys {
-            stage.layer.removeAnimation(forKey: key)
+            layer.removeAnimation(forKey: key)
         }
         builtKeys = []
         builtSignature = nil

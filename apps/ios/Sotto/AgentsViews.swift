@@ -36,9 +36,16 @@ struct AgentsButton: View {
         }
         .buttonStyle(PressStyle())
         .accessibilityLabel("Agents")
-        .accessibilityValue("\(count.total) \(count.total == 1 ? "agent" : "agents")" + (needs ? ", \(count.needs) needs you" : ""))
+        .accessibilityValue(spokenCount)
         .accessibilityHint("Opens this thread’s delegated threads and agents")
         .accessibilityIdentifier("thread-agents")
+    }
+    /// The count as VoiceOver reads it: how many agents, and how many of them need the user.
+    private var spokenCount: String {
+        let agents = count.total == 1 ? String(localized: "1 agent") : String(localized: "\(count.total) agents")
+        guard count.needs > 0 else { return agents }
+        let waiting = count.needs == 1 ? String(localized: "1 needs you") : String(localized: "\(count.needs) need you")
+        return String(localized: "\(agents), \(waiting)", comment: "First %@ is how many agents the thread has, such as 3 agents; second is how many need the user, such as 1 needs you.")
     }
 }
 
@@ -114,7 +121,7 @@ private struct AgentsSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.s3) {
                 HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                    Text("Agents").font(.sotto(.title, .bold)).tracking(-0.4).foregroundStyle(Palette.ink)
+                    Text("Agents").font(.sotto(.title, .bold)).headingTracking(-0.4).foregroundStyle(Palette.ink)
                         .accessibilityAddTraits(.isHeader)
                     Spacer(minLength: Space.s2)
                     Button("Done") { dismiss() }
@@ -123,7 +130,7 @@ private struct AgentsSheet: View {
                         .accessibilityIdentifier("agents-done")
                 }
                 if let title = source?.owner.title {
-                    Text(title).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    Text(verbatim: title).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
                     Text(counts.title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
@@ -136,6 +143,7 @@ private struct AgentsSheet: View {
                     VStack(alignment: .leading, spacing: Space.s2) {
                         Text("Couldn’t read the agents on \(model.name(ref.hostID)). Nothing was changed. Try again.")
                             .font(.sotto(.small)).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
+                            .paragraphDirection()
                         Button("Try again") { Task { await refresh() } }
                             .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
                             .disabled(loading)
@@ -145,9 +153,10 @@ private struct AgentsSheet: View {
                     .sottoCard(.plain)
                 }
                 if rows.isEmpty {
-                    Text(loading ? "Loading agents…" : "This thread has no delegated threads or agents now.")
+                    (loading ? Text("Loading agents…") : Text("This thread has no delegated threads or agents now."))
                         .font(.sotto(.body)).foregroundStyle(Palette.muted)
                         .fixedSize(horizontal: false, vertical: true).padding(.vertical, Space.s6)
+                        .paragraphDirection()
                 } else {
                     VStack(spacing: 0) {
                         ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
@@ -259,7 +268,7 @@ private struct RowBody: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
-                    Text(row.title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink).lineLimit(2)
+                    Text(verbatim: row.title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink).lineLimit(2)
                     Text(tag)
                         .font(.sotto(.caption, .semibold)).foregroundStyle(Palette.muted)
                         .padding(.horizontal, 7).padding(.vertical, 1)
@@ -305,7 +314,7 @@ private struct AgentsThreadRow: View {
         VStack(alignment: .leading, spacing: 0) {
             Button(action: open) {
                 HStack(alignment: .center, spacing: Space.s2) {
-                    RowBody(row: row, tag: "Thread", mark: ProviderLogo.asset(row.providerID) != nil ? AnyView(ProviderLogo(providerID: row.providerID))
+                    RowBody(row: row, tag: String(localized: "Thread", comment: "The tag on a row of the Agents sheet that is a delegated thread."), mark: ProviderLogo.asset(row.providerID) != nil ? AnyView(ProviderLogo(providerID: row.providerID))
                         : AnyView(Image(systemName: "bubble.left").font(.system(size: 12, weight: .semibold))))
                     Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.muted)
                         .accessibilityHidden(true)
@@ -345,7 +354,8 @@ private struct AgentsAgentRow: View {
         VStack(alignment: .leading, spacing: 0) {
             Button { open.toggle() } label: {
                 HStack(alignment: .center, spacing: Space.s2) {
-                    RowBody(row: row, tag: row.workflow ? "Workflow" : "Agent",
+                    RowBody(row: row, tag: row.workflow ? String(localized: "Workflow", comment: "The tag on a row of the Agents sheet that is a workflow's run.")
+                                : String(localized: "Agent", comment: "The tag on a row of the Agents sheet that is one of the provider's own agents."),
                             mark: AnyView(Image(systemName: row.workflow ? "square.stack.3d.up" : "person.crop.square").font(.system(size: 13, weight: .semibold))))
                     Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.muted)
                         .rotationEffect(.degrees(open ? 90 : 0))
@@ -358,8 +368,9 @@ private struct AgentsAgentRow: View {
             }
             .buttonStyle(PressStyle())
             .accessibilityLabel(row.spokenLabel)
-            .accessibilityValue(open ? "Open" : "Closed")
-            .accessibilityHint(open ? "Hides its task and result" : "Shows its task and result")
+            .accessibilityValue(open ? String(localized: "agent-row.open", defaultValue: "Open", comment: "An agent's row is opened to its task and result, as an expanded disclosure is. Not a pull request's state.")
+                                : String(localized: "agent-row.closed", defaultValue: "Closed", comment: "An agent's row is folded, hiding its task and result, as a collapsed disclosure is. Not a pull request's state."))
+            .accessibilityHint(open ? String(localized: "Hides its task and result") : String(localized: "Shows its task and result"))
             .accessibilityIdentifier("agents-row-\(row.id)")
             if open { details }
         }
@@ -379,6 +390,7 @@ private struct AgentsAgentRow: View {
             } else if failed {
                 Text("Couldn’t read its result. Nothing was changed. Close it and open it again to try again.")
                     .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true).padding(.top, Space.s2)
+                    .paragraphDirection()
             } else {
                 Text("Loading its result…").font(.sotto(.small)).foregroundStyle(Palette.muted).padding(.top, Space.s2)
             }

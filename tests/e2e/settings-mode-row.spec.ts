@@ -40,7 +40,7 @@ test('Settings mode row fits and keeps keyboard navigation', async () => {
         expect(bounds.rowRight).toBeLessThanOrEqual(bounds.right)
         expect(bounds.clipped).toBe(0)
         expect(bounds.labels.map(label => label.name)).toEqual(['Dictate', 'Watcher', 'Threads'])
-        expect(bounds.labels.every(label => label.fits && label.height === 32)).toBe(true)
+        expect(bounds.labels.every(label => label.fits && label.height === 30)).toBe(true)
         await page.screenshot({ path: join(evidence, `settings-two-${width}-${appearance}.png`) })
       }
     }

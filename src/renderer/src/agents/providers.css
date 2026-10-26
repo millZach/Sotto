@@ -31,6 +31,7 @@
 .provider-badge[data-provider='muse'] { --provider-badge: var(--tt-provider-muse); }
 .provider-badge[data-provider='opencode'] { --provider-badge: var(--tt-provider-opencode-badge); }
 .provider-badge[data-provider='cursor'] { --provider-badge: var(--tt-provider-cursor-badge); }
+.provider-badge[data-provider='deepseek'] { --provider-badge: var(--tt-provider-deepseek-badge); }
 
 /* Update to <version>: a filled chip in the selected card's colour, beside the switch while an update is offered. */
 .provider-row__update { justify-self: end; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 28px; padding: 0 10px; border: 0; border-radius: 5px; background: var(--tt-card-selected); color: var(--tt-accent-text); font: inherit; font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }

@@ -1,5 +1,7 @@
 # Git the way T3 Code does it
 
+October 26, 2026 amendment: [ADR-0142](0142-sotto-keeps-each-projects-main-up-to-date.md) adds Keep main up to date, an Owl feature that fetches each project's `origin` every 15 minutes and after a pull request merges, whatever the Git fetch interval says and whether or not the window is in front. Decision 1's interval, Off included, still governs every fetch made for threads.
+
 October 23, 2026 amendment: [ADR-0113](0113-the-composer-controls-are-text-buttons.md) draws the branch toolbar as one muted line of text buttons under the composer, a faint dot between them, with the pull request badge and the branch picker following the workspace rather than sitting at the right. What each part does is unchanged.
 
 October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The supervision follow-up send path described below has been removed. Manual sends, queued user follow-ups and explicit babysitting wake-ups retain the read before a send and checkpoint rules.
@@ -158,3 +160,13 @@ Decision 2 had the status reader ask GitHub about each watched branch on its own
 - **The cleanup sweep runs when its rules change.** A settings save sweeps worktrees only when the cleanup rules or Auto-settle merged threads changed, so the #271 amendment's merged check (decision 3 there) asks GitHub no more often than the hourly sweep and a settle. The merged check spends the sign-in's points as a background read does: it asks nothing while the sign-in is paused or the reserve is reached, which leaves the branch taken as not merged until the next sweep, and a rate-limited answer to it pauses the status reader's background questions too.
 
 Before and after, measured over a scripted gh and Git: ten threads on ten branches for an hour with the window in front cost 600 gh processes before and 60 after with an open pull request on every branch, 12 with none; opening the Pull request surface costs one gh process instead of two, and a merge from it two instead of five (`docs/verification/2026-10-07-github-rate-limit.md`).
+
+## Amendment, October 26, 2026: fewer reads of folders that are no repository, and none while no window shows
+
+A CPU audit on the development Mac found Sotto starting about one Git process a second, among them `rev-parse --git-common-dir` 64 times in seven minutes in a folder that is no repository. Every status read began with that call, so the timer, each re-read after finished work and each focus of the window asked Git again a question it had just answered. What this decides:
+
+- **A folder that is no repository is taken at its word for five minutes.** The status reader answers from its last read of such a folder without running Git, fresh reads included, until five minutes pass, an `invalidate` reaches the folder (Initialize Git's, any Git action's, or one that reaches every repository), or a `.git` appears in the folder or above it, which a few file checks see without starting Git. A folder an agent or a terminal makes a repository shows as one at the next read.
+- **Inspecting a shared folder looks for `.git` first.** When no `.git` that Git would take sits in the folder or above it, the inspection records it as no repository without asking Git, from the same files a send already reads (#766).
+- **The re-read after finished work waits for a window to show.** While no Sotto window is showing (hidden, closed to the tray or minimized), a re-read after a turn or a tool call is held, and the timer's next tick once a window shows reads each held thread once. A window showing but not in front still gets its re-reads. A headless host has no window and is unchanged. A phone paired with the desktop sees a held thread's branch and counts when the desktop's window next shows, or on a refresh.
+
+The timer round still makes two local reads, the second after the remote half. That second read is the one that decides an automatic pull, and skipping it when no fetch landed would leave a branch already behind, whose pull was held off because a thread was busy, unpulled until the next fetch lands, so it stays.

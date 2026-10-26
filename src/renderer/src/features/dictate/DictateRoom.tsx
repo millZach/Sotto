@@ -1,4 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { t } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 
 import {
   MICROPHONE_NOT_SET_UP_DETAIL,
@@ -76,17 +78,18 @@ export function formatElapsed(milliseconds: number): string {
 
 function errorDetail(code: string, copy: PlatformCopy, kept = false, retried = false): string {
   if (kept && isTranscriptionErrorCode(code)) {
-    return retried ? `Try again failed too. ${TRANSCRIPTION_KEPT_DETAIL[code]}` : TRANSCRIPTION_KEPT_DETAIL[code]
+    const detail = TRANSCRIPTION_KEPT_DETAIL[code]
+    return retried ? t`Try again failed too. ${detail}` : detail
   }
   switch (code) {
     case 'MIC_PERMISSION_DENIED': return copy.homeMicrophonePermissionDenied
-    case 'MIC_DEVICE_NOT_FOUND': return 'The selected microphone is unavailable. Choose another microphone in Settings.'
+    case 'MIC_DEVICE_NOT_FOUND': return t`The selected microphone is unavailable. Choose another microphone in Settings.`
     case 'MIC_NOT_SET_UP': return MICROPHONE_NOT_SET_UP_DETAIL
     case 'SPEECH_MODEL_NOT_READY': return SPEECH_MODEL_NOT_READY_DETAIL
-    case 'NO_SPEECH': return 'No speech was detected. Try again a little closer to the microphone.'
+    case 'NO_SPEECH': return t`No speech was detected. Try again a little closer to the microphone.`
     case 'OUTPUT_FAILED':
-    case 'OUTPUT_UNAVAILABLE': return 'Your completed text is below. Copy it again, or select and copy it yourself.'
-    case 'DESKTOP_CLIPBOARD_UNAVAILABLE': return 'The desktop clipboard could not be updated. Your text is kept below. Use Copy text to try again, or select and copy it yourself.'
+    case 'OUTPUT_UNAVAILABLE': return t`Your completed text is below. Copy it again, or select and copy it yourself.`
+    case 'DESKTOP_CLIPBOARD_UNAVAILABLE': return t`The desktop clipboard could not be updated. Your text is kept below. Use Copy text to try again, or select and copy it yourself.`
     default: return isTranscriptionErrorCode(code)
       ? TRANSCRIPTION_ERROR_DETAIL[code]
       : TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_FAILED
@@ -106,25 +109,25 @@ export function dictateSentence(
   // Setup was finished without a microphone, so the resting room says so
   // rather than offering a start that could only fail.
   if (microphoneSkipped && state.status === 'idle') {
-    return { sentence: 'No microphone is set up.', detail: MICROPHONE_NOT_SET_UP_DETAIL, tone: 'normal' }
+    return { sentence: t`No microphone is set up.`, detail: MICROPHONE_NOT_SET_UP_DETAIL, tone: 'normal' }
   }
   // The same for a speech model still downloading, starting or stopped; the pill
   // and the line beside it say which (ADR-0071).
   // Nothing downloads by itself, so with no model chosen the room says where to choose one.
   if (!speechModelChosen && state.status === 'idle') {
-    return { sentence: 'No speech model is chosen.', detail: 'Choose one in Settings → Dictation, under Speech model.', tone: 'normal' }
+    return { sentence: t`No speech model is chosen.`, detail: t`Choose one in Settings → Dictation, under Speech model.`, tone: 'normal' }
   }
   if (!speechModelReady && state.status === 'idle') {
-    return { sentence: 'The speech model is not ready yet.', tone: 'normal' }
+    return { sentence: t`The speech model is not ready yet.`, tone: 'normal' }
   }
   switch (state.status) {
-    case 'requesting-permission': return { sentence: 'Connecting to your microphone.', detail: copy.homeRequestingPermissionDetail, tone: 'normal' }
-    case 'listening': return { sentence: 'Listening.', tone: 'normal' }
-    case 'processing': return { sentence: 'Turning speech into text.', tone: 'normal' }
-    case 'success': return { sentence: state.output === 'pasted' ? deliveredApp === undefined ? 'Pasted.' : `Pasted into ${deliveredApp}.` : 'Copied.', tone: 'normal' }
-    case 'cancelled': return { sentence: 'Cancelled.', tone: 'normal' }
-    case 'error': return { sentence: 'Dictation needs attention.', detail: errorDetail(state.code, copy, state.kept === true, state.retried === true), tone: 'error' }
-    default: return { sentence: 'Ready when you are.', tone: 'normal' }
+    case 'requesting-permission': return { sentence: t`Connecting to your microphone.`, detail: copy.homeRequestingPermissionDetail, tone: 'normal' }
+    case 'listening': return { sentence: t`Listening.`, tone: 'normal' }
+    case 'processing': return { sentence: t`Turning speech into text.`, tone: 'normal' }
+    case 'success': return { sentence: state.output === 'pasted' ? deliveredApp === undefined ? t`Pasted.` : t`Pasted into ${deliveredApp}.` : t`Copied.`, tone: 'normal' }
+    case 'cancelled': return { sentence: t`Cancelled.`, tone: 'normal' }
+    case 'error': return { sentence: t`Dictation needs attention.`, detail: errorDetail(state.code, copy, state.kept === true, state.retried === true), tone: 'error' }
+    default: return { sentence: t`Ready when you are.`, tone: 'normal' }
   }
 }
 
@@ -162,19 +165,18 @@ export function DictateRoom({
   onQueryChange,
   now: pinnedNow,
 }: DictateRoomProps): ReactNode {
+  const { t } = useLingui()
   const [submitting, setSubmitting] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   const copy = platformCopy(platform)
   const configured = speechModel === null || speechModel.state === 'ready'
-  const modelLabel = speechModel?.state === 'downloading' ? 'Downloading speech model' : speechModel?.state === 'loading' ? 'Starting speech model' : 'Speech model needed'
+  const modelLabel = speechModel?.state === 'downloading' ? t`Downloading speech model` : speechModel?.state === 'loading' ? t`Starting speech model` : t`Speech model needed`
   const stage = waveStage(dictation)
   const listening = dictation.status === 'listening'
   const sessionId = 'sessionId' in dictation ? dictation.sessionId : undefined
   const microphoneSkipped = settings.microphoneSkipped
   // Linux's keys are Hyprland bindings Sotto writes from Settings › Dictation; F9 and Super+Ctrl+X until changed.
-  const linuxKeys = linuxKeyWords(settings)
-  const linuxStop = linuxKeys.hold === undefined ? `Press ${linuxKeys.press} to stop.` : `Release ${linuxKeys.hold}, or press ${linuxKeys.press} to stop.`
-  const linuxStart = linuxKeys.hold === undefined ? `press ${linuxKeys.press} to talk` : `hold ${linuxKeys.hold} to talk, or press ${linuxKeys.press}`
+  const { press, hold } = linuxKeyWords(settings)
   // The dictation that just finished shares its id with its record, which says where it went and how it went.
   const finished = dictation.status === 'success' ? records.find((record) => record.id === dictation.sessionId) : undefined
   const said = dictateSentence(dictation, copy, microphoneSkipped, configured, speechModel?.state !== 'missing', finished?.app)
@@ -217,24 +219,24 @@ export function DictateRoom({
     try { await operation() } finally { setSubmitting(false) }
   }
 
-  let actionLabel = microphoneSkipped ? 'Microphone needed' : configured ? 'Start dictation' : modelLabel
+  let actionLabel = microphoneSkipped ? t`Microphone needed` : configured ? t`Start dictation` : modelLabel
   let actionDisabled = submitting || !configured || microphoneSkipped
   let action = onStart
   if (dictation.status === 'requesting-permission') {
-    actionLabel = 'Connecting...'
+    actionLabel = t`Connecting...`
     actionDisabled = true
   } else if (listening) {
-    actionLabel = 'Stop'
+    actionLabel = t({ message: 'Stop', comment: 'Stops the dictation that is recording' })
     actionDisabled = submitting
     action = onStop
   } else if (dictation.status === 'processing') {
-    actionLabel = 'Transcribing...'
+    actionLabel = t`Transcribing...`
     actionDisabled = true
   }
   // A kept recording is sent again from here as well as from the widget.
   const kept = dictation.status === 'error' && dictation.kept === true && onRetry !== undefined
   if (kept) {
-    actionLabel = 'Try again'
+    actionLabel = t`Try again`
     actionDisabled = submitting
     action = onRetry
   }
@@ -274,6 +276,7 @@ export function DictateRoom({
     : { 'aria-live': 'polite' as const }
 
   const elapsedMs = listening ? now - dictation.startedAt : 0
+  const elapsed = formatElapsed(elapsedMs)
 
   // Under the sentence: the shortcut. It starts a new dictation, which lets a kept recording go, so it is not offered
   // as another way to press Try again; a kept recording that failed because the speech model was not ready still
@@ -289,11 +292,19 @@ export function DictateRoom({
     if (platform === 'linux') {
       hint = listening
         ? settings.autoPaste
-          ? `${linuxStop} Sotto copies, then pastes into the focused window on Hyprland.`
-          : `${linuxStop} Sotto copies your text. Paste with Super+V, Omarchy’s universal paste.`
-        : `With Sotto’s compositor bindings: ${linuxStart}. Automatic paste works on Hyprland, terminals included. If needed, use Super+V, Omarchy’s universal paste.`
+          ? hold === undefined
+            ? t`Press ${press} to stop. Sotto copies, then pastes into the focused window on Hyprland.`
+            : t`Release ${hold}, or press ${press} to stop. Sotto copies, then pastes into the focused window on Hyprland.`
+          : hold === undefined
+            ? t`Press ${press} to stop. Sotto copies your text. Paste with Super+V, Omarchy’s universal paste.`
+            : t`Release ${hold}, or press ${press} to stop. Sotto copies your text. Paste with Super+V, Omarchy’s universal paste.`
+        : hold === undefined
+          ? t`With Sotto’s compositor bindings: press ${press} to talk. Automatic paste works on Hyprland, terminals included. If needed, use Super+V, Omarchy’s universal paste.`
+          : t`With Sotto’s compositor bindings: hold ${hold} to talk, or press ${press}. Automatic paste works on Hyprland, terminals included. If needed, use Super+V, Omarchy’s universal paste.`
     } else {
-      hint = <>or press <ShortcutKey accelerator={settings.hotkey} platform={platform} /> {listening ? 'again' : 'in any app'}</>
+      hint = listening
+        ? <Trans>or press <ShortcutKey accelerator={settings.hotkey} platform={platform} /> again</Trans>
+        : <Trans>or press <ShortcutKey accelerator={settings.hotkey} platform={platform} /> in any app</Trans>
     }
   } else {
     hint = microphoneSkipped ? null : speechModelSummary(speechModel, speechModelName)
@@ -301,13 +312,13 @@ export function DictateRoom({
   }
 
   return (
-    <section className="dictate" aria-label="Dictation" data-status={dictation.status} data-stage={stage}>
+    <section className="dictate" aria-label={t`Dictation`} data-status={dictation.status} data-stage={stage}>
       <div className="dictate__layout">
         <div className="dictate__bar">
           <VoiceWave
             stage={stage}
             value={listening ? dictation.level : 0}
-            label="Microphone activity"
+            label={t`Microphone activity`}
             size="deck"
           />
           <div className="dictate__words">
@@ -315,29 +326,29 @@ export function DictateRoom({
               <h1 className="dictate__sentence">
                 {said.sentence}
                 {listening ? (
-                  <time dateTime={`PT${Math.floor(Math.max(0, elapsedMs) / 1_000)}S`} aria-label={`Recording time ${formatElapsed(elapsedMs)}`}>
+                  <time dateTime={`PT${Math.floor(Math.max(0, elapsedMs) / 1_000)}S`} aria-label={t`Recording time ${elapsed}`}>
                     {formatElapsed(elapsedMs)}
                   </time>
                 ) : null}
               </h1>
-              {said.detail === undefined ? null : <p className="dictate__detail">{said.detail}</p>}
+              {said.detail === undefined ? null : <p className="dictate__detail tt-paragraph">{said.detail}</p>}
             </div>
-            {hint === null ? null : <p className="dictate__hint">{hint}</p>}
+            {hint === null ? null : <p className="dictate__hint tt-paragraph">{hint}</p>}
           </div>
           <div className="dictate__actions">
             <Button disabled={actionDisabled} onClick={() => void invoke(action)}>{actionLabel}</Button>
             {dismiss === undefined ? null : (
               <Button variant="secondary" disabled={submitting} onClick={() => void invoke(dismiss)}>
-                {kept ? 'Discard recording' : 'Dismiss'}
+                {kept ? t`Discard recording` : t`Dismiss`}
               </Button>
             )}
-            {settingsButton ? <Button variant="secondary" onClick={() => onOpenSettings(settingsButton)}>Open Settings</Button> : null}
+            {settingsButton ? <Button variant="secondary" onClick={() => onOpenSettings(settingsButton)}><Trans>Open Settings</Trans></Button> : null}
           </div>
         </div>
         {recovery.length > 0 ? (
-          <section className="dictate__recovery" aria-label="Completed text to recover">
-            <h2>Your text is still here</h2>
-            <p>Copy it when you are ready. It stays here until you dismiss it or close Sotto.</p>
+          <section className="dictate__recovery" aria-label={t`Completed text to recover`}>
+            <h2><Trans>Your text is still here</Trans></h2>
+            <p className="tt-paragraph"><Trans>Copy it when you are ready. It stays here until you dismiss it or close Sotto.</Trans></p>
             {recovery.map(entry => <RecoveredTranscript key={entry.id} entry={entry} onCopy={onCopy} onDismiss={() => onDismissRecovery?.(entry.id)} />)}
           </section>
         ) : null}
@@ -370,6 +381,7 @@ function RecoveredTranscript({ entry, onCopy, onDismiss }: {
   readonly onCopy: (text: string) => Promise<boolean>
   readonly onDismiss: () => void
 }): ReactNode {
+  const { t } = useLingui()
   const [state, setState] = useState<'ready' | 'copying' | 'copied' | 'failed'>('ready')
   const copy = async (): Promise<void> => {
     if (state === 'copying') return
@@ -377,12 +389,12 @@ function RecoveredTranscript({ entry, onCopy, onDismiss }: {
     try { setState(await onCopy(entry.text) ? 'copied' : 'failed') }
     catch { setState('failed') }
   }
-  return <article className="dictate__recovered" aria-label="Recovered transcript">
-    <textarea readOnly aria-label="Completed dictation text" value={entry.text} rows={3} />
+  return <article className="dictate__recovered" aria-label={t`Recovered transcript`}>
+    <textarea readOnly aria-label={t`Completed dictation text`} value={entry.text} rows={3} />
     <div className="dictate__recovery-actions">
-      <Button variant="secondary" disabled={state === 'copying'} onClick={() => void copy()}>Copy text</Button>
-      <Button variant="secondary" onClick={onDismiss}>Dismiss text</Button>
-      <span role="status">{state === 'copied' ? 'Copied.' : state === 'failed' ? 'Copy failed. Your text is still here. Try again or select and copy it.' : ''}</span>
+      <Button variant="secondary" disabled={state === 'copying'} onClick={() => void copy()}><Trans>Copy text</Trans></Button>
+      <Button variant="secondary" onClick={onDismiss}><Trans>Dismiss text</Trans></Button>
+      <span role="status">{state === 'copied' ? t`Copied.` : state === 'failed' ? t`Copy failed. Your text is still here. Try again or select and copy it.` : ''}</span>
     </div>
   </article>
 }

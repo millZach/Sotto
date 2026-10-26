@@ -26,6 +26,9 @@ public struct WatcherPhoneState: Decodable, Equatable, Sendable {
     /// The user's own follow-ups waiting in Watcher's queue, first in line first: what goes next, after Watcher's turn.
     /// Nil from a computer that doesn't take a steer from this iPhone (#1229).
     public let followups: [Followup]?
+    /// Each machine and what works on it, for the machines line (#1032). Nil from a computer without Work across machines,
+    /// or for an iPhone that did not accept `watcher-phone-machines`.
+    public let machines: WatcherMachines?
     public struct DraftDelivery: Decodable, Equatable, Sendable { public let draftId: String; public let status: String }
     /// One follow-up waiting for Watcher: its queue item, the draft it went with, its words, and `queued`, `dispatching`,
     /// `uncertain`, `failed` or `paused`.
@@ -178,11 +181,14 @@ public enum WatcherWire {
     public static let manageFeature = "watcher-phone-manage"
     /// Send steers into Watcher's running turn, or the message goes next, and a follow-up waiting for Watcher can be removed (#1229).
     public static let steerFeature = "watcher-phone-steer"
+    /// A send may carry the photos this iPhone staged, with words or alone, and a Watcher message's photos are read back
+    /// through `preview`: Watcher's thread is never one of this iPhone's own to read (October 23, 2026).
+    public static let photosFeature = "watcher-phone-photos"
     /// Views opt in to management only when they can present the controls and recover mutation receipts. Steering rides
-    /// with it: its Remove recovers its outcome from the same receipt.
+    /// with it: its Remove recovers its outcome from the same receipt. So does the machines line (#1032), which reads only.
     public static var managementHello: [String: JSONValue] {
         var result = hello
-        if case .array(let accepts)? = result["accepts"] { result["accepts"] = .array(accepts + [.string(manageFeature), .string(steerFeature)]) }
+        if case .array(let accepts)? = result["accepts"] { result["accepts"] = .array(accepts + [.string(manageFeature), .string(steerFeature), .string(machinesFeature)]) }
         return result
     }
     public static func setPermission(runtimeMode: String) throws -> [String: JSONValue] {
@@ -204,13 +210,22 @@ public enum WatcherWire {
     public static let prepareStop: [String: JSONValue] = ["op": .string("watcher-phone-prepare-stop-all")]
     /// With `steer`, only to a computer that offers `steerFeature`: while Watcher works the words steer into its turn, or
     /// go next as their own turn when they can't.
-    public static func send(target: WatcherTarget, clientID: String, draftID: String, text: String, steer: Bool = false) -> [String: JSONValue] {
+    /// `images` only to a computer that offers `photosFeature`; they go with the words however the words go.
+    public static func send(target: WatcherTarget, clientID: String, draftID: String, text: String, steer: Bool = false,
+                            images: [StagedImage] = []) -> [String: JSONValue] {
         var request: [String: JSONValue] = [
             "origin": .object(["kind": .string("phone"), "hostId": .string(target.hostId), "clientId": .string(clientID)]),
             "target": .object(["hostId": .string(target.hostId), "threadId": .string(target.threadId)]),
             "draftId": .string(draftID), "text": .string(text)]
         if steer { request["delivery"] = .string("steer") }
+        if !images.isEmpty { request["images"] = .array(images.map(\.wire)) }
         return ["op": .string("watcher-phone-send"), "request": .object(request)]
+    }
+    /// One photo of a message in Watcher's conversation, answered as `Photos.preview` is for a thread.
+    public static func preview(target: WatcherTarget, messageID: String, attachmentID: String) -> [String: JSONValue] {
+        ["op": .string("watcher-phone-preview"), "request": .object([
+            "target": .object(["hostId": .string(target.hostId), "threadId": .string(target.threadId)]),
+            "messageId": .string(messageID), "attachmentId": .string(attachmentID)])]
     }
     /// Takes a follow-up out of Watcher's queue before it goes, by its queue item.
     public static func removeFollowup(target: WatcherTarget, itemID: String) -> [String: JSONValue] {

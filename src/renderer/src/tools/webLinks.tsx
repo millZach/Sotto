@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { t } from '@lingui/core/macro'
 import type { BrowserBridge, BrowserPage } from '../../../shared/browser'
 import type { FilesBridge } from '../../../shared/files'
 import { toolsPanelStore, type ToolsPanelStore } from './toolsPanelStore'
@@ -64,25 +65,25 @@ export function threadLinkRouter(threadId: string, threadTitle: string, bridge: 
     const shown = store.showBrowserPage(page, focused)
     if (shown === 'opened') return { ok: true }
     // Pinned elsewhere: the page opened here, but Tools is looking at another thread, not this one.
-    if (shown === 'pinned-elsewhere') return { ok: true, message: `Opened in ${threadTitle}’s browser, and Tools is pinned to another thread. Unpin it to see the page.` }
-    return { ok: true, message: `Opened in ${threadTitle}’s browser. Open Tools > Browser in that thread to see it.` }
+    if (shown === 'pinned-elsewhere') return { ok: true, message: t({ message: `Opened in ${threadTitle}’s browser, and Tools is pinned to another thread. Unpin it to see the page.`, comment: '{threadTitle} is a thread\'s title.' }) }
+    return { ok: true, message: t({ message: `Opened in ${threadTitle}’s browser. Open Tools > Browser in that thread to see it.`, comment: '{threadTitle} is a thread\'s title.' }) }
   }
   return {
     show: showPage,
     async revealFile(path) {
       const files = (window.sotto as { files?: FilesBridge } | undefined)?.files
-      if (!files?.revealLink) return { ok: false, message: 'Sotto cannot show files from here. Nothing was opened.' }
+      if (!files?.revealLink) return { ok: false, message: t`Sotto cannot show files from here. Nothing was opened.` }
       try {
         const result = await files.revealLink({ threadId, path })
         return result.ok ? { ok: true } : { ok: false, message: result.error.message }
-      } catch { return { ok: false, message: 'Sotto could not show this file. Nothing was opened.' } }
+      } catch { return { ok: false, message: t`Sotto could not show this file. Nothing was opened.` } }
     },
     canEmbed: bridge !== undefined,
     async open(url, destination) {
-      if (!bridge || url.startsWith('mailto:')) return destination === 'embedded' ? { ok: false, message: 'Only web pages open in Sotto’s browser.' } : openSystem(url)
+      if (!bridge || url.startsWith('mailto:')) return destination === 'embedded' ? { ok: false, message: t`Only web pages open in Sotto’s browser.` } : openSystem(url)
       try {
         const target = await store.browser.target(bridge, threadId)
-        if (!target && destination === 'embedded') return { ok: false, message: 'This thread has no working folder for Sotto’s browser.' }
+        if (!target && destination === 'embedded') return { ok: false, message: t`This thread has no working folder for Sotto’s browser.` }
         const result = await bridge.openLink({ url, ...(destination ? { destination } : {}), ...(target ? { target } : {}) })
         if (!result.ok) {
           // The setting asks for embedded pages but this thread cannot hold one: the system browser still opens it.

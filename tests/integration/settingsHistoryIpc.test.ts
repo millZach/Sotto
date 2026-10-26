@@ -344,6 +344,15 @@ describe('IPC validation and lifecycle', () => {
       expect(settings.update).toHaveBeenCalledTimes(2)
     })
 
+  it('persists where Watcher compacts through the allow-list, and refuses a point off the slider', async () => {
+    const { ipc, settings } = createIpcHarness()
+    await expect(ipc.invoke(SETTINGS_UPDATE, { watcherCompactAtTokens: 600_000 })).resolves.toMatchObject({ watcherCompactAtTokens: 600_000 })
+    expect(settings.update).toHaveBeenCalledExactlyOnceWith({ watcherCompactAtTokens: 600_000 })
+    await expect(ipc.invoke(SETTINGS_UPDATE, { watcherCompactAtTokens: 150_000 })).rejects.toThrow('Invalid IPC payload')
+    await expect(ipc.invoke(SETTINGS_UPDATE, { watcherCompactAtTokens: 425_000 })).rejects.toThrow('Invalid IPC payload')
+    expect(settings.update).toHaveBeenCalledOnce()
+  })
+
   it('persists the night falls look through the allow-list, and refuses a look Sotto does not have (ADR-0119)', async () => {
     const { ipc, settings } = createIpcHarness()
     await expect(ipc.invoke(SETTINGS_UPDATE, { roomTransitionLook: 'stars' })).resolves.toMatchObject({ roomTransitionLook: 'stars' })
@@ -415,14 +424,14 @@ describe('IPC validation and lifecycle', () => {
         { gitAutoPull: true }, { defaultMergeMethod: 'squash' }, { lastMergeMethod: 'rebase' },
         { diffLayout: 'split' }, { diffHideWhitespace: false }, { diffFileState: 'expanded' },
         { gitWritingStyle: 'custom' }, { gitWritingInstructions: 'Subjects in the past tense.' }, { followPullRequestTemplates: false },
-        { autoSettleMergedThreads: true }, { proactivePanels: true },
+        { autoSettleMergedThreads: true }, { proactivePanels: true }, { clearSettledThreadsAfterDays: 90 }, { clearSettledThreadsAfterDays: null },
       ]
       // One control saves one field, so each must survive the allow-list on its own or its toggle snaps back.
       for (const patch of choices) {
         await expect(ipc.invoke(SETTINGS_UPDATE, patch)).resolves.toMatchObject(patch)
         expect(settings.update).toHaveBeenLastCalledWith(patch)
       }
-      for (const patch of [{ defaultMergeMethod: 'fast-forward' }, { lastMergeMethod: 'last' }, { diffLayout: 'unified' }, { diffFileState: 'open' }, { gitWritingStyle: 'haiku' }, { gitWritingInstructions: 'x'.repeat(2_001) }, { proactivePanels: 'yes' }]) {
+      for (const patch of [{ defaultMergeMethod: 'fast-forward' }, { lastMergeMethod: 'last' }, { diffLayout: 'unified' }, { diffFileState: 'open' }, { gitWritingStyle: 'haiku' }, { gitWritingInstructions: 'x'.repeat(2_001) }, { proactivePanels: 'yes' }, { clearSettledThreadsAfterDays: 7 }]) {
         await expect(ipc.invoke(SETTINGS_UPDATE, patch)).rejects.toThrow('Invalid IPC payload')
       }
       expect(settings.update).toHaveBeenCalledTimes(choices.length)

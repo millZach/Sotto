@@ -74,6 +74,9 @@ extension WatcherPhoneState {
 struct WatcherDrafts: Equatable, Sendable {
     struct Sent: Equatable, Sendable {
         let text: String
+        /// The staged handles of the photos that went with the words, by ID, in order: the same words with other photos, or
+        /// with the same photos staged again, are another message, as the host holds a draft ID to one packet.
+        var photos: [String] = []
         let draftID: String
         /// Its send has ended, so a page asked for from now on says where it stands.
         var ended = false
@@ -85,15 +88,15 @@ struct WatcherDrafts: Equatable, Sendable {
     /// Oldest first.
     private(set) var unresolved: [Sent] = []
     init() {}
-    /// The ID these exact words go with: the one they last went with, or a new one.
-    mutating func id(for text: String, minting: () -> String = { UUID().uuidString.lowercased() }) -> String {
-        if let index = unresolved.firstIndex(where: { $0.text == text }) {
+    /// The ID these exact words and photos go with: the one they last went with, or a new one.
+    mutating func id(for text: String, photos: [String] = [], minting: () -> String = { UUID().uuidString.lowercased() }) -> String {
+        if let index = unresolved.firstIndex(where: { $0.text == text && $0.photos == photos }) {
             unresolved[index].ended = false
             unresolved[index].sends += 1
             return unresolved[index].draftID
         }
         let draftID = minting()
-        unresolved.append(Sent(text: text, draftID: draftID))
+        unresolved.append(Sent(text: text, photos: photos, draftID: draftID))
         if unresolved.count > Self.limit { unresolved.removeFirst(unresolved.count - Self.limit) }
         return draftID
     }
@@ -178,7 +181,10 @@ struct WatchNotice: Equatable, Sendable {
     let watched: Bool
     var words: String { WatcherWords.watching(title, watched) }
     /// What Undo does, for VoiceOver.
-    var undo: String { watched ? "Undo: stop watching \(title)" : "Undo: watch \(title) again" }
+    var undo: String {
+        watched ? String(localized: "Undo: stop watching \(title)", comment: "%@ is a thread's title")
+            : String(localized: "Undo: watch \(title) again", comment: "%@ is a thread's title")
+    }
 }
 
 /// What the Watcher tab says on its icon: a dot while Watcher works, and a count of what needs the user that only
@@ -195,8 +201,11 @@ struct WatcherTabState: Equatable {
     /// What VoiceOver says after the tab's name, for the dot and the badge.
     var spoken: String {
         var parts: [String] = []
-        if working { parts.append("Working") }
-        if needs > 0 { parts.append(needs == 1 ? "1 needs you" : "\(needs) need you") }
+        if working { parts.append(String(localized: "Working", comment: "Watcher's state: it is taking a turn")) }
+        if needs > 0 {
+            parts.append(needs == 1 ? String(localized: "1 needs you", comment: "How many requests wait on the user, on the Watcher tab")
+                : String(localized: "\(needs) need you", comment: "How many requests wait on the user, on the Watcher tab"))
+        }
         return parts.joined(separator: ", ")
     }
 }
@@ -352,65 +361,85 @@ struct WatcherBarSlide: Equatable {
 
 enum WatcherWords {
     /// The bar's owl, which goes to the top of Watcher's page.
-    static let toTop = "Go to the top, where Watcher’s state and permissions are"
+    static let toTop = String(localized: "Go to the top, where Watcher’s state and permissions are")
     /// What Watcher did, in a word or two.
     static func action(_ action: String) -> String {
         switch action {
-        case "start": return "Started"
-        case "send": return "Sent a message"
-        case "stop": return "Stopped"
-        case "settle": return "Settled"
-        default: return "Changed"
+        case "start": return String(localized: "Started", comment: "What Watcher did: it started a thread")
+        case "send": return String(localized: "Sent a message", comment: "What Watcher did: it sent a message to a thread")
+        case "stop": return String(localized: "Stopped", comment: "What Watcher did: it stopped a thread")
+        case "settle": return String(localized: "Settled", comment: "What Watcher did: it settled a thread")
+        default: return String(localized: "Changed", comment: "What Watcher did: it changed a thread")
         }
     }
     /// Where Watcher's action stands, when the thread hasn't simply taken it.
     static func delivery(_ receipt: WatcherPage.Receipt) -> String? {
         switch receipt.deliveryState {
-        case "queued": return "Waiting to go"
-        case "dispatching": return "Sending"
-        case "failed": return "Didn’t reach it"
-        case "uncertain": return "Not confirmed"
+        case "queued": return String(localized: "Waiting to go", comment: "Where Watcher's action stands: queued")
+        case "dispatching": return String(localized: "watcher-action.sending", defaultValue: "Sending", comment: "Where Watcher's action stands: on its way")
+        case "failed": return String(localized: "Didn’t reach it", comment: "Where Watcher's action stands: it didn't reach the thread")
+        case "uncertain": return String(localized: "Not confirmed", comment: "Where Watcher's action stands: the computer didn't confirm it")
         default: return nil
         }
     }
     /// A watched thread's state, as Threads words it.
     static func status(_ thread: WatcherPage.WatchedThread) -> String {
-        if !thread.connected || thread.status == "unavailable" { return "Can’t reach it" }
-        switch thread.status {
-        case "running": return "Working"
-        case "error": return "Turn failed"
-        default: return thread.backgroundWorkCount > 0 ? "Working" : "Idle"
+        if !thread.connected || thread.status == "unavailable" {
+            return String(localized: "Can’t reach it", comment: "A thread's state: its computer or provider can't be reached")
         }
+        switch thread.status {
+        case "running": return String(localized: "Working", comment: "A thread's state: its turn is running")
+        case "error": return String(localized: "Turn failed", comment: "A thread's state: its last turn failed")
+        default:
+            return thread.backgroundWorkCount > 0 ? String(localized: "Working", comment: "A thread's state: its turn is running")
+                : String(localized: "Idle", comment: "A thread's state: nothing is running")
+        }
+    }
+    /// Whether a watched thread works now, as `status` says Working: read from its values, never from the words.
+    static func working(_ thread: WatcherPage.WatchedThread) -> Bool {
+        guard thread.connected, thread.status != "unavailable" else { return false }
+        return thread.status == "running" || (thread.status != "error" && thread.backgroundWorkCount > 0)
     }
     /// Why a thread left Watched.
     static func left(_ thread: WatcherPage.WatchedThread) -> String {
-        thread.takenOver ? "You took it over" : "No longer watched"
+        thread.takenOver ? String(localized: "You took it over", comment: "Why a thread left Watched")
+            : String(localized: "No longer watched", comment: "Why a thread left Watched")
     }
     /// The meter beside Stop all: "3 of 4 watched".
-    static func meter(_ page: WatcherPage) -> String { "\(page.inFlight) of \(page.inFlightLimit) watched" }
+    static func meter(_ page: WatcherPage) -> String {
+        String(localized: "\(page.inFlight) of \(page.inFlightLimit) watched",
+               comment: "The first number is how many threads Watcher works with now; the second is the most it may")
+    }
     /// The line under Watched's cards.
     static func room(_ page: WatcherPage) -> String {
         let room = page.inFlightLimit - page.inFlight
-        if room <= 0 { return "Watcher starts nothing new until one of these finishes or stops. A thread waiting on you still counts." }
-        return (room == 1 ? "1 more can start." : "\(room) more can start.") + " A thread waiting on you still counts."
+        if room <= 0 { return String(localized: "Watcher starts nothing new until one of these finishes or stops. A thread waiting on you still counts.") }
+        return (room == 1 ? String(localized: "1 more can start.", comment: "How many more threads Watcher may start")
+            : String(localized: "\(room) more can start.", comment: "How many more threads Watcher may start"))
+            + " " + String(localized: "A thread waiting on you still counts.")
     }
     /// Stop all's question.
     static func stopQuestion(_ count: Int) -> String {
-        count == 1 ? "Stop the thread Watcher started?" : "Stop the \(count) threads Watcher started?"
+        count == 1 ? String(localized: "Stop the thread Watcher started?") : String(localized: "Stop the \(count) threads Watcher started?")
     }
-    static func stopButton(_ count: Int) -> String { count == 1 ? "Stop 1 thread" : "Stop \(count) threads" }
+    static func stopButton(_ count: Int) -> String {
+        count == 1 ? String(localized: "Stop 1 thread") : String(localized: "Stop \(count) threads")
+    }
     /// What Stop all did, thread by thread when not everything stopped. `titles` are by `ThreadRef.id`.
     static func stopped(_ results: [WatcherStopResult.StoppedTarget], titles: [String: String]) -> String {
-        if results.isEmpty { return "Watcher had no threads to stop. Nothing was stopped." }
+        if results.isEmpty { return String(localized: "Watcher had no threads to stop. Nothing was stopped.") }
         let done = results.filter { $0.status == "stopped" || $0.status == "requested" }
         if done.count == results.count {
-            return done.count == 1 ? "Stopped 1 thread Watcher started." : "Stopped \(done.count) threads Watcher started."
+            return done.count == 1 ? String(localized: "Stopped 1 thread Watcher started.")
+                : String(localized: "Stopped \(done.count) threads Watcher started.")
         }
         let rest = results.filter { $0.status != "stopped" && $0.status != "requested" }.map { outcome in
-            let title = titles[outcome.target.ref.id] ?? "A thread"
-            return outcome.status == "uncertain" ? "\(title) isn’t confirmed." : "\(title): \(outcome.message)"
+            let title = titles[outcome.target.ref.id] ?? String(localized: "A thread", comment: "Stands in for a thread whose title isn't known")
+            return outcome.status == "uncertain" ? String(localized: "\(title) isn’t confirmed.", comment: "%@ is a thread's title")
+                : String(localized: "\(title): \(outcome.message)", comment: "The first %@ is a thread's title; the second is what its computer said about stopping it")
         }
-        return "Stopped \(done.count) of \(results.count). " + rest.joined(separator: " ")
+        return String(localized: "Stopped \(done.count) of \(results.count).", comment: "The first number is how many threads stopped; the second is how many Stop all tried")
+            + " " + rest.joined(separator: " ")
     }
 
     // Watching (watch B, Zach's pick on October 13, 2026): a thread stays watched until the user stops it, with no limit.
@@ -420,73 +449,95 @@ enum WatcherWords {
     /// so the line promises only what holds for each, word for word as on the desktop.
     static func watchedLead(_ count: Int, standing: Int? = nil) -> String {
         let standing = standing ?? count
-        if count == 0 { return "Watcher watches no threads yet. Watch one here or from its page, and Watcher keeps it going until you stop it." }
-        let keeps = count == 1 ? "Watcher keeps this thread going on its own and brings you its questions and permissions."
-            : "Watcher keeps these \(count) threads going on its own and brings you their questions and permissions."
-        if standing == count { return keeps + (count == 1 ? " It stays" : " Each stays") + " watched until you stop it." }
-        if standing == 0 {
-            return keeps + (count == 1 ? " It is watched for a request: if you send to it yourself, Watcher stops sending to it."
-                : " They are watched for a request: if you send to one yourself, Watcher stops sending to it.")
+        if count == 0 { return String(localized: "Watcher watches no threads yet. Watch one here or from its page, and Watcher keeps it going until you stop it.") }
+        let keeps = count == 1 ? String(localized: "Watcher keeps this thread going on its own and brings you its questions and permissions.")
+            : String(localized: "Watcher keeps these \(count) threads going on its own and brings you their questions and permissions.")
+        if standing == count {
+            return keeps + " " + (count == 1 ? String(localized: "It stays watched until you stop it.", comment: "Said of one watched thread")
+                : String(localized: "Each stays watched until you stop it.", comment: "Said of several watched threads"))
         }
-        return keeps + " A thread you watch stays watched until you stop it. One watched for a request stops when you send to it yourself."
+        if standing == 0 {
+            return keeps + " " + (count == 1 ? String(localized: "It is watched for a request: if you send to it yourself, Watcher stops sending to it.")
+                : String(localized: "They are watched for a request: if you send to one yourself, Watcher stops sending to it."))
+        }
+        return keeps + " " + String(localized: "A thread you watch stays watched until you stop it. One watched for a request stops when you send to it yourself.")
     }
     /// What Watcher last did with a watched thread, from its computer's own records and never from anyone's words: waiting
     /// while the user's own turn runs, its latest action and how that went, or how long it has watched with nothing sent.
     static func doing(_ thread: WatcherPage.WatchedThread, in page: WatcherPage) -> String? {
-        if thread.paused == true { return "You sent here yourself. Until that turn ends, Watcher can only steer it." }
+        if thread.paused == true { return String(localized: "You sent here yourself. Until that turn ends, Watcher can only steer it.") }
         let rows = page.receiptGroups.flatMap(\.rows).filter { $0.target == thread.target }
         if let last = rows.max(by: { (Stamp.date($0.updatedAt) ?? .distantPast) < (Stamp.date($1.updatedAt) ?? .distantPast) }) {
-            let at = clock(last.updatedAt).map { " at " + $0 } ?? ""
+            let at = clock(last.updatedAt)
             switch last.deliveryState {
-            case "accepted": return "Watcher \(verb(last.action))\(at)."
-            case "failed": return "Watcher’s last try\(at) didn’t reach it."
-            case "uncertain": return "Watcher’s last try\(at) isn’t confirmed."
-            default: return "Watcher is sending to it now."
+            case "accepted": return did(last.action, at: at)
+            case "failed":
+                if let at { return String(localized: "Watcher’s last try at \(at) didn’t reach it.", comment: "%@ is a time of day") }
+                return String(localized: "Watcher’s last try didn’t reach it.")
+            case "uncertain":
+                if let at { return String(localized: "Watcher’s last try at \(at) isn’t confirmed.", comment: "%@ is a time of day") }
+                return String(localized: "Watcher’s last try isn’t confirmed.")
+            default: return String(localized: "Watcher is sending to it now.")
             }
         }
         guard let watch = page.standingWatch(thread.target.ref) else { return nil }
-        return (clock(watch.createdAt).map { "Watching since \($0)." } ?? "Watching.") + " Nothing sent yet."
+        let since: String
+        if let at = clock(watch.createdAt) { since = String(localized: "Watching since \(at).", comment: "%@ is a time of day") }
+        else { since = String(localized: "Watching.", comment: "Watcher has a standing watch on this thread") }
+        return since + " " + String(localized: "Nothing sent yet.", comment: "Watcher hasn't sent anything to this thread")
     }
-    private static func verb(_ action: String) -> String {
+    /// What Watcher last did with a thread, as one sentence, with the time when its computer gave one.
+    private static func did(_ action: String, at time: String?) -> String {
+        if let time {
+            switch action {
+            case "start": return String(localized: "Watcher started it at \(time).", comment: "%@ is a time of day")
+            case "send": return String(localized: "Watcher last sent to it at \(time).", comment: "%@ is a time of day")
+            case "stop": return String(localized: "Watcher stopped it at \(time).", comment: "%@ is a time of day")
+            case "settle": return String(localized: "Watcher settled it at \(time).", comment: "%@ is a time of day")
+            default: return String(localized: "Watcher last changed it at \(time).", comment: "%@ is a time of day")
+            }
+        }
         switch action {
-        case "start": return "started it"
-        case "send": return "last sent to it"
-        case "stop": return "stopped it"
-        case "settle": return "settled it"
-        default: return "last changed it"
+        case "start": return String(localized: "Watcher started it.")
+        case "send": return String(localized: "Watcher last sent to it.")
+        case "stop": return String(localized: "Watcher stopped it.")
+        case "settle": return String(localized: "Watcher settled it.")
+        default: return String(localized: "Watcher last changed it.")
         }
     }
     /// "10:15 AM", in this iPhone's own format.
     static func clock(_ stamp: String) -> String? { Stamp.date(stamp)?.formatted(date: .omitted, time: .shortened) }
     /// What a Watch or Stop watching press did.
     static func watching(_ title: String, _ watched: Bool) -> String {
-        watched ? "Watcher is watching \(title)." : "Watcher stopped watching \(title)."
+        watched ? String(localized: "Watcher is watching \(title).", comment: "%@ is a thread's title")
+            : String(localized: "Watcher stopped watching \(title).", comment: "%@ is a thread's title")
     }
     static func watchUnconfirmed(_ title: String, watched: Bool, computer: String) -> String {
-        (watched ? "\(computer) didn’t confirm that Watcher is watching \(title)." : "\(computer) didn’t confirm that Watcher stopped watching \(title).")
-            + " Check Watched before you try again."
+        (watched ? String(localized: "\(computer) didn’t confirm that Watcher is watching \(title).", comment: "The first %@ is the computer's name; the second is a thread's title")
+            : String(localized: "\(computer) didn’t confirm that Watcher stopped watching \(title).", comment: "The first %@ is the computer's name; the second is a thread's title"))
+            + " " + String(localized: "Check Watched before you try again.")
     }
     static func permissionUnconfirmed(_ computer: String) -> String {
-        "\(computer) didn’t confirm the change to Watcher’s permissions. Check what they say before you change them again."
+        String(localized: "\(computer) didn’t confirm the change to Watcher’s permissions. Check what they say before you change them again.", comment: "%@ is the computer's name")
     }
 
     // Steering Watcher while it works (#1229, Zach's pick B): Send steers into Watcher's turn, or the words go next.
 
     /// A computer on an older Sotto refuses a message while Watcher works. The words stay in the box.
     static func updateToSteer(_ computer: String) -> String {
-        "Update Sotto on \(computer) to send to Watcher while it works. Your message is still here."
+        String(localized: "Update Sotto on \(computer) to send to Watcher while it works. Your message is still here.", comment: "%@ is the computer's name")
     }
     static func removeUnconfirmed(_ computer: String) -> String {
-        "\(computer) didn’t confirm that your message was removed. Check Watcher’s conversation before you send it again."
+        String(localized: "\(computer) didn’t confirm that your message was removed. Check Watcher’s conversation before you send it again.", comment: "%@ is the computer's name")
     }
     /// What a follow-up waiting for Watcher says over its words.
     static func followup(_ status: String) -> String {
         switch status {
-        case "dispatching": return "Going to Watcher now"
-        case "uncertain": return "Watcher didn’t confirm this message"
-        case "failed": return "Didn’t reach Watcher"
-        case "paused": return "Held after a stop"
-        default: return "Goes next, after this turn"
+        case "dispatching": return String(localized: "Going to Watcher now")
+        case "uncertain": return String(localized: "Watcher didn’t confirm this message")
+        case "failed": return String(localized: "Didn’t reach Watcher")
+        case "paused": return String(localized: "Held after a stop", comment: "A follow-up message held in Watcher's queue after the user stopped Watcher")
+        default: return String(localized: "Goes next, after this turn")
         }
     }
     /// The line under its words, when there's more to say: why it didn't steer, or what to do next.
@@ -494,22 +545,24 @@ enum WatcherWords {
         switch status {
         case "queued":
             guard let current = page.current, current.steers == false else { return nil }
-            return "\(AgentNames.name(current.provider)) can’t take a steer."
-        case "uncertain": return "Check the conversation before you send it again."
-        case "failed": return "Remove it, then send it again."
-        case "paused": return "Resume Watcher’s queue in Sotto on \(computer), or remove it."
+            return String(localized: "\(AgentNames.name(current.provider)) can’t take a steer.", comment: "%@ is the provider's name, such as Claude Code")
+        case "uncertain": return String(localized: "Check the conversation before you send it again.")
+        case "failed": return String(localized: "Remove it, then send it again.")
+        case "paused": return String(localized: "Resume Watcher’s queue in Sotto on \(computer), or remove it.", comment: "%@ is the computer's name")
         default: return nil
         }
     }
 
     // Watcher's own changes (mark B): Sotto's count of what the provider changed, and Watcher's reason in its own words.
 
-    static func files(_ count: Int) -> String { count == 1 ? "1 file" : "\(count) files" }
-    static func ownChangeHeadline(_ count: Int) -> String { "Watcher changed \(files(count)) itself." }
+    static func files(_ count: Int) -> String { count == 1 ? String(localized: "1 file") : String(localized: "\(count) files") }
+    static func ownChangeHeadline(_ count: Int) -> String {
+        count == 1 ? String(localized: "Watcher changed 1 file itself.") : String(localized: "Watcher changed \(count) files itself.")
+    }
     /// The press that shows the file names, and folds them again.
     static func ownChangeToggle(_ count: Int, open: Bool) -> String {
-        let what = count == 1 ? "the file" : "the \(files(count))"
-        return (open ? "Hide " : "Show ") + what
+        if open { return count == 1 ? String(localized: "Hide the file") : String(localized: "Hide the \(count) files") }
+        return count == 1 ? String(localized: "Show the file") : String(localized: "Show the \(count) files")
     }
 }
 
@@ -520,25 +573,25 @@ enum WatcherPermissions {
     /// What the first Watcher ever starts on.
     static let first = "approval-required"
     static let modes = ["approval-required", "auto-accept-edits", "auto", "full-access"]
-    static let title = "What Watcher may do without asking"
+    static let title = String(localized: "What Watcher may do without asking")
     /// What stays true in every mode, under the list.
-    static let foot = "When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread."
+    static let foot = String(localized: "When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.")
     static func name(_ mode: String) -> String {
         switch mode {
-        case "approval-required": return "Ask before actions"
-        case "auto-accept-edits": return "Allow edits"
-        case "auto": return "Allow actions"
-        case "full-access": return "Full access"
+        case "approval-required": return String(localized: "Ask before actions", comment: "A permission mode's name")
+        case "auto-accept-edits": return String(localized: "Allow edits", comment: "A permission mode's name")
+        case "auto": return String(localized: "Allow actions", comment: "A permission mode's name")
+        case "full-access": return String(localized: "Full access", comment: "A permission mode's name")
         default: return mode
         }
     }
     /// What Watcher does under a mode, in one line. Under Allow actions the provider decides, so the line names it.
     static func line(_ mode: String, provider: String, computer: String) -> String {
         switch mode {
-        case "auto-accept-edits": return "Edits files without asking. Asks before a command that changes something."
-        case "auto": return "\(provider) decides what to ask you about."
-        case "full-access": return "Edits files and runs any command without asking, anywhere on \(computer)."
-        default: return "Asks you before it edits a file or runs a command that changes something."
+        case "auto-accept-edits": return String(localized: "Edits files without asking. Asks before a command that changes something.")
+        case "auto": return String(localized: "\(provider) decides what to ask you about.", comment: "%@ is the provider's name, such as Claude Code, or “The provider”")
+        case "full-access": return String(localized: "Edits files and runs any command without asking, anywhere on \(computer).", comment: "%@ is the computer's name")
+        default: return String(localized: "Asks you before it edits a file or runs a command that changes something.")
         }
     }
     /// Whether a mode lets Watcher act without asking, which only an iPhone that may answer there can choose.
@@ -549,13 +602,16 @@ enum WatcherPermissions {
         return listed.isEmpty ? modes : modes.filter { listed.contains($0) }
     }
     /// Why the chip can't be pressed while Watcher works, as on the desktop: beside the chip, and when, as its hint.
-    static let fixed = "Fixed while Watcher works."
-    static let fixedHint = "It can change once Watcher finishes and nothing waits on you."
+    static let fixed = String(localized: "Fixed while Watcher works.", comment: "Why Watcher's permission mode can't be changed now")
+    static let fixedHint = String(localized: "It can change once Watcher finishes and nothing waits on you.")
     /// What stays in force while Watcher's provider hasn't confirmed the mode just chosen.
-    static func inForce(_ mode: String, provider: String) -> String { "\(provider) stays on \(name(mode)) until it confirms." }
+    static func inForce(_ mode: String, provider: String) -> String {
+        String(localized: "\(provider) stays on \(name(mode)) until it confirms.",
+               comment: "The first %@ is the provider's name, such as Claude Code; the second is a permission mode's name, such as Allow edits")
+    }
     /// Why the wider modes can't be chosen from this iPhone.
     static func asksOnly(_ computer: String) -> String {
-        "This iPhone can’t answer on \(computer), so it can only keep Watcher asking first."
+        String(localized: "This iPhone can’t answer on \(computer), so it can only keep Watcher asking first.", comment: "%@ is the computer's name")
     }
 }
 
@@ -583,11 +639,12 @@ struct WatcherWatch: Sendable {
             guard known.insert(card.request.id).inserted, !first, !onScreen, switches.needsYou else { continue }
             let permission = card.request.kind == "permission"
             alerts.append(ThreadAlert(ref: ref, kind: permission ? .permission : .question, title: "Watcher",
-                                      body: permission ? "Watcher is asking for permission on \(computer)." : "Watcher is asking a question on \(computer).",
+                                      body: permission ? String(localized: "Watcher is asking for permission on \(computer).", comment: "%@ is the computer's name")
+                                          : String(localized: "Watcher is asking a question on \(computer).", comment: "%@ is the computer's name"),
                                       id: Self.alertPrefix + ref.id + "/request/" + card.request.id))
         }
         if nowFailed && !failed && !first && !onScreen && switches.failed {
-            alerts.append(ThreadAlert(ref: ref, kind: .failed, title: "Watcher", body: "Watcher stopped with an error on \(computer).",
+            alerts.append(ThreadAlert(ref: ref, kind: .failed, title: "Watcher", body: String(localized: "Watcher stopped with an error on \(computer).", comment: "%@ is the computer's name"),
                                       id: Self.alertPrefix + ref.id + "/failed/" + UUID().uuidString))
         }
         if known.count > 500 { known = known.intersection(own.map(\.request.id)) }
@@ -597,14 +654,16 @@ struct WatcherWatch: Sendable {
 
 /// The words a watched thread carries, shared by its rows, cards and reply box.
 enum WatchedWords {
-    static let label = "Watched by Watcher"
+    static let label = String(localized: "Watched by Watcher")
     /// What a watched thread's reply box says on a computer whose watching a send takes over: one that keeps no
     /// standing watches.
-    static let takeover = "Watched by Watcher. If you send here, Watcher stops sending to it."
+    static let takeover = String(localized: "Watched by Watcher. If you send here, Watcher stops sending to it.")
     /// What it says where Watcher keeps the thread watched until the user stops it, word for word as on the desktop, and
     /// while the user's own turn there runs.
-    static let standing = "Watched by Watcher. It keeps this thread going and brings you its questions and permissions."
-    static let paused = "Watched by Watcher. While your own turn here runs, it can only steer that turn."
+    static let standing = String(localized: "Watched by Watcher. It keeps this thread going and brings you its questions and permissions.")
+    static let paused = String(localized: "Watched by Watcher. While your own turn here runs, it can only steer that turn.")
     /// The words a row or card adds for VoiceOver after where the thread runs.
-    static func spoken(_ watched: Bool) -> String { watched ? ", watched by Watcher" : "" }
+    static func spoken(_ watched: Bool) -> String {
+        watched ? ", " + String(localized: "thread-label.watched-by-watcher", defaultValue: "watched by Watcher", comment: "Added for VoiceOver after a thread's title and where it runs") : ""
+    }
 }

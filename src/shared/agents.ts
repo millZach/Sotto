@@ -10,6 +10,7 @@ import { agentActivitySchema, MAX_AGENT_ACTIVITIES, type AgentActivity } from '.
 import { threadUsageSchema } from './threadUsage'
 import { agentVisualSchema, VISUAL_MESSAGE_PREFIX, type AgentVisual } from './visuals'
 import { compactionSchema } from './compaction'
+import { clearThreadsAgeSchema, THREAD_CLEAR_MAX, threadClearKeptReasonSchema, threadClearPreviewSchema, threadClearResultSchema } from './threadClear'
 import { agentBackgroundWorkSchema, agentMonitoringSchema } from './agentMonitoring'
 import { gitStatusSchema } from './gitStatus'
 import { agentBabysitEndedSchema, agentBabysittingSchema, BABYSITTING_PER_THREAD_MAX } from './babysitting'
@@ -335,6 +336,9 @@ export const agentRequestSchema = z.object({
     plan: z.object({ name: text.optional(), overview: text.optional(), steps: text.optional() }).strict().optional() }).optional(),
   delivery: z.literal('uncertain').optional(),
   answerRetryReady: z.literal(true).optional(),
+  /** When the host's coordinator first showed this request (ADR-0135), so a client can say how long it has waited.
+   * The host adds it; no provider does. Absent from hosts that predate it, which say no wait at all. */
+  since: z.string().datetime().optional(),
 })
 export const agentQuestionAnswersSchema = z.record(id, z.object({ optionIds: z.array(id).max(100), text: text.optional() }).strict())
 export type AgentQuestionAnswers = z.infer<typeof agentQuestionAnswersSchema>
@@ -462,6 +466,13 @@ export const worktreeReclaimPreviewSchema = z.object({
   outsideLink: z.string().optional(),
 }).strict()
 export type WorktreeReclaimPreview = z.infer<typeof worktreeReclaimPreviewSchema>
+/**
+ * What Delete thread… shows before it asks (ADR-0140): why the thread is kept, or null when it may go, and, for a thread
+ * with a worktree folder of its own, what removing that folder would take, so the window can List and tick ignored items
+ * and nested work the way Remove worktree does (ADR-0041). Null when the thread has no folder of its own.
+ */
+export const threadDeletePreviewSchema = z.object({ threadId: z.string().min(1).max(512), kept: threadClearKeptReasonSchema.nullable(), worktree: worktreeReclaimPreviewSchema.nullable() }).strict()
+export type ThreadDeletePreview = z.infer<typeof threadDeletePreviewSchema>
 export const agentWorktreeSchema = z.object({
   mode: z.enum(['independent', 'shared']), status: z.enum(['pending', 'ready', 'error']),
   path: z.string().optional(), repositoryRoot: z.string().optional(), branch: z.string().optional(),
@@ -597,6 +608,9 @@ export const agentThreadSchema = z.object({
   /** Why that failure happened, as the failed turn's own record says, cut to its first 600 characters; absent when it says
    * nothing, and from older hosts. The pane reads it to tell the thread's own failure from the provider's other errors. */
   failureReason: z.string().max(600).optional(),
+  /** When the coordinator named the failure `failureId` names (ADR-0135), so a client can say how long it has stood.
+   * Absent while the thread stands in none, for a failure named before the moment was kept, and from older hosts. */
+  failureSince: z.string().datetime().optional(),
   /** The newest message of the user's the provider's adapter has recorded, whether or not `messages` still
    * holds it. A send names it back so the adapter can refuse one that raced the user's own input; a window
    * the adapter put away and took back up carries none of the older messages, so it cannot say. */
@@ -722,6 +736,8 @@ export const agentClientHostSchema = z.object({ hostId: z.uuid(), connected: z.b
   clientUpdates: z.array(providerClientUpdateSchema).max(PROVIDER_COUNT).optional(), clientUpdateRun: clientUpdateRunSchema.optional(),
   /** The host lists `pull-request-babysit`: the Pull request surface offers Babysit pull request on its threads (ADR-0061 decision 11). */
   pullRequestBabysit: z.literal(true).optional(),
+  /** The host deletes its settled threads when asked: it lists `thread-delete` (ADR-0140 decision 7). Absent, Delete thread… is off. */
+  threadDelete: z.literal(true).optional(),
   /** Where a new project goes on this host, in its own format, for Settings → Threads' row per computer (ADR-0074). */
   projectsDirectory: z.string().max(4_096).optional(),
   /** Whether this host lets this computer answer, so a permission default that grants applies there (ADR-0074). */
@@ -803,7 +819,7 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
 }
 
 export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
-  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor',
+  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor', deepseek: 'DeepSeek Harness',
 }
 const THREAD_PROVIDERS_CONNECTED = 'Thread providers connected'
 /** The bounded success vocabulary old hosts use, including a default provider discovered during connect. */
@@ -906,6 +922,10 @@ export const providerUpgradeSchema = z.object({ recoveryPath: z.string(), migrat
 export const agentStateSchema = z.object({
   legacyManagement: z.boolean().optional(),
   worktreeReclaimPreview: worktreeReclaimPreviewSchema.optional(),
+  /** The answers of `preview-delete-thread`, `preview-clear-threads` and `clear-threads` (ADR-0140), on that reply alone. */
+  threadDeletePreview: threadDeletePreviewSchema.optional(),
+  threadClearPreview: threadClearPreviewSchema.optional(),
+  threadClearResult: threadClearResultSchema.optional(),
   clientScoped: z.boolean().optional(),
   connections: z.array(z.object({ hostId: z.uuid(), name: z.string(), kind: z.enum(['local', 'remote']), connected: z.boolean() })).optional(),
   hostId: z.uuid().optional(),
@@ -1235,6 +1255,18 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('restore-project'), projectId: providerEntityId }).strict(),
   z.object({ type: z.literal('settle-thread'), threadId: id }).strict(),
   z.object({ type: z.literal('restore-thread'), threadId: id }).strict(),
+  /**
+   * Clearing settled threads (ADR-0140), an Owl feature. `preview-delete-thread` says whether one settled thread may be
+   * deleted and what its own worktree would take; `delete-thread` deletes it, with the same confirmations Remove worktree
+   * takes for its folder. `preview-clear-threads` lists this computer's settled threads quiet longer than `olderThanDays`
+   * (0 is any age) that would go and those kept; `clear-threads` deletes those of `threadIds` that still qualify. Each is
+   * checked again as it is deleted, and nothing can be taken back. Unlike Remove worktree, `delete-thread` takes no answer
+   * to uncommitted changes: a thread whose worktree has them is kept (ADR-0140 decision 3).
+   */
+  z.object({ type: z.literal('preview-delete-thread'), threadId: id }).strict(),
+  z.object({ type: z.literal('delete-thread'), threadId: id, confirmedIgnored: z.array(z.string()).optional(), confirmedItems: z.array(z.object({ path: z.string(), fileCount: z.number().int().nonnegative() }).strict()).optional(), confirmedRepositories: z.array(z.object({ path: z.string(), changeCount: z.number().int().nonnegative(), unpushedCommitCount: z.number().int().nonnegative().optional(), kind: z.enum(['worktree', 'repository']) }).strict()).optional() }).strict(),
+  z.object({ type: z.literal('preview-clear-threads'), olderThanDays: clearThreadsAgeSchema }).strict(),
+  z.object({ type: z.literal('clear-threads'), olderThanDays: clearThreadsAgeSchema, threadIds: z.array(id).min(1).max(THREAD_CLEAR_MAX) }).strict(),
   /** A pure Sotto-side edit of the thread's name; the trimmed title must not be empty. */
   z.object({ type: z.literal('rename-thread'), threadId: id, title: z.string().max(512) }).strict(),
   /** Ask the thread's own provider for its name again, on the side, replacing a generated or stand-in one. */
@@ -1397,7 +1429,7 @@ export function hostForThread(host: AgentHostSnapshot, thread: Pick<AgentThread,
   const source = host.clientHosts?.find(item => item.hostId === thread.hostId)
   return source ? { ...host, ...source, providers: source.providers } : host
 }
-const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor'])
+const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor', 'deepseek'])
 /**
  * What Connect providers turns on: every thread client installed on this machine, Devin included, except one the user
  * turned off, added to the ones already on, as a headless host connects them all (ADR-0036). A client already on stays

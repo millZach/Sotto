@@ -148,6 +148,10 @@ jobs:
       - name: Third-party notices
         run: npm run notices:verify
 
+      # CI runs only a few Playwright journeys, so a spec that cannot load would go unseen (#1579). Listing loads every one.
+      - name: Load every Playwright spec
+        run: npm run e2e:list
+
       # A change made only of documents skips the shards; these are the tests that read the documents.
       - name: Document tests
         if: needs.changes.outputs.tests == 'docs'

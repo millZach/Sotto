@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sidebar footer — 10 variants</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600&display=swap');
+  :root {
+    --canvas:#0b0b0c; --side:#1e1f20; --raised:#2a2b2d; --hover:#ffffff12; --line:#ffffff14;
+    --text:#ececed; --muted:#9a9b9f; --accent:#6bb8a8; --accent-ink:#0d1f1b; --accent-soft:#6bb8a826;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:#000; color:var(--text); font:13px/1.4 Figtree,-apple-system,system-ui,sans-serif; padding:32px; -webkit-font-smoothing:antialiased; }
+  h1 { font-weight:600; font-size:18px; margin:0 0 4px; }
+  p.lead { color:var(--muted); margin:0 0 28px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:28px; }
+  figure { margin:0; }
+  figcaption { margin-top:10px; }
+  figcaption b { font-weight:600; }
+  figcaption span { display:block; color:var(--muted); font-size:12px; margin-top:2px; }
+  .side { width:280px; height:240px; background:var(--side); border-radius:14px; border:1px solid var(--line); position:relative; overflow:hidden; display:flex; flex-direction:column; justify-content:flex-end; padding:12px; }
+  .side::before { content:""; position:absolute; inset:12px 12px auto; height:90px; background:repeating-linear-gradient(#ffffff08 0 22px,transparent 22px 30px); border-radius:6px; }
+  svg { width:18px; height:18px; stroke:currentColor; fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; flex:none; }
+  button { all:unset; box-sizing:border-box; cursor:default; display:inline-flex; align-items:center; justify-content:center; gap:7px; color:var(--muted); border-radius:8px; transition:background .15s,color .15s; }
+  button:hover { background:var(--hover); color:var(--text); }
+  button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .ib { width:30px; height:30px; }
+  .row { display:flex; align-items:center; gap:2px; }
+  .sp { flex:1; }
+  .hr { height:1px; background:var(--line); margin:10px 2px; }
+  .on { color:var(--text); }
+  @media (prefers-reduced-motion:reduce){ button{transition:none;} }
+
+  /* 1 segmented control */
+  .seg { display:flex; background:#00000040; border-radius:9px; padding:2px; box-shadow:inset 0 0 0 .5px var(--line); }
+  .seg button { flex:1; height:28px; border-radius:7px; font-weight:500; }
+  .seg button.on { background:var(--raised); box-shadow:0 1px 2px #0006,inset 0 .5px 0 #ffffff1a; }
+
+  /* 2 source list */
+  .list button { display:flex; justify-content:flex-start; width:100%; height:30px; padding:0 8px; font-weight:500; }
+  .list button.on { background:var(--accent-soft); color:var(--text); }
+  .list button.on svg { color:var(--accent); }
+
+  /* 3 floating capsule */
+  .cap { display:flex; margin:0 auto; padding:4px; gap:2px; border-radius:999px; background:#2c2d2fcc; backdrop-filter:blur(20px); box-shadow:0 8px 24px #0008,inset 0 .5px 0 #ffffff22,0 0 0 .5px #ffffff14; }
+  .cap button { height:32px; padding:0 10px; border-radius:999px; }
+  .cap button.on { background:var(--accent); color:var(--accent-ink); font-weight:600; padding:0 14px; }
+
+  /* 4 tab bar */
+  .tabs { display:flex; border-top:1px solid var(--line); margin:0 -12px -12px; padding:6px 8px 8px; }
+  .tabs button { flex:1; flex-direction:column; gap:3px; height:46px; font-size:10.5px; font-weight:500; }
+  .tabs button.on { color:var(--accent); background:none; }
+
+  /* 5 two-tier: utilities top, modes as cards */
+  .cards { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; }
+  .cards button { flex-direction:column; height:56px; gap:5px; font-size:11px; font-weight:500; background:#ffffff08; border-radius:10px; box-shadow:inset 0 0 0 .5px var(--line); }
+  .cards button.on { background:var(--accent-soft); color:var(--text); box-shadow:inset 0 0 0 1px #6bb8a866; }
+  .cards button.on svg { color:var(--accent); }
+
+  /* 6 inline single row */
+  .one button.on { background:var(--raised); color:var(--text); }
+  .vr { width:1px; height:18px; background:var(--line); margin:0 6px; }
+
+  /* 7 profile-style footer card */
+  .acct { display:flex; align-items:center; gap:10px; padding:8px; border-radius:10px; background:#ffffff06; box-shadow:inset 0 0 0 .5px var(--line); }
+  .acct .dot { width:28px; height:28px; border-radius:7px; background:var(--accent); color:var(--accent-ink); display:grid; place-items:center; }
+  .acct .t { flex:1; line-height:1.2; } .acct .t small { color:var(--muted); font-size:11px; }
+
+  /* 8 pill mode switch with sliding thumb */
+  .pill { position:relative; display:flex; background:#00000040; border-radius:999px; padding:3px; box-shadow:inset 0 0 0 .5px var(--line); }
+  .pill .thumb { position:absolute; top:3px; bottom:3px; left:calc(66.66% - 1px); width:calc(33.33% - 2px); border-radius:999px; background:var(--accent); }
+  .pill button { flex:1; height:30px; border-radius:999px; position:relative; z-index:1; font-weight:600; }
+  .pill button.on { color:var(--accent-ink); background:none; }
+
+  /* 9 vertical rail edge */
+  .rail { position:absolute; left:0; top:0; bottom:0; width:52px; border-right:1px solid var(--line); display:flex; flex-direction:column; align-items:center; padding:12px 0; gap:4px; background:#18191a; }
+  .rail button { width:36px; height:36px; border-radius:10px; }
+  .rail button.on { background:var(--accent-soft); color:var(--accent); }
+  .s9::before { left:64px; }
+
+  /* 10 toolbar with label buttons (Finder bottom bar) */
+  .tb { display:flex; align-items:center; gap:6px; margin:0 -12px -12px; padding:8px 10px; background:#00000030; border-top:.5px solid var(--line); }
+  .tb .group { display:flex; background:var(--raised); border-radius:7px; box-shadow:0 .5px 1px #0006,inset 0 .5px 0 #ffffff14; }
+  .tb .group button { height:26px; width:32px; border-radius:0; }
+  .tb .group button + button { border-left:.5px solid #00000066; }
+  .tb .group button:first-child { border-radius:7px 0 0 7px; } .tb .group button:last-child { border-radius:0 7px 7px 0; }
+  .tb .group button.on { background:var(--accent); color:var(--accent-ink); }
+  .tb > button { width:26px; height:26px; }
+</style>
+</head>
+<body>
+<svg style="display:none">
+  <symbol id="mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+  <symbol id="owl" viewBox="0 0 24 24"><path d="M5 4l3 3h8l3-3v9a7 7 0 0 1-14 0z"/><circle cx="9.5" cy="12" r="1.6"/><circle cx="14.5" cy="12" r="1.6"/></symbol>
+  <symbol id="thr" viewBox="0 0 24 24"><path d="M4 5h11v8H8l-4 3z"/><path d="M15 9h5v8l-3-2h-6v-2"/></symbol>
+  <symbol id="use" viewBox="0 0 24 24"><path d="M4 20h16M7 16v-5M11 16V6M15 16v-7M19 16v-3"/></symbol>
+  <symbol id="set" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></symbol>
+  <symbol id="hlp" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01"/></symbol>
+  <symbol id="upd" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-14 5.3M4 12a8 8 0 0 1 14-5.3M18 3v4h-4M6 21v-4h4"/></symbol>
+</svg>
+<h1>Sidebar footer — 10 variants</h1>
+<p class="lead">Dictation · Watcher · Threads (current page) · Usage · Settings · Help · Check for updates. Hover any control. Teal stands in for the theme accent.</p>
+<div class="grid">
+
+<figure><div class="side">
+  <div class="seg"><button aria-label="Dictation"><svg><use href="#mic"/></svg></button><button aria-label="Watcher"><svg><use href="#owl"/></svg></button><button class="on" aria-label="Threads"><svg><use href="#thr"/></svg>Threads</button></div>
+  <div class="row" style="margin-top:8px"><button class="ib" aria-label="Usage"><svg><use href="#use"/></svg></button><button class="ib" aria-label="Settings"><svg><use href="#set"/></svg></button><button class="ib" aria-label="Help"><svg><use href="#hlp"/></svg></button><span class="sp"></span><button class="ib" aria-label="Check for updates"><svg><use href="#upd"/></svg></button></div>
+</div><figcaption><b>1 · Segmented control</b><span>macOS NSSegmentedControl: recessed track, raised neutral thumb. Accent saved for state, not navigation.</span></figcaption></figure>
+
+<figure><div class="side">
+  <div class="list"><button aria-label="Dictation"><svg><use href="#mic"/></svg>Dictation</button><button aria-label="Watcher"><svg><use href="#owl"/></svg>Watcher</button><button class="on"><svg><use href="#thr"/></svg>Threads</button></div>
+  <div class="hr"></div>
+  <div class="row"><button class="ib" aria-label="Usage"><svg><use href="#use"/></svg></button><button class="ib" aria-label="Settings"><svg><use href="#set"/></svg></button><button class="ib" aria-label="Help"><svg><use href="#hlp"/></svg></button><span class="sp"></span><button class="ib" aria-label="Check for updates"><svg><use href="#upd"/></svg></button></div>
+</div><figcaption><b>2 · Source list</b><span>Finder/Mail sidebar rows. Every page is named; tinted selection with accent icon.</span></figcaption></figure>
+
+<figure><div class="side">
+  <div class="cap"><button aria-label="Dictation"><svg><use href="#mic"/></svg></button><button aria-label="Watcher"><svg><use href="#owl"/></svg></button><button class="on"><svg><use href="#thr"/></svg>Threads</button><span class="vr"></span><button aria-label="Settings"><svg><use href="#set"/></svg></button></div>
+  <div class="row" style="margin-top:10px;justify-content:center"><button class="ib" aria-label="Usage"><svg><use href="#use"/></svg></button><button class="ib" aria-label="Help"><svg><use href="#hlp"/></svg></button><button class="ib" aria-label="Check for updates"><svg><use href="#upd"/></svg></button></div>
+</div><figcaption><b>3 · Floating glass capsule</b><span>macOS 26 Liquid Glass toolbar feel. Closest to today, but one object instead of three tiles.</span></figcaption></figure>
+
+<figure><div class="side">
+  <div class="row" style="padding:0 2px 8px"><span style="color:var(--muted);font-size:11px">Sotto 0.42 · up to date</span><span class="sp"></span><button class="ib" aria-label="Check for updates"><svg><use href="#upd"/></svg></button></div>
+  <div class="tabs"><button><svg><use href="#mic"/></svg>Dictation</button><button><svg><use href="#owl"/></svg>Watcher</button><button class="on"><svg><use href="#thr"/></svg>Threads</button><button><svg><use href="#use"/></svg>Usage</button><button><svg><use href="#set"/></svg>Settings</button></div>
+</div><figcaption><b>4 · Tab bar</b><span>iOS-style labelled tabs pinned to the edge. Update status becomes a quiet line instead of a mystery icon.</span></figcaption></figure>
+
+<figure><div class="side">
+  <div class="cards"><button><svg><use href="#mic"/></svg>Dictation</button><button><svg><use href="#owl"/></svg>Watcher</button><button class="on"><svg><use href="#thr"/></svg>Threads</button></div>
+  <div class="row" style="margin-top:8px"><button class="ib" aria-label="Usage"><svg><use href="#use"/></svg></button><button class="ib" aria-label="Settings"><svg><use href="#set"/></svg></button><button class="ib" aria-label="Help"><svg><use href="#hlp"/></svg></button><span class="sp"></span><button class="ib" aria-label="Check for updates"><svg><use href="#upd"/></svg></button></div>
+</div><figcaption><b>5 · Mode cards</b><span>Control Center tiles. Equal weight, labelled, big targets; hairline ring on the current one.</span></figcaption></figure>
+
+<figure><div class="side">
+  <div class="row one"><button class="ib" aria-label="Dictation"><svg><use href="#mic"/></svg></button><button class="ib" aria-label="Watcher"><svg><use href="#owl"/></svg></button><button class="ib on" aria-label="Threads"><svg><use href="#thr"/></svg></button><span class="vr"></span><button class="ib" aria-label="Usage"><svg><use href="#use"/></svg></button><button class="ib" aria-label="Settings"><svg><use href="#set"/></svg></button><button class="ib" aria-label="Help"><svg><use href="#hlp"/></svg></button><span class="sp"></span><button class="ib" aria-label="Check for updates"><svg><use href="#upd"/></svg></button></div>
+</div><figcaption><b>6 · One quiet row</b><span>Minimum footprint: seven icons, one hairline divider. Most room for the thread list.</span></figcaption></figure>
+
+<figure><div class="side">
+  <div class="row" style="margin-bottom:8px"><button class="ib" aria-label="Dictation"><svg><use href="#mic"/></svg></button><button class="ib" aria-label="Watcher"><svg><use href="#owl"/></svg></button><button class="ib on" style="background:var(--raised)" aria-label="Threads"><svg><use href="#thr"/></svg></button><span class="sp"></span><button class="ib" aria-label="Usage"><svg><use href="#use"/></svg></button><button class="ib" aria-label="Help"><svg><use href="#hlp"/></svg></button></div>
+  <div class="acct"><div class="dot"><svg style="width:16px;height:16px"><use href="#set"/></svg></div><div class="t">Settings<br><small>Update ready · restart</small></div><button class="ib" aria-label="Restart to update"><svg><use href="#upd"/></svg></button></div>
+</div><figcaption><b>7 · Status card</b><span>Like an account chip in Slack/Linear: Settings and update state live together in one card.</span></figcaption></figure>
+
+<figure><div class="side">
+  <div class="pill"><span class="thumb"></span><button aria-label="Dictation"><svg><use href="#mic"/></svg></button><button aria-label="Watcher"><svg><use href="#owl"/></svg></button><button class="on" aria-label="Threads"><svg><use href="#thr"/></svg></button></div>
+  <div class="row" style="margin-top:10px;justify-content:space-between"><button class="ib" aria-label="Usage"><svg><use href="#use"/></svg></button><button class="ib" aria-label="Settings"><svg><use href="#set"/></svg></button><button class="ib" aria-label="Help"><svg><use href="#hlp"/></svg></button><button class="ib" aria-label="Check for updates"><svg><use href="#upd"/></svg></button></div>
+</div><figcaption><b>8 · Pill switch</b><span>Full-width three-way pill with an accent thumb that slides. Utilities spread evenly below.</span></figcaption></figure>
+
+<figure><div class="side s9">
+  <div class="rail"><button aria-label="Dictation"><svg><use href="#mic"/></svg></button><button aria-label="Watcher"><svg><use href="#owl"/></svg></button><button class="on" aria-label="Threads"><svg><use href="#thr"/></svg></button><span class="sp"></span><button aria-label="Usage"><svg><use href="#use"/></svg></button><button aria-label="Settings"><svg><use href="#set"/></svg></button><button aria-label="Help"><svg><use href="#hlp"/></svg></button></div>
+  <div style="margin-left:52px;color:var(--muted);font-size:11px;text-align:right">↻ Up to date</div>
+</div><figcaption><b>9 · Edge rail</b><span>Moves navigation off the bottom to a slim left rail (Xcode navigator / Arc). Footer disappears entirely.</span></figcaption></figure>
+
+<figure><div class="side">
+  <div class="tb"><div class="group"><button aria-label="Dictation"><svg style="width:15px;height:15px"><use href="#mic"/></svg></button><button aria-label="Watcher"><svg style="width:15px;height:15px"><use href="#owl"/></svg></button><button class="on" aria-label="Threads"><svg style="width:15px;height:15px"><use href="#thr"/></svg></button></div><span class="sp"></span><button aria-label="Usage"><svg style="width:15px;height:15px"><use href="#use"/></svg></button><button aria-label="Settings"><svg style="width:15px;height:15px"><use href="#set"/></svg></button><button aria-label="Help"><svg style="width:15px;height:15px"><use href="#hlp"/></svg></button><button aria-label="Check for updates"><svg style="width:15px;height:15px"><use href="#upd"/></svg></button></div>
+</div><figcaption><b>10 · Bottom bar</b><span>Classic Mac window bottom bar: compact bordered button group flush to the edge, small glyphs.</span></figcaption></figure>
+
+</div>
+</body>
+</html>

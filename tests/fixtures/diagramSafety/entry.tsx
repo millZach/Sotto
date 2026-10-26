@@ -5,6 +5,7 @@ import { inspectDiagramSource } from '../../../src/shared/diagramSource'
 import { createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MessageContent } from '../../../src/renderer/src/agents/MessageContent'
+import { shownWords } from '../../../src/renderer/src/agents/interfaceWords'
 
 export async function probe(source: string, direct = false, timeoutMs?: number) {
   const start = performance.now()
@@ -36,7 +37,7 @@ export async function probe(source: string, direct = false, timeoutMs?: number) 
   await tick
   await new Promise(resolve => setTimeout(resolve, 100))
   observer.disconnect()
-  return { ok: result.ok, reason: result.ok ? null : result.reason, ms, tickAt, stages,
+  return { ok: result.ok, reason: result.ok ? null : shownWords(result.reason), ms, tickAt, stages,
     remainingStages: document.querySelectorAll('[data-diagram-stage]').length }
 }
 

@@ -1,14 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { t } from '@lingui/core/macro'
 import { MAX_OUTPUT_IMAGE_DATA_URL } from '../../../shared/contracts'
+import { useInterfaceLanguageState } from '../state/interfaceLanguage'
+import { shownWords, type LaterWords } from './interfaceWords'
 
 const FEEDBACK_MS = 1_600
 
-/** A short-lived status message, cleared after a moment and on unmount. */
-export function useTransientFlag(): [string | null, (value: string) => void] {
-  const [value, setValue] = useState<string | null>(null)
+/**
+ * A short-lived status, cleared after a moment and on unmount. It holds text, or what happened as a key or a message
+ * whose words are read when shown, so a change of language rewords it (ADR-0123).
+ */
+export function useTransientFlag<T extends string | object = string>(): [T | null, (value: T) => void] {
+  const [value, setValue] = useState<T | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
-  const show = useCallback((next: string) => {
+  const show = useCallback((next: T) => {
     if (timer.current) clearTimeout(timer.current)
     setValue(next)
     timer.current = setTimeout(() => { setValue(null); timer.current = null }, FEEDBACK_MS)
@@ -17,7 +23,7 @@ export function useTransientFlag(): [string | null, (value: string) => void] {
 }
 
 /** Parts of a rendered message that carry controls or status, never content. */
-const PLAIN_TEXT_SKIP = '.rich-code__bar, .rich-message__feedback, .tt-visually-hidden, [aria-hidden="true"]'
+const PLAIN_TEXT_SKIP = '.rich-code__bar, .rich-message__feedback, .run-command__anchor, .tt-visually-hidden, [aria-hidden="true"]'
 /** Blocks that end a line in the plain-text form. */
 const PLAIN_TEXT_BREAK = 'p, li, h1, h2, h3, h4, h5, h6, tr, pre, blockquote, .rich-code, .rich-table, ul, ol, hr'
 
@@ -88,23 +94,30 @@ export class ImageTooLargeError extends Error {
   constructor() { super('Image too large to copy') }
 }
 
-export const COPIED_IMAGE = 'Copied image'
+/** How the latest copy of an image went, or other words shown in its place; the words are read when shown (ADR-0123). */
+type ImageCopyStatus = { readonly copy: 'copied' | 'too-large' | 'failed' } | { readonly said: LaterWords }
 
 /**
  * Copy image with its feedback: "Copied image", or what went wrong and what to do. Only the latest copy's result is
  * shown, so an older copy that fails late cannot cover a newer one that worked. `say` shows any other status there.
+ * The last element is whether the latest copy went through.
  */
-export function useCopyImage(): [string | null, (source: string) => void, (message: string) => void] {
-  const [feedback, showFeedback] = useTransientFlag()
+export function useCopyImage(): [string | null, (source: string) => void, (words: LaterWords) => void, boolean] {
+  useInterfaceLanguageState()
+  const [status, show] = useTransientFlag<ImageCopyStatus>()
   const latest = useRef(0)
   const copy = useCallback((source: string): void => {
     const request = ++latest.current
-    const settle = (message: string): void => { if (request === latest.current) showFeedback(message) }
-    void writeClipboardImage(source).then(() => settle(COPIED_IMAGE), error => settle(error instanceof ImageTooLargeError
-      ? 'This image is too large to copy. Nothing was put on the clipboard.'
-      : 'Could not copy the image. Try again.'))
-  }, [showFeedback])
-  return [feedback, copy, showFeedback]
+    const settle = (outcome: 'copied' | 'too-large' | 'failed'): void => { if (request === latest.current) show({ copy: outcome }) }
+    void writeClipboardImage(source).then(() => settle('copied'), error => settle(error instanceof ImageTooLargeError ? 'too-large' : 'failed'))
+  }, [show])
+  const say = useCallback((words: LaterWords): void => show({ said: words }), [show])
+  const feedback = status === null ? null
+    : 'said' in status ? shownWords(status.said)
+      : status.copy === 'copied' ? t`Copied image`
+        : status.copy === 'too-large' ? t`This image is too large to copy. Nothing was put on the clipboard.`
+          : t`Could not copy the image. Try again.`
+  return [feedback, copy, say, status !== null && 'copy' in status && status.copy === 'copied']
 }
 
 async function pngDataUrl(source: string): Promise<string> {

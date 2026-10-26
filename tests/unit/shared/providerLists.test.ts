@@ -17,6 +17,7 @@ vi.mock('../../../src/shared/usageDashboard', async importOriginal => ({
 
 import { agentClientHostSchema, agentCommandSchema, agentConfigurationSchema, agentStateSchema, everyProvider, providerIdSchema,
   providerTakesSottoTools, providerWritesShortText, PROVIDER_COUNT, threadTakesSottoTools, type ProviderId } from '../../../src/shared/agents'
+import { providerProfile } from '../../../src/shared/providerProfile'
 import { agentSkillCatalogSchema } from '../../../src/shared/agentSkills'
 import { hostClientUpdateRequestSchema } from '../../../src/shared/hostProviders'
 import { hostRequestSchema } from '../../../src/shared/hostProtocol'
@@ -93,13 +94,20 @@ describe('provider lists', () => {
     expect(threadTakesSottoTools({ providerId: 'cursor' })).toBe(true)
   })
 
+  it('gives DeepSeek Harness Sotto’s tools but no side writing or Watcher (ADR-0138)', () => {
+    expect(providerWritesShortText('deepseek')).toBe(false)
+    expect(providerTakesSottoTools('deepseek')).toBe(true)
+    expect(providerProfile('deepseek')?.runsWatcher).toBe(false)
+    expect(threadTakesSottoTools({ providerId: 'deepseek' })).toBe(true)
+  })
+
   it('names the provider a list that must name every provider leaves out', () => {
-    expect(everyProvider(['cursor', 'opencode', 'muse', 'devin', 'grok', 'claude', 'codex'])).toEqual(['cursor', 'opencode', 'muse', 'devin', 'grok', 'claude', 'codex'])
+    expect(everyProvider(['cursor', 'deepseek', 'opencode', 'muse', 'devin', 'grok', 'claude', 'codex'])).toEqual(['cursor', 'deepseek', 'opencode', 'muse', 'devin', 'grok', 'claude', 'codex'])
     // @ts-expect-error Cursor is missing, and the type checker says so.
-    everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode'])
+    everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'deepseek'])
   })
 
   it('refuses a list of every provider that names one twice', () => {
-    expect(() => everyProvider(['codex', 'codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor'])).toThrow('codex is listed twice in a list of every provider.')
+    expect(() => everyProvider(['codex', 'codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor', 'deepseek'])).toThrow('codex is listed twice in a list of every provider.')
   })
 })
