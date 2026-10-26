@@ -38,6 +38,7 @@ import { RetainedDraftStore, type RetainedDraft } from './retainedDraftStore'
 import { heldProviderOfWatcherRequest, heldProviderRefusedBy, heldWatcherRefusal, rememberDormantProviderThreads, type DormantProviderThread } from './heldProviderGate'
 import { heldProviderRefusal, heldProvidersOption, type HeldProviderNames, type HeldProviders } from '../../shared/heldProviders'
 import { hostMachineReportSchema, type HostMachineReport } from '../../shared/hostFacts'
+import { branchMoveStepTimeoutMs, type HostBranchMoveRequest } from '../../shared/branchMoves'
 import { HOST_UPDATE_ANSWER_DEADLINES_MS, hostUpdateAnswerSchema, type HostUpdateAnswer, type HostUpdateRequest } from '../../shared/hostSelfUpdate'
 import type { HostUpdateStep } from '../../shared/hostUpdates'
 import { projectOriginsSchema, type ProjectOrigins } from '../../shared/workerMachine'
@@ -1264,6 +1265,16 @@ export class SocketHostService implements HostService {
   async hostFacts(): Promise<HostMachineReport> {
     this.offers('host-facts')
     return this.read(hostMachineReportSchema, await this.call({ op: 'host-facts' }, undefined, undefined, 10000))
+  }
+  /** The host lists `branch-moves`: it moves branches with this desktop over this socket (ADR-0105 decision 8). */
+  get supportsBranchMoves(): boolean { return this.features.includes('branch-moves') }
+  /**
+   * One step of a branch move, answered as the host gave it for the caller to read (`branchMoves.ts`). A host that does not
+   * list `branch-moves` is refused before anything is sent.
+   */
+  async branchMove(request: HostBranchMoveRequest): Promise<unknown> {
+    this.offers('branch-moves')
+    return this.call({ op: 'branch-move', request }, undefined, undefined, branchMoveStepTimeoutMs(request.action))
   }
   /** The host lists `project-origins`: it names each of its projects' GitHub repository (#1032). An older host's cannot be matched. */
   get supportsProjectOrigins(): boolean { return this.features.includes('project-origins') }
