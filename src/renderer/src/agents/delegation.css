@@ -61,8 +61,15 @@
 .delegation-ring[data-state='needs-you'] { border: 0; background: var(--tt-warning-text); mask: none; }
 .delegation-ring[data-state='starting'] { border: 1.5px dashed var(--tt-text-muted); background: none; mask: none; }
 .delegation-ring[data-outcome='stopped'] { width: 9px; height: 9px; border-color: var(--tt-text-muted); border-radius: 2px; }
+/* An outcome as Sotto last read it on a machine that is not connected (#1310): greyed, and a working ring stands still. */
+.delegated-work__state[data-last-read] { color: var(--tt-text-muted); }
+.delegation-ring[data-last-read]:is([data-outcome='working'], [data-outcome='background']) { background: conic-gradient(var(--tt-text-muted) 0 32%, color-mix(in srgb, var(--tt-text-muted) 22%, transparent) 32% 100%); }
+.delegation-ring[data-last-read]:is([data-outcome='failed'], [data-outcome='unknown'], [data-outcome='paused']) { border-color: var(--tt-text-muted); }
+/* Why a start on another machine began at Ask for approval there, under its row's line. */
+.delegated-work__held { display: flex; grid-column: 2 / -1; gap: 6px; margin: 0; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.5; }
+.delegated-work__held > svg { flex: none; margin-top: 3px; color: var(--tt-warning-text); }
 @media (prefers-reduced-motion: no-preference) {
-  :root:not([data-reduced-motion='on']) .delegation-ring:is([data-outcome='working'], [data-outcome='background']):not([data-state='needs-you'], [data-state='starting']) { animation: delegation-ring 1.1s linear infinite; }
+  :root:not([data-reduced-motion='on']) .delegation-ring:is([data-outcome='working'], [data-outcome='background']):not([data-state='needs-you'], [data-state='starting'], [data-last-read]) { animation: delegation-ring 1.1s linear infinite; }
 }
 @keyframes delegation-ring { to { rotate: 360deg; } }
 

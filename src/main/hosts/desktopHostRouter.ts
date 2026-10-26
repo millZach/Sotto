@@ -29,6 +29,8 @@ import type { GitChangeListing, GitPathRequest, GitReview, GitReviewRequest } fr
 import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage, SubagentPageRequest } from '../../shared/subagents'
 import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import type { HostThreadToolReads } from '../agents/threadToolReads'
+import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
+import { RemoteDelegationReads } from './remoteDelegations'
 import { HostConnectionError, REMOTE_COMPOSE_UNSAVED } from '../agents/socketHostService'
 import { USAGE_HOSTS_MAX, usageClearQuerySchema, usageDashboardReadSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageProviderIdSchema, usageQuerySchema, usageRefreshQuerySchema, type UsageClearQuery, type UsageClearResult, type UsageDashboardRead, type UsageHostRead, type UsageProviderId, type UsageQuery, type UsageRefreshQuery } from '../../shared/usageDashboard'
 
@@ -37,7 +39,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads'>
+  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -285,6 +287,11 @@ export class DesktopHostRouter {
   /** Told once of each host connection the router takes, new or in place of one it had, as it takes it. */
   private readonly connectedListeners = new Set<(connection: DesktopHostConnection) => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
+  /** The window's reads of each remote host's own threads' delegations, and what Sotto last read there (#1310). */
+  private readonly delegations = new RemoteDelegationReads({
+    connection: hostId => { const connection = this.hosts.get(hostId)?.connection; return connection?.kind === 'remote' ? connection : undefined },
+    connected: hostId => { const connection = this.hosts.get(hostId)?.connection; return connection !== undefined && !this.reconnecting.has(hostId) && connection.available?.() !== false },
+  })
   /**
    * Each remote thread's revisions as the window is given them. A host counts a thread's revisions in memory, so after
    * it restarts they start again from one, and a window that held the thread at a higher revision threw every newer
@@ -514,6 +521,9 @@ export class DesktopHostRouter {
       if (this.owedClientChecks.size && this.owedClientChecks.has(connection.hostId)) void this.checkHostClients(connection, state)
     })]
     if (connection.kind === 'remote' && connection.service.subscribeWatcher) off.push(connection.service.subscribeWatcher(() => this.watcherChanged(connection.hostId, false)))
+    if (connection.kind === 'remote' && connection.service.subscribeDelegationViews) off.push(connection.service.subscribeDelegationViews(change => {
+      if (this.hosts.get(connection.hostId)?.connection === connection) this.delegations.heard(connection.hostId, change)
+    }))
     if (connection.subscribeDetail) off.push(connection.subscribeDetail(detail => {
       if (!this.watcherAvailable(connection, detail.threadId)) return
       const scoped = this.toWindowRevisions(connection, this.hosts.get(connection.hostId)?.run, mapHostReferences(detail, id => hostEntityKey(connection.hostId, id)))
@@ -529,6 +539,7 @@ export class DesktopHostRouter {
     this.selectedHostId ??= connection.hostId
     this.emit()
     this.connected(connection)
+    if (connection.kind === 'remote') this.delegations.taken(connection.hostId)
   }
   /**
    * Hears each host connection as the router takes it, new or in place of one it had (a reconnect), so what a host must
@@ -559,6 +570,7 @@ export class DesktopHostRouter {
     this.watcherChanged(connection.hostId)
     this.emit()
     this.connected(connection)
+    if (connection.kind === 'remote') this.delegations.taken(connection.hostId)
   }
   /** Marks a connected host's threads as reconnecting, or no longer: while it is set they read Reconnecting, not Disconnected. */
   setReconnecting(hostId: string, value: boolean): void {
@@ -566,6 +578,7 @@ export class DesktopHostRouter {
     if (value) this.reconnecting.add(hostId); else this.reconnecting.delete(hostId)
     this.watcherChanged(hostId)
     this.emit()
+    if (value) this.delegations.lostHost(hostId); else this.delegations.taken(hostId)
   }
   remove(hostId: string): void {
     this.hosts.get(hostId)?.off.forEach(off => off())
@@ -579,6 +592,7 @@ export class DesktopHostRouter {
     if (this.selectedHostId === hostId) this.selectedHostId = this.hosts.keys().next().value
     if (this.selectedThreadId && parseHostEntityKey(this.selectedThreadId)?.hostId === hostId) this.selectedThreadId = null
     this.emit()
+    this.delegations.removed(hostId)
   }
   /**
    * Main reports the window's focus as it moves. Each remote host that keeps what is shown hears it with the threads the
@@ -1106,6 +1120,15 @@ export class DesktopHostRouter {
   async gitChanges(request: ToolListRequest): Promise<ToolsResult<GitChangeListing>> { return answeredAsRefusal(() => this.threadToolRead('gitChanges', request)) }
   async gitReview(request: GitReviewRequest): Promise<ToolsResult<GitReview>> { return answeredAsRefusal(() => this.threadToolRead('gitReview', request)) }
   subagentPage(request: SubagentPageRequest): Promise<SubagentPage> { return this.threadToolRead('subagentPage', request) }
+  /**
+   * What a thread on a remote host delegated and was sent, by the window's key for it, read from that host's own record
+   * (#1310), or as Sotto last read it there while the host is not connected. A host that does not offer it says so.
+   */
+  delegationViews(threadKey: string): Promise<DelegationsRead> { return this.delegations.views(threadKey) }
+  /** The newest brief a delegated thread on a remote host was sent, read from that host; none while it is not connected. */
+  delegationBrief(threadKey: string): Promise<DelegationBrief> { return this.delegations.brief(threadKey) }
+  /** Hears the window keys of remote threads whose delegations changed, or whose host was lost or connected again. */
+  subscribeDelegationViews(listener: (threadIds: readonly string[]) => void): () => void { return this.delegations.subscribe(listener) }
   subagentAssignments(request: SubagentAssignmentsRequest): Promise<SubagentAssignmentsPage> { return this.threadToolRead('subagentAssignments', request) }
   /**
    * Copy path in Files for a thread on a paired host: the host's own path to the file or folder, in the host's format,

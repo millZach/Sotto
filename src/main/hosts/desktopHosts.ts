@@ -259,6 +259,8 @@ export class DesktopHosts {
     directory: string; credentials: AgentCredentials; router: DesktopHostRouter;
     /** `museEnabled` is Muse's answer alone, from before the held set; `heldProviders` wins, and neither holds every one. */
     watcherEnabled?: boolean; heldProviders?: HeldProviders; museEnabled?: boolean; streamingPublishCost?: boolean; clientVersion?: string; retainedDrafts?: RetainedDraftStore;
+    /** Work across machines (#1310): each host's socket reads its own threads' delegations only where this is on. */
+    crossMachineEnabled?: boolean;
     /**
      * The host version the update this computer is downloading brings, with Update all on (ADR-0077 decision 6). A host
      * updated to it before Sotto restarts runs ahead of this computer until then, and is told apart from a newer host.
@@ -1534,7 +1536,7 @@ export class DesktopHosts {
     // A push error stays on the row only until what it was about arrives, so a thread that was once too large
     // does not keep saying so after it fits again.
     const socket = new SocketHostService({ ...(this.options.clientVersion ? { clientVersion: this.options.clientVersion } : {}),
-      ...(this.options.waitingClientVersion ? { waitingVersion: this.options.waitingClientVersion } : {}), watcherEnabled: this.options.watcherEnabled === true, heldProviders: this.heldProviders, streamingPublishCost: this.options.streamingPublishCost === true, retainedDrafts: this.retainedDrafts, retainedRegistrationId: host.id, getSelectedThreadId: () => {
+      ...(this.options.waitingClientVersion ? { waitingVersion: this.options.waitingClientVersion } : {}), watcherEnabled: this.options.watcherEnabled === true, crossMachineEnabled: this.options.crossMachineEnabled === true, heldProviders: this.heldProviders, streamingPublishCost: this.options.streamingPublishCost === true, retainedDrafts: this.retainedDrafts, retainedRegistrationId: host.id, getSelectedThreadId: () => {
       const selected = this.options.router.shell().activeThreadId
       const picked = selected ? parseHostEntityKey(selected) : null
       return picked?.hostId === target.expectedHostId ? picked.id : null
