@@ -50,6 +50,19 @@ textarea {
   font: inherit;
 }
 
+/* A desktop control is pressed, not selected: double-clicking a button, tab or
+   switch must not paint its label the way a paragraph is painted. Text a user
+   copies keeps its selection in fields, transcripts and code. */
+button,
+summary,
+[role='button'],
+[role='tab'],
+[role='switch'],
+[role='menuitem'],
+[role='option'] {
+  user-select: none;
+}
+
 /* Native Windows popups can use a light background even for a dark select.
    Keep the option surface and text paired instead of inheriting only the ink. */
 select option,

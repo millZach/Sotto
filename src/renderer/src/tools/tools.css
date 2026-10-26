@@ -65,7 +65,7 @@
 .terminal-tabs__item { display: inline-flex; flex: none; align-items: center; min-width: 0; border: 1px solid transparent; border-radius: 7px; }
 .terminal-tabs__item[data-selected] { border-color: var(--tt-selected-border); background: var(--tt-selected); }
 .terminal-tabs__item[data-selected] > .terminal-tabs__tab { padding-right: 4px; border-color: transparent; background: transparent; }
-.terminal-tabs__close { display: inline-grid; flex: none; place-items: center; width: 22px; height: 22px; margin-right: 4px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.terminal-tabs__close { display: inline-grid; flex: none; place-items: center; width: 24px; height: 24px; margin-right: 4px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
 .terminal-tabs__close:hover { background: var(--tools-hover); color: var(--tt-text); }
 .terminal-tabs__close:disabled { opacity: .5; cursor: default; }
 .terminal-tabs__dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-success); }
