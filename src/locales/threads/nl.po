@@ -37,7 +37,7 @@ msgid "(recommended)"
 msgstr ""
 
 #. placeholder {0}: blocked.ahead
-#: src/renderer/src/agents/mainCheckoutLine.logic.ts
+#: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "{0, plural, one {a local commit blocks the update} other {{commits} local commits block the update}}"
 msgstr ""
 
@@ -102,15 +102,6 @@ msgstr ""
 
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 msgid "{behindCount, plural, one {# of {total} clients has a newer version} other {# of {total} clients have a newer version}}"
-msgstr ""
-
-#. {branch} is a Git branch name, such as main; {behind} counts commits.
-#: src/renderer/src/agents/mainCheckoutLine.logic.ts
-msgid "{branch} is {behind} behind"
-msgstr ""
-
-#: src/renderer/src/agents/mainCheckoutLine.logic.ts
-msgid "{branch} is checked out"
 msgstr ""
 
 #: src/renderer/src/agents/threadActivityView.ts
@@ -1178,6 +1169,16 @@ msgstr ""
 #. {more} is how many more threads wait; {overflowKinds} says what for, such as 2 approvals, 1 answer.
 #: src/renderer/src/agents/NeedsYouQueue.tsx
 msgid "+ {more} more waiting ({overflowKinds})"
+msgstr ""
+
+#. {branch} is a Git branch name, such as main; {behind} counts commits.
+#: src/renderer/src/agents/MainCheckoutLine.tsx
+msgid "<0>{branch}</0> is {behind} behind"
+msgstr ""
+
+#. {branch} is a Git branch name.
+#: src/renderer/src/agents/MainCheckoutLine.tsx
+msgid "<0>{branch}</0> is checked out"
 msgstr ""
 
 #. {sent} is the branch the last send went to; {branch} is the one the folder is on now.
@@ -3964,7 +3965,7 @@ msgstr ""
 msgid "Loading…"
 msgstr ""
 
-#: src/renderer/src/agents/mainCheckoutLine.logic.ts
+#: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "local changes block the update"
 msgstr ""
 
@@ -4372,7 +4373,7 @@ msgstr ""
 msgid "No answer"
 msgstr ""
 
-#: src/renderer/src/agents/mainCheckoutLine.logic.ts
+#: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "no branch is checked out"
 msgstr ""
 
@@ -7576,7 +7577,7 @@ msgstr ""
 msgid "Untracked"
 msgstr ""
 
-#: src/renderer/src/agents/mainCheckoutLine.logic.ts
+#: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "untracked files are in the way"
 msgstr ""
 
@@ -7651,7 +7652,7 @@ msgstr ""
 
 #. {branch} is a Git branch name, such as main.
 #: src/renderer/src/agents/MainCheckoutLine.tsx
-msgid "Updated {branch}"
+msgid "Updated <0>{branch}</0>"
 msgstr ""
 
 #. One part of a list of what a turn did, starting lowercase.

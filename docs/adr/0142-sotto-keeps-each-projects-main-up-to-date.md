@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted October 23, 2026, at Zach's request, as an Owl feature (`keep-main-current`, [ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md)). It adds to [ADR-0027](0027-git-the-way-t3-code-does-it.md)'s Automatically pull and changes none of it. The mock-up is `design/keep-main-current/mockup.html`; Zach picked variant A.
+Accepted October 23, 2026, at Zach's request, as an Owl feature (`keep-main-current`, [ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md)). It adds to [ADR-0027](0027-git-the-way-t3-code-does-it.md)'s Automatically pull and changes none of it, and amends ADR-0027's Git fetch interval: Off no longer stops this fetch. The mock-up is `design/keep-main-current/mockup.html`; Zach picked variant A.
 
 Zach's own Sotto checkout fell 1,320 commits behind `origin/main`, because nothing pulls a project's folder on its own. Automatically pull only acts on a folder a thread shows, while the window is in front, and it is off by default. Every merged pull request widens the gap, and the next thread that shares the project folder starts from old code. Old uncommitted edits in that folder would have blocked a pull anyway, and nothing said so.
 

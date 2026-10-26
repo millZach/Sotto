@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { MainCheckoutBridge, MainCheckoutChanges, ProjectMainCheckout } from '../../../src/shared/mainCheckout'
 import { MainCheckoutLine } from '../../../src/renderer/src/agents/MainCheckoutLine'
-import { blockWords, showLabel } from '../../../src/renderer/src/agents/mainCheckoutLine.logic'
+import { showLabel } from '../../../src/renderer/src/agents/mainCheckoutLine.logic'
 
 afterEach(cleanup)
 
@@ -22,7 +22,7 @@ describe('Keep main up to date on the project row (ADR-0142)', () => {
     const user = userEvent.setup()
     const { bridge: main, command } = bridge()
     render(<MainCheckoutLine line={blocked} title="Sotto" bridge={main} />)
-    expect(screen.getByText('main is 1,320 behind')).toBeTruthy()
+    expect(document.querySelector('.thread-folder__main-behind')?.textContent).toBe('main is 1,320 behind')
     expect(screen.getByText(/local changes block the update/u)).toBeTruthy()
     await user.click(screen.getByRole('button', { name: 'Show changes in Sotto' }))
     await waitFor(() => expect(screen.getByText('src/main/index.ts')).toBeTruthy())
@@ -40,7 +40,7 @@ describe('Keep main up to date on the project row (ADR-0142)', () => {
     const user = userEvent.setup()
     const { bridge: main, command } = bridge()
     render(<MainCheckoutLine line={{ ...blocked, behind: 0, blocked: null, dependencies: ['package-lock.json'] }} title="Sotto" bridge={main} />)
-    expect(screen.getByText('Updated main')).toBeTruthy()
+    expect(document.querySelector('.thread-folder__main-updated')?.textContent).toBe('Updated main')
     expect(screen.getByText(/dependencies changed, run install/u)).toBeTruthy()
     await user.click(screen.getByRole('button', { name: 'What changed in Sotto' }))
     expect(screen.getByText('package-lock.json')).toBeTruthy()
@@ -55,14 +55,32 @@ describe('Keep main up to date on the project row (ADR-0142)', () => {
 
   it('names each block in plain words, with a press only where there is something to list', () => {
     const line = (block: ProjectMainCheckout['blocked']): ProjectMainCheckout => ({ ...blocked, blocked: block })
-    expect(blockWords(line({ reason: 'untracked' }))).toBe('untracked files are in the way')
-    expect(blockWords(line({ reason: 'in-progress', operation: 'rebase' }))).toBe('a rebase is in progress')
-    expect(blockWords(line({ reason: 'branch', checkedOut: 'fix/tray-icon' }))).toBe('fix/tray-icon is checked out')
-    expect(blockWords(line({ reason: 'branch', checkedOut: null }))).toBe('no branch is checked out')
-    expect(blockWords(line({ reason: 'diverged', ahead: 1 }))).toBe('a local commit blocks the update')
-    expect(blockWords(line({ reason: 'diverged', ahead: 2 }))).toBe('2 local commits block the update')
+    const said = (block: ProjectMainCheckout['blocked']): string => {
+      const { container, unmount } = render(<MainCheckoutLine line={line(block)} title="Sotto" bridge={bridge().bridge} />)
+      const text = container.querySelector('.thread-folder__main-line')?.textContent ?? ''
+      unmount()
+      return text
+    }
+    expect(said({ reason: 'untracked' })).toContain('untracked files are in the way')
+    expect(said({ reason: 'in-progress', operation: 'rebase' })).toContain('a rebase is in progress')
+    expect(said({ reason: 'branch', checkedOut: 'fix/tray-icon' })).toBe('main is 1,320 behind · fix/tray-icon is checked out')
+    expect(said({ reason: 'branch', checkedOut: null })).toContain('no branch is checked out')
+    expect(said({ reason: 'diverged', ahead: 1 })).toContain('a local commit blocks the update')
+    expect(said({ reason: 'diverged', ahead: 2 })).toContain('2 local commits block the update')
     expect(showLabel(line({ reason: 'branch', checkedOut: 'fix/tray-icon' }))).toBeNull()
     expect(showLabel(line({ reason: 'diverged', ahead: 2 }))).toBe('Show commits')
     expect(showLabel(line({ reason: 'untracked' }))).toBe('Show changes')
+  })
+
+  it('reads the open list again when what blocks the update changes', async () => {
+    const user = userEvent.setup()
+    const { bridge: main } = bridge()
+    const { rerender } = render(<MainCheckoutLine line={blocked} title="Sotto" bridge={main} />)
+    await user.click(screen.getByRole('button', { name: 'Show changes in Sotto' }))
+    await waitFor(() => expect(main.changes).toHaveBeenCalledTimes(1))
+    vi.mocked(main.changes).mockResolvedValueOnce({ items: [{ kind: 'commit', text: 'abc1234 Local work' }], more: 0 })
+    rerender(<MainCheckoutLine line={{ ...blocked, blocked: { reason: 'diverged', ahead: 1 } }} title="Sotto" bridge={main} />)
+    await waitFor(() => expect(screen.getByText('abc1234 Local work')).toBeTruthy())
+    expect(screen.queryByText('src/main/index.ts')).toBeNull()
   })
 })

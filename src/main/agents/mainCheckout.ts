@@ -57,11 +57,15 @@ type CheckOutcome = { readonly kind: 'line'; readonly line: Omit<ProjectMainChec
   readonly dependencies?: { readonly branch: string; readonly files: readonly string[] } }
   | { readonly kind: 'unchanged'; readonly retry: boolean }
 
-/** `owner/repo` of a GitHub remote URL or pull request URL, lowercased; null for anything else. */
+/**
+ * `host/owner/repo` of a remote URL or pull request URL, lowercased; null for anything else. The host is part of it, so a
+ * merge on one host never checks a same-named repository on another. A remote written with an SSH alias in place of its
+ * host matches no pull request, and waits for the next 15-minute pass instead.
+ */
 export function repositoryOf(url: string): string | null {
   const trimmed = url.trim().replace(/\/+$/u, '')
-  const match = /^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?[^/:]+[:/]([^/]+)\/([^/]+?)(?:\.git)?(?:\/pull\/\d+.*)?$/iu.exec(trimmed)
-  return match ? `${match[1]}/${match[2]}`.toLowerCase() : null
+  const match = /^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?([^/:]+)[:/]([^/]+)\/([^/]+?)(?:\.git)?(?:\/pull\/\d+.*)?$/iu.exec(trimmed)
+  return match ? `${match[1]}/${match[2]}/${match[3]}`.toLowerCase() : null
 }
 
 /**
@@ -187,8 +191,10 @@ export class MainCheckoutKeeper {
     let items: MainCheckoutChanges['items'] = []
     if (blocked.reason === 'untracked') items = (this.untracked.get(top) ?? []).map(text => ({ kind: 'untracked' as const, text }))
     else if (blocked.reason === 'diverged') {
-      const log = await this.git(top, ['log', '--format=%h %s', `refs/remotes/origin/${line.branch}..refs/heads/${line.branch}`, '--']).catch(() => '')
+      // Only the commits the list shows are read; the rest are counted from what the check already knew.
+      const log = await this.git(top, ['log', `--max-count=${MAIN_CHECKOUT_FILES_MAX}`, '--format=%h %s', `refs/remotes/origin/${line.branch}..refs/heads/${line.branch}`, '--']).catch(() => '')
       items = log.split('\n').map(text => text.trim()).filter(Boolean).map(text => ({ kind: 'commit' as const, text }))
+      return { items, more: Math.max(0, blocked.ahead - items.length) }
     } else if (blocked.reason === 'changes' || blocked.reason === 'in-progress') {
       const porcelain = await this.git(top, ['status', '--porcelain=v1', '-z', '--untracked-files=no']).catch(() => '')
       items = trackedChanges(porcelain)
@@ -287,6 +293,10 @@ export class MainCheckoutKeeper {
     if (facts === null) return { kind: 'line', line: null }
     if (facts.behind === 0) return { kind: 'line', line: null }
     if (facts.blocked) {
+      // What stands in the way may be a working thread's own edits: while a thread holds the checkout, say nothing and
+      // look again a minute later, as for a clean one.
+      const idle = await this.dependencies.host.withProjectCheckout(top, async () => true).catch(() => null)
+      if (idle === null) return { kind: 'unchanged', retry: true }
       this.dependencies.log?.('main-checkout-blocked')
       return { kind: 'line', line: { branch: facts.branch, behind: facts.behind, blocked: facts.blocked } }
     }

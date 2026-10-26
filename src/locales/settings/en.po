@@ -39,6 +39,11 @@ msgstr "“{target}” already has a light palette. Pick another name."
 msgid "“{target}” already has light and dark palettes. Pick another name."
 msgstr "“{target}” already has light and dark palettes. Pick another name."
 
+#. placeholder {0}: MAIN_CHECKOUT_INTERVAL_MS / 60_000
+#: src/renderer/src/features/settings/GitSettings.tsx
+msgid "{0, plural, one {# minute} other {# minutes}}"
+msgstr "{0, plural, one {# minute} other {# minutes}}"
+
 #. placeholder {0}: choice.working
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "{0, plural, one {# working} other {# working}}"
@@ -2131,8 +2136,8 @@ msgid "Error text"
 msgstr "Error text"
 
 #: src/renderer/src/features/settings/GitSettings.tsx
-msgid "Every 15 minutes and after a pull request merges, each project’s folder moves forward to its remote’s default branch when that branch is checked out and has no local changes. Sotto never stashes, resets or rebases."
-msgstr "Every 15 minutes and after a pull request merges, each project’s folder moves forward to its remote’s default branch when that branch is checked out and has no local changes. Sotto never stashes, resets or rebases."
+msgid "Every {keepMainEvery} and after a pull request merges, each project’s folder moves forward to its remote’s default branch when that branch is checked out and has no local changes. Sotto never stashes, resets or rebases."
+msgstr "Every {keepMainEvery} and after a pull request merges, each project’s folder moves forward to its remote’s default branch when that branch is checked out and has no local changes. Sotto never stashes, resets or rebases."
 
 #: src/renderer/src/features/settings/HostConnectionChoice.tsx
 msgid "Every connection signs in over SSH, and Tailscale may ask you to approve it each time."
@@ -4592,6 +4597,10 @@ msgstr "Sotto needs {required} or later."
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Sotto needs a newer version."
 msgstr "Sotto needs a newer version."
+
+#: src/renderer/src/features/settings/GitSettings.tsx
+msgid "Sotto never fetches for threads, even before a Git action. Ahead and behind use the last fetch. Keep main up to date still fetches each project every {keepMainEvery}."
+msgstr "Sotto never fetches for threads, even before a Git action. Ahead and behind use the last fetch. Keep main up to date still fetches each project every {keepMainEvery}."
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Sotto never fetches, even before a Git action. Ahead and behind use the last fetch."

@@ -1,5 +1,7 @@
 # Git the way T3 Code does it
 
+October 26, 2026 amendment: [ADR-0142](0142-sotto-keeps-each-projects-main-up-to-date.md) adds Keep main up to date, an Owl feature that fetches each project's `origin` every 15 minutes and after a pull request merges, whatever the Git fetch interval says and whether or not the window is in front. Decision 1's interval, Off included, still governs every fetch made for threads.
+
 October 23, 2026 amendment: [ADR-0113](0113-the-composer-controls-are-text-buttons.md) draws the branch toolbar as one muted line of text buttons under the composer, a faint dot between them, with the pull request badge and the branch picker following the workspace rather than sitting at the right. What each part does is unchanged.
 
 October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The supervision follow-up send path described below has been removed. Manual sends, queued user follow-ups and explicit babysitting wake-ups retain the read before a send and checkpoint rules.

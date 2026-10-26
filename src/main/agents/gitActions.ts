@@ -467,11 +467,16 @@ export class GitActions {
       const branch = (await this.git(cwd, ['symbolic-ref', '--short', '-q', 'HEAD']).catch(() => '')).trim()
       if (branch !== expected.branch) return { status: 'moved' }
       const before = (await this.git(cwd, ['rev-parse', '--verify', 'HEAD^{commit}'])).trim()
-      try { await this.git(cwd, ['merge', '--ff-only', '--quiet', '--end-of-options', expected.target], { timeoutMs: PULL_TIMEOUT_MS }) }
+      // Whatever the user's configuration says: never stash (merge.autoStash), and never overwrite an ignored file, which
+      // Git otherwise replaces without asking when the incoming commits track it.
+      try { await this.git(cwd, ['merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', '--quiet', '--end-of-options', expected.target], { timeoutMs: PULL_TIMEOUT_MS }) }
       catch (error) {
         const detail = error instanceof Error ? error.message : ''
         const refused = inTheWay(detail)
         if (refused) return { status: 'refused', ...refused }
+        // A post-merge hook that outlasts the timeout ends the merge in an error after the branch has already moved.
+        const moved = (await this.git(cwd, ['rev-parse', '--verify', 'HEAD^{commit}']).catch(() => before)).trim()
+        if (moved !== before) return { status: 'fast-forwarded', before, after: moved }
         throw new GitActionRefusal('The fast-forward did not run.')
       }
       const after = (await this.git(cwd, ['rev-parse', '--verify', 'HEAD^{commit}'])).trim()

@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -34,7 +34,7 @@ function push(repository: Repository, files: Readonly<Record<string, string>>, m
   runFixtureGit(repository.other, 'push', '-q', 'origin', 'main')
 }
 
-async function keeperFor(repository: Repository, options: { host?: Partial<MainCheckoutHost>; enabled?: () => boolean } = {}) {
+async function keeperFor(repository: Repository, options: { host?: Partial<MainCheckoutHost>; enabled?: () => boolean; retryMs?: number } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-main-checkout-'))
   owned.push(() => rm(directory, { recursive: true, force: true }))
   const status = new GitStatusReader({ fetchIntervalMs: () => 0 })
@@ -44,7 +44,7 @@ async function keeperFor(repository: Repository, options: { host?: Partial<MainC
     withProjectCheckout: async (_folder, work) => work(),
     ...options.host,
   }
-  const keeper = new MainCheckoutKeeper({ host, status, actions, directory, enabled: options.enabled ?? (() => true), retryMs: 60 * 60_000, mergeGatherMs: 0 })
+  const keeper = new MainCheckoutKeeper({ host, status, actions, directory, enabled: options.enabled ?? (() => true), retryMs: options.retryMs ?? 60 * 60_000, mergeGatherMs: 0 })
   owned.push(() => keeper.close())
   return { keeper, directory }
 }
@@ -144,6 +144,31 @@ describe('Keep main up to date (ADR-0142)', () => {
     expect(keeper.state().projects).toEqual([])
   }, 30_000)
 
+  it('says nothing of a working thread\'s own edits, and says what is in the way once the thread rests', async () => {
+    const repository = await behind()
+    await writeFile(join(repository.repo, 'tracked.txt'), 'edited by the thread')
+    let working = true
+    const withProjectCheckout: MainCheckoutHost['withProjectCheckout'] = async (_folder, work) => working ? null : work()
+    const { keeper } = await keeperFor(repository, { host: { withProjectCheckout }, retryMs: 50 })
+    await keeper.request('all')
+    expect(keeper.state().projects).toEqual([])
+    working = false
+    await vi.waitFor(() => expect(keeper.state().projects[0]?.blocked).toEqual({ reason: 'changes' }))
+  }, 30_000)
+
+  it('never overwrites an ignored file the incoming commits track', async () => {
+    const repository = await behind([{ 'built.txt': 'theirs' }])
+    mkdirSync(join(repository.repo, '.git', 'info'), { recursive: true })
+    await writeFile(join(repository.repo, '.git', 'info', 'exclude'), 'built.txt\n')
+    await writeFile(join(repository.repo, 'built.txt'), 'mine')
+    const before = head(repository)
+    const { keeper } = await keeperFor(repository)
+    await keeper.request('all')
+    expect(head(repository)).toBe(before)
+    expect(await readFile(join(repository.repo, 'built.txt'), 'utf8')).toBe('mine')
+    expect(keeper.state().projects[0]?.blocked).toEqual({ reason: 'untracked' })
+  }, 30_000)
+
   it('keeps the last line when the remote cannot be reached', async () => {
     const repository = await behind()
     await writeFile(join(repository.repo, 'tracked.txt'), 'edited')
@@ -175,6 +200,8 @@ describe('Keep main up to date (ADR-0142)', () => {
     keeper.pullRequestMerged('https://github.com/millzach/sotto/pull/1406')
     keeper.pullRequestMerged('https://github.com/millzach/sotto/pull/1406')
     keeper.pullRequestMerged('https://github.com/someone/else/pull/2')
+    // The same name on another host is another repository.
+    keeper.pullRequestMerged('https://github.example.com/millZach/Sotto/pull/7')
     await vi.waitFor(() => expect(request).toHaveBeenCalledWith(['project']))
     expect(request).toHaveBeenCalledOnce()
   }, 30_000)

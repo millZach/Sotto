@@ -13,6 +13,7 @@ import { Select } from '../../components/Select'
 import { Toggle } from '../../components/Toggle'
 import { SettingsGroup } from './SettingsGroup'
 import { useOwlFeature } from '../../state/owlFeature'
+import { MAIN_CHECKOUT_INTERVAL_MS } from '../../../../shared/mainCheckout'
 import type { LaterWords } from './laterWords'
 import './gitSettings.css'
 
@@ -44,7 +45,10 @@ type GitSettingDescriptions = Record<'style' | 'templates' | 'merge' | 'settle' 
  * What each Git setting will do with the value it holds, one sentence or two each, so a description changes
  * as its value does. The merge method's describes the merge in the pull request checklist (#294), which reads it.
  */
-export function gitSettingDescriptions(settings: AppSettings): GitSettingDescriptions {
+export function gitSettingDescriptions(settings: AppSettings, options: { readonly keepMainShown?: boolean } = {}): GitSettingDescriptions {
+  // Keep main up to date fetches each project whatever the fetch interval says (ADR-0142), so Off says so while it runs.
+  const keepMainFetches = options.keepMainShown === true && (settings.keepMainCurrent || Object.values(settings.projectKeepMainCurrent).includes('on'))
+  const keepMainEvery = plural(MAIN_CHECKOUT_INTERVAL_MS / 60_000, { one: '# minute', other: '# minutes' })
   const drafting = settings.commitMessages || settings.pullRequestText
   const style = {
     repository: drafting
@@ -84,7 +88,9 @@ export function gitSettingDescriptions(settings: AppSettings): GitSettingDescrip
       ? t`While Tools is closed, Changes opens on its own when a turn leaves 3 more changed files or 50 more changed lines.`
       : t`Changes opens only when you open it.`,
     fetch: seconds === 0
-      ? t`Sotto never fetches, even before a Git action. Ahead and behind use the last fetch.`
+      ? keepMainFetches
+        ? t`Sotto never fetches for threads, even before a Git action. Ahead and behind use the last fetch. Keep main up to date still fetches each project every ${keepMainEvery}.`
+        : t`Sotto never fetches, even before a Git action. Ahead and behind use the last fetch.`
       : seconds < 60
         ? plural(seconds, { one: 'Checks origin every # second for ahead and behind, while this window is in front.', other: 'Checks origin every # seconds for ahead and behind, while this window is in front.' })
         : plural(minutes, { one: 'Checks origin every minute for ahead and behind, while this window is in front.', other: 'Checks origin every # minutes for ahead and behind, while this window is in front.' }),
@@ -92,7 +98,7 @@ export function gitSettingDescriptions(settings: AppSettings): GitSettingDescrip
       ? t`Fast-forwards a clean folder on the default branch when it falls behind. Nothing is merged or rebased.`
       : t`Shows when the default branch is behind and leaves the pull to you.`,
     keepMain: settings.keepMainCurrent
-      ? t`Every 15 minutes and after a pull request merges, each project’s folder moves forward to its remote’s default branch when that branch is checked out and has no local changes. Sotto never stashes, resets or rebases.`
+      ? t`Every ${keepMainEvery} and after a pull request merges, each project’s folder moves forward to its remote’s default branch when that branch is checked out and has no local changes. Sotto never stashes, resets or rebases.`
       : t`Projects stay where they are until you pull. A project can turn it on for itself in Threads, Project defaults.`,
   }
 }
@@ -200,9 +206,9 @@ function WritingStyle({ settings, onSave, description }: GitSettingsProps & { re
 export function GitSettings({ settings, onSave }: GitSettingsProps): ReactNode {
   // The descriptions below are read in the interface language, so the page draws again when it changes.
   const { t } = useLingui()
-  const says = gitSettingDescriptions(settings)
   // Keep main up to date (ADR-0142): an Owl feature, so stable shows no switch for it.
   const keepMain = useOwlFeature('keep-main-current')
+  const says = gitSettingDescriptions(settings, { keepMainShown: keepMain })
   return <div className="git-settings">
     <SettingsGroup id="settings-worktrees" title={t`Removing worktrees`} icon={FolderMinus}>
       <Field setting="worktree-idle-cleanup" label={t`Remove idle worktrees after`} description={t`Removes a thread's worktree folder once it has been idle this long. The branch stays, sending brings the folder back, and uncommitted work is never removed.`}><Select value={String(settings.worktreeCleanup.afterDays ?? 'never')} onChange={event => { const value = event.currentTarget.value; void onSave({ worktreeCleanup: { afterDays: value === 'never' ? null : Number(value) as WorktreeCleanupDays } }) }}><option value="never">{t({ message: 'Never', comment: 'Remove idle worktrees after: never' })}</option>{WORKTREE_CLEANUP_DAYS.map(days => <option key={days} value={String(days)}>{plural(days, { one: '# day', other: '# days' })}</option>)}</Select></Field>

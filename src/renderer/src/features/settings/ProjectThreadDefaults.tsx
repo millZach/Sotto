@@ -30,35 +30,30 @@ export function ProjectThreadDefaults({ settings, onSave }: ProjectThreadDefault
   const keepMain = useOwlFeature('keep-main-current')
   const localProject = project !== undefined && (defaultKey(project.id) !== project.id || !agents?.state?.connections?.some(host => host.kind === 'remote'))
 
-  const saveDefault = async (value: string): Promise<void> => {
+  // One save at a time for the chosen project; the controls wait while it runs.
+  const save = async (patch: (key: string) => SettingsPatch): Promise<void> => {
     if (!project || savingRef.current) return
     savingRef.current = true
     setSaving(true)
+    try {
+      await onSave(patch(defaultKey(project.id)))
+    } finally {
+      savingRef.current = false
+      setSaving(false)
+    }
+  }
+  const saveDefault = (value: string): Promise<void> => save(key => {
     const defaults = { ...settings.projectThreadWorkingCopyDefaults }
-    if (value === 'inherit') delete defaults[defaultKey(project.id)]
-    else if (value === 'shared' || value === 'independent') defaults[defaultKey(project.id)] = value
-    try {
-      await onSave({ projectThreadWorkingCopyDefaults: defaults })
-    } finally {
-      savingRef.current = false
-      setSaving(false)
-    }
-  }
-
-  const saveKeepMain = async (value: string): Promise<void> => {
-    if (!project || savingRef.current) return
-    savingRef.current = true
-    setSaving(true)
+    if (value === 'inherit') delete defaults[key]
+    else if (value === 'shared' || value === 'independent') defaults[key] = value
+    return { projectThreadWorkingCopyDefaults: defaults }
+  })
+  const saveKeepMain = (value: string): Promise<void> => save(key => {
     const overrides = { ...settings.projectKeepMainCurrent }
-    if (value === 'on' || value === 'off') overrides[defaultKey(project.id)] = value
-    else delete overrides[defaultKey(project.id)]
-    try {
-      await onSave({ projectKeepMainCurrent: overrides })
-    } finally {
-      savingRef.current = false
-      setSaving(false)
-    }
-  }
+    if (value === 'on' || value === 'off') overrides[key] = value
+    else delete overrides[key]
+    return { projectKeepMainCurrent: overrides }
+  })
 
   return <div onKeyDown={event => {
     if (event.key !== 'Escape' || !open) return
