@@ -47,12 +47,14 @@ const settingsFrames = async (f: Fixture) => (await f.driver.requests()).flatMap
 /** Each thread CLI's launch arguments, oldest first; the catalog read, which keeps no session, is not one. */
 const launchArgs = async (f: Fixture) => (await f.driver.requests()).filter(record => record.method === 'launch' || record.method === 'resume')
   .map(record => (record.params?.frame as { args: string[] }).args).filter(args => !args.includes('--no-session-persistence'))
+/** The `fastMode` a launch's `--settings` flag layer names; every launch names one, off as well as on. */
+const fastFlag = (args: readonly string[]): unknown => JSON.parse(args[args.indexOf('--settings') + 1]!).fastMode
 const configure = (f: Fixture, id: string, options: Record<string, unknown>) => f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, ...options })
 
-it('starts a new thread with fast mode off, and its CLI launches without the flag', async () => {
+it('starts a new thread with fast mode off, and its CLI launches with it off, outranking a fastMode the user saved with /fast', async () => {
   const { f, id } = await fixture()
   expect((await thread(f, id)).fastMode).toBeUndefined()
-  expect((await launchArgs(f)).at(-1)).not.toContain('--settings')
+  expect(fastFlag((await launchArgs(f)).at(-1)!)).toBe(false)
   expect((await f.liveSettings.effective(id)).fastMode).toBe(false)
   // The catalog says which models offer it.
   const snapshot = await f.host.snapshot()
@@ -98,11 +100,11 @@ it('keeps the choice through a model without fast mode, running it at normal spe
   expect(await thread(f, id)).toMatchObject({ modelId: 'fixture-plain', fastMode: true })
   expect((await f.liveSettings.effective(id)).fastMode).toBe(false)
 
-  // A launch on that model carries no flag.
+  // A launch on that model names fast mode off, so the choice kept on the thread never runs there.
   const next = await restarted(f)
   next.host.observeThreads?.([id])
   await next.adapter.refreshThread(id)
-  expect((await launchArgs(next)).at(-1)).not.toContain('--settings')
+  expect(fastFlag((await launchArgs(next)).at(-1)!)).toBe(false)
 
   // Back on a model that has it, fast mode comes on after the model change.
   const back = (await settingsFrames(next)).length
@@ -216,7 +218,7 @@ it('does not adopt a spare started without fast mode for a first send that turne
   expect(await launchArgs(f)).toHaveLength(1)
   await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: plain, projectId: f.projectId, title: 'Fast', modelId: 'fixture-model', fastMode: true })
   const [spare, own] = await launchArgs(f)
-  expect(spare).not.toContain('--settings')
+  expect(fastFlag(spare!)).toBe(false)
   expect(own![own!.indexOf('--settings') + 1]).toBe('{"fastMode":true}')
   expect(session(own!)).not.toBe(session(spare!))
 

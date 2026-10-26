@@ -151,7 +151,7 @@ async function complete(action) {
 // The settings this process runs: what it was launched with, then whatever a settings request changed. Written to
 // settings-<session>.json on every change so a test reads what the running CLI would use for its next turn.
 const bypassAllowed = args.includes('--allow-dangerously-skip-permissions')
-// Fast mode arrives as a flag layer, `--settings '{"fastMode":true}'`, and only for a model whose catalog entry offers it.
+// Fast mode arrives as a flag layer on every launch, `--settings '{"fastMode":true|false}'`, and on only for a model whose catalog entry offers it.
 const launchFlags = args.includes('--settings') ? JSON.parse(value('--settings')) : {}
 const settings = { model: value('--model'), effort: args.includes('--effort') ? value('--effort') : null, mode: value('--permission-mode'), fast: launchFlags.fastMode === true }
 const fastOffered = model => models.some(entry => (entry.value === model || entry.value === String(model).replace(/\[\d+[km]\]$/iu, '')) && entry.supportsFastMode === true)

@@ -130,8 +130,12 @@ const settingsOf = (value: Pick<Alias, 'modelId' | 'reasoningEffort' | 'runtimeM
   ({ modelId: value.modelId, reasoningEffort: value.reasoningEffort, runtimeMode: value.runtimeMode ?? 'approval-required', fastMode: fastModeRuns({ models }, value.modelId, value.fastMode) })
 const sameSettings = (first: ClaudeSettings, second: ClaudeSettings): boolean =>
   first.modelId === second.modelId && first.reasoningEffort === second.reasoningEffort && first.runtimeMode === second.runtimeMode && first.fastMode === second.fastMode
-/** Fast mode's launch flag: `--settings` as a flag layer, which leaves the user's own saved settings alone. */
-const FAST_MODE_ARGUMENTS = ['--settings', JSON.stringify({ fastMode: true })] as const
+/**
+ * Fast mode's launch flag: `--settings` as a flag layer, which leaves the user's own saved settings alone. It is sent on
+ * every launch, off as well as on: a `fastMode` the user saved with `/fast` would otherwise run a thread fast, and bill
+ * it so, while its bolt shows off, and would carry over when a live model change moves the thread onto a model with it.
+ */
+const fastModeArguments = (on: boolean): readonly string[] => ['--settings', JSON.stringify({ fastMode: on })]
 /** Whether a spare that is still running was started in this folder with these settings. */
 const spareFits = (spare: Spare, cwd: string, settings: ClaudeSettings): boolean =>
   !spare.exited && spare.cwd === cwd && sameSettings(spare.settings, settings)
@@ -1423,7 +1427,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       '--include-partial-messages', '--replay-user-messages', ...permissionArguments(alias.runtimeMode),
       '--append-system-prompt', profile ? `${CLAUDE_QUESTIONS}\n\n${profile.instructions ?? WATCHER_SYSTEM_PROMPT}` : roles?.instructions ? `${CLAUDE_QUESTIONS}\n\n${roles.instructions}` : CLAUDE_QUESTIONS,
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(alias.reasoningEffort ? ['--effort', alias.reasoningEffort] : []),
-      ...(fastModeRuns(this.state, alias.modelId, alias.fastMode) ? FAST_MODE_ARGUMENTS : [])]
+      ...fastModeArguments(fastModeRuns(this.state, alias.modelId, alias.fastMode))]
     let runtime: Runtime
     try {
       this.configurationGuards.get(id)?.()
