@@ -737,7 +737,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const delegationsOn = useDelegationsEnabled()
   const delegations = useDelegations(delegationsOn && !watcher ? thread.id : undefined)
   const delegatedWork = useShared(useMemo(() => delegationsByTurn(delegations.made, messages), [delegations.made, messages]))
-  const delegationWorld = useDelegationWorld(state, command)
+  const delegationWorld = useDelegationWorld(state, command, undefined, { thread, lastReadAt: delegations.lastReadAt })
   // The provider's own agents still running in the background, which stand under the last reply when the composer's
   // ornament may show them too. A command waits rather than works, so it stays the ornament's alone.
   const ornamentAllowed = threadOrnamentAllowed(thread, row.connected)

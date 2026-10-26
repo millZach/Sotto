@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useId, useMemo, useState, type ReactNode } from 'react'
-import { Bot, GitFork, Laptop, Search, Server, Sparkle, type LucideIcon } from 'lucide-react'
+import { Bot, GitFork, Laptop, Search, Server, ShieldCheck, Sparkle, type LucideIcon } from 'lucide-react'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import { BACKGROUND_WORK_LABELS, type AgentBackgroundWork } from '../../../shared/agentMonitoring'
@@ -9,9 +9,10 @@ import { isThreadClosed, isThreadTurnRunning } from '../../../shared/threadActiv
 import type { AgentConnection } from './AgentContext'
 import { threadHostName } from './HostBadge'
 import { ProviderMark } from './ProviderMark'
-import { DELEGATION_OUTCOME_WORDS, delegatedKind, delegatedKindWord, delegatedLine, delegatedNote, delegatedState, delegatedSummary, pendingRequestOf, settledDelegation, stopLine, userTurnRunning, workingDelegatedThreads, type DelegatedKind, type DelegatedState } from './delegationWords'
+import { askedFor, DELEGATION_OUTCOME_WORDS, delegatedKind, delegatedKindWord, delegatedLine, delegatedNote, delegatedState, delegatedSummary, delegationRefusalLine, heldLine, lastReadOutcome, lastReadWord, pendingRequestOf, settledDelegation, stopLine, userTurnRunning, workingDelegatedThreads, type DelegatedKind, type DelegatedState } from './delegationWords'
 import { useDelegations, useDelegationsEnabled, useNewestBrief } from './delegations'
-import { openDelegatedThread } from '../tools/delegatedRoster'
+import { openDelegatedThread, rosterMachine } from '../tools/delegatedRoster'
+import { useOwlFeature } from '../state/owlFeature'
 import './delegation.css'
 
 /** What a row of delegated work needs of the window besides its delegation: the threads it names, where they run, and a way to open one. */
@@ -22,6 +23,13 @@ export interface DelegationWorld {
   /** False where the page holds its clock still (a capture run): a wait in progress keeps the time it was drawn with. */
   readonly liveClock: boolean
   readonly now?: number | undefined
+  /**
+   * The delegating thread's machine where it is another machine and Work across machines is on (#1310): its name, whether
+   * Sotto is connected to it now, and when what the rows show stood, while it is not.
+   */
+  readonly away?: { readonly name: string; readonly connected: boolean; readonly lastReadAt: number } | undefined
+  /** A machine by its host ID, as a refused start's row names what it asked for: "this computer", or a host's name. */
+  readonly machineName?: ((hostId: string) => string | undefined) | undefined
 }
 const DelegationWorldContext = createContext<DelegationWorld | null>(null)
 
@@ -29,9 +37,14 @@ const DelegationWorldContext = createContext<DelegationWorld | null>(null)
  * The transcript's world for its rows of delegated work, built once per state the transcript is given. A row's link opens
  * its thread as a delegated thread's roster row does: in the pane, with an open Tools kept on the thread that delegated it.
  */
-export function useDelegationWorld(state: AgentState, command: AgentConnection['command'], now?: number): DelegationWorld {
+export function useDelegationWorld(state: AgentState, command: AgentConnection['command'], now?: number,
+  from?: { readonly thread: AgentThread; readonly lastReadAt: number | undefined }): DelegationWorld {
+  const { t } = useLingui()
   const threads = state.host.threads
   const connections = state.connections
+  const crossMachine = useOwlFeature('cross-machine-work')
+  const machine = crossMachine && from?.thread.remoteHost === true ? rosterMachine(connections, from.thread) : undefined
+  const awayName = machine?.name, awayConnected = machine?.connected, lastReadAt = from?.lastReadAt
   return useMemo(() => {
     const byId = new Map(threads.map(thread => [thread.id, thread]))
     return { thread: id => byId.get(id), hostName: thread => threadHostName({ connections }, thread),
@@ -39,8 +52,10 @@ export function useDelegationWorld(state: AgentState, command: AgentConnection['
         const from = byId.get(id)?.delegatedBy
         if (from === undefined) void command({ type: 'select-thread', threadId: id })
         else openDelegatedThread(command, id, from)
-      }, liveClock: now === undefined, now }
-  }, [threads, connections, command, now])
+      }, liveClock: now === undefined, now,
+      machineName: hostId => { const listed = connections?.find(item => item.hostId === hostId); return listed === undefined ? undefined : listed.kind === 'local' ? t`this computer` : listed.name },
+      ...(awayName !== undefined ? { away: { name: awayName, connected: awayConnected !== false, lastReadAt: lastReadAt ?? Number.NaN } } : {}) }
+  }, [threads, connections, command, now, awayName, awayConnected, lastReadAt, t])
 }
 export function DelegationWorldProvider({ world, children }: { readonly world: DelegationWorld; readonly children: ReactNode }): ReactNode {
   return <DelegationWorldContext.Provider value={world}>{children}</DelegationWorldContext.Provider>
@@ -57,10 +72,18 @@ function Outcome({ view }: { readonly view: DelegatedView }): ReactNode {
 /** Each kind of delegated work's mark: a review, a Muse review, or any other kind of work handed to a delegated thread. */
 const KIND_GLYPHS: Record<DelegatedKind, LucideIcon> = { review: Search, 'muse-review': Sparkle, work: GitFork }
 
+/**
+ * As Sotto last read it (#1310): the delegating thread's machine is not connected, or main could not read it afresh there.
+ * What a row then says stood when that read did.
+ */
+const lastReadAway = (world: DelegationWorld): DelegationWorld['away'] =>
+  world.away && (!world.away.connected || Number.isFinite(world.away.lastReadAt)) ? world.away : undefined
+
 /** The line under a row, counting the seconds while the delegating thread waits in the call. */
 function RowLine({ view, state, id, world, request }: { readonly view: DelegationView; readonly state: DelegatedState; readonly id: string; readonly world: DelegationWorld
   readonly request: AgentThread['requests'][number] | undefined }): ReactNode {
-  const ticking = view.outcome !== 'refused' && view.waiting && world.liveClock
+  const away = view.outcome === 'refused' ? undefined : lastReadAway(world)
+  const ticking = view.outcome !== 'refused' && view.waiting && world.liveClock && !away
   const [now, setNow] = useState(() => world.now ?? Date.now())
   useEffect(() => {
     if (!ticking) return
@@ -70,7 +93,13 @@ function RowLine({ view, state, id, world, request }: { readonly view: Delegatio
   }, [ticking])
   const listed = view.thread !== undefined && world.thread(view.thread) !== undefined
   useInterfaceLanguageState()
-  return <p id={id} className="delegated-work__line tt-paragraph">{delegatedLine(view, state, world.now ?? now, request, listed)}</p>
+  // A thread on another machine starts threads only there for now, and a refused start names what it asked for (#1310).
+  const line = view.outcome === 'refused' ? world.away ? delegationRefusalLine(view, world.away.name, view.asked ? askedFor(view.asked, hostId => world.machineName?.(hostId)) : undefined)
+    : delegatedLine(view, state, world.now ?? now, request, listed)
+    // Its machine is not connected: how it stood when Sotto last read it, never a wait still counting (#1310).
+    : away ? lastReadOutcome(away.name, view.outcome, away.lastReadAt, away.connected)
+      : delegatedLine(view, state, world.now ?? now, request, listed)
+  return <p id={id} className="delegated-work__line tt-paragraph">{line}</p>
 }
 
 /**
@@ -83,14 +112,18 @@ export function DelegatedWorkRow({ view }: { readonly view: DelegationView }): R
   const { t } = useLingui()
   const world = useContext(DelegationWorldContext)
   const lineId = useId(), metaId = useId()
+  // Its words are messages; reading the language draws the row again when it changes (ADR-0123).
+  useInterfaceLanguageState()
   if (world === null) return null
   const thread = view.thread === undefined ? undefined : world.thread(view.thread)
   const provider = thread?.providerId ?? (view.outcome === 'refused' ? view.provider : undefined)
   const kind = delegatedKind(view.work, provider)
   const Glyph = KIND_GLYPHS[kind]
   const request = pendingRequestOf(view, thread)
-  const state = delegatedState(view, kind, request !== undefined)
   const refused = view.outcome === 'refused'
+  // As Sotto last read it on a machine it cannot read afresh now (#1310): that outcome, greyed, said as such.
+  const lastRead = !refused && lastReadAway(world) !== undefined
+  const state = lastRead ? { id: view.outcome, word: lastReadWord(view.outcome) } : delegatedState(view, kind, request !== undefined)
   const name = thread?.title ?? DELEGATION_WORK_TITLES[view.work]
   const kindWord = delegatedKindWord(kind, view.work)
   const stateWord = state.word, threadTitle = thread?.title ?? ''
@@ -99,6 +132,10 @@ export function DelegatedWorkRow({ view }: { readonly view: DelegationView }): R
     : t`${kindWord}: ${name}, ${stateWord}`
   const machine = thread ? world.hostName(thread) : t({ message: 'This computer', comment: 'The computer Sotto runs on, named among the hosts that run threads.' })
   const Machine = thread?.remoteHost ? Server : Laptop
+  // A refused start of a thread on another machine names no machine it could have started on (#1310).
+  const shownMachine = thread !== undefined || !refused || world.away === undefined
+  // Its start was held to Ask for approval on its machine (#1310), said as the roster says it.
+  const held = view.outcome !== 'refused' && view.held && world.away ? heldLine(view.held, thread ? world.hostName(thread) : world.away.name) : undefined
   return <li className="delegated-work__row" data-outcome={view.outcome} data-state={state.id} aria-label={label}>
     <Glyph size={14} aria-hidden="true" className="delegated-work__glyph" />
     <span className="delegated-work__name">
@@ -108,15 +145,16 @@ export function DelegatedWorkRow({ view }: { readonly view: DelegationView }): R
           onClick={() => world.open(thread.id)}>{thread.title}</button>
           : <span>{name}</span>}
     </span>
-    <span className="delegated-work__state" data-state={state.id}>
-      <span className="delegation-ring" data-outcome={view.outcome} data-state={state.id} aria-hidden="true" />{state.word}
+    <span className="delegated-work__state" data-state={state.id} data-last-read={lastRead || undefined}>
+      <span className="delegation-ring" data-outcome={view.outcome} data-state={state.id} data-last-read={lastRead || undefined} aria-hidden="true" />{state.word}
     </span>
     <p id={metaId} className="delegated-work__meta">
-      {provider ? <><ProviderMark provider={provider} name={PROVIDER_LABELS[provider]} size={12} /><span>{PROVIDER_LABELS[provider]}</span><span aria-hidden="true">·</span></> : null}
-      <span className="delegated-work__machine" data-kind={thread?.remoteHost ? 'remote' : 'local'}><Machine size={12} aria-hidden="true" />{machine}</span>
+      {provider ? <><ProviderMark provider={provider} name={PROVIDER_LABELS[provider]} size={12} /><span>{PROVIDER_LABELS[provider]}</span>{shownMachine ? <span aria-hidden="true">·</span> : null}</> : null}
+      {shownMachine ? <span className="delegated-work__machine" data-kind={thread?.remoteHost ? 'remote' : 'local'}><Machine size={12} aria-hidden="true" />{machine}</span> : null}
       <span className="tt-visually-hidden">, {state.word}.</span>
     </p>
     <RowLine view={view} state={state.id} id={lineId} world={world} request={request} />
+    {held ? <p className="delegated-work__held tt-paragraph"><ShieldCheck size={13} aria-hidden="true" /><span>{held}</span></p> : null}
   </li>
 }
 

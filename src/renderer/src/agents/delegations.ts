@@ -7,6 +7,13 @@ import { useOwlFeature } from '../state/owlFeature'
 export interface ThreadDelegations {
   readonly made: readonly DelegationView[]
   readonly received: readonly DelegatedView[]
+  /**
+   * For a thread on another machine that is not connected now (#1310): what is held is as Sotto last read it there, as it
+   * stood at this epoch time, when the connection was lost.
+   */
+  readonly lastReadAt?: number
+  /** For a thread on another machine whose delegations Sotto could not read: an older Sotto there, or not connected. */
+  readonly unread?: 'older-host' | 'not-connected'
 }
 const NONE: ThreadDelegations = { made: [], received: [] }
 
@@ -72,7 +79,9 @@ export class DelegationStore {
     entry.reading = true
     void bridge.read({ threadId }).then(answer => {
       if (this.entries.get(threadId) !== entry) return
-      entry.delegations = { made: answer.delegations, received: answer.received }
+      const lastRead = answer.lastRead === undefined ? Number.NaN : Date.parse(answer.lastRead)
+      entry.delegations = { made: answer.delegations, received: answer.received,
+        ...(Number.isFinite(lastRead) ? { lastReadAt: lastRead } : {}), ...(answer.unread ? { unread: answer.unread } : {}) }
       for (const listener of [...entry.listeners]) listener()
     }, () => undefined).finally(() => {
       entry.reading = false
