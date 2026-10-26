@@ -36,7 +36,12 @@ describe('Claude Code role agents', () => {
     expect(made.agents.sotto_research).not.toHaveProperty('effort')
     expect([...made.kinds]).toEqual(['building', 'ui', 'research'])
     expect(made.widest).toBe('auto-accept-edits')
-    for (const agent of Object.values(made.agents)) { expect(agent.description).toContain('synthetic work'); expect(agent.prompt).toContain('report') }
+    for (const agent of Object.values(made.agents)) { expect(agent.description).toMatch(/^Use when /u); expect(agent.prompt).toContain('report') }
+    // Research reads only, so it carries no MCP tool definitions, and stops sooner; the others keep every tool.
+    expect(made.agents.sotto_research).toMatchObject({ tools: expect.arrayContaining(['Read', 'Grep', 'Glob', 'Bash', 'WebFetch', 'WebSearch']), maxTurns: 40 })
+    expect(made.agents.sotto_research!.tools).not.toContain('Edit')
+    expect(made.agents.sotto_building).toMatchObject({ maxTurns: 60 })
+    expect(made.agents.sotto_building).not.toHaveProperty('tools')
   })
 
   it('caps every agent at the thread\'s own permission', () => {
