@@ -28,6 +28,8 @@ export interface AgentConnection {
 const DETAIL_CACHE_LIMIT = 16
 /** At most one cache write per this long; the shell arrives as often as a provider streams. */
 const SHELL_CACHE_INTERVAL_MS = 2_000
+/** Commands that only ask what an action would do; their answers stay with the dialog that asked. */
+const PREVIEW_COMMANDS: ReadonlySet<AgentCommand['type']> = new Set(['preview-reclaim-thread-worktree', 'preview-delete-thread', 'preview-clear-threads'])
 /** Said when main gave no reason in words: a code, a schema failure or nothing at all. */
 const COMMAND_UNCONFIRMED = msg`The action could not be confirmed. Your draft is retained; check the connection before retrying.`
 
@@ -237,7 +239,8 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
           // a reply causes yields to the next keystroke instead of holding it (October 20, 2026: with a few hundred
           // threads that render took 60-70 ms, once per saved pause).
           const urgent = request.type !== 'save-thread-draft'
-          if (request.type !== 'preview-reclaim-thread-worktree' && version === session.observed) { commitPendingShell({ urgent }); receiveState(next, { urgent }) }
+          // A preview's answer belongs to the dialog that asked, never to the shared state (ADR-0041, ADR-0140).
+          if (!PREVIEW_COMMANDS.has(request.type) && version === session.observed) { commitPendingShell({ urgent }); receiveState(next, { urgent }) }
         }
         return visibleWatcherState(next, watcherEnabledRef.current)
       } catch (error) {

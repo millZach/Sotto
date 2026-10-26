@@ -50,6 +50,8 @@ export class CodexSessionLogWatcher {
     tail.locateGeneration++
   }
   forget(threadId: string, messageId: string): void { const tail = this.tails.get(threadId); tail?.own.delete(messageId); tail?.files.delete(messageId) }
+  /** A deleted thread (ADR-0140): stop tailing its rollout and drop any read in flight for it. */
+  drop(threadId: string): void { this.tails.delete(threadId); this.reading.delete(threadId) }
   start(): void {
     if (this.timer || this.stopped) return
     this.timer = setInterval(() => { void this.poll() }, this.options.pollIntervalMs ?? 1000)
