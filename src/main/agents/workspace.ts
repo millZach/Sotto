@@ -389,6 +389,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private watcherPrObserver: ((read: PullRequestObservation) => void) | undefined
   setWatcherPrObserver(observer: (read: PullRequestObservation) => void): void { if (this.watcherEnabled) this.watcherPrObserver = observer }
   private observePullRequest(view: GitPullRequestView): void {
+    if (view.state === 'merged') this.pullRequestMerged(view.url)
     if (!this.watcherPrObserver) return
     const checks = summarizePullRequestChecks(view.headId, view.checks, view.checksUnknown)
     this.watcherPrObserver({ url: view.url, head: view.headId ?? null, observedAt: view.observedAt ?? new Date().toISOString(),
@@ -1131,6 +1132,52 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       return release
     } catch (error) { release(); throw error }
   }
+  /** Keep main up to date's projects (ADR-0142): each with its folder and whether the user settled it. */
+  mainCheckoutProjects(): readonly { readonly id: string; readonly path: string; readonly settled: boolean }[] {
+    return this.state.snapshot.projects.filter(project => project.path).map(project => ({ id: project.id, path: project.path, settled: Boolean(project.workspaceSettledAt) }))
+  }
+  /**
+   * Keep main up to date's reservation (ADR-0142): `work` runs under the mutation reservation of the checkout at `folder`
+   * that sends, Git actions and automatic pulls share, once no thread whose working copy is that checkout is running, waiting
+   * on an answer, loading its history, being set up, running a Git action or holding queued work. Null, having run nothing,
+   * when anything holds it; Keep main up to date tries again later rather than wait here.
+   */
+  async withProjectCheckout<T>(folder: string, work: () => Promise<T>): Promise<T | null> {
+    await this.initialize()
+    let key: string
+    try { key = await checkoutIdentity(folder) } catch { return null }
+    let release: () => void
+    try { release = this.checkoutMutations.acquireIdentity(key, 'mutation', { kind: 'automatic-pull' }) } catch { return null }
+    try {
+      for (const thread of this.state.snapshot.threads) {
+        if (!this.checkoutWorkHolder(thread) && thread.gitAction?.status !== 'running') continue
+        let identity: string
+        try { identity = await checkoutIdentity(this.threadCheckoutFolder(thread.id)) } catch { continue }
+        if (identity === key) return null
+      }
+      return await work()
+    } finally { release() }
+  }
+  /**
+   * Keep main up to date moved the checkout at `folder` (ADR-0142): each thread working in it, or in a folder inside it,
+   * reads its Git status again, so its branch stops saying it is behind. Matched by path alone, so it costs no Git.
+   */
+  async projectCheckoutMoved(folder: string): Promise<void> {
+    const key = (path: string): string => path.replace(/[\\/]+$/u, '').replace(/\\/gu, '/').toLowerCase()
+    const root = key(folder)
+    const reads: Promise<void>[] = []
+    for (const thread of this.state.snapshot.threads) {
+      const own = this.statusFolder(thread.id)
+      if (own === undefined) continue
+      const path = key(own)
+      if (path === root || path.startsWith(`${root}/`)) reads.push(this.onLane(thread.id, () => this.readGitStatus(thread.id, true)).catch(() => undefined))
+    }
+    await Promise.all(reads)
+  }
+  private pullRequestMergedListener: ((url: string) => void) | undefined
+  /** Told of each pull request a read finds merged, for Keep main up to date (ADR-0142); one listener, set by the runtime. */
+  onPullRequestMerged(listener: (url: string) => void): void { this.pullRequestMergedListener = listener }
+  private pullRequestMerged(url: string): void { try { this.pullRequestMergedListener?.(url) } catch { /* The listener's failure is its own. */ } }
   private onGitLane<T>(threadId: string, operation: () => Promise<T>): Promise<T> {
     return this.onLane(threadId, () => this.withCheckoutMutation(threadId, operation))
   }
@@ -1529,6 +1576,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const current = this.threadById(threadId)
     if (!current?.worktree || current.worktree.status !== 'ready' || this.stopping) return
     if (gitStatusFingerprint(current.worktree.git) === gitStatusFingerprint(status)) return
+    if (status.pullRequest?.state === 'merged' && current.worktree.git?.pullRequest?.state !== 'merged') this.pullRequestMerged(status.pullRequest.url)
     this.touched(current).worktree = { ...current.worktree, git: status }
     this.dirty = true
     try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }

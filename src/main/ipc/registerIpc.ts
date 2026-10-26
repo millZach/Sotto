@@ -158,6 +158,8 @@ const settingKeys = [
   'worktreeCleanup',
   'gitFetchIntervalSeconds',
   'gitAutoPull',
+  'keepMainCurrent',
+  'projectKeepMainCurrent',
   'defaultMergeMethod',
   'lastMergeMethod',
   'diffLayout',
