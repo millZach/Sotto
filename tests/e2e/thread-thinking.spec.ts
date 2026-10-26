@@ -136,9 +136,10 @@ test('a Claude thread shows its thinking as a row before the first reply text', 
     // The reply follows the thinking, below it.
     await writeFile(join(client, 'release-reply'), '')
     await expect(transcript.getByText(REPLY, { exact: true })).toBeVisible(wait)
-    // The finished turn folds its work; opened, the Thinking row sits above the reply.
-    await transcript.getByRole('button', { name: /^Worked for/ }).click()
-    await transcript.getByRole('button', { name: 'Thought once' }).click()
+    // The finished turn folds its work; the steps were left open, so the fold and its group start open, with the
+    // Thinking row above the reply.
+    await expect(transcript.getByRole('button', { name: /^Worked for/ })).toHaveAttribute('aria-expanded', 'true')
+    await expect(transcript.getByRole('button', { name: 'Thought once' })).toHaveAttribute('aria-expanded', 'true')
     const settled = transcript.getByRole('button', { name: new RegExp(`^Thinking, ${THINKING.slice(0, 20)}`) })
     const answer = transcript.locator('.thread-message').filter({ hasText: REPLY })
     expect(await settled.evaluate((target, reply) => !!(target.compareDocumentPosition(reply!) & Node.DOCUMENT_POSITION_FOLLOWING), await answer.elementHandle())).toBe(true)

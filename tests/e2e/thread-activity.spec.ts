@@ -69,12 +69,12 @@ test('settled turn folds its work above the final reply, failures and all, and o
     await work.focus()
     await page.keyboard.press('Enter')
     await expect(work).toHaveAttribute('aria-expanded', 'true')
+    // Its groups open with it, since the fold was opened by hand; a failed step shows with the rest of its group.
     const summary = log.getByRole('button', { name: 'Ran 2 commands, 1 reasoning summary' })
-    await expect(summary).toHaveAttribute('aria-expanded', 'false')
+    await expect(summary).toHaveAttribute('aria-expanded', 'true')
     const later = log.getByRole('button', { name: 'Ran 2 commands, changed 2 files, 1 agent action' })
-    await expect(later).toHaveAttribute('aria-expanded', 'false')
-    // A failed step folds with the rest of its group.
-    await expect(log.getByRole('button', { name: 'npm run lint, Exit 1' })).toHaveCount(0)
+    await expect(later).toHaveAttribute('aria-expanded', 'true')
+    await expect(log.getByRole('button', { name: 'npm run lint, Exit 1' })).toHaveCount(1)
     // Opened, messages keep their order and count; activity sits between them.
     await expect(log.locator('.thread-message')).toHaveCount(3)
     await expect(log.locator('.thread-message, .thread-activity')).toHaveCount(5)
@@ -87,8 +87,6 @@ test('settled turn folds its work above the final reply, failures and all, and o
     await theme(page, 'dark')
 
     await summary.focus()
-    await page.keyboard.press('Enter')
-    await expect(summary).toHaveAttribute('aria-expanded', 'true')
     const top = await summary.evaluate(element => element.getBoundingClientRect().top)
     const search = log.getByRole('button', { name: 'rg -n "patchLength" src/main/audio, completed in 0.3s' })
     await page.keyboard.press('Tab')
@@ -109,7 +107,6 @@ test('settled turn folds its work above the final reply, failures and all, and o
     }
     await theme(page, 'dark')
 
-    await later.click()
     const files = log.getByRole('button', { name: 'Edited src/main/audio/wavStream.ts, and 1 more file, completed' })
     await files.click()
     await expect(files).toHaveText('Changed 2 files')
