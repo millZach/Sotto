@@ -18,7 +18,7 @@ import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import { shownCount } from '../state/interfaceNumbers'
 import { focusComposerFrom, TurnFailureReason, useOwnServerTurnActions, type OwnServerTurnActions } from './OwnServerTurn'
 import { retryingWords, stillWaitingNote, stillWaitingWords, stopName, stopWords } from './ownServerTurnWords'
-import { setStepsOpen, useStepsOpen } from './stepsOpen'
+import { foldedTurns, setStepsOpen, useStepsOpen } from './stepsOpen'
 import './activity.css'
 
 /** A running turn shows its newest rows; older ones stay one click away. */
@@ -459,7 +459,7 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
       <ActivityGroupView group={{ key: `live:${turnId}`, turnId, anchorMessageId: null, records: steps }} live threadRunning connected={connected} provider={provider} onDisclosure={onDisclosure} />
     </div> : null,
     onToggle: event => { onDisclosure?.(event.currentTarget); setPressed({ turnId, open: !open }); setStepsOpen(!open) },
-    onKeyDown: foldOnEscape(open, summary => { onDisclosure?.(summary); setPressed({ turnId, open: false }) }),
+    onKeyDown: foldOnEscape(open, summary => { onDisclosure?.(summary); setPressed({ turnId, open: false }); foldedTurns.add(turnId) }),
   }
   // Compaction holds the thread in the running state without a turn of its own, and a line saying the agent
   // is working would be the wrong thing to read while the only thing happening is the context being folded up.

@@ -6,6 +6,8 @@ import { useSyncExternalStore } from 'react'
  */
 export const STEPS_OPEN_KEY = 'sotto.threads.stepsOpen'
 const listeners = new Set<() => void>()
+/** Running turns whose working line Escape folded, so their Worked for fold starts folded too, for this window's life. */
+export const foldedTurns = new Set<string>()
 /** What the user last chose when storage refused to keep it. */
 let unsaved: boolean | null = null
 

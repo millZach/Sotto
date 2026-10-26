@@ -16,7 +16,7 @@ import { followupsFor } from './ThreadFollowups'
 import { deliveryFor, deliveryPending, hasDraftContent, queuedRevision, submissionStatus, useSubmissions, useThreadComposer, type Submission, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import { clockLabel, type ThreadRow } from './threadFacts'
 import { useShared } from './stateSharing'
-import { setStepsOpen, useStepsOpen } from './stepsOpen'
+import { foldedTurns, setStepsOpen, useStepsOpen } from './stepsOpen'
 import { MessageContent, AttachmentPreviews } from './MessageContent'
 import { renderedPlainText, useTransientFlag, writeClipboard } from './richActions'
 import { LinkMenu, type LinkMenuItem } from '../tools/webLinks'
@@ -383,7 +383,6 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   // pressed, the fold starts as the user last left any turn's steps.
   const [pressedOpen, setWorkOpen] = useState<boolean | null>(null)
   const stepsOpen = useStepsOpen()
-  const workOpen = pressedOpen ?? stepsOpen
   // A fork carries finished turns, so only a finished turn's newest written reply offers one (#1028, E5b).
   const forkableId = running && last ? undefined : turn.replies.findLast(message => message.role === 'assistant' && !isVisualMessage(message) && !isWakeUpMessage(message) && drawn(message))?.id
   // A visual an agent drew is its card; one this window cannot draw is its text, which says what it showed (ADR-0056).
@@ -453,6 +452,8 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   const shown = (from: number, to: number): ReactNode => visuals.filter(visual => visual.at > from && visual.at < to)
     .map(({ message }) => <React.Fragment key={message.id}>{article(message)}</React.Fragment>)
   const lifecycle = groups.find(group => group.turn)?.turn
+  // A turn whose working line was folded with Escape stays folded once it ends.
+  const workOpen = pressedOpen ?? (lifecycle !== undefined && foldedTurns.has(lifecycle.turnId) ? false : stepsOpen)
   const moments = [...turn.replies.map(message => message.createdAt), ...groups.flatMap(group => group.records.map(record => record.completedAt ?? record.startedAt))]
   // A question a folded reply asked would fold away with it, so it is quoted under the fold (#1019).
   const lifted = work.flatMap(message => message.role === 'assistant' && !isWakeUpMessage(message) && asked(message).length ? [{ message, questions: asked(message) }] : [])
