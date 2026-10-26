@@ -51,6 +51,11 @@ msgstr ""
 msgid "{0, plural, one {It no longer lists {names}, so threads on it will fail until the server loads it again.} other {It no longer lists {names}, so threads on them will fail until the server loads them again.}}"
 msgstr ""
 
+#. placeholder {0}: models.length
+#: src/renderer/src/agents/ProviderModelList.tsx
+msgid "{0, plural, one {Show {label} models, # model} other {Show {label} models, # models}}"
+msgstr ""
+
 #. {about} is a sentence saying where the sign-in is; {host} is the name of a saved host.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "{about} Sotto’s OpenCode on {host} reads it there, and Sotto keeps no copy."
@@ -111,6 +116,11 @@ msgstr ""
 #. {choice} is the provider's words for an answer, such as Allow once; {title} is a thread's title.
 #: src/renderer/src/agents/NeedsYouQueue.tsx
 msgid "{choice} in {title}"
+msgstr ""
+
+#. {clientName} is a provider's client, such as Claude Code.
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "{clientName} lists no model you can use now. Check your {clientName} sign-in and plan, then refresh this provider."
 msgstr ""
 
 #: src/renderer/src/agents/threadActivityView.ts
@@ -2046,7 +2056,7 @@ msgstr ""
 
 #: src/renderer/src/agents/ProviderModelList.tsx
 #: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Choose what new threads start with under Agents."
+msgid "Choose what new threads start with in Settings > Threads."
 msgstr ""
 
 #: src/renderer/src/agents/BranchToolbar.tsx
@@ -6181,11 +6191,6 @@ msgstr ""
 #. {manager} is File Explorer, Finder or the file manager; {file} is a path.
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Show {file} in {manager}"
-msgstr ""
-
-#. {label} is a provider's name; {count} says how many models, such as "12 models".
-#: src/renderer/src/agents/ProviderModelList.tsx
-msgid "Show {label} models, {count}"
 msgstr ""
 
 #. {name} is the file name of an image.

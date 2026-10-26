@@ -51,6 +51,11 @@ msgstr "{0, plural, one {It also lists {names}, which is not added. To use it, r
 msgid "{0, plural, one {It no longer lists {names}, so threads on it will fail until the server loads it again.} other {It no longer lists {names}, so threads on them will fail until the server loads them again.}}"
 msgstr "{0, plural, one {It no longer lists {names}, so threads on it will fail until the server loads it again.} other {It no longer lists {names}, so threads on them will fail until the server loads them again.}}"
 
+#. placeholder {0}: models.length
+#: src/renderer/src/agents/ProviderModelList.tsx
+msgid "{0, plural, one {Show {label} models, # model} other {Show {label} models, # models}}"
+msgstr "{0, plural, one {Show {label} models, # model} other {Show {label} models, # models}}"
+
 #. {about} is a sentence saying where the sign-in is; {host} is the name of a saved host.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "{about} Sotto’s OpenCode on {host} reads it there, and Sotto keeps no copy."
@@ -112,6 +117,11 @@ msgstr "{changed, plural, one {changed {fileCount} file} other {changed {fileCou
 #: src/renderer/src/agents/NeedsYouQueue.tsx
 msgid "{choice} in {title}"
 msgstr "{choice} in {title}"
+
+#. {clientName} is a provider's client, such as Claude Code.
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "{clientName} lists no model you can use now. Check your {clientName} sign-in and plan, then refresh this provider."
+msgstr "{clientName} lists no model you can use now. Check your {clientName} sign-in and plan, then refresh this provider."
 
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "{commands, plural, one {ran {commandCount} command} other {ran {commandCount} commands}}"
@@ -2046,8 +2056,8 @@ msgstr "Choose or create a thread to review this draft."
 
 #: src/renderer/src/agents/ProviderModelList.tsx
 #: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Choose what new threads start with under Agents."
-msgstr "Choose what new threads start with under Agents."
+msgid "Choose what new threads start with in Settings > Threads."
+msgstr "Choose what new threads start with in Settings > Threads."
 
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "Choose workspace"
@@ -6182,11 +6192,6 @@ msgstr "Show {earlier} earlier"
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Show {file} in {manager}"
 msgstr "Show {file} in {manager}"
-
-#. {label} is a provider's name; {count} says how many models, such as "12 models".
-#: src/renderer/src/agents/ProviderModelList.tsx
-msgid "Show {label} models, {count}"
-msgstr "Show {label} models, {count}"
 
 #. {name} is the file name of an image.
 #: src/renderer/src/agents/AttachmentViewer.tsx

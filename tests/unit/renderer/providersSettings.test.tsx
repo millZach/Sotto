@@ -351,7 +351,7 @@ describe('a provider’s models, in provider settings', () => {
     render(<ProvidersSettings />)
     const row = openRow('Codex')
     expect(within(row).queryByRole('button', { name: /^Show Codex models/u })).toBeNull()
-    expect(row).toHaveTextContent('No models were returned. Refresh this provider to check again.')
+    expect(row).toHaveTextContent('Codex lists no model you can use now. Check your Codex sign-in and plan, then refresh this provider.')
   })
   it('searches the list, then clears the search and closes on Escape, leaving the row open', () => {
     provide(withModels())

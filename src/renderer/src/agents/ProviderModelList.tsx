@@ -1,16 +1,17 @@
 import React, { useId, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown, Search, X } from 'lucide-react'
+import { plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import type { AgentModel } from '../../../shared/agents'
 import { useAnchoredMenu } from './anchoredMenu'
-import { countModels, modelSources, newestModelsFirst } from './ModelPicker'
+import { countModels, matchesWords, modelSources, newestModelsFirst, searchWords } from './ModelPicker'
 import './modelPicker.css'
 
 /**
  * A provider's models on the Providers page: a small field naming how many there are, which opens a searchable list
  * anchored over it the way the composer's model menu opens, so one provider's models never fill the page. It is a list
- * to look through, not a choice: what new threads start with is chosen under Agents, and its model is marked here as the
- * Agent setting. A provider whose models name their source (OpenCode's model sources, Cursor's model makers) lists them
+ * to look through, not a choice: what new threads start with is chosen in Settings › Threads, and its model is marked here
+ * as the Agent setting. A provider whose models name their source (OpenCode's model sources, Cursor's model makers) lists them
  * under each source. Escape clears the search, then closes the list.
  */
 export function ProviderModelList({ label, models, agentEntryId }: {
@@ -30,12 +31,9 @@ export function ProviderModelList({ label, models, agentEntryId }: {
   const list = useRef<HTMLDivElement>(null)
   const dialogId = useId()
   useAnchoredMenu(open, trigger, dialog, search)
-  const words = query.toLowerCase().split(/\s+/u).filter(Boolean)
+  const words = searchWords(query)
   // Each word matches on its own, against the model's name, its ID and its source, as the composer's menu searches.
-  const matches = (model: AgentModel): boolean => {
-    const text = `${model.name} ${model.id} ${model.source ?? ''}`.toLowerCase()
-    return words.every(word => text.includes(word))
-  }
+  const matches = (model: AgentModel): boolean => matchesWords(`${model.name} ${model.id} ${model.source ?? ''}`, words)
   const sources = open ? modelSources(models, label) : undefined
   const groups = !open ? [] : sources
     ? sources.map(source => ({ name: source.name, models: source.models.filter(matches) })).filter(source => source.models.length)
@@ -48,7 +46,7 @@ export function ProviderModelList({ label, models, agentEntryId }: {
   </li>
   return <div className="provider-model-list">
     <button ref={trigger} type="button" className="provider-model-list__trigger" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? dialogId : undefined}
-      aria-label={t({ message: `Show ${label} models, ${count}`, comment: '{label} is a provider\'s name; {count} says how many models, such as "12 models".' })}
+      aria-label={plural(models.length, { one: `Show ${label} models, # model`, other: `Show ${label} models, # models` })}
       onClick={() => { setQuery(''); setOpen(true) }}>
       <span>{count}</span><ChevronDown size={13} aria-hidden="true" />
     </button>
@@ -75,7 +73,7 @@ export function ProviderModelList({ label, models, agentEntryId }: {
             : <ul key="models">{group.models.map(row)}</ul>)}
           {!groups.length && <p className="model-picker__empty tt-paragraph">{t`No matching models.`}</p>}
         </div>
-        <p className="model-picker__note tt-paragraph">{t`Choose what new threads start with under Agents.`}</p>
+        <p className="model-picker__note tt-paragraph">{t`Choose what new threads start with in Settings > Threads.`}</p>
       </div>
     </dialog>}
   </div>

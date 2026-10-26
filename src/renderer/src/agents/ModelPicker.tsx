@@ -75,6 +75,14 @@ const makerGrouped = (models: readonly AgentModel[]): boolean => models[0]?.prov
 /** A model source name longer than this many characters may give way on the chip, down to a floor; a shorter one never does. */
 const LONG_SOURCE = 9
 
+/** What a search line holds, as the words a model must match, each on its own. */
+export const searchWords = (query: string): string[] => query.toLowerCase().split(/\s+/u).filter(Boolean)
+/** Whether every search word is somewhere in `text`, so "anthropic sonnet" finds Anthropic's Sonnets. */
+export const matchesWords = (text: string, words: readonly string[]): boolean => {
+  const lower = text.toLowerCase()
+  return words.every(word => lower.includes(word))
+}
+
 export const countModels = (count: number): string => plural(count, { one: '# model', other: '# models' })
 
 /** A provider the menu lists without models, and why: one the user turned on that cannot take the choice now. */
@@ -154,13 +162,11 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   // The words a menu of Cursor's model makers uses where a menu of model sources uses its own (ADR-0128).
   const backToMakers = t`Back to Cursor’s model makers`
   const makerModels = (maker: string): string => t({ message: `${maker} models in Cursor`, comment: '{maker} is the company that made the models, such as Anthropic.' })
-  const sourceWords = query.toLowerCase().split(/\s+/u).filter(Boolean)
+  const sourceWords = searchWords(query)
   // Across every source at once, matching the source's name too, so "anthropic" finds all of Anthropic's models. Each word
   // matches on its own, so "anthropic sonnet" finds Anthropic's Sonnets though no one name holds both words side by side.
-  const found = sources && sourceWords.length ? sources.map(source => ({ ...source, models: source.models.filter(model => {
-    const text = `${model.name} ${model.id} ${source.name}`.toLowerCase()
-    return sourceWords.every(word => text.includes(word))
-  }) })).filter(source => source.models.length) : undefined
+  const found = sources && sourceWords.length ? sources.map(source => ({ ...source, models: source.models.filter(model => matchesWords(`${model.name} ${model.id} ${source.name}`, sourceWords)) }))
+    .filter(source => source.models.length) : undefined
   const openSource = sources && step?.provider === selectedProvider?.name ? sources.find(source => source.name === step?.source) : undefined
   // A source that leaves while it is open (its sign-in ends, the folder reconnects without it) is forgotten, so its
   // return shows the sources rather than reopening it unasked.

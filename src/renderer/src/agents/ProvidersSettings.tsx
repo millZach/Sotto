@@ -255,9 +255,9 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
     const working = pending[provider] || status.connection === 'connecting'
     const update = updateFor(provider)
     const providerUpdating = updatingNow(provider)
+    const listed = hostModels.filter(model => model.providerId === provider || (!model.providerId && model.provider === PROVIDER_LABELS[provider]))
     // Only the models the user can use now: one the provider lists but cannot run is left out rather than labelled.
-    const models = hostModels.filter(model => model.ready && (model.providerId === provider
-      || (!model.providerId && model.provider === PROVIDER_LABELS[provider])))
+    const models = listed.filter(model => model.ready)
     // A long-context variant the catalog does not list (`opus[1m]`) is its base model's entry here.
     const inheritedEntryId = catalogEntry(models, inheritedModelId)?.id
     // OpenCode missing, or refused for its version (OpenCode 1 among them), gets its install guide whether or not update
@@ -293,7 +293,9 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
         <div className="provider-client">
           <div>
             <h4><Trans>Models</Trans></h4>
-            <p className="tt-paragraph">{models.length ? t({ message: `The models ${clientName} offers you now.`, comment: '{clientName} is a provider\'s client, such as Claude Code.' }) : connected ? t`No models were returned. Refresh this provider to check again.` : t({ message: `Connect ${label} to load its models.`, comment: '{label} is a provider\'s name.' })}</p>
+            <p className="tt-paragraph">{models.length ? t({ message: `The models ${clientName} offers you now.`, comment: '{clientName} is a provider\'s client, such as Claude Code.' })
+              : listed.length ? t({ message: `${clientName} lists no model you can use now. Check your ${clientName} sign-in and plan, then refresh this provider.`, comment: '{clientName} is a provider\'s client, such as Claude Code.' })
+              : connected ? t`No models were returned. Refresh this provider to check again.` : t({ message: `Connect ${label} to load its models.`, comment: '{label} is a provider\'s name.' })}</p>
           </div>
           {models.length ? <div className="provider-client__actions"><ProviderModelList label={label} models={models} agentEntryId={inheritedEntryId} /></div> : null}
         </div>
@@ -399,7 +401,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
     {/* Your own model servers sit above the provider list, apart from any one provider (ADR-0124, layout B). */}
     {ownServers ? <OwnModelServers bridge={ownServers} /> : null}
     <ul className="providers-list" aria-label={t`Thread providers`} data-setting="thread-providers" onKeyDown={moveBetweenRows}>{providerIdSchema.options.filter(provider => !held.has(provider)).map(row)}</ul>
-    <p className="providers-note tt-paragraph">{t`Choose what new threads start with under Agents.`}</p>
+    <p className="providers-note tt-paragraph">{t`Choose what new threads start with in Settings > Threads.`}</p>
     <div className="providers-updates">
       <div>
         <h4>{t`Check for client updates`}</h4>
