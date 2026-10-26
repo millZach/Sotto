@@ -57,6 +57,8 @@ import { HostFactsSource, hostMachineReport, type MachineWork } from './hostFact
 import type { HostMachineReport } from '../../shared/hostFacts'
 import { readProjectOrigins } from './projectOrigins'
 import { threadDelegations } from './agentsView'
+import { DesktopDefaultsStore, hostDelegationMachines } from './hostDelegation'
+import { machineWorkingThreadsWarning } from '../../shared/workingThreads'
 
 type ControlDependencies = ConstructorParameters<typeof AgentControl>[0]
 type NativeHost = AgentHost & { closed?: () => Promise<void> }
@@ -94,6 +96,14 @@ export interface AgentRuntimeOptions {
    * list_machines shows none of it.
    */
   crossMachineEnabled?: boolean
+  /**
+   * A headless host runs delegation for its own threads (#1310) only where its own Owl answer turns on Work across
+   * machines. It holds them to the desktop defaults the last desktop that still counts sent it, and to Ask for approval
+   * when none counts. `counts` says whether a desktop is still paired here with an answers grant, read from the host's
+   * pairing and policy records at every start. `roles` is the host's own Owl answer for worker roles: with it, a
+   * delegation's kind of work starts on the desktop's roles.
+   */
+  hostDelegation?: { counts(clientId: string): boolean; roles: boolean }
   /**
    * The Owl list's answer for attaching any file (ADR-0131), read once by the process owner. With it the store keeps files
    * that are not images and the host lists `file-staging`. Absent fails closed: only the four image types are kept.
@@ -142,7 +152,7 @@ export interface AgentRuntimeOptions {
    * Git status the way T3 reads it: how often a project's origin may be fetched in the background, and
    * whether a window is in front to read for. Absent, thread records carry no Git status.
    */
-  gitStatus?: { fetchIntervalMs: () => number; foreground?: () => boolean
+  gitStatus?: { fetchIntervalMs: () => number; foreground?: () => boolean; visible?: () => boolean
     /** A scripted `gh` for a journey in the running app; development only. */
     ghStandIn?: { executable: string; args: readonly string[] }
     /** When GitHub's rate limit holds Sotto's questions back (#820), and what babysitting did (ADR-0061), as stable
@@ -224,7 +234,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   /** How Git and gh are run; only a journey's stand-in changes it. */
   let gitRun: RunGitCommand | undefined
   if (options.gitStatus) {
-    const { fetchIntervalMs, foreground, ghStandIn, log } = options.gitStatus
+    const { fetchIntervalMs, foreground, visible, ghStandIn, log } = options.gitStatus
     if (ghStandIn) gitRun = runWithGhStandIn(ghStandIn)
     // One rate limit for the process: the status reader and the Pull request surface spend the same gh sign-in's points.
     gitHubRateLimit = new GitHubRateLimit(log ? { log } : {})
@@ -232,7 +242,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     gitHubHosts = new GitHubHosts({ run: gitRun ?? runGitStatusCommand })
     gitStatus = new GitStatusReader({ fetchIntervalMs, rateLimit: gitHubRateLimit, hosts: gitHubHosts, ...(gitRun ? { run: gitRun } : {}) })
     // Automatically pull is read at every remote read, so turning it on or off applies without a restart on the desktop.
-    agentHost.setGitStatus(gitStatus, { pollIntervalMs: fetchIntervalMs, autoPull: () => options.settings().gitAutoPull, ...(foreground ? { foreground } : {}) })
+    agentHost.setGitStatus(gitStatus, { pollIntervalMs: fetchIntervalMs, autoPull: () => options.settings().gitAutoPull, ...(foreground ? { foreground } : {}), ...(visible ? { visible } : {}) })
   }
   // Sotto's own short writing (ADR-0026): thread titles, branch names, commit and pull request drafts, each a
   // side call to the thread's own provider client. A design fixture host offers none, so its titles stay the stand-in.
@@ -287,8 +297,13 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     reasoner,
   })
   let watcherTools: WatcherToolServer | undefined
-  // Delegation between threads (ADR-0081): only this computer's threads take Sotto's tool servers, so a headless host has none.
+  // Delegation between threads (ADR-0081): this computer's threads, and a headless host's own threads where its Owl answer
+  // turns on Work across machines (#1310), each on its own machine, with its own tool tokens.
   let delegation: DelegationService | undefined
+  const hostDelegation = options.runsAs === 'headless-host' && options.crossMachineEnabled === true ? options.hostDelegation : undefined
+  // The desktop defaults a desktop sent this host: the only new-thread default and roles its delegations use.
+  const desktopDefaults = hostDelegation ? new DesktopDefaultsStore(directory) : undefined
+  if (desktopDefaults) await desktopDefaults.load()
   // Worker roles (#1041): Settings are read only when a start or a delegation asks for its role.
   const roles = options.workerRolesEnabled === true ? { roles: () => options.settings().workerRoles } : {}
   // Each provider's own sub-agents follow them too (#1042): the table is read when a thread on this computer launches,
@@ -313,6 +328,16 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       tool: threadId => options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId), ...roles,
       ...placingWatcher ? { machines: { list: () => placingWatcher.machines(), place: (ask, project, setting) => placingWatcher.placement(ask, project, setting),
         name: hostId => placingWatcher.machineName(hostId), setting: () => options.settings().newWorkerMachine } } : {} })
+  } else if (hostDelegation && desktopDefaults) {
+    agentHost.enableDelegation()
+    // A thread here delegates on this machine alone until #1316. Its ceiling and roles are the desktop's, never this host's
+    // own stored defaults; the four-prompt budget and the warning above ten are this machine's.
+    const defaults = desktopDefaults
+    delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
+      newThreadCeiling: () => defaults.ceiling(clientId => hostDelegation.counts(clientId)),
+      ...hostDelegation.roles ? { roles: () => defaults.roles(clientId => hostDelegation.counts(clientId)) } : {},
+      warning: count => machineWorkingThreadsWarning(count, 'this machine'),
+      machines: hostDelegationMachines(() => agentControl.hostId(), facts, () => agentControl.watcherSnapshot().threads) })
   }
   // Continuing a thread on another provider (ADR-0089): the desktop's own threads only, so a headless host builds none.
   const continuation = options.continueEnabled === true && options.runsAs !== 'headless-host'
@@ -457,11 +482,14 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const delegationRecord = delegation
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
     ...(crossMachine ? { projectOrigins: readProjectOrigins } : {}),
+    // A headless host that runs delegation for its own threads keeps the desktop defaults a desktop sends it (#1310).
+    ...(desktopDefaults ? { desktopDefaults } : {}),
     prompts: { threadPrompts: (threadId, beforeMessageId) => agentHost.threadPrompts(threadId, beforeMessageId) },
     ...(options.threadStartsEnabled === true ? { threadStarts: { startHandover: (threadId: string) => agentHost.startHandover(threadId) } } : {}),
     ...(options.pullRequestViewEnabled === true ? { pullRequestView: true } : {}),
     ...(options.attachAnyFile === true ? { fileStaging: true } : {}),
-    // The iPhone's Agents view (ADR-0103): delegated threads only where delegation runs, which is never on a headless host.
+    // The iPhone's Agents view (ADR-0103): delegated threads only where delegation runs, which on a headless host is only
+    // where Work across machines is on (#1310).
     ...(options.agentsViewEnabled === true ? { agentsView: delegationRecord ? { delegations: (threadId, threads) => threadDelegations(delegationRecord, threads, threadId) } : {} } : {}),
     ...(usage ? { usage, mayClearUsage: client => (options.authority?.mayGrant(client) ?? mayGrantLocally(client)).allowed } : {}),
     ...(options.runsAs === 'headless-host' && watcher ? { watcher } : {}),

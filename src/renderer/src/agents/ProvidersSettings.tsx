@@ -86,8 +86,8 @@ function shortVersion(version: string): string {
 
 /**
  * Settings → Providers: one list with a row per provider, each opening in place to its connection, client and models
- * (Zach's pick, variant A of the tag prototype/providers-settings). One row is open at a time; Codex's is open to begin
- * with, as Codex was the provider shown first before, and pressing an open row's header closes it.
+ * (Zach's pick, variant A of the tag prototype/providers-settings). One row is open at a time; every row starts closed
+ * unless a link aimed at one, and pressing an open row's header closes it.
  */
 /** Idle compaction's switch (ADR-0127): a setting of this computer's rather than the provider's, shown in Claude Code's row. */
 export interface CompactIdleSetting {
@@ -101,7 +101,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
   const ownServers = useOwnServersBridge()
   const { t } = useLingui()
   // A link elsewhere, such as a thread's Turn off, or Find a setting, can open the row that holds one provider's setting.
-  const [open, setOpen] = useState<ProviderId | null>(() => takeAimedProvider() ?? 'codex')
+  const [open, setOpen] = useState<ProviderId | null>(() => takeAimedProvider() ?? null)
   useEffect(() => onProviderAimed(setOpen), [])
   const [pending, setPending] = useState<Partial<Record<ProviderId, 'connect' | 'disconnect' | 'refresh'>>>({})
   const [errors, setErrors] = useState<Partial<Record<ProviderId, LaterWords | undefined>>>({})

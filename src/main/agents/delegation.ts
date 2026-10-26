@@ -10,6 +10,7 @@ import { isThreadClosed, isThreadTurnRunning } from '../../shared/threadActivity
 import { countWorkingThreads, workingThreadsWarning } from '../../shared/workingThreads'
 import { workerMachineHostId, type WorkerMachineSetting, type WorkerPlacementReceipt } from '../../shared/workerMachine'
 import type { WatcherRefusal } from '../../shared/watcher'
+import { HOST_CEILING_HOLD_WORDS, type HostCeilingHold } from '../../shared/desktopDefaults'
 import type { PlacementAsk, WorkerPlacement } from './workerPlacement'
 import { WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
 import { cancelDelegationInputSchema, delegatedThreadsBelow, delegateInputSchema, delegationRefusalCodeSchema, delegationWorkSchema, readDelegationInputSchema,
@@ -99,6 +100,17 @@ export interface DelegationServiceOptions {
     name(hostId: string): string | undefined
     setting(): WorkerMachineSetting
   }
+  /**
+   * The user's new-thread default as this machine may use it, in place of its own coordinator's (#1310). A headless host
+   * gives it: the desktop defaults its desktop last sent, held to Ask for approval when it was never told them or that
+   * desktop may not answer there, with why. Absent, the coordinator's own new-thread default applies, as on the desktop.
+   */
+  readonly newThreadCeiling?: () => { readonly mode: AgentRuntimeMode; readonly held?: HostCeilingHold }
+  /**
+   * The warning a start's result carries while more than ten threads are working on this machine after it, counted on
+   * this machine's own list. Absent, This computer's words, which mention its battery.
+   */
+  readonly warning?: (count: number) => string | undefined
   /** The clock a held background outcome's release reads, and how it waits for it; tests give their own. */
   readonly now?: () => number
   readonly schedule?: (callback: () => void, delay: number) => () => void
@@ -235,7 +247,7 @@ const NOTES: Record<WatcherOutcome, string> = {
 }
 const REFUSED_CANCEL = 'This delegation was refused when it was asked for, so nothing was started or sent, and there is nothing to stop.'
 const GONE = 'The delegated thread is gone from Sotto, so nothing more will come of this, and Sotto cannot tell how its turn ended. Start a new delegation if the work is still needed.'
-export const NOT_ADMITTED = 'This thread cannot delegate with Sotto\'s tools. Only Claude Code, Codex, Grok Build and Muse threads on this computer can, outside Watcher, host setup and provider jobs. Threads on another machine get none of Sotto\'s tools yet. Nothing was started.'
+export const NOT_ADMITTED = 'This thread cannot delegate with Sotto\'s tools. Only Claude Code, Codex, Grok Build and Muse threads can, outside Watcher, host setup and provider jobs, on this computer or on a machine whose Sotto offers it. Nothing was started.'
 const LEVEL_LIMIT = 'This thread was started by a delegated thread, and delegation goes two levels deep, so it cannot delegate. Nothing was started.'
 
 /** The text cut to at most this many UTF-8 bytes, never inside a character. */
@@ -417,7 +429,7 @@ export class DelegationService {
       const started = this.record(record.id)
       const pending = started !== undefined && (started.deliveryState === 'queued' || started.deliveryState === 'dispatching'
         || started.deliveryState === 'uncertain' || started.deliveryState === 'accepted' && started.outcomeAt === undefined)
-      const warning = admitted.start ? workingThreadsWarning(countWorkingThreads(this.snapshot().threads, pending ? record.delegatedThreadId : undefined)) : undefined
+      const warning = admitted.start ? (this.options.warning ?? workingThreadsWarning)(countWorkingThreads(this.snapshot().threads, pending ? record.delegatedThreadId : undefined)) : undefined
       const waitMs = Math.max(0, Math.min((input.wait_seconds ?? DELEGATION_WAIT_MAX_SECONDS) * 1000,
         context.waitMs === undefined ? Infinity : context.waitMs - 2_000))
       if (this.open(this.record(record.id)!)) {
@@ -748,8 +760,16 @@ export class DelegationService {
     if (!ceiling.runtimeMode) refuse('PERMISSION_NOT_COMPARABLE', 'This model has no permission mode Sotto can compare. Choose another model. Nothing was started.')
     const mode = explicit ?? ceiling.runtimeMode
     if (!model.runtimeModes?.includes(mode)) refuse('PERMISSION_NOT_COMPARABLE', 'This model does not offer that permission mode. Nothing was started.')
-    if (index(mode) > index(ceiling.runtimeMode)) refuse('PERMISSION_TOO_WIDE', 'A delegated thread cannot have more permission than this thread has, or than the user\'s new-thread default. Nothing was started.')
+    if (index(mode) > index(ceiling.runtimeMode)) {
+      // On a host that holds starts to Ask for approval, the refusal says why when that, not the calling thread, held it.
+      const held = this.newThreadDefault().held, own = caller.providerMode ? 'approval-required' : caller.runtimeMode ?? 'approval-required'
+      refuse('PERMISSION_TOO_WIDE', `A delegated thread cannot have more permission than this thread has, or than the user's new-thread default.${held && index(own) > 0 ? ` ${HOST_CEILING_HOLD_WORDS[held]}` : ''} Nothing was started.`)
+    }
     return { runtimeMode: mode }
+  }
+  /** The user's new-thread default as this machine may use it: the coordinator's own, or what a host was told (#1310). */
+  private newThreadDefault(): { readonly mode: AgentRuntimeMode; readonly held?: HostCeilingHold } {
+    return this.options.newThreadCeiling?.() ?? { mode: this.options.control.configuration().newThreadRuntimeMode ?? 'approval-required' }
   }
   /** The widest a delegated thread may start on: the narrower of the calling thread's own and the new-thread default. */
   private ceiling(model: AgentModel, caller: AgentThread, models: readonly AgentModel[]) {
@@ -760,7 +780,7 @@ export class DelegationService {
       if (mode?.allows !== 'nothing') refuse('PERMISSION_NOT_COMPARABLE', 'This thread\'s own permission profile cannot be compared with Sotto\'s modes, so Sotto cannot tell how much a thread it starts may have. Nothing was started.')
       own = 'approval-required'
     }
-    const configured = this.options.control.configuration().newThreadRuntimeMode ?? 'approval-required'
+    const configured = this.newThreadDefault().mode
     return resolveNewThreadPermission(model, index(own) < index(configured) ? own : configured)
   }
   /**
@@ -774,10 +794,11 @@ export class DelegationService {
     if (mode === wanted) return { mode }
     const index = (value: AgentRuntimeMode) => RUNTIME_MODE_ORDER.indexOf(value)
     const own = caller.providerMode ? 'approval-required' : caller.runtimeMode ?? 'approval-required'
-    const configured = this.options.control.configuration().newThreadRuntimeMode ?? 'approval-required'
+    const { mode: configured, held: hostHeld } = this.newThreadDefault()
     const thread = index(own) < index(configured)
-    // A limit the model does not offer starts on the nearest mode it does, and the receipt says that is why.
-    return { mode, held: { wanted, startedOn: mode, by: thread ? 'delegating-thread' : 'new-thread-default', ...(ceiling.nearestFit ? { unoffered: thread ? own : configured } : {}) } }
+    // A limit the model does not offer starts on the nearest mode it does, and the receipt says that is why. A host that held
+    // the default to Ask for approval says why it did (#1310).
+    return { mode, held: { wanted, startedOn: mode, by: thread ? 'delegating-thread' : hostHeld ?? 'new-thread-default', ...(ceiling.nearestFit ? { unoffered: thread ? own : configured } : {}) } }
   }
   /**
    * Whether the turn running in a delegated thread is the user's own: its newest message is neither a brief nor one of
@@ -1338,7 +1359,10 @@ export class DelegationService {
       .map(({ thread, refusal, ...item }) => ({ ...item, ...(thread ? { thread } : {}), ...(refusal ? { refusal } : {}) }))
     const ready = this.ready(snapshot).map(model => ({ provider: model.providerId!, model: model.id, name: model.name,
       efforts: model.reasoningEfforts ?? [], permissions: model.runtimeModes ?? [] }))
-    return { status: 'ok' as const, delegations: own, models: ready, ...(this.options.roles ? { roles: this.roles(caller, snapshot, this.options.roles()) } : {}), limits: this.limits() }
+    // On a headless host (#1310), the new-thread default it holds starts to, and why when it holds them to Ask for approval.
+    const hold = this.options.newThreadCeiling?.()
+    return { status: 'ok' as const, delegations: own, models: ready, ...(this.options.roles ? { roles: this.roles(caller, snapshot, this.options.roles()) } : {}),
+      ...(hold ? { newThreadDefault: { permission: hold.mode, ...(hold.held ? { note: HOST_CEILING_HOLD_WORDS[hold.held] } : {}) } } : {}), limits: this.limits() }
   }
   /**
    * The machines this thread could name, as Watcher's `list_machines` gives them (#1032), while Work across machines is on.

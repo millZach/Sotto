@@ -169,10 +169,11 @@ button.thread-activity-live__line:hover { background: var(--tt-hover); }
 .thread-activity-live--own-server .thread-activity__clock { color: var(--tt-text-muted); }
 .thread-activity__pulse[data-connected][data-tone='attention'] { background: var(--tt-attention); }
 .thread-activity-live__stop {
-  display: inline-flex; flex: none; align-items: center; gap: 6px; height: 28px; margin-left: -2px; padding: 0 8px; border: 0; border-radius: 6px;
+  display: inline-flex; flex: none; align-items: center; gap: 6px; height: 28px; min-height: 28px; margin-left: -2px; padding: 0 8px; border: 0; border-radius: 6px;
   background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer;
 }
 .thread-activity-live__stop:hover:not(:disabled) { background: var(--tt-hover); color: var(--tt-text); }
+.thread-activity-live__stop:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .thread-activity-live__stop:disabled { color: var(--tt-text-muted); cursor: default; }
 .thread-activity-live__note { flex-basis: 100%; margin: 0 0 0 14px; color: var(--tt-text-muted); font-size: 13.5px; line-height: 1.45; }
 /* A turn the user's own server let down: what happened in the error colour, the rest in ordinary text, then what to press. */

@@ -106,7 +106,7 @@ createInterface({ input: process.stdin }).on('line', line => {
   if (frame.method === 'initialize') {
     if (p.clientCapabilities?.fs?.writeTextFile !== false || p.clientCapabilities?.terminal !== false) violation('Sotto offers no file or terminal capability')
     const ready = () => send({ id: frame.id, result: { protocolVersion: script.protocolVersion ?? 1,
-      agentCapabilities: { mcpCapabilities: { http: script.httpMcp !== false }, promptCapabilities: { image: false, audio: false, embeddedContext: false },
+      agentCapabilities: { mcpCapabilities: { http: script.httpMcp !== false }, promptCapabilities: { image: script.images === true, audio: false, embeddedContext: false },
         sessionCapabilities: { close: {}, list: {}, resume: {} } },
       agentInfo: { name: 'deepseek-harness-acp', version: '0.0.1' }, authMethods: [] } })
     if (script.startDelayMs) setTimeout(ready, script.startDelayMs); else ready()
