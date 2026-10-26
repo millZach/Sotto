@@ -65,8 +65,7 @@ export function afterSocketMiss(action: SocketUpdateAction, miss: HostUpdateMiss
   switch (miss) {
     case 'forbidden': case 'invalid_request': case 'version_mismatch': case 'busy': case 'unsent': return 'ssh'
     case 'closed': return action === 'fetch' ? 'ssh' : action === 'install' ? 'lost' : 'reconnect'
-    case 'failed': return action === 'fetch' ? 'ssh' : action === 'install' ? 'lost' : 'ask'
-    case 'timeout': return action === 'fetch' ? 'ssh' : action === 'restart' ? 'ask' : 'lost'
+    case 'failed': case 'timeout': return action === 'fetch' ? 'ssh' : action === 'install' ? 'lost' : 'ask'
   }
 }
 /** Why a socket step has no answer, by the error's class; anything unexpected counts as an answer lost. */

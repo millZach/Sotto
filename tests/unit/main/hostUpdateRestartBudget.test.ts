@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { DesktopHosts } from '../../../src/main/hosts/desktopHosts'
 import { HostUpdateMissed, SocketHostService } from '../../../src/main/agents/socketHostService'
-import type { HostUpdateAnswer } from '../../../src/shared/hostSelfUpdate'
+import { HOST_UPDATE_RESTART_BUDGET_MS, type HostUpdateAnswer } from '../../../src/shared/hostSelfUpdate'
 import { deferred } from '../../fixtures/deferred'
 
 const host = { id: 'saved-host', name: 'Test host', enabled: true }
@@ -188,7 +188,7 @@ function reconnecting(status: { phase: string; reconnecting?: boolean } = { phas
   const press = vi.fn(async (_host: unknown, run: (connection: { updateHost(): Promise<unknown> }) => Promise<unknown>) => run({ updateHost: async () => ({ type: 'update-installed' }) }))
   Object.assign(manager, { options: { now: () => Date.now(), retryDelayMs: () => 60_000, router: { setReconnecting: vi.fn(), remove: vi.fn() } },
     saved: [host], status: new Map([[host.id, status]]), live: new Map([[host.id, { via: 'tailnet', up: false }]]), retries: new Map(),
-    held: new Map(), restartWindows: new Map(), socketSteps: new Map(), listeners: new Set(), closed: false, open, press })
+    held: new Map(), restartWindows: new Map(), updatesOverSsh: new Set(), socketSteps: new Map(), listeners: new Set(), closed: false, open, press })
   const run = manager as unknown as Recovering & { restartWindows: Map<string, { since: number; tailnetOnlyMs: number }> }
   dispose.push(async () => { for (const retry of run.retries.values()) clearTimeout(retry.timer) })
   return { run, open, press }
@@ -239,4 +239,35 @@ it('asks again when a quick reconnect reaches the old host before the restart ha
   expect(await result).toEqual(rollback)
   expect(f.client.hostUpdate).toHaveBeenCalledTimes(2)
   expect(vi.getTimerCount()).toBe(0)
+})
+
+it('ends a restart whose old host never drops within its budget, the reconnect it then starts included', async () => {
+  const f = reconnecting({ phase: 'connected' }), seen = vi.fn()
+  const socket = { connected: () => true, whenDisconnected: () => new Promise<void>(() => undefined),
+    hostUpdate: vi.fn(async (request: { action: string }) => request.action === 'restart' ? { type: 'update-restarting', version: '9.9.9' } : { type: 'update-outcome', running: '9.9.8', restart: { state: 'none' } }) }
+  const run = f.run as unknown as { restartOverSocket(target: typeof host, socket: unknown, version: string): Promise<unknown> }
+  void run.restartOverSocket(host, socket, '9.9.9').then(seen)
+  await vi.advanceTimersByTimeAsync(HOST_UPDATE_RESTART_BUDGET_MS)
+  expect(f.open).toHaveBeenCalledTimes(1)
+  // The connect never answers; nothing waits for it past the budget.
+  await vi.advanceTimersByTimeAsync(1)
+  expect(seen).toHaveBeenCalledWith({ went: true, result: undefined })
+})
+
+it('installs over an admin connection between reconnect attempts, when no connection is live', async () => {
+  const f = reconnecting()
+  ;(f.run as unknown as { live: Map<string, unknown> }).live.clear()
+  await expect(f.run.runUpdate(host.id, { op: 'update-install', version: '9.9.9', file: 'host.tar.gz', sha256: 'a'.repeat(64) })).resolves.toEqual({ type: 'update-installed' })
+  expect(f.press).toHaveBeenCalledTimes(1)
+})
+
+it('restarts over an admin connection while the tailnet reconnects, only after an earlier step of the update went over SSH', async () => {
+  const restarted = { type: 'update-restarted', ready: { type: 'ready', hostId: 'host-id', pid: 42 } }
+  const later = reconnecting({ phase: 'connecting', reconnecting: true, owned: true } as never)
+  const run = later.run as unknown as Recovering & { restartForUpdate(id: string, version: string): Promise<unknown>; open: () => Promise<void>; press: unknown }
+  run.press = vi.fn(async (_host: unknown, press: (connection: { updateHost(): Promise<unknown> }) => Promise<unknown>) => press({ updateHost: async () => restarted }))
+  run.open = vi.fn(async () => undefined)
+  await expect(run.restartForUpdate(host.id, '9.9.9')).rejects.toThrow('Connect to Test host')
+  await run.runUpdate(host.id, { op: 'update-install', version: '9.9.9', file: 'host.tar.gz', sha256: 'a'.repeat(64) })
+  await expect(run.restartForUpdate(host.id, '9.9.9')).resolves.toEqual(restarted)
 })

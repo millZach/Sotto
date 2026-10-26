@@ -192,3 +192,21 @@ it('ends the socket download before reporting its answer timeout for SSH fallbac
     expect(client.connected()).toBe(false)
   } finally { held.resolve({ type: 'update-cancelled', cancelled: true }) }
 })
+
+it('closes the download connection when the host answers Cancel update with nothing cancelled, since the cancel may have overtaken it', async () => {
+  const { client, script } = await setUp()
+  const held = deferred<HostUpdateAnswer>()
+  let download: HostUpdateContext | undefined
+  // The host reached the cancel first: nothing of this client's was downloading yet, and the download starts after it.
+  script((request, context) => { if (request.action === 'cancel') return Promise.resolve({ type: 'update-cancelled', cancelled: false }); download = context; return held.promise })
+  await client.connect()
+  const abort = new AbortController()
+  const fetching = client.hostUpdate({ action: 'fetch', version: '9.9.9' }, { signal: abort.signal }).catch((error: unknown) => error)
+  await vi.waitFor(() => expect(download).toBeDefined(), { timeout: 10_000 })
+  try {
+    abort.abort()
+    await vi.waitFor(() => expect(download?.gone.aborted).toBe(true), { timeout: 10_000 })
+    expect(await fetching).toEqual(missed('closed'))
+    expect(client.connected()).toBe(false)
+  } finally { held.resolve({ type: 'update-cancelled', cancelled: true }); await fetching }
+})

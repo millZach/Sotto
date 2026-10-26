@@ -245,6 +245,11 @@ export class DesktopHosts {
    * dropped again included (ADR-0088, October 16 amendment).
    */
   private readonly restartWindows = new Map<string, Required<Pick<Retry, 'since' | 'tailnetOnlyMs'>>>()
+  /**
+   * Hosts whose update under way has run a step over SSH: the tailnet did not answer before it installed, so its later
+   * steps, its restart included, may go over an admin connection while the tailnet reconnects (ADR-0088).
+   */
+  private readonly updatesOverSsh = new Set<string>()
   /** Set by close(): Sotto is quitting, so no retry may start an SSH session the quit drain would leave behind. */
   private closed = false
   private writing: Promise<void> = Promise.resolve()
@@ -375,9 +380,10 @@ export class DesktopHosts {
    */
   async runUpdate(id: string, operation: SshHostUpdateOperation, options?: SshHostUpdateOptions): Promise<SshHostUpdateResult> {
     const host = this.saved.find(item => item.id === id)
-    // A step after a download that fell back to SSH can find the tailnet still reconnecting: it goes over an admin connection.
-    const reconnecting = this.status.get(id)?.phase === 'connecting' && this.status.get(id)?.reconnecting === true
-    if (!host || !this.live.has(id) || !(this.reachable(id) || reconnecting)) throw new Error(host ? t`${{ host: host.name }} is not connected. Nothing was changed.` : t`This host is not connected. Nothing was changed.`)
+    // A step after a download that fell back to SSH can find the tailnet still reconnecting, between attempts too: it goes
+    // over an admin connection.
+    if (!host || !((this.live.has(id) && this.reachable(id)) || this.reconnecting(id))) throw new Error(host ? t`${{ host: host.name }} is not connected. Nothing was changed.` : t`This host is not connected. Nothing was changed.`)
+    if (operation.op === 'update-fetch') this.updatesOverSsh.delete(id)
     const socket = this.updateSocket(id, operation.op)
     if (socket && (operation.op === 'update-fetch' || operation.op === 'update-install')) {
       // The request carries a version, and for install the archive the host's own download named. Never a releases page.
@@ -397,7 +403,13 @@ export class DesktopHosts {
       // The install carries on on the host. `HostUpdates` words any such error as a lost connection, and Try again starts over.
       if (next !== 'ssh') throw new HostConnectionError(t`The connection to ${{ host: host.name }} closed during the update.`, 'disconnected')
     }
+    this.updatesOverSsh.add(id)
     return this.press(host, connection => connection.updateHost(operation, options))
+  }
+  /** Whether a saved host's connection dropped and Sotto is connecting it again. */
+  private reconnecting(id: string): boolean {
+    const status = this.status.get(id)
+    return status?.phase === 'connecting' && status.reconnecting === true
   }
   /** The socket a host update step goes over, when `updateCarrier` says the socket carries it. */
   private updateSocket(id: string, op: SshHostUpdateOperation['op']): SocketHostService | undefined {
@@ -439,7 +451,8 @@ export class DesktopHosts {
   async restartForUpdate(id: string, version: string, options?: SshHostUpdateOptions): Promise<SshHostUpdateResult | HostUpdateRestartResult | undefined> {
     const host = this.saved.find(item => item.id === id)
     if (!host) throw new Error(t`This host is no longer saved. Nothing was changed.`)
-    this.requireOwnedConnection(host)
+    // An update whose earlier steps went over SSH restarts over an admin connection while the tailnet reconnects.
+    this.requireOwnedConnection(host, this.updatesOverSsh.has(id) && this.reconnecting(id))
     // Over the host's socket when it carries the update (ADR-0088). A restart the socket refused, or never sent, stopped
     // nothing and goes as it always has; one that went is never sent again over SSH.
     const socket = this.updateSocket(id, 'update-restart')
@@ -454,6 +467,7 @@ export class DesktopHosts {
       if (!signedIn) throw new SshFailure('not-connected', error instanceof Error ? error.message : undefined)
       throw error
     }
+    finally { this.updatesOverSsh.delete(id) }
   }
   /**
    * A restart the host runs on itself, asked over its socket (ADR-0088, October 16 amendment). The host answers once the
@@ -464,7 +478,7 @@ export class DesktopHosts {
    * a host still running, so the same connection carries on.
    */
   private async restartOverSocket(host: SavedHost, socket: SocketHostService, version: string): Promise<{ readonly went: false } | { readonly went: true; readonly result: HostUpdateRestartResult | undefined }> {
-    let sentAt = this.now(), acknowledged = false
+    let sentAt = this.now(), went = false, acknowledged = false
     // What the host recorded of its last restart before this one, so a record left from an earlier Try again is not read as this one's.
     let before: HostUpdateAnswer | undefined
     type Sent = { readonly refused: true } | { readonly answer: HostUpdateRestartResult } | { readonly restarting: true }
@@ -473,6 +487,7 @@ export class DesktopHosts {
       sentAt = this.now()
       const deadline = sentAt + HOST_UPDATE_RESTART_BUDGET_MS
       const restarting = async (): Promise<Sent> => {
+        went = true
         this.restartWindows.set(host.id, { since: sentAt, tailnetOnlyMs: HOST_UPDATE_RESTART_BUDGET_MS })
         await this.socketDown(socket, deadline)
         return { restarting: true }
@@ -494,7 +509,8 @@ export class DesktopHosts {
       if (answer.type !== 'update-restarting') return { answer: { type: 'error', reason: 'restart-not-sent' } }
       acknowledged = true
       return restarting()
-    }, result => !('restarting' in result), () => this.restartWindow(host.id) ?? { since: this.now() })
+    // The restart's own deadline bounds its first reconnect, even once the socket took its whole budget to drop.
+    }, result => !('restarting' in result), () => went ? { since: sentAt, tailnetOnlyMs: HOST_UPDATE_RESTART_BUDGET_MS } : { since: this.now() })
     if ('refused' in sent) return { went: false }
     if ('answer' in sent) return { went: true, result: sent.answer }
     // An acknowledged restart went even on an older host with no attempt IDs; an identical rollback can be fresh.
@@ -609,6 +625,8 @@ export class DesktopHosts {
     // has them on the page and its drop is the one restart it expects. The press itself stays on the SSH connection it began on.
     let active = this.live.get(id)
     while (active?.moving) { await active.moving.catch(() => false); active = this.live.get(id) }
+    // Between reconnect attempts there is no connection to hold: the retries already under way connect to what it leaves.
+    if (!active && this.reconnecting(id)) return operation()
     if (!active) throw new SshFailure('not-connected', t`${{ host: host.name }} is not connected. Nothing was changed.`)
     active.closing = true
     this.clearRetry(id)
@@ -1838,9 +1856,9 @@ export class DesktopHosts {
     return t`How Sotto connects to ${{ host: host.name }} could not be changed. Nothing was changed. Check that ${{ host: host.name }} is reachable over SSH and its host is running, then try again.`
   }
   /** Stop host needs a live connection to a host this Sotto started; a discovered host is never stopped. */
-  private requireOwnedConnection(host: SavedHost): void {
+  private requireOwnedConnection(host: SavedHost, reconnectingWill = false): void {
     // A host of another version leaves its SSH session open in the error phase for exactly this press.
-    if (!this.live.has(host.id) || !this.reachable(host.id)) throw new Error(t`Connect to ${{ host: host.name }} before stopping its host.`)
+    if (!reconnectingWill && (!this.live.has(host.id) || !this.reachable(host.id))) throw new Error(t`Connect to ${{ host: host.name }} before stopping its host.`)
     if (this.status.get(host.id)?.owned !== true) throw new Error(t`Sotto did not start the host on ${{ host: host.name }}, so it cannot stop it. Stop it on that machine.`)
   }
   /** The SSH connection a saved host's current connect signed in with, while it is open. */

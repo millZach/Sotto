@@ -1326,9 +1326,10 @@ export class SocketHostService implements HostService {
     if (onStep) this.updateSteps.add(onStep)
     const frames = this.frames
     // A cancel that cannot reach the host must still end its download: closing this request's connection aborts its owner.
+    // So must one the host answers with nothing cancelled, since it may have overtaken the download it was for on the host.
     // Keep this connection, so a late cancel failure can never close a replacement connection.
     const cancel = (): void => { void this.call({ op: 'host-update', action: 'cancel' }, randomUUID(), undefined, HOST_UPDATE_ANSWER_DEADLINES_MS.cancel)
-      .then(answer => { const parsed = hostUpdateAnswerSchema.safeParse(answer); if (!parsed.success || parsed.data.type !== 'update-cancelled') frames?.close() }, () => frames?.close()) }
+      .then(answer => { const parsed = hostUpdateAnswerSchema.safeParse(answer); if (!parsed.success || parsed.data.type !== 'update-cancelled' || !parsed.data.cancelled) frames?.close() }, () => frames?.close()) }
     signal?.addEventListener('abort', cancel, { once: true })
     try {
       const operation = { op: 'host-update', action: request.action, ...(request.version ? { version: request.version } : {}),

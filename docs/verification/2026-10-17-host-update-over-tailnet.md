@@ -32,6 +32,18 @@ The coordinator opened the new minimum-size [checksum failure](../../artifacts/h
 
 Functional durations are not comparable performance evidence: background CPU was above the quiet measurement threshold. Full-suite validation, comparative timing and process resources, prerequisite integration and final PR gates remain open.
 
+## October 26: finishing review
+
+The branch was merged with `main` twice (`e3582b026`, then `14db20a98`). Main's timeout error for #1311 is now the timeout stage of this branch's unanswered-request error, and the branch's errors carry main's catalog words (ADR-0123). Two-axis review by Sol at max reasoning ran twice and found eight problems, each fixed with a regression test that fails on the code before its fix:
+
+- A reconnect that reached the stopping host and dropped again lost the tailnet-only window, so SSH could sign in while the restart's budget still ran. The restart window now lasts until the outcome has been read.
+- The first reconnect after a restart waited without a bound, including when the old host never dropped and the socket wait took the whole budget. It now ends at the restart's own deadline.
+- After a download fell back to SSH while the tailnet reconnected, the install was refused as "not connected", including between reconnect attempts, and the restart after it was refused as well. Those steps now go over an admin connection, and the restart does so only when an earlier step of the same update went over SSH.
+- After a lost restart answer, a quick reconnect could read "none" or the earlier record from the old host and stop asking. It now asks until the host says how this restart ended (`restartSettled`) or the budget ends.
+- A cancel could overtake its own download on the host, come back with nothing cancelled, and leave that download running. An unconfirmed cancel now closes that request's connection, as an undelivered one already did.
+
+Typecheck, lint, the catalog check and 242 tests in the host-update, socket, Watcher paired-host and real-host self-update files passed on Windows. Running both real-host suites alongside two other heavy files once gave a `port-taken` start of the old host, from the launch script's health check under load; the suite passed alone and both suites passed together. The full suite and the desktop journeys run in CI.
+
 ## Limits
 
 The panel itself is unchanged. No live provider turn, real Tailscale approval, Linux start-at-boot update or forge update was run here. Zach deferred the real Linux host check until the next Owl release and his go. These local journeys verify the socket and SSH choice against stand-ins; they do not replace that deferred check.
