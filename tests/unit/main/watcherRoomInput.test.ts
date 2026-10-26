@@ -86,7 +86,7 @@ describe('owned cached Watcher room inputs', () => {
       createdAt: '2026-10-14T00:00:00.000Z', closedAt: null, participants: ['one', 'two', 'missing'].map(threadId => ({
         target: { hostId: remoteId, threadId }, requestId: 'request', startedBy: 'watcher', generation: 0, state: 'participating', promptCount: 1 })) })
     const control = { watcherRecord: () => structuredClone(record), watcherRecordView: () => record, watcherSnapshot: () => emptyDesktopState(localId).host,
-      hostId: () => localId, useWatcher: () => () => undefined, subscribe: () => () => undefined } as unknown as AgentControl
+      hostId: () => localId, hostThreadsOf: () => undefined, useWatcher: () => () => undefined, subscribe: () => () => undefined } as unknown as AgentControl
     const service = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, historyEnabled: () => false, streamingPublishCost: optimized })
     const legacy = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, historyEnabled: () => false })
     const remote: WatcherRemoteHosts = f.router.watcherHosts()
@@ -128,7 +128,7 @@ describe('owned cached Watcher room inputs', () => {
     record.watches = [{ id: '44444444-4444-4444-8444-444444444444', target: { hostId: remoteId, threadId: 'standing-only' },
       createdAt: at, generation: 0, pausedByUserMessageId: 'user' }]
     const control = { watcherRecord: () => structuredClone(record), watcherRecordView: () => record, watcherSnapshot: () => emptyDesktopState(localId).host,
-      hostId: () => localId, useWatcher: () => () => undefined, subscribe: () => () => undefined } as unknown as AgentControl
+      hostId: () => localId, hostThreadsOf: () => undefined, useWatcher: () => () => undefined, subscribe: () => () => undefined } as unknown as AgentControl
     const service = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, historyEnabled: () => false, streamingPublishCost: true })
     const legacy = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, historyEnabled: () => false })
     const remote = f.router.watcherHosts(), read = vi.spyOn(remote, 'roomThreads'), snapshot = vi.spyOn(remote, 'snapshot'), shell = vi.spyOn(f.socket, 'shell')

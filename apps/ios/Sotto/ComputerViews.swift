@@ -10,7 +10,7 @@ struct ComputersView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
         SheetPage(washHeight: 330) {
-            PageHeading("Computers", subtitle: "Each computer runs Sotto and shares its threads with this iPhone.") {
+            PageHeading(String(localized: "Computers"), subtitle: String(localized: "Each computer runs Sotto and shares its threads with this iPhone.")) {
                 Button { model.startAdding() } label: { Image(systemName: "plus") }
                     .buttonStyle(GlassCircleStyle())
                     .disabled(!model.storageReady)
@@ -29,6 +29,7 @@ struct ComputersView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, Space.s1)
                 .padding(.top, Space.s3)
+                .paragraphDirection()
         }
         .refreshable { await model.refresh() }
         .navigationTitle("Computers")
@@ -84,7 +85,7 @@ private struct ComputerCard: View {
                 .background(status == .online ? Palette.accent.opacity(0.14) : Palette.fillSoft, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(name).font(.sotto(.lead, .bold)).foregroundStyle(Palette.ink)
+                Text(verbatim: name).font(.sotto(.lead, .bold)).foregroundStyle(Palette.ink)
                     .lineLimit(textSize.isAccessibilitySize ? 3 : 1)
                 HStack(spacing: Space.s2) {
                     ComputerDot(status: status)
@@ -112,26 +113,26 @@ private struct ComputerCard: View {
 
     private var answerTitle: String {
         switch status {
-        case .online: return model.mayAnswer(hostID) ? "Can answer" : "Can’t answer yet"
-        case .connecting: return "Checking…"
-        case .unreachable: return "Not known now"
+        case .online: return model.mayAnswer(hostID) ? String(localized: "Can answer", comment: "This iPhone may answer questions and permissions on this computer.") : String(localized: "Can’t answer yet", comment: "This iPhone may not answer questions and permissions on this computer yet.")
+        case .connecting: return String(localized: "Checking…", comment: "Whether this iPhone may answer on a computer is being checked.")
+        case .unreachable: return String(localized: "Not known now", comment: "Whether this iPhone may answer on a computer that can’t be reached.")
         }
     }
     private var answerDetail: String {
         switch status {
-        case .online: return model.mayAnswer(hostID) ? "Questions and permissions" : "Turn on Can answer in Sotto there"
-        case .connecting: return "Whether this iPhone may answer"
-        case .unreachable: return "Shown once it’s back"
+        case .online: return model.mayAnswer(hostID) ? String(localized: "Questions and permissions") : String(localized: "Turn on Can answer in Sotto there")
+        case .connecting: return String(localized: "Whether this iPhone may answer")
+        case .unreachable: return String(localized: "Shown once it’s back")
         }
     }
     private var shared: ComputerThreads? { model.lists.first { $0.hostID == hostID } }
     private var projectWords: String {
         let count = shared?.projects.count ?? 0
-        return count == 1 ? "1 project" : "\(count) projects"
+        return count == 1 ? String(localized: "1 project") : String(localized: "\(count) projects")
     }
     private var threadWords: String {
         let count = shared?.threads.count ?? 0
-        return count == 1 ? "1 thread" : "\(count) threads"
+        return count == 1 ? String(localized: "1 thread") : String(localized: "\(count) threads")
     }
 }
 
@@ -182,11 +183,11 @@ private struct ComputerDetails: View {
                 ComputerStatusCard(hostID: hostID, status: status)
                 if model.feedback != nil { FeedbackBanner() }
                 VStack(spacing: 0) {
-                    DetailRow(label: "Name on tailnet", value: computer.machineName, mono: true)
+                    DetailRow(label: String(localized: "Name on tailnet"), value: computer.machineName, mono: true)
                     Rectangle().fill(Palette.hairline).frame(height: 1)
-                    DetailRow(label: "Address", value: computer.endpoint?.address ?? computer.address, mono: true)
+                    DetailRow(label: String(localized: "Address", comment: "A computer’s network address."), value: computer.endpoint?.address ?? computer.address, mono: true)
                     Rectangle().fill(Palette.hairline).frame(height: 1)
-                    DetailRow(label: "Answers from this iPhone", value: answers, mono: false)
+                    DetailRow(label: String(localized: "Answers from this iPhone"), value: answers, mono: false)
                     Rectangle().fill(Palette.hairline).frame(height: 1)
                     ClientIDRow(clientID: computer.pairing.clientId)
                 }
@@ -201,7 +202,7 @@ private struct ComputerDetails: View {
                     .accessibilityLabel("Rename \(computer.name) on this iPhone")
                     Rectangle().fill(Palette.hairline).frame(height: 1)
                     Button(role: .destructive) { confirmRemove = true } label: {
-                        Text(model.removing == hostID ? "Removing…" : "Remove this computer").font(.sotto(.body, .semibold))
+                        (model.removing == hostID ? Text("Removing…") : Text("Remove this computer")).font(.sotto(.body, .semibold))
                             .foregroundStyle(Palette.dangerText)
                             .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading).contentShape(Rectangle())
                     }
@@ -213,12 +214,13 @@ private struct ComputerDetails: View {
                     .font(.sotto(.small)).foregroundStyle(Palette.muted)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, Space.s1)
+                    .paragraphDirection()
             }
             .padding(.horizontal, Space.gutter).padding(.top, Space.s2).padding(.bottom, Space.s6)
         }
         // A computer that gave up waits for its Reconnect; pulling leaves it alone, as it does on the lists.
         .refreshable { if model.status(hostID) != .unreachable { await model.connect(hostID) } }
-        .confirmationDialog("Remove \(computer.name)?", isPresented: $confirmRemove, titleVisibility: .visible) {
+        .confirmationDialog(String(localized: "computer-remove.title", defaultValue: "Remove \(computer.name)?", comment: "Asks before removing a computer from this iPhone. %@ is the computer's name"), isPresented: $confirmRemove, titleVisibility: .visible) {
             Button("Remove from this iPhone", role: .destructive) { Task { await model.remove(hostID) } }
         } message: {
             Text("This iPhone stops showing its threads. If \(computer.name) can’t be reached, remove this iPhone there too: in Settings › Hosts & phones, or for a computer without a screen, with Phones on its row in Settings › Hosts & phones on your main computer.")
@@ -231,9 +233,9 @@ private struct ComputerDetails: View {
     }
     private var answers: String {
         switch status {
-        case .online: return model.mayAnswer(hostID) ? "Allowed" : "Not allowed yet"
-        case .connecting: return "Checking…"
-        case .unreachable: return "Shown once it’s back"
+        case .online: return model.mayAnswer(hostID) ? String(localized: "Allowed", comment: "This iPhone may answer questions and permissions on this computer.") : String(localized: "Not allowed yet", comment: "This iPhone may not answer questions and permissions on this computer yet.")
+        case .connecting: return String(localized: "Checking…", comment: "Whether this iPhone may answer on a computer is being checked.")
+        case .unreachable: return String(localized: "Shown once it’s back")
         }
     }
 }
@@ -251,9 +253,11 @@ private struct ComputerStatusCard: View {
             }
             .accessibilityElement(children: .combine)
             if status == .unreachable {
-                Text(model.problem(hostID) ?? "Check that it’s on and that Tailscale is connected on this iPhone.")
+                Text(model.problem(hostID) ?? String(localized: "Check that it’s on and that Tailscale is connected on this iPhone."))
                     .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                    .paragraphDirection()
                 Text("Work carries on there. Your drafts are kept.").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                    .paragraphDirection()
                 Button { Task { await model.connect(hostID) } } label: { Label("Reconnect", systemImage: "arrow.clockwise") }
                     .buttonStyle(ActionStyle(wide: true)).padding(.top, Space.s1)
                     .accessibilityLabel("Reconnect to \(model.name(hostID))")
@@ -287,7 +291,7 @@ private struct ClientIDRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s1) {
             Text("Client ID").font(.sotto(.body)).foregroundStyle(Palette.ink)
-            Text(clientID).font(.mono).foregroundStyle(Palette.muted).textSelection(.enabled)
+            Text(verbatim: clientID).font(.mono).foregroundStyle(Palette.muted).textSelection(.enabled)
         }
         .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading).padding(.horizontal, Space.s4).padding(.vertical, Space.s2)
         .accessibilityElement(children: .combine)
@@ -300,9 +304,10 @@ private struct AllowAnswersHelp: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("To answer questions and permissions from this iPhone, open Sotto on \(name), go to Settings › Hosts & phones and turn on Can answer for this iPhone.")
-            Text("For a computer without a screen, turn it on in Sotto on your main computer: Settings › Hosts & phones, then Phones on its row. Or run its --allow-answers command with this iPhone’s client ID.")
+            Text("For a computer without a screen, turn it on in Sotto on your main computer: Settings › Hosts & phones, then Phones on its row. Or run its \(Interface.isolated("--allow-answers")) command with this iPhone’s client ID.", comment: "%@ is a command-line option, left as it is.")
         }
         .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, Space.s1)
+        .paragraphDirection()
     }
 }

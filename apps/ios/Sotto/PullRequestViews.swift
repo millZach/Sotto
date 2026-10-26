@@ -62,7 +62,7 @@ struct PullRequestSheet: View {
                     Image(systemName: "arrow.up.right.square").font(.system(size: 16, weight: .semibold))
                 }
                 .buttonStyle(GlassCircleStyle())
-                .accessibilityLabel("Open #\(number) on GitHub")
+                .accessibilityLabel("Open #\(String(number)) on GitHub")
                 .accessibilityHint("Opens it in Safari.")
                 .accessibilityIdentifier("pull-request-github")
             }
@@ -89,7 +89,7 @@ struct PullRequestSheet: View {
                         }
                     }
                     .buttonStyle(ChipStyle(selected: part == each))
-                    .accessibilityLabel(each.title + (each.flagged(detail) ? ", " + each.flagWords : ""))
+                    .accessibilityLabel(each.flagged(detail) ? each.flaggedTitle : each.title)
                     .accessibilityHint("Goes to this part of the pull request.")
                     .accessibilityAddTraits(part == each ? .isSelected : [])
                     .accessibilityIdentifier("pull-request-jump-\(each.rawValue)")
@@ -115,12 +115,12 @@ struct PullRequestSheet: View {
         case .reading:
             VStack(spacing: Space.s3) {
                 ProgressView()
-                Text("Reading #\(number) from GitHub…").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                Text("Reading #\(String(number)) from GitHub…").font(.sotto(.small)).foregroundStyle(Palette.muted)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityElement(children: .combine)
         case .nothing:
-            message("This thread has no pull request to show. It may have been unlinked on the computer.", retry: false)
+            message(String(localized: "This thread has no pull request to show. It may have been unlinked on the computer."), retry: false)
         case .limited(let words), .failed(let words):
             message(words, retry: true)
         case .shown(let detail):
@@ -139,6 +139,7 @@ struct PullRequestSheet: View {
     private func message(_ words: String, retry: Bool) -> some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             Text(words).font(.sotto(.body)).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
+                .paragraphDirection()
             if retry {
                 Button("Try again") { phase = .reading; Task { await load() } }
                     .buttonStyle(PillButtonStyle(kind: .soft))
@@ -164,8 +165,10 @@ struct PullRequestSheet: View {
             case .detail(let detail): next = .shown(detail)
             case .noPullRequest: next = .nothing
             case .limited(let retryAt):
-                let when = Stamp.date(retryAt).map { " after " + PullRequests.clock($0) } ?? " in a few minutes"
-                next = .limited("GitHub is limiting requests from your gh sign-in, so Sotto could not read the pull request. Nothing was lost. Try again\(when).")
+                let words = Stamp.date(retryAt).map {
+                    String(localized: "GitHub is limiting requests from your gh sign-in, so Sotto could not read the pull request. Nothing was lost. Try again after \(PullRequests.clock($0)).", comment: "%@ is a time of day, such as 3:40 PM.")
+                } ?? String(localized: "GitHub is limiting requests from your gh sign-in, so Sotto could not read the pull request. Nothing was lost. Try again in a few minutes.")
+                next = .limited(words)
             }
         } catch {
             next = .failed(failureWords(error))
@@ -193,10 +196,10 @@ enum PullRequestPart: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .summary: return "Summary"
-        case .checks: return "Checks"
-        case .reviews: return "Reviews"
-        case .files: return "Files"
+        case .summary: return String(localized: "Summary", comment: "A part of a pull request: its description.")
+        case .checks: return String(localized: "Checks", comment: "A part of a pull request: its CI checks.")
+        case .reviews: return String(localized: "Reviews", comment: "A part of a pull request: its reviews.")
+        case .files: return String(localized: "Files", comment: "A part of a pull request: the files it changes.")
         }
     }
     /// Whether the part holds something that failed: a failing check, or a request for changes.
@@ -207,7 +210,14 @@ enum PullRequestPart: String, CaseIterable, Identifiable {
         case .summary, .files: return false
         }
     }
-    var flagWords: String { self == .checks ? "a check failed" : "changes requested" }
+    /// The jump chip's name for VoiceOver when the part holds something that failed.
+    var flaggedTitle: String {
+        switch self {
+        case .checks: return String(localized: "Checks, a check failed", comment: "VoiceOver name of a pull request’s Checks chip when a check failed.")
+        case .reviews: return String(localized: "Reviews, changes requested", comment: "VoiceOver name of a pull request’s Reviews chip when a reviewer asked for changes.")
+        case .summary, .files: return title
+        }
+    }
 }
 
 /// Where each part's top sits in the sheet's scroll.
@@ -242,11 +252,11 @@ private struct PullRequestBody: View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack(spacing: Space.s2) {
                 StatePill(state: detail.shownState)
-                Text("#\(detail.number)").font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
+                Text("#\(String(detail.number))").font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
             }
             .accessibilityElement(children: .combine)
-            Text(detail.title)
-                .font(.sotto(.title, .bold)).tracking(-0.4)
+            Text(verbatim: detail.title)
+                .font(.sotto(.title, .bold)).headingTracking(-0.4)
                 .foregroundStyle(Palette.ink)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
@@ -255,13 +265,13 @@ private struct PullRequestBody: View {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.triangle.branch").font(.system(size: 11, weight: .semibold)).accessibilityHidden(true)
                     BranchName(name: detail.headBranch)
-                    Text("into")
+                    Text("into", comment: "Between two branch names, as in: feature-branch into main.")
                     BranchName(name: detail.baseBranch)
                 }
                 .font(.sotto(.caption))
                 .foregroundStyle(Palette.muted)
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Branch \(detail.headBranch) into \(detail.baseBranch)")
+                .accessibilityLabel("Branch \(Interface.isolated(detail.headBranch)) into \(Interface.isolated(detail.baseBranch))")
             }
         }
     }
@@ -314,6 +324,7 @@ private struct PullRequestBody: View {
         Group {
             if description.isEmpty {
                 Text("It has no description.").font(.sotto(.body)).foregroundStyle(Palette.muted)
+                    .paragraphDirection()
             } else {
                 MarkdownText(text: description).equatable().foregroundStyle(Palette.ink)
             }
@@ -347,7 +358,7 @@ private struct PullRequestBody: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: showPassed ? "chevron.up" : "chevron.down").font(.system(size: 11, weight: .bold)).accessibilityHidden(true)
-                            Text(showPassed ? "Hide passed checks" : "Show \(passed) passed")
+                            (showPassed ? Text("Hide passed checks") : passed == 1 ? Text("Show 1 passed", comment: "Shows the one check that passed.") : Text("Show \(passed) passed", comment: "Shows the checks that passed; the number counts them."))
                         }
                         .font(.sotto(.small, .semibold))
                         .foregroundStyle(Palette.accentText)
@@ -358,7 +369,7 @@ private struct PullRequestBody: View {
                     .buttonStyle(PressStyle())
                     .accessibilityIdentifier("pull-request-passed-checks")
                 }
-                if detail.checksUnknown { Hairline(); Note(words: "GitHub did not let Sotto read every check.", inCard: true) }
+                if detail.checksUnknown { Hairline(); Note(words: String(localized: "GitHub did not let Sotto read every check."), inCard: true) }
             }
             .sottoCard(.plain)
         }
@@ -368,7 +379,7 @@ private struct PullRequestBody: View {
 
     @ViewBuilder private var reviews: some View {
         if detail.reviews.isEmpty {
-            Note(words: detail.draft ? "Nobody has reviewed it. Reviewers wait until it is ready." : "Nobody has reviewed it yet.")
+            Note(words: detail.draft ? String(localized: "Nobody has reviewed it. Reviewers wait until it is ready.") : String(localized: "Nobody has reviewed it yet."))
         } else {
             VStack(spacing: 0) {
                 // The newest review first.
@@ -392,7 +403,7 @@ private struct PullRequestBody: View {
     @ViewBuilder private var files: some View {
         if let files = detail.files {
             if files.isEmpty {
-                Note(words: "It changes no files.")
+                Note(words: String(localized: "It changes no files."))
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(PullRequests.ordered(files).enumerated()), id: \.offset) { index, file in
@@ -401,14 +412,19 @@ private struct PullRequestBody: View {
                     }
                     if let total = detail.changedFiles, total > files.count {
                         Hairline()
-                        Note(words: "GitHub listed \(files.count) of its \(total) files. Open it on GitHub for the rest.", inCard: true)
+                        Note(words: String(localized: "GitHub listed \(files.count) of its \(Self.fileWords(total)). Open it on GitHub for the rest.", comment: "%lld is how many files GitHub listed; %@ counts all the files, such as “40 files”."), inCard: true)
                     }
                 }
                 .sottoCard(.plain)
             }
         } else {
-            Note(words: "GitHub did not list the changed files. Open it on GitHub to see them.")
+            Note(words: String(localized: "GitHub did not list the changed files. Open it on GitHub to see them."))
         }
+    }
+
+    /// All of a pull request's files, counted: "1 file", "40 files".
+    private static func fileWords(_ total: Int) -> String {
+        total == 1 ? String(localized: "1 file") : String(localized: "\(total) files")
     }
 }
 
@@ -423,7 +439,7 @@ private struct CheckRow: View {
         let row = HStack(spacing: Space.s3) {
             ToneMark(tone: tone, size: 18)
             VStack(alignment: .leading, spacing: 2) {
-                Text(check.name).font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(2)
+                Text(verbatim: check.name).font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(2)
                 if let description = check.description, !description.isEmpty {
                     Text(description).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(2)
                 }
@@ -460,11 +476,13 @@ private struct ReviewRow: View {
     var body: some View {
         let approved = review.state == "approved"
         let link = PullRequests.openable(review.url)
-        let words = approved ? "Approved" : "Asked for changes"
+        let words = approved ? String(localized: "Approved", comment: "A pull request review that approved it.") : String(localized: "Asked for changes", comment: "A pull request review that asked for changes.")
+        let spoken = approved ? String(localized: "\(review.author), approved", comment: "VoiceOver name of a review; %@ is the reviewer’s GitHub name.")
+            : String(localized: "\(review.author), asked for changes", comment: "VoiceOver name of a review; %@ is the reviewer’s GitHub name.")
         let row = HStack(spacing: Space.s3) {
             ToneMark(tone: approved ? .passed : .failing, size: 18)
             VStack(alignment: .leading, spacing: 2) {
-                Text(review.author).font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(1)
+                Text(verbatim: review.author).font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(1)
                 Text(words).font(.sotto(.caption)).foregroundStyle(Palette.muted)
             }
             Spacer(minLength: Space.s2)
@@ -479,11 +497,11 @@ private struct ReviewRow: View {
             Button { openURL(link) } label: { row }
                 .buttonStyle(PressStyle())
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(review.author), \(words.lowercased())")
+                .accessibilityLabel(spoken)
                 .accessibilityHint("Opens the review on GitHub.")
                 .accessibilityAddTraits(.isLink)
         } else {
-            row.accessibilityElement(children: .ignore).accessibilityLabel("\(review.author), \(words.lowercased())")
+            row.accessibilityElement(children: .ignore).accessibilityLabel(spoken)
         }
     }
 }
@@ -495,7 +513,7 @@ private struct FileRow: View {
             Image(systemName: "doc").font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.muted).frame(width: 18).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(file.name).font(.system(.subheadline, design: .monospaced)).foregroundStyle(Palette.ink).lineLimit(1).truncationMode(.middle)
-                Text(file.folder ?? "The top folder").font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1).truncationMode(.head)
+                Text(file.folder ?? String(localized: "The top folder")).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1).truncationMode(.head)
             }
             Spacer(minLength: Space.s2)
             HStack(spacing: 6) {
@@ -508,7 +526,7 @@ private struct FileRow: View {
         .padding(.horizontal, Space.s4).padding(.vertical, Space.s2)
         .frame(minHeight: 52)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(file.path), \(file.additions) added, \(file.deletions) removed")
+        .accessibilityLabel("\(Interface.isolated(file.path)), \(file.additions) added, \(file.deletions) removed")
     }
 }
 
@@ -575,10 +593,10 @@ private struct StatePill: View {
     }
     private var word: String {
         switch state {
-        case "draft": return "Draft"
-        case "merged": return "Merged"
-        case "closed": return "Closed"
-        default: return "Open"
+        case "draft": return String(localized: "Draft", comment: "A pull request’s state: a draft.")
+        case "merged": return String(localized: "Merged", comment: "A pull request’s state: merged.")
+        case "closed": return String(localized: "Closed", comment: "A pull request’s state: closed without merging.")
+        default: return String(localized: "Open", comment: "A pull request’s state: open.")
         }
     }
     private var foreground: Color {
@@ -602,7 +620,7 @@ private struct StatePill: View {
 private struct BranchName: View {
     let name: String
     var body: some View {
-        Text(name)
+        Text(verbatim: name)
             .font(.system(.caption, design: .monospaced))
             .foregroundStyle(Palette.ink)
             .lineLimit(1).truncationMode(.middle)
@@ -624,6 +642,7 @@ private struct Note: View {
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
+            .paragraphDirection()
         if inCard { text } else { text.sottoCard(.plain) }
     }
 }
@@ -655,23 +674,23 @@ private struct BabysitDock: View {
             switch state {
             case .babysitting(let title, let words):
                 line(icon: "alarm", tone: .passed, title: title, words: words)
-                Button { press(false) } label: { Text(waiting ? "Stopping…" : "Stop babysitting").frame(maxWidth: .infinity) }
+                Button { press(false) } label: { (waiting ? Text("Stopping…") : Text("Stop babysitting")).frame(maxWidth: .infinity) }
                     .buttonStyle(PillButtonStyle(kind: .soft, wide: true))
                     .disabled(waiting || !model.canChangeBabysitting(ref))
-                    .accessibilityLabel("Stop babysitting #\(detail.number)")
+                    .accessibilityLabel("Stop babysitting #\(String(detail.number))")
                     .accessibilityIdentifier("stop-babysitting")
             case .offered(let words):
                 line(icon: "alarm", tone: .quiet, title: nil, words: words)
                 Button { press(true) } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "alarm").accessibilityHidden(true)
-                        Text(waiting ? "Starting…" : "Babysit pull request")
+                        (waiting ? Text("Starting…", comment: "Babysitting a pull request is starting.") : Text("Babysit pull request"))
                     }
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(PillButtonStyle(kind: .primary, wide: true))
                 .disabled(waiting || !model.canChangeBabysitting(ref))
-                .accessibilityLabel("Babysit pull request #\(detail.number)")
+                .accessibilityLabel("Babysit pull request #\(String(detail.number))")
                 .accessibilityIdentifier("babysit-pull-request")
             case .finished(let title, let words):
                 line(icon: "alarm", tone: .quiet, title: title, words: words)
@@ -691,6 +710,7 @@ private struct BabysitDock: View {
             VStack(alignment: .leading, spacing: 2) {
                 if let title { Text(title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink) }
                 Text(words).font(.sotto(.small)).foregroundStyle(Palette.muted)
+                    .paragraphDirection()
             }
             .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -707,7 +727,7 @@ private struct BabysitDock: View {
             let key = PullRequests.key(detail.url)
             let now = model.babysitting(ref).current.contains { PullRequests.key($0.url) == key }
             // Said only once the computer's thread agrees; a refusal shows above as feedback instead.
-            if now == on { toast = on ? "Babysitting #\(detail.number)" : "Stopped babysitting #\(detail.number)" }
+            if now == on { toast = on ? String(localized: "Babysitting #\(String(detail.number))", comment: "%@ is the pull request’s number.") : String(localized: "Stopped babysitting #\(String(detail.number))", comment: "%@ is the pull request’s number.") }
         }
     }
 }

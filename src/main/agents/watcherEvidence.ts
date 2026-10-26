@@ -89,6 +89,8 @@ export class WatcherEvidenceStore {
    * only: after a restart a pass counts from Sotto's first read of it.
    */
   private readonly passing = new Map<string, Map<string, { head: string | undefined; since: string }>>()
+  /** The thread keys written since `removeMissing` last ran, which the next run may have to let go of. */
+  private readonly written = new Set<string>()
   put(slot: string, input: Omit<WatcherEvidence, 'id'>): boolean {
     const id = evidenceIdentity(slot, input)
     const parsed = watcherEvidenceSchema.safeParse({ ...input, id })
@@ -102,6 +104,7 @@ export class WatcherEvidenceStore {
     entries.set(slot, item)
     while (entries.size > EVIDENCE_CACHE_MAX) entries.delete(entries.keys().next().value!)
     this.entries.set(key, entries)
+    this.written.add(key)
     return previous?.id !== id
   }
   /** `key` is the target's key, when the caller has already built it: the room reads every target's evidence on every publish. */
@@ -123,7 +126,7 @@ export class WatcherEvidenceStore {
     if (item.checksState !== 'passed') passing.delete(slot)
     else if (!kept || kept.head !== item.headId || previous?.checksState !== 'passed') passing.set(slot, { head: item.headId, since: item.observedAt })
     while (passing.size > EVIDENCE_CACHE_MAX) passing.delete(passing.keys().next().value!)
-    if (passing.size) this.passing.set(key, passing); else this.passing.delete(key)
+    if (passing.size) { this.passing.set(key, passing); this.written.add(key) } else this.passing.delete(key)
   }
   /**
    * Since when a pull request's checks have passed on the commit it is on, as Sotto first saw them pass, or undefined
@@ -180,7 +183,7 @@ export class WatcherEvidenceStore {
       else if (!entry.present) { entry.returns++; entry.present = true }
     }
     while (seen.size > 300) seen.delete(seen.keys().next().value!)
-    if (seen.size) this.returning.set(key, seen); else this.returning.delete(key)
+    if (seen.size) { this.returning.set(key, seen); this.written.add(key) } else this.returning.delete(key)
   }
   private heldFacts(target: WatcherThreadTarget): WatcherAttentionFact[] {
     const facts: WatcherAttentionFact[] = []
@@ -227,7 +230,22 @@ export class WatcherEvidenceStore {
     for (const key of this.attending.keys()) if (!targets.has(key)) this.attending.delete(key)
     for (const key of this.returning.keys()) if (!targets.has(key)) this.returning.delete(key)
     for (const key of this.passing.keys()) if (!targets.has(key)) this.passing.delete(key)
+    this.written.clear()
   }
+  /**
+   * What `removeMissing` would let go of, read only where it could find any (#925 step 5): the facts of each thread written
+   * since it last ran, and of each of `moved`, the threads that have left the list since. Every other thread's facts were
+   * kept by that last run, so its thread was listed then, and it still is.
+   */
+  removeMissingOf(moved: Iterable<string>, listed: (key: string) => boolean): void {
+    for (const key of [...this.written, ...moved]) {
+      if (listed(key)) continue
+      this.entries.delete(key); this.attending.delete(key); this.returning.delete(key); this.passing.delete(key)
+    }
+    this.written.clear()
+  }
+  /** Every thread key the store holds anything for, for verifying mode. */
+  heldKeys(): Set<string> { return new Set([...this.entries.keys(), ...this.attending.keys(), ...this.returning.keys(), ...this.passing.keys()]) }
   observeThread(thread: AgentThread, target: WatcherThreadTarget, observedAt: string): boolean {
     let changed = false
     const turn = thread.lastTurn
@@ -293,6 +311,7 @@ export class WatcherEvidenceStore {
     byPr.set(pr, after)
     while (byPr.size > 50) byPr.delete(byPr.keys().next().value!)
     this.attending.set(key, byPr)
+    this.written.add(key)
     return after.conflicting !== before.conflicting || after.changesRequested !== before.changesRequested || after.remarksMoved !== before.remarksMoved
       || after.requiredPassedHead !== before.requiredPassedHead
   }

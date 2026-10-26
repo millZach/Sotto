@@ -39,6 +39,11 @@ msgstr ""
 msgid "“{target}” already has light and dark palettes. Pick another name."
 msgstr ""
 
+#. placeholder {0}: MAIN_CHECKOUT_INTERVAL_MS / 60_000
+#: src/renderer/src/features/settings/GitSettings.tsx
+msgid "{0, plural, one {# minute} other {# minutes}}"
+msgstr ""
+
 #. placeholder {0}: choice.working
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "{0, plural, one {# working} other {# working}}"
@@ -2130,6 +2135,10 @@ msgstr ""
 msgid "Error text"
 msgstr ""
 
+#: src/renderer/src/features/settings/GitSettings.tsx
+msgid "Every {keepMainEvery} and after a pull request merges, each project’s folder moves forward to its remote’s default branch when that branch is checked out and has no local changes. Sotto never stashes, resets or rebases."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostConnectionChoice.tsx
 msgid "Every connection signs in over SSH, and Tailscale may ask you to approve it each time."
 msgstr ""
@@ -2682,6 +2691,11 @@ msgstr ""
 msgid "Keep local history"
 msgstr ""
 
+#: src/renderer/src/features/settings/GitSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Keep main up to date"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "Keep phone"
@@ -2697,6 +2711,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Keep the small dictation sliver on screen between sessions. Click it to dictate."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProjectThreadDefaults.tsx
+msgid "Keep this project's main up to date"
 msgstr ""
 
 #. The run.cloud key, a secret that lets Sotto use the service.
@@ -3257,9 +3275,11 @@ msgid "now {installed}"
 msgstr ""
 
 #. A switch that is off.
+#. Keep this project's main up to date: off
 #. The Git fetch interval: never fetch
 #: src/renderer/src/features/settings/GitSettings.tsx
 #: src/renderer/src/features/settings/HostsSettings.tsx
+#: src/renderer/src/features/settings/ProjectThreadDefaults.tsx
 msgid "Off"
 msgstr ""
 
@@ -3294,7 +3314,9 @@ msgid "Omarchy setup"
 msgstr ""
 
 #. A switch that is on.
+#. Keep this project's main up to date: on
 #: src/renderer/src/features/settings/HostsSettings.tsx
+#: src/renderer/src/features/settings/ProjectThreadDefaults.tsx
 msgid "On"
 msgstr ""
 
@@ -3733,6 +3755,10 @@ msgstr ""
 #: src/renderer/src/features/settings/ProjectThreadDefaults.tsx
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Project folder"
+msgstr ""
+
+#: src/renderer/src/features/settings/GitSettings.tsx
+msgid "Projects stay where they are until you pull. A project can turn it on for itself in Threads, Project defaults."
 msgstr ""
 
 #. A Settings page, named in its rail and its heading. Other messages name it as "Settings > Providers".
@@ -4570,6 +4596,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Sotto needs a newer version."
+msgstr ""
+
+#: src/renderer/src/features/settings/GitSettings.tsx
+msgid "Sotto never fetches for threads, even before a Git action. Ahead and behind use the last fetch. Keep main up to date still fetches each project every {keepMainEvery}."
 msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx
@@ -5902,6 +5932,14 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Use SSH only"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProjectThreadDefaults.tsx
+msgid "Use the Git setting (Off)"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProjectThreadDefaults.tsx
+msgid "Use the Git setting (On)"
 msgstr ""
 
 #. {month} is the name of a month, such as October.

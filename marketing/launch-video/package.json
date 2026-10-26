@@ -1,0 +1,18 @@
+{
+  "name": "sotto-launch-video",
+  "private": true,
+  "type": "module",
+  "description": "Sotto's 9:16 launch video: capture scripts over the built app, and the Remotion composition that frames them.",
+  "scripts": {
+    "capture": "node capture/run.mjs",
+    "studio": "remotion studio src/index.ts",
+    "render": "node render.mjs",
+    "poster": "remotion still src/index.ts Launch poster.png --frame=396 --scale=1"
+  },
+  "devDependencies": {
+    "@remotion/cli": "4.0.529",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "remotion": "4.0.529"
+  }
+}
