@@ -674,6 +674,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   const following = useRef(true)
+  /** Where the scroll stood when last heard or set to the end, so a reader moving up from the end is told apart from the end moving away. */
+  const lastTop = useRef(0)
   const anchor = useRef<{ readonly height: number; readonly top: number } | null>(null)
   const followed = useRef(followSignal)
   const seen = useRef<string | undefined>(undefined)
@@ -831,6 +833,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     // Jump to latest, a send or another thread is somewhere else to be, so a pressed prompt still loading is not.
     far.current = null
     element.scrollTop = element.scrollHeight
+    lastTop.current = element.scrollTop
     following.current = true
     setAway(false)
     setUnseen(false)
@@ -857,7 +860,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     if (followed.current !== followSignal) { followed.current = followSignal; toEnd(); return }
     const arrived = seen.current !== lastMessageId
     seen.current = lastMessageId
-    if (following.current) element.scrollTop = element.scrollHeight
+    if (following.current) { element.scrollTop = element.scrollHeight; lastTop.current = element.scrollTop }
     else if (arrived) setUnseen(true)
   }, [lastMessageId, pendingKey, hidden, followSignal, thread.historyStatus, toEnd])
 
@@ -866,7 +869,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     const element = content.current
     if (element === null || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(() => {
-      if (following.current && anchor.current === null && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight
+      if (following.current && anchor.current === null && scroller.current) { scroller.current.scrollTop = scroller.current.scrollHeight; lastTop.current = scroller.current.scrollTop }
       if (scroller.current) { setRequestUnderJump(reachesJumpBand(scroller.current)); noteReading(scroller.current) }
     })
     observer.observe(element)
@@ -881,7 +884,11 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     const held = reading.current
     if (held?.held === true && held.threadId === thread.id && Math.abs(element.scrollTop - held.top) < 1) return
     const distance = element.scrollHeight - element.scrollTop - element.clientHeight
-    following.current = distance <= FOLLOW_SLACK_PX
+    // Any move up that is not the end being cut short lets go of the end, however near it: a reply being written grows the
+    // end faster than a reader scrolls out of the slack, and following would pull them back down with every word.
+    const movedUp = element.scrollTop < lastTop.current - 1 && distance > 1
+    lastTop.current = element.scrollTop
+    following.current = !movedUp && distance <= FOLLOW_SLACK_PX
     const isAway = distance > Math.max(FOLLOW_SLACK_PX, element.clientHeight / 2)
     if (isAway !== away) setAway(isAway)
     if (following.current && unseen) setUnseen(false)
