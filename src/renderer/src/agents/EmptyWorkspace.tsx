@@ -67,7 +67,7 @@ export function EmptyWorkspace({ state, command, onNewThread, onNewThreadWithDra
   const images = state.draftAttachments ?? []
   const imageNames = images.map(image => image.name).join(', ')
   const imageCount = images.length
-  const connect = <>{error && !connecting ? <p className="agent-error thread-workspace__error tt-paragraph" role="alert">{error}</p> : null}<Button disabled={connecting} onClick={() => void command({ type: 'connect' })}>{connecting ? t`Connecting...` : t`Connect providers`}</Button></>
+  const connect = <>{error && !connecting ? <p className="agent-error thread-workspace__error tt-paragraph" role="alert">{error}</p> : null}<Button disabled={connecting} onClick={() => void command({ type: 'connect' })}>{connecting ? t`Connecting…` : t`Connect providers`}</Button></>
   const moveDraft = (draft: CarriedDraft): void => {
     if (moving) return
     setMoving(true)
