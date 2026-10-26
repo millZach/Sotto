@@ -93,7 +93,13 @@ test('uses OpenCode in Owl over its own server, restores each turn under its pro
     }
     await resizeWindow(launched, 1280, 800)
     await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'dark' }))
-    await expect(panel.getByRole('list', { name: 'OpenCode available models' })).toContainText('Fixture Model')
+    // Its models are behind a small field; the list opens over it, and Escape closes it back onto the field.
+    const opencodeModels = panel.getByRole('button', { name: /^Show OpenCode models, /u })
+    await opencodeModels.click()
+    await expect(page.getByRole('dialog', { name: 'OpenCode models', exact: true })).toContainText('Fixture Model')
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog', { name: 'OpenCode models', exact: true })).toHaveCount(0)
+    await expect(opencodeModels).toBeFocused()
 
     // A new OpenCode thread on an OpenCode Zen model.
     const prepared = await page.evaluate(async path => {

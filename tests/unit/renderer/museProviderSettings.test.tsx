@@ -66,8 +66,9 @@ describe('Muse in provider settings', () => {
     expect(within(support).getByText(/On Muse 1\.4\.7 or newer, Muse threads get Sotto's browser, visual, pull request babysitting and delegation tools, and Watcher runs on Muse\. Skills are unavailable\./)).toBeInTheDocument()
     expect(within(support).queryByText(/browser tools, Watcher and skills are unavailable/)).toBeNull()
     expect(within(support).getByText(/Muse does not write thread titles, branch names, commit messages or pull request drafts/)).toBeInTheDocument()
-    // Muse's models sit beside its connection in its open row, and no other provider's are there.
-    const models = within(screen.getByRole('region', { name: 'Muse details' })).getByRole('list', { name: 'Muse available models' })
+    // Muse's models are behind a field in its open row, and no other provider's are there.
+    fireEvent.click(within(screen.getByRole('region', { name: 'Muse details' })).getByRole('button', { name: 'Show Muse models, 1 model' }))
+    const models = screen.getByRole('dialog', { name: 'Muse models' })
     expect(models).toHaveTextContent('Muse Spark')
     expect(models).not.toHaveTextContent('Codex model')
   })
@@ -112,8 +113,8 @@ describe('Muse in provider settings', () => {
     [{ state: 'updated' as const, installed: '1.4.7', behind: false, canInstall: false }, /1.4.7 is installed; 1.4.7-R6101.1 is published/],
   ])('reports native version state %j without naming the npm registry', async (update, line) => {
     const { container } = await mount(fixture(update))
-    expect(within(container.querySelector('.provider-client')!).getByText(line)).toBeVisible()
-    expect(container.querySelector('.provider-client')).not.toHaveTextContent('registry')
+    expect(within(container.querySelector('.provider-client[aria-busy]')!).getByText(line)).toBeVisible()
+    expect(container.querySelector('.provider-client[aria-busy]')).not.toHaveTextContent('registry')
   })
 
   it('keeps an unknown installation manual and exposes only the commands the host supplies', async () => {

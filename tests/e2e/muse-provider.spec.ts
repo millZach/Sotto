@@ -109,7 +109,13 @@ test('uses Muse in Owl, settles requests and steered activity, and preserves it 
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'settings-connected-1280-dark.png') })
     const deferUpdates = page.getByRole('button', { name: 'Not now', exact: true })
     if (await deferUpdates.count()) await deferUpdates.click()
-    await expect(panel.getByRole('list', { name: 'Muse available models' })).toContainText('Fixture Muse')
+    // Its models are behind a small field; the list opens over it, and Escape closes it back onto the field.
+    const museModels = panel.getByRole('button', { name: /^Show Muse models, /u })
+    await museModels.click()
+    await expect(page.getByRole('dialog', { name: 'Muse models', exact: true })).toContainText('Fixture Muse')
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog', { name: 'Muse models', exact: true })).toHaveCount(0)
+    await expect(museModels).toBeFocused()
     // Escape closes the open row from inside it and gives focus back to its header; Enter opens it again.
     await panel.getByRole('button', { name: 'Check again', exact: true }).focus()
     await page.keyboard.press('Escape')

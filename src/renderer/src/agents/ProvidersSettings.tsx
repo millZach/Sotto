@@ -9,9 +9,9 @@ import { Button } from '../components/Button'
 import { Toggle } from '../components/Toggle'
 import { useOptionalAgents } from './AgentContext'
 import { useHeldProviders } from '../state/owlFeature'
-import { modelSources, newestModelsFirst } from './ModelPicker'
 import { ProviderMark } from './ProviderMark'
 import { OpenCodeModelSources } from './OpenCodeModelSources'
+import { ProviderModelList } from './ProviderModelList'
 import { CursorConnection, useCursorSignIn } from './CursorConnection'
 import { OwnModelServers, useOwnServersBridge } from './OwnModelServers'
 import { useTransientFlag, writeClipboard } from './richActions'
@@ -247,7 +247,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
     triggers[next]?.focus()
   }
 
-  /** What today's provider detail showed, for the one open row: its connection and client on the left, its models on the right. */
+  /** What the one open row shows: its connection, its models in a small field, and its client. */
   const details = (provider: ProviderId): ReactNode => {
     const status = statusFor(provider)
     const label = PROVIDER_LABELS[provider], clientName = CLIENT_NAMES[provider]
@@ -255,7 +255,8 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
     const working = pending[provider] || status.connection === 'connecting'
     const update = updateFor(provider)
     const providerUpdating = updatingNow(provider)
-    const models = newestModelsFirst(hostModels.filter(model => model.providerId === provider
+    // Only the models the user can use now: one the provider lists but cannot run is left out rather than labelled.
+    const models = hostModels.filter(model => model.ready && (model.providerId === provider
       || (!model.providerId && model.provider === PROVIDER_LABELS[provider])))
     // A long-context variant the catalog does not list (`opus[1m]`) is its base model's entry here.
     const inheritedEntryId = catalogEntry(models, inheritedModelId)?.id
@@ -274,10 +275,6 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
         onClick={() => void perform(provider, connected ? 'disconnect' : 'connect')}>{working ? pending[provider] === 'disconnect' ? t`Disconnecting…` : pending[provider] === 'refresh' ? t`Refreshing…` : t`Connecting…` : connected ? t`Disconnect` : status.connection === 'error' ? t`Retry connection` : t`Connect`}</Button>
       {connected && <Button variant="ghost" iconOnly aria-label={t({ message: `Refresh ${label}`, comment: '{label} is a provider\'s name.' })} disabled={Boolean(working) || providerUpdating} onClick={() => void perform(provider, 'refresh')}><RefreshCw size={15} /></Button>}
     </>
-    // Cursor's models arrive grouped by model maker in Cursor's order (ADR-0128), and its row keeps them so, grouped the
-    // way the model menu groups them.
-    const makers = provider === 'cursor' ? modelSources(hostModels.filter(model => model.providerId === 'cursor'), label) : undefined
-    const modelItem = (model: (typeof models)[number]): ReactNode => <li key={model.id}><span><strong>{model.name}</strong>{model.reasoningEfforts?.length ? <small>{model.reasoningEfforts.join(' · ')}</small> : null}</span><small data-agent-setting={model.ready && model.id === inheritedEntryId ? true : undefined}>{model.ready ? model.id === inheritedEntryId ? t`Agent setting` : t({ message: 'Available', comment: 'Beside a model that can be chosen.' }) : t({ message: 'Unavailable', comment: 'Beside a model that cannot be chosen now.' })}</small></li>
     return <>
       <div className="provider-row__column">
         {provider === 'cursor' && cursorBridge ? <CursorConnection signIn={cursorRowSignIn} problem={problem} connected={connected}
@@ -291,6 +288,15 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
           <div className="provider-client__actions">{connectButtons}</div>
         </div>}
         {provider === 'opencode' && connected && window.sotto?.opencode ? <OpenCodeModelSources bridge={window.sotto.opencode} /> : null}
+        {/* A small field rather than the whole list, so one provider's models never fill the page. Cursor's models arrive
+            grouped by model maker (ADR-0128) and OpenCode's by model source, and the list keeps those groups. */}
+        <div className="provider-client">
+          <div>
+            <h4><Trans>Models</Trans></h4>
+            <p className="tt-paragraph">{models.length ? t({ message: `The models ${clientName} offers you now.`, comment: '{clientName} is a provider\'s client, such as Claude Code.' }) : connected ? t`No models were returned. Refresh this provider to check again.` : t({ message: `Connect ${label} to load its models.`, comment: '{label} is a provider\'s name.' })}</p>
+          </div>
+          {models.length ? <div className="provider-client__actions"><ProviderModelList label={label} models={models} agentEntryId={inheritedEntryId} /></div> : null}
+        </div>
         <div className="provider-client" aria-busy={checkingUpdates || providerUpdating}>
           <div>
             <h4>{t`Installed client`}</h4>
@@ -334,15 +340,6 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
         {provider === 'cursor' && <details className="provider-support"><summary>{t`Threads with Cursor`}</summary><p className="tt-paragraph"><Trans>Replies, images, approvals, Cursor’s questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread.</Trans></p><p className="tt-paragraph"><Trans>Cursor threads get Sotto’s browser, visual, pull request babysitting and delegation tools, and skills, and Watcher runs on Cursor. Cursor has no fork of its own and cannot be steered, so a message sent while it works waits for the turn to end; Fork from here starts the new thread from a handover. Cursor reports no token counts, so it is not in Usage. Cursor keeps its own history, and runs Auto’s checks on its servers.</Trans></p></details>}
         {provider === 'opencode' && <details className="provider-support"><summary>{t`Threads with OpenCode`}</summary><p className="tt-paragraph">{t`Replies, images, steering, approvals, questions and reasoning effort, on each model's own source. Change models and permissions in a thread.`}</p><p className="tt-paragraph">{t`Sotto's browser tools, Watcher and skills are unavailable. OpenCode does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.`}</p></details>}
         {provider === 'deepseek' && <details className="provider-support"><summary>{t`Threads with DeepSeek Harness`}</summary><p className="tt-paragraph">{t`Replies, approvals and reasoning effort, on the keyless model servers you saved under Your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself.`}</p><p className="tt-paragraph">{t`DeepSeek Harness threads get Sotto's browser, visual, pull request babysitting and delegation tools. Images, steering, skills, Watcher and Usage counts are unavailable, and DeepSeek Harness does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.`}</p></details>}
-      </div>
-      <div className="provider-row__column provider-row__models" role="group" aria-labelledby={`${rowId}-${provider}-models`}>
-        <h4 id={`${rowId}-${provider}-models`}><Trans>Models</Trans></h4>
-        {makers?.length ? <div className="provider-models__makers" role="group" aria-label={t({ message: `${label} available models`, comment: '{label} is a provider\'s name.' })}>{makers.map(({ name, models: items }, index) => <React.Fragment key={name}>
-          <h5 id={`${rowId}-${provider}-maker-${index}`} className="provider-models__maker">{name}</h5>
-          <ul className="provider-models" aria-labelledby={`${rowId}-${provider}-maker-${index}`}>{items.map(modelItem)}</ul>
-        </React.Fragment>)}</div>
-          : models.length ? <ul className="provider-models" aria-label={t({ message: `${label} available models`, comment: '{label} is a provider\'s name.' })}>{models.map(modelItem)}</ul>
-          : <p className="provider-models__empty tt-paragraph">{connected ? t`No models were returned. Refresh this provider to check again.` : t({ message: `Connect ${label} to load its models.`, comment: '{label} is a provider\'s name.' })}</p>}
       </div>
     </>
   }

@@ -41,6 +41,11 @@ function openRow(provider: string): HTMLElement {
   if (header.getAttribute('aria-expanded') !== 'true') fireEvent.click(header)
   return screen.getByRole('region', { name: `${provider} details` })
 }
+/** Opens an open row's model list and returns it; the list is a dialog over the field. */
+function openModels(provider: string): HTMLElement {
+  fireEvent.click(within(openRow(provider)).getByRole('button', { name: new RegExp(`^Show ${provider} models, `, 'u') }))
+  return screen.getByRole('dialog', { name: `${provider} models` })
+}
 
 describe('independent provider settings', () => {
   it('shows and acts on this computer’s clients while another host is selected for new work', async () => {
@@ -86,9 +91,9 @@ describe('independent provider settings', () => {
       ] } }
     provide(state)
     render(<ProvidersSettings />)
-    const models = (provider: string) => within(openRow(provider)).getByRole('list', { name: `${provider} available models` })
-    expect(models('Codex')).toHaveTextContent('Agent setting')
-    expect(models('Claude Code')).not.toHaveTextContent('Agent setting')
+    expect(openModels('Codex')).toHaveTextContent('Agent setting')
+    fireEvent.click(screen.getByRole('button', { name: 'Close models' }))
+    expect(openModels('Claude Code')).not.toHaveTextContent('Agent setting')
   })
   it('says this computer’s host is off, and offers nothing that would reach the selected host, when it is turned off', () => {
     const FORGE = '22222222-2222-4222-8222-222222222222'
@@ -173,7 +178,7 @@ describe('independent provider settings', () => {
     expect(codex).toHaveAttribute('aria-controls', panel.id)
     expect(within(panel).getByRole('button', { name: 'Disconnect Codex' })).toBeVisible()
     expect(within(panel).getByText('Installed client')).toBeVisible()
-    expect(within(panel).getByRole('list', { name: 'Codex available models' })).toHaveTextContent('codex model')
+    expect(within(panel).getByRole('button', { name: 'Show Codex models, 1 model' })).toBeVisible()
     expect(claude).toHaveAttribute('aria-expanded', 'false')
     expect(claude).not.toHaveAttribute('aria-controls')
     expect(screen.queryByRole('tablist')).toBeNull()
@@ -182,7 +187,7 @@ describe('independent provider settings', () => {
     expect(claude).toHaveAttribute('aria-expanded', 'true')
     expect(codex).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByRole('region', { name: 'Codex details' })).toBeNull()
-    expect(within(screen.getByRole('region', { name: 'Claude Code details' })).getByText('claude model')).toBeVisible()
+    expect(within(screen.getByRole('region', { name: 'Claude Code details' })).getByRole('button', { name: 'Show Claude Code models, 1 model' })).toBeVisible()
     // Its header closes it again, leaving none open.
     fireEvent.click(claude)
     expect(screen.queryByRole('region', { name: /details$/u })).toBeNull()
@@ -255,9 +260,9 @@ describe('independent provider settings', () => {
   it('shows only the open provider catalog and keeps new-thread defaults in Agents settings', () => {
     provide()
     const view = render(<ProvidersSettings />)
-    const panel = openRow('Claude Code')
-    expect(within(panel).getByText('claude model')).toBeVisible()
-    expect(within(panel).queryByText('codex model')).toBeNull()
+    const models = openModels('Claude Code')
+    expect(within(models).getByText('claude model')).toBeVisible()
+    expect(within(models).queryByText('codex model')).toBeNull()
     expect(screen.queryByLabelText('Reasoning account')).toBeNull()
     view.unmount()
     render(<AgentSetupFields />)
@@ -306,6 +311,83 @@ describe('independent provider settings', () => {
       act(() => { sending = result.current.command({ type: 'manual-send', threadId: 'thread', text: 'Hello', draftId: '00000000-0000-4000-8000-000000000001' }) })
       await waitFor(() => expect(bridge.command).toHaveBeenCalledWith(expect.objectContaining({ type: 'manual-send' })))
     } finally { await act(async () => { release(); await connecting; await sending }) }
+  })
+})
+
+describe('a provider’s models, in provider settings', () => {
+  function withModels(): AgentState {
+    const state = fixture()
+    state.host.models = [
+      { id: 'codex:sol', name: 'GPT-6.1-Sol', provider: 'Codex', providerId: 'codex', ready: true, reasoningEfforts: ['low', 'high'] },
+      { id: 'codex:mini', name: 'GPT-6-Codex-Mini', provider: 'Codex', providerId: 'codex', ready: true },
+      { id: 'codex:retired', name: 'GPT-5-Retired', provider: 'Codex', providerId: 'codex', ready: false },
+      { id: 'claude:opus', name: 'Opus 5.5', provider: 'Claude Code', providerId: 'claude', ready: true },
+    ]
+    return state
+  }
+  it('lists only the models the provider can use, behind a small field', () => {
+    provide(withModels())
+    render(<ProvidersSettings />)
+    // The field counts usable models only, and no model shows until it is pressed.
+    const field = within(openRow('Codex')).getByRole('button', { name: 'Show Codex models, 2 models' })
+    expect(field).toHaveTextContent('2 models')
+    expect(field).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('GPT-6.1-Sol')).toBeNull()
+    fireEvent.click(field)
+    expect(field).toHaveAttribute('aria-expanded', 'true')
+    const list = screen.getByRole('dialog', { name: 'Codex models' })
+    expect(within(list).getByText('GPT-6.1-Sol')).toBeVisible()
+    expect(within(list).getByText('low · high')).toBeVisible()
+    expect(within(list).getByText('GPT-6-Codex-Mini')).toBeVisible()
+    // A model the provider lists but cannot run is left out, not labelled.
+    expect(within(list).queryByText('GPT-5-Retired')).toBeNull()
+    expect(screen.queryByText('Unavailable')).toBeNull()
+    expect(within(list).queryByText('Opus 5.5')).toBeNull()
+  })
+  it('says why there is no list when every model is unavailable', () => {
+    const state = withModels()
+    state.host.models = state.host.models.map(model => ({ ...model, ready: false }))
+    provide(state)
+    render(<ProvidersSettings />)
+    const row = openRow('Codex')
+    expect(within(row).queryByRole('button', { name: /^Show Codex models/u })).toBeNull()
+    expect(row).toHaveTextContent('No models were returned. Refresh this provider to check again.')
+  })
+  it('searches the list, then clears the search and closes on Escape, leaving the row open', () => {
+    provide(withModels())
+    render(<ProvidersSettings />)
+    const field = within(openRow('Codex')).getByRole('button', { name: 'Show Codex models, 2 models' })
+    fireEvent.click(field)
+    const search = screen.getByRole('textbox', { name: 'Search models' })
+    expect(search).toHaveFocus()
+    fireEvent.change(search, { target: { value: 'codex mini' } })
+    const list = screen.getByRole('dialog', { name: 'Codex models' })
+    expect(within(list).getByText('GPT-6-Codex-Mini')).toBeVisible()
+    expect(within(list).queryByText('GPT-6.1-Sol')).toBeNull()
+    fireEvent.change(search, { target: { value: 'nothing like this' } })
+    expect(within(list).getByText('No matching models.')).toBeVisible()
+    fireEvent.keyDown(search, { key: 'Escape' })
+    expect(search).toHaveValue('')
+    expect(within(list).getByText('GPT-6.1-Sol')).toBeVisible()
+    fireEvent(list, new Event('cancel', { cancelable: true }))
+    expect(screen.queryByRole('dialog', { name: 'Codex models' })).toBeNull()
+    expect(field).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'Codex' })).toHaveAttribute('aria-expanded', 'true')
+  })
+  it('lists a provider’s models under each model source, and a source’s name finds them', () => {
+    const state = fixture()
+    state.host.models = [
+      { id: 'codex:a', name: 'Model A', provider: 'Codex', providerId: 'codex', ready: true, source: 'Anthropic' },
+      { id: 'codex:b', name: 'Model B', provider: 'Codex', providerId: 'codex', ready: true, source: 'Google' },
+    ]
+    provide(state)
+    render(<ProvidersSettings />)
+    const list = openModels('Codex')
+    expect(within(within(list).getByRole('region', { name: 'Anthropic' })).getByText('Model A')).toBeVisible()
+    expect(within(within(list).getByRole('region', { name: 'Google' })).getByText('Model B')).toBeVisible()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search models' }), { target: { value: 'google' } })
+    expect(within(list).queryByText('Model A')).toBeNull()
+    expect(within(list).getByText('Model B')).toBeVisible()
   })
 })
 

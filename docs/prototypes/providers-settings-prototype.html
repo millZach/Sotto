@@ -1,0 +1,345 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: what does Settings › Providers look like with every provider collapsed on open, unavailable models hidden,
+  and each provider's models in a small searchable field in place of the full-height Models tab?
+
+  Settled by Zach before this prototype (October 26, 2026): nothing is expanded on open, Codex included; unavailable models
+  are hidden, not labelled; the model list is a small field that opens a searchable popover like the composer's model
+  picker, and the provider card stays compact.
+
+  Variants (?variant=C|A|B, the bottom bar, or the arrow keys):
+    C  Today's cards.           The provider cards ADR-0110 gave the page (Zach's P1), four across. Nothing is chosen on
+       open, so there is no detail card; choosing a card shows its detail card under them, with Local connection, a
+       Models field and Installed client. The Configuration and Models tabs are gone.
+    A  Models inside the card.  Each provider is one row (mark, name, status, switch, chevron). Opening it shows the card:
+       Local connection, a Models field, Installed client. The Configuration and Models tabs are gone.
+    B  Models on the row.        The Models field sits on the collapsed row itself, so models are one press away without
+       opening the card. Opening it shows the rest.
+
+  Proposal for Zach to react to: the field lists models to look through and search; choosing what new threads start with
+  stays under Agents. The model new threads start with is marked "Agent setting" in the list.
+
+  Zach's picks (October 26, 2026): A, the Models field inside the provider's open row, and a list to browse, not a
+  choice. C was drawn from an older checkout that still had the provider cards; asked about it, he answered "It is
+  already a list": main's Providers page is already one row per provider, every row starting closed, so what was built
+  is A on it. The open row's Models column became the Models field.
+  Other params: theme (dark | light), size (1600 | 1280 | 820 | phone), open (codex | claude | ...), menu (provider id).
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Sotto: Providers settings, prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('figtree-latin.woff2') format('woff2'), url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+html[data-theme='dark'] {
+  color-scheme: dark;
+  --r-canvas: oklch(0.115 0.008 265); --r-surface: oklch(0.145 0.008 265); --r-raised: oklch(0.185 0.008 265);
+  --r-text: oklch(0.985 0.005 280); --r-muted-fg: oklch(0.72 0.014 265); --r-placeholder: oklch(0.675 0.012 270);
+  --r-border: oklch(0.305 0.02 265); --r-input: oklch(0.375 0.024 265); --r-accent: oklch(0.714403 0.104089 183.092);
+  --r-accent-fg: oklch(0.16 0.012 190); --r-accent-surface: oklch(0.32 0.05 185); --r-update-fg: oklch(0.83 0.08 183);
+  --r-error-fg: oklch(0.702184 0.189226 22.228); --r-sidebar: oklch(0.235 0.003 265); --r-sidebar-selected: oklch(0.355 0.035 188);
+  --tt-shadow-color: rgb(0 0 0 / 73%);
+  --tt-provider-codex: #d7dbe1; --tt-provider-claude: #e3b58e; --tt-provider-grok: #c9baff; --tt-provider-devin: #a5d8f5; --tt-provider-opencode: #ece3d0;
+}
+html[data-theme='light'] {
+  color-scheme: light;
+  --r-canvas: oklch(0.978 0.004 85); --r-surface: oklch(0.99 0.003 85); --r-raised: oklch(0.955 0.006 85);
+  --r-text: oklch(0.235 0.014 75); --r-muted-fg: oklch(0.5 0.014 75); --r-placeholder: oklch(0.525 0.015 78);
+  --r-border: oklch(0.86 0.012 80); --r-input: oklch(0.8 0.016 80); --r-accent: oklch(0.53 0.095 186);
+  --r-accent-fg: oklch(0.99 0.003 85); --r-accent-surface: oklch(0.92 0.03 186); --r-update-fg: oklch(0.43 0.08 186);
+  --r-error-fg: oklch(0.509494 0.208583 28.513); --r-sidebar: oklch(0.955 0.008 85); --r-sidebar-selected: oklch(0.895 0.028 188);
+  --tt-shadow-color: rgb(20 24 22 / 18%);
+  --tt-provider-codex: #5d636d; --tt-provider-claude: #b4693a; --tt-provider-grok: #6b55c9; --tt-provider-devin: #2f7fb0; --tt-provider-opencode: #625843;
+}
+html {
+  --tt-font: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --tt-canvas: var(--r-canvas); --tt-surface: var(--r-surface); --tt-surface-elevated: var(--r-raised);
+  --tt-text: var(--r-text); --tt-text-2: color-mix(in oklab, var(--r-text) 55%, var(--r-muted-fg));
+  --tt-text-muted: color-mix(in oklab, var(--r-muted-fg) 85%, var(--r-text)); --tt-text-faint: var(--r-placeholder);
+  --tt-hairline: var(--r-border); --tt-field-border: var(--r-input); --tt-field: var(--r-surface);
+  --tt-accent: var(--r-accent); --tt-activity: var(--r-update-fg); --tt-on-accent: var(--r-accent-fg);
+  --tt-activity-wash: color-mix(in srgb, var(--r-accent) 10%, transparent);
+  --tt-hover: color-mix(in srgb, var(--r-accent-surface) 70%, transparent); --tt-selected: var(--r-sidebar-selected);
+  --tt-track: color-mix(in srgb, var(--r-text) 18%, transparent); --tt-error: var(--r-error-fg); --tt-focus-ring: var(--r-accent);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: #1b1b1e; font-family: var(--tt-font); }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+svg.ic { display: block; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+svg.pm { display: block; flex: none; fill: currentColor; color: var(--tt-text-2); }
+svg.pm[data-p='codex'] { color: var(--tt-provider-codex); } svg.pm[data-p='claude'] { color: var(--tt-provider-claude); }
+svg.pm[data-p='grok'] { color: var(--tt-provider-grok); } svg.pm[data-p='devin'] { color: var(--tt-provider-devin); }
+svg.pm[data-p='opencode'] { color: var(--tt-provider-opencode); }
+
+.stage { display: flex; justify-content: center; padding: 70px 12px 110px; }
+.win { position: relative; width: var(--w); min-height: var(--h); background: var(--tt-canvas); color: var(--tt-text); font-size: 14px; line-height: 1.45; border: 1px solid #000; display: grid; grid-template-columns: 210px minmax(0, 1fr); }
+.win[data-size='820'] { grid-template-columns: 170px minmax(0, 1fr); }
+.win[data-size='phone'] { grid-template-columns: 1fr; border: 0; }
+.side { background: var(--tt-surface); border-right: 1px solid var(--tt-hairline); padding: 54px 10px; display: grid; align-content: start; gap: 2px; }
+.win[data-size='phone'] .side { display: none; }
+.side span { padding: 8px 12px; border-radius: 8px; color: var(--tt-text-muted); }
+.side span[data-on] { background: var(--tt-selected); color: var(--tt-text); }
+.page { padding: 44px 40px 60px; min-width: 0; }
+.win[data-size='820'] .page { padding: 32px 20px; }
+.win[data-size='phone'] .page { padding: 20px 14px; }
+.heading h2 { margin: 0; font-size: 20px; font-weight: 600; }
+.heading p { margin: 4px 0 18px; color: var(--tt-text-muted); }
+
+/* The provider list: one row each, opened in place. */
+.plist { border: 1px solid var(--tt-hairline); border-radius: 14px; background: var(--tt-surface); }
+.prow:first-child .prow__bar { border-radius: 13px 13px 0 0; } .prow:last-child:not([data-open]) .prow__bar { border-radius: 0 0 13px 13px; }
+.prow { position: relative; } .prow:has([aria-expanded='true'].mfield__trigger) { z-index: 5; }
+.prow + .prow { border-top: 1px solid var(--tt-hairline); }
+.prow__bar { display: flex; align-items: center; gap: 10px; padding: 0 14px 0 4px; }
+.prow[data-open] .prow__bar { background: var(--tt-activity-wash); }
+.prow__open { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; padding: 14px 10px; border: 0; background: transparent; text-align: left; border-radius: 10px; }
+.prow__open .chev { color: var(--tt-text-muted); transition: transform 160ms ease; }
+.prow[data-open] .prow__open .chev { transform: rotate(90deg); }
+.prow__name { display: grid; gap: 3px; min-width: 0; }
+.prow__name strong { font-size: 15px; font-weight: 600; }
+.prow__name small { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tt-text-muted); }
+.prow__name small i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.prow__name small[data-s='connected'] { color: var(--tt-activity); }
+.prow__name small[data-s='error'] { color: var(--tt-error); }
+.prow__ver { margin-left: 4px; color: var(--tt-text-muted); font-size: 12px; font-weight: 400; }
+.toggle { flex: none; width: 34px; height: 20px; border-radius: 10px; border: 0; background: var(--tt-track); position: relative; padding: 0; }
+.toggle::after { content: ''; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--tt-text); transition: left 140ms ease; }
+.toggle[aria-checked='true'] { background: var(--tt-accent); }
+.toggle[aria-checked='true']::after { left: 17px; background: var(--tt-on-accent); }
+.prow__body { padding: 6px 24px 22px 50px; display: grid; gap: 20px; animation: arrive 160ms ease both; }
+.win[data-size='phone'] .prow__body, .win[data-size='820'] .prow__body { padding: 6px 16px 18px; }
+@keyframes arrive { from { opacity: .5; } to { opacity: 1; } }
+.sect { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; }
+.sect > div:first-child { flex: 1 1 220px; min-width: 0; }
+.sect h4 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+.sect p { margin: 0; color: var(--tt-text-muted); line-height: 1.6; max-width: 34em; }
+.btn { min-height: 34px; padding: 6px 14px; border-radius: 8px; border: 1px solid var(--tt-field-border); background: transparent; font-size: 13px; }
+.btn--primary { background: var(--tt-accent); color: var(--tt-on-accent); border-color: transparent; font-weight: 600; }
+.foot { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--tt-hairline); display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+.foot h4 { margin: 0 0 4px; font-size: 14px; } .foot p { margin: 0; color: var(--tt-text-muted); font-size: 13px; max-width: 44em; line-height: 1.6; }
+.note { margin: 0; color: var(--tt-text-muted); font-size: 13px; }
+
+/* The Models field: the composer picker's named-field look (New thread dialog). */
+.mfield { position: relative; flex: none; }
+.mfield__trigger { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 6px 10px 6px 11px; border-radius: 7px; border: 1px solid var(--tt-field-border); background: var(--tt-field); color: var(--tt-text-2); font-size: 13px; white-space: nowrap; }
+.mfield__trigger:hover { color: var(--tt-text); }
+.mfield__trigger[aria-expanded='true'] { border-color: var(--tt-accent); color: var(--tt-text); }
+.mfield__trigger[disabled] { opacity: .55; cursor: default; }
+.mfield__trigger b { font-weight: 600; color: var(--tt-text); }
+.prow__bar .mfield__trigger { min-height: 30px; padding: 4px 8px 4px 10px; }
+.menu { position: absolute; z-index: 30; top: calc(100% + 6px); right: 0; width: min(320px, calc(100vw - 32px)); max-height: 340px; display: flex; flex-direction: column; border: 1px solid var(--tt-field-border); border-radius: 14px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); overflow: hidden; }
+
+.menu__search { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); flex: none; }
+.menu__search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--tt-text); font-size: 13px; }
+.menu__search input::placeholder { color: var(--tt-text-faint); }
+.menu__search button { display: grid; place-items: center; padding: 5px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); }
+.menu__list { overflow-y: auto; padding: 4px; }
+.menu__row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border-radius: 8px; }
+.menu__row:focus-visible, .menu__row:hover { background: var(--tt-hover); outline: 0; }
+.menu__row span { display: grid; gap: 2px; min-width: 0; }
+.menu__row b { font-weight: 500; font-size: 13px; }
+.menu__row small { color: var(--tt-text-muted); font-size: 11.5px; }
+.menu__tag { flex: none; font-size: 11px; color: var(--tt-activity); border: 1px solid color-mix(in srgb, var(--r-accent) 45%, var(--r-input)); border-radius: 999px; padding: 1px 7px; }
+.menu__group { margin: 8px 10px 2px; color: var(--tt-text-muted); font-size: 11px; display: flex; justify-content: space-between; }
+.menu__empty { margin: 10px; color: var(--tt-text-muted); font-size: 13px; }
+.menu__note { flex: none; margin: 0; padding: 9px 12px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; }
+.win[data-size='phone'] .menu { position: fixed; left: 12px; right: 12px; top: auto; bottom: 120px; width: auto; }
+
+/* Variant C: today's provider cards (ADR-0110, P1) and a detail card under them once one is chosen. */
+html { --tt-card: var(--r-raised); --tt-card-selected: color-mix(in srgb, var(--r-accent-surface) 55%, var(--r-raised)); }
+html[data-theme='light'] { --tt-card: color-mix(in srgb, var(--r-text) 4%, var(--r-canvas)); }
+.cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.win[data-size='820'] .cards, .win[data-size='phone'] .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.pcard { position: relative; border: 1px solid transparent; border-radius: 12px; background: var(--tt-card); }
+.pcard[data-on] { border-color: var(--tt-accent); background: var(--tt-card-selected); box-shadow: 0 0 0 1px var(--tt-accent); }
+.pcard__sel { display: grid; grid-template-columns: auto minmax(0, 1fr) 36px; grid-template-areas: 'mark name .' 'status status status'; align-items: center; gap: 6px 8px; width: 100%; padding: 13px 12px; border: 0; border-radius: 11px; background: transparent; text-align: left; }
+.pcard__sel svg { grid-area: mark; } .pcard__sel strong { grid-area: name; font-size: 14px; font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.pcard__sel small { grid-area: status; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tt-text-muted); }
+.pcard__sel small i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.pcard__sel small[data-s='connected'] { color: var(--tt-activity); }
+.pcard .toggle { position: absolute; top: 13px; right: 12px; border-radius: 5px; } .pcard .toggle::after { border-radius: 3px; }
+.dcard { margin-top: 18px; padding: 0 20px 6px; border-radius: 14px; background: var(--tt-card); animation: arrive 160ms ease both; }
+.dcard__head { display: flex; align-items: center; gap: 11px; padding: 18px 0 14px; border-bottom: 1px solid var(--tt-hairline); }
+.dcard__head h3 { margin: 0; font-size: 18px; font-weight: 600; }
+.dcard__head .ver { padding: 1px 7px; border-radius: 4px; background: var(--r-canvas); color: var(--tt-text-muted); font-size: 12px; }
+.dcard__head .icb { margin-left: auto; display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); }
+.dcard .prow__body { padding: 20px 0 16px; }
+.cards-hint { margin: 14px 2px 0; color: var(--tt-text-muted); font-size: 13px; }
+
+/* Prototype chrome. */
+.bar { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 50; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 8px; max-width: calc(100vw - 16px); background: #111; color: #eee; border: 1px solid #333; border-radius: 12px; font: 12px system-ui, sans-serif; }
+.bar fieldset { display: flex; gap: 3px; border: 0; margin: 0; padding: 0 6px 0 0; align-items: center; }
+.bar legend { float: left; padding: 0 4px 0 0; color: #999; }
+.bar button { padding: 5px 9px; border-radius: 7px; border: 1px solid #333; background: #1d1d1d; color: #ddd; }
+.bar button[aria-pressed='true'] { background: #2a6f69; border-color: #2a6f69; color: #fff; }
+.top { position: fixed; top: 0; left: 0; right: 0; z-index: 40; padding: 10px 14px; background: #111; color: #ccc; font: 12.5px/1.45 system-ui, sans-serif; border-bottom: 1px solid #333; }
+.top b { color: #fff; }
+.readout { color: #8fd; }
+@media (max-width: 700px) { .stage { padding: 96px 0 160px; } .top { font-size: 11.5px; } }
+@media (prefers-reduced-motion: reduce) { .prow__body { animation: none; } .prow__open .chev, .toggle::after { transition: none; } }
+</style>
+</head>
+<body>
+<div class="top" id="top"></div>
+<div class="stage"><div class="win" id="win"></div></div>
+<div class="bar" id="bar"></div>
+<script>
+const MARKS = {"muse":{"viewBox":"0 0 100 100","path":"M24.6257 16.1214C28.2365 16.1214 30.8187 18.9408 30.8187 23.3643C30.8185 27.7868 30.1055 31.7765 28.9225 40.2466C28.0743 46.1813 26.62 55.2418 26.0132 59.0088C27.1782 56.7815 29.9074 51.5757 30.3914 50.5982C36.1081 39.061 42.0657 28.7544 43.7826 26.0254C46.0594 22.382 48.062 20.9229 51.1597 20.9229C52.7685 20.923 54.6826 21.7357 55.6315 22.819C56.9178 24.2895 57.1859 26.6602 57.1411 29.244C57.0738 33.2073 56.5599 39.5264 55.8553 46.5698C55.5416 49.7057 54.9365 56.1066 54.5288 60.4004C58.1883 53.8532 64.9609 41.8109 67.6921 37.6058C70.0727 33.9402 72.466 31.5797 75.6836 31.5796C78.4595 31.5796 81.8809 33.5416 81.6772 38.7573C81.3774 46.4556 80.2673 63.2232 79.7607 70.7479C83.1662 65.7913 87.6377 58.4543 89.3148 55.6966C91.0104 52.908 92.75 50.6542 95.3898 50.5778C98.0987 50.4995 99.913 52.341 99.9959 55.1839C100.078 58.0277 98.3835 61.2256 96.1344 64.856C93.6937 68.7957 90.9621 73.0123 87.6383 76.9491C84.3148 80.8856 81.2604 83.8782 76.5991 83.8786C72.4243 83.8786 69.4869 81.1043 69.283 76.0254C69.1768 73.364 69.6804 67.6405 70.0602 63.1673C70.5 57.9875 71.0315 52.9861 71.403 49.6786C67.7337 56.3979 60.0101 70.4676 56.5348 75.9603C53.1343 81.3339 51.4774 83.2269 47.8882 83.2275C44.2977 83.2275 42.7226 80.6416 42.6717 76.7497C42.6142 72.5285 45.7852 47.1821 46.8587 38.737C45.1183 42.4616 40.839 51.6056 38.1551 57.0435C35.5587 62.3055 31.204 71.3978 28.0436 76.6357C25.7668 80.4094 23.2092 83.2273 19.4173 83.2275C15.6252 83.2275 13.4847 80.6784 13.4847 76.5788C13.4847 72.4794 14.6716 65.6492 15.9465 57.1777C16.5839 53.0781 17.3108 48.6133 18.1315 43.8761C18.7324 40.448 19.7764 34.4169 20.4183 30.7129C17.502 35.2539 12.2536 43.4278 10.6567 45.8903C8.88113 48.6291 7.28747 50.626 4.64681 50.6266C1.7329 50.6266 0.000532901 48.3522 0 45.7113C0 43.0703 1.34323 41.0344 3.52376 37.4512C6.32403 32.8465 11.3578 26.57 14.1154 23.2747C17.3656 19.3912 20.6139 16.1219 24.6257 16.1214Z"},"codex":{"viewBox":"0 0 256 260","path":"M239.184 106.203a64.716 64.716 0 0 0-5.576-53.103C219.452 28.459 191 15.784 163.213 21.74A65.586 65.586 0 0 0 52.096 45.22a64.716 64.716 0 0 0-43.23 31.36c-14.31 24.602-11.061 55.634 8.033 76.74a64.665 64.665 0 0 0 5.525 53.102c14.174 24.65 42.644 37.324 70.446 31.36a64.72 64.72 0 0 0 48.754 21.744c28.481.025 53.714-18.361 62.414-45.481a64.767 64.767 0 0 0 43.229-31.36c14.137-24.558 10.875-55.423-8.083-76.483Zm-97.56 136.338a48.397 48.397 0 0 1-31.105-11.255l1.535-.87 51.67-29.825a8.595 8.595 0 0 0 4.247-7.367v-72.85l21.845 12.636c.218.111.37.32.409.563v60.367c-.056 26.818-21.783 48.545-48.601 48.601Zm-104.466-44.61a48.345 48.345 0 0 1-5.781-32.589l1.534.921 51.722 29.826a8.339 8.339 0 0 0 8.441 0l63.181-36.425v25.221a.87.87 0 0 1-.358.665l-52.335 30.184c-23.257 13.398-52.97 5.431-66.404-17.803ZM23.549 85.38a48.499 48.499 0 0 1 25.58-21.333v61.39a8.288 8.288 0 0 0 4.195 7.316l62.874 36.272-21.845 12.636a.819.819 0 0 1-.767 0L41.353 151.53c-23.211-13.454-31.171-43.144-17.804-66.405v.256Zm179.466 41.695-63.08-36.63L161.73 77.86a.819.819 0 0 1 .768 0l52.233 30.184a48.6 48.6 0 0 1-7.316 87.635v-61.391a8.544 8.544 0 0 0-4.4-7.213Zm21.742-32.69-1.535-.922-51.619-30.081a8.39 8.39 0 0 0-8.492 0L99.98 99.808V74.587a.716.716 0 0 1 .307-.665l52.233-30.133a48.652 48.652 0 0 1 72.236 50.391v.205ZM88.061 139.097l-21.845-12.585a.87.87 0 0 1-.41-.614V65.685a48.652 48.652 0 0 1 79.757-37.346l-1.535.87-51.67 29.825a8.595 8.595 0 0 0-4.246 7.367l-.051 72.697Zm11.868-25.58 28.138-16.217 28.188 16.218v32.434l-28.086 16.218-28.188-16.218-.052-32.434Z"},"claude":{"viewBox":"0 0 256 257","path":"m50.228 170.321 50.357-28.257.843-2.463-.843-1.361h-2.462l-8.426-.518-28.775-.778-24.952-1.037-24.175-1.296-6.092-1.297L0 125.796l.583-3.759 5.12-3.434 7.324.648 16.202 1.101 24.304 1.685 17.629 1.037 26.118 2.722h4.148l.583-1.685-1.426-1.037-1.101-1.037-25.147-17.045-27.22-18.017-14.258-10.37-7.713-5.25-3.888-4.925-1.685-10.758 7-7.713 9.397.649 2.398.648 9.527 7.323 20.35 15.75L94.817 91.9l3.889 3.24 1.555-1.102.195-.777-1.75-2.917-14.453-26.118-15.425-26.572-6.87-11.018-1.814-6.61c-.648-2.723-1.102-4.991-1.102-7.778l7.972-10.823L71.42 0 82.05 1.426l4.472 3.888 6.61 15.101 10.694 23.786 16.591 32.34 4.861 9.592 2.592 8.879.973 2.722h1.685v-1.556l1.36-18.211 2.528-22.36 2.463-28.776.843-8.1 4.018-9.722 7.971-5.25 6.222 2.981 5.12 7.324-.713 4.73-3.046 19.768-5.962 30.98-3.889 20.739h2.268l2.593-2.593 10.499-13.934 17.628-22.036 7.778-8.749 9.073-9.657 5.833-4.601h11.018l8.1 12.055-3.628 12.443-11.342 14.388-9.398 12.184-13.48 18.147-8.426 14.518.778 1.166 2.01-.194 30.46-6.481 16.462-2.982 19.637-3.37 8.88 4.148.971 4.213-3.5 8.62-20.998 5.184-24.628 4.926-36.682 8.685-.454.324.519.648 16.526 1.555 7.065.389h17.304l32.21 2.398 8.426 5.574 5.055 6.805-.843 5.184-12.962 6.611-17.498-4.148-40.83-9.721-14-3.5h-1.944v1.167l11.666 11.406 21.387 19.314 26.767 24.887 1.36 6.157-3.434 4.86-3.63-.518-23.526-17.693-9.073-7.972-20.545-17.304h-1.36v1.814l4.73 6.935 25.017 37.59 1.296 11.536-1.814 3.76-6.481 2.268-7.13-1.297-14.647-20.544-15.1-23.138-12.185-20.739-1.49.843-7.194 77.448-3.37 3.953-7.778 2.981-6.48-4.925-3.436-7.972 3.435-15.749 4.148-20.544 3.37-16.333 3.046-20.285 1.815-6.74-.13-.454-1.49.194-15.295 20.999-23.267 31.433-18.406 19.702-4.407 1.75-7.648-3.954.713-7.064 4.277-6.286 25.47-32.405 15.36-20.092 9.917-11.6-.065-1.686h-.583L44.07 198.125l-12.055 1.555-5.185-4.86.648-7.972 2.463-2.593 20.35-13.999-.064.065Z"},"devin":{"viewBox":"48 48 330 330","path":"M70 159.333V91.3471C70 88.3592 71.594 85.5983 74.1816 84.1044L133.043 50.1205C135.631 48.6265 138.819 48.6265 141.407 50.1205L200.269 84.1044C202.856 85.5983 204.45 88.3592 204.45 91.3471V126.068C204.708 137.606 210.806 148.734 221.531 154.926C232.256 161.117 244.942 160.834 255.063 155.289L285.132 137.929C287.719 136.435 290.907 136.435 293.495 137.929L352.357 171.913C354.944 173.406 356.538 176.167 356.538 179.155V247.123C356.538 250.111 354.944 252.872 352.357 254.366L293.495 288.35C290.907 289.844 287.719 289.844 285.132 288.35L255.306 271.13C245.146 265.456 232.344 265.117 221.534 271.358C210.809 277.55 204.711 288.678 204.453 300.215V334.926C204.453 337.914 202.859 340.675 200.271 342.169L141.41 376.153C138.822 377.647 135.634 377.647 133.046 376.153L74.1845 342.169C71.5969 340.675 70.0028 337.914 70.0028 334.926V266.959C70.0029 263.971 71.5969 261.21 74.1845 259.716L133.046 225.732C135.634 224.238 138.822 224.238 141.41 225.732L171.547 243.132C181.656 248.638 194.306 248.906 205.005 242.729C215.815 236.488 221.922 225.231 222.088 213.595C221.83 202.057 215.732 189.737 205.008 183.545C194.283 177.353 181.597 177.636 171.476 183.181L141.269 200.72C138.67 202.229 135.461 202.228 132.864 200.716L74.1576 166.562C71.5835 165.065 70 162.311 70 159.333Z"},"opencode":{"viewBox":"0 0 32 40","path":"M24 8H8V32H24V8ZM32 40H0V0H32V40Z"},"grok":{"viewBox":"0 0 24 24","path":"M9.26905 15.284L17.2479 9.36086C17.6391 9.07047 18.1981 9.18374 18.3845 9.63478C19.3655 12.0135 18.9272 14.8721 16.9755 16.8349C15.0238 18.7976 12.3082 19.228 9.8261 18.2477L7.1146 19.5102C11.0037 22.1834 15.7263 21.5223 18.6774 18.5525C21.0182 16.1985 21.7432 12.9897 21.0653 10.0961L21.0714 10.1023C20.0884 5.85143 21.3131 4.15233 23.8218 0.677913C23.8812 0.595532 23.9406 0.513151 24 0.428711L20.6987 3.74866V3.73836L9.267 15.2861M7.62249 16.7237C4.83113 14.0422 5.3124 9.89222 7.69417 7.49905C9.45541 5.72786 12.341 5.00497 14.86 6.06768L17.5653 4.81138C17.0779 4.45714 16.4533 4.07613 15.7365 3.80839C12.4966 2.46764 8.6178 3.13492 5.98413 5.78141C3.45081 8.32904 2.65415 12.2463 4.02219 15.5889C5.04412 18.0871 3.36889 19.8541 1.68137 21.6377C1.08337 22.2699 0.483318 22.9022 0 23.5716L7.62045 16.7257"}}
+const LABELS = { codex: 'Codex', claude: 'Claude', grok: 'Grok', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode' }
+const CLIENT = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI', muse: 'Muse', opencode: 'OpenCode' }
+// Stand-in models. ready: false is what the app calls Unavailable today; this page never shows those.
+const MODELS = {
+  codex: [
+    { name: 'GPT-6.1-Sol', efforts: 'low · medium · high · xhigh', ready: true, recommended: true },
+    { name: 'GPT-6-Astra', efforts: 'low · medium · high · xhigh', ready: true },
+    { name: 'GPT-6.1-Luna', efforts: 'low · medium · high', ready: true },
+    { name: 'GPT-6-Codex', efforts: 'low · medium · high', ready: true },
+    { name: 'GPT-6-Codex-Mini', efforts: 'low · medium', ready: true },
+    { name: 'GPT-5.5', efforts: 'low · medium · high', ready: true },
+    { name: 'GPT-5.5-Codex', efforts: 'low · medium · high', ready: false },
+    { name: 'GPT-5-Pro', efforts: 'high', ready: false },
+    { name: 'o5-research', efforts: 'high', ready: false },
+  ],
+  claude: [
+    { name: 'Opus 5.5', efforts: 'low · medium · high · xhigh · max', ready: true, agent: true },
+    { name: 'Sonnet 5.5', efforts: 'low · medium · high · max', ready: true },
+    { name: 'Fable 5.1', efforts: 'low · medium · high', ready: true },
+    { name: 'Haiku 5.5', efforts: 'low · medium · high · xhigh', ready: true },
+    { name: 'Opus 5', efforts: 'low · medium · high', ready: false },
+    { name: 'Sonnet 4.6', efforts: 'low · medium · high', ready: false },
+  ],
+  grok: [
+    { name: 'Grok Build 2', efforts: 'low · high', ready: true },
+    { name: 'Grok 5 Fast', efforts: '', ready: true },
+    { name: 'Grok 5 Heavy', efforts: '', ready: false },
+  ],
+  devin: [],
+  muse: [
+    { name: 'Muse Spark', efforts: 'low · medium · high', ready: true },
+    { name: 'Muse Wonder', efforts: 'low · medium', ready: true },
+  ],
+  opencode: [
+    { name: 'Big Pickle', source: 'OpenCode Zen', ready: true },
+    { name: 'Kimi K3', source: 'OpenCode Zen', ready: true },
+    { name: 'Qwen 4 Coder', source: 'OpenCode Zen', ready: true },
+    { name: 'Claude Sonnet 5.5', source: 'Anthropic', ready: true },
+    { name: 'Claude Opus 5.5', source: 'Anthropic', ready: true },
+    { name: 'Claude Haiku 5.5', source: 'Anthropic', ready: false },
+    { name: 'Gemini 3.5 Pro', source: 'Google', ready: true },
+    { name: 'Gemini 3.5 Flash', source: 'Google', ready: true },
+    { name: 'DeepSeek V4', source: 'OpenRouter', ready: true },
+    { name: 'GLM 5', source: 'OpenRouter', ready: true },
+    { name: 'Llama 5 Maverick', source: 'OpenRouter', ready: false },
+  ],
+}
+const STATUS = { codex: 'connected', claude: 'connected', grok: 'connected', devin: 'disabled', muse: 'connected', opencode: 'connected' }
+const VERSIONS = { codex: '0.142.0', claude: '3.4.12', grok: '1.9.0', muse: '1.4.9', opencode: '2.0.44' }
+const params = new URLSearchParams(location.search)
+const state = {
+  variant: params.get('variant') ?? 'A', theme: params.get('theme') ?? 'dark', size: params.get('size') ?? (innerWidth < 700 ? 'phone' : '1280'),
+  open: params.get('open') ?? null, menu: params.get('menu') ?? null, query: '',
+}
+const SIZES = { 1600: [1600 - 210, 1000], 1280: [1280, 800], 820: [820, 560], phone: [390, 760] }
+const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+const mark = (p, size = 20) => `<svg class="pm" data-p="${p}" width="${size}" height="${size}" viewBox="${MARKS[p].viewBox}" aria-hidden="true"><path d="${MARKS[p].path}"/></svg>`
+const ic = { chev: '<path d="m9 6 6 6-6 6"/>', down: '<path d="m6 9 6 6 6-6"/>', search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>', x: '<path d="M18 6 6 18M6 6l12 12"/>', refresh: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>' }
+const icon = (n, s = 15) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" aria-hidden="true">${ic[n]}</svg>`
+const usable = p => MODELS[p].filter(m => m.ready)
+const statusLabel = p => ({ connected: 'Connected', disabled: 'Disabled', error: 'Needs attention' })[STATUS[p]]
+
+function field(p) {
+  const list = usable(p)
+  const connected = STATUS[p] === 'connected'
+  const open = state.menu === p
+  const text = !connected ? 'Connect to load models' : list.length ? `<b>${list.length}</b> model${list.length === 1 ? '' : 's'}` : 'No models'
+  return `<div class="mfield"><button type="button" class="mfield__trigger" data-menu="${p}" aria-haspopup="dialog" aria-expanded="${open}" aria-label="${LABELS[p]} models, ${connected ? list.length : 0}" ${connected && list.length ? '' : 'disabled'}>${text}${icon('down', 12)}</button>${open ? menu(p) : ''}</div>`
+}
+function menu(p) {
+  const q = state.query.toLowerCase().split(/\s+/).filter(Boolean)
+  const all = usable(p).filter(m => q.every(w => `${m.name} ${m.source ?? ''}`.toLowerCase().includes(w)))
+  const row = m => `<div class="menu__row" tabindex="-1" role="listitem"><span><b>${esc(m.name)}</b>${m.efforts ? `<small>${m.efforts}</small>` : ''}</span>${m.agent ? '<span class="menu__tag">Agent setting</span>' : m.recommended ? '<small>Recommended</small>' : ''}</div>`
+  let body
+  if (!all.length) body = '<p class="menu__empty">No matching models.</p>'
+  else if (all.some(m => m.source)) {
+    const groups = {}; for (const m of all) (groups[m.source] ??= []).push(m)
+    body = Object.entries(groups).map(([s, ms]) => `<p class="menu__group" aria-hidden="true">${esc(s)}<span>${ms.length}</span></p>${ms.map(row).join('')}`).join('')
+  } else body = all.map(row).join('')
+  return `<div class="menu" role="dialog" aria-label="${LABELS[p]} models">
+    <div class="menu__search">${icon('search')}<input id="q" aria-label="Search models" placeholder="Search ${LABELS[p]} models" value="${esc(state.query)}"><button type="button" data-close aria-label="Close models">${icon('x')}</button></div>
+    <div class="menu__list" role="list">${body}</div>
+    <p class="menu__note">Choose what new threads start with under Agents.</p></div>`
+}
+function body(p) {
+  const connected = STATUS[p] === 'connected'
+  const conn = p === 'devin' ? 'Install Devin CLI and run devin auth login before connecting.' : p === 'muse' ? 'Uses your Muse sign-in on this computer. Run muse login in a terminal before connecting.' : p === 'opencode' ? 'Sotto runs its own OpenCode, with its own folder and its own sign-ins.' : `Uses your ${CLIENT[p]} sign-in on this computer.`
+  return `<div class="prow__body">
+    <div class="sect"><div><h4>Local connection</h4><p>${conn}</p></div><button type="button" class="btn ${connected ? '' : 'btn--primary'}">${connected ? 'Disconnect' : 'Connect'}</button></div>
+    ${state.variant !== 'B' ? `<div class="sect"><div><h4>Models</h4><p>${connected ? `The models ${CLIENT[p]} offers you now.` : `Connect ${LABELS[p]} to load its models.`}</p></div>${field(p)}</div>` : ''}
+    <div class="sect"><div><h4>Installed client</h4><p>${VERSIONS[p] ? `${VERSIONS[p]} is installed, and that is what is published.` : 'Connect this provider to read its installed version.'}</p></div><button type="button" class="btn">Check again</button></div>
+  </div>`
+}
+function render() {
+  document.documentElement.dataset.theme = state.theme
+  const win = document.getElementById('win')
+  const [w, h] = SIZES[state.size]
+  win.style.setProperty('--w', state.size === '1600' ? '1390px' : `${w}px`); win.style.setProperty('--h', `${h}px`)
+  if (state.size === 'phone') win.style.setProperty('--w', '100%')
+  win.dataset.size = state.size
+  const rows = Object.keys(LABELS).map(p => {
+    const open = state.open === p
+    return `<div class="prow" ${open ? 'data-open' : ''}>
+      <div class="prow__bar">
+        <button type="button" class="prow__open" data-open-p="${p}" aria-expanded="${open}" aria-label="${LABELS[p]}, ${statusLabel(p)}">${icon('chev', 14).replace('class="ic"', 'class="ic chev"')}${mark(p)}<span class="prow__name"><strong>${LABELS[p]}${VERSIONS[p] && open ? `<span class="prow__ver">${VERSIONS[p]}</span>` : ''}</strong><small data-s="${STATUS[p]}"><i></i>${statusLabel(p)}</small></span></button>
+        ${state.variant === 'B' && state.size !== 'phone' ? field(p) : ''}
+        <button type="button" class="toggle" role="switch" aria-checked="${STATUS[p] !== 'disabled'}" aria-label="Enable ${LABELS[p]}"></button>
+      </div>
+      ${state.variant === 'B' && state.size === 'phone' && open ? `<div style="padding:0 16px 4px">${field(p)}</div>` : ''}
+      ${open ? body(p) : ''}
+    </div>`
+  }).join('')
+  const cards = Object.keys(LABELS).map(p => `<div class="pcard" ${state.open === p ? 'data-on' : ''}><button type="button" class="pcard__sel" data-open-p="${p}" aria-expanded="${state.open === p}" aria-label="${LABELS[p]}, ${statusLabel(p)}">${mark(p, 21)}<strong>${LABELS[p]}</strong><small data-s="${STATUS[p]}"><i></i>${statusLabel(p)}</small></button><button type="button" class="toggle" role="switch" aria-checked="${STATUS[p] !== 'disabled'}" aria-label="Enable ${LABELS[p]}"></button></div>`).join('')
+  const detail = state.open ? `<section class="dcard" aria-label="${LABELS[state.open]} settings"><header class="dcard__head">${mark(state.open, 21)}<h3>${LABELS[state.open]}</h3>${VERSIONS[state.open] ? `<span class="ver">${VERSIONS[state.open]}</span>` : ''}<button type="button" class="icb" aria-label="Refresh ${LABELS[state.open]}">${icon('refresh')}</button></header>${body(state.open)}</section>` : ''
+  const list = state.variant === 'C' ? `<div class="cards" role="list" aria-label="Thread providers">${cards}</div>${detail}` : `<div class="plist" role="list" aria-label="Thread providers">${rows}</div>`
+  win.innerHTML = `<nav class="side" aria-label="Settings pages"><span>General</span><span>Dictation</span><span>Agents</span><span data-on>Providers</span><span>Hosts &amp; phones</span><span>Watcher</span></nav>
+    <main class="page"><div class="heading"><h2>Providers</h2><p>Accounts &amp; connections</p></div>
+      ${list}
+      <p class="note" style="margin-top:12px">Choose what new threads start with under Agents.</p>
+      <div class="foot"><div><h4>Check for client updates</h4><p>Checks each client's published version when it connects and every five minutes. No thread text is sent.</p></div><button type="button" class="toggle" role="switch" aria-checked="true" aria-label="Check for client updates"></button></div>
+    </main>`
+  const hidden = Object.fromEntries(Object.keys(MODELS).map(p => [p, MODELS[p].filter(m => !m.ready).length]))
+  document.getElementById('top').innerHTML = `<b>Prototype</b> · Settings › Providers · Variant <b>${state.variant}</b>: ${({ A: 'a list; the Models field is inside the opened row', B: 'a list; the Models field is on every row', C: "today's provider cards; nothing is chosen on open, and choosing one shows its card underneath with the Models field in it" })[state.variant]}. Click a provider to open it; click its model count to search its models.<br><span class="readout">State: open = ${state.open ?? 'none'} · menu = ${state.menu ?? 'closed'}${state.query ? ` · search = "${esc(state.query)}"` : ''} · unavailable hidden: ${Object.entries(hidden).filter(([, n]) => n).map(([p, n]) => `${LABELS[p]} ${n}`).join(', ')}</span>`
+  const bar = document.getElementById('bar')
+  const group = (legend, key, values) => `<fieldset><legend>${legend}</legend>${values.map(([v, l]) => `<button type="button" data-k="${key}" data-v="${v}" aria-pressed="${state[key] === v}">${l}</button>`).join('')}</fieldset>`
+  bar.innerHTML = group('Variant', 'variant', [['C', "C · today's cards"], ['A', 'A · list'], ['B', 'B · list, on row']]) + group('Theme', 'theme', [['dark', 'Dark'], ['light', 'Light']]) + group('Size', 'size', [['1600', '1600'], ['1280', '1280'], ['820', '820'], ['phone', 'Phone']])
+  const q = document.getElementById('q')
+  if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length) }
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('button, .menu')
+  if (!t) { if (state.menu) { state.menu = null; state.query = ''; render() } return }
+  if (t.classList.contains('menu') && !e.target.closest('[data-close]')) return
+  if (t.dataset.k) { state[t.dataset.k] = t.dataset.v; state.menu = null; state.query = '' }
+  else if (t.dataset.openP) { state.open = state.open === t.dataset.openP ? null : t.dataset.openP; state.menu = null }
+  else if (t.dataset.menu) { state.menu = state.menu === t.dataset.menu ? null : t.dataset.menu; state.query = '' }
+  else if (t.dataset.close !== undefined) { const p = state.menu; state.menu = null; state.query = ''; render(); document.querySelector(`[data-menu="${p}"]`)?.focus(); return }
+  else if (t.getAttribute('role') === 'switch') { t.setAttribute('aria-checked', t.getAttribute('aria-checked') !== 'true'); return }
+  else return
+  render()
+})
+document.addEventListener('input', e => { if (e.target.id === 'q') { state.query = e.target.value; render() } })
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && state.menu) { e.preventDefault(); const p = state.menu; if (state.query) state.query = ''; else state.menu = null; render(); if (!state.menu) document.querySelector(`[data-menu="${p}"]`)?.focus(); return }
+  if (e.key === 'ArrowDown' && state.menu) { e.preventDefault(); const rows = [...document.querySelectorAll('.menu__row')]; const i = rows.indexOf(document.activeElement); rows[Math.min(rows.length - 1, i + 1)]?.focus(); return }
+  if (e.key === 'ArrowUp' && state.menu) { e.preventDefault(); const rows = [...document.querySelectorAll('.menu__row')]; const i = rows.indexOf(document.activeElement); if (i <= 0) document.getElementById('q')?.focus(); else rows[i - 1].focus(); return }
+  if (!state.menu && document.activeElement?.tagName !== 'INPUT' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { const vs = ['C', 'A', 'B']; state.variant = vs[(vs.indexOf(state.variant) + (e.key === 'ArrowRight' ? 1 : 2)) % 3]; render() }
+})
+render()
+</script>
+</body>
+</html>

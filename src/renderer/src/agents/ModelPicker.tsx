@@ -5,6 +5,7 @@ import { useLingui } from '@lingui/react/macro'
 import { OPENCODE_ZEN_SOURCE, type AgentModel, type ProviderId } from '../../../shared/agents'
 import type { OwnServersBridge } from '../../../shared/ownModelServers'
 import { catalogEntry, resolveModel } from '../../../shared/modelCatalog'
+import { useAnchoredMenu } from './anchoredMenu'
 import { moveListboxFocus } from './listboxKeys'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { ProviderMark } from './ProviderMark'
@@ -74,7 +75,7 @@ const makerGrouped = (models: readonly AgentModel[]): boolean => models[0]?.prov
 /** A model source name longer than this many characters may give way on the chip, down to a floor; a shorter one never does. */
 const LONG_SOURCE = 9
 
-const countModels = (count: number): string => plural(count, { one: '# model', other: '# models' })
+export const countModels = (count: number): string => plural(count, { one: '# model', other: '# models' })
 
 /** A provider the menu lists without models, and why: one the user turned on that cannot take the choice now. */
 export interface UnavailablePickerProvider { readonly name: string; readonly providerId?: ProviderId | undefined; readonly reason: string }
@@ -206,46 +207,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
     element.addEventListener('wheel', wheel, { passive: false })
     return () => element.removeEventListener('wheel', wheel)
   }, [groups, selectedName])
-  const placeMenu = useRef<(() => void) | undefined>(undefined)
-  useLayoutEffect(() => {
-    if (!open) return
-    const element = dialog.current
-    if (!element) return
-    element.showModal?.()
-    if (!element.open) element.setAttribute('open', '')
-    // Anchored over the chip, below it only when there is room, and kept inside the window as it resizes. Where it fits
-    // on neither side, as in a small window with the composer mid-way down, it takes the roomier side and is shortened to
-    // fit there, so it never covers the chip it came from. Once open it keeps its side and holds the chip's edge: a menu
-    // above its chip keeps its foot there and grows and shrinks upward, one below keeps its head there and grows
-    // downward. It changes sides only when it no longer fits on its own.
-    let side: 'below' | 'above' | undefined
-    const place = (): void => {
-      const anchor = trigger.current?.getBoundingClientRect()
-      if (!anchor) return
-      element.style.maxHeight = ''
-      const width = element.offsetWidth || 336
-      const natural = element.offsetHeight || 360
-      const room = { below: innerHeight - anchor.bottom - 22, above: anchor.top - 22 }
-      if (!side || natural > room[side]) side = natural <= room.below ? 'below' : natural <= room.above ? 'above' : room.below > room.above ? 'below' : 'above'
-      const fit = Math.max(room[side], 160)
-      if (natural > fit) element.style.maxHeight = `${fit}px`
-      const height = Math.min(natural, fit)
-      const top = Math.max(16, Math.min(side === 'below' ? anchor.bottom + 6 : anchor.top - height - 6, innerHeight - height - 16))
-      element.style.left = `${Math.max(16, Math.min(anchor.left, innerWidth - width - 16))}px`
-      // The edge against the chip is the one set, so the menu's own height moves only its far edge. The other is set to
-      // auto, since a modal dialog's own style pins both to the window.
-      element.style.top = side === 'below' ? `${top}px` : 'auto'
-      element.style.bottom = side === 'above' ? `${innerHeight - top - height}px` : 'auto'
-    }
-    place()
-    placeMenu.current = place
-    addEventListener('resize', place)
-    search.current?.focus()
-    return () => { removeEventListener('resize', place); placeMenu.current = undefined; element.close?.(); trigger.current?.focus() }
-  }, [open])
-  // A step of the menu can be taller or shorter than the last (a provider's model sources, then one source's models),
-  // so each draw places it again before it shows, keeping it clear of the chip.
-  useLayoutEffect(() => { placeMenu.current?.() })
+  useAnchoredMenu(open, trigger, dialog, search)
   // The step a key or a press asked for has drawn: focus what it said. A source with no model to choose yet puts focus on
   // its back control. Whatever the step, focus stays in the menu: where what held it has gone (a source that left, a
   // model that went), it goes to search, so Escape still steps back rather than reaching the window behind.

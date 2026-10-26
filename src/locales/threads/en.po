@@ -483,12 +483,6 @@ msgstr "{kindWord}: {label}, Working"
 msgid "{kindWord}: {name}, {stateWord}"
 msgstr "{kindWord}: {name}, {stateWord}"
 
-#. {label} is a provider's name.
-#. {label} is a provider's name.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "{label} available models"
-msgstr "{label} available models"
-
 #. {label} is the code's language, such as TypeScript, or the word "Code".
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "{label} code block"
@@ -502,6 +496,12 @@ msgstr "{label} details"
 #: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "{label} in {title}"
 msgstr "{label} in {title}"
+
+#. {label} is a provider's name.
+#. {label} is a provider's name.
+#: src/renderer/src/agents/ProviderModelList.tsx
+msgid "{label} models"
+msgstr "{label} models"
 
 #. {label} is a diagram's kind, such as Flowchart: its Mermaid source.
 #: src/renderer/src/agents/diagrams/MermaidDiagram.tsx
@@ -1457,7 +1457,7 @@ msgstr "Agent {number}"
 msgid "Agent controls are unavailable. Reopen Sotto to reconnect."
 msgstr "Agent controls are unavailable. Reopen Sotto to reconnect."
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
+#: src/renderer/src/agents/ProviderModelList.tsx
 msgid "Agent setting"
 msgstr "Agent setting"
 
@@ -1684,11 +1684,6 @@ msgstr "Auto"
 #: src/renderer/src/agents/ProviderUpgradeNotice.tsx
 msgid "Automatic management and pending actions were stopped in Sotto. Native work was not cancelled or replayed."
 msgstr "Automatic management and pending actions were stopped in Sotto. Native work was not cancelled or replayed."
-
-#. Beside a model that can be chosen.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Available"
-msgstr "Available"
 
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Available after this turn finishes."
@@ -2049,6 +2044,7 @@ msgstr "Choose model"
 msgid "Choose or create a thread to review this draft."
 msgstr "Choose or create a thread to review this draft."
 
+#: src/renderer/src/agents/ProviderModelList.tsx
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Choose what new threads start with under Agents."
 msgstr "Choose what new threads start with under Agents."
@@ -2127,6 +2123,10 @@ msgstr "Close image"
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "Close model picker"
 msgstr "Close model picker"
+
+#: src/renderer/src/agents/ProviderModelList.tsx
+msgid "Close models"
+msgstr "Close models"
 
 #: src/renderer/src/agents/NewThreadDialog.tsx
 msgid "Close new thread dialog"
@@ -4582,6 +4582,7 @@ msgid "No local commits to push."
 msgstr "No local commits to push."
 
 #: src/renderer/src/agents/ModelPicker.tsx
+#: src/renderer/src/agents/ProviderModelList.tsx
 msgid "No matching models."
 msgstr "No matching models."
 
@@ -5982,6 +5983,11 @@ msgstr "Saving…"
 msgid "Screenshot files"
 msgstr "Screenshot files"
 
+#. {label} is a provider's name.
+#: src/renderer/src/agents/ProviderModelList.tsx
+msgid "Search {label} models"
+msgstr "Search {label} models"
+
 #. {providerName} is a provider's name.
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "Search {providerName} models"
@@ -6016,6 +6022,7 @@ msgid "Search model sources"
 msgstr "Search model sources"
 
 #: src/renderer/src/agents/ModelPicker.tsx
+#: src/renderer/src/agents/ProviderModelList.tsx
 msgid "Search models"
 msgstr "Search models"
 
@@ -6175,6 +6182,11 @@ msgstr "Show {earlier} earlier"
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Show {file} in {manager}"
 msgstr "Show {file} in {manager}"
+
+#. {label} is a provider's name; {count} says how many models, such as "12 models".
+#: src/renderer/src/agents/ProviderModelList.tsx
+msgid "Show {label} models, {count}"
+msgstr "Show {label} models, {count}"
 
 #. {name} is the file name of an image.
 #: src/renderer/src/agents/AttachmentViewer.tsx
@@ -7182,6 +7194,11 @@ msgstr "The model it asked for was not ready on this computer, or Sotto could no
 msgid "the model's default effort"
 msgstr "the model's default effort"
 
+#. {clientName} is a provider's client, such as Claude Code.
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "The models {clientName} offers you now."
+msgstr "The models {clientName} offers you now."
+
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "The Muse guide could not be opened. Try again."
 msgstr "The Muse guide could not be opened. Try again."
@@ -7774,9 +7791,7 @@ msgid "Ultrathink is in this prompt"
 msgstr "Ultrathink is in this prompt"
 
 #. Beside a model that cannot be chosen now.
-#. Beside a model that cannot be chosen now.
 #: src/renderer/src/agents/ModelPicker.tsx
-#: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Unavailable"
 msgstr "Unavailable"
 
