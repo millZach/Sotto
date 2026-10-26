@@ -2236,9 +2236,6 @@ msgid "connecting"
 msgstr ""
 
 #: src/renderer/src/agents/EmptyWorkspace.tsx
-msgid "Connecting..."
-msgstr ""
-
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Connecting…"
 msgstr ""
@@ -7246,7 +7243,7 @@ msgid "This thread can’t be deleted: {reason}. Nothing was deleted."
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
-msgid "This thread cannot delegate. Only Claude Code, Codex, Grok Build and Muse threads on this computer can, outside Watcher, host setup and provider jobs. {nothing}"
+msgid "This thread cannot delegate. Only Claude Code, Codex, Grok Build and Muse threads can, outside Watcher, host setup and provider jobs, on this computer or on a machine whose Sotto offers it. {nothing}"
 msgstr ""
 
 #: src/renderer/src/agents/attachmentWords.ts

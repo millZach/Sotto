@@ -9,7 +9,7 @@ import type { OwnServer } from '../../shared/ownModelServers'
 import { watcherProvidersInWords } from '../../shared/workerRoles'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
-import { deliverAttachments, withAttachedFilesNote } from './attachedFiles'
+import { acpImageBlocks, deliverAttachments, withAttachedFilesNote } from './attachedFiles'
 import type { BrowserAgentTools } from './browserAgentServer'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { deepseekActivities, DEEPSEEK_THINKING_ID_PREFIX } from './deepseekActivity'
@@ -225,6 +225,8 @@ export class DeepSeekAcpHost implements AgentHost {
   private patching = Promise.resolve()
   private servers: readonly OwnServer[] = []
   private httpToolServers = false
+  /** Whether the harness advertised image prompts on the current overlay: unknown until a process has started on it. */
+  private harnessImages = false
   private generation = 0
   private writing = Promise.resolve()
   private state: AgentHostSnapshot = { connected: false, name: 'DeepSeek Harness', version: '', projects: [], models: [], threads: [],
@@ -381,15 +383,27 @@ export class DeepSeekAcpHost implements AgentHost {
     this.processes.add(rpc); void rpc.closed.then(() => this.processes.delete(rpc))
     return rpc
   }
-  private async handshake(rpc: DeepSeekRpc): Promise<void> {
-    let protocol: number | undefined
+  private async handshake(rpc: DeepSeekRpc): Promise<boolean> {
+    let protocol: number | undefined, images = false
     await rpc.request('initialize', { protocolVersion: DEEPSEEK_ACP_VERSION, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
       clientInfo: { name: 'sotto', version: appVersion } }, value => {
       const client = initializeSchema.parse(value)
       protocol = client.protocolVersion
       this.httpToolServers = client.agentCapabilities.mcpCapabilities?.http === true
+      images = client.agentCapabilities.promptCapabilities?.image === true
     }, false, this.options.startTimeoutMs ?? 30_000)
     if (protocol !== DEEPSEEK_ACP_VERSION) throw new ProviderUnavailable('cannot-start', `Sotto speaks ACP ${DEEPSEEK_ACP_VERSION}, and this DeepSeek Harness client answered ACP ${protocol}.`)
+    return images
+  }
+  /**
+   * What a process on the current overlay and client advertised decides whether any model offers images: the harness
+   * takes them only when the overlay's default model declares image input, and refuses every image block otherwise.
+   */
+  private readHarnessImages(connection: Connection, images: boolean): void {
+    if (this.stale(connection) || images === this.harnessImages) return
+    this.harnessImages = images
+    this.state.models = deepseekCatalog(this.servers, images)
+    this.emit()
   }
   /** The overlay from the current record, written whenever it changed: a record change makes processes outdated. */
   /** One write at a time, so an older overlay never lands on disk after a newer one. */
@@ -414,7 +428,7 @@ export class DeepSeekAcpHost implements AgentHost {
       patchRevision, mode: alias.runtimeMode, closing: false, model: undefined, effort: undefined, tools: new Map() }
     const rpc = this.spawn([...(this.options.executableArgs ?? []), '--profile', 'acp', '--patch', this.patchPath], cwd, alias.runtimeMode, frame => this.frame(id, connection, frame), () => this.processLost(id, connection))
     ;(connection as { rpc: DeepSeekRpc }).rpc = rpc
-    try { await this.handshake(rpc) }
+    try { this.readHarnessImages(connection, await this.handshake(rpc)) }
     catch (error) { connection.closing = true; rpc.close(); throw error }
     return connection
   }
@@ -434,6 +448,8 @@ export class DeepSeekAcpHost implements AgentHost {
       if (compareDeepSeekVersions(version, DEEPSEEK_CLI_VERSION) < 0) throw new ProviderUnavailable('too-old', `DeepSeek Harness ${DEEPSEEK_CLI_VERSION} or newer is needed, and this one is ${version}. Update it, then connect again. Your threads are kept.`, version, DEEPSEEK_CLI_VERSION)
       this.servers = await this.options.servers?.() ?? []
       this.assertGeneration(generation)
+      // Images wait for the harness to say it takes them, which a process started on this overlay does.
+      this.harnessImages = false
       const models = deepseekCatalog(this.servers)
       if (!models.length) throw new ProviderUnavailable('signed-out', 'DeepSeek Harness runs your own model servers, and none it can run is saved yet. Add one under Your own model servers, then connect again. Your threads are kept.', version)
       this.executable = executable
@@ -483,7 +499,7 @@ export class DeepSeekAcpHost implements AgentHost {
       const servers = await this.options.servers?.()
       if (!servers || generation !== this.generation) return
       this.servers = servers
-      this.state.models = deepseekCatalog(servers)
+      this.state.models = deepseekCatalog(servers, this.harnessImages)
       // Only a new overlay outdates a process: a save that leaves it the same, such as a keyed server's, restarts nothing.
       if (deepseekPatch(servers) !== this.patchText) {
         this.patchRevision++
@@ -939,13 +955,15 @@ export class DeepSeekAcpHost implements AgentHost {
     const running = this.turns.get(id)
     if (running && !running.ended) throw new Error('DeepSeek Harness is still working on this thread. Queue this follow-up.')
     if (this.thread(id).requests.length) throw new Error('Answer DeepSeek Harness’s pending request before sending another message.')
-    // Images are refused here, before any bytes are read: no model on this provider advertises them in this version.
+    // An image is refused here, before any bytes are read, unless the model's record and the harness both take images.
     const attachments = validatePromptAttachments(this.state, alias.modelId, command.attachments, { workingDirectory: alias.cwd })
     verifyFileMentions(command.text, command.files)
     if (command.skills?.length) throw new Error('DeepSeek Harness takes no skills from the composer in this version.')
-    // Files that are not images are saved into the thread's folder and named in a note after the words (ADR-0131).
+    // Images go as ACP image blocks after the words; files that are not images are saved into the thread's folder and
+    // named in a note after the words (ADR-0131).
     const delivered = await deliverAttachments(alias.cwd, attachments)
     const nativeText = withAttachedFilesNote(command.text, delivered.note)
+    const images = await acpImageBlocks(delivered.images)
     await this.applySettings(alias, connection)
     current()
     const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: digest(nativeText), createdAt: new Date().toISOString(), turn: alias.turns,
@@ -968,7 +986,7 @@ export class DeepSeekAcpHost implements AgentHost {
     this.emit()
     markSendStage(command.commandId, 'written')
     const superseded = (): boolean => generation !== this.generation || this.turns.get(id) !== turn
-    void connection.rpc.request('session/prompt', { sessionId: alias.deepseekSessionId, prompt: [{ type: 'text', text: nativeText }] }, value => {
+    void connection.rpc.request('session/prompt', { sessionId: alias.deepseekSessionId, prompt: [{ type: 'text', text: nativeText }, ...images] }, value => {
       if (superseded()) return
       const stop = promptAnswerSchema.parse(value).stopReason
       this.endTurn(id, stop === 'end_turn' ? 'completed' : stop === 'cancelled' ? 'interrupted' : stop === 'refusal' ? 'failed' : 'completed',

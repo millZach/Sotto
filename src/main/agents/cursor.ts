@@ -29,7 +29,7 @@ import { markSendStage } from './sendStages'
 import { SIDE_WRITING_TIMEOUT_MS } from './sideWriting'
 import { settledThinking, thinkingSettledAs } from './thinkingActivity'
 import { ThreadMessageLog } from './threadMessageLog'
-import { deliverAttachments, withAttachedFilesNote } from './attachedFiles'
+import { acpImageBlocks, deliverAttachments, withAttachedFilesNote } from './attachedFiles'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { scopedThreadServers, type ScopedThreadTools, type ThreadMcpServer } from './threadToolServer'
 import { existingWorkingDirectory } from './threadWorktrees'
@@ -1117,8 +1117,7 @@ export class CursorAcpHost implements AgentHost {
     const delivered = await deliverAttachments(alias.cwd, attachments)
     const nativeText = withAttachedFilesNote(lead + head + command.text.slice(lead.length) + tail, delivered.note)
     const sottoTail = nativeText.length - head.length - command.text.length
-    const images: { type: 'image'; mimeType: string; data: string }[] = []
-    for (const attachment of delivered.images) images.push({ type: 'image', mimeType: attachment.mimeType, data: Buffer.from(await attachment.read()).toString('base64') })
+    const images = await acpImageBlocks(delivered.images)
     await this.applySettings(alias, connection)
     current()
     const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: digest(nativeText), createdAt: new Date().toISOString(), turn: alias.turns,

@@ -38,9 +38,20 @@ describe('the DeepSeek Harness overlay (ADR-0138)', () => {
     expect(patch).toContain('maxTokens: 8192')
     expect(patch).toContain('reasoningEfforts:\n              off:\n              low: low\n              high: high\n              max: max')
     expect(patch).toContain('reasoningEfforts: false')
-    // The DeepSeek thinking format only on the model that calls itself one, and text as the only input either way.
+    // The DeepSeek thinking format only on the model that calls itself one, and images only where the record says so.
     expect(patch.match(/thinkingFormat: deepseek/g)).toHaveLength(1)
-    expect(patch.match(/input: \[text\]/g)).toHaveLength(2)
+    expect(patch.match(/input: \[text, image\]/g)).toHaveLength(1)
+    expect(patch.match(/input: \[text\]/g)).toHaveLength(1)
+  })
+
+  it('starts the ACP entry on the first model that reads images, since the harness takes images only from that default', () => {
+    const plainFirst: OwnServer = { ...SERVER, models: [SERVER.models[1]!, SERVER.models[0]!] }
+    const patch = deepseekPatch([plainFirst])!
+    expect(patch).toContain('- id: acp\n  name: \'@deepseek-ai/dsh-acp\'\n  config:\n    provider: "own-abc123"\n    model: "deepseek-v4-flash"')
+    expect(patch).toContain('- id: agent-default-model\n  name: \'@deepseek-ai/dsh-agent-default-model\'\n  config:\n    provider: "own-abc123"\n    model: "deepseek-v4-flash"')
+    // With no model that reads images, the first model stays the default.
+    const textOnly: OwnServer = { ...SERVER, models: [SERVER.models[1]!] }
+    expect(deepseekPatch([textOnly])).toContain('provider: "own-abc123"\n    model: "qwen-plain"')
   })
 
   it('is undefined with no keyless server: there is no model a session could run', () => {
@@ -62,6 +73,12 @@ describe('the DeepSeek Harness catalog and settings (ADR-0138)', () => {
       reasoningEfforts: ['off', 'low', 'high', 'max'], defaultReasoningEffort: 'high',
       runtimeModes: ['approval-required', 'auto-accept-edits', 'full-access'] })
     expect(catalog[1]!.reasoningEfforts).toBeUndefined()
+  })
+
+  it('offers images only on a model whose record reads them, once the harness has advertised image prompts', () => {
+    expect(deepseekCatalog([SERVER]).map(model => model.supportsImages)).toEqual([undefined, undefined])
+    expect(deepseekCatalog([SERVER], false).map(model => model.supportsImages)).toEqual([undefined, undefined])
+    expect(deepseekCatalog([SERVER], true).map(model => model.supportsImages)).toEqual([true, undefined])
   })
 
   it('encodes a model as the harness’s route pair, and reads a pair and an effort back', () => {
