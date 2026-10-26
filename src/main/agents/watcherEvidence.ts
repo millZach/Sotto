@@ -78,10 +78,11 @@ export const WATCHER_STATE_FLIP_MS = 10 * 60_000
 /** Merged and closed: what a pull request says after either is no news, and either is told once (#1146). */
 const ENDED_KINDS: ReadonlySet<WatcherAttentionKind> = new Set(['merged', 'closed'])
 /**
- * What Sotto has seen of a pull request's state while it ran: whether it first met it as a thread's link already merged or
- * closed, whose merge or close is then no news, and when it saw it close. In memory only, as attention is.
+ * What Sotto has seen of a pull request's state while it ran, whichever read said it, this host's or a paired one's:
+ * whether it first met it as a thread's link already merged or closed, whose merge or close is then no news, whether any
+ * read said it merged, and when it saw it close. In memory only, as attention is.
  */
-interface PullRequestLife { linkedEnded?: true; closedAt?: number }
+interface PullRequestLife { linkedEnded?: true; merged?: true; closedAt?: number }
 
 /** Bounded in-memory facts only. Never keep raw errors, file paths, tool inputs, output or review bodies. */
 export class WatcherEvidenceStore {
@@ -394,7 +395,7 @@ export class WatcherEvidenceStore {
         fact: read.checks === 'failed' ? 'checks-failed' : read.checks === 'passed' ? 'checks-passed' : 'pull-request-observed',
         checksState: read.checks, ...(read.checks === 'unknown' ? { reason: 'checks-unavailable' as const } : {}),
         ...(read.checkCount !== undefined ? { checkCount: read.checkCount } : {}) })
-      const said = this.stateRead(target, read, stateBefore)
+      const said = this.stateRead(target, read, stateBefore, !this.entries.get(targetKey(target))?.has(slot + ':state'))
       if (said !== undefined) put(slot + ':state', { ...common,
         fact: said === 'merged' ? 'merge-observed' : 'pull-request-observed', pullRequestState: said })
       if (head && read.reviewApproved !== undefined) put(slot + ':review', { ...common,
@@ -408,13 +409,16 @@ export class WatcherEvidenceStore {
   }
   /**
    * The state a read leaves a pull request in (#1146). Merged is final, since GitHub never unmerges, so a read that says
-   * otherwise is an older answer. So is one that says open within WATCHER_STATE_FLIP_MS of Sotto seeing it close.
+   * otherwise is an older answer, from this host or a paired one, and a new commit's read that says nothing of its state
+   * keeps it merged (`lost`: the new head cleared the state). A read that says open within WATCHER_STATE_FLIP_MS of Sotto
+   * seeing it close is an older answer too.
    */
-  private stateRead(target: WatcherThreadTarget, read: PullRequestObservation, before: WatcherEvidence['pullRequestState']): PullRequestObservation['state'] {
-    if (read.state === undefined) return undefined
+  private stateRead(target: WatcherThreadTarget, read: PullRequestObservation, before: WatcherEvidence['pullRequestState'], lost: boolean): PullRequestObservation['state'] {
     const life = this.life(target, read.url), now = this.now()
-    const state = before === 'merged' ? 'merged'
+    if (read.state === undefined) return life.merged && lost ? 'merged' : undefined
+    const state = before === 'merged' || life.merged ? 'merged'
       : before === 'closed' && read.state === 'open' && life.closedAt !== undefined && now - life.closedAt < WATCHER_STATE_FLIP_MS ? 'closed' : read.state
+    if (state === 'merged') life.merged = true
     if (state === 'closed' && before !== 'closed') life.closedAt = now
     return state
   }

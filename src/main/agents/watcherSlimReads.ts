@@ -109,16 +109,28 @@ export function watcherSlimRow(row: FullRow, watched: boolean, turnFailed = fals
 const isOk = (result: unknown): result is { status: 'ok' } & Record<string, unknown> =>
   typeof result === 'object' && result !== null && (result as { status?: unknown }).status === 'ok'
 
+/** What the desktop knows of each thread that a slim read says beside the read's own result. */
+export interface WatcherSlimLookups {
+  /**
+   * Whether a thread's last turn failed, from the thread itself: its turn facts cannot, as a paired host's sits beside the
+   * desktop's own and either can be the older.
+   */
+  readonly turnFailed?: (target: WatcherThreadTarget) => boolean
+  /**
+   * Whether a prototype the thread made waits for the user's review (ADR-0108), from the thread too, so a paired host never
+   * sends a field an older desktop refuses.
+   */
+  readonly prototypeReady?: (target: WatcherThreadTarget) => boolean
+  /** The pull requests the last read of the thread given to this Watcher conversation held merged or closed (#1147). */
+  readonly endedBefore?: (target: WatcherThreadTarget) => ReadonlySet<string> | undefined
+}
 /**
  * What Watcher is given of a read's full result, from what its call asked (#1191). Refusals and other tools pass as they
  * are. `watched` says which threads Watcher watches. A paired host's page is filtered here, since the host is not asked to.
- * `turnFailed` says whether a thread's last turn failed, from the thread itself: its turn facts cannot, as a paired host's
- * sits beside the desktop's own and either can be the older. `prototypeReady` says whether a prototype the thread made
- * waits for the user's review (ADR-0108), from the thread too, so a paired host never sends a field an older desktop refuses.
  */
 export function watcherSlimRead(name: WatcherToolName, input: unknown, result: unknown, watched: (target: WatcherThreadTarget) => boolean,
-  turnFailed: (target: WatcherThreadTarget) => boolean = () => false, prototypeReady: (target: WatcherThreadTarget) => boolean = () => false,
-  endedBefore: (target: WatcherThreadTarget) => ReadonlySet<string> | undefined = () => undefined): unknown {
+  lookups: WatcherSlimLookups = {}): unknown {
+  const { turnFailed = () => false, prototypeReady = () => false, endedBefore = () => undefined } = lookups
   if (!isOk(result)) return result
   if (name === 'list_threads') {
     const asked = input as WatcherToolInput<'list_threads'>, rows = (result.rows as FullRow[]).filter(row => !asked.watchedOnly || watched(row.target))

@@ -726,8 +726,12 @@ it('keeps a legacy request-only takeover fenced until the user watches the threa
   await f.control.updateWatcher(record => { delete record.localTakeovers })
   await f.finish(f.watcherId)
   const requestB = await f.request('Synthetic fresh request with legacy evidence')
-  for (const requestId of [f.requestA, requestB]) expect(await f.call('send_to_thread', { requestId, retryKey: randomUUID(), target: f.target,
-    delivery: 'now', text: 'Synthetic conservative legacy continuation' })).toMatchObject({ status: 'refused', code: 'THREAD_TAKEN_OVER' })
+  for (const requestId of [f.requestA, requestB]) {
+    const refused = await f.call('send_to_thread', { requestId, retryKey: randomUUID(), target: f.target, delivery: 'now', text: 'Synthetic conservative legacy continuation' })
+    expect(refused).toMatchObject({ status: 'refused', code: 'THREAD_TAKEN_OVER' })
+    // With no local record a later request does not lift the fence, so the refusal points at the watch instead (#1148).
+    expect(refused.status === 'refused' && refused.message).toContain('A later request does not lift this here; Watcher reaches the thread again under its standing watch once the user watches it.')
+  }
   // The user's own Watch hands the thread back and establishes a boundary of its own; from then on the watch decides.
   expect(await f.watcher.watchThread({ target: f.target })).toMatchObject({ status: 'ok' })
   expect(f.control.watcherRecord().localTakeovers).toContainEqual(expect.objectContaining({ target: f.target, lastRequestId: requestB }))

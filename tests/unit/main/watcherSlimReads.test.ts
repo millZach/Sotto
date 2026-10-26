@@ -126,7 +126,7 @@ it('says in a slim row why a thread needs the user or is not watched, and carrie
   failed!.waitsOn = [{ id: 'card', kind: 'permission', label: 'Open to answer permission', openTarget: failed!.target }]
   takenOver!.participation = [{ requestId: randomUUID(), startedBy: 'watcher', generation: 0, state: 'taken-over', takeover: { reason: 'user-send', at }, automationStopped: true }]
   quiet!.connected = false
-  const slim = watcherSlimRead('list_threads', {}, full, item => item.threadId === 'thread-0', item => item.threadId === 'thread-0') as typeof full
+  const slim = watcherSlimRead('list_threads', {}, full, item => item.threadId === 'thread-0', { turnFailed: item => item.threadId === 'thread-0' }) as typeof full
   expect(watcherToolSchemas.list_threads.output.parse(slim)).toBeTruthy()
   expect(slim.rows[0]).toMatchObject({ watched: true, turnFailed: true, waitsOn: [{ id: 'card', kind: 'permission' }] })
   expect(slim.rows[1]).toMatchObject({ watched: false, takenOver: true, automationStopped: true })
@@ -141,7 +141,7 @@ it('says in a slim row why a thread needs the user or is not watched, and carrie
 it('says on a row and a read that a prototype waits for the user’s review, from the thread itself (ADR-0108)', () => {
   const full = roster(2, 0), ready = (item: { threadId: string }) => item.threadId === 'thread-0'
   for (const input of [{}, { detail: 'full' as const }]) {
-    const rows = (watcherSlimRead('list_threads', input, full, () => true, () => false, ready) as typeof full).rows
+    const rows = (watcherSlimRead('list_threads', input, full, () => true, { prototypeReady: ready }) as typeof full).rows
     expect(watcherToolSchemas.list_threads.output.parse({ ...full, rows })).toBeTruthy()
     expect(rows[0]).toMatchObject({ prototypeReady: true })
     expect(rows[1]).not.toHaveProperty('prototypeReady')
@@ -149,7 +149,7 @@ it('says on a row and a read that a prototype waits for the user’s review, fro
   const read = { status: 'ok', target: target('thread-0'), messages: [], waitsOn: [], activities: [], evidence: [], historyEpoch: 'epoch',
     firstPosition: null, lastPosition: null, nextPosition: null, truncated: false, earlierAvailable: false, observedAt: at }
   for (const input of [{}, { evidence: 'full' as const }]) {
-    const slim = watcherSlimRead('read_thread', input, read, () => true, () => false, ready)
+    const slim = watcherSlimRead('read_thread', input, read, () => true, { prototypeReady: ready })
     expect(watcherToolSchemas.read_thread.output.parse(slim)).toMatchObject({ prototypeReady: true })
   }
   expect(watcherSlimRead('read_thread', {}, read, () => true)).not.toHaveProperty('prototypeReady')
@@ -175,7 +175,7 @@ it('takes a slim row’s failure from the thread’s last turn, not from a turn 
   // A paired host's failure fact can outlive the turn that followed it, or carry a later time from a skewed clock.
   row.evidence.push({ id: randomUUID(), target: row.target, source: 'native-turn', observedAt: '2026-10-19T11:00:00.000Z', freshness: 'fresh', availability: 'available',
     turnId: 'turn-1', fact: 'turn-failed', failureCategory: 'provider-turn-failed' })
-  const slim = watcherSlimRead('list_threads', {}, full, () => true, item => item.threadId === 'thread-1') as typeof full
+  const slim = watcherSlimRead('list_threads', {}, full, () => true, { turnFailed: item => item.threadId === 'thread-1' }) as typeof full
   expect(slim.rows[0]).not.toHaveProperty('turnFailed')
   expect(slim.rows[1]).toMatchObject({ turnFailed: true })
 })
@@ -213,7 +213,7 @@ it('reads a thread with twenty-five merged pull requests in under 2 KB, summing 
     firstPosition: 0, lastPosition: 1, nextPosition: null, truncated: false, earlierAvailable: false, observedAt: at })
   // A first read, and one with nothing new, sum up none of them: the news told each merge as it came.
   for (const before of [undefined, watcherEndedPullRequests(evidence)]) {
-    const slim = watcherSlimRead('read_thread', { limit: 2 }, read(evidence), () => false, undefined, undefined, () => before)
+    const slim = watcherSlimRead('read_thread', { limit: 2 }, read(evidence), () => false, { endedBefore: () => before })
     expect(slim).not.toHaveProperty('pullRequests')
     expect(slim).toMatchObject({ mergedPullRequests: 25 })
     expect(bytes(slim)).toBeLessThan(2_048)
@@ -221,7 +221,7 @@ it('reads a thread with twenty-five merged pull requests in under 2 KB, summing 
   }
   // One merged since the last read is summed up; one still open always is.
   const later = [...evidence, ...endedFacts('a', 925, 'merged'), ...prFacts('a', 926)]
-  const slim = watcherSlimRead('read_thread', { limit: 2 }, read(later), () => false, undefined, undefined, () => watcherEndedPullRequests(evidence))
+  const slim = watcherSlimRead('read_thread', { limit: 2 }, read(later), () => false, { endedBefore: () => watcherEndedPullRequests(evidence) })
   expect(slim).toMatchObject({ mergedPullRequests: 25, pullRequests: [{ number: 925, state: 'merged' }, { number: 926, state: 'open' }] })
   expect(watcherSlimRead('read_thread', { evidence: 'full' }, read(later), () => false)).toMatchObject({ evidence: later })
 })

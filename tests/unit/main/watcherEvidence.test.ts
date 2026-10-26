@@ -225,3 +225,17 @@ it('holds a closed pull request read open again within ten minutes, and takes a 
   clock += 60_000; read('closed')
   expect(store.attention(centerTarget)).toEqual(closed)
 })
+it('keeps a pull request merged through a new commit’s read and a paired host’s older answer (#1146)', () => {
+  const store = new WatcherEvidenceStore(), merged = 'https://github.com/o/r/pull/12'
+  const states = () => store.read(centerTarget).filter(item => item.pullRequestState !== undefined).map(item => item.pullRequestState)
+  store.pullRequest(centerTarget, { url: merged, head: 'head-a', observedAt: centerTime, availability: 'available', state: 'merged' })
+  // A read of a new commit that says nothing of its state clears the old head's facts but not the merge.
+  store.pullRequest(centerTarget, { url: merged, head: 'head-b', observedAt: minutesLater(1), availability: 'available', checks: 'unknown' })
+  expect(states()).toEqual(['merged'])
+  store.pullRequest(centerTarget, { url: merged, head: 'head-b', observedAt: minutesLater(2), availability: 'available', state: 'open' })
+  expect(states()).toEqual(['merged'])
+  // A paired host's read says open in its own slot: still merged.
+  store.paired({ id: 'paired', target: centerTarget, source: 'github', observedAt: minutesLater(3), freshness: 'fresh', availability: 'available',
+    url: merged, headId: 'head-b', fact: 'pull-request-observed', pullRequestState: 'open' })
+  expect(states()).toEqual(['merged', 'merged'])
+})

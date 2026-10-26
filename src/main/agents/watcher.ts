@@ -42,7 +42,7 @@ import { followupDigest } from './followups'
 import type { Handover } from './handover'
 import { handoverCounts, handoverPrefix, watcherHandoverProvenance, watcherMessageAsShown } from './watcherHandover'
 import type { WatcherEvent } from '../../shared/watcherNews'
-import { watcherPullRequestWords, watcherReplyStart } from './watcherNews'
+import { LATER_REQUEST_REACHES, watcherPullRequestWords, watcherReplyStart } from './watcherNews'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
@@ -128,12 +128,14 @@ const TAKEOVER_ACTS: Record<TakeoverReason, string> = {
 }
 /**
  * A takeover refusal on a thread Watcher does not watch (#1148): what the user did and when, that the request it fenced no
- * longer reaches the thread, and that a later request of the user's does. `before` is when it came for this call.
+ * longer reaches the thread, and what does. `before` is when it came for this call. `later` says whether a request the user
+ * sends Watcher afterwards reaches the thread; one on a paired host, or behind a takeover with no local record, does not,
+ * and only the thread's standing watch does once the user watches it.
  */
-export function takenOverWords(takeover: Participant['takeover'] | undefined, before: 'request' | 'send'): string {
-  const did = takeover ? `The user ${TAKEOVER_ACTS[takeover.reason]} at ${takeover.at}` : 'The user took over this thread'
-  return `${did}, ${before === 'request' ? 'after this request began, so this request no longer sends to it. Nothing was sent.' : 'before this went, so it was not sent.'}`
-    + ' A message the user sends Watcher after that starts a request that reaches the thread; while the user’s own turn there runs, it can only steer it.'
+export function takenOverWords(takeover: { readonly reason?: TakeoverReason; readonly at: string } | undefined, before: 'request' | 'send', later: boolean): string {
+  const did = `The user ${takeover?.reason ? TAKEOVER_ACTS[takeover.reason] : 'took over this thread'}${takeover ? ` at ${takeover.at}` : ''}`
+  return `${did}, ${before === 'request' ? 'after this request began, so this request no longer sends to it. Nothing was sent.' : 'before this went, so it was not sent.'} `
+    + (later ? LATER_REQUEST_REACHES : 'A later request does not lift this here; Watcher reaches the thread again under its standing watch once the user watches it.')
 }
 /** One owning host's threads as a look for finished threads first read them, with the threads some thread delegated from. */
 interface FinishedHost { readonly snapshot: AgentHostSnapshot | undefined; readonly threads: Pick<ReadonlyMap<string, AgentThread>, 'get'>; readonly delegators: Pick<ReadonlySet<string>, 'has'>; readonly reportsWork: boolean }
@@ -703,7 +705,7 @@ export class WatcherService implements WatcherControlHooks {
       }
       if (record.userUnwatches?.some(item => key(item.target) === key(target))) refuse('REQUEST_NOT_ACTIVE', 'The user stopped Watcher watching this thread. Nothing was changed.')
       const participant = request.participants.find(item => key(item.target) === key(target))
-      if (participant?.state === 'taken-over') refuse('THREAD_TAKEN_OVER', takenOverWords(participant.takeover, 'request'))
+      if (participant?.state === 'taken-over') refuse('THREAD_TAKEN_OVER', this.takenOverRefusal(record, target, request, 'request'))
       if (participant?.automationStopped || participant?.state === 'relinquished') refuse('REQUEST_NOT_ACTIVE', 'Watcher stopped working with this thread for this request. Nothing was changed.')
     }
     allowed()
@@ -1880,14 +1882,18 @@ export class WatcherService implements WatcherControlHooks {
     // The local list is append-only. If retention ever removes the anchor, missing evidence keeps the fence.
     return frontier < 0 || requestIndex <= frontier
   }
-  /** The newest takeover recorded on a thread, the request's own first, for a refusal's words (#1148). */
-  private takeoverOn(record: Readonly<WatcherRecord>, target: WatcherThreadTarget, requestId: string): Participant['takeover'] {
-    let own: Participant['takeover'], newest: Participant['takeover']
-    for (const request of record.requests) for (const item of request.participants) if (item.takeover && key(item.target) === key(target)) {
-      if (request.id === requestId) own = item.takeover
-      if (!newest || item.takeover.at > newest.at) newest = item.takeover
-    }
-    return own ?? newest
+  /**
+   * The takeover a refusal names (#1148): the request's own participation's, else the thread's latest local takeover, whose
+   * time is known but not what the user did. Neither walks the record's history.
+   */
+  private takeoverOn(record: Readonly<WatcherRecord>, target: WatcherThreadTarget, request: Readonly<WatcherRequest> | undefined): { reason?: TakeoverReason; at: string } | undefined {
+    return request?.participants.find(item => item.takeover && key(item.target) === key(target))?.takeover
+      ?? record.localTakeovers?.find(item => key(item.target) === key(target))
+  }
+  /** A takeover refusal's words for this request on this thread, with what reaches it, as `requestTakenOver` orders it. */
+  private takenOverRefusal(record: Readonly<WatcherRecord>, target: WatcherThreadTarget, request: Readonly<WatcherRequest> | undefined, before: 'request' | 'send'): string {
+    const later = !request?.remoteOrigin && target.hostId === this.hostId() && record.localTakeovers?.some(item => key(item.target) === key(target)) === true
+    return takenOverWords(this.takeoverOn(record, target, request), before, later)
   }
   /**
    * Whether a user takeover, or a renewed watch's boundary, came after this request on a thread it takes part in. A request
@@ -2877,7 +2883,7 @@ export class WatcherService implements WatcherControlHooks {
     }
     if (participant?.state === 'relinquished' && (operation.action === 'start' || operation.action === 'send')) refuse('REQUEST_NOT_ACTIVE', 'Watcher settled this participation. Nothing was sent.')
     if (!participant || participant.state !== 'participating' || participant.generation !== operation.generation) refuse('THREAD_TAKEN_OVER', participant?.state === 'taken-over'
-      ? takenOverWords(participant.takeover, 'send') : 'The user sent this thread an instruction first, so this was not sent. Read it before sending again.')
+      ? this.takenOverRefusal(record, operation.target, request, 'send') : 'The user sent this thread an instruction first, so this was not sent. Read it before sending again.')
     if (participant.automationStopped && (operation.action === 'start' || operation.action === 'send')) refuse('REQUEST_NOT_ACTIVE', 'Watcher stopped this participation. It will not send another prompt for this request.')
     if (operation.action === 'start' && !this.options.control.watcherSnapshot().threads.some(item => item.id === operation.target.threadId)) return
     const thread = this.thread(operation.target); this.protect(thread)
@@ -3143,7 +3149,7 @@ export class WatcherService implements WatcherControlHooks {
       if (request.state !== 'active' && !reopens && !(imported && this.confirmedWorkerStop(imported, request))) {
         const stoppedTarget = 'target' in input ? input.target : undefined
         if (stoppedTarget && !record.watches?.some(watch => key(watch.target) === key(stoppedTarget))
-          && record.requests.some(item => item.participants.some(participant => key(participant.target) === key(stoppedTarget) && participant.state === 'taken-over'))) refuse('THREAD_TAKEN_OVER', takenOverWords(this.takeoverOn(record, stoppedTarget, request.id), 'request'))
+          && record.requests.some(item => item.participants.some(participant => key(participant.target) === key(stoppedTarget) && participant.state === 'taken-over'))) refuse('THREAD_TAKEN_OVER', this.takenOverRefusal(record, stoppedTarget, request, 'request'))
         refuse('REQUEST_NOT_ACTIVE', 'This request is not active. Only a user Send to Watcher can start a request.')
       }
       const start = name === 'start_thread', send = name === 'send_to_thread'
@@ -3162,7 +3168,7 @@ export class WatcherService implements WatcherControlHooks {
       const watchedTarget = record.watches?.some(watch => key(watch.target) === key(target))
       const takenOver = !watchedTarget && (name === 'send_to_thread' ? this.requestTakenOver(record, request, target)
         : !request.standingWatchId && record.requests.some(item => item.participants.some(participant => key(participant.target) === key(target) && participant.state === 'taken-over')))
-      if (takenOver) refuse('THREAD_TAKEN_OVER', takenOverWords(this.takeoverOn(record, target, request.id), 'request'))
+      if (takenOver) refuse('THREAD_TAKEN_OVER', this.takenOverRefusal(record, target, request, 'request'))
       if (request.standingWatchId) {
         const watch = record.watches?.find(item => item.id === request!.standingWatchId && key(item.target) === key(target))
         if (!watch) refuse('REQUEST_NOT_ACTIVE', 'This thread is no longer watched. Nothing was sent.')
@@ -3540,7 +3546,7 @@ ${operation.draftId}`)
       const watched = this.record().watches?.find(watch => key(watch.target) === key(operation.target))
       return { ...watcherRefusal(operation.refusalCode, operation.refusalCode === 'THREAD_TAKEN_OVER'
         ? watched ? 'The user sent this thread an instruction first, so this was not sent. The thread is still watched. Read it before sending again.'
-          : takenOverWords(this.takeoverOn(this.record(), operation.target, operation.requestId), 'send')
+          : this.takenOverRefusal(this.record(), operation.target, this.record().requests.find(item => item.id === operation.requestId), 'send')
         : operation.refusalCode === 'THREAD_BUSY' ? watched?.pausedByUserMessageId ? 'The user’s own turn in this thread is running. Steer it, or send once it ends. Nothing was sent.' : RUNNING_TURN_HOLD
         : 'The operation could not be completed. Read its receipt before trying again.'), receipt: base.receipt }
     }
@@ -3588,7 +3594,7 @@ ${operation.draftId}`)
         const participant = scope.participants.find(item => key(item.target) === key(operation.target))
         if (live.deliveryState === 'failed') refuse(live.refusalCode ?? 'REQUEST_NOT_ACTIVE', 'This operation was cancelled before dispatch.')
         if (!participant || participant.state !== 'participating' || participant.generation !== live.generation) refuse('THREAD_TAKEN_OVER', participant?.state === 'taken-over'
-          ? takenOverWords(participant.takeover, 'send') : 'The user sent this thread an instruction first, so this was not sent. Read it before sending again.')
+          ? this.takenOverRefusal(record, operation.target, scope, 'send') : 'The user sent this thread an instruction first, so this was not sent. Read it before sending again.')
         if (scope.standingWatchId && !record.watches?.some(watch => watch.id === scope.standingWatchId && watch.generation === live.generation)) refuse('REQUEST_NOT_ACTIVE', 'This watch changed. Nothing was sent.')
         if (live.standingWatchId && !record.watches?.some(watch => watch.id === live.standingWatchId && watch.generation === live.generation)) refuse('REQUEST_NOT_ACTIVE', 'This watch changed. Nothing was sent.')
         if (live.action === 'send') this.checkHumanTurn(this.thread(live.target), record, live.delivery)
@@ -4065,8 +4071,8 @@ ${operation.draftId}`)
   private slim(name: WatcherToolName, input: unknown, result: unknown): unknown {
     const watched = this.wakes.watchedKeys()
     const thread = (target: WatcherThreadTarget) => this.owningSnapshot(target.hostId)?.threads.find(item => item.id === target.threadId)
-    const slim = watcherSlimRead(name, input, result, target => watched.has(key(target)), target => thread(target)?.lastTurn?.status === 'failed',
-      target => thread(target)?.prototypeReady !== undefined, target => this.endedRead.get(this.readSlot(target)))
+    const slim = watcherSlimRead(name, input, result, target => watched.has(key(target)), { turnFailed: target => thread(target)?.lastTurn?.status === 'failed',
+      prototypeReady: target => thread(target)?.prototypeReady !== undefined, endedBefore: target => this.endedRead.get(this.readSlot(target)) })
     // What this read gives as merged or closed, so the next leaves those out once this one is given (#1147). A refusal says nothing.
     if (name === 'read_thread' && typeof result === 'object' && result !== null && (result as { status?: unknown }).status === 'ok' && typeof slim === 'object' && slim !== null)
       this.endedPending.set(slim, watcherEndedPullRequests((result as { evidence: WatcherEvidence[] }).evidence))
