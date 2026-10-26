@@ -71,7 +71,7 @@ export function deepseekPatch(servers: readonly OwnServer[]): string | undefined
       '        retryPolicy:',
       '          mode: normal',
       '          maxRetries: 1',
-      '          retryableCodes: [SERVER, TRANSPORT, RATE_LIMIT]',
+      '          retryableCodes: [SERVER, TRANSPORT, RATE_LIMIT, EMPTY_RESPONSE]',
       '        models:',
     )
     for (const model of server.models) {

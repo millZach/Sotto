@@ -32,7 +32,7 @@ describe('the DeepSeek Harness overlay (ADR-0138)', () => {
 
   it('retries a route at most once and never after a timeout, so a stalled server is not sent the prompt again', () => {
     const patch = deepseekPatch([SERVER])!
-    expect(patch).toContain('retryPolicy:\n          mode: normal\n          maxRetries: 1\n          retryableCodes: [SERVER, TRANSPORT, RATE_LIMIT]')
+    expect(patch).toContain('retryPolicy:\n          mode: normal\n          maxRetries: 1\n          retryableCodes: [SERVER, TRANSPORT, RATE_LIMIT, EMPTY_RESPONSE]')
   })
 
   it('gives a thinking model its effort levels and a plain one none, with outputs Sotto derives the OpenCode way', () => {

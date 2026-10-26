@@ -26,7 +26,7 @@ The catalog is built from the record, grouped by server in the model menu the wa
 
 With no keyless server saved, the tile connects nothing and says to add a model server under Your own model servers, and a keyless Add lands while DeepSeek Harness's adapter runs, connected or not, so the first server never waits on OpenCode. A thread whose last keyless server went starts no process and says so. A server that goes away fails the turn the way an OpenCode thread on the same server does (ADR-0124's words, with this provider's name): nothing moves to another model on its own.
 
-Each route also carries a retry policy (amended October 26, 2026): at most one retry, for a server error, a dropped connection or a rate limit, and none after the harness's 300 s stream idle timeout. The harness's own default retries five times, timeouts included, and a server that took the prompt and went quiet still holds it, so on a stalled four-Spark cluster each resend of a 183k-token prompt queued another copy (14 in all). The policy is the harness's per-provider `retryPolicy`, checked against its own resolver.
+Each route also carries a retry policy (amended October 26, 2026): at most one retry, for a server error, a dropped connection, a rate limit or an empty reply (the server already finished, so a resend cannot queue a copy), and none after the harness's 300 s stream idle timeout. The harness's own default retries five times, timeouts included, and a server that took the prompt and went quiet still holds it, so on a stalled four-Spark cluster each resend of a 183k-token prompt queued another copy (14 in all). The policy is the harness's per-provider `retryPolicy`, checked against its own resolver.
 
 ## Permissions
 
