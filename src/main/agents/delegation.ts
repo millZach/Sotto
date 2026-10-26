@@ -21,6 +21,7 @@ import { WATCHER_FINAL_OUTCOMES, watcherBriefTurnIsNewest, watcherNewestTurnRepl
 import { delegationNewsText, foldDelegationNews, heldWords, type DelegationNewsDetail } from './delegationNews'
 import { WATCHER_QUIET_MS } from '../../shared/watcherOverview'
 import type { AgentState } from '../../shared/agents'
+import type { HostThreadsView } from './control'
 
 /** The commands delegation sends on a thread's behalf: create the delegated thread, send it a brief, stop it. */
 export type DelegationCommand = Extract<AgentCommand, { type: 'create-thread' | 'manual-send' | 'interrupt' }>
@@ -28,14 +29,22 @@ export type DelegationCommand = Extract<AgentCommand, { type: 'create-thread' | 
 export interface DelegationControlHooks {
   /** The user's own command on a thread, never one of Sotto's: a send pauses delegated sends to it, a Stop cascades. */
   userCommand(command: AgentCommand, threadId: string | undefined, answersQuestion: boolean): void
-  /** Every snapshot the coordinator accepts. Reads it once; never copies it. */
-  observe(snapshot: AgentHostSnapshot): void
+  /**
+   * Every snapshot the coordinator accepts. Reads it without copying it; `threads` looks its threads up by ID, when the
+   * coordinator can, so the pass reads only the threads its delegations name (#925 step 5).
+   */
+  observe(snapshot: AgentHostSnapshot, threads?: HostThreadsView): void
   /** The delegated threads whose turns delegation is following, kept in the observed set. */
   observedThreadIds(): readonly string[]
   /** The message ID a delegation gave its brief, so the brief's turn is known by it from the first echo. */
   messageIdFor(draftId: string): string | undefined
   /** Whether a message is one of delegation's briefs, so a thread's watcher never takes it for the user's own. */
   ownsMessage?(messageId: string): boolean
+  /**
+   * A number that moves whenever a message stops being one of delegation's briefs, as when an old delegation is let go,
+   * so Watcher reads again a thread whose newest message it took for a brief (#925 step 5).
+   */
+  briefsRevision?(): number
   /** The guard a delegated brief carries to the provider's writer, asked again after the thread's preparation. */
   guardFor(draftId: string): (() => void) | undefined
   /**
@@ -323,6 +332,8 @@ export class DelegationService {
   private viewsScheduled = false
   private tail: Promise<unknown> = Promise.resolve()
   private closed = false
+  /** Moves whenever a record, and with it a brief's message, is let go (`DelegationControlHooks.briefsRevision`). */
+  private briefsRevision = 0
   private unhook: (() => void) | undefined
 
   constructor(private readonly options: DelegationServiceOptions) {
@@ -360,10 +371,11 @@ export class DelegationService {
     this.options.host.admitDelegationCommands?.()
     this.unhook = this.options.control.useDelegation({
       userCommand: (command, threadId, answersQuestion) => this.userCommand(command, threadId, answersQuestion),
-      observe: snapshot => this.observe(snapshot),
+      observe: (snapshot, threads) => this.observe(snapshot, threads),
       observedThreadIds: () => this.observedThreadIds(),
       messageIdFor: draftId => this.records.findLast(record => record.draftId === draftId && this.open(record))?.messageId,
       ownsMessage: messageId => this.records.some(record => record.messageId === messageId),
+      briefsRevision: () => this.briefsRevision,
       guardFor: draftId => {
         const record = this.records.findLast(item => item.draftId === draftId && this.open(item))
         return record ? () => this.guardSend(record.id) : undefined
@@ -897,6 +909,7 @@ export class DelegationService {
     try { await this.save() }
     catch {
       this.records = this.records.filter(item => item.id !== record.id)
+      this.briefsRevision++
       this.creating.delete(record.id)
       if (record.action === 'start') this.links.delete(record.delegatedThreadId)
       refuse('PROVIDER_UNAVAILABLE', 'Sotto could not save this delegation, so nothing was started or sent. Try again.')
@@ -1103,15 +1116,22 @@ export class DelegationService {
   }
   /**
    * One pass over the coordinator's snapshot: each open brief's outcome from its thread, pauses whose turn has ended, and
-   * briefs whose thread is free. Reads the snapshot's thread list once, whatever the number of delegations.
+   * briefs whose thread is free. It reads only the threads its open delegations and its pauses name: by `view`, the
+   * coordinator's index, when it gives one (#925 step 5), otherwise from the snapshot's thread list read once, whatever the
+   * number of delegations. Each of those threads is read on every pass, since what the pass decides of one also follows
+   * the queue, the user's composer, delegation's own sends and the clock, which move without the thread.
    */
-  private observe(snapshot: AgentHostSnapshot): void {
+  private observe(snapshot: AgentHostSnapshot, view?: HostThreadsView): void {
     if (this.closed) return
     const open = this.records.filter(record => this.open(record))
     if (this.untold.size) this.scheduleNews()
     if (!open.length && !this.paused.size) return
-    const threads = new Map(snapshot.threads.map(thread => [thread.id, thread]))
-    const briefs = new Set(this.records.map(record => record.messageId))
+    let listed: Map<string, AgentThread> | undefined
+    const threads: Pick<ReadonlyMap<string, AgentThread>, 'get'> = view
+      ? { get: id => view.thread(id) }
+      : { get: id => (listed ??= new Map(snapshot.threads.map(thread => [thread.id, thread]))).get(id) }
+    let briefIds: Set<string> | undefined
+    const briefs = { has: (messageId: string) => (briefIds ??= new Set(this.records.map(record => record.messageId))).has(messageId) }
     let changed = false
     for (const threadId of [...this.paused]) {
       const thread = threads.get(threadId)
@@ -1159,7 +1179,7 @@ export class DelegationService {
    * outcome, the work its turn left running never seen to end (#1263). The delegating thread is told once, plainly, rather
    * than wait for work-settled news that may never come. One wait runs, for the next such outcome due, only while one waits.
    */
-  private releaseHeld(snapshot: AgentHostSnapshot, threads: ReadonlyMap<string, AgentThread>): boolean {
+  private releaseHeld(snapshot: AgentHostSnapshot, threads: Pick<ReadonlyMap<string, AgentThread>, 'get'>): boolean {
     this.cancelRelease?.(); this.cancelRelease = undefined
     let released = false, next = Infinity
     const clock = this.clock()
@@ -1383,6 +1403,7 @@ export class DelegationService {
     const excess = this.records.length - RECORDS_MAX
     let dropped = 0
     // A brief still open, or one the delegating thread's current turn counts against its budget, is never dropped.
+    this.briefsRevision++
     this.records = this.records.filter(record => this.open(record) || this.roots.get(record.delegatingThreadId) === record.rootUserMessageId || dropped++ >= excess)
     const kept = new Set(this.records.map(record => record.delegatedThreadId))
     if (this.links.size > RECORDS_MAX) for (const threadId of [...this.links.keys()].slice(0, this.links.size - RECORDS_MAX)) if (!kept.has(threadId)) this.links.delete(threadId)

@@ -7,11 +7,11 @@ import { heldProviderRefusal, heldProvidersOption, type HeldProviders } from '..
 import { watcherRoomInputs } from '../agents/watcherRoomInput'
 import { visibleWatcherState, watcherThreadVisible, withoutThreads } from '../../shared/watcherVisibility'
 import { parsePublicProviderEntityId, providerIdSchema } from '../../shared/agents'
-import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts } from '../../shared/watcherHost'
+import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts, WatcherRoomThreadInput } from '../../shared/watcherHost'
 import { hostCannotStageScreenshotsWords, inInterfaceLanguage, threadStartsUnsupportedWords, watcherDisabledWords } from '../../shared/interfaceWords'
 import { randomUUID } from 'node:crypto'
 import { isAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
-import { agentCommandSchema, isImageAttachment, defaultNewThreadModelId, defaultThreadModelId, enabledThreadProviders, MAX_DELIVERED_DRAFTS, HOST_DISCONNECTED_BEFORE_FILES, SCREENSHOT_WRONG_TYPE, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { agentCommandSchema, isImageAttachment, defaultNewThreadModelId, defaultThreadModelId, enabledThreadProviders, MAX_DELIVERED_DRAFTS, HOST_DISCONNECTED_BEFORE_FILES, SCREENSHOT_WRONG_TYPE, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentHostSnapshot, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { threadsReplacedSince } from '../../shared/threadListPatches'
 import { clientThreadId, hostEntityKey, mapHostReferences, parseHostEntityKey, projectClientAgentState, type ClientAgentStateProjection } from '../../shared/clientIdentity'
 import type { QuestionPageTarget } from '../agents/questionPages'
@@ -196,9 +196,14 @@ export class DesktopHostRouter {
         if (!entry || entry.kind !== 'remote') return undefined
         const connected = !this.reconnecting.has(id) && entry.available?.() !== false
         if (!entry.service.watcherRoomThreads) {
-          const snapshot = this.visibleState(readView(entry.service), id).host
-          return watcherRoomInputs(snapshot, ids, this.held, this.dormantProviderIds.get(id))
+          // Made again only when the host pushed, its connection moved or the room asks for other threads (#925 step 5).
+          const view = readView(entry.service), asked = ids.join('\n'), kept = this.watcherRoomInputs.get(id)
+          if (kept?.pushed === view.host && kept.connected === connected && kept.asked === asked && kept.connection === entry) return kept.inputs
+          const snapshot = this.visibleState(view, id).host
+          const inputs = watcherRoomInputs(snapshot, ids, this.held, this.dormantProviderIds.get(id))
             .map(thread => ({ ...thread, connected: connected && thread.connected }))
+          this.watcherRoomInputs.set(id, { pushed: view.host, connected, asked, connection: entry, inputs })
+          return inputs
         }
         return entry.service.watcherRoomThreads(ids)
           .filter(thread => !this.held.size || !this.dormantProviderIds.get(id)?.has(thread.id))
@@ -217,9 +222,16 @@ export class DesktopHostRouter {
       snapshot: id => {
         allowed(); const entry = this.hosts.get(id)?.connection
         if (!entry || entry.kind !== 'remote') return undefined
-        const snapshot = this.visibleState(readView(entry.service), id).host, connected = !this.reconnecting.has(id) && entry.available?.() !== false
-        return { ...snapshot, hostId: id, connected: snapshot.connected && connected,
-          threads: snapshot.threads.map(thread => ({ ...thread, hostId: id, ...!connected ? { clientConnected: false } : {} })) }
+        // Watcher reads this on every update (#925 step 5). It is made again only when the host pushed or its connection
+        // moved, and its thread list is frozen, so Watcher can index it once for each push rather than walk it every time.
+        const view = readView(entry.service), pushed = view.host, connected = !this.reconnecting.has(id) && entry.available?.() !== false
+        const kept = this.watcherSnapshots.get(id)
+        if (kept?.pushed === pushed && kept.connected === connected && kept.connection === entry) return kept.snapshot
+        const snapshot = this.visibleState(view, id).host
+        const made: AgentHostSnapshot = { ...snapshot, hostId: id, connected: snapshot.connected && connected,
+          threads: Object.freeze(snapshot.threads.map(thread => ({ ...thread, hostId: id, ...!connected ? { clientConnected: false } : {} }))) as AgentThread[] }
+        this.watcherSnapshots.set(id, { pushed, connected, connection: entry, snapshot: made })
+        return made
       },
       projection: (id, master) => connection(id).service.cachedWatcherProjection?.(master),
       read: async (id, request) => {
@@ -256,6 +268,13 @@ export class DesktopHostRouter {
     }
   }
   private watcherChanged(hostId?: string, force = true): void { for (const listener of this.watcherListeners) listener(hostId, force) }
+  /**
+   * Each paired host's snapshot as Watcher was last handed it, with the host's push and the connection it was made from:
+   * the same snapshot while neither moved, and let go of with the host.
+   */
+  /** Each paired host's room inputs as Watcher's room was last handed them, with what they were made from. */
+  private readonly watcherRoomInputs = new Map<string, { readonly pushed: AgentHostSnapshot; readonly connected: boolean; readonly asked: string; readonly connection: DesktopHostConnection; readonly inputs: WatcherRoomThreadInput[] }>()
+  private readonly watcherSnapshots = new Map<string, { readonly pushed: AgentHostSnapshot; readonly connected: boolean; readonly connection: DesktopHostConnection; readonly snapshot: AgentHostSnapshot }>()
   /** `run` numbers each connection a host was added with, so a rename, which replaces the connection object, keeps it. */
   private readonly hosts = new Map<string, { connection: DesktopHostConnection; off: (() => void)[]; run: number }>()
   /** Hosts owed a check of their clients that a new version of Sotto asked for, waiting for their update line to empty. */
@@ -550,7 +569,7 @@ export class DesktopHostRouter {
   }
   remove(hostId: string): void {
     this.hosts.get(hostId)?.off.forEach(off => off())
-    this.hosts.delete(hostId)
+    this.hosts.delete(hostId); this.watcherSnapshots.delete(hostId); this.watcherRoomInputs.delete(hostId)
     this.built.delete(hostId)
     this.dormantProviderIds.delete(hostId)
     this.observedOn.delete(hostId)

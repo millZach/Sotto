@@ -6,12 +6,13 @@ import type { WatcherOperation, WatcherRecord, WatcherRequest, WatcherThreadTarg
 /**
  * The owner's history on October 20, 2026, as counts only: about 250 threads on this computer, one connected remote host
  * with about 40 threads that held answered questions, 256 answer retirements (40 of them on that host) and 4 Watcher
- * owners in request-drafts.json, and a Watcher record with about 150 operations, 160 requests and 5 standing watches.
+ * owners in request-drafts.json, a Watcher record with about 150 operations, 160 requests and 5 standing watches, and
+ * 40 threads delegated from a thread Watcher does not watch (ADR-0081), which count as history.
  * Nothing built from it is anyone's words. `tests/fixtures/ownerScalePipeline.ts` builds main with it for the work
  * budget, and `tests/e2e/main-freeze.spec.ts` builds the app with it for the nightly timing run.
  */
 export const OWNER_SCALE = { threads: 250, remoteThreads: 40, retirements: 256, remoteRetirements: 40, watcherOwners: 4,
-  operations: 150, requests: 160, watches: 5 } as const
+  operations: 150, requests: 160, watches: 5, delegations: 40 } as const
 export type OwnerScaleCounts = { -readonly [K in keyof typeof OWNER_SCALE]: number }
 
 /**

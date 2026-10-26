@@ -94,20 +94,74 @@ const EMPTY_ACTIVITIES: AgentActivity[] = []
 const EMPTY_MODELS: AgentModel[] = []
 const EMPTY_THREADS: AgentThread[] = []
 /**
- * The host snapshot's threads by ID and by position, for the very list they were read from (#925). An accept of thread
- * changes keeps it up to date as it patches the list; any other list is indexed afresh the first time it is read.
+ * The coordinator's host snapshot's threads, read without a walk of its list (ADR-0016, #925 step 5): Watcher's and
+ * delegation's passes look threads up here rather than search the list for each. Only ever for the host snapshot it was
+ * asked of (`AgentControl.hostThreadsOf`), and only while the coordinator holds that snapshot.
  */
-interface HostThreadIndex {
-  /** The list the host snapshot carries. */
-  list: readonly AgentThread[]
-  /** The same threads in a list of the index's own, which a change copies and replaces threads in. */
-  raw: AgentThread[]
-  readonly byId: Map<string, AgentThread>
-  readonly at: Map<string, number>
+export interface HostThreadsView {
+  /** The thread with this ID, the first a search of the list finds. */
+  thread(id: string): AgentThread | undefined
+  /** Where the thread with this ID is in the list, the first place a search finds it. */
+  position(id: string): number | undefined
+  /** The threads that name this one as the thread that delegated them (ADR-0081), in no order. */
+  delegatedFrom(parentId: string): ReadonlySet<string> | undefined
+  /** Watcher's conversations, current and earlier. */
+  readonly watcherKinds: ReadonlySet<string>
+  /** Whether a thread names a host other than this one, which a look-up by this host's ID would not find as a search does. */
+  readonly foreign: boolean
+}
+/**
+ * What an accept of thread changes changed in the host snapshot (#925 step 5), handed to Watcher with the snapshot it
+ * made. Each thread it does not name is the very record `from` listed, in the same place.
+ */
+export interface HostThreadsChange {
+  /** The host snapshot the change was made from. A reader that last read another reads this one whole. */
+  readonly from: AgentHostSnapshot
+  /** The threads shown again, in display order: the records the host snapshot now lists. */
+  readonly threads: readonly AgentThread[]
+  /** Each named thread's record as `from` listed it; a thread `from` did not list has none. */
+  readonly previous: ReadonlyMap<string, AgentThread>
+}
+/**
+ * The host snapshot's threads by ID and by position, for the very list they were read from (#925). An accept of thread
+ * changes keeps it up to date as it patches the list; any other list is indexed afresh the first time it is read. It is
+ * also how Watcher and delegation read the host's threads without a walk of the list (`HostThreadsView`, #925 step 5).
+ */
+class HostThreadIndex implements HostThreadsView {
+  readonly byId = new Map<string, AgentThread>()
+  readonly at = new Map<string, number>()
   /** Threads that carry hidden wake-ups, which the detail broadcast keeps projections for. */
-  readonly hidden: Set<string>
+  readonly hidden = new Set<string>()
   /** Watcher's conversations, shown again whenever Watcher's requests move. */
-  readonly watcherKinds: Set<string>
+  readonly watcherKinds = new Set<string>()
+  /** The threads each thread delegated to, by its ID. */
+  private readonly children = new Map<string, Set<string>>()
+  /** Threads that name a host other than the host snapshot's own. */
+  private readonly elsewhere = new Set<string>()
+  /**
+   * `list` is the list the host snapshot carries; `raw` the same threads in a list of the index's own, which a change
+   * copies and replaces threads in. `hostId` is the host snapshot's own.
+   */
+  constructor(public list: readonly AgentThread[], public raw: AgentThread[], readonly hostId: string | undefined) {}
+  get foreign(): boolean { return this.elsewhere.size > 0 }
+  thread(id: string): AgentThread | undefined { return this.byId.get(id) }
+  position(id: string): number | undefined { return this.at.get(id) }
+  delegatedFrom(parentId: string): ReadonlySet<string> | undefined { return this.children.get(parentId) }
+  /** Notes what a thread newly read into the index says, `previous` being the record it replaced, if any. */
+  note(thread: AgentThread, previous?: AgentThread): void {
+    if (thread.hiddenWakeUpMessageIds?.length) this.hidden.add(thread.id); else this.hidden.delete(thread.id)
+    if (isWatcherKind(thread)) this.watcherKinds.add(thread.id); else this.watcherKinds.delete(thread.id)
+    if (thread.hostId !== undefined && thread.hostId !== this.hostId) this.elsewhere.add(thread.id); else this.elsewhere.delete(thread.id)
+    if (previous?.delegatedBy === thread.delegatedBy) return
+    if (previous?.delegatedBy !== undefined) {
+      const siblings = this.children.get(previous.delegatedBy)
+      siblings?.delete(thread.id)
+      if (siblings?.size === 0) this.children.delete(previous.delegatedBy)
+    }
+    if (thread.delegatedBy === undefined) return
+    const siblings = this.children.get(thread.delegatedBy)
+    if (siblings) siblings.add(thread.id); else this.children.set(thread.delegatedBy, new Set([thread.id]))
+  }
 }
 const isWatcherKind = (thread: AgentThread): boolean => thread.kind === 'watcher' || thread.kind === 'watcher-history'
 /**
@@ -150,10 +204,6 @@ class PositionQueue {
     this.held.delete(top)
     return top
   }
-}
-function noteIndexed(index: HostThreadIndex, thread: AgentThread): void {
-  if (thread.hiddenWakeUpMessageIds?.length) index.hidden.add(thread.id); else index.hidden.delete(thread.id)
-  if (isWatcherKind(thread)) index.watcherKinds.add(thread.id); else index.watcherKinds.delete(thread.id)
 }
 /** The history every thread record a broadcast lists stands on: frozen, as the records that share it are. */
 const BROADCAST_MESSAGES = Object.freeze([]) as unknown as AgentMessage[]
@@ -520,6 +570,17 @@ export class AgentControl {
   }
   /** Whether a message is a brief delegation sent, so Watcher never takes it for the user's own message. */
   delegationMessage(messageId: string): boolean { return this.delegationHooks?.ownsMessage?.(messageId) === true }
+  /**
+   * What `delegationMessage` answers from, as a number that moves when a message stops being a brief, delegation is
+   * turned on or off, or another delegation takes its place (#925 step 5).
+   */
+  delegationBriefsRevision(): number {
+    const hooks = this.delegationHooks
+    if (hooks !== this.briefsHooks) { this.briefsHooks = hooks; this.briefsHooksTurn++ }
+    return this.briefsHooksTurn * 1_000_000_000 + (hooks?.briefsRevision?.() ?? 0)
+  }
+  private briefsHooks: DelegationControlHooks | undefined
+  private briefsHooksTurn = 0
   updateWatcher(update: (record: WatcherRecord) => void): Promise<void> {
     if (this.dependencies.watcherEnabled !== true) throw new Error('Watcher is available in Sotto Owl.')
     this.mutateWatcher(update)
@@ -5593,15 +5654,23 @@ export class AgentControl {
     this.state.draft = ''; this.state.draftThreadId = null; this.state.draftRequestId = null; this.state.composing = false
   }
   private hasDraft(): boolean { return Boolean(this.state.draft.trim() || this.state.draftAttachments?.length) }
-  /** Lets Watcher read the threads and the queue as they stand, with Sotto's own sends known as its own. */
-  private observeWatcher(snapshot: AgentHostSnapshot): void {
+  /**
+   * Lets Watcher read the threads and the queue as they stand, with Sotto's own sends known as its own. `changed` says
+   * what an accept of thread changes changed, so Watcher reads only that and what its own record names (#925 step 5).
+   */
+  private observeWatcher(snapshot: AgentHostSnapshot, changed?: HostThreadsChange): void {
     if (this.disposed) return
     // Watcher's pass runs for every update, and asks which messages Sotto sent only of a head that may be a takeover, so the
     // set is gathered from the outbox and every delivery only when it is first asked.
     let known: Set<string> | undefined
     this.watcherHooks?.observe(snapshot, { has: id => (known ??= new Set([...this.outbox.flatMap(item => item.messageId ? [item.messageId] : []),
-      ...(this.state.deliveries ?? []).flatMap(item => item.messageId ? [item.messageId] : [])])).has(id) })
+      ...(this.state.deliveries ?? []).flatMap(item => item.messageId ? [item.messageId] : [])])).has(id) }, changed)
   }
+  /**
+   * The host snapshot's threads by look-up (`HostThreadsView`), for Watcher and delegation, when `snapshot` is the one the
+   * coordinator holds now; undefined for any other, which its reader searches as it always did.
+   */
+  hostThreadsOf(snapshot: Readonly<AgentHostSnapshot>): HostThreadsView | undefined { return snapshot === this.state.host ? this.indexed() : undefined }
   /**
    * Takes a whole host snapshot in: a publication of a host without thread changes, a command's read, the coordinator's
    * own snapshot taken again, or (`fromChanges`) the host's thread changes taken in whole. Only that last leaves the next
@@ -5719,11 +5788,15 @@ export class AgentControl {
     // only removes threads lets go of what was kept for them too.
     this.prototypeReady.letGo(gone)
     const shown = this.prototypeQuestions.decorate({ ...this.state.host, threads: [...marked.values()].sort(byPosition) }, gone, settled).threads
+    // Each named thread's record as the list held it, for Watcher, read before the list is patched (#925 step 5).
+    const from = this.state.host, previous = new Map<string, AgentThread>()
+    for (const id of named) { const held = index.byId.get(id); if (held) previous.set(id, held) }
+    for (const id of gone) { const held = index.byId.get(id); if (held) previous.set(id, held) }
     const list = this.patchHostThreads(index, map, named, shown, gone, changes.placements !== undefined && changes.placements.length > 0)
     this.state.host = { ...this.state.host, threads: list }
     this.hostFromChanges = this.state.host
     this.hostListFromChanges = list
-    this.accepted(this.state.host, connecting, { threads: shown, gone })
+    this.accepted(this.state.host, connecting, { threads: shown, gone, from, previous })
     if (this.verifyingChanges) this.verifyChanges(map)
   }
   /**
@@ -5740,7 +5813,7 @@ export class AgentControl {
     let list: AgentThread[]
     if (inPlace) {
       const raw = index.raw.slice()
-      for (const thread of shown) { raw[index.at.get(thread.id)!] = thread; index.byId.set(thread.id, thread); noteIndexed(index, thread) }
+      for (const thread of shown) { const previous = index.byId.get(thread.id); raw[index.at.get(thread.id)!] = thread; index.byId.set(thread.id, thread); index.note(thread, previous) }
       list = this.hostThreadList(raw)
       index.raw = raw; index.list = list
       // The broadcast that follows lists again only the threads replaced since the list it was made from.
@@ -5752,11 +5825,11 @@ export class AgentControl {
     }
     const records = new Map(shown.map(thread => [thread.id, thread]))
     const raw: AgentThread[] = []
-    const rebuilt: HostThreadIndex = { list: raw, raw, byId: new Map(), at: new Map(), hidden: new Set(), watcherKinds: new Set() }
+    const rebuilt = new HostThreadIndex(raw, raw, this.state.host.hostId)
     for (const id of map.ids()) {
       const thread = named.has(id) ? records.get(id) : gone.has(id) ? undefined : index.byId.get(id)
       if (!thread || rebuilt.byId.has(id)) continue
-      rebuilt.byId.set(id, thread); rebuilt.at.set(id, raw.length); noteIndexed(rebuilt, thread)
+      rebuilt.byId.set(id, thread); rebuilt.at.set(id, raw.length); rebuilt.note(thread)
       raw.push(thread)
     }
     list = this.hostThreadList(raw)
@@ -5799,13 +5872,13 @@ export class AgentControl {
   /** The host's threads by ID and position, for the host snapshot's list as it is now. */
   private indexed(): HostThreadIndex {
     const list = this.state.host.threads
-    if (this.hostIndex?.list === list) return this.hostIndex
-    const index: HostThreadIndex = { list, raw: [], byId: new Map(), at: new Map(), hidden: new Set(), watcherKinds: new Set() }
+    if (this.hostIndex?.list === list && this.hostIndex.hostId === this.state.host.hostId) return this.hostIndex
+    const index = new HostThreadIndex(list, [], this.state.host.hostId)
     for (let position = 0; position < list.length; position++) {
       const thread = list[position]!
       index.raw.push(thread)
       if (index.byId.has(thread.id)) continue
-      index.byId.set(thread.id, thread); index.at.set(thread.id, position); noteIndexed(index, thread)
+      index.byId.set(thread.id, thread); index.at.set(thread.id, position); index.note(thread)
     }
     this.hostIndex = index
     return index
@@ -5816,9 +5889,9 @@ export class AgentControl {
    * What taking a host snapshot in does once the snapshot is shown, whole or by a change. `changed` names, for a change,
    * the threads it showed again and the threads that went: only those are tracked, every other being as it was.
    */
-  private accepted(snapshot: AgentHostSnapshot, connecting: boolean, changed?: { readonly threads: readonly AgentThread[]; readonly gone: ReadonlySet<string> }): void {
-    this.observeWatcher(snapshot)
-    if (!this.disposed) this.delegationHooks?.observe(snapshot)
+  private accepted(snapshot: AgentHostSnapshot, connecting: boolean, changed?: HostThreadsChange & { readonly gone: ReadonlySet<string> }): void {
+    this.observeWatcher(snapshot, changed)
+    if (!this.disposed) this.delegationHooks?.observe(snapshot, this.hostThreadsOf(snapshot))
     const shownThread = (id: string): AgentThread | undefined => snapshot === this.state.host ? this.threadById(id) : snapshot.threads.find(thread => thread.id === id)
     if (snapshot.connected && this.state.activeThreadId && this.threadAvailable(this.state.activeThreadId) && !shownThread(this.state.activeThreadId)) {
       const selected = snapshot.threads.find(thread => thread.id === this.state.draftThreadId) ?? snapshot.threads.find(thread => !isThreadClosed(thread))

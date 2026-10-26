@@ -814,3 +814,10 @@ artifacts/watcher-picture-owls/*
 !artifacts/watcher-picture-owls/sotto-light-1600x1000.png
 !artifacts/watcher-picture-owls/sotto-light-820x560.png
 !artifacts/watcher-picture-owls/tropic-dark-1280x800.png
+
+# The launch video's dependencies, raw captures, stills and renders (marketing/launch-video)
+marketing/launch-video/node_modules/
+marketing/launch-video/public/takes/
+marketing/launch-video/public/stills/
+marketing/launch-video/src/takes.json
+marketing/launch-video/out/

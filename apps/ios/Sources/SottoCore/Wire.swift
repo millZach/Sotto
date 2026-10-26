@@ -38,20 +38,24 @@ public enum ClientError: Error, LocalizedError, Equatable {
     case hostRefused(String)
     public var errorDescription: String? {
         switch self {
-        case .invalidHost: return "Enter the computer's name on your tailnet, such as forge, or its full address ending in .ts.net."
-        case .hostNotFound(let name): return "Couldn't find \(name) on your tailnet. Check that Tailscale is connected on this iPhone and MagicDNS is on for your tailnet, or enter the full address ending in .ts.net."
-        case .hostUnreachable(let name): return "Couldn't reach \(name). Check that it's on and that Tailscale is connected on this iPhone."
-        case .notASottoHost(let name): return "\(name) answered, but Sotto isn't listening there. If \(name) has no screen, turn on Let phones reach \(name) in Sotto on your main computer: Settings > Hosts & phones, then Phones on its row. Otherwise, in Sotto on \(name), turn on phone access in Settings > Hosts & phones."
-        case .sottoNotRunning(let name): return "\(name) answered, but Sotto isn't running there. Nothing was lost. Open Sotto on \(name) and try again."
-        case .invalidCode: return "A pairing code is eight letters and numbers. Check the code on that computer."
-        case .invalidProtocol: return "This computer uses a different connection format. Update Sotto before connecting."
-        case .invalidIdentity: return "A different computer answered at this address. Remove it and add it again if you meant to change computers."
-        case .invalidRequest: return "This request changed or is not supported on this iPhone. Refresh the thread or answer on the computer."
-        case .disconnected: return "Connection lost. Work carries on on the computer. Reconnect to check the thread."
-        case .connectionTimedOut: return "The computer didn't finish connecting. Work carries on there. Try connecting again."
-        case .readTimedOut: return "Sotto did not answer in time. Try again."
-        case .rateLimited: return "Too many connection attempts. Wait a minute and try again."
-        case .uncertain: return "Delivery is unconfirmed. Check the thread before sending again."
+        case .invalidHost: return String(localized: "Enter the computer's name on your tailnet, such as forge, or its full address ending in .ts.net.", bundle: .module)
+        case .hostNotFound(let name): return String(localized: "Couldn't find \(name) on your tailnet. Check that Tailscale is connected on this iPhone and MagicDNS is on for your tailnet, or enter the full address ending in .ts.net.", bundle: .module,
+                                     comment: "%@ is the computer's name as typed, such as forge")
+        case .hostUnreachable(let name): return String(localized: "Couldn't reach \(name). Check that it's on and that Tailscale is connected on this iPhone.", bundle: .module,
+                                     comment: "%@ is the computer's name, such as forge")
+        case .notASottoHost(let name): return String(localized: "\(name) answered, but Sotto isn't listening there. If \(name) has no screen, turn on Let phones reach \(name) in Sotto on your main computer: Settings > Hosts & phones, then Phones on its row. Otherwise, in Sotto on \(name), turn on phone access in Settings > Hosts & phones.", bundle: .module,
+                                     comment: "Every %@ is the computer's name, such as forge")
+        case .sottoNotRunning(let name): return String(localized: "\(name) answered, but Sotto isn't running there. Nothing was lost. Open Sotto on \(name) and try again.", bundle: .module,
+                                     comment: "Every %@ is the computer's name, such as forge")
+        case .invalidCode: return String(localized: "A pairing code is eight letters and numbers. Check the code on that computer.", bundle: .module)
+        case .invalidProtocol: return String(localized: "This computer uses a different connection format. Update Sotto before connecting.", bundle: .module)
+        case .invalidIdentity: return String(localized: "A different computer answered at this address. Remove it and add it again if you meant to change computers.", bundle: .module)
+        case .invalidRequest: return String(localized: "This request changed or is not supported on this iPhone. Refresh the thread or answer on the computer.", bundle: .module)
+        case .disconnected: return String(localized: "Connection lost. Work carries on on the computer. Reconnect to check the thread.", bundle: .module)
+        case .connectionTimedOut: return String(localized: "The computer didn't finish connecting. Work carries on there. Try connecting again.", bundle: .module)
+        case .readTimedOut: return String(localized: "Sotto did not answer in time. Try again.", bundle: .module)
+        case .rateLimited: return String(localized: "Too many connection attempts. Wait a minute and try again.", bundle: .module)
+        case .uncertain: return String(localized: "Delivery is unconfirmed. Check the thread before sending again.", bundle: .module)
         case .rejected(let message): return message
         case .hostRefused(let message): return message
         }
@@ -115,7 +119,7 @@ public struct Health: Decodable, Equatable, Sendable {
     public func validate() throws {
         guard v == 1 else { throw ClientError.invalidProtocol }
         guard UUID(uuidString: hostId) != nil else { throw ClientError.invalidIdentity }
-        guard status == "ready" else { throw ClientError.rejected("Sotto on that computer is still starting. Try again in a moment.") }
+        guard status == "ready" else { throw ClientError.rejected(String(localized: "Sotto on that computer is still starting. Try again in a moment.", bundle: .module)) }
     }
 }
 public struct WireFailure: Decodable, Sendable {
@@ -349,7 +353,7 @@ public struct Activity: Decodable, Identifiable, Equatable, Sendable {
     public var subject: String? {
         if let command, !command.isEmpty { return command }
         guard let changes, let first = changes.first else { return nil }
-        return changes.count == 1 ? first.path : "\(first.path) and \(changes.count - 1) more"
+        return changes.count == 1 ? first.path : StepRun.andMore(first.path, more: changes.count - 1)
     }
 }
 public struct Message: Decodable, Identifiable, Equatable, Sendable {

@@ -37,13 +37,19 @@ import SottoCore
                 guard self.fetching?.key == key else { if let url { copies.remove(url) }; return }
                 self.fetching = nil
                 if let url { self.shown = url }
-                else { model.feedback = "This file couldn’t be opened on this iPhone. Nothing was lost. Open it on \(computer)." }
+                else {
+                    model.feedback = String(localized: "This file couldn’t be opened on this iPhone. Nothing was lost. Open it on \(computer).",
+                                            comment: "%@ is the computer's name")
+                }
             case .notKept:
                 self.fetching = nil
-                model.feedback = "This file is no longer kept on \(computer), so it can’t open here. Look for it in the thread’s working folder there, under .sotto/attachments."
+                let folder = Interface.isolated(".sotto/attachments")
+                model.feedback = String(localized: "This file is no longer kept on \(computer), so it can’t open here. Look for it in the thread’s working folder there, under \(folder).",
+                                        comment: "The first %@ is the computer's name; the second is a folder's path, .sotto/attachments, left as it is")
             case .failed:
                 self.fetching = nil
-                model.feedback = "This file couldn’t be brought from \(computer). Nothing was lost. Try again when it’s connected."
+                model.feedback = String(localized: "This file couldn’t be brought from \(computer). Nothing was lost. Try again when it’s connected.",
+                                        comment: "%@ is the computer's name")
             }
         }
     }
@@ -72,7 +78,10 @@ struct SentFilePills: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Open \(attachment.name)")
-            .accessibilityValue(progress.map { "Getting it from \(model.name(ref.hostID)), \(Int(($0 * 100).rounded())) percent" } ?? "")
+            .accessibilityValue(progress.map { value in
+                String(localized: "Getting it from \(model.name(ref.hostID)), \(FilePill.percent(value))",
+                       comment: "A sent file on its way from its computer; the first %@ is the computer's name, the second how much has come, such as 40%")
+            } ?? "")
         }
     }
 }
@@ -135,12 +144,17 @@ struct FilePill: View {
         else { Image(systemName: Self.symbol(name)).font(.system(size: 14)).foregroundStyle(Palette.muted) }
     }
     private var detail: String? {
-        if let progress { return "\(Int((progress * 100).rounded()))%" }
+        if let progress { return Self.percent(progress) }
         return sizeBytes.flatMap { $0 > 0 ? Files.size($0) : nil }
     }
     private var state: String {
-        if let progress { return "\(Int((progress * 100).rounded())) percent" }
-        return reading ? "Getting it ready" : ""
+        if let progress { return Self.percent(progress) }
+        return reading ? String(localized: "file.getting-ready", defaultValue: "Getting it ready",
+                                comment: "Accessibility value: a file in the reply box is being read, as a photo is prepared. Said of a file, not a photo.") : ""
+    }
+    /// How much of a file has gone or come, "40%", in the locale's own way of writing a percentage.
+    static func percent(_ progress: Double) -> String {
+        min(1, max(0, progress)).formatted(.percent.precision(.fractionLength(0)))
     }
     static func symbol(_ name: String) -> String {
         switch Files.kind(of: name) {
