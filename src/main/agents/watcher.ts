@@ -121,6 +121,20 @@ function delegatedBelowOf(view: HostThreadsView, threadId: string): string[] {
   }
   return below
 }
+/** What the user did in a thread that took it over, for the words of a refusal it causes (#1148). */
+const TAKEOVER_ACTS: Record<TakeoverReason, string> = {
+  'user-send': 'sent this thread a message', 'native-user-send': 'sent this thread a message outside Sotto', 'user-stop': 'stopped this thread',
+  'user-settle': 'settled this thread', 'user-reconfigure': 'changed this thread’s settings, queue or branch',
+}
+/**
+ * A takeover refusal on a thread Watcher does not watch (#1148): what the user did and when, that the request it fenced no
+ * longer reaches the thread, and that a later request of the user's does. `before` is when it came for this call.
+ */
+export function takenOverWords(takeover: Participant['takeover'] | undefined, before: 'request' | 'send'): string {
+  const did = takeover ? `The user ${TAKEOVER_ACTS[takeover.reason]} at ${takeover.at}` : 'The user took over this thread'
+  return `${did}, ${before === 'request' ? 'after this request began, so this request no longer sends to it. Nothing was sent.' : 'before this went, so it was not sent.'}`
+    + ' A message the user sends Watcher after that starts a request that reaches the thread; while the user’s own turn there runs, it can only steer it.'
+}
 /** One owning host's threads as a look for finished threads first read them, with the threads some thread delegated from. */
 interface FinishedHost { readonly snapshot: AgentHostSnapshot | undefined; readonly threads: Pick<ReadonlyMap<string, AgentThread>, 'get'>; readonly delegators: Pick<ReadonlySet<string>, 'has'>; readonly reportsWork: boolean }
 /** What one look for finished threads reads once (Settle finished threads). */
@@ -689,7 +703,7 @@ export class WatcherService implements WatcherControlHooks {
       }
       if (record.userUnwatches?.some(item => key(item.target) === key(target))) refuse('REQUEST_NOT_ACTIVE', 'The user stopped Watcher watching this thread. Nothing was changed.')
       const participant = request.participants.find(item => key(item.target) === key(target))
-      if (participant?.state === 'taken-over') refuse('THREAD_TAKEN_OVER', 'You took over this thread. Watcher stopped sending to it.')
+      if (participant?.state === 'taken-over') refuse('THREAD_TAKEN_OVER', takenOverWords(participant.takeover, 'request'))
       if (participant?.automationStopped || participant?.state === 'relinquished') refuse('REQUEST_NOT_ACTIVE', 'Watcher stopped working with this thread for this request. Nothing was changed.')
     }
     allowed()
@@ -1846,8 +1860,10 @@ export class WatcherService implements WatcherControlHooks {
   }
   /**
    * Whether a takeover fences this request on a thread. Admission asks only for a thread with no standing watch, since a
-   * standing watch outlasts the user's own message (ADR-0073, October 19); there a takeover fences every request. The
-   * ordering by the local takeover record below is what applied to watched threads from October 17 to 19.
+   * standing watch outlasts the user's own message (ADR-0073, October 19). There a takeover fences the request it happened
+   * in and every request already present when it came, by the local takeover record's order; a request the user sends
+   * Watcher after it is new consent and reaches the thread (#1148), held to steering while the user's own turn runs
+   * (`checkHumanTurn`). A paired request, or a takeover with no local record, keeps the fence.
    */
   private requestTakenOver(record: WatcherRecord, request: WatcherRequest, target: WatcherThreadTarget): boolean {
     if (request.standingWatchId) return false
@@ -1857,13 +1873,21 @@ export class WatcherService implements WatcherControlHooks {
     // Paired requests do not share this host's request insertion order. Keep their existing fence: a taken-over
     // participation alone. The local marker orders only this host's own requests and fences nothing paired.
     if (request.remoteOrigin || target.hostId !== this.hostId()) return previous.length > 0
-    const watch = record.watches?.find(item => key(item.target) === key(target))
-    if (!watch || !latest || previous.some(item => item.requestId === request.id)) return true
+    if (!latest || previous.some(item => item.requestId === request.id)) return true
     const requestIndex = record.requests.findIndex(item => item.id === request.id)
     if (latest.lastRequestId === null) return requestIndex < 0
     const frontier = record.requests.findIndex(item => item.id === latest.lastRequestId)
     // The local list is append-only. If retention ever removes the anchor, missing evidence keeps the fence.
     return frontier < 0 || requestIndex <= frontier
+  }
+  /** The newest takeover recorded on a thread, the request's own first, for a refusal's words (#1148). */
+  private takeoverOn(record: Readonly<WatcherRecord>, target: WatcherThreadTarget, requestId: string): Participant['takeover'] {
+    let own: Participant['takeover'], newest: Participant['takeover']
+    for (const request of record.requests) for (const item of request.participants) if (item.takeover && key(item.target) === key(target)) {
+      if (request.id === requestId) own = item.takeover
+      if (!newest || item.takeover.at > newest.at) newest = item.takeover
+    }
+    return own ?? newest
   }
   /**
    * Whether a user takeover, or a renewed watch's boundary, came after this request on a thread it takes part in. A request
@@ -2852,7 +2876,8 @@ export class WatcherService implements WatcherControlHooks {
       if (request.remoteOrigin && watch.remoteOrigin?.masterCreationOperationId !== request.remoteOrigin.creationOperationId) refuse('NOT_CURRENT_WATCHER', 'That Watcher conversation was replaced. Nothing was sent.')
     }
     if (participant?.state === 'relinquished' && (operation.action === 'start' || operation.action === 'send')) refuse('REQUEST_NOT_ACTIVE', 'Watcher settled this participation. Nothing was sent.')
-    if (!participant || participant.state !== 'participating' || participant.generation !== operation.generation) refuse('THREAD_TAKEN_OVER', 'You took over this thread. Watcher stopped sending to it.')
+    if (!participant || participant.state !== 'participating' || participant.generation !== operation.generation) refuse('THREAD_TAKEN_OVER', participant?.state === 'taken-over'
+      ? takenOverWords(participant.takeover, 'send') : 'The user sent this thread an instruction first, so this was not sent. Read it before sending again.')
     if (participant.automationStopped && (operation.action === 'start' || operation.action === 'send')) refuse('REQUEST_NOT_ACTIVE', 'Watcher stopped this participation. It will not send another prompt for this request.')
     if (operation.action === 'start' && !this.options.control.watcherSnapshot().threads.some(item => item.id === operation.target.threadId)) return
     const thread = this.thread(operation.target); this.protect(thread)
@@ -3118,7 +3143,7 @@ export class WatcherService implements WatcherControlHooks {
       if (request.state !== 'active' && !reopens && !(imported && this.confirmedWorkerStop(imported, request))) {
         const stoppedTarget = 'target' in input ? input.target : undefined
         if (stoppedTarget && !record.watches?.some(watch => key(watch.target) === key(stoppedTarget))
-          && record.requests.some(item => item.participants.some(participant => key(participant.target) === key(stoppedTarget) && participant.state === 'taken-over'))) refuse('THREAD_TAKEN_OVER', 'You took over this thread. Watcher stopped sending to it.')
+          && record.requests.some(item => item.participants.some(participant => key(participant.target) === key(stoppedTarget) && participant.state === 'taken-over'))) refuse('THREAD_TAKEN_OVER', takenOverWords(this.takeoverOn(record, stoppedTarget, request.id), 'request'))
         refuse('REQUEST_NOT_ACTIVE', 'This request is not active. Only a user Send to Watcher can start a request.')
       }
       const start = name === 'start_thread', send = name === 'send_to_thread'
@@ -3137,7 +3162,7 @@ export class WatcherService implements WatcherControlHooks {
       const watchedTarget = record.watches?.some(watch => key(watch.target) === key(target))
       const takenOver = !watchedTarget && (name === 'send_to_thread' ? this.requestTakenOver(record, request, target)
         : !request.standingWatchId && record.requests.some(item => item.participants.some(participant => key(participant.target) === key(target) && participant.state === 'taken-over')))
-      if (takenOver) refuse('THREAD_TAKEN_OVER', 'You took over this thread. Watcher stopped sending to it.')
+      if (takenOver) refuse('THREAD_TAKEN_OVER', takenOverWords(this.takeoverOn(record, target, request.id), 'request'))
       if (request.standingWatchId) {
         const watch = record.watches?.find(item => item.id === request!.standingWatchId && key(item.target) === key(target))
         if (!watch) refuse('REQUEST_NOT_ACTIVE', 'This thread is no longer watched. Nothing was sent.')
@@ -3515,7 +3540,7 @@ ${operation.draftId}`)
       const watched = this.record().watches?.find(watch => key(watch.target) === key(operation.target))
       return { ...watcherRefusal(operation.refusalCode, operation.refusalCode === 'THREAD_TAKEN_OVER'
         ? watched ? 'The user sent this thread an instruction first, so this was not sent. The thread is still watched. Read it before sending again.'
-          : 'You took over this thread. Watcher stopped sending to it.'
+          : takenOverWords(this.takeoverOn(this.record(), operation.target, operation.requestId), 'send')
         : operation.refusalCode === 'THREAD_BUSY' ? watched?.pausedByUserMessageId ? 'The user’s own turn in this thread is running. Steer it, or send once it ends. Nothing was sent.' : RUNNING_TURN_HOLD
         : 'The operation could not be completed. Read its receipt before trying again.'), receipt: base.receipt }
     }
@@ -3562,7 +3587,8 @@ ${operation.draftId}`)
         this.checkLocalWithdrawal(live)
         const participant = scope.participants.find(item => key(item.target) === key(operation.target))
         if (live.deliveryState === 'failed') refuse(live.refusalCode ?? 'REQUEST_NOT_ACTIVE', 'This operation was cancelled before dispatch.')
-        if (!participant || participant.state !== 'participating' || participant.generation !== live.generation) refuse('THREAD_TAKEN_OVER', 'You took over this thread. Nothing was sent.')
+        if (!participant || participant.state !== 'participating' || participant.generation !== live.generation) refuse('THREAD_TAKEN_OVER', participant?.state === 'taken-over'
+          ? takenOverWords(participant.takeover, 'send') : 'The user sent this thread an instruction first, so this was not sent. Read it before sending again.')
         if (scope.standingWatchId && !record.watches?.some(watch => watch.id === scope.standingWatchId && watch.generation === live.generation)) refuse('REQUEST_NOT_ACTIVE', 'This watch changed. Nothing was sent.')
         if (live.standingWatchId && !record.watches?.some(watch => watch.id === live.standingWatchId && watch.generation === live.generation)) refuse('REQUEST_NOT_ACTIVE', 'This watch changed. Nothing was sent.')
         if (live.action === 'send') this.checkHumanTurn(this.thread(live.target), record, live.delivery)

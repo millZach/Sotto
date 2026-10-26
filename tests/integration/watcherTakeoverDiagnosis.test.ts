@@ -585,6 +585,37 @@ it('keeps a pre-existing nonparticipant request fenced through restart on a thre
     delivery: 'now', text: 'Synthetic fresh request after rewatch' })).toMatchObject({ status: 'ok' })
 }, 60_000)
 
+it('lets a request the user sends after taking over a thread watched for a request alone reach it, and keeps the earlier one fenced (#1148)', async () => {
+  const f = await fixture(), userText = 'Synthetic user takeover of a request-only thread'
+  await f.finish(f.target.threadId)
+  // Watched for request A alone: the user's own message takes the thread back from A (ADR-0073).
+  await f.control.updateWatcher(record => { record.watches = [] })
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: f.target.threadId, draftId: randomUUID(), text: userText })).error).toBeNull()
+  await expect.poll(() => f.participationA()).toMatchObject({ state: 'taken-over', takeover: { reason: 'user-send' } })
+  await expect.poll(() => f.thread(f.target.threadId).lastTurn?.status).toBe('running')
+  const at = f.participationA().takeover!.at
+  await f.finish(f.watcherId)
+  const requestB = await f.request('Synthetic request B after the takeover')
+  const send = (requestId: string, delivery: 'now' | 'queue' | 'steer') => f.call('send_to_thread', { requestId, retryKey: randomUUID(), target: f.target, delivery,
+    text: `Synthetic ${delivery} send`, ...delivery === 'steer' ? { expectedTurnId: f.thread(f.target.threadId).lastTurn?.id } : {} })
+  // Request A is over for this thread, and its refusal says how and when the user took it, and what does reach it.
+  const refusedA = await send(f.requestA, 'now')
+  expect(refusedA).toMatchObject({ status: 'refused', code: 'THREAD_TAKEN_OVER', retryable: false })
+  expect(refusedA.status === 'refused' && refusedA.message).toBe(`The user sent this thread a message at ${at}, after this request began, so this request no longer sends to it. Nothing was sent. A message the user sends Watcher after that starts a request that reaches the thread; while the user’s own turn there runs, it can only steer it.`)
+  // While the user's own turn runs, request B may only steer it, and is told to send once it ends.
+  for (const delivery of ['now', 'queue'] as const) expect(await send(requestB, delivery)).toMatchObject({ status: 'refused', code: 'THREAD_BUSY', retryable: true })
+  const steered = await send(requestB, 'steer')
+  expect(steered, JSON.stringify(steered)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
+  await f.finish(f.target.threadId)
+  await expect.poll(() => f.control.hasPendingThreadWork(f.target.threadId)).toBe(false)
+  // Once it ends, request B sends. Its first send watched the thread, as every Watcher send does, so from then on the
+  // watch decides (ADR-0073, October 19) and request A's participation follows it again.
+  const sent = await send(requestB, 'now')
+  expect(sent, JSON.stringify(sent)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
+  expect(f.control.watcherRecord().watches).toEqual([expect.objectContaining({ target: f.target })])
+  await f.finish(f.target.threadId)
+}, 60_000)
+
 it('keeps an unparticipated worker’s takeover boundary through an unrelated takeover, then sends after rewatch', async () => {
   const f = await fixture(), source = f.thread(f.target.threadId)
   const createWatchedWorker = async (title: string) => {

@@ -52,7 +52,7 @@ const words: Record<Exclude<WatcherEvent['kind'], 'request-closed'>, string> = {
   'turn-failed': 'The provider confirmed that this turn failed. Read the thread for its error.',
   'needs-user': 'This thread waits on the user to answer its request, which they do on its card in your conversation or in the thread. Only the user can answer it.',
   quiet: 'No progress was observed for twenty minutes of connected work.',
-  'taken-over': 'You took over this thread. Watcher stopped sending to it.',
+  'taken-over': 'The user took over this thread, so the request Watcher was working with it in no longer sends to it. A message the user sends Watcher after that starts a request that reaches the thread; while the user’s own turn there runs, it can only steer it.',
   'delivery-changed': 'Sotto observed a new delivery receipt. Read the operation for its state.',
   'evidence-changed': 'Sotto observed changed evidence. Read the thread for the sourced facts.',
   'prototype-ready': 'This thread has a prototype ready for the user to review. Only the user can review it; open the thread for its page.',
