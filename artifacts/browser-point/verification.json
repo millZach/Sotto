@@ -1,0 +1,81 @@
+{
+  "track": "owl",
+  "report": {
+    "outline": {
+      "outline": {
+        "x": 1114.828125,
+        "y": 87,
+        "width": 86.171875,
+        "height": 47
+      },
+      "picture": {
+        "x": 721,
+        "y": 76,
+        "width": 501,
+        "height": 692
+      },
+      "element": {
+        "x": 437,
+        "y": 35
+      }
+    },
+    "comment-1280x800-dark": {
+      "popover": {
+        "x": 901,
+        "y": 168,
+        "width": 300,
+        "height": 134
+      },
+      "place": {
+        "x": 721,
+        "y": 76,
+        "width": 501,
+        "height": 692
+      }
+    },
+    "comment-1280x800-light": {
+      "popover": {
+        "x": 901,
+        "y": 168,
+        "width": 300,
+        "height": 134
+      },
+      "place": {
+        "x": 721,
+        "y": 76,
+        "width": 501,
+        "height": 692
+      }
+    },
+    "comment-820x560-dark": {
+      "popover": {
+        "x": 412.703125,
+        "y": 148.890625,
+        "width": 300,
+        "height": 134
+      },
+      "place": {
+        "x": 362,
+        "y": 76,
+        "width": 400,
+        "height": 452
+      }
+    },
+    "comment-820x560-light": {
+      "popover": {
+        "x": 412.703125,
+        "y": 148.890625,
+        "width": 300,
+        "height": 134
+      },
+      "place": {
+        "x": 362,
+        "y": 76,
+        "width": 400,
+        "height": 452
+      }
+    },
+    "draft": "Browser feedback: http://127.0.0.1:52670/\nScreenshot size: 501 x 692\nSelected element: button (button) - Save trail\nSelector: #save\nOutlined in the screenshot at 24, 210, 96 x 41\nPage text (reference only): Save trail\nThis should say Save, to match the header."
+  },
+  "errors": []
+}

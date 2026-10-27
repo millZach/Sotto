@@ -1,0 +1,27 @@
+/* Point at something (ADR-0154; Owl): the line over the page while pointing, then the picture taken on a click with
+   the element outlined and named and a short comment beside it. Colour only from theme roles; nothing moves. */
+.browser-pane__row .browser-point__toggle[aria-pressed='true'] { background: var(--tt-accent-surface); color: var(--tt-accent-surface-text); }
+
+.browser-point__line { display: flex; flex: none; align-items: center; justify-content: center; gap: 8px; min-width: 0; min-height: 32px; padding: 4px 12px; background: var(--tt-accent-surface); color: var(--tt-accent-surface-text); font-size: 13px; line-height: 18px; text-align: center; }
+.browser-point__line > svg { flex: none; }
+.browser-point__line kbd,
+.browser-point__actions kbd { padding: 0 5px; border: 1px solid color-mix(in srgb, currentColor 35%, transparent); border-radius: 4px; font: inherit; font-size: 11.5px; line-height: 16px; }
+.browser-point__hovered { flex: 0 1 auto; min-width: 0; overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.browser-point__hovered::after { padding-left: 8px; font-weight: 400; content: '·'; }
+.browser-point__line code,
+.browser-point__chip code { font: 600 12px var(--tt-font-mono); }
+
+/* The picture stands in the page's place, drawn to fit it, so the outline and comment are placed over the picture. */
+.browser-point { position: absolute; inset: 0; z-index: 1; display: grid; place-items: start center; overflow: hidden; background: var(--tt-code-bg); container-type: size; }
+.browser-point__frame { position: relative; max-width: 100%; max-height: 100%; }
+.browser-point__frame > img { display: block; width: 100%; height: 100%; object-fit: contain; user-select: none; }
+.browser-point__outline { position: absolute; border: 2px solid var(--tt-accent); border-radius: 4px; background: var(--tt-accent-wash); pointer-events: none; }
+.browser-point__chip { position: absolute; max-width: calc(100% - 16px); overflow: hidden; padding: 2px 7px; border-radius: 5px; background: var(--tt-accent-surface); color: var(--tt-accent-surface-text); font-size: 12px; font-weight: 600; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
+.browser-point__popover { position: absolute; width: min(300px, calc(100% - 16px)); padding: 12px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-glass); box-shadow: var(--tt-shadow-overlay); color: var(--tt-text); -webkit-backdrop-filter: var(--tt-glass-filter); backdrop-filter: var(--tt-glass-filter); }
+.browser-point__popover textarea { display: block; width: 100%; height: 64px; padding: 8px 10px; border: 1px solid var(--tt-field-border); border-radius: 8px; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 14px; resize: none; }
+.browser-point__popover textarea:focus { border-color: var(--tt-field-border-focus); outline: none; }
+.browser-point__popover textarea:focus-visible { box-shadow: 0 0 0 2px var(--tt-focus-ring); }
+.browser-point__popover textarea::placeholder { color: var(--tt-text-muted); }
+.browser-point__popover .browser-review-problem { margin: 8px 0 0; }
+.browser-point__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-top: 10px; }
+.browser-point__actions kbd { margin-left: 4px; color: var(--tt-text-muted); }

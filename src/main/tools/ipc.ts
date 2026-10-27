@@ -54,7 +54,7 @@ export function registerToolsIpc(ipc: IpcMainAdapter, services: { terminal: Term
   }
   for (const method of ['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen', 'pasteImage'] as const) register(TERMINAL_CHANNEL + method, payload => services.terminal[method](payload))
   register(TERMINAL_CHANNEL + 'focus', payload => { services.onTerminalFocus?.(z.boolean().parse(payload)); return { ok: true, value: undefined } })
-  for (const method of ['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture'] as const) register(BROWSER_CHANNEL + method, payload => services.browser[method](payload))
+  for (const method of ['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture', 'point'] as const) register(BROWSER_CHANNEL + method, payload => services.browser[method](payload))
   for (const method of GIT_CHANGES_METHODS) register(GIT_CHANGES_CHANNEL + method, payload => namesHostThread(payload) ? onHost(method, payload) : services.gitChanges[method](payload))
   return () => {
     for (const channel of channels) ipc.removeHandler(channel)

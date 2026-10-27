@@ -1,7 +1,7 @@
 import { t } from '@lingui/core/macro'
 import { randomUUID } from 'node:crypto'
 import { BaseWindow, screen, WebContentsView, nativeImage, session, type BrowserWindow, type Session } from 'electron'
-import { browserCreateSchema, browserRequestSchema, browserNavigateSchema, browserMountSchema, browserOpenLinkSchema, safeBrowserUrl, type BrowserPage, type BrowserEvent, type BrowserBounds, browserShareSchema, browserViewportSchema, browserCaptureSchema, browserStartTaskSchema, browserAgentOpenSchema, browserAgentActionSchema, browserControlTaskSchema, browserAnswerActionSchema, browserFinishTaskSchema, browserTaskRequestSchema, BROWSER_WAITING_TO_OPEN, TEST_IPHONE, type BrowserTask, type BrowserAction, type BrowserAgentResult, type BrowserCapture } from '../../shared/browser'
+import { browserCreateSchema, browserRequestSchema, browserNavigateSchema, browserMountSchema, browserOpenLinkSchema, safeBrowserUrl, type BrowserPage, type BrowserEvent, type BrowserBounds, browserShareSchema, browserViewportSchema, browserCaptureSchema, browserStartTaskSchema, browserAgentOpenSchema, browserAgentActionSchema, browserControlTaskSchema, browserAnswerActionSchema, browserFinishTaskSchema, browserTaskRequestSchema, browserPointModeSchema, BROWSER_WAITING_TO_OPEN, TEST_IPHONE, type BrowserTask, type BrowserAction, type BrowserAgentResult, type BrowserCapture, type BrowserPointState } from '../../shared/browser'
 import { toolListRequestSchema, toolTargetSchema } from '../../shared/tools'
 import type { FileWorkspace } from '../../shared/files'
 import type { FilesService } from '../files/service'
@@ -12,7 +12,15 @@ import { blockSpellcheckDictionaryDownloads } from '../security'
 
 interface CaptureLease { count: number; window: BaseWindow; bounds: BrowserBounds; throttling: boolean; temporary: boolean }
 /** `madePrivate`: the user pressed Stop sharing, so the thread's browser grant leaves the page private until the user shares it again. */
-interface PageRecord { page: BrowserPage; view: WebContentsView; generation: number; automation: BrowserAutomation; initial: boolean; selection: { id: string; generation: number; capture: BrowserCapture; expiresAt: number } | null; zoom: number; madePrivate: boolean }
+/**
+ * `point`: the user turned on Point at something for this page (ADR-0154). It is `live` once Chromium's inspect
+ * overlay is on, which waits until the pane shows the page.
+ */
+interface PageRecord { page: BrowserPage; view: WebContentsView; generation: number; automation: BrowserAutomation; initial: boolean; selection: { id: string; generation: number; capture: BrowserCapture; expiresAt: number } | null; zoom: number; madePrivate: boolean; point: { color: PointColor; live: boolean } | null }
+interface PointColor { r: number; g: number; b: number }
+type PointEnd = Extract<BrowserPointState, { state: 'ended' }>['reason']
+/** The outline's colour when the window sends none: a quiet blue-green that reads on light and dark pages. */
+const POINT_COLOR: PointColor = { r: 47, g: 128, b: 112 }
 /** Where a page is drawn: the Tools pane or the Browser player for an ordinary page, the phone player for the test iPhone. One of each can show at once. */
 type MountSlot = 'pane' | 'phone'
 const slotOf = (record: PageRecord): MountSlot => record.page.device ? 'phone' : 'pane'
@@ -183,7 +191,7 @@ export class BrowserService extends ToolOperations {
     } })
     // A phone starts at its own size, so a capture before the player ever draws it is already 393 pixels wide.
     view.setBounds(phone ? { x: 0, y: 0, width: TEST_IPHONE.width, height: TEST_IPHONE.height } : { x: 0, y: 0, width: 1280, height: 800 })
-    const record: PageRecord = { view, generation: 0, automation: new BrowserAutomation(view.webContents, () => this.prepareCapture(record), phone), initial, selection: null, zoom: 1, madePrivate: false, page: { id: randomUUID(), workspace: owner, url: request.url, title: '', status: 'loading', error: null, canGoBack: false, canGoForward: false, sharedOrigin: null, viewport: null, device: phone ? 'iphone' : null } }
+    const record: PageRecord = { view, generation: 0, automation: new BrowserAutomation(view.webContents, () => this.prepareCapture(record), phone), initial, selection: null, zoom: 1, madePrivate: false, point: null, page: { id: randomUUID(), workspace: owner, url: request.url, title: '', status: 'loading', error: null, canGoBack: false, canGoForward: false, sharedOrigin: null, viewport: null, device: phone ? 'iphone' : null } }
     this.pages.set(record.page.id, record)
     const contents = view.webContents
     if (phone) {
@@ -208,6 +216,15 @@ export class BrowserService extends ToolOperations {
     })
     contents.on('will-redirect', (event, url) => blocked(event, url))
     contents.on('will-attach-webview', event => event.preventDefault())
+    // Escape pressed while the page has the keyboard leaves Point at something, as it does in Sotto's own window.
+    contents.on('before-input-event', (event, input) => {
+      if (!record.point || input.type !== 'keyDown' || input.key !== 'Escape') return
+      event.preventDefault()
+      // The keyboard goes back to Sotto's window, where the Point button takes it.
+      const shown = this.mounted.get('pane')
+      if (shown?.record === record && !shown.window.isDestroyed()) shown.window.webContents.focus()
+      this.endPoint(record, 'escape')
+    })
     contents.setWindowOpenHandler(() => {
       this.issue(record, t`A new-window request was blocked. Use a link destination action or open this page externally.`)
       return { action: 'deny' }
@@ -216,6 +233,7 @@ export class BrowserService extends ToolOperations {
     const moving = (url: string, mainFrame: boolean): boolean => {
       const safe = safeBrowserUrl(url)
       if (!mainFrame || !safe) return false
+      this.endPoint(record, 'navigated')
       this.invalidate(record)
       record.generation++
       this.followSharing(record, safe)
@@ -259,6 +277,7 @@ export class BrowserService extends ToolOperations {
     return this.publish(record)
   }
   private load(record: PageRecord, url: string): void {
+    this.endPoint(record, 'navigated')
     this.invalidate(record)
     record.automation.clear()
     this.followSharing(record, url)
@@ -320,11 +339,14 @@ export class BrowserService extends ToolOperations {
     if (request.bounds !== null) this.desiredPageId[slot] = request.pageId
     else if (this.desiredPageId[slot] === request.pageId) { this.desiredPageId[slot] = null; this.mountVersion[slot]++ }
     const record = await this.owned(request, request.bounds !== null)
-    if (request.bounds === null) { if (this.isMounted(record)) this.removeMountedView(slot); return }
+    // A page nobody shows leaves Point at something.
+    if (request.bounds === null) { if (this.isMounted(record)) this.removeMountedView(slot); this.endPoint(record, 'hidden'); return }
     if (version !== this.mountVersion[slot]) return
     const window = this.dependencies.getWindow()
     if (!window || window.isDestroyed()) return fail('unavailable', t`The main window is unavailable.`)
+    const previous = this.mounted.get(slot)?.record
     this.removeMountedView(slot)
+    if (previous && previous !== record) this.endPoint(previous, 'hidden')
     this.desiredPageId[slot] = request.pageId
     this.setBounds(record, window, request.bounds)
     const detach = (): void => this.detach()
@@ -342,6 +364,7 @@ export class BrowserService extends ToolOperations {
       window.removeListener('resize', detach)
     } })
     window.contentView.addChildView(record.view)
+    this.startPoint(record)
   }) }
   private setBounds(record: PageRecord, window: BrowserWindow, bounds: BrowserBounds): void {
     const zoom = window.webContents.getZoomFactor()
@@ -360,7 +383,9 @@ export class BrowserService extends ToolOperations {
     for (const slot of ['pane', 'phone'] as const) {
       this.mountVersion[slot]++
       this.desiredPageId[slot] = null
+      const shown = this.mounted.get(slot)?.record
       this.removeMountedView(slot)
+      if (shown) this.endPoint(shown, 'hidden')
     }
   }
   private removeMountedView(slot: MountSlot): void {
@@ -433,6 +458,8 @@ export class BrowserService extends ToolOperations {
     const slot = slotOf(record)
     if (this.desiredPageId[slot] === record.page.id) { this.desiredPageId[slot] = null; this.mountVersion[slot]++ }
     if (this.isMounted(record)) this.removeMountedView(slot)
+    // Closing says so with its own event; point mode simply goes with the page.
+    record.point = null
     for (const task of this.taskRecords.values()) if (task.pageId === record.page.id && ['working', 'paused'].includes(task.status)) {
       task.status = 'failed'; task.summary = 'This browser page closed.'; task.output = null; task.thumbnail = null; task.evidence = []; this.publishTask(task)
     }
@@ -459,6 +486,7 @@ export class BrowserService extends ToolOperations {
   private revoke(record: PageRecord): void {
     record.page.sharedOrigin = null
     this.invalidate(record)
+    this.endPoint(record, 'hidden')
     record.automation.dispose()
     for (const task of this.taskRecords.values()) if (task.pageId === record.page.id) {
       task.output = null; task.thumbnail = null; task.evidence = []; this.publishTask(task)
@@ -511,6 +539,8 @@ export class BrowserService extends ToolOperations {
     record.madePrivate = !request.enabled
     if (request.enabled) record.automation.observe()
     if (!request.enabled) {
+      // Detaching from the page turns its overlay off with it.
+      this.endPoint(record, 'hidden')
       record.automation.dispose()
       for (const task of this.taskRecords.values()) if (task.pageId === record.page.id) {
         if (task.status === 'working') task.status = 'paused'
@@ -569,6 +599,61 @@ export class BrowserService extends ToolOperations {
     record.selection = { id: randomUUID(), generation, capture: full, expiresAt: Date.now() + 5 * 60_000 }
     return { ...full, captureId: record.selection.id }
   }) }
+  /**
+   * Point at something (ADR-0154): the user's own action, so it needs neither sharing nor the browser grant. It
+   * turns on for a page the pane shows or is about to show; a page nobody shows answers false and nothing starts.
+   */
+  point(payload: unknown) { return this.run(async () => {
+    const request = parse(browserPointModeSchema, payload)
+    const record = await this.owned(request, request.on)
+    if (!request.on) { this.endPoint(record, null); return { pointing: false } }
+    const shown = this.isMounted(record) || this.desiredPageId.pane === record.page.id
+    if (record.page.device || record.page.status === 'unavailable' || !shown) return { pointing: false }
+    record.point ??= { color: request.color ?? POINT_COLOR, live: false }
+    this.startPoint(record)
+    return { pointing: true }
+  }) }
+  private emitPoint(record: PageRecord, point: BrowserPointState): void {
+    if (this.disposed || !this.pages.has(record.page.id)) return
+    const { threadId, workspaceId } = record.page.workspace
+    this.dependencies.emit({ type: 'point', threadId, workspaceId, pageId: record.page.id, point })
+  }
+  /** Turns the overlay on for a page the user asked to point at, once the pane shows it. */
+  private startPoint(record: PageRecord): void {
+    const point = record.point
+    if (!point || point.live || !this.isMounted(record)) return
+    point.live = true
+    const generation = record.generation
+    void record.automation.point(point.color, {
+      hover: label => { if (record.point === point) this.emitPoint(record, { state: 'hover', label }) },
+      pick: backendNodeId => { if (record.point === point) { record.point = null; void this.pick(record, backendNodeId, generation) } },
+    }).catch(() => { if (record.point === point) this.endPoint(record, 'unavailable') })
+  }
+  /** Point mode off. `reason` tells the window why, when it was not the window's own doing. */
+  private endPoint(record: PageRecord, reason: PointEnd | null): void {
+    const point = record.point
+    if (!point) return
+    record.point = null
+    if (point.live) void record.automation.unpoint()
+    if (reason) this.emitPoint(record, { state: 'ended', reason })
+  }
+  /**
+   * The user clicked an element: the overlay goes, the window gets the keyboard back for the comment, and the page
+   * is captured as it looks now, kept as the page's selection the way Comment on page keeps its capture.
+   */
+  private async pick(record: PageRecord, backendNodeId: number, generation: number): Promise<void> {
+    try {
+      await record.automation.unpoint()
+      const shown = this.mounted.get('pane')
+      if (shown?.record === record && !shown.window.isDestroyed()) shown.window.webContents.focus()
+      const pointed = await record.automation.pointed(backendNodeId)
+      if (!pointed) { this.emitPoint(record, { state: 'ended', reason: 'unavailable' }); return }
+      const full = await record.automation.capture(record.page.url)
+      if (record.generation !== generation) { this.emitPoint(record, { state: 'ended', reason: 'navigated' }); return }
+      record.selection = { id: randomUUID(), generation, capture: { ...full, element: pointed.element }, expiresAt: Date.now() + 5 * 60_000 }
+      this.emitPoint(record, { state: 'picked', capture: { ...full, captureId: record.selection.id, element: pointed.element }, box: pointed.box })
+    } catch { this.emitPoint(record, { state: 'ended', reason: 'unavailable' }) }
+  }
   startTask(payload: unknown) { return this.run(async () => {
     const request = parse(browserStartTaskSchema, payload)
     const record = await this.owned(request)

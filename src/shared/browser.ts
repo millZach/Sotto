@@ -47,6 +47,22 @@ export const browserViewportSchema = browserRequestSchema.extend(viewportShape).
 export const browserShareSchema = browserRequestSchema.extend({ enabled: z.boolean() })
 export const browserCaptureSchema = browserRequestSchema.extend({ point: browserPointSchema.optional(), region: browserBoundsSchema.optional(), captureId: z.string().uuid().optional() })
 export const browserCaptureResultSchema = z.object({ captureId: z.string().uuid().optional(), image: z.string().max(16_000_000), url: browserUrlSchema, width: z.number(), height: z.number(), element: z.object({ tag: z.string(), role: z.string(), name: z.string(), text: z.string(), selector: z.string() }).nullable() }).strict()
+/**
+ * Point at something (ADR-0154): the user turns Chromium's own inspect overlay on or off for the page Tools shows.
+ * `color` is the theme's accent, so the outline is the room's colour rather than DevTools' blue.
+ */
+export const browserPointModeSchema = browserRequestSchema.extend({ on: z.boolean(), color: z.object({ r: z.number().int().min(0).max(255), g: z.number().int().min(0).max(255), b: z.number().int().min(0).max(255) }).strict().optional() })
+/** Where the element sits in the picture, in its pixels. Part of it may lie outside the picture. */
+const pointBoxSchema = z.object({ x: z.number().finite(), y: z.number().finite(), width: z.number().finite().min(0), height: z.number().finite().min(0) }).strict()
+/**
+ * What point mode tells the window: the element under the pointer by its tag and accessible name (`label`), the
+ * element the user clicked with a picture of the page at that moment, or that point mode ended and why.
+ */
+export const browserPointStateSchema = z.discriminatedUnion('state', [
+  z.object({ state: z.literal('hover'), label: z.string().max(600) }).strict(),
+  z.object({ state: z.literal('picked'), capture: browserCaptureResultSchema, box: pointBoxSchema.nullable() }).strict(),
+  z.object({ state: z.literal('ended'), reason: z.enum(['navigated', 'hidden', 'escape', 'unavailable']) }).strict(),
+])
 export const browserActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('inspect') }).strict(), z.object({ type: z.literal('screenshot') }).strict(),
   z.object({ type: z.literal('navigate'), url: browserUrlSchema }).strict(),
@@ -79,7 +95,7 @@ export const browserTaskSchema = z.object({
   evidence: z.array(z.object({ id: z.string(), at: z.number(), url: z.string(), viewport: z.object({ width: z.number(), height: z.number() }).nullable(), image: z.string().max(2_000_000), width: z.number(), height: z.number() })).max(3).optional(),
 }).strict()
 export const browserAgentResultSchema = z.object({ task: browserTaskSchema, output: z.string().max(200_000).optional(), image: z.string().max(16_000_000).optional(), approvalRequired: z.boolean() }).strict()
-export const browserEventSchema = z.discriminatedUnion('type', [z.object({ type: z.literal('page'), page: browserPageSchema }).strict(), z.object({ type: z.literal('closed'), threadId: z.string(), workspaceId: z.string(), pageId: z.string().uuid() }).strict(), z.object({ type: z.literal('task'), task: browserTaskSchema }).strict(), z.object({ type: z.literal('browser-grant'), threadId: z.string(), grant: browserGrantSchema.nullable() }).strict()])
+export const browserEventSchema = z.discriminatedUnion('type', [z.object({ type: z.literal('page'), page: browserPageSchema }).strict(), z.object({ type: z.literal('closed'), threadId: z.string(), workspaceId: z.string(), pageId: z.string().uuid() }).strict(), z.object({ type: z.literal('task'), task: browserTaskSchema }).strict(), z.object({ type: z.literal('browser-grant'), threadId: z.string(), grant: browserGrantSchema.nullable() }).strict(), z.object({ type: z.literal('point'), threadId: z.string(), workspaceId: z.string(), pageId: z.string().uuid(), point: browserPointStateSchema }).strict()])
 export type BrowserTask = z.infer<typeof browserTaskSchema>
 export type BrowserAction = z.infer<typeof browserActionSchema>
 export type BrowserAgentResult = z.infer<typeof browserAgentResultSchema>
@@ -87,6 +103,8 @@ export type BrowserCapture = z.infer<typeof browserCaptureResultSchema>
 export type BrowserPage = z.infer<typeof browserPageSchema>
 export type BrowserEvent = z.infer<typeof browserEventSchema>
 export type BrowserBounds = z.infer<typeof browserBoundsSchema>
+export type BrowserPointState = z.infer<typeof browserPointStateSchema>
+export type BrowserPointPick = Extract<BrowserPointState, { state: 'picked' }>
 export type BrowserGrantView = z.infer<typeof browserGrantSchema>
 export interface BrowserBridge {
   tasks(request: { threadId: string }): Promise<ToolsResult<BrowserTask[]>>
@@ -97,6 +115,8 @@ export interface BrowserBridge {
   stopGrant(request: z.infer<typeof toolTargetSchema>): Promise<ToolsResult<void>>
   viewport(request: z.infer<typeof browserViewportSchema>): Promise<ToolsResult<BrowserPage>>
   capture(request: z.infer<typeof browserCaptureSchema>): Promise<ToolsResult<BrowserCapture>>
+  /** Point at something: whether the overlay is on now. Off, or a page nobody shows, answers false. */
+  point(request: z.infer<typeof browserPointModeSchema>): Promise<ToolsResult<{ pointing: boolean }>>
   list(request: { threadId: string }): Promise<ToolsResult<z.infer<typeof browserListingSchema>>>
   create(request: z.infer<typeof browserCreateSchema>): Promise<ToolsResult<BrowserPage>>
   navigate(request: z.infer<typeof browserNavigateSchema>): Promise<ToolsResult<BrowserPage>>

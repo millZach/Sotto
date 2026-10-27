@@ -40,3 +40,13 @@ The first of three pull requests builds the pane, the strip, Screenshot to messa
 - **The addresses opened this session** are every address a page of the thread's browser arrived at, newest first (any visit moves it to the front, a reload or the same address submitted again included, while a title or sharing update does not), up to eight, in the renderer's memory only and only while the pane is on, so stable keeps none. A page still waiting to be opened has opened nothing.
 - **A page the agent cannot see always says so.** Share lives in More, so the private line shows for any unshared page, with or without the grant, unless the thread's provider takes no Sotto tools or the page is still waiting to be opened. Stable keeps its line to pages made private under the grant.
 - **A page the agent opens ends New page** when the pane turns to it, which happens only while focus is outside Tools, so nothing being typed is lost.
+
+## Amendment, October 27, 2026: Point at something as built
+
+The second pull request builds Point at something. Where this record left room:
+
+- **The outline under the pointer is a tint.** Chromium's inspect overlay fills an element's boxes; it has no outline. Sotto fills them in the theme's accent at a light strength, with Chromium's own label off, and names the element in the line over the page instead ("button · Sign in"). The 2px outline and the name chip are drawn on the picture after the click, where Sotto draws.
+- **Pointing is the user's own action.** It needs neither sharing nor the browser grant, and works on a private page. It runs only on a page the pane shows: a page nobody shows does nothing, and hiding the page (a menu over it, another tab, Tools closing) or a navigation ends it.
+- **One click, one comment.** A click ends the overlay, takes the picture and opens the comment; the page itself never gets that click. Cancel or Escape goes back to pointing on the live page; Add to message ends pointing and gives focus back to the Point button. The line over the page stays while the comment is open, so the picture sits exactly where the page was.
+- **What the draft gets.** The element's tag, role, accessible name, an id selector or its tag, and up to 1,000 characters of its words, read from the DOM and accessibility tree without running script in the page; the picture with the element outlined in the accent, named after the element in the composer; where the outline is; and the comment, which may be empty.
+- **No shortcut.** Point is reached in the row's order, between the address and Screenshot to message. Escape in the page while pointing ends it as Escape in the pane does.

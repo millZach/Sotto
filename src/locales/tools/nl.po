@@ -388,6 +388,10 @@ msgstr ""
 msgid "Add to draft"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPoint.tsx
+msgid "Add to message"
+msgstr ""
+
 #. A changed file's Git status.
 #: src/renderer/src/tools/changesStore.ts
 msgid "Added"
@@ -398,6 +402,7 @@ msgstr ""
 msgid "Added line {number}: {text}"
 msgstr ""
 
+#. {threadTitle} is a thread's title.
 #. {threadTitle} is a thread's title.
 #: src/renderer/src/tools/BrowserPane.tsx
 msgid "Added to the draft for {threadTitle}"
@@ -657,6 +662,7 @@ msgid "Browser control is unavailable."
 msgstr ""
 
 #: src/renderer/src/tools/BrowserFeedback.tsx
+#: src/renderer/src/tools/BrowserPane.tsx
 msgid "Browser feedback"
 msgstr ""
 
@@ -696,8 +702,10 @@ msgstr ""
 msgid "Can read and screenshot this page."
 msgstr ""
 
+#. Closes the comment on a page element and goes back to pointing.
 #: src/renderer/src/tools/AgentContinue.tsx
 #: src/renderer/src/tools/BrowserFeedback.tsx
+#: src/renderer/src/tools/BrowserPoint.tsx
 #: src/renderer/src/tools/ChangesSurface.tsx
 #: src/renderer/src/tools/PullRequestDialogs.tsx
 #: src/renderer/src/tools/PullRequestSurface.tsx
@@ -798,6 +806,15 @@ msgstr ""
 
 #: src/renderer/src/tools/BrowserFeedback.tsx
 msgid "Click an element, or use arrow keys and Enter."
+msgstr ""
+
+#. Shown over a browser page while the user points at something on it. Esc is the Escape key.
+#: src/renderer/src/tools/BrowserPoint.tsx
+msgid "Click something on the page to point at it · <0>Esc</0> to stop"
+msgstr ""
+
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Click something on the page to tell the agent about it"
 msgstr ""
 
 #: src/renderer/src/tools/browserSteps.ts
@@ -2314,6 +2331,20 @@ msgstr ""
 msgid "Pinned"
 msgstr ""
 
+#. {label} is a page element, such as button · Sign in.
+#: src/renderer/src/tools/BrowserPoint.tsx
+msgid "Point at {label}"
+msgstr ""
+
+#. Lets the user click an element on the browser page to tell the agent about it.
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Point at something"
+msgstr ""
+
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Point at something stopped because the page did not answer. Try again."
+msgstr ""
+
 #. Short for pull request: the Tools surface's word on the narrow rail.
 #: src/renderer/src/tools/toolsPanelStore.ts
 msgid "PR"
@@ -2939,6 +2970,10 @@ msgid "Stop letting this thread use the browser without asking"
 msgstr ""
 
 #: src/renderer/src/tools/BrowserPane.tsx
+msgid "Stop pointing at the page"
+msgstr ""
+
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 #: src/renderer/src/tools/IPhoneSurface.tsx
 msgid "Stop sharing"
@@ -3068,6 +3103,7 @@ msgstr ""
 msgid "The command did not run. Sotto could not reach this thread’s terminals. Try again."
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "The draft for this thread is not available."
 msgstr ""
@@ -3100,6 +3136,11 @@ msgstr ""
 #: src/renderer/src/tools/browserPageView.tsx
 #: src/renderer/src/tools/BrowserPlayer.tsx
 msgid "The page steps aside while a menu or dialog is open."
+msgstr ""
+
+#. {label} is a page element, such as button · Sign in.
+#: src/renderer/src/tools/BrowserPoint.tsx
+msgid "The page when you pointed at {label}"
 msgstr ""
 
 #: src/renderer/src/tools/PhonePlayer.tsx
@@ -3622,6 +3663,10 @@ msgstr ""
 
 #: src/renderer/src/tools/BrowserFeedback.tsx
 msgid "What should change?"
+msgstr ""
+
+#: src/renderer/src/tools/BrowserPoint.tsx
+msgid "What should the agent know about this?"
 msgstr ""
 
 #: src/renderer/src/tools/IPhoneSurface.tsx

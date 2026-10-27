@@ -2,7 +2,7 @@ import { browserBridgeFixture, browserPage, browserTask } from '../../../fixture
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { BrowserPage, BrowserTask } from '../../../../src/shared/browser'
+import type { BrowserPage, BrowserPointState, BrowserTask } from '../../../../src/shared/browser'
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { DEFAULT_SETTINGS } from '../../../../src/shared/settings'
 import type { AppContextValue } from '../../../../src/renderer/src/state/AppContext'
@@ -390,5 +390,107 @@ describe('browser steps in plain words', () => {
   it('names the page while the agent has taken no step yet', () => {
     expect(browsingWords(task(), 'http://localhost:5173/')).toEqual({ lead: 'Agent is browsing', last: 'localhost:5173' })
     expect(shortAddress('https://example.com/')).toBe('example.com')
+  })
+})
+
+describe('point at something on Owl (ADR-0154)', () => {
+  const CAPTURE_ID = '55555555-5555-4555-8555-555555555555'
+  const box = { x: 1000, y: 20, width: 120, height: 40 }
+  const pick = { image: 'data:image/png;base64,YWJj', url: 'http://localhost:5173/sign-in', width: 1280, height: 800, captureId: CAPTURE_ID,
+    element: { tag: 'button', role: 'button', name: 'Sign in', text: 'Sign in', selector: '#sign-in' } }
+  const point = (browser: ReturnType<typeof fakeBrowser>, state: BrowserPointState) =>
+    act(() => browser.emit({ type: 'point', threadId: 'visual-gate', workspaceId: TOKEN_A, pageId: PAGE_1, point: state }))
+  const target = { threadId: 'visual-gate', workspaceId: TOKEN_A, pageId: PAGE_1 }
+  async function pointing() {
+    owl(true)
+    const browser = fakeBrowser([page(PAGE_1)])
+    mount(browser)
+    const tools = panel()
+    const button = await within(tools).findByRole('button', { name: 'Point at something' })
+    await waitFor(() => expect(browser.bridge.mount).toHaveBeenCalledWith(expect.objectContaining({ pageId: PAGE_1, bounds: expect.objectContaining({ width: 400 }) })))
+    fireEvent.click(button)
+    await waitFor(() => expect(browser.bridge.point).toHaveBeenCalledWith(expect.objectContaining({ ...target, on: true })))
+    return { browser, tools, button }
+  }
+
+  it('sits in the row between the address and Screenshot to message, and says what to do while it is on', async () => {
+    owl(true)
+    mount(fakeBrowser([page(PAGE_1)]))
+    const tools = panel()
+    const button = await within(tools).findByRole('button', { name: 'Point at something' })
+    const row = [...tools.querySelector('.browser-pane__row')!.querySelectorAll('button, input')].map(item => item.getAttribute('aria-label'))
+    expect(row.slice(row.indexOf('Address'), row.indexOf('Address') + 3)).toEqual(['Address', 'Point at something', 'Screenshot to message'])
+    expect(button).toHaveAttribute('aria-pressed', 'false')
+    expect(within(tools).queryByText(/Click something on the page to point at it/)).not.toBeInTheDocument()
+  })
+
+  it('turns the overlay on, names what is under the pointer, and turns it off again from the button', async () => {
+    const { browser, tools, button } = await pointing()
+    expect(button).toHaveAttribute('aria-pressed', 'true')
+    expect(tools.querySelector('.browser-point__line')).toHaveTextContent('Click something on the page to point at it · Esc to stop')
+    point(browser, { state: 'hover', label: 'button · Sign in' })
+    expect(tools.querySelector('.browser-point__hovered')).toHaveTextContent('button · Sign in')
+    fireEvent.click(button)
+    await waitFor(() => expect(browser.bridge.point).toHaveBeenLastCalledWith({ ...target, on: false }))
+    expect(button).toHaveAttribute('aria-pressed', 'false')
+    expect(tools.querySelector('.browser-point__line')).toBeNull()
+  })
+
+  it('shows the picture in the page\'s place with a comment, and Add to message puts the element, picture and comment in the draft', async () => {
+    const { browser, tools, button } = await pointing()
+    point(browser, { state: 'picked', capture: pick, box })
+    const comment = within(tools).getByRole('dialog', { name: 'Point at button · Sign in' })
+    const field = within(comment).getByRole('textbox', { name: 'What should the agent know about this?' })
+    expect(field).toHaveFocus()
+    expect(within(tools).getByRole('img', { name: 'The page when you pointed at button · Sign in' })).toHaveAttribute('src', pick.image)
+    expect(tools.querySelector('.browser-point__chip')).toHaveTextContent('button · Sign in')
+    // The native page steps aside for the picture; the line stays, so the picture sits where the page did.
+    await waitFor(() => expect(browser.bridge.mount).toHaveBeenLastCalledWith(expect.objectContaining({ pageId: PAGE_1, bounds: null })))
+    expect(tools.querySelector('.browser-point__line')).not.toBeNull()
+    expect(within(comment).getAllByRole('button').map(item => item.textContent)).toEqual(['Cancel Esc', 'Add to message'])
+    fireEvent.change(field, { target: { value: 'Make this match the header' } })
+    fireEvent.click(within(comment).getByRole('button', { name: 'Add to message' }))
+    await waitFor(() => expect(appendBrowserFeedback).toHaveBeenCalledWith(drafts, 'visual-gate', pick, 'Make this match the header', expect.any(Boolean), expect.objectContaining({ name: 'button · Sign in', box })))
+    await waitFor(() => expect(within(tools).queryByRole('dialog')).not.toBeInTheDocument())
+    expect(button).toHaveAttribute('aria-pressed', 'false')
+    await waitFor(() => expect(button).toHaveFocus())
+    const title = threadsStateFixture().host.threads.find(item => item.id === 'visual-gate')!.title
+    expect(tools.querySelector('.tools-panel__status')).toHaveTextContent(`Added to the draft for ${title}`)
+  })
+
+  it('closes the comment on Escape and goes back to pointing, and a second Escape leaves Point', async () => {
+    const { browser, tools, button } = await pointing()
+    vi.mocked(appendBrowserFeedback).mockClear()
+    point(browser, { state: 'picked', capture: pick, box })
+    const field = within(tools).getByRole('textbox', { name: 'What should the agent know about this?' })
+    vi.mocked(browser.bridge.point).mockClear()
+    fireEvent.keyDown(field, { key: 'Escape' })
+    expect(within(tools).queryByRole('dialog')).not.toBeInTheDocument()
+    expect(appendBrowserFeedback).not.toHaveBeenCalled()
+    expect(button).toHaveAttribute('aria-pressed', 'true')
+    expect(tools.querySelector('.browser-point__line')).not.toBeNull()
+    await waitFor(() => expect(button).toHaveFocus())
+    // The live page comes back, and the overlay with it.
+    await waitFor(() => expect(browser.bridge.point).toHaveBeenCalledWith(expect.objectContaining({ ...target, on: true })))
+    fireEvent.keyDown(button, { key: 'Escape' })
+    expect(button).toHaveAttribute('aria-pressed', 'false')
+    expect(tools.querySelector('.browser-point__line')).toBeNull()
+    await waitFor(() => expect(browser.bridge.point).toHaveBeenLastCalledWith({ ...target, on: false }))
+    expect(button).toHaveFocus()
+  })
+
+  it('leaves Point when main ends it, as when the page navigates', async () => {
+    const { browser, tools, button } = await pointing()
+    point(browser, { state: 'ended', reason: 'navigated' })
+    expect(button).toHaveAttribute('aria-pressed', 'false')
+    expect(tools.querySelector('.browser-point__line')).toBeNull()
+  })
+
+  it('is not on stable, which keeps Comment on page', async () => {
+    owl(false)
+    mount(fakeBrowser([page(PAGE_1)]))
+    const tools = panel()
+    await within(tools).findByRole('button', { name: 'Comment on page' })
+    expect(within(tools).queryByRole('button', { name: 'Point at something' })).not.toBeInTheDocument()
   })
 })

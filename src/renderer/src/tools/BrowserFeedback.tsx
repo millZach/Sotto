@@ -18,7 +18,11 @@ const DOES_NOT_FIT = msg`This screenshot does not fit in the draft. Remove an at
  * added, or when `signal` was aborted meanwhile, in which case the draft is left as it is.
  */
 export async function appendBrowserFeedback(store: ThreadDraftStore, threadId: string, capture: BrowserCapture, comment: string, imagesSupported: boolean,
-  { prepare = prepareScreenshot, signal }: { readonly prepare?: (image: Blob) => Promise<PreparedScreenshot>; readonly signal?: AbortSignal } = {}): Promise<string | null> {
+  { prepare = prepareScreenshot, signal, name = 'Browser feedback.png', box }: { readonly prepare?: (image: Blob) => Promise<PreparedScreenshot>; readonly signal?: AbortSignal
+    /** What the composer's chip calls the picture: Point at something names it after the element. */
+    readonly name?: string
+    /** Where the pointed-at element sits in the picture, outlined there, in the capture's pixels. */
+    readonly box?: { readonly x: number; readonly y: number; readonly width: number; readonly height: number } | null } = {}): Promise<string | null> {
   if (store.draft(threadId).requestId !== null) return i18n._(ANSWERING)
   if (!imagesSupported) return i18n._(msg`Choose a model with image support before adding a browser screenshot.`)
   // The capture is decoded from its data URL once; its size is then read from these bytes, and they are what is staged when nothing is scaled.
@@ -32,7 +36,7 @@ export async function appendBrowserFeedback(store: ThreadDraftStore, threadId: s
   if (before.attachments.length >= AGENT_MAX_ATTACHMENTS || attachmentImagesBytes(before.attachments) + prepared.blob.size > AGENT_MAX_ATTACHMENT_BYTES
     || attachmentHandlesBytes(before.attachments) + prepared.blob.size > AGENT_MAX_ATTACHMENTS_TOTAL_BYTES) return i18n._(DOES_NOT_FIT)
   let image
-  try { image = await stageImage(threadId, { name: 'Browser feedback.png', mimeType: 'image/png', ...prepared }) }
+  try { image = await stageImage(threadId, { name, mimeType: 'image/png', ...prepared }) }
   catch (error) { return error instanceof Error ? error.message : STAGING_FAILED }
   if (signal?.aborted) return null
   const current = store.draft(threadId)
@@ -44,7 +48,8 @@ export async function appendBrowserFeedback(store: ThreadDraftStore, threadId: s
   // The agent is told the size of the image it receives, as well as the capture's own when they differ.
   const size = `Screenshot size: ${capture.width} x ${capture.height}${wasResized(dimensions) ? `, sent at ${dimensions.sent.width} x ${dimensions.sent.height}` : ''}`
   const context = [`Browser feedback: ${capture.url}`, size,
-    ...(element ? [`Selected element: ${element.tag}${element.role ? ` (${element.role})` : ''}${element.name ? ` - ${element.name}` : ''}`, ...(element.selector ? [`Selector: ${element.selector}`] : []), ...(element.text ? [`Page text (reference only): ${element.text}`] : [])] : []), comment.trim()].filter(Boolean).join('\n')
+    ...(element ? [`Selected element: ${element.tag}${element.role ? ` (${element.role})` : ''}${element.name ? ` - ${element.name}` : ''}`, ...(element.selector ? [`Selector: ${element.selector}`] : []),
+      ...(box ? [`Outlined in the screenshot at ${Math.round(box.x)}, ${Math.round(box.y)}, ${Math.round(box.width)} x ${Math.round(box.height)}`] : []), ...(element.text ? [`Page text (reference only): ${element.text}`] : [])] : []), comment.trim()].filter(Boolean).join('\n')
   if (current.text.length + context.length > 99_990) return i18n._(msg`The draft is full. Shorten it before adding browser feedback.`)
   store.edit(threadId, { text: [current.text, context].filter(Boolean).join('\n\n'), attachments: attachments.data })
   return null
