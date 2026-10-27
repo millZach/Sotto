@@ -206,6 +206,24 @@ function aliasUnconfirmed(host: WorkspaceHost, threadId: string): boolean {
   return (writes.byThread?.get(threadId) ?? []).some(({ write }) => aliases(eventsOfWrite(write, threadId)))
 }
 
+/**
+ * The stored threads whose records a workspace is still reading back on the store worker (step 3), read for a test alone:
+ * until a read arrives its thread shows no records, where the writer on main read them at once.
+ */
+export function readsInFlight(host: WorkspaceHost): ReadonlyMap<string, { readonly held: readonly unknown[]; readonly done: Promise<void> }> {
+  return (host as unknown as { activityReads: ReadonlyMap<string, { readonly held: readonly unknown[]; readonly done: Promise<void> }> }).activityReads
+}
+
+/** Whether a thread's records are in the store and not in memory, read for a test alone. */
+export function storedIn(host: WorkspaceHost, threadId: string): boolean {
+  return (host as unknown as { storedActivity: ReadonlySet<string> }).storedActivity.has(threadId)
+}
+
+/** Waits until every read back the workspace has begun has been dealt with, reads begun meanwhile included. */
+export async function readsArrived(host: WorkspaceHost): Promise<void> {
+  for (let reads = readsInFlight(host); reads.size; reads = readsInFlight(host)) await Promise.all([...reads.values()].map(read => read.done))
+}
+
 /** Whether a workspace still holds events for a thread that it has not posted, read for the comparison below alone. */
 function waitingIn(host: WorkspaceHost, threadId: string): boolean {
   return (host as unknown as { pendingEvents: ReadonlyMap<string, unknown> }).pendingEvents.has(threadId)
@@ -221,7 +239,9 @@ function waitingIn(host: WorkspaceHost, threadId: string): boolean {
  *   message the events add until it is read again, and then the reference must have earlier messages too;
  * - a thread in `switched`: Keep local history changed the store it is read from, and the screen keeps what it showed
  *   until the thread is read again (ADR-0016). When that is depends on when its commits were confirmed, so it is
- *   compared again once it has had an event since the switch, which reads it again on both.
+ *   compared again once it has had an event since the switch, which reads it again on both;
+ * - the records of a thread whose stored list the store worker is still reading back (`readsInFlight`): they show once
+ *   it arrives, with what its provider published meanwhile merged onto it, and are compared from then.
  * The driver also leaves out, while history stays off, a thread with a write in flight or words held when it went off: turning it off
  * moves what still waits to this run's memory store (ADR-0016, September 27), and words waiting behind a batch in flight
  * wait longer than the writer on main holds them, so they move to memory where the reference committed them to the file
@@ -244,7 +264,7 @@ export function compareShown(reference: WorkspaceHost, later: WorkspaceHost, swi
     }
     const aliasHeld = aliasUnconfirmed(later, id)
     expect(strip(mine.summary, aliasHeld), id).toEqual(strip(theirs.summary, aliasHeld))
-    expect(mine.activities?.map(activity => activity.id), id).toEqual(theirs.activities?.map(activity => activity.id))
+    if (!readsInFlight(later).has(id)) expect(mine.activities?.map(activity => activity.id), id).toEqual(theirs.activities?.map(activity => activity.id))
     const shown = namedVisuals(mine.messages), reference = namedVisuals(theirs.messages)
     const first = reference[0] ? shown.findIndex(message => message.id === reference[0]!.id) : shown.length
     if (first > 0) {
@@ -277,7 +297,14 @@ function controlOf(later: Fixture): LaterControl {
   return {
     waiting: () => writes.unconfirmed(),
     unconfirmed: threadId => writes.unconfirmed(threadId),
-    settle: async () => { for (;;) { later.host.workspaceSnapshot(); if (!writes.unconfirmed()) return; await writes.confirmed() } },
+    settle: async () => {
+      for (;;) {
+        later.host.workspaceSnapshot()
+        if (!writes.unconfirmed() && readsInFlight(later.host).size === 0) return
+        await writes.confirmed()
+        await readsArrived(later.host)
+      }
+    },
     pumped: work => work,
     release: async count => { for (let turn = 0; turn < count; turn++) await new Promise(resolve => setImmediate(resolve)) },
   }
@@ -289,7 +316,7 @@ function controlOf(later: Fixture): LaterControl {
  */
 export async function runEquivalence(seed: number, mode: { readonly worker?: string } = {}): Promise<void> {
     const families = ['add-user', 'add-assistant', 'append', 'replace', 'reset', 'alias', 'answer', 'visual', 'activities', 'observe',
-      'wake-up', 'clear', 'privacy', 'read-now', 'read-waiting', 'publish', 'flush', 'release', 'checkpoint'] as const
+      'wake-up', 'clear', 'privacy', 'read-now', 'read-waiting', 'publish', 'flush', 'release', 'checkpoint', 'read-back'] as const
     type Family = typeof families[number]
     const random = mulberry32(seed)
     const pick = <T>(items: readonly T[]): T => items[Math.floor(random() * items.length)]!
@@ -303,6 +330,11 @@ export async function runEquivalence(seed: number, mode: { readonly worker?: str
     const ran = new Map<Family, number>(families.map(family => [family, 0]))
     /** Comparisons and reads made while the later writer held writes: the case the overlay and the wait exist for. */
     let held = 0, compared = 0
+    /**
+     * Stored threads opened (step 3): each read back, on the worker when there is one, and the ways a list on its way meets
+     * the run: a record its provider publishes, the window looking away, or nothing.
+     */
+    const readBacks = { opened: 0, onWorker: 0, published: 0, letGo: 0 }
     /** The driver's own picture of each live thread, so every event it makes is one a provider could send. */
     const model = new Map<string, AgentMessage[]>([[WORKSHOP, []], [DOCS, []]])
     let serial = 0
@@ -321,11 +353,8 @@ export async function runEquivalence(seed: number, mode: { readonly worker?: str
       if (!settled && control.waiting()) held++
     }
 
-    // The publish and the reads that cannot wait are drawn more often: they are what the overlay is for.
-    const drawn: readonly Family[] = [...families, 'publish', 'publish', 'publish', 'read-now', 'read-now']
-    for (let step = 0; step < 500; step++) {
-      const family = pick(drawn)
-      const threadId = pick([...model.keys()])
+    /** One step of a family on a thread, counted once it ran; a step that cannot be made on this thread now is not. */
+    const act = async (family: Family, threadId: string): Promise<void> => {
       const messages = model.get(threadId)!
       switch (family) {
         case 'add-user':
@@ -338,13 +367,13 @@ export async function runEquivalence(seed: number, mode: { readonly worker?: str
         }
         case 'append': {
           const last = messages.at(-1)
-          if (!last) continue
+          if (!last) return
           last.text += ` more ${++serial}`
           publish(threadId, appended(last.id, ` more ${serial}`))
           break
         }
         case 'replace': {
-          if (!messages.length) continue
+          if (!messages.length) return
           const target = pick(messages)
           target.text = `Replaced ${++serial}`
           publish(threadId, replaced(target.id, target.text, target.role))
@@ -359,7 +388,7 @@ export async function runEquivalence(seed: number, mode: { readonly worker?: str
           break
         }
         case 'alias': {
-          if (!messages.length) continue
+          if (!messages.length) return
           const canonical = pick(messages)
           const id = `copy${++serial}`
           publish(threadId, added(id, canonical.text, canonical.role))
@@ -372,7 +401,7 @@ export async function runEquivalence(seed: number, mode: { readonly worker?: str
           break
         }
         case 'visual': {
-          if (!messages.length) continue
+          if (!messages.length) return
           const title = `Visual ${++serial}`
           const results = [await onMain.host.addVisual(threadId, visual(title)), await control.pumped(later.host.addVisual(threadId, visual(title)))]
           if (!moved.has(threadId)) expect(results[1]).toMatchObject({ added: results[0]!.added, ...(results[0]!.added ? { anchor: (results[0] as { anchor: string }).anchor } : {}) })
@@ -435,7 +464,7 @@ export async function runEquivalence(seed: number, mode: { readonly worker?: str
           break
         }
         case 'read-now': {
-          if (moved.has(threadId)) continue
+          if (moved.has(threadId)) return
           if (control.unconfirmed(threadId)) held++
           expect(later.host.messageIdentities(threadId)).toEqual(onMain.host.messageIdentities(threadId))
           // A pane's loaded window answers both of these for a watched thread, and the screen keeps it across a switch
@@ -447,9 +476,9 @@ export async function runEquivalence(seed: number, mode: { readonly worker?: str
           break
         }
         case 'read-waiting': {
-          if (moved.has(threadId)) continue
+          if (moved.has(threadId)) return
           const user = messages.findLast(item => item.role === 'user')
-          if (!user) continue
+          if (!user) return
           expect(await control.pumped(later.host.threadPrompts(threadId, user.id))).toEqual(await onMain.host.threadPrompts(threadId, user.id))
           break
         }
@@ -467,11 +496,78 @@ export async function runEquivalence(seed: number, mode: { readonly worker?: str
         case 'checkpoint':
           await compare(true)
           break
+        case 'read-back': {
+          // The thread is let go and saved, so it is stored once nothing in it runs, then a window looks at it again.
+          const others = [...model.keys()].filter(id => id !== threadId)
+          // Its provider finishes what ran, as a turn ending does: a thread with a running record keeps it in memory.
+          for (const f of both) {
+            const thread = f.adapter.state.threads.find(item => item.id === threadId)!
+            if (thread.activities?.some(item => item.status === 'running')) {
+              thread.activities = thread.activities.map(item => item.status === 'running' ? { ...item, status: 'completed' as const } : item)
+              f.adapter.emit()
+            }
+            f.host.observeThreads(others)
+          }
+          // A save that confirms later lets records go at the save after it, once it knows what the store holds.
+          for (let save = 0; save < 2; save++) {
+            await onMain.host.flush()
+            await control.pumped(later.host.flush())
+            await control.settle()
+          }
+          const storedOnBoth = both.every(f => storedIn(f.host, threadId))
+          for (const f of both) f.host.observeThreads([...others, threadId])
+          if (!storedOnBoth) break
+          readBacks.opened++
+          if (readsInFlight(later.host).has(threadId)) readBacks.onWorker++
+          const meets = pick(['publish', 'let-go', 'nothing'] as const)
+          if (meets === 'publish') {
+            readBacks.published++
+            const fresh = record(`a${threadId}-${++serial}-read`, 0, 'completed')
+            for (const f of both) {
+              const thread = f.adapter.state.threads.find(item => item.id === threadId)!
+              thread.activities = structuredClone([...(thread.activities ?? []).slice(-6), fresh])
+              f.adapter.emit()
+            }
+          } else if (meets === 'let-go') {
+            readBacks.letGo++
+            for (const f of both) f.host.observeThreads(others)
+          }
+          await readsArrived(later.host)
+          // What the provider is told, and what each thread shows, are the same once the list is here.
+          expect(later.adapter.observed, threadId).toEqual(onMain.adapter.observed)
+          await compare(false)
+          break
+        }
       }
       ran.set(family, ran.get(family)! + 1)
     }
 
+    // The publish and the reads that cannot wait are drawn more often: they are what the overlay is for. Opening a stored
+    // thread is drawn in a phase of its own below, from a generator of its own, so this phase is drawn as it always was.
+    const drawn: readonly Family[] = [...families.filter(family => family !== 'read-back'), 'publish', 'publish', 'publish', 'read-now', 'read-now']
+    for (let step = 0; step < 500; step++) await act(pick(drawn), pick([...model.keys()]))
+    // Stored threads opened (step 3), among the steps that make, change and let go of their records. Records are let go
+    // only into a store that keeps them, so Keep local history is on for it.
+    if (!history) {
+      history = true
+      moved.clear()
+      await onMain.host.privacyChanged()
+      await control.pumped(later.host.privacyChanged())
+      for (const id of model.keys()) switched.add(id)
+    }
+    const readRandom = mulberry32(seed ^ 0x51ED)
+    const readPick = <T>(items: readonly T[]): T => items[Math.floor(readRandom() * items.length)]!
+    const readDrawn: readonly Family[] = ['read-back', 'read-back', 'read-back', 'activities', 'activities', 'observe', 'publish', 'publish', 'release', 'flush', 'add-assistant', 'checkpoint']
+    for (let step = 0; step < 90; step++) await act(readPick(readDrawn), readPick([...model.keys()]))
+
     for (const family of families) expect(ran.get(family), family).toBeGreaterThan(0)
+    // Stored threads were opened, and over the worker read back there, each way a list on its way can be met among them.
+    expect(readBacks.opened, 'read-back opened').toBeGreaterThan(0)
+    if (mode.worker !== undefined) {
+      expect(readBacks.onWorker, 'read back on the worker').toBeGreaterThan(0)
+      expect(readBacks.published, 'published while on its way').toBeGreaterThan(0)
+      expect(readBacks.letGo, 'let go while on its way').toBeGreaterThan(0)
+    }
     // A good share of what was compared or read was compared or read with writes held.
     expect(held).toBeGreaterThanOrEqual(20)
     // The worker commits at its own pace, so fewer reads find it holding writes than a writer the test holds.
