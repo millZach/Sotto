@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -11,6 +11,7 @@ import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentMessage, AgentThreadSummary } from '../../../src/shared/agents'
 import type { AnswerGivenEvent, ThreadEvent } from '../../../src/shared/threadEvents'
 import type { VisualInput } from '../../../src/shared/visuals'
+import { writeThreads } from '../../../src/main/agents/threadStoreWriter'
 import { DeferredStoreWriter } from '../../fixtures/deferredStoreWriter'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
 
@@ -56,7 +57,7 @@ interface Fixture { directory: string; adapter: EventProvider | FakeProviderHost
  * A workspace with one provider. `deferred` runs it over the holding writer, which confirms nothing until released; the
  * start commits at once, as nothing reads the store before it, and the writer holds from then on.
  */
-async function fixture(options: { deferred?: boolean; streamingPublishCost?: boolean; providerId?: 'claude'; watcher?: boolean; wholeHistories?: boolean } = {}): Promise<Fixture & { adapter: EventProvider }> {
+async function fixture(options: { deferred?: boolean; streamingPublishCost?: boolean; providerId?: 'claude'; watcher?: boolean; wholeHistories?: boolean; history?: () => boolean } = {}): Promise<Fixture & { adapter: EventProvider }> {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-store-writer-'))
   cleanup.push(async () => {
     if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-store-writer-')) throw new Error('Unexpected test directory')
@@ -65,10 +66,14 @@ async function fixture(options: { deferred?: boolean; streamingPublishCost?: boo
   // A provider that publishes whole histories is the one whose snapshots the workspace compares (`record`).
   const adapter = (options.wholeHistories ? new FakeProviderHost() : new EventProvider()) as EventProvider
   if (options.providerId) for (const thread of adapter.state.threads) thread.providerId = options.providerId
+  // A send looks at its project's folder, so the project is a folder that is there.
+  const project = join(directory, 'project')
+  await mkdir(project)
+  adapter.state.projects[0]!.path = project
   let writer: DeferredStoreWriter | undefined
   const host = options.deferred === false
-    ? new WorkspaceHost(adapter, directory, () => true, undefined, options.watcher ?? false, false, options.streamingPublishCost ?? true)
-    : new WorkspaceHost(adapter, directory, () => true, undefined, options.watcher ?? false, false, options.streamingPublishCost ?? true,
+    ? new WorkspaceHost(adapter, directory, options.history ?? (() => true), undefined, options.watcher ?? false, false, options.streamingPublishCost ?? true)
+    : new WorkspaceHost(adapter, directory, options.history ?? (() => true), undefined, options.watcher ?? false, false, options.streamingPublishCost ?? true,
       store => { writer = new DeferredStoreWriter(store); writer.holding = false; return writer })
   cleanup.push(async () => { host.disconnect(); if (writer) { writer.holding = false; writer.release() } await host.close().catch(() => undefined) })
   await host.initialize()
@@ -195,6 +200,15 @@ describe('a read that cannot wait answers from what is posted, or says not yet',
     expect(f.host.message(WORKSHOP, 'reply')).toMatchObject({ text: 'Words' })
   })
 
+  it('holds the cursor gate until the writer confirms with the Owl feature off too', async () => {
+    const f = await fixture({ deferred: true, streamingPublishCost: false })
+    f.adapter.publish(added('reply', 'Words'))
+    f.host.workspaceSnapshot()
+    expect(f.host.flushEvents(WORKSHOP)).toBe(false)
+    f.writer!.release()
+    expect(f.host.flushEvents(WORKSHOP)).toBe(true)
+  })
+
   it('answers a catching-up client with what has committed, and the rest in order once it does', async () => {
     const f = await fixture({ deferred: true })
     f.adapter.publish(added('reply', 'Words'))
@@ -271,6 +285,26 @@ describe('a read that needs the store waits for what was posted for its thread',
     settle(f)
     await pumped(f, f.host.flush())
     expect(f.host.eventsAfter(0, WORKSHOP).map(row => row.event.kind)).toEqual(['message-added', 'message-text-appended', 'answer-given'])
+  })
+})
+
+describe('an answer behind a batch that failed', () => {
+  it('waits with the words it answered and commits after them once their retry lands', async () => {
+    const f = await fixture({ deferred: true })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    f.writer!.failing = write => write.kind === 'event-batches'
+    f.adapter.publish(added('reply', 'Asked'))
+    f.host.workspaceSnapshot()
+    f.writer!.release()
+    expect(f.host.workspaceSnapshot().error).toContain('Thread messages could not be saved')
+    f.host.recordAnswer(WORKSHOP, answer('request-3'))
+    // Nothing is posted for the answer on its own: it waits behind the words for their retry.
+    expect(f.writer!.waiting).toBe(0)
+    f.writer!.failing = undefined
+    await vi.advanceTimersByTimeAsync(1_000)
+    f.writer!.release()
+    expect(f.host.workspaceSnapshot().error).toBeUndefined()
+    expect(f.host.eventsAfter(0, WORKSHOP).map(row => row.event.kind)).toEqual(['message-added', 'answer-given'])
   })
 })
 
@@ -362,6 +396,29 @@ describe('order, failure and durability through the seam', () => {
     expect(storedMessages(f.directory)).toEqual([])
   })
 
+  it('takes nothing more of a thread into the store once its forget is posted, so nothing outlives the removal', async () => {
+    const f = await fixture({ deferred: true })
+    f.adapter.publish(added('reply', 'Before clearing'))
+    settle(f)
+    f.adapter.publish(appended('reply', ' held for the write window'))
+    const cleared = f.host.deleteThreads([WORKSHOP], { automatic: false, hold: () => null })
+    await releaseUntilPosted(f.writer!, 'forget')
+    const forgetAt = f.writer!.log.findIndex(write => write.kind === 'forget')
+    // A provider's late event, and the write window's flush, arrive while the forget is held.
+    f.adapter.publish(added('late', 'Late words'))
+    f.host.workspaceSnapshot()
+    const flushing = f.host.flush()
+    expect(await pumped(f, cleared)).toMatchObject({ deleted: [WORKSHOP] })
+    await pumped(f, flushing)
+    expect(f.writer!.log.slice(forgetAt + 1).filter(write => writeThreads(write).includes(WORKSHOP))).toEqual([])
+    expect(storedMessages(f.directory)).toEqual([])
+    const db = new DatabaseSync(join(f.directory, 'threads.sqlite'), { readOnly: true })
+    try {
+      expect(db.prepare("SELECT COUNT(*) AS found FROM events WHERE payload LIKE '%Late words%' OR payload LIKE '%Before clearing%' OR payload LIKE '%held for the write window%'").get()?.found).toBe(0)
+      expect(db.prepare('SELECT COUNT(*) AS found FROM messages WHERE thread_id = ?').get(WORKSHOP)?.found).toBe(0)
+    } finally { db.close() }
+  })
+
   it('takes the words out at the disk when history turns off, and answers once the writer has', async () => {
     let history = true
     const directory = await mkdtemp(join(tmpdir(), 'sotto-store-writer-'))
@@ -416,7 +473,7 @@ function mulberry32(seed: number): () => number {
  * cut a streamed reply's appends differently, and sequences are left out for the same reason; a reset an activity save
  * followed is named by its place among its thread's resets.
  */
-function rows(directory: string) {
+function rows(directory: string, unwrittenThreads: ReadonlySet<string> = new Set()) {
   const db = new DatabaseSync(join(directory, 'threads.sqlite'), { readOnly: true })
   try {
     const events: Record<string, unknown[]> = {}
@@ -425,6 +482,10 @@ function rows(directory: string) {
       const threadId = String(row.thread_id)
       const { at: _at, ...event } = JSON.parse(String(row.payload)) as ThreadEvent & { appendText?: string; messageId?: string }
       void _at
+      // Words that moved to memory when history went off, or were dropped with a thread cleared while they were held,
+      // never reached this file, where the reference wrote them and took them out, keeping a record of each event it was
+      // given. Those threads' logs are left out; their projection, records, visuals and wake-ups below are not.
+      if (unwrittenThreads.has(threadId)) continue
       const list = events[threadId] ??= []
       const last = list.at(-1) as { kind?: string; messageId?: string; appendText?: string } | undefined
       if (event.kind === 'message-text-appended' && last?.kind === 'message-text-appended' && last.messageId === event.messageId) last.appendText += event.appendText!
@@ -436,7 +497,7 @@ function rows(directory: string) {
       messages: db.prepare('SELECT thread_id, position, message_id, role, text, created_at, command_id, attachments, turn_message_id FROM messages ORDER BY thread_id, position').all(),
       activities: db.prepare('SELECT thread_id, activity_id, payload FROM activities ORDER BY thread_id, position').all(),
       epochs: db.prepare('SELECT thread_id, epoch, message_reset_seq FROM activity_epochs ORDER BY thread_id').all()
-        .map(row => ({ ...row, message_reset_seq: row.message_reset_seq === null ? null : (resets[String(row.thread_id)] ?? []).filter(seq => seq <= Number(row.message_reset_seq)).length })),
+        .map(row => ({ ...row, message_reset_seq: row.message_reset_seq === null || unwrittenThreads.has(String(row.thread_id)) ? null : (resets[String(row.thread_id)] ?? []).filter(seq => seq <= Number(row.message_reset_seq)).length })),
       visuals: db.prepare('SELECT thread_id, anchor_message_id, anchor_user_message_id, json_extract(payload, \'$.title\') AS title FROM visuals ORDER BY seq').all(),
       wakeUps: db.prepare('SELECT thread_id, message_id FROM wake_ups ORDER BY thread_id, message_id').all(),
     }
@@ -447,46 +508,102 @@ function rows(directory: string) {
 function namedVisuals(messages: readonly AgentMessage[]): AgentMessage[] {
   return messages.map(item => item.visual ? { ...item, id: `visual:${item.visual.title}`, visual: { ...item.visual, id: item.visual.title } } : item)
 }
+
+/** The events a workspace lays over the store for a thread, read for the comparison below and nowhere else. */
+function heldEvents(host: WorkspaceHost, threadId: string): readonly ThreadEvent[] {
+  return (host as unknown as { heldEvents(threadId: string, withWaitingAppends: boolean): readonly ThreadEvent[] }).heldEvents(threadId, true)
+}
+
+/** Whether a workspace still holds events for a thread that it has not posted, read for the comparison below alone. */
+function waitingIn(host: WorkspaceHost, threadId: string): boolean {
+  return (host as unknown as { pendingEvents: ReadonlyMap<string, unknown> }).pendingEvents.has(threadId)
+}
+
 /**
- * What each thread shows: its window, its summary and its activity records. A summary's record count is left out: it is
- * refreshed when the thread's messages are read again, which a confirmation that comes later does sooner, so the
- * records it counts are compared instead.
+ * What each thread shows, as the publish gives it: its window, its summary and its activity records. Left out, each for
+ * a reason the plan names (docs/plans/store-worker.md, step 1):
+ * - the summary's record count and running turn, which are taken from the records when the summary is read again, and
+ *   a confirmation that comes later reads it again sooner; the records themselves are compared;
+ * - while an alias is held for a thread, its summary's count and excerpts, which show the alias once it is confirmed;
+ * - while writes are held, the window's messages before the reference's first: a window asked for in turns keeps every
+ *   message the events add until it is read again, and then the reference must have earlier messages too;
+ * - a thread in `switched`: Keep local history changed the store it is read from, and the screen keeps what it showed
+ *   until the thread is read again (ADR-0016). When that is depends on when its commits were confirmed, so it is
+ *   compared again once it has had an event since the switch, which reads it again on both.
+ * The driver also leaves out, while history stays off, a thread with a write in flight or words held when it went off: turning it off
+ * moves what still waits to this run's memory store (ADR-0016, September 27), and words waiting behind a batch in flight
+ * wait longer than the writer on main holds them, so they move to memory where the reference committed them to the file
+ * and took them out. Turning history back on drops the memory store on both, and the file is compared at the end.
  */
-function shownThreads(host: WorkspaceHost) {
-  return host.workspaceSnapshot().threads.map(thread => {
-    const { activityCount: _count, ...summary } = thread.summary ?? ({} as AgentThreadSummary)
-    void _count
-    return { id: thread.id, messages: namedVisuals(thread.messages), earlierAvailable: thread.earlierAvailable === true, summary, activities: thread.activities?.map(activity => activity.id) }
-  })
+function compareShown(reference: WorkspaceHost, later: WorkspaceHost, switched: ReadonlySet<string>): void {
+  const shownBy = (host: WorkspaceHost) => new Map(host.workspaceSnapshot().threads.map(thread => [thread.id, thread]))
+  const expected = shownBy(reference), received = shownBy(later)
+  expect([...received.keys()]).toEqual([...expected.keys()])
+  for (const [id, mine] of received) {
+    if (switched.has(id)) continue
+    const theirs = expected.get(id)!
+    const strip = (summary: AgentThreadSummary | undefined, aliasHeld: boolean) => {
+      const { activityCount: _count, runningTurnStartedAt: _running, ...rest } = summary ?? ({} as AgentThreadSummary)
+      void _count; void _running
+      if (!aliasHeld) return rest
+      const { messageCount: _messages, lastUser: _user, lastAssistant: _assistant, lastMessageAt: _at, ...left } = rest
+      void _messages; void _user; void _assistant; void _at
+      return left
+    }
+    const aliasHeld = heldEvents(later, id).some(event => event.kind === 'message-aliased')
+    expect(strip(mine.summary, aliasHeld), id).toEqual(strip(theirs.summary, aliasHeld))
+    expect(mine.activities?.map(activity => activity.id), id).toEqual(theirs.activities?.map(activity => activity.id))
+    const shown = namedVisuals(mine.messages), reference = namedVisuals(theirs.messages)
+    const first = reference[0] ? shown.findIndex(message => message.id === reference[0]!.id) : shown.length
+    if (first > 0) {
+      expect(theirs.earlierAvailable, id).toBe(true)
+      expect(shown.slice(first), id).toEqual(reference)
+    } else {
+      expect(shown, id).toEqual(reference)
+      expect(mine.earlierAvailable === true, id).toBe(theirs.earlierAvailable === true)
+    }
+  }
 }
 
 describe('the writer on main and a writer that confirms later agree (#1457)', () => {
-  it.each([1457, 1026, 2026])('leaves the same rows and shows the same threads over a seeded run of every operation family (seed %i)', async seed => {
+  it.each([1457, 1026, 2026, 3, 6, 7])('leaves the same rows and shows the same threads over a seeded run of every operation family (seed %i)', async seed => {
     const families = ['add-user', 'add-assistant', 'append', 'replace', 'reset', 'alias', 'answer', 'visual', 'activities', 'observe',
-      'read-now', 'read-waiting', 'publish', 'flush', 'release', 'checkpoint'] as const
+      'wake-up', 'clear', 'privacy', 'read-now', 'read-waiting', 'publish', 'flush', 'release', 'checkpoint'] as const
     type Family = typeof families[number]
     const random = mulberry32(seed)
     const pick = <T>(items: readonly T[]): T => items[Math.floor(random() * items.length)]!
-    const onMain = await fixture({ deferred: false })
-    const later = await fixture({ deferred: true })
+    let history = true
+    const onMain = await fixture({ deferred: false, history: () => history })
+    const later = await fixture({ deferred: true, history: () => history })
     // Timers wait for the test, so neither workspace's windows fire on their own, and both stamp the same instant.
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] })
     const both = [onMain, later]
     const ran = new Map<Family, number>(families.map(family => [family, 0]))
-    /** Reads made while the later writer held writes: the case the overlay and the wait exist for. */
-    let heldReads = 0
-    /** The driver's own picture of each thread, so every event it makes is one a provider could send. */
+    /** Comparisons and reads made while the later writer held writes: the case the overlay and the wait exist for. */
+    let held = 0, compared = 0
+    /** The driver's own picture of each live thread, so every event it makes is one a provider could send. */
     const model = new Map<string, AgentMessage[]>([[WORKSHOP, []], [DOCS, []]])
     let serial = 0
-    const publish = (threadId: string, event: ThreadEvent): void => { for (const f of both) f.adapter.publish(structuredClone(event), threadId) }
-    const compareShown = (): void => {
-      settle(later)
-      expect(shownThreads(later.host)).toEqual(shownThreads(onMain.host))
+    /** Threads not read again since Keep local history last switched, and threads whose held words moved to memory. */
+    const switched = new Set<string>(), moved = new Set<string>(), unwritten = new Set<string>()
+    const unlike = (): ReadonlySet<string> => moved.size ? new Set([...switched, ...moved]) : switched
+    const publish = (threadId: string, event: ThreadEvent): void => {
+      switched.delete(threadId)
+      for (const f of both) f.adapter.publish(structuredClone(event), threadId)
+    }
+    const compare = (settled: boolean): void => {
+      if (settled) settle(later)
+      compared++
+      compareShown(onMain.host, later.host, unlike())
+      // The publish posts what waited, then lays it over the store: held, if the writer still holds anything now.
+      if (!settled && later.writer!.waiting > 0) held++
     }
 
+    // The publish and the reads that cannot wait are drawn more often: they are what the overlay is for.
+    const drawn: readonly Family[] = [...families, 'publish', 'publish', 'publish', 'read-now', 'read-now']
     for (let step = 0; step < 500; step++) {
-      const family = pick(families)
-      const threadId = pick([WORKSHOP, DOCS])
+      const family = pick(drawn)
+      const threadId = pick([...model.keys()])
       const messages = model.get(threadId)!
       switch (family) {
         case 'add-user':
@@ -536,7 +653,7 @@ describe('the writer on main and a writer that confirms later agree (#1457)', ()
           if (!messages.length) continue
           const title = `Visual ${++serial}`
           const results = [await onMain.host.addVisual(threadId, visual(title)), await pumped(later, later.host.addVisual(threadId, visual(title)))]
-          expect(results[1]).toMatchObject({ added: results[0]!.added, ...(results[0]!.added ? { anchor: (results[0] as { anchor: string }).anchor } : {}) })
+          if (!moved.has(threadId)) expect(results[1]).toMatchObject({ added: results[0]!.added, ...(results[0]!.added ? { anchor: (results[0] as { anchor: string }).anchor } : {}) })
           break
         }
         case 'activities': {
@@ -550,26 +667,73 @@ describe('the writer on main and a writer that confirms later agree (#1457)', ()
           break
         }
         case 'observe': {
-          const watched = pick([[WORKSHOP], [DOCS], [WORKSHOP, DOCS], []])
+          const live = [...model.keys()]
+          const watched = live.filter(() => random() < 0.5)
           for (const f of both) f.host.observeThreads(watched)
           break
         }
+        case 'wake-up': {
+          const id = `wake${++serial}`
+          // Babysitting's send: the wake-up is marked before the provider hears it, then the provider echoes the prompt.
+          await onMain.host.execute({ type: 'send', commandId: `send-${serial}`, threadId, messageId: id, text: `Wake-up ${serial}`, wakeUp: true })
+          await pumped(later, later.host.execute({ type: 'send', commandId: `send-${serial}`, threadId, messageId: id, text: `Wake-up ${serial}`, wakeUp: true }))
+          for (const f of both) {
+            const thread = f.adapter.state.threads.find(item => item.id === threadId)!
+            thread.status = 'idle'
+            f.adapter.emit()
+          }
+          messages.push(message(id, 'user', `Wake-up ${serial}`))
+          publish(threadId, added(id, `Wake-up ${serial}`, 'user'))
+          break
+        }
+        case 'clear': {
+          // Words still held when the forget is posted go with the thread, never written; the reference wrote them first.
+          if (later.writer!.unconfirmed(threadId) || waitingIn(later.host, threadId)) unwritten.add(threadId)
+          const options = { automatic: false, hold: () => null }
+          const results = [await onMain.host.deleteThreads([threadId], options), await pumped(later, later.host.deleteThreads([threadId], options))]
+          expect(results[1]).toEqual(results[0])
+          if (!results[0]!.deleted.length) break
+          model.delete(threadId)
+          // A thread the provider starts next takes its place, so the run keeps two threads to write to.
+          const id = `session-t${++serial}`
+          for (const f of both) {
+            f.adapter.state.threads.push({ id, projectId: 'project', title: `Thread ${serial}`, modelId: 'fake:model', status: 'idle', messages: [], requests: [] })
+            f.adapter.emit()
+          }
+          model.set(id, [])
+          break
+        }
+        case 'privacy': {
+          history = !history
+          if (history) moved.clear()
+          else for (const id of model.keys()) if (later.writer!.unconfirmed(id) || waitingIn(later.host, id)) { moved.add(id); unwritten.add(id) }
+          await onMain.host.privacyChanged()
+          await pumped(later, later.host.privacyChanged())
+          for (const id of model.keys()) switched.add(id)
+          break
+        }
         case 'read-now': {
-          if (later.writer!.unconfirmed(threadId)) heldReads++
+          if (moved.has(threadId)) continue
+          if (later.writer!.unconfirmed(threadId)) held++
           expect(later.host.messageIdentities(threadId)).toEqual(onMain.host.messageIdentities(threadId))
+          // A pane's loaded window answers both of these for a watched thread, and the screen keeps it across a switch
+          // until the thread is read again (`compareShown`).
+          if (switched.has(threadId)) break
           expect(namedVisuals(later.host.threadMessages(threadId))).toEqual(namedVisuals(onMain.host.threadMessages(threadId)))
           const user = messages.findLast(item => item.role === 'user')
           if (user) expect(later.host.hasRecordedUserMessage(threadId, user.id)).toBe(onMain.host.hasRecordedUserMessage(threadId, user.id))
           break
         }
         case 'read-waiting': {
+          if (moved.has(threadId)) continue
           const user = messages.findLast(item => item.role === 'user')
           if (!user) continue
           expect(await pumped(later, later.host.threadPrompts(threadId, user.id))).toEqual(await onMain.host.threadPrompts(threadId, user.id))
           break
         }
         case 'publish':
-          for (const f of both) f.host.workspaceSnapshot()
+          // The publish reads the store and lays what is held over it: compared as it is, with writes held.
+          compare(false)
           break
         case 'flush':
           await onMain.host.flush()
@@ -579,25 +743,33 @@ describe('the writer on main and a writer that confirms later agree (#1457)', ()
           later.writer!.release(Math.floor(random() * 3))
           break
         case 'checkpoint':
-          compareShown()
+          compare(true)
           break
       }
       ran.set(family, ran.get(family)! + 1)
     }
 
     for (const family of families) expect(ran.get(family), family).toBeGreaterThan(0)
-    expect(heldReads).toBeGreaterThan(0)
-    compareShown()
+    // A good share of what was compared or read was compared or read with writes held.
+    expect(held).toBeGreaterThanOrEqual(20)
+    expect(held / (compared + ran.get('read-now')!)).toBeGreaterThan(0.2)
+    if (!history) {
+      history = true
+      moved.clear()
+      await onMain.host.privacyChanged()
+      await pumped(later, later.host.privacyChanged())
+      for (const id of model.keys()) switched.add(id)
+    }
+    compare(true)
     await onMain.host.flush()
     await pumped(later, later.host.flush())
     for (const f of both) f.host.disconnect()
     await onMain.host.close()
     await pumped(later, later.host.close())
     expect(later.writer!.waiting).toBe(0)
-    const expected = rows(onMain.directory)
-    expect(expected.messages.length).toBeGreaterThan(0)
-    expect(expected.activities.length).toBeGreaterThan(0)
-    expect(expected.visuals.length).toBeGreaterThan(0)
-    expect(rows(later.directory)).toEqual(expected)
+    const expected = rows(onMain.directory, unwritten)
+    // Clearing and history off take words out, so what is left is compared whatever it holds; it holds the log at least.
+    expect(Object.keys(expected.events).length).toBeGreaterThan(0)
+    expect(rows(later.directory, unwritten)).toEqual(expected)
   })
 })

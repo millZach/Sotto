@@ -33,7 +33,7 @@ function replacedMessage(held: AgentMessage, message: AgentMessage): AgentMessag
  * read from the store with `stored`, and changed there in turn, so an alias decides as the store would. A window asked
  * for in turns keeps every message the events add, so it may hold more turns than asked until it is read again.
  */
-export function overlayWindow(window: ThreadMessageWindow, events: readonly ThreadEvent[], stored: (id: string) => AgentMessage | undefined): ThreadMessageWindow {
+export function applyEventsToWindow(window: ThreadMessageWindow, events: readonly ThreadEvent[], stored: (id: string) => AgentMessage | undefined): ThreadMessageWindow {
   if (events.length === 0) return window
   let messages: AgentMessage[] | undefined
   const own = (): AgentMessage[] => (messages ??= [...window.messages])
@@ -96,7 +96,7 @@ export function overlayWindow(window: ThreadMessageWindow, events: readonly Thre
  * until the commit reads them again: an alias takes out a duplicate with the same words, so only its identity and the
  * count can differ meanwhile.
  */
-export function overlaySummary(summary: ThreadSummaryMessages, events: readonly ThreadEvent[]): ThreadSummaryMessages {
+export function applyEventsToSummary(summary: ThreadSummaryMessages, events: readonly ThreadEvent[]): ThreadSummaryMessages {
   if (events.length === 0) return summary
   let { count, user, assistant } = summary
   for (const event of events) {

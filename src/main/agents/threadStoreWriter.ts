@@ -72,7 +72,7 @@ export interface ThreadStoreWriter {
   close(): void
 }
 
-const NO_EVENTS: readonly ThreadEvent[] = Object.freeze([])
+export const NO_EVENTS: readonly ThreadEvent[] = Object.freeze([])
 const NO_THREADS: ReadonlySet<string> = new Set()
 
 /** The threads a write names; empty for one that covers the whole store. */
@@ -148,8 +148,11 @@ export class ThreadStoreWriterOnMain implements ThreadStoreWriter {
   close(): void { this.store.close() }
 }
 
+/** Whether any part of a write did not commit. */
+export function writeFailed(outcome: ThreadStoreWriteOutcome): boolean { return outcome.error !== undefined || outcome.failed.size > 0 }
+
 /** Throws a write's failure as the store would have thrown it, for a caller that waits on a write it cannot do without. */
 export function throwIfFailed(outcome: ThreadStoreWriteOutcome): void {
-  if (outcome.error !== undefined) throw outcome.error
-  if (outcome.failed.size) throw new Error('Thread history could not be saved')
+  if (!writeFailed(outcome)) return
+  throw outcome.error ?? new Error('Thread history could not be saved')
 }
