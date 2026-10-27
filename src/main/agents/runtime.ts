@@ -33,6 +33,7 @@ import { WatcherService, type WatcherAutoSettleEvent } from './watcher'
 import { WatcherPhoneService } from './watcherPhone'
 import { WatcherToolServer } from './watcherTools'
 import { DelegationService } from './delegation'
+import { CheckQueue } from './checkQueue'
 import { ContinueService } from './continueThread'
 import { AgentControl } from './control'
 import { TurnRecorder } from './turns'
@@ -120,6 +121,11 @@ export interface AgentRuntimeOptions {
    * list_machines shows none of it.
    */
   crossMachineEnabled?: boolean
+  /**
+   * A time of day as the user's computer writes it in the interface language main shows, for the words that say when a
+   * check's snapshot was taken (#1312). Absent, as on a headless host, this machine's own default.
+   */
+  clockTime?: (at: Date) => string
   /**
    * A headless host runs delegation for its own threads (#1310) only where its own Owl answer turns on Work across
    * machines. It holds them to the desktop defaults the last desktop that still counts sent it, and to Ask for approval
@@ -393,7 +399,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       ...branchMoves ? { branchMoves } : {} } : {}
   const watcher = moving.watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
-      workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts, crossMachine,
+      workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts, crossMachine, ...options.clockTime ? { clockTime: options.clockTime } : {},
       settleFinished: () => options.settings().watcherSettlesFinishedThreads, ...babysittingRetired ? { babysittingRetired: true } : {}, compactAt: () => options.settings().watcherCompactAtTokens, ...options.watcherLog ? { log: options.watcherLog } : {},
       ...roles, ...placing }) : undefined
   if (options.delegationEnabled === true && options.runsAs !== 'headless-host') {
@@ -410,8 +416,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       tool: threadId => babysitTool(threadId), ...roles,
       ...placingWatcher ? { machines: { list: () => placingWatcher.machines(), place: (ask, project, setting) => placingWatcher.placement(ask, project, setting),
         name: hostId => placingWatcher.machineName(hostId), setting: () => options.settings().newWorkerMachine } } : {},
-      // Offered with the machines, as the tool server offers from_my_branch and test_run only with them (#1033).
-      ...placingWatcher && branchMoves ? { branchMoves } : {},
+      // Offered with the machines, as the tool server offers from_my_branch and test_run only with them (#1033). This
+      // computer's checks run one at a time, in the order asked (#1312).
+      ...placingWatcher && branchMoves ? { branchMoves, checks: new CheckQueue('This computer'), ...options.clockTime ? { clockTime: options.clockTime } : {} } : {},
       // A delegated thread's own worktree is made from the delegating thread's branch, so it can bring changes back (#1030).
       ...crossMachine ? { bringBack: true } : {},
       ...relaying ? { relayedCallers: { caller: (threadId: string) => relaying.caller(threadId), tell: (threadId: string, news: DelegationNews) => relaying.tell(threadId, news) } } : {} })
@@ -589,7 +596,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       if (babysitter) await babysitter.close()
       if (watchedPullRequests) await watchedPullRequests.close()
       toolReads.dispose()
-      try { await stopProviders(); await preparingForShutdown } finally { usage?.close(); await agentHost.close() }
+      // Checks that were waiting let go of the branches they would have started from (#1312), alongside the providers'
+      // drain rather than ahead of it, and before the store closes.
+      try { await stopProviders(); await preparingForShutdown } finally { await delegation?.drained(); usage?.close(); await agentHost.close() }
     })()
     return closing
   }

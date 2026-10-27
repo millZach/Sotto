@@ -47,7 +47,7 @@ export const delegateInputSchema = z.object({
   machine: z.uuid().optional().describe(`For a new thread: the machine it starts on, a host ID from ${LIST_MACHINES_TOOL}. A delegated thread starts only on This computer for now.`),
   os: workerSystemSchema.optional().describe('For a new thread: the system it needs, windows, macos or linux. Never falls back to another system.'),
   from_my_branch: z.boolean().optional().describe('For a new thread: start it in a worktree of its own on this thread\'s branch, with this thread\'s commits. Uncommitted work here refuses it; commit first, or set test_run.'),
-  test_run: z.boolean().optional().describe('For a new thread that is there to run tests, which the user calls a check. With from_my_branch, this thread\'s uncommitted work goes too, as a snapshot, and nothing in this thread changes. Sotto never guesses it from commands.'),
+  test_run: z.boolean().optional().describe('For a new thread that is there to run tests, which the user calls a check. One check runs at a time on a machine; a later one waits its turn, working. With from_my_branch, this thread\'s uncommitted work goes too, as a snapshot taken now, and nothing in this thread changes. Sotto never guesses it from commands.'),
   title: z.string().trim().min(1).max(DELEGATION_TITLE_MAX).optional().describe('For a new thread: its name in the sidebar, which Sotto keeps. Left out, Sotto names the thread from the brief, as it names any thread.'),
   wait_seconds: z.number().int().min(0).max(DELEGATION_WAIT_MAX_SECONDS).optional()
     .describe(`How long to wait in this call for the outcome, up to ${DELEGATION_WAIT_MAX_SECONDS}. Left out, ${DELEGATION_WAIT_MAX_SECONDS}. When the wait ends first the call returns working, and Sotto sends a wake-up when the outcome changes.`),
@@ -111,6 +111,11 @@ export interface DelegationRead {
   readonly replyUnavailable?: string
   /** The user has sent their own message in the delegated thread since this thread's last brief to it. */
   readonly userSentSince?: boolean
+  /**
+   * A check still waiting for its machine's checks ahead of it (#1312): how many are ahead, the running one included, and
+   * the words saying so. Its outcome stays `working` meanwhile; nothing is started until its turn.
+   */
+  readonly check?: { readonly ahead: number; readonly note: string }
   /**
    * Why it was refused: for a `refused` delegation, the rule that turned it down, with `note` in plain words; for a `paused`
    * one, the user's newer message (`TARGET_CHANGED`) or their turn (`PAUSED`) in the delegated thread, before delivery.

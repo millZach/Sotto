@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { CANCEL_DELEGATION_TOOL, cancelDelegationInputSchema, DELEGATE_MCP_SERVER, DELEGATE_TOOL, delegateInputSchema, DELEGATION_PROMPTS_PER_THREAD,
   DELEGATION_WAIT_MAX_SECONDS, LIST_MACHINES_TOOL, READ_DELEGATION_TOOL, readDelegationInputSchema } from '../../shared/delegation'
 import { WORKING_THREADS_QUIET_MAX } from '../../shared/workingThreads'
+import { WATCHER_REPLY_BYTES_MAX } from '../../shared/watcher'
 import { NOT_ADMITTED, type DelegationService } from './delegation'
 import { ThreadToolServer, type ScopedThreadTools, type ThreadMcpServer, type ThreadToolCallContext, type ThreadToolDefinition, type ThreadToolResult } from './threadToolServer'
 
@@ -21,6 +22,11 @@ const NEW_THREAD_BY_ROLE = `For a new thread name the kind of work and leave out
 const WHERE = `A new thread starts on This computer. Name machine, from ${LIST_MACHINES_TOOL}, or os (windows, macos or linux) when the work needs one: a delegated thread starts only on This computer for now, so another machine is refused, and a system never falls back to another. The result's placement says where it started.`
 /** With Work across machines on (#1033), a new thread may start from this thread's branch, and say it is a test run. */
 const FROM_MY_BRANCH = 'Set from_my_branch to start a new thread in its own worktree on your branch, with your commits; uncommitted work refuses it. Set test_run too when the thread is there to run tests: your uncommitted work then goes as a snapshot, and nothing in your own working copy changes. The result\'s startedFrom says where it started and what the snapshot carried.'
+/**
+ * A check, one at a time per machine (#1312): what a delegating thread is told of the queue and of the reply it asks for.
+ * The reply is the contract; Sotto passes it on as the thread's words and reads no verdict from it.
+ */
+const CHECKS = `Set test_run for any thread that is there to run tests, which the user calls a check. One check runs at a time on a machine: a later one waits its turn, in the order asked, with its outcome working and the result's check saying how many are ahead, and its snapshot is taken when you ask, not when it starts. cancel_delegation takes a waiting check out of the queue. In a check's brief, ask its thread to reply first with the verdict, the counts and the failing lines, inside ${WATCHER_REPLY_BYTES_MAX / 1024} KiB, since a longer reply is cut there; the full log stays in its own history. Sotto passes that reply on as the thread's words and never reads pass or fail from it.`
 /** What starting from this thread's branch adds to a delegation (#1033), offered only on This computer while Work across machines is on. */
 const FROM_BRANCH_FIELDS = { from_my_branch: true, test_run: true } as const
 /** What Work across machines adds to a delegation (#1032, #1033), none of it offered while that is off. */
@@ -48,7 +54,7 @@ export function delegationToolDefinitions(roles: boolean, machines = false, plac
       roles ? NEW_THREAD_BY_ROLE : NEW_THREAD_BY_NAME,
       `It waits up to wait_seconds (at most ${DELEGATION_WAIT_MAX_SECONDS}) for the outcome and returns the reply once answered. When the wait ends first it returns working, and Sotto sends this thread a wake-up, with the reply once answered, when the outcome changes: end your turn or carry on, and do not poll.`,
       `Sotto starts any number of threads. When more than ${WORKING_THREADS_QUIET_MAX} threads are working on ${here} after a start, the result carries a warning: tell the user what it says. Each thread takes ${DELEGATION_PROMPTS_PER_THREAD} briefs per user message to this thread; retries and wake-ups renew nothing.`,
-      ...machines ? place === 'this-machine' ? [relay ? WHERE_HOST_RELAY : WHERE_HOST] : [WHERE, FROM_MY_BRANCH] : [],
+      ...machines ? place === 'this-machine' ? [relay ? WHERE_HOST_RELAY : WHERE_HOST] : [WHERE, FROM_MY_BRANCH, CHECKS] : [],
     ].join(' ') },
     { name: READ_DELEGATION_TOOL, inputSchema: schema(readDelegationInputSchema), description:
       `Read one of this thread's delegations: its outcome (working, background, answered, failed, stopped, paused, unknown, or refused when Sotto turned it down as it was asked for) and, once answered, the delegated thread's reply, labelled as its own words. With no delegation, list this thread's delegations, the ready models it can delegate to, ${roles ? 'what each kind of work starts on now, ' : ''}and the limits. Reading charges nothing.`,

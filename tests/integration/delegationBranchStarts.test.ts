@@ -50,7 +50,7 @@ it('refuses and records uncommitted work unless it is a test run, which starts f
   const status = git(f.folder, 'status', '--porcelain')
   const tested = f.ok(await f.start({ test_run: true })) as ReturnType<typeof f.ok> & { startedFrom?: unknown }
   expect(tested.startedFrom).toEqual({ hostId: f.control.hostId(), name: 'This computer', branch: 'feat/p', snapshot: { untracked: ['scratch.txt'], untrackedCount: 1 },
-    note: 'Started on This computer from feat/p with your uncommitted changes (1 untracked file).' })
+    note: expect.stringMatching(/^Started on This computer from feat\/p with your uncommitted changes as they were at \d{1,2}\D\d\d\D*? \(1 untracked file\)\.$/u) })
   const worktree = await f.worktreeOf(tested.delegation.thread)
   expect(lf(await readFile(join(worktree.path!, 'p.txt'), 'utf8'))).toBe('edited\n')
   expect(lf(await readFile(join(worktree.path!, 'scratch.txt'), 'utf8'))).toBe('scratch\n')
