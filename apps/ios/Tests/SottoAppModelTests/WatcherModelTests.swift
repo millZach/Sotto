@@ -820,7 +820,8 @@ final class WatcherModelTests: XCTestCase {
             await self.until { model.watcherSendingShown(self.laptop) == nil }
             shownMidSend.append(model.watcherSendingShown(self.laptop))
             lockedMidSend.append(model.watcherSending[self.laptop] != nil && !model.canSendToWatcher(self.laptop))
-            return try self.json(#"{"status":"ok","draftId":"\#(draft)","state":\#(self.page(Spec(workerCard: false, observedAt: "2026-10-11T09:0\#(step + 1):30.000Z")))}"#)
+            let answered = self.page(Spec(workerCard: false, observedAt: "2026-10-11T09:0\(step + 1):30.000Z"))
+            return try self.json(#"{"status":"ok","draftId":"\#(draft)","state":\#(answered)}"#)
         }
         let key = model.watcherDraftKey(laptop)
         model.drafts[key] = "Check the release notes"
