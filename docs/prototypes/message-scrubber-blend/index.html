@@ -1,0 +1,135 @@
+<!doctype html>
+<!-- Throwaway prototype. Question: how should the message scrubber's ticks sit beside Watcher's chat so they stop reading
+     as a dashed ruler? Loads the real messageScrubber.css (before.css, a copy) or a patched copy (a.css, b.css, c.css;
+     the diffs are variant-*.patch) over a mock Watcher pane in Citrine dark. ?v=before|a|b|c. Picked: (pending) -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Message scrubber blend</title>
+<link id="scrubber-css" rel="stylesheet" href="before.css">
+<style>
+  :root {
+    --theme-text: oklch(0.95 0.034764 96.302); --theme-muted-foreground: oklch(0.647022 0.041622 95.87);
+    --tt-canvas: oklch(0.181787 0.002007 106.597); --tt-text: var(--theme-text);
+    --tt-text-2: color-mix(in oklab, var(--theme-text) 55%, var(--theme-muted-foreground));
+    --tt-text-muted: color-mix(in oklab, var(--theme-muted-foreground) 85%, var(--theme-text));
+    --tt-border: oklch(0.341787 0 0); --tt-hairline: oklch(0.29 0 0); --tt-surface-elevated: oklch(0.231787 0 0);
+    --tt-card: oklch(0.231787 0 0); --tt-card-inset: var(--tt-canvas); --tt-focus-ring: oklch(0.861207 0.170546 96.512);
+    --tt-accent: oklch(0.861207 0.170546 96.512); --tt-shadow-color: rgb(0 0 0 / 73%); --tt-message: oklch(0.29 0.03 91.9);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--tt-canvas); color: var(--tt-text); font: 14px/1.55 Figtree, -apple-system, system-ui, sans-serif; overflow: hidden; }
+  .strip { height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid var(--tt-hairline); font-size: 13px; color: var(--tt-text-2); }
+  .strip b { color: var(--tt-text); font-weight: 600; }
+  .watcher-pane { position: relative; height: calc(100% - 40px); isolation: isolate; }
+  #sky { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; }
+  .transcript { position: absolute; top: 0; left: 0; right: 0; bottom: 120px; overflow: hidden; }
+  .column { position: absolute; left: 50%; width: 720px; margin-left: -360px; top: 0; padding: 0 24px; }
+  .transcript { text-shadow: 0 0 3px var(--tt-canvas), 0 0 7px var(--tt-canvas), 0 0 12px var(--tt-canvas); }
+  .msg { margin: 22px 0; }
+  .user { margin-left: auto; max-width: 78%; width: fit-content; padding: 10px 14px; border-radius: 12px; background: var(--tt-message); text-shadow: none; }
+  .who { color: var(--tt-text-2); font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+  .reply p { margin: 0 0 10px; color: var(--tt-text); }
+  .reply code { font: 12.5px ui-monospace, Menlo, monospace; padding: 1px 5px; border-radius: 4px; background: var(--tt-card-inset); text-shadow: none; }
+  .compose { position: absolute; left: 50%; width: 672px; margin-left: -336px; bottom: 24px; height: 84px; border-radius: 14px; padding: 14px 16px;
+    background: color-mix(in srgb, var(--tt-card) 88%, transparent); backdrop-filter: blur(14px); color: var(--tt-text-muted); font-size: 14px; }
+  /* Watcher's own remap of the scrubber's muted tier (nightScene.css). */
+  .watcher-pane .message-scrubber { --tt-text-muted: var(--tt-text-2); }
+</style>
+</head>
+<body>
+<div class="strip"><b>Watcher</b><span>·</span><span>sotto</span></div>
+<div class="watcher-pane">
+  <canvas id="sky"></canvas>
+  <div class="transcript" id="transcript">
+    <div class="column" id="column"></div>
+  </div>
+  <div class="compose">Ask Watcher…</div>
+</div>
+<script>
+const v = new URLSearchParams(location.search).get('v') || 'before'
+document.getElementById('scrubber-css').href = `${v}.css`
+
+const sent = [
+  ['9:02 AM', 'Look at why the Threads page jumps when a reply finishes streaming.'],
+  ['9:15 AM', 'Can you check whether the composer keeps its draft across a restart?'],
+  ['9:31 AM', 'The sidebar search misses threads whose title came from the branch name.'],
+  ['9:48 AM', 'Try the fix on the 820 by 560 window too.'],
+  ['10:06 AM', 'Open a pull request for the scroll fix, but hold the sidebar one.'],
+  ['10:22 AM', 'Why did Package (Windows) fail on the last run?'],
+  ['10:40 AM', 'Rerun it once; if it fails the same way, read the log for the signing step.'],
+  ['11:03 AM', 'Summarise what the three threads did this morning.'],
+  ['11:20 AM', 'The Claude thread is waiting on a question about the ADR number. Answer 0142.'],
+  ['11:36 AM', 'Did the Codex thread finish the settings migration?'],
+  ['11:52 AM', 'Ask it to add the new setting to the patch allow-list too.'],
+  ['12:10 PM', 'Good. Wake me when CI goes green on both.'],
+]
+const replies = [
+  'The page jumps because the transcript recomputes its anchor after the last token lands. Pinning the anchor to the newest user message keeps it still; the change is in <code>useStickyScroll.ts</code>.',
+  'It does. The draft is saved on every keystroke and comes back with the thread.',
+  'The search reads only the generated title. Branch-named titles are stored on the worktree record; I added it to the index.',
+  'At 820 by 560 the transcript keeps its place and nothing clips.',
+  'Opened #1611 for the scroll fix. The sidebar change stays on its branch.',
+  'Signing timed out after 10 minutes waiting on the timestamp server; nothing in the build itself failed.',
+  'The rerun passed. Signing took 41 seconds this time.',
+  'Codex migrated the settings, Claude drafted ADR-0142, and Grok profiled the sidebar search. Two are waiting on CI.',
+  'Answered 0142. The Claude thread is writing the ADR now.',
+  'Yes. The migration is merged into its branch and the unit tests for it pass.',
+  'Added. The toggle no longer snaps back on save.',
+  'I will tell you when both are green.',
+]
+const column = document.getElementById('column')
+column.innerHTML = sent.map(([, text], i) => `<div class="msg user" data-i="${i}">${text}</div>
+  <div class="msg reply"><div class="who">Watcher</div><p>${replies[i]}</p><p>${replies[(i + 3) % 12]}</p><p>${replies[(i + 7) % 12]}</p></div>`).join('')
+const transcript = document.getElementById('transcript')
+// Scroll so messages 9 and 10 sit on screen.
+transcript.scrollTop = column.querySelector('[data-i="8"]').offsetTop - 140
+
+// The night scene's stars: the text colour thinned, drawn in the margins, faint under the column (nightScenePainter.ts).
+const sky = document.getElementById('sky'), pane = sky.parentElement
+const dpr = devicePixelRatio, W = pane.clientWidth, H = pane.clientHeight
+sky.width = W * dpr; sky.height = H * dpr
+const ctx = sky.getContext('2d'); ctx.scale(dpr, dpr)
+const ink = getComputedStyle(document.body).color
+ctx.font = '13px ui-monospace, Menlo, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647
+const colLeft = W / 2 - 360, colRight = W / 2 + 360
+for (let y = 10; y < H; y += 18) for (let x = 5; x < W; x += 9) {
+  if (rnd() > 0.06) continue
+  const s = rnd(), inColumn = x > colLeft && x < colRight
+  ctx.globalAlpha = Math.min(inColumn ? 0.12 : 1, 0.15 + 0.6 * s * s)
+  ctx.fillStyle = s > 0.93 && !inColumn ? getComputedStyle(document.documentElement).getPropertyValue('--tt-accent') : ink
+  ctx.fillText(s > 0.85 ? '*' : s > 0.6 ? '+' : '·', x, y)
+}
+ctx.globalAlpha = 1
+
+// The scrubber, as MessageScrubber.tsx lays it out: a 44px lane against the column, ticks 9px apart, centred.
+const lane = 44, gap = 18, pitch = Math.min(9, transcript.clientHeight * 0.8 / (sent.length - 1))
+const height = transcript.clientHeight, first = height / 2 - pitch * (sent.length - 1) / 2
+const places = sent.map((_, i) => first + i * pitch)
+const nav = document.createElement('nav')
+nav.className = 'message-scrubber'
+nav.style.cssText = `--scrubber-left:${colLeft - lane + 24}px;--scrubber-lane:${lane}px;--scrubber-gap:${gap}px;--scrubber-hit:${Math.max(6, pitch)}px;bottom:120px`
+const inView = new Set([8, 9])
+nav.innerHTML = sent.map((_, i) => `<button type="button" class="message-scrubber__tick" data-index="${i}" style="top:${places[i]}px" ${inView.has(i) ? 'data-in-view' : ''} tabindex="-1"></button>`).join('')
+pane.appendChild(nav)
+const ticks = [...nav.children]
+let card = null
+nav.addEventListener('pointermove', e => {
+  const y = e.clientY - nav.getBoundingClientRect().top
+  let hot = 0; places.forEach((p, i) => { if (Math.abs(p - y) < Math.abs(places[hot] - y)) hot = i })
+  ticks.forEach((t, i) => { t.style.setProperty('--rise', Math.exp(-((places[i] - y) ** 2) / (2 * 16 * 16)).toFixed(3)); t.toggleAttribute('data-hot', i === hot) })
+  nav.setAttribute('data-active', '')
+  card?.remove()
+  card = document.createElement('div')
+  card.className = 'message-scrubber__card'
+  card.innerHTML = `<div class="message-scrubber__head"><b>You</b><span>${sent[hot][0]}</span><span>Message ${hot + 1} of ${sent.length}</span></div>
+    <p class="message-scrubber__said">${sent[hot][1]}</p><p class="message-scrubber__who">Watcher replied</p><p class="message-scrubber__then">${replies[hot]}</p>`
+  card.style.cssText = `left:${colLeft + 24 + 8}px;width:340px`
+  pane.appendChild(card)
+  card.style.top = `${Math.max(8, places[hot] - card.offsetHeight / 2)}px`
+})
+</script>
+</body>
+</html>

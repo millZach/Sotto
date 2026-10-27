@@ -1,0 +1,24 @@
+<!doctype html>
+<!-- Throwaway prototype review sheet for the message scrubber blend (see index.html). Close-ups of the lane, 2x captures at
+     1280x800, Citrine dark; full shots linked below each row. Picked: (pending) -->
+<html lang="en"><head><meta charset="utf-8"><title>Message scrubber blend: review</title>
+<style>
+  body { margin: 0; padding: 24px; background: #0c0c0b; color: #eee6cf; font: 14px/1.5 Figtree, system-ui, sans-serif; }
+  h2 { margin: 18px 0 4px; font-size: 15px; } p { margin: 0 0 8px; color: #a9a28d; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .crop { height: 360px; overflow: hidden; border: 1px solid #333; border-radius: 6px; position: relative; }
+  .crop img { position: absolute; width: 1280px; left: -260px; top: -220px; }
+  a { color: #d9c766; font-size: 12px; margin-right: 12px; }
+</style></head><body>
+<div id="rows"></div>
+<script>
+const rows = [
+  ['before', 'Before: today’s 10×2px square bars in the muted tier at 55%.'],
+  ['a', 'A: 3px round dots in the scene’s ink at rest, rising into bars; end ticks fade.'],
+  ['b', 'B: 6×1.5px rounded dashes in the scene’s ink, 8px from the column instead of 18px; end ticks fade.'],
+  ['c', 'C: today’s bars, rounded, in the scene’s ink, lane at 35%; end ticks fade.'],
+]
+document.getElementById('rows').innerHTML = rows.map(([v, text]) => `<h2>${v === 'before' ? 'Before' : 'Variant ' + v.toUpperCase()}</h2><p>${text}</p>
+  <div class="row"><div class="crop"><img src="${v}-rest.png" alt="${v} at rest"></div><div class="crop"><img src="${v}-hover.png" alt="${v} with the pointer on a tick"></div></div>
+  <a href="${v}-rest.png">Full shot at rest</a><a href="${v}-hover.png">Full shot, pointer on a tick</a>`).join('')
+</script></body></html>
