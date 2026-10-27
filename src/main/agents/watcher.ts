@@ -1348,6 +1348,11 @@ export class WatcherService implements WatcherControlHooks {
     if (!check) { check = { ticket }; this.heldChecks.set(ticket, check); this.options.checks!.join(ticket, () => this.checkTurn(ticket)) }
     return check
   }
+  /** Gives back a place a test run took as it was asked for, unless an admitted check here now holds it. */
+  private dropTicket(ticket: string): void {
+    const check = this.heldChecks.get(ticket)
+    if (check && check.operationId === undefined) this.leaveChecks(check)
+  }
   /** A check's operation, admitted: from now on the pass on every publish reads it. */
   private adoptCheck(check: WatcherCheck, operationId: string): void { check.operationId = operationId; this.checkOf.set(operationId, check) }
   /** Takes a check out of this machine's queue, so the next one takes its turn. */
@@ -3365,16 +3370,24 @@ export class WatcherService implements WatcherControlHooks {
         return await this.mutate(threadId, name, send, undefined, undefined, progress)
       }
       if (name === 'start_thread') {
-        const asked = parsed.data as WatcherToolInput<'start_thread'>, placed = await this.placeStart(asked)
-        // A start refused at admission never ran, so the move it would have made is forgotten with it.
-        try { return await this.mutate(threadId, name, placed?.input ?? asked, undefined, undefined, progress, placed) }
-        finally { if (placed?.input.fromMove) this.branchStartsPlaced.delete(placed.input.fromMove) }
+        const asked = parsed.data as WatcherToolInput<'start_thread'>
+        // A test run takes its place in this machine's queue as it is asked for, before it is placed and admitted, so a
+        // check asked later, Watcher's or a delegated one, never overtakes it (#1312). It gives the place back when it is
+        // placed on another machine, refused, or a retry; only an admitted check here keeps it.
+        const ticket = asked.testRun === true && this.options.checks && this.options.workerMachine ? this.joinChecks(randomUUID()).ticket : undefined
+        try {
+          const placed = await this.placeStart(asked)
+          if (ticket && (placed?.input.check !== true || placed.input.project.hostId !== this.hostId())) this.dropTicket(ticket)
+          // A start refused at admission never ran, so the move it would have made is forgotten with it.
+          try { return await this.mutate(threadId, name, placed?.input ?? asked, undefined, undefined, progress, placed, ticket) }
+          finally { if (placed?.input.fromMove) this.branchStartsPlaced.delete(placed.input.fromMove) }
+        } finally { if (ticket) this.dropTicket(ticket) }
       }
       return await this.mutate(threadId, name, parsed.data as WatcherToolInput<'stop_thread'>, undefined, undefined, progress)
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('PROVIDER_UNAVAILABLE', 'This Watcher call could not be completed. Check the operation receipt before trying again.', true) }
     finally { if (--this.invocations === 0) this.publish() }
   }
-  private async mutate(threadId: string, name: WatcherToolName, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, imported?: WatcherOperation, connectionGuard?: () => void, progress?: CallProgress, placed?: PlacedStart): Promise<unknown> {
+  private async mutate(threadId: string, name: WatcherToolName, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, imported?: WatcherOperation, connectionGuard?: () => void, progress?: CallProgress, placed?: PlacedStart, ticket?: string): Promise<unknown> {
     const admitted = await this.transaction(async () => {
       if (imported && this.record().remoteAbsences?.some(item => item.operationId === imported.id)) refuse('OPERATION_NOT_RECORDED', 'An exact read fenced this unrecorded operation. Nothing was sent.')
       if (imported && this.closed) refuse('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was sent. Reopen Sotto.')
@@ -3599,7 +3612,7 @@ export class WatcherService implements WatcherControlHooks {
       if (active) { const answer = await active; if (typeof answer !== 'object' || answer === null || !('warning' in answer)) return answer; const { warning: _warning, ...rest } = answer; void _warning; return rest }
       return this.operationResult(name, admitted.operation, input)
     }
-    const running = admitted.operation.target.hostId !== this.hostId() ? this.executeRemote(name, admitted.operation, input) : this.executeOperation(name, admitted.operation, input)
+    const running = admitted.operation.target.hostId !== this.hostId() ? this.executeRemote(name, admitted.operation, input) : this.executeOperation(name, admitted.operation, input, { ticket })
     this.active.set(admitted.operation.id, running)
     try { return await running } finally { this.active.delete(admitted.operation.id); this.dispatchRefusals.delete(admitted.operation.id); this.pruneRemoteGuards(); if (admitted.operation.target.hostId !== this.hostId() && this.record().operations.find(item => item.id === admitted.operation.id)?.deliveryState === 'uncertain') this.scheduleRemote(admitted.operation.target.hostId, true); this.publish() }
   }
