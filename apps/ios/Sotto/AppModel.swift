@@ -515,7 +515,7 @@ extension AppModel {
             switch reply {
             case .ok(let state, let results):
                 applyWatcher(state, from: hostID)
-                feedback = WatcherWords.stopped(results, titles: titles)
+                sayStopped(results, titles: titles)
             case .refused(let refusal):
                 feedback = refusal.message
             }
@@ -554,7 +554,7 @@ extension AppModel {
             // What it did, what the computer refused, or that the computer doesn't know it: settled either way.
             watcherStops[hostID] = nil
             switch receipt.watcherStop {
-            case .ok(let results)?: feedback = WatcherWords.stopped(results, titles: request.titles)
+            case .ok(let results)?: sayStopped(results, titles: request.titles)
             case .refused(let refusal)?: feedback = refusal.message
             case nil: feedback = Self.watcherStopUnconfirmed
             }
@@ -1075,6 +1075,7 @@ struct HeldDetail {
 /// Every paired computer, each with its own connection, session and state. A computer that can't be
 /// reached, or fails, never holds up the others. Everything that names a thread names its computer too.
 @MainActor final class AppModel: ObservableObject {
+    private static let answerSent = String(localized: "Answer sent.", comment: "Said once the computer confirms the user's answer to a request")
     private static let requestNoLongerWaiting = String(localized: "That request is no longer waiting.")
     private static let markersUnreadable = String(localized: "Saved unconfirmed actions could not be read. Check your threads before sending again. Nothing was resent.")
     private static func pairingWarning(_ count: Int) -> String {
@@ -1100,8 +1101,12 @@ struct HeldDetail {
     @Published private(set) var storageReady = false
     /// The computer being removed, while its pairing is revoked.
     @Published private(set) var removing: String?
-    /// What just happened on the tabs.
-    @Published var feedback: String? { didSet { feedbackOperations = [] } }
+    /// What just happened on the tabs. A problem stays until the user dismisses it; a confirmation passes (`confirm`).
+    @Published var feedback: String? { didSet { feedbackOperations = []; passing = nil; feedbackExpiry?.cancel() } }
+    /// Set while `feedback` only says a thing worked, so it leaves by itself and with the page; new for each confirmation.
+    @Published private(set) var passing: UUID?
+    private var passingShown: UUID?
+    private var feedbackExpiry: Task<Void, Never>?
     /// Answers whose own receipt the computer confirmed, as `host/thread/request`, so a Threads card can say Answered
     /// only for those. An answer whose request left without that receipt is not in here.
     @Published private(set) var confirmedAnswers: Set<String> = []
@@ -1597,7 +1602,7 @@ struct HeldDetail {
         fixtureShells[ref.hostID] = root
         update(ref.hostID) { $0.shell = next }
         confirmedAnswers.insert(ref.hostID + "/" + ref.threadID + "/" + request.id)
-        feedback = String(localized: "Answer sent.", comment: "Said once the computer confirms the user's answer to a request")
+        confirm(Self.answerSent)
     }
 
     // MARK: Watcher in the simulator journeys
@@ -1833,7 +1838,7 @@ struct HeldDetail {
         }
         if card.target.hostId == hostID, thread(card.target.ref) != nil { try? settleFixtureAnswer(card.request, in: card.target.ref) }
         confirmedAnswers.insert(hostID + "/" + card.target.threadId + "/" + card.request.id)
-        feedback = String(localized: "Answer sent.", comment: "Said once the computer confirms the user's answer to a request")
+        confirm(Self.answerSent)
     }
     private func fixtureWatcherStopPreview(_ hostID: String) -> WatcherStopPreview? {
         guard let page = watcherPage(hostID) else { return nil }
@@ -1864,7 +1869,7 @@ struct HeldDetail {
         }
         let results = (try? JSONDecoder().decode([WatcherStopResult.StoppedTarget].self,
                                                  from: JSONSerialization.data(withJSONObject: outcomes))) ?? []
-        feedback = WatcherWords.stopped(results, titles: titles)
+        sayStopped(results, titles: titles)
     }
     #endif
 
@@ -2427,7 +2432,7 @@ struct HeldDetail {
         gone.forEach { dispatchingOperations[$0] = nil; receiptFollowers[$0] = nil }
         largeRequests[hostID] = nil
         let words = outcome.words(name: saved.name, clientID: saved.pairing.clientId)
-        feedback = words
+        if case .confirmed = outcome { confirm(words) } else { feedback = words }
         // With nothing left paired the app goes back to the pairing steps, which show this instead.
         if rest.isEmpty { pairFeedback = words }
     }
@@ -3057,6 +3062,29 @@ struct HeldDetail {
     private func operationFeedback(_ words: String, operations: Set<String>) {
         feedback = words; feedbackOperations = operations
     }
+    /// Says a thing worked, as the desktop's toasts do: for five seconds once a page shows it (`confirmationShown`), or
+    /// until the user leaves the page or a newer message replaces it.
+    private func confirm(_ words: String) {
+        feedback = words; passing = UUID()
+    }
+    /// A banner shows confirmation `id`: the first one starts its five seconds and is told to announce it.
+    func confirmationShown(_ id: UUID) -> Bool {
+        guard passing == id, passingShown != id else { return false }
+        passingShown = id
+        feedbackExpiry = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard !Task.isCancelled, self?.passing == id else { return }
+            withAnimation(.easeOut(duration: 0.25)) { self?.feedback = nil }
+        }
+        return true
+    }
+    /// The user moved to another tab or page: a confirmation does not follow them there.
+    func pageLeft() { if passing != nil { feedback = nil } }
+    /// What Stop all did: a confirmation when every thread stopped, otherwise what still needs a look.
+    private func sayStopped(_ results: [WatcherStopResult.StoppedTarget], titles: [String: String]) {
+        let words = WatcherWords.stopped(results, titles: titles)
+        if !results.isEmpty, results.allSatisfy({ $0.status == "stopped" || $0.status == "requested" }) { confirm(words) } else { feedback = words }
+    }
     private func settle(_ item: PendingOperation, receipt: Receipt? = nil, shell: Shell?) throws {
         // An answer from a card in Watcher's page: its own receipt confirms it, and a card that left Watcher's page is no
         // longer waiting. The thread may not be in this iPhone's list at all, Watcher's own included.
@@ -3068,7 +3096,7 @@ struct HeldDetail {
             if confirmed, let request = item.requestID { confirmedAnswers.insert(item.hostID + "/" + item.threadID + "/" + request) }
             try forgetMarker(item.id)
             if feedback == nil || feedbackOperations.contains(item.id) {
-                feedback = confirmed ? String(localized: "Answer sent.", comment: "Said once the computer confirms the user's answer to a request") : Self.requestNoLongerWaiting
+                if confirmed { confirm(Self.answerSent) } else { feedback = Self.requestNoLongerWaiting }
             }
             return
         }
@@ -3097,7 +3125,7 @@ struct HeldDetail {
             if confirmed, let request = item.requestID { confirmedAnswers.insert(item.hostID + "/" + item.threadID + "/" + request) }
             try forgetMarker(item.id)
             if feedback == nil || feedbackOperations.contains(item.id) {
-                feedback = confirmed ? String(localized: "Answer sent.", comment: "Said once the computer confirms the user's answer to a request") : Self.requestNoLongerWaiting
+                if confirmed { confirm(Self.answerSent) } else { feedback = Self.requestNoLongerWaiting }
             }
         } else if delivery?.status == "failed" {
             try rejectOperation(item)
@@ -3139,7 +3167,7 @@ struct HeldDetail {
         }
     }
     func acknowledgeUnknown(_ id: String) {
-        do { try forgetMarker(id); feedback = String(localized: "Unconfirmed action dismissed. Nothing was resent.") }
+        do { try forgetMarker(id); confirm(String(localized: "Unconfirmed action dismissed. Nothing was resent.")) }
         catch { feedback = error.localizedDescription }
     }
 
