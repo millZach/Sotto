@@ -2165,6 +2165,7 @@ msgstr "This address belongs to a different host. Check the connection before co
 msgid "This address belongs to a different host. Nothing was saved. Check the connection before continuing."
 msgstr "This address belongs to a different host. Nothing was saved. Check the connection before continuing."
 
+#. Stands in for a branch name at the start of a sentence, when the branch is unknown.
 #: src/main/hosts/desktopHostRouter.ts
 msgid "This branch"
 msgstr "This branch"

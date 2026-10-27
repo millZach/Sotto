@@ -11,7 +11,7 @@ import { watcherRoomInputs } from '../agents/watcherRoomInput'
 import { visibleWatcherState, watcherThreadVisible, withoutThreads } from '../../shared/watcherVisibility'
 import { parsePublicProviderEntityId, providerIdSchema } from '../../shared/agents'
 import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts, WatcherRoomThreadInput } from '../../shared/watcherHost'
-import { BRING_BACK_INTERFACE_WORDS, hostCannotStageScreenshotsWords, inInterfaceLanguage, threadStartsUnsupportedWords, watcherDisabledWords } from '../../shared/interfaceWords'
+import { BRING_BACK_INTERFACE_WORDS, bringBackInInterfaceLanguage, hostCannotStageScreenshotsWords, inInterfaceLanguage, threadStartsUnsupportedWords, watcherDisabledWords } from '../../shared/interfaceWords'
 import { randomUUID } from 'node:crypto'
 import { isAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
 import { agentCommandSchema, isImageAttachment, defaultNewThreadModelId, defaultThreadModelId, enabledThreadProviders, MAX_DELIVERED_DRAFTS, HOST_DISCONNECTED_BEFORE_FILES, SCREENSHOT_WRONG_TYPE, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentHostSnapshot, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
@@ -1330,6 +1330,9 @@ export class DesktopHostRouter {
         : command.type === 'bring-changes-back' && connection.kind === 'remote' && connection.service.supportsBringBack !== true ? { error: BRING_BACK_INTERFACE_WORDS.unsupported() }
         : await (decisionId ? connection.service.command(command as AgentCommand, client, decisionId)
           : connection.service.command(command as AgentCommand, client))
+      // Bringing changes back's own refusals arrive in English from this computer's workspace or a host; they are said
+      // in the interface language here, and Git's words stay as Git wrote them.
+      if (result.error && command.type === 'bring-changes-back') result.error = bringBackInInterfaceLanguage(result.error)
       if (result.error && startsThread(command)) { refused = true; inPlace = this.refusal(connection, result.error) }
       else if (result.error) {
         refused = true
@@ -1433,7 +1436,7 @@ export class DesktopHostRouter {
     if (child.status === 'running' || child.requests.length > 0) return { error: t`Wait for this thread to finish its turn, then bring its changes back. Nothing changed.` }
     const moveId = randomUUID()
     const moved = await moves.forStart({ from: { hostId: connection.hostId, threadId: child.id }, to: { hostId: made.host, projectId: parent.projectId }, here, moveId, snapshot: false })
-    if (moved.type === 'refused') return { error: bringBackMoveRefused(moved, target, child.worktree?.git?.branch ?? child.worktree?.branch ?? t`This branch`) }
+    if (moved.type === 'refused') return { error: bringBackMoveRefused(moved, target, child.worktree?.git?.branch ?? child.worktree?.branch ?? t({ message: 'This branch', comment: 'Stands in for a branch name at the start of a sentence, when the branch is unknown.' })) }
     return { connection: entry, command: { type: 'bring-changes-back', threadId: parent.id, actionId: command.actionId,
       ...command.mergeCommit ? { mergeCommit: command.mergeCommit } : {}, away: { moveId, from: hostEntityKey(connection.hostId, child.id), target } } }
   }

@@ -7,6 +7,7 @@ import { HOST_BUSY, LEGACY_MANAGEMENT_UPDATE, MANAGEMENT_REMOVED } from './hostP
 import type { HostProviderJobCase } from './hostProviders'
 import { SIGN_IN_WORDS } from './opencodeSignIn'
 import type { EffortColor, GitMergeMethod } from './settings'
+import { BRING_BACK_FROM_DESKTOP, BRING_BACK_NO_TARGET, BRING_BACK_OFF, BRING_BACK_OTHER_DESKTOP, BRING_BACK_QUESTION_GONE, BRING_BACK_UNSUPPORTED } from './bringChangesBack'
 import { THREAD_STARTS_UNSUPPORTED } from './threadStarts'
 import type { WorkerRoleId } from './workerRoles'
 
@@ -137,18 +138,31 @@ export function threadStartsUnsupportedWords(): string {
  * them in English for the host.
  */
 export const BRING_BACK_INTERFACE_WORDS = {
-  /** `BRING_BACK_UNSUPPORTED`: a host too old to bring changes back, or one whose Owl answer leaves it off. */
   unsupported: (): string => t`This host can’t bring changes back yet, and nothing changed. Update Sotto on the host, then try again.`,
-  /** `BRING_BACK_OFF`: Work across machines is off on this desktop. */
   off: (): string => t`Bringing changes back is available in Sotto Owl, and nothing changed.`,
-  /** `BRING_BACK_NO_TARGET`: nothing to bring back to. */
   noTarget: (): string => t`This thread’s worktree wasn’t made from the branch of the thread it began from, or that thread is on another branch now, so there is nothing to bring back. Nothing changed.`,
-  /** `BRING_BACK_OTHER_DESKTOP`: another desktop started the worker. */
   otherDesktop: (): string => t`Sotto on another desktop started this thread, and only that desktop can bring its changes back. Bring them back from there. Nothing changed.`,
-  /** `bringBackNotConnected`: the parent's machine is not connected. */
+  questionGone: (): string => t`That question is out of date, so Sotto made no merge commit. Press Bring changes again to be asked again.`,
+  fromDesktop: (): string => t`This thread began from a thread on another machine, so its changes are brought back from Sotto on your desktop. Nothing changed.`,
   notConnected: (machine: string): string => t({ message: `${machine} isn’t connected, so nothing was brought back. Connect it, then try again. Nothing changed.`,
     comment: '{machine} is a machine’s name, such as forge, or “The machine it began on”.' }),
 } as const
+
+/**
+ * A refusal of bringing changes back as `bringChangesBack.ts` writes it in English, which main's own workspace and a
+ * host both send, in the interface language; Git's own words, and anything else, as they came.
+ */
+export function bringBackInInterfaceLanguage(sentence: string): string {
+  switch (sentence) {
+    case BRING_BACK_UNSUPPORTED: return BRING_BACK_INTERFACE_WORDS.unsupported()
+    case BRING_BACK_OFF: return BRING_BACK_INTERFACE_WORDS.off()
+    case BRING_BACK_NO_TARGET: return BRING_BACK_INTERFACE_WORDS.noTarget()
+    case BRING_BACK_OTHER_DESKTOP: return BRING_BACK_INTERFACE_WORDS.otherDesktop()
+    case BRING_BACK_QUESTION_GONE: return BRING_BACK_INTERFACE_WORDS.questionGone()
+    case BRING_BACK_FROM_DESKTOP: return BRING_BACK_INTERFACE_WORDS.fromDesktop()
+    default: return sentence
+  }
+}
 
 /** A host that cannot keep screenshots (`HOST_CANNOT_STAGE_SCREENSHOTS`). */
 export function hostCannotStageScreenshotsWords(): string {

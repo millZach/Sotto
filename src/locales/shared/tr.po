@@ -293,6 +293,10 @@ msgid "Start update"
 msgstr ""
 
 #: src/shared/interfaceWords.ts
+msgid "That question is out of date, so Sotto made no merge commit. Press Bring changes again to be asked again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
 msgid "The {source} sign-in did not finish, so nothing was saved. Open the sign-in page again to start over."
 msgstr ""
 
@@ -359,6 +363,10 @@ msgstr ""
 
 #: src/shared/interfaceWords.ts
 msgid "This screenshot’s content does not match its file type. Nothing was attached. Save it again as PNG, JPEG, GIF, or WebP, then attach it."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "This thread began from a thread on another machine, so its changes are brought back from Sotto on your desktop. Nothing changed."
 msgstr ""
 
 #: src/shared/interfaceWords.ts

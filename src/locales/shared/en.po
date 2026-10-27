@@ -293,6 +293,10 @@ msgid "Start update"
 msgstr "Start update"
 
 #: src/shared/interfaceWords.ts
+msgid "That question is out of date, so Sotto made no merge commit. Press Bring changes again to be asked again."
+msgstr "That question is out of date, so Sotto made no merge commit. Press Bring changes again to be asked again."
+
+#: src/shared/interfaceWords.ts
 msgid "The {source} sign-in did not finish, so nothing was saved. Open the sign-in page again to start over."
 msgstr "The {source} sign-in did not finish, so nothing was saved. Open the sign-in page again to start over."
 
@@ -360,6 +364,10 @@ msgstr "This host still has thread management running. Its history and drafts ar
 #: src/shared/interfaceWords.ts
 msgid "This screenshot’s content does not match its file type. Nothing was attached. Save it again as PNG, JPEG, GIF, or WebP, then attach it."
 msgstr "This screenshot’s content does not match its file type. Nothing was attached. Save it again as PNG, JPEG, GIF, or WebP, then attach it."
+
+#: src/shared/interfaceWords.ts
+msgid "This thread began from a thread on another machine, so its changes are brought back from Sotto on your desktop. Nothing changed."
+msgstr "This thread began from a thread on another machine, so its changes are brought back from Sotto on your desktop. Nothing changed."
 
 #: src/shared/interfaceWords.ts
 msgid "This thread’s worktree wasn’t made from the branch of the thread it began from, or that thread is on another branch now, so there is nothing to bring back. Nothing changed."
