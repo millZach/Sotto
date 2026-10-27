@@ -180,6 +180,8 @@ describe('the desktop side of the relay', () => {
   it('admits a start on This computer as its own delegation, for the asking thread by its host\'s key', async () => {
     const relay = new DesktopDelegationRelay(await folder(), { placement: placement(DESKTOP), localHostId: () => DESKTOP })
     await relay.load()
+    const threads: { id: string; delegatedBy?: string }[] = [{ id: 'thread-a' }]
+    relay.useHosts({ subscribeConnected: () => () => undefined, remoteConnections: () => [{ hostId: HOST, kind: 'remote', service: { shell: () => ({ host: { threads } }) } }] })
     const calls: { threadId: string; args: unknown; waitMs?: number | undefined }[] = []
     relay.useDelegation({ delegate: async (threadId, args, context) => { calls.push({ threadId, args, waitMs: context?.waitMs }); return { status: 'ok', delegation: { id: DELEGATION, outcome: 'working' } } },
       read: async () => ({ status: 'ok', delegation: { id: DELEGATION, outcome: 'answered' } }), cancel: async () => ({ status: 'ok' }) })
@@ -188,6 +190,18 @@ describe('the desktop side of the relay', () => {
     const key = `host:${HOST}:thread-a`
     expect(calls).toEqual([{ threadId: key, args: { work: 'code-review', brief: 'Review it.', retry_key: '55555555-5555-4555-8555-555555555555' }, waitMs: 3_000 }])
     expect(relay.caller(key)).toEqual({ id: key, projectId: 'local-project', runtimeMode: 'auto', levels: 0, rootUserMessageId: 'root-1' })
+    // Its depth is what this computer can prove from its own read of the host, never less than the host says (#1316 review).
+    threads.splice(0, 1, { id: 'thread-a', delegatedBy: 'parent-of-a' }, { id: 'parent-of-a' })
+    await relay.answer(HOST, ask())
+    expect(relay.caller(key)?.levels).toBe(1)
+    // A chain it cannot follow to the top counts as the deepest a delegating thread may be.
+    threads.splice(1, 1)
+    await relay.answer(HOST, ask())
+    expect(relay.caller(key)?.levels).toBe(1)
+    threads.length = 0
+    await relay.answer(HOST, ask())
+    expect(relay.caller(key)?.levels).toBe(1)
+    threads.push({ id: 'thread-a' })
     // A read by the host's relay ID finds what it made; one it never recorded cannot be proved.
     expect(await relay.answer(HOST, { type: 'read', threadId: 'thread-a', relayId: '55555555-5555-4555-8555-555555555555' })).toMatchObject({ delegation: { outcome: 'answered' } })
     expect(await relay.answer(HOST, { type: 'read', threadId: 'thread-a', relayId: '66666666-6666-4666-8666-666666666666' })).toMatchObject({ status: 'refused', code: 'UNKNOWN_DELEGATION' })

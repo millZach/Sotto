@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { agentRuntimeModeSchema } from '../../shared/agents'
 import { hostEntityKey, parseHostEntityKey } from '../../shared/clientIdentity'
-import type { DelegationNews } from '../../shared/delegation'
+import { DELEGATION_LEVELS_MAX, type DelegationNews } from '../../shared/delegation'
 import { delegationRelayAskSchema, type DelegationRelayAsk } from '../../shared/delegationRelay'
 import type { WatcherRefusal } from '../../shared/watcher'
 import type { WorkerMachineSetting } from '../../shared/workerMachine'
@@ -15,6 +15,8 @@ export interface RelayHostConnection {
   readonly hostId: string
   readonly kind: 'local' | 'remote'
   readonly service: {
+    /** The host's threads as this computer last read them, with each one's `delegatedBy`: what proves a relayed caller's depth. */
+    shell?(): { readonly host: { readonly threads: readonly { readonly id: string; readonly delegatedBy?: string | undefined }[] } }
     readonly supportsDelegationRelay?: boolean | undefined
     subscribeDelegationRelay?(listener: (askId: string, ask: DelegationRelayAsk) => void): () => void
     answerDelegationRelay?(askId: string, answer: unknown): Promise<void>
@@ -145,7 +147,7 @@ export class DesktopDelegationRelay {
     if (placed.hostId === hostId) return { status: 'refused', code: 'MACHINE_UNAVAILABLE', message: RELAY_BACK_HOME(from) }
     if (placed.hostId !== this.options.localHostId()) return { status: 'refused', code: 'MACHINE_UNAVAILABLE', message: RELAY_THIS_COMPUTER_ONLY(placed.receipt.name, from) }
     this.callers.delete(key)
-    this.callers.set(key, { id: key, projectId: placed.projectId, runtimeMode: ask.runtimeMode, levels: ask.levels, rootUserMessageId: ask.rootUserMessageId,
+    this.callers.set(key, { id: key, projectId: placed.projectId, runtimeMode: ask.runtimeMode, levels: this.provedLevels(hostId, ask.threadId, ask.levels), rootUserMessageId: ask.rootUserMessageId,
       ...(ask.callerMessageId ? { callerMessageId: ask.callerMessageId } : {}) })
     this.asks.push({ key, relayId: ask.relayId })
     // Saved before the start, so a read after a lost answer finds the ask, and an ask never recorded reads as unproved.
@@ -155,6 +157,27 @@ export class DesktopDelegationRelay {
     const made = isObject(result) && isObject(result.delegation) && typeof result.delegation.id === 'string' ? result.delegation.id : undefined
     if (made) { const saved = this.asks.findLast(item => item.key === key && item.relayId === ask.relayId); if (saved) saved.delegation = made; await this.save().catch(() => undefined) }
     return isObject(result) && result.status === 'ok' ? { ...result, placement: { ...placed.receipt, awayFromDefault: false } } : result
+  }
+  /**
+   * How many threads delegated above the asking one, as far as this computer can prove from its own read of that host's
+   * threads, and never fewer than the host says. A chain this computer cannot follow to its top counts as the deepest a
+   * thread that may still delegate can be, so a host that understates its depth gains no generation (#1316 review).
+   */
+  private provedLevels(hostId: string, threadId: string, claimed: number): number {
+    const deepest = DELEGATION_LEVELS_MAX - 1
+    const connection = [...this.source?.remoteConnections() ?? []].find(item => item.hostId === hostId)
+    let threads: readonly { readonly id: string; readonly delegatedBy?: string | undefined }[] | undefined
+    try { threads = connection?.service.shell?.().host.threads } catch { threads = undefined }
+    if (!threads) return deepest
+    let at = threads.find(thread => thread.id === threadId), level = 0
+    if (!at) return deepest
+    while (at.delegatedBy !== undefined) {
+      if (++level >= DELEGATION_LEVELS_MAX) return level
+      const above: string = at.delegatedBy
+      at = threads.find(thread => thread.id === above)
+      if (!at) return deepest
+    }
+    return Math.max(level, claimed)
   }
   private save(): Promise<void> {
     if (this.callers.size > CALLERS_MAX) for (const key of [...this.callers.keys()].slice(0, this.callers.size - CALLERS_MAX)) this.callers.delete(key)
