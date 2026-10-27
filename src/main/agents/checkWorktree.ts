@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { access, constants, readFile, writeFile } from 'node:fs/promises'
+import { access, constants, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { findCli, withCliPath } from './cliLookup'
 import { launchProcess, runToExit } from './gitLauncher'
@@ -125,4 +125,23 @@ export const npmCi: PackageInstaller = async projectFolder => {
     child.on('error', () => finish('failed'))
     child.on('close', code => finish(code === 0 ? 'installed' : 'failed'))
   })
+}
+
+/**
+ * Prepares a check's packages in its project folder, whichever worktree it got (#1312): nothing when it has no lockfile or
+ * `node_modules` was installed from this one. Otherwise the record of what `node_modules` was installed from is removed
+ * first, before anything changes it, so an install that stops partway never leaves the old record behind; then the
+ * install runs, and the record is written only when it succeeded. A record that cannot be removed is not trusted to be
+ * replaced, so nothing is installed and the install counts as failed. `installing` is told just before the install starts.
+ */
+export async function preparePackages(projectFolder: string, install: PackageInstaller, installing: () => void): Promise<'none' | 'installed' | 'failed'> {
+  const needed = await installNeeded(projectFolder)
+  if (!needed) return 'none'
+  try { await rm(join(projectFolder, 'node_modules', CHECK_INSTALLED_FROM), { force: true }) }
+  catch { console.warn('check-install-record-stuck'); return 'failed' }
+  installing()
+  const outcome = await install(projectFolder).catch(() => 'failed' as const)
+  if (outcome !== 'installed') { console.warn('check-install-failed'); return 'failed' }
+  try { await recordInstalled(projectFolder, needed.hash) } catch { return 'failed' }
+  return 'installed'
 }

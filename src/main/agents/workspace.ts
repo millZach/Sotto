@@ -46,7 +46,7 @@ import { resolveModel } from '../../shared/modelCatalog'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
 import { isThreadArchived, isThreadSettled, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { delegatedThreadsBelow } from '../../shared/delegation'
-import { installNeeded, npmCi, recordInstalled, type PackageInstaller } from './checkWorktree'
+import { npmCi, preparePackages, type PackageInstaller } from './checkWorktree'
 import { checkoutIdentity, existingWorkingDirectory, movedBranchRef, runWorktreeGit, ThreadWorktrees } from './threadWorktrees'
 import { claudeSkillFolder, claudeSkillPath } from './claudeSkills'
 import { providerTakesNoSkills } from './providerSwitch'
@@ -2168,15 +2168,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private async checkPackages(threadId: string, metadata: AgentWorktree, folder: string): Promise<AgentWorktree> {
     const install = this.checkInstaller
     if (!install || !metadata.check) return metadata
-    let needed: Awaited<ReturnType<typeof installNeeded>>
-    try { needed = await installNeeded(folder) } catch { return metadata }
-    if (!needed) return metadata
-    const running = this.threadById(threadId)
-    if (running) { this.touched(running).worktree = { ...metadata, status: 'pending', check: { install: 'running' } }; this.publish() }
-    const outcome = await install(folder).catch(() => 'failed' as const)
-    if (outcome === 'installed') await recordInstalled(folder, needed.hash).catch(() => undefined)
-    else console.warn('check-install-failed')
-    return { ...metadata, check: outcome === 'installed' ? {} : { install: 'failed' } }
+    const outcome = await preparePackages(folder, install, () => {
+      const running = this.threadById(threadId)
+      if (running) { this.touched(running).worktree = { ...metadata, status: 'pending', check: { install: 'running' } }; this.publish() }
+    }).catch(() => 'failed' as const)
+    return outcome === 'none' ? metadata : { ...metadata, check: outcome === 'installed' ? {} : { install: 'failed' } }
   }
   /**
    * The check worktree's checkout reservation (ADR-0027's checkout guard), taken as a Git action takes it: the mutation
