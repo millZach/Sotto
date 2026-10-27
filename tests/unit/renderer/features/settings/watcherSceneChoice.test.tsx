@@ -69,7 +69,7 @@ describe('Settings → Appearance → Watcher scene (ADR-0148)', () => {
     expect(radio(/Desert, in use$/)).toHaveFocus()
     await user.keyboard('{Home}')
     expect(radio(/Night wood, in use$/)).toHaveFocus()
-    expect(onSave.mock.calls.map(([patch]) => patch)).toEqual([
+    expect((onSave.mock.calls as unknown as Array<[unknown]>).map(([patch]) => patch)).toEqual([
       { watcherScene: 'harbour' }, { watcherScene: 'desert' }, { watcherScene: 'night-wood' }, { watcherScene: 'desert' }, { watcherScene: 'night-wood' },
     ])
     // Tab leaves the group in one step.
