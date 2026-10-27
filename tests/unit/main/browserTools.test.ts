@@ -115,7 +115,7 @@ async function browserFixture(withWindow = false, gone: ReadonlySet<string> = ne
   cleanup.push(() => rm(directory, { recursive: true, force: true }))
   const files = new FilesService({ resolveBinding: threadId => gone.has(threadId) ? null : ({ threadId, projectId: 'p', workingDirectory: directory }), copyPath: vi.fn(), reveal: vi.fn() })
   const emit = vi.fn(), attached = new Set<WebContentsView>()
-  const window = Object.assign(new EventEmitter(), { isDestroyed: () => false, getContentSize: () => [1200, 800], webContents: Object.assign(new EventEmitter(), { getZoomFactor: () => 1, focus: vi.fn() }), contentView: { addChildView: (view: WebContentsView) => attached.add(view), removeChildView: (view: WebContentsView) => attached.delete(view) } }) as unknown as BrowserWindow
+  const window = Object.assign(new EventEmitter(), { isDestroyed: () => false, isVisible: vi.fn(() => true), isMinimized: vi.fn(() => false), getContentSize: () => [1200, 800], webContents: Object.assign(new EventEmitter(), { getZoomFactor: () => 1, focus: vi.fn() }), contentView: { addChildView: (view: WebContentsView) => attached.add(view), removeChildView: (view: WebContentsView) => attached.delete(view) } }) as unknown as BrowserWindow
   const service = new BrowserService({ files, getWindow: () => withWindow ? window : null, emit, openExternal: vi.fn(), destination: async () => 'embedded', byDefault, pointAtSomething: true })
   cleanup.push(async () => service.dispose())
   const owner = unwrap(await service.list({ threadId: 'a' })).workspace
@@ -833,6 +833,25 @@ describe('point at something (ADR-0154)', () => {
     unwrap(await service.point({ ...target, on: false }))
     checked.resolve()
     expect(unwrap(await on)).toEqual({ pointing: false })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(inspectModes(view)).not.toContain('searchForNode')
+  })
+
+  it('makes a start still being checked stale when the window is minimized, and starts nothing on a hidden window', async () => {
+    const { service, target, view, files, window } = await browserFixture(true)
+    unwrap(await service.mount({ ...target, bounds }))
+    const real = files.resolveWorkspace.bind(files)
+    const checked = deferred<void>()
+    vi.spyOn(files, 'resolveWorkspace').mockImplementationOnce(async (...args) => { await checked.promise; return real(...args) })
+    const on = service.point({ ...target, on: true, color })
+    window.emit('minimize')
+    checked.resolve()
+    expect(unwrap(await on)).toEqual({ pointing: false })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(inspectModes(view)).not.toContain('searchForNode')
+    // A window already hidden when the start comes in: the overlay never comes on.
+    vi.mocked(window.isVisible).mockReturnValue(false)
+    unwrap(await service.point({ ...target, on: true, color }))
     await new Promise(resolve => setTimeout(resolve, 10))
     expect(inspectModes(view)).not.toContain('searchForNode')
   })

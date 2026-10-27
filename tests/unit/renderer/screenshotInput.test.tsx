@@ -1,4 +1,6 @@
 import { deferred } from '../../fixtures/deferred'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import React, { useState } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -52,6 +54,18 @@ describe('screenshot attachment input', () => {
     expect(chip.textContent).not.toContain('#sign-in')
     fireEvent.click(screen.getByRole('button', { name: 'Remove button · Sign in' }))
     expect(screen.queryByText('Match the header')).not.toBeInTheDocument()
+  })
+  it('puts a scaled-down picture\'s comment and its Resized line on lines of their own in the short-window layout (ADR-0154)', () => {
+    const resized: AgentAttachmentHandle = { ...attached('pointed', 100), name: 'button · Sign in', dimensions: { original: { width: 3840, height: 2160 }, sent: { width: 2576, height: 1449 } },
+      browserFeedback: { label: 'button · Sign in', comment: 'Match the header', context: 'Selector: #sign-in' } }
+    render(<ScreenshotInput target="workshop" attachments={[resized]} onChange={() => undefined} disabled={false} supported><textarea aria-label="Prompt" /></ScreenshotInput>)
+    const chip = screen.getByText('button · Sign in').closest('figure')!
+    const note = chip.querySelector('.screenshot-previews__note')!, notice = chip.querySelector('.screenshot-previews__resized')!
+    // The comment comes first, so the stylesheet's sibling rule moves the Resized line to the row under it.
+    expect(note.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const css = readFileSync(join(process.cwd(), 'src/renderer/src/agents/threads.css'), 'utf8')
+    expect(css).toContain('.threads-view .thread-workspace__compose .screenshot-previews__note ~ .screenshot-previews__resized { grid-row: 3; }')
+    expect(css).toContain('figure:has(.screenshot-previews__resized):has(.screenshot-previews__note) img { grid-row: 1 / span 3; }')
   })
   it('accepts pasted screenshot files without inserting clipboard text', async () => {
     render(<Harness />)

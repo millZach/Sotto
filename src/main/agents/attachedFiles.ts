@@ -145,18 +145,45 @@ export function carriesAttachedFiles(attachments: readonly { readonly mimeType: 
   return attachments?.some(attachment => !isImageAttachment(attachment.mimeType) || attachment.pointed === true) ?? false
 }
 
+/** A message's recorded attachments, as far as reading its notes back needs them. */
+type RecordedAttachments = readonly { readonly mimeType: string; readonly pointed?: true | undefined }[]
+/** The last block at the end of a text, a files note or a feedback block, with the one separator before it. */
+const LAST_BLOCK = new RegExp(`(?:\\n\\n|\\n)?(?:${NOTE_BODY}|${FEEDBACK_BODY})\\s*$`, 'u')
+
 /**
- * A user message read back from a provider's own history, and the origin it matches. The note comes off only when the
- * origin the text then matches, by message ID or by digest as the adapter's `match` decides, recorded an attached file,
- * since only then did Sotto put it there. Any other text, one the user typed in the note's shape included, is shown and
- * matched as it is.
+ * The exact suffix Sotto appended to a message whose record holds `attachments`, as `deliverAttachments` writes it:
+ * one files note when a file was attached, then one feedback block for each Point at something picture, in that
+ * order. Null when it appended nothing.
  */
-export function readBackUserText<T extends { readonly attachments?: readonly { readonly mimeType: string }[] | undefined }>(
+function appendedNotes(attachments: RecordedAttachments): RegExp | null {
+  const blocks = [...(attachments.some(attachment => !isImageAttachment(attachment.mimeType)) ? [NOTE_BODY] : []),
+    ...attachments.filter(attachment => attachment.pointed === true).map(() => FEEDBACK_BODY)]
+  return blocks.length ? new RegExp(`(?:\\n\\n|\\n)?${blocks.join('\\n\\n')}\\s*$`, 'u') : null
+}
+
+/** Text without exactly the blocks Sotto appended for a message whose record holds `attachments`, and nothing more. */
+export function stripAppendedNotes(text: string, attachments: RecordedAttachments | undefined): string {
+  const pattern = appendedNotes(attachments ?? [])
+  return pattern ? text.replace(pattern, '') : text
+}
+
+/**
+ * A user message read back from a provider's own history, and the origin it matches. Notes come off only when the
+ * origin the text then matches, by message ID or by digest as the adapter's `match` decides, recorded an attached file
+ * or a Point at something picture, since only then did Sotto put them there, and only the blocks Sotto put there for
+ * that message: one files note when a file was attached and one feedback block per picture. Blocks are taken off the
+ * end one at a time, and the text is accepted only where it is exactly what is left once that suffix is off, so a block
+ * the user wrote themselves, in the note's shape or not, is shown and matched as it is.
+ */
+export function readBackUserText<T extends { readonly attachments?: RecordedAttachments | undefined }>(
   text: string, match: (text: string) => T | undefined): { readonly text: string; readonly origin: T | undefined } {
-  const words = stripAttachedFilesNote(text)
-  if (words !== text) {
-    const origin = match(words)
-    if (origin && carriesAttachedFiles(origin.attachments)) return { text: words, origin }
+  let rest = text
+  for (;;) {
+    const shorter = rest.replace(LAST_BLOCK, '')
+    if (shorter === rest) break
+    rest = shorter
+    const origin = match(rest)
+    if (origin && carriesAttachedFiles(origin.attachments) && stripAppendedNotes(text, origin.attachments) === rest) return { text: rest, origin }
   }
   return { text, origin: match(text) }
 }

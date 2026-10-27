@@ -28,7 +28,7 @@ Before Zach's rule, each test for a review fix was run with its fix undone and f
 ## Not checked here
 
 - The spec after the review fixes. Of seven runs with the fixes in, one passed end to end. In at least one, logged, pointing ended as `hidden` during the hover shots, before the click (the capture shows and raises the window, and a window hidden or minimized now ends pointing); two more failed the same way unlogged, one native capture was refused, one click timed out, and one failed without a recorded reason. The laptop was in use meanwhile. The spec now points again if a capture ended it. Whether the `hidden` end came from a minimize, a hide or something else was not found.
-- Sending: the `<sotto-browser-feedback>` block is checked in unit tests of `deliverAttachments` only, not through a provider in the running app.
+- Sending: the `<sotto-browser-feedback>` block is checked in unit tests only: the coordinator handing the feedback across to the provider adapter (`tests/unit/main/attachedFileStaging.test.ts`), `deliverAttachments` writing it, and reading back taking off only the blocks Sotto appended (`tests/unit/main/attachedFiles.test.ts`). It was not seen through a provider in the running app. A second review (after 4ef03b04a) found the coordinator dropped the feedback at that boundary; the fix and its tests in the commit after 4f6a584c5 have not been run on this laptop.
 
 - The outline drawn into the picture the agent receives. The renderer draws it on a canvas with the accent; the composer's thumbnail is too small to show it, and no capture opened the full picture.
 - A screen reader's reading of the line and the comment.

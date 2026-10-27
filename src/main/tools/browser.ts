@@ -356,8 +356,9 @@ export class BrowserService extends ToolOperations {
     this.desiredPageId[slot] = request.pageId
     this.setBounds(record, window, request.bounds)
     const detach = (): void => this.detach()
-    // A hidden or minimized window shows no page, and the window's own frame loop stops while it is hidden.
-    const hidden = (): void => this.endPoint(record, 'hidden')
+    // A hidden or minimized window shows no page, and the window's own frame loop stops while it is hidden. A start
+    // still being checked is made stale too, so it cannot finish on the hidden window.
+    const hidden = (): void => { this.pointRequests.set(record.page.id, ++this.pointSessions); this.endPoint(record, 'hidden') }
     // Detach on host reload/crash so native content cannot obscure a recovered app screen.
     window.webContents.on('did-start-loading', detach)
     window.webContents.on('render-process-gone', detach)
@@ -649,6 +650,9 @@ export class BrowserService extends ToolOperations {
   private startPoint(record: PageRecord): void {
     const point = record.point
     if (!point || point.live || !this.isMounted(record)) return
+    // A window hidden or minimized before the page was shown in it shows no page either.
+    const shown = this.mounted.get(slotOf(record))
+    if (!shown || shown.window.isDestroyed() || !shown.window.isVisible() || shown.window.isMinimized()) { this.endPoint(record, 'hidden'); return }
     point.live = true
     const current = (): boolean => record.point === point
     void record.automation.point(point.color, {

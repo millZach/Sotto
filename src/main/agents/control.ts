@@ -2156,10 +2156,14 @@ export class AgentControl {
     if (this.attachmentPreviews.contentCleanupBlocked()) return
     await this.attachments.sweep(() => this.ownedAttachments(), undefined, previewed)
   }
-  /** A staged image as the adapter receives it: the handle, and its bytes read from the store only when asked. */
+  /**
+   * A staged image as the adapter receives it: the handle, and its bytes read from the store only when asked. Point at
+   * something's feedback goes with it, since delivery writes it for the provider and marks the message's record
+   * (ADR-0154).
+   */
   private promptImage(handle: AgentAttachmentHandle): PromptImage {
-    const { id, name, mimeType, sizeBytes, digest } = handle
-    return { id, name, mimeType, sizeBytes, digest, read: async () => {
+    const { id, name, mimeType, sizeBytes, digest, browserFeedback } = handle
+    return { id, name, mimeType, sizeBytes, digest, ...(browserFeedback ? { browserFeedback } : {}), read: async () => {
       const bytes = await this.attachments.read(digest)
       if (!bytes) throw new Error(this.attachments.missing)
       return bytes
