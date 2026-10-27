@@ -9,6 +9,8 @@
  */
 export class CheckQueue {
   private readonly entries: { readonly id: string; readonly start: () => void }[] = []
+  /** Ends the running check's turn once it has held it for CHECK_TURN_CEILING_MS. */
+  private ceiling: ReturnType<typeof setTimeout> | undefined
 
   /**
    * `machine` is the machine's name as the words for the model give it, such as "This computer", or how to read it when
@@ -24,6 +26,7 @@ export class CheckQueue {
    */
   join(id: string, start: () => void): 'running' | 'waiting' {
     if (!this.entries.some(entry => entry.id === id)) this.entries.push({ id, start })
+    if (this.entries.length === 1) this.watchTurn()
     return this.entries[0]!.id === id ? 'running' : 'waiting'
   }
   /**
@@ -34,8 +37,21 @@ export class CheckQueue {
     const at = this.entries.findIndex(entry => entry.id === id)
     if (at === -1) return
     this.entries.splice(at, 1)
-    const next = at === 0 ? this.entries[0] : undefined
+    if (at !== 0) return
+    this.watchTurn()
+    const next = this.entries[0]
     if (next) queueMicrotask(() => { if (this.entries[0] === next) next.start() })
+  }
+  /**
+   * Starts the running check's ceiling (CHECK_TURN_CEILING_MS), so one whose outcome never leaves `working`, as a hung
+   * provider's would, gives the machine back to the checks behind it. Its thread runs on; it only stops holding the queue.
+   */
+  private watchTurn(): void {
+    clearTimeout(this.ceiling); this.ceiling = undefined
+    const running = this.entries[0]
+    if (!running) return
+    this.ceiling = setTimeout(() => { if (this.entries[0] === running) this.leave(running.id) }, CHECK_TURN_CEILING_MS)
+    this.ceiling.unref?.()
   }
   /** How many checks are ahead of this one, the running one included; undefined when it is not in the queue. */
   ahead(id: string): number | undefined {
@@ -54,6 +70,13 @@ export class CheckQueue {
  * is seen to end or the outcome is released after its thread sits idle (#1263).
  */
 export const CHECK_HOLDS_THROUGH_BACKGROUND = true
+
+/**
+ * The longest one check holds its machine's place, from when its turn came, however its outcome reads: a check whose turn
+ * never ends, such as one on a hung provider, would otherwise keep every check behind it waiting, Watcher's and delegated
+ * alike. Generous, since the checks it bounds are whole test suites. Its value is not settled (PR #1647).
+ */
+export const CHECK_TURN_CEILING_MS = 2 * 60 * 60 * 1000
 
 /** How a delegating thread takes a waiting check out of the queue, as its waiting words end. */
 export const DELEGATION_CHECK_STOP = 'cancel_delegation takes it out of the queue.'

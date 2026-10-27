@@ -1,7 +1,7 @@
 // @vitest-environment node
 // #1312: a machine runs one check at a time, and the rest wait their turn in the order they were asked for.
 import { describe, expect, it, vi } from 'vitest'
-import { checkWaitingWords, CheckQueue } from '../../../src/main/agents/checkQueue'
+import { CHECK_TURN_CEILING_MS, checkWaitingWords, CheckQueue } from '../../../src/main/agents/checkQueue'
 
 const settle = () => new Promise<void>(resolve => queueMicrotask(resolve))
 
@@ -48,6 +48,29 @@ describe('CheckQueue', () => {
     await settle()
     expect(b).not.toHaveBeenCalled()
     expect(queue.ids()).toEqual([])
+  })
+
+  it('gives the machine to the next check once the running one has held it past the ceiling, whatever its outcome reads', async () => {
+    vi.useFakeTimers()
+    try {
+      const queue = new CheckQueue('forge')
+      const b = vi.fn(), c = vi.fn()
+      queue.join('a', vi.fn()); queue.join('b', b); queue.join('c', c)
+      await vi.advanceTimersByTimeAsync(CHECK_TURN_CEILING_MS - 1)
+      expect(b).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(b).toHaveBeenCalledTimes(1)
+      expect(queue.ids()).toEqual(['b', 'c'])
+      // The ceiling counts from each check's own turn, and the owner leaving later changes nothing.
+      queue.leave('a')
+      await vi.advanceTimersByTimeAsync(CHECK_TURN_CEILING_MS - 1)
+      expect(c).not.toHaveBeenCalled()
+      queue.leave('b')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(c).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(CHECK_TURN_CEILING_MS)
+      expect(queue.ids()).toEqual([])
+    } finally { vi.useRealTimers() }
   })
 
   it('says how many checks are ahead, for the model that asked', () => {
