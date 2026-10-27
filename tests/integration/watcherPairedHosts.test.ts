@@ -2371,12 +2371,14 @@ it('keeps the branch a stopped check waiting on a paired host would have started
   await writeFile(join(f.local.path, 'new.txt'), 'new\n')
   vi.spyOn(f.socket, 'supportsWatcherCheckQueue', 'get').mockReturnValue(true)
   expect(await f.watcher.invoke(f.id, 'start_thread', { ...f.start(), title: 'Synthetic first remote check', testRun: true })).toMatchObject({ status: 'ok' })
+  const refs = async () => (await git('git', ['-C', f.project.path, 'for-each-ref', '--format=%(refname)', 'refs/sotto'])).stdout.trim()
+  const before = new Set((await refs()).split('\n'))
   const waiting = watcherToolSchemas.start_thread.output.parse(await f.watcher.invoke(f.id, 'start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId,
     title: 'Synthetic waiting remote check', workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread, testRun: true }))
   expect(waiting).toMatchObject({ status: 'ok', check: { ahead: 1 } })
-  const refs = async () => (await git('git', ['-C', f.project.path, 'for-each-ref', 'refs/sotto'])).stdout.trim()
-  const landed = await refs()
-  expect(landed).not.toBe('')
+  // The waiting check's own ref. The first check's goes on its own once its check worktree has the commit (#1312, third part).
+  const landed = (await refs()).split('\n').filter(ref => ref && !before.has(ref))
+  expect(landed).toHaveLength(1)
   // The host cannot be read when the user stops the request: this desktop records the stop, and the host has not heard it.
   const read = vi.spyOn(f.socket, 'watcherRead').mockRejectedValue(new Error('synthetic lost read'))
   const forget = vi.spyOn(DesktopBranchMoves.prototype, 'forget')
@@ -2384,7 +2386,7 @@ it('keeps the branch a stopped check waiting on a paired host would have started
   await vi.waitFor(() => expect(f.watcher.outcomeOf(f.control.watcherRecord().operations.find(item => item.id === waiting.receipt!.operationId)!)).toBe('stopped'))
   await vi.waitFor(() => expect(read).toHaveBeenCalled())
   expect(forget).not.toHaveBeenCalled()
-  expect(await refs()).toBe(landed)
+  expect((await refs()).split('\n')).toContain(landed[0])
   // Once the host is read again it hears the stop and fails the start there, and only then does the branch go.
   read.mockRestore()
   await expect.poll(refs, { timeout: 10_000 }).toBe('')
