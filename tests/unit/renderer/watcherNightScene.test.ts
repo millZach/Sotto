@@ -258,6 +258,29 @@ describe('Watcher’s owl', () => {
     expect(fold.spread).toBeLessThan(0.95)
   })
 
+  it('never turns back or passes the perch, on every flight it can make, at every size with trees', () => {
+    const trips: Array<[WatcherOwlState, 'home' | 'tree' | 'composer']> = [
+      [home, 'tree'], [{ ...home, at: 'tree' }, 'home'], [home, 'composer'], [{ ...home, at: 'composer' }, 'home'],
+      [{ ...home, at: 'tree' }, 'composer'], [{ ...home, at: 'composer', side: 'right' }, 'home'],
+    ]
+    for (const [w, h] of [[1600, 1000], [1280, 800], [1100, 700]] as const) {
+      const sized = layoutScene(room(w, h))
+      if (sized.mode !== 'trees') continue
+      for (const [from, to] of trips) {
+        const flight = planFlight(sized, from, to, 0)
+        const b = along(flight.route, 1), dir = Math.sign(b.x - along(flight.route, 0).x) || 1
+        let last = -Infinity
+        for (let t = 0; t <= flight.dur; t += 1 / 30) {
+          const x = dir * owlAt(t, sized, { ...from, flight }, { still: false }).pose.x
+          expect(x, `${w}x${h} ${from.at} to ${to} at ${t.toFixed(2)}`).toBeGreaterThanOrEqual(last - CELL.w / 2)
+          expect(x).toBeLessThanOrEqual(dir * b.x + 1e-6)
+          // Leaving the perch it takes the cells of the one it lands on, a jump of at most half a cell.
+          last = x
+        }
+      }
+    }
+  })
+
   it('with motion reduced, goes perch to perch in a few still steps, waking only for each', () => {
     const flight = planFlight(layout, home, 'tree', 10, true)
     expect(flight.calm).toBe(true)
@@ -266,6 +289,8 @@ describe('Watcher’s owl', () => {
     expect(poses.map(p => p.stage)).toEqual(['perched', 'flying', 'flying', 'perched'])
     expect([poses[0]!.pose.x, poses[3]!.pose.x]).toEqual([layout.home.x, layout.visit.x])
     for (const { pose } of poses) expect([pose.bank, pose.legs]).toEqual([0, 0])
+    // In the air it stands on whole cells from the perch it lands on, as in flight.
+    for (const { pose } of poses.slice(1, 3)) expect(Number.isInteger(Math.round((pose.x - layout.visit.x) / CELL.w * 1e6) / 1e6) && Number.isInteger(Math.round((pose.y - layout.visit.y) / CELL.h * 1e6) / 1e6)).toBe(true)
     // Within a step nothing changes, so nothing needs drawing.
     expect(at(10 + CALM_STEP + 0.1).pose).toEqual(at(10 + CALM_STEP + 0.6).pose)
     expect(calmStepDelay(flight, 10.2)).toBeCloseTo((CALM_STEP - 0.2) * 1000, 3)

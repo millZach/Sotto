@@ -374,7 +374,7 @@ export class NightScenePainter {
     const parts: Array<string | number> = [this.layout!.mode === 'trees' ? twinkleStep(t, still) : 0, ambienceStep(this.ambience, t, still)]
     if (frame.whirl > 0.01 || runningRipples(frame.ripples, t) > 0) parts.push('m', Math.round(t * 30))
     const w = frame.watcher?.pose
-    if (w !== undefined) parts.push(Math.round(w.x), Math.round(w.y), Math.round(w.turn * 20), Math.round(w.gx * 4), Math.round(w.gy * 4), w.blink ? 1 : 0, Math.round(w.flap * 4), Math.round(w.spread * 10))
+    if (w !== undefined) parts.push(Math.round(w.x), Math.round(w.y), Math.round(w.turn * 20), Math.round(w.gx * 4), Math.round(w.gy * 4), w.blink ? 1 : 0, Math.round(w.flap * 4), Math.round(w.spread * 10), Math.round(w.bank * 40), Math.round(w.squash * 50), Math.round(w.legs * 8))
     frame.owls.forEach((pose, k) => {
       parts.push(pose.owl.key, Math.round(pose.x / cw), Math.round(pose.y / ch), Math.round(pose.alpha * 10), owlLines[k]![0]!, pose.owl.mood,
         pose.owl.mood === 'waiting' ? glowStep(t, still) : 0)

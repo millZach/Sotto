@@ -414,16 +414,27 @@ export function planFlight(layout: SceneLayout, owl: Pick<WatcherOwlState, 'at' 
   const a = placeOf(layout, owl.at, owl.side), b = placeOf(layout, to, side)
   const dir = Math.sign(b.x - a.x) || 1, d = Math.abs(b.x - a.x)
   const high = Math.max(layout.header + 34, Math.min(a.y, b.y) - clamp(d * 0.3, 26 * s, 150 * s))
-  const points: Point[] = [a, { x: a.x + dir * 16 * s, y: a.y + 3 * s }, { x: a.x + dir * d * 0.14, y: lerp(a.y, high, 0.55) }]
-  if (d > layout.width * 0.4) {
-    // A crossing passes just under the moon, on the side it comes from; the moon is on the right, so a flight there
-    // reaches its high point first and the moon second.
-    const past = { x: moon.x - dir * moon.r * 0.6, y: moon.y + moon.r * 0.9 }, top = Math.min(high, past.y)
-    if (dir > 0) points.push({ x: (points[2]!.x + past.x) / 2, y: top }, past)
-    else points.push(past, { x: (past.x + b.x - dir * d * 0.2) / 2, y: top })
-  } else points.push({ x: a.x + dir * d * 0.5, y: high })
-  points.push({ x: b.x - dir * d * 0.2, y: lerp(high, b.y, 0.82) + 10 * s }, { x: b.x - dir * 22 * s, y: b.y + 7 * s }, b)
-  const route = makeRoute(points)
+  const between: Point[] = [{ x: a.x + dir * 16 * s, y: a.y + 3 * s }, { x: a.x + dir * d * 0.14, y: lerp(a.y, high, 0.55) },
+    { x: b.x - dir * d * 0.2, y: lerp(high, b.y, 0.82) + 10 * s }, { x: b.x - dir * 22 * s, y: b.y + 7 * s }]
+  // A crossing passes just under the moon when the moon lies between the perches; otherwise its high point is halfway.
+  const past = { x: moon.x - dir * moon.r * 0.6, y: moon.y + moon.r * 0.9 }
+  if (d > layout.width * 0.4 && dir * (past.x - a.x) > 0 && dir * (b.x - past.x) > 0) between.push(past, { x: lerp(a.x, past.x, 0.55), y: Math.min(high, past.y) })
+  else between.push({ x: a.x + dir * d * 0.5, y: high })
+  // In order from the perch it leaves to the one it lands on, and only those between them; a point close across to the
+  // last is left out. The curve through them can still bulge back a little where it turns hard, so its samples are held
+  // from going back: the owl never turns back or passes the perch.
+  const points = [a]
+  for (const p of between.filter(p => dir * (p.x - a.x) > 0 && dir * (b.x - p.x) > 0).sort((p, q) => dir * (p.x - q.x))) {
+    if (dir * (p.x - points[points.length - 1]!.x) >= 14 * s && dir * (b.x - p.x) >= 14 * s) points.push(p)
+  }
+  points.push(b)
+  const samples: RouteSample[] = []
+  for (const p of makeRoute(points).samples) {
+    const last = samples[samples.length - 1]
+    const x = last === undefined ? p.x : dir * p.x < dir * last.x ? last.x : p.x
+    samples.push({ x, y: p.y, d: last === undefined ? 0 : last.d + Math.hypot(x - last.x, p.y - last.y) })
+  }
+  const route: Route = { samples, length: samples[samples.length - 1]!.d }
   const air = clamp(route.length / OWL_FLIGHT_SPEED, OWL_FLIGHT_TIME[0], OWL_FLIGHT_TIME[1])
   const dur = calm ? CALM_STEP * (CALM_STEPS.length + 1) : OWL_CROUCH + air + OWL_FOLD
   return { from: owl.at, to, side, t0, dur, route, air, calm }
@@ -541,8 +552,9 @@ const IDLE_TURN_EVERY = 5.2
 const BLINK_EVERY = 4.7
 
 /**
- * Where Watcher's owl is at `t`, and in what pose. With `still` (reduced motion, or a capture's fixed clock) it sits at
- * home and holds still there: no flight, no turning, no blinking.
+ * Where Watcher's owl is at `t`, and in what pose. With `still` (a capture's fixed clock) it sits at home and holds still
+ * there: no flight, no turning, no blinking. With `calm` (reduced motion) it sits where it is without turning or blinking,
+ * and a calm flight shows as a few still steps; pass `still: false` with it.
  */
 export function owlAt(t: number, layout: SceneLayout, owl: WatcherOwlState, options: { readonly still: boolean; readonly calm?: boolean; readonly look?: Look | null; readonly watch?: Watch | null }): { readonly pose: OwlPose; readonly stage: OwlStage } {
   const { s } = layout
@@ -559,7 +571,7 @@ export function owlAt(t: number, layout: SceneLayout, owl: WatcherOwlState, opti
       if (j <= 0) { pose.x = a.x; pose.y = a.y; return { pose, stage: 'perched' } }
       if (j > CALM_STEPS.length) { pose.x = b.x; pose.y = b.y; return { pose, stage: 'perched' } }
       const p = along(flight.route, CALM_STEPS[j - 1]!)
-      pose.x = p.x; pose.y = p.y; pose.flap = 0.22; pose.spread = 1; pose.turn = dir * 0.25; pose.gx = dir * 0.5; pose.gy = 0.6
+      pose.x = b.x + Math.round((p.x - b.x) / CELL.w) * CELL.w; pose.y = b.y + Math.round((p.y - b.y) / CELL.h) * CELL.h; pose.flap = 0.22; pose.spread = 1; pose.turn = dir * 0.25; pose.gx = dir * 0.5; pose.gy = 0.6
       return { pose, stage: 'flying' }
     }
     if (local < OWL_CROUCH) {
@@ -578,11 +590,13 @@ export function owlAt(t: number, layout: SceneLayout, owl: WatcherOwlState, opti
       return { pose, stage: 'flying' }
     }
     const k = air / flight.air, u = airProgress(k), p = along(flight.route, u)
-    const flareAt = FLARE_AT * flight.air, approach = flareAt - APPROACH.beats / APPROACH.hz, climbEnd = CLIMB.beats / CLIMB.hz
+    // A short flight has no cruise and only the end of its approach: the approach is counted back from the flare, so it
+    // always ends on a whole beat, and starts no earlier than the climb ends.
+    const flareAt = FLARE_AT * flight.air, climbEnd = Math.min(CLIMB.beats / CLIMB.hz, flareAt), approach = Math.max(flareAt - APPROACH.beats / APPROACH.hz, climbEnd)
     let flap: number, spread: number
     if (air < climbEnd) { const key = wingFrame(air * CLIMB.hz); flap = key.flap * CLIMB.depth; spread = key.spread }
     else if (air >= flareAt) { flap = stepped(0.22, FLARE.flap, (air - flareAt) / (flight.air - flareAt) * 1.6, 3); spread = FLARE.spread }
-    else if (air >= approach) { const key = wingFrame((air - approach) * APPROACH.hz); flap = key.flap * APPROACH.depth + 0.15; spread = key.spread }
+    else if (air >= approach) { const key = wingFrame(APPROACH.beats - (flareAt - air) * APPROACH.hz); flap = key.flap * APPROACH.depth + 0.15; spread = key.spread }
     else { const key = wingFrame((air - climbEnd) * CRUISE.hz); flap = key.flap * CRUISE.depth; spread = key.spread * 1.08 }
     // A slow wobble across, and a bank into every turn held to steps of about three degrees, both kept off near the
     // perches. The owl moves in whole cells from the perch it lands on, so its drawing changes only where it beats or

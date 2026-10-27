@@ -49,7 +49,7 @@ own movement is taken out), and CDP's `TaskDuration` over 12 seconds for the ren
 | | Before | After |
 |---|---|---|
 | Owl glyphs changing per painted frame | 63 of 66 | about 24 of 63, measured on the prototype's E |
-| Frames painted a second in flight | 26 | 22 |
+| Frames painted a second in flight | 26 | 24 |
 | One painted frame | 0.30 ms | 0.29 to 0.31 ms |
 | Renderer, scene still | 1.8 to 2.4% | 1.8% |
 | Renderer, looping crossings | 7.0% | 6.1 to 6.5% |
