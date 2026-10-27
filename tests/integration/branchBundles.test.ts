@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BranchBundles, IncomingBundle, type AlreadyPresent, type PreparedBundle } from '../../src/main/agents/branchBundles'
@@ -272,6 +272,24 @@ describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8
     await writeFile(join(staging, 'keep.snapshot.index.lock'), 'not ours')
     await new BranchBundles(machines.data('laptop')).start()
     expect(await readdir(staging)).toEqual(['keep.snapshot.index.lock'])
+  })
+
+  it('leaves the real index byte for byte as it was when a check snapshots, even after a file is touched without changing it', async () => {
+    const laptop = new BranchBundles(machines.data('laptop'))
+    const indexPath = join(machines.laptop, '.git', 'index')
+    // A newer modification time with the same content leaves the index's stat data stale, which a status that may take
+    // Git's optional locks writes back to the index.
+    const touch = (): Promise<void> => utimes(join(machines.laptop, 'app.txt'), new Date(), new Date(Date.now() + 60_000))
+    await touch()
+    const clean = await readFile(indexPath)
+    expect(await laptop.snapshotOf(machines.laptop)).toEqual({ branch: 'main', commit: git(machines.laptop, 'rev-parse', 'HEAD') })
+    expect((await readFile(indexPath)).equals(clean)).toBe(true)
+    // With uncommitted work beside the touched file, the snapshot is made from a copy, and the real index stays as it was.
+    await writeFile(join(machines.laptop, 'notes.txt'), 'draft\n')
+    await touch()
+    const dirty = await readFile(indexPath)
+    expect(await laptop.snapshotOf(machines.laptop)).toMatchObject({ branch: 'main', snapshot: { untrackedCount: 1 } })
+    expect((await readFile(indexPath)).equals(dirty)).toBe(true)
   })
 
   it('keeps every move’s record when moves finish together', async () => {
