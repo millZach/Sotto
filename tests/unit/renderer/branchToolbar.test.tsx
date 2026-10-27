@@ -95,6 +95,8 @@ describe('branch toolbar logic', () => {
       thread({ id: 'c', worktree: { mode: 'independent', status: 'ready', path: 'C:/wt/c', branch: 'feat/c', reclaimedAt: '2026-09-23T00:00:00.000Z' } }),
       thread({ id: 'd', projectId: 'elsewhere', worktree: { mode: 'independent', status: 'ready', path: 'C:/wt/d', branch: 'feat/d' } }),
       thread({ id: 'e', worktree: { mode: 'shared', status: 'ready', path: project.path } }),
+      // A check's thread in the machine's check worktree (#1312): the next check moves that folder, so it is not offered.
+      thread({ id: 'f', worktree: { mode: 'independent', status: 'ready', path: 'C:/data/check-worktrees/0123456789abcdef', reused: true, check: {} } }),
     ]
     expect(workspaceOptions(thread(), others).map(option => option.label)).toEqual(['Current checkout', 'New worktree', 'Previous worktree (feat/a)'])
   })
