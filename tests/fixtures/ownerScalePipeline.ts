@@ -18,6 +18,8 @@ import { WatcherService } from '../../src/main/agents/watcher'
 import { CheckQueue } from '../../src/main/agents/checkQueue'
 import { createWatcherRoomDesktop } from '../../src/main/agents/watcherRoomDesktop'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
+import type { ThreadStore } from '../../src/main/agents/threadStore'
+import type { ThreadStoreWriter } from '../../src/main/agents/threadStoreWriter'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import type { ActivitySubscriptionOptions, AgentHostCommand, AgentHostResult } from '../../src/main/agents/host'
 import { e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
@@ -94,6 +96,8 @@ export interface OwnerScalePipeline {
   readonly streamSessions: readonly string[]
   /** The thread open in the window, as the window names it. */
   readonly openThread: string
+  /** The workspace, for a case that reads a thread's history from it. */
+  readonly workspace: WorkspaceHost
   /** The answer draft's question, on a thread of this computer. */
   readonly question: RequestDraftTarget
   /** Updates the coordinator broadcast since the last reset. */
@@ -145,6 +149,8 @@ export interface OwnerScalePipelineOptions {
    * creation the workspace keeps for as long as the thread, newest last, as the owner's do (#925 review).
    */
   creationRead?: () => void
+  /** The thread-store writer the workspace runs over; absent, the one it makes itself (#1457). */
+  storeWriter?: (store: ThreadStore) => ThreadStoreWriter
 }
 
 export interface ThreadChangesReport {
@@ -383,7 +389,7 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
       muse: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('muse'),
       opencode: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('opencode'), cursor: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('cursor'), deepseek: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('deepseek') } })
   shadows.tapSwitchChanges(native)
-  const workspace = new WorkspaceHost(native, root, () => true, undefined, owl, held, owl)
+  const workspace = new WorkspaceHost(native, root, () => true, undefined, owl, held, owl, options.storeWriter)
   shadows.tapAccept(workspace)
   shadows.tapWorkspaceChanges(workspace)
   shadows.tap(workspace, 'workspace publication')
@@ -570,7 +576,7 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
     },
   }
   return {
-    track, counts, adapter, control, router, requestDrafts, watcher, streamSessions, openThread, question, actions,
+    track, counts, adapter, control, router, requestDrafts, watcher, streamSessions, openThread, workspace, question, actions,
     broadcasts: () => broadcasts,
     adapterChangeRecords: () => shadows.carried.adapter,
     wrapperChangeRecords: () => shadows.carried['identity wrapper'],
