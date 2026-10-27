@@ -92,9 +92,9 @@ function renderRoom(room: WatcherRoomState, state: AgentState = agentState()) {
   const view = render(<WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>)
   return { ...view, bridge, publish, command }
 }
-const paneReady = () => screen.findByRole('tab', { name: /^Watched, / })
+const paneReady = () => waitFor(() => expect(document.querySelector('#watcher-pane .thread-workspace__transcript')).not.toBeNull())
 
-beforeEach(() => { vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset(); localStorage.clear(); sessionStorage.clear(); roomView.set({ besideId: null, share: 0.5, tab: 'conversation' }); firstMessage.clear() })
+beforeEach(() => { vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset(); localStorage.clear(); sessionStorage.clear(); roomView.set({ besideId: null, share: 0.5 }); firstMessage.clear() })
 afterEach(() => { cleanup(); localStorage.clear(); sessionStorage.clear() })
 
 describe('receipt cards', () => {
@@ -182,8 +182,8 @@ describe('Stop all', () => {
     expect(done).toHaveTextContent('Stopped.')
     fireEvent.keyDown(within(done).getByRole('button', { name: 'Close' }), { key: 'Escape' })
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Stopped Footer links.' })).toBeNull())
-    // Its threads stopped, so Stop all is gone, and focus goes back along the header to the tab that is shown.
-    await waitFor(() => expect(screen.getByRole('tab', { name: 'Conversation' })).toHaveFocus())
+    // Its threads stopped, so Stop all is gone, and focus goes back along the header to All threads.
+    await waitFor(() => expect(screen.getByRole('button', { name: /^All threads, \d+\. Show the list$/ })).toHaveFocus())
   })
 
   it('answers Escape while its stop runs, and keeps what came of each thread for the button’s next press', async () => {
