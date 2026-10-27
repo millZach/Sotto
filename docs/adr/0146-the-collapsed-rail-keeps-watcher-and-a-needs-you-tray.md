@@ -6,7 +6,7 @@ Accepted October 26, 2026. Drake picked **Owl apart** (column D of `tray.html`) 
 
 Amended October 27, 2026: the rail's group holds the threads Watcher watches, not the threads that wait on the user, and the tray is gone (below, "October 27, 2026 amendment: Watcher's threads").
 
-Amends ADR-0135 in one place: "The collapsed rail is unchanged" holds while this feature is off. While it is on, the rail says need with its own tray, reading the same Needs you queue the card does. Nothing in ADR-0004 changes: the tray opens threads and answers nothing.
+Amends ADR-0135 in one place: "The collapsed rail is unchanged" holds while this feature is off. While it is on, the rail says need by putting waiting threads first, in the same Needs you queue order the card uses, with an amber edge (a tray until the October 27 amendment). Nothing in ADR-0004 changes: the rail opens threads and answers nothing.
 
 ## Context
 
@@ -40,4 +40,4 @@ Items 3 to 5 of the decision become:
 4. A hairline, then the **other** open threads.
 5. Inside each of the two parts the order is what waits on the user first, in the Needs you queue's order and settled threads that wait included, then the moving threads, then the resting ones as smaller tiles in muted text. In the other threads a hairline comes before the resting ones; among Watcher's threads it does not.
 
-A thread that waits on the user, watched or not, takes the attention colour on its whole edge as well as its ring; the full colour keeps the edge above 3:1 on the light sidebar, where a part-strength edge falls under it. There is no tray and no count: Watcher's tile shows only its own ring, and the Needs you queue in the expanded sidebar keeps the count. Not picked: the neutral card (amber kept one meaning there too, but a card is one more container on a narrow strip), the amber panel (amber would mean two things), and the accent card (in Citrine the accent is also the working arc).
+A thread that waits on the user, watched or not, takes the attention colour on its whole edge as well as its ring, except the focused thread, whose edge keeps the current look as every focused tile does (its ring still says it waits); the full colour keeps the edge above 3:1 on the light sidebar, where a part-strength edge falls under it. There is no tray and no count: Watcher's tile shows only its own ring, and the Needs you queue in the expanded sidebar keeps the count. Not picked: the neutral card (amber kept one meaning there too, but a card is one more container on a narrow strip), the amber panel (amber would mean two things), and the accent card (in Citrine the accent is also the working arc).

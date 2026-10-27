@@ -35,6 +35,8 @@ function mountCollapsed(state: AgentState): HTMLElement {
   act(() => { screen.getByRole('button', { name: 'Collapse sidebar' }).click() })
   return document.querySelector<HTMLElement>('.thread-nav__rail')!
 }
+/** The waiting threads' titles in the Needs you queue's own order. */
+const queueOrder = (state: AgentState): string[] => organizeWorkspace(state, describeThreads(state, NOW), '', state.activeProjectId, false, NOW).needsYou.entries.map(entry => entry.row.thread.title)
 const tile = (rail: HTMLElement, title: string): HTMLElement => within(rail).getByRole('button', { name: title })
 const follows = (first: Element, second: Element): boolean => (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
 
@@ -63,6 +65,8 @@ describe('the collapsed rail (ADR-0146)', () => {
     const rail = mountCollapsed(threadsStateFixture())
     expect(rail.querySelector('.thread-nav__rail-tray, .thread-nav__rail-watched, .thread-nav__rail-watched-mark')).toBeNull()
     const waiting = [tile(rail, 'Visual gate flake'), tile(rail, 'Streaming WAV stall')]
+    const queued = [...rail.querySelectorAll('.thread-nav__rail-thread[data-waiting]')].map(button => button.getAttribute('aria-label'))
+    expect(queued).toEqual(queueOrder(threadsStateFixture()))
     for (const button of waiting) {
       expect(button).toHaveAttribute('data-waiting')
       expect(button.querySelector('.thread-nav__ring')).toHaveAttribute('data-state', 'needs')
@@ -107,7 +111,7 @@ describe('the collapsed rail (ADR-0146)', () => {
   it('edges nothing in the attention colour while nothing waits', () => {
     owl(true)
     const rail = mountCollapsed(calm(threadsStateFixture()))
-    expect(rail.querySelector('[data-waiting]')).toBeNull()
+    expect(rail.querySelector('.thread-nav__rail-thread[data-waiting]')).toBeNull()
     expect(tile(rail, 'Visual gate flake')).toBeInTheDocument()
   })
 
