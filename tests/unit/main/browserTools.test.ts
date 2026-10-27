@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
 import { BaseWindow, WebContentsView, type BrowserWindow } from 'electron'
 import { BrowserService } from '../../../src/main/tools/browser'
+import { BROWSER_COMMAND_DEADLINE_MS } from '../../../src/main/tools/browserAutomation'
 import { FilesService } from '../../../src/main/files/service'
 import type { ToolsResult } from '../../../src/shared/tools'
 import { deferred } from '../../fixtures/deferred'
@@ -382,6 +383,82 @@ describe('browser agent boundaries', () => {
     expect(unwrap(await service.share({ ...request, enabled: true })).sharedOrigin).toBe('http://localhost:4555')
   })
 
+})
+
+describe('browser actions that the page cannot finish', () => {
+  const parked = (view: WebContentsView): boolean => vi.mocked(BaseWindow).mock.results.some(result => {
+    const window = result.value as { children: Set<unknown>; isDestroyed(): boolean }
+    return window.children.has(view) && !window.isDestroyed()
+  })
+  /** With the browser grant on, as it is by default, so a tap runs rather than asking (ADR-0029). */
+  async function sharedTask(withWindow = false) {
+    const fixture = await browserFixture(withWindow, new Set(), () => true)
+    unwrap(await fixture.service.share({ ...fixture.target, enabled: true }))
+    const task = unwrap(await fixture.service.startTask({ ...fixture.target, description: 'Scroll the notes' }))
+    return { ...fixture, request: { ...fixture.target, taskId: task.id } }
+  }
+  afterEach(() => { vi.useRealTimers() })
+
+  it.each([
+    { type: 'scroll', x: 300, y: 300, deltaX: 0, deltaY: 400 },
+    { type: 'tap', x: 50, y: 30 },
+  ] as const)('lends a page that is not on screen a surface for $type, which Chromium answers only once the page draws', async action => {
+    const { service, request, view, attached } = await sharedTask(true)
+    expect(attached.has(view)).toBe(false)
+    const original = vi.mocked(view.webContents.debugger.sendCommand).getMockImplementation()!
+    // Chromium answers wheel and touch only after a frame; a page with nowhere to draw makes none (the 300-second hangs).
+    vi.mocked(view.webContents.debugger.sendCommand).mockImplementation(async (...args) => {
+      if ((args[0] === 'Input.dispatchMouseEvent' || args[0] === 'Input.dispatchTouchEvent') && !parked(view)) throw new Error('No frame to answer from.')
+      return original(...args)
+    })
+    const result = await service.action({ ...request, action })
+    expect(result).toMatchObject({ ok: true, value: { task: { steps: [{ action: action.type, status: 'completed' }] } } })
+    expect(parked(view)).toBe(false)
+  })
+
+  it('fails a command the page never answers in words, and frees the page for the next action', async () => {
+    const { service, request, view } = await sharedTask()
+    const original = vi.mocked(view.webContents.debugger.sendCommand).getMockImplementation()!
+    const dispatched = deferred<void>()
+    vi.mocked(view.webContents.debugger.sendCommand).mockImplementation(async (...args) => {
+      if (args[0] !== 'Input.dispatchMouseEvent' || args[1]?.type !== 'mouseWheel' || vi.mocked(view.webContents.debugger.detach).mock.calls.length > 0) return original(...args)
+      dispatched.resolve()
+      return new Promise(() => undefined)
+    })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const hung = service.action({ ...request, action: { type: 'scroll', x: 300, y: 300, deltaX: 0, deltaY: 400 } })
+    await dispatched.promise
+    await vi.advanceTimersByTimeAsync(BROWSER_COMMAND_DEADLINE_MS)
+    expect(await hung).toMatchObject({ ok: false, error: { code: 'unavailable', message: 'The page did not answer in time. Inspect it before trying again.' } })
+    expect(view.webContents.debugger.detach).toHaveBeenCalled()
+    vi.useRealTimers()
+    // Before, the page stayed "still running" and the service kept the hung call's place until the page was shown.
+    expect(await service.action({ ...request, action: { type: 'scroll', x: 300, y: 300, deltaX: 0, deltaY: 400 } })).toMatchObject({ ok: true })
+  })
+
+  it('tries the debugger setup again after it failed once', async () => {
+    const { service, target, view } = await browserFixture()
+    const original = vi.mocked(view.webContents.debugger.sendCommand).getMockImplementation()!
+    let refused = 0
+    vi.mocked(view.webContents.debugger.sendCommand).mockImplementation(async (...args) => {
+      if (args[0] === 'Network.enable' && refused++ === 0) throw new Error('Inspected target navigated or closed')
+      return original(...args)
+    })
+    // Sharing starts observing the page, and that first setup fails while the page is moving.
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Read the page' }))
+    expect(await service.action({ ...target, taskId: task.id, action: { type: 'inspect' } })).toMatchObject({ ok: true })
+    expect(refused).toBe(2)
+  })
+
+  it('says why typing was refused instead of asking for a refresh', async () => {
+    const { service, request, view } = await sharedTask()
+    const original = vi.mocked(view.webContents.debugger.sendCommand).getMockImplementation()!
+    vi.mocked(view.webContents.debugger.sendCommand).mockImplementation(async (...args) => args[0] === 'DOM.describeNode' ? { node: { backendNodeId: 7, nodeName: 'DIV', attributes: [] } } : original(...args))
+    const result = await service.action({ ...request, action: { type: 'type', text: 'hello' } })
+    expect(result).toMatchObject({ ok: false, error: { code: 'blocked' } })
+    expect(!result.ok && result.error.message).toMatch(/plain text field/u)
+  })
 })
 
 describe('browser grant (ADR-0029)', () => {
