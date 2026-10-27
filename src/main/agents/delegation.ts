@@ -278,6 +278,8 @@ const refusedSchema = z.object({ id: z.uuid(), delegatingThreadId: id, action: z
   asked: delegationAskedSchema.optional(),
   /** Refused because no desktop that relays was connected to this host (#1316), which its card says in Zach's words. */
   away: z.literal(true).optional(),
+  /** Refused by the desktop this host relayed it to (#1316), which its card says. */
+  relayed: z.literal(true).optional(),
   /** The user's message to the delegating thread the call answered, when Sotto can find one (decision 3). */
   rootUserMessageId: id.optional(),
   /** The delegating thread's newest message when it called, a wake-up's included: the turn the call was made in. */
@@ -690,7 +692,7 @@ export class DelegationService {
   private refusedView(refused: RefusedDelegation): RefusedView {
     const anchor = refused.callerMessageId ?? refused.rootUserMessageId
     return { id: refused.id, ...(refused.delegatedThreadId ? { thread: refused.delegatedThreadId } : {}), ...(refused.provider ? { provider: refused.provider } : {}),
-      action: refused.action, work: refused.work, outcome: 'refused', refusal: refused.code, ...(refused.asked ? { asked: refused.asked } : {}), ...(refused.away ? { away: true as const } : {}),
+      action: refused.action, work: refused.work, outcome: 'refused', refusal: refused.code, ...(refused.asked ? { asked: refused.asked } : {}), ...(refused.away ? { away: true as const } : {}), ...(refused.relayed ? { relayed: true as const } : {}),
       ...(refused.rootUserMessageId ? { rootUserMessageId: refused.rootUserMessageId } : {}), ...(anchor ? { anchorMessageId: anchor } : {}), createdAt: refused.createdAt }
   }
   /**
@@ -828,7 +830,7 @@ export class DelegationService {
     if (answer.status !== 'refused') return answer
     const code = delegationRefusalCodeSchema.safeParse(answer.code)
     const message = typeof answer.message === 'string' && answer.message.trim() ? answer.message.slice(0, REFUSAL_MESSAGE_MAX) : 'This computer could not start this delegation. Nothing was started.'
-    return await this.refused(threadId, input, delegationRefusal(code.success ? code.data : 'PROVIDER_UNAVAILABLE', message))
+    return await this.refused(threadId, input, delegationRefusal(code.success ? code.data : 'PROVIDER_UNAVAILABLE', message), false, true)
   }
   /**
    * Lands the delegating thread's branch for a new thread that starts from it (#1033): in the incoming ref of a move of
@@ -861,7 +863,7 @@ export class DelegationService {
    * Records a delegation main refused under its rules, when a thread Sotto holds asked for it, and answers with the
    * refusal and that delegation's ID. Nothing is started, sent, reserved or charged, and no wake-up goes for it.
    */
-  private async refused(threadId: string, input: DelegateInput, refusal: DelegationRefusal, away = false): Promise<DelegationRefusal> {
+  private async refused(threadId: string, input: DelegateInput, refusal: DelegationRefusal, away = false, relayed = false): Promise<DelegationRefusal> {
     if (this.closed || !RECORDED_REFUSALS.has(refusal.code)) return refusal
     const caller = this.snapshot().threads.find(thread => thread.id === threadId)
     if (!caller) return refusal
@@ -873,7 +875,7 @@ export class DelegationService {
       ...(target === undefined && input.provider ? { provider: input.provider } : {}),
       ...(refusal.code === 'MACHINE_UNAVAILABLE' && (input.machine !== undefined || input.os !== undefined)
         ? { asked: { ...(input.machine !== undefined ? { machine: input.machine } : {}), ...(input.os !== undefined ? { os: input.os } : {}) } } : {}),
-      ...(away && refusal.code === 'MACHINE_UNAVAILABLE' ? { away: true } : {}),
+      ...(away && refusal.code === 'MACHINE_UNAVAILABLE' ? { away: true } : {}), ...(relayed && refusal.code === 'MACHINE_UNAVAILABLE' ? { relayed: true } : {}),
       code: refusal.code, message: refusal.message.slice(0, REFUSAL_MESSAGE_MAX), ...(root ? { rootUserMessageId: root } : {}), ...(head ? { callerMessageId: head } : {}),
       createdAt: now() })
     this.refusalEntries.push(record)

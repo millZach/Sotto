@@ -116,5 +116,10 @@ describe('a thread on a host delegating elsewhere', () => {
     const g = await service({ machines: machines(true), relay: there.relay })
     expect(await g.delegation.delegate('parent', { ...start, machine: DESKTOP })).toMatchObject({ status: 'refused', code: 'PERMISSION_TOO_WIDE', message: 'Too wide there. Nothing was started.' })
     expect(g.delegation.views('parent').made).toEqual([expect.not.objectContaining({ away: true })])
+    // One the desktop refused for its machine is recorded as relayed, which its card words (Zach, October 27, 2026).
+    const mac = relay(async () => ({ status: 'refused', code: 'MACHINE_UNAVAILABLE', message: 'The Mac has no copy. Nothing was started.' }))
+    const h = await service({ machines: machines(true), relay: mac.relay })
+    await h.delegation.delegate('parent', { ...start, machine: DESKTOP })
+    expect(h.delegation.views('parent').made).toEqual([expect.objectContaining({ refusal: 'MACHINE_UNAVAILABLE', relayed: true, asked: { machine: DESKTOP } })])
   })
 })
