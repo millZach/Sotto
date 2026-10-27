@@ -523,6 +523,12 @@ export class WatcherService implements WatcherControlHooks {
    */
   private readonly lostStartMoves = new Map<string, LandedMove>()
   /**
+   * The branch landed for a check that waited on a paired host and failed here, as the user's Stop fails it, before that
+   * host was heard to fail it too (#1312). The Stop reaches the host on its next read, and until then its turn may come
+   * there, so the branch is let go only once the host's own copy of the start reads failed, or the host holds none.
+   */
+  private readonly stoppedAwayMoves = new Map<string, LandedMove>()
+  /**
    * Starts from a thread's branch placed but not yet run (#1033), by the move each will make: the thread whose branch it
    * carries, whether it is a test run, and the machine it goes to. Taken when the start runs, which is at once.
    */
@@ -1433,10 +1439,14 @@ export class WatcherService implements WatcherControlHooks {
     for (const check of [...this.checkOf.values()]) {
       const operation = this.operationOfCheck(check, operations)
       if (check.away) {
-        // The host made its thread, which owns the branch now; or it failed or was stopped first, and nothing will.
+        // The host made its thread, which owns the branch now; or the start failed first, and its branch goes once the host agrees.
         if (operation?.deliveryState !== 'accepted' && operation?.deliveryState !== 'failed') continue
         this.checkOf.delete(check.ticket)
-        if (operation.deliveryState === 'failed' && !this.madeThread(operation.target)) void this.releaseMove(check.away.landed)
+        if (operation.deliveryState === 'failed' && check.away.landed && !this.madeThread(operation.target)) {
+          this.stoppedAwayMoves.set(operation.id, check.away.landed)
+          while (this.stoppedAwayMoves.size > 1_000) this.stoppedAwayMoves.delete(this.stoppedAwayMoves.keys().next().value!)
+          void this.reconcileRemote(operation.target.hostId).catch(() => undefined)
+        }
         continue
       }
       const hold = operation ? this.checkHold(check, operation) : false
@@ -4102,6 +4112,17 @@ ${operation.draftId}`)
       this.lostStartMoves.delete(operationId)
     }
   }
+  /** After a read of `hostId`: each stopped check's branch there is let go once the host's own copy of its start failed. */
+  private async releaseStoppedAwayMoves(hostId: string, projected: readonly Pick<WatcherOperation, 'id' | 'deliveryState'>[]): Promise<void> {
+    for (const [operationId, landed] of [...this.stoppedAwayMoves]) {
+      if (landed.hostId !== hostId) continue
+      const there = projected.find(item => item.id === operationId)
+      if (there && there.deliveryState !== 'failed') continue
+      this.stoppedAwayMoves.delete(operationId)
+      const operation = this.record().operations.find(item => item.id === operationId)
+      if (!operation || !this.madeThread(operation.target)) await this.releaseMove(landed)
+    }
+  }
   private recordRemoteRefusal(record: WatcherRecord, operationId: string, code: WatcherRefusal['code']): void {
     const saved = record.operations.find(item => item.id === operationId)!, wasFailed = saved.deliveryState === 'failed'
     saved.deliveryState = 'failed'; saved.refusalCode = code; saved.updatedAt = now()
@@ -4279,6 +4300,7 @@ ${operation.draftId}`)
         while (this.remoteProgress.size > 1_000) this.remoteProgress.delete(this.remoteProgress.keys().next().value!)
         this.wakes.pairedEvidence(host.hostId, projection.evidence)
         await this.releaseLostStartMoves(host.hostId)
+        await this.releaseStoppedAwayMoves(host.hostId, projection.operations)
         if (receiptFailed) this.retryRemote(host.hostId)
         else this.remoteFailures.delete(host.hostId)
       } catch {
