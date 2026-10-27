@@ -213,8 +213,10 @@ test('the quiet browser pane opens on its own, speaks in one strip, and puts a s
         await expect(fresh).toBeFocused()
         await fresh.fill(`${url}notes`); await fresh.press('Enter')
         await expect(panel.getByRole('tablist', { name: 'Pages' }).getByRole('tab')).toHaveCount(2)
-        // Tools shows the user's new page, so the agent's page, still working, floats in the player rather than nowhere.
-        await expect(page.getByRole('complementary', { name: 'Browser for Workshop' })).toBeVisible()
+        // Tools shows the user's new page; the agent's page, still working, is offered in the strip rather than floating
+        // (the player and Tools share one place to draw a page).
+        await expect(page.getByRole('complementary', { name: /^Browser for/ })).toHaveCount(0)
+        await expect(panel.getByRole('button', { name: /^Show page: / })).toBeVisible()
         await shot(launched, 'two-pages-1280x800-dark')
 
         await agent('browser_finish', { taskId: task.id, pageId: task.pageId, status: 'completed', summary: 'Saved the trail.', unchecked: [] })

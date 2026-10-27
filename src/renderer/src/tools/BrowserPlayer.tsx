@@ -4,6 +4,7 @@ import { Globe, Minimize2, PanelRight, Pause, Play, X } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
 import type { AgentState } from '../../../shared/agents'
 import type { BrowserBounds, BrowserBridge, BrowserPage } from '../../../shared/browser'
+import { useOwlFeature } from '../state/owlFeature'
 import { pageLabel, useThreadBrowser, useBrowserTasks } from './browserStore'
 import { useBrowserPageMount } from './useBrowserPageMount'
 import { useOverlayOpen } from './browserOverlay'
@@ -64,6 +65,7 @@ export interface BrowserPlayerProps {
 export function BrowserPlayer({ state, focusedThreadId, bridge, store, autoShow = true, playerStore = browserPlayerStore }: BrowserPlayerProps): ReactNode {
   const { t } = useLingui()
   const chrome = useToolsPanelChrome(store)
+  const quietBrowser = useOwlFeature('quiet-browser')
   const tasks = useBrowserTasks(store.browser)
   // Sotto's browser is this computer's, so a remote host's threads have no tasks here to watch.
   const ids = state.host.threads.filter(thread => !thread.remoteHost).map(thread => thread.id).join('\n')
@@ -98,9 +100,12 @@ export function BrowserPlayer({ state, focusedThreadId, bridge, store, autoShow 
   const thread = state.host.threads.find(item => item.id === threadId)
   if (!thread) return null
   const browserInTools = chrome.open && chrome.surface === 'browser' && toolsTarget(chrome, focusedThreadId) === threadId
-  // It steps aside only for the same page: with Tools on another of the thread's pages, the agent's page would show nowhere.
-  const dockedSame = browserInTools && threadBrowser?.activePageId === task.pageId
-  if (visibility === 'hidden' || dockedSame) return null
+  // The quiet pane (ADR-0154; Owl) keeps the player away while Tools shows this thread's browser on any page: the two
+  // share one place to draw a page, and the pane's strip offers the agent's page when it is not the one shown.
+  const dockedSame = browserInTools && (quietBrowser || threadBrowser?.activePageId === task.pageId)
+  // On the quiet pane (ADR-0154; Owl), a task whose page has closed has nothing left to float.
+  const pageClosed = quietBrowser && threadBrowser?.status === 'ready' && !threadBrowser.pages.some(item => item.id === task.pageId)
+  if (visibility === 'hidden' || dockedSame || pageClosed) return null
   // Measure the pane only when drawing the player. `rectFor` remains the one default for drawing, dragging and resizing.
   const rect = rawRect ? clampBrowserPlayerRect(rawRect, size) : playerStore.rectFor(size)
 
