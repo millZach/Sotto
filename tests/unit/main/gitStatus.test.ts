@@ -6,6 +6,7 @@ import { mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { GitStatusReader, GitUnavailableError, parsePorcelain, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from '../../../src/main/agents/gitStatus'
 import { deferred } from '../../fixtures/deferred'
+import { GitHubHosts } from '../../../src/main/agents/github'
 
 const repositories: Awaited<ReturnType<Awaited<ReturnType<typeof gitRepositorySeed>>['copy']>>[] = []
 let seed: Awaited<ReturnType<typeof gitRepositorySeed>>
@@ -503,14 +504,62 @@ describe('porcelain v2 parsing', () => {
 })
 
 describe('stopping the remote half when Sotto closes (#1664)', () => {
-  it('kills a command stopped from outside and rejects at once', async () => {
+  it('ends a running command with what it started when stopped, and answers that it was stopped', async () => {
     const stop = new AbortController()
-    // gh answered by a Node process that never exits on its own.
+    // gh answered by a Node process that starts a child of its own, as git starts git-remote-https, and never exits.
+    const tree = "const g = require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(() => undefined, 1000)'], { stdio: 'ignore' });"
+      + " process.stdout.write('ready ' + process.pid + ' ' + g.pid + '\\n'); setInterval(() => undefined, 1000)"
+    const run = runWithGhStandIn({ executable: process.execPath, args: ['-e', tree] })
+    const ready = deferred<readonly number[]>()
+    const running = run(process.cwd(), 'gh', [], { signal: stop.signal, onLine: line => { if (line.startsWith('ready ')) ready.resolve(line.split(' ').slice(1).map(Number)) } })
+    const pids = await ready.promise
+    stop.abort()
+    // The stop decides the answer, not the process's own exit as it is killed.
+    await expect(running).rejects.toMatchObject({ code: 'ABORT_ERR' })
+    const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true } catch { return false } }
+    expect(pids.filter(alive)).toEqual([])
+    await expect(run(process.cwd(), 'gh', [], { signal: stop.signal })).rejects.toMatchObject({ code: 'ABORT_ERR' })
+  })
+
+  it('answers that a command was stopped though it exits on its own while its tree is being ended', async () => {
+    const stop = new AbortController()
+    // It exits with 3 sooner than taskkill or a group kill can finish.
+    const run = runWithGhStandIn({ executable: process.execPath, args: ['-e', "process.stdout.write('ready\\n'); setTimeout(() => process.exit(3), 20)"] })
+    const ready = deferred<void>()
+    const running = run(process.cwd(), 'gh', [], { signal: stop.signal, onLine: line => { if (line === 'ready') ready.resolve() } })
+    await ready.promise
+    stop.abort()
+    await expect(running).rejects.toMatchObject({ code: 'ABORT_ERR' })
+  })
+
+  it('stops a command asked to stop before it has started, once it starts', async () => {
+    const stop = new AbortController()
     const run = runWithGhStandIn({ executable: process.execPath, args: ['-e', 'setInterval(() => undefined, 1000)'] })
     const running = run(process.cwd(), 'gh', [], { signal: stop.signal })
     stop.abort()
     await expect(running).rejects.toMatchObject({ code: 'ABORT_ERR' })
-    await expect(run(process.cwd(), 'gh', [], { signal: stop.signal })).rejects.toMatchObject({ code: 'ABORT_ERR' })
+  })
+
+  it('stops the GitHub hosts lookup it shares, which asks gh nothing more once stopped', async () => {
+    const asked: string[][] = []
+    const looking = deferred<void>()
+    // gh auth status held until it is stopped, as one that hangs is.
+    const run: RunGitCommand = (_cwd, command, args, options) => {
+      asked.push([command, ...args])
+      if (command !== 'gh') return Promise.resolve('')
+      looking.resolve()
+      return new Promise<string>((_, reject) => options?.signal?.addEventListener('abort', () => reject(Object.assign(new Error('stopped'), { code: 'ABORT_ERR' })), { once: true }))
+    }
+    const hosts = new GitHubHosts({ run })
+    const reader = new GitStatusReader({ run, hosts, fetchIntervalMs: () => 30_000 })
+    const repository = hosts.repository('https://ghe.example.com/o/r')
+    await looking.promise
+    await reader.stop()
+    // A stopped lookup answers no hosts, without falling back to asking gh again.
+    expect(await repository).toBeNull()
+    expect(asked.filter(call => call[0] === 'gh')).toHaveLength(1)
+    expect(await hosts.repository('https://ghe.example.com/o/r')).toBeNull()
+    expect(asked.filter(call => call[0] === 'gh')).toHaveLength(1)
   })
 
   it('stops a fetch under way and starts no more, while local reads go on', async () => {

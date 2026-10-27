@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { access, constants, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { findCli, withCliPath } from './cliLookup'
-import { launchProcess, runToExit } from './gitLauncher'
+import { launchProcess, stopProcessTree } from './gitLauncher'
 import { nativeEnvironment } from './subscriptionCodex'
 
 /**
@@ -114,21 +114,6 @@ async function npmUnder(node: string): Promise<string | undefined> {
   return undefined
 }
 
-/** Stops a process tree, and settles only once it is seen gone. */
-async function stopTree(pid: number): Promise<void> {
-  if (process.platform === 'win32') { await runToExit('taskkill', ['/pid', String(pid), '/T', '/F']); return }
-  const gone = (signal: NodeJS.Signals | 0): boolean => {
-    try { process.kill(-pid, signal); return false } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ESRCH') return true; throw error }
-  }
-  if (gone('SIGKILL')) return
-  // kill only sends the signal: wait until the whole group is gone, as Git's own stop does.
-  const until = Date.now() + 5_000
-  while (!gone(0)) {
-    if (Date.now() > until) throw new Error('The install process group outlived its kill.')
-    await new Promise(resolve => setTimeout(resolve, 10))
-  }
-}
-
 /**
  * Runs an install to its end: `installed` when it exits with 0, `failed` otherwise. When `signal` aborts, as when Sotto
  * closes, or `timeoutMs` passes, the whole process tree is stopped, and this settles only once the tree is stopped and the
@@ -150,7 +135,7 @@ export function runInstall(command: string, args: readonly string[], options: { 
       stopping = (async () => {
         // A launch on the worker has its pid once it has started.
         if (!child.pid) await new Promise<void>(resolve => child.once('spawn', resolve))
-        try { await stopTree(child.pid!) } catch { console.warn('check-install-stop-failed'); child.kill('SIGKILL') }
+        try { await stopProcessTree(child.pid!) } catch { console.warn('check-install-stop-failed'); child.kill('SIGKILL') }
       })()
     }
     const timer = setTimeout(() => stop('check-install-timed-out'), options.timeoutMs)

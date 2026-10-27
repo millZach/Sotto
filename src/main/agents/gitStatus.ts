@@ -3,7 +3,7 @@ import { dirname, join, resolve, sep } from 'node:path'
 import type { GitPullRequestSummary, GitStatus } from '../../shared/gitStatus'
 import { GIT_REFS_MAX_LIMIT, type GitRef, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
 import { GIT_CHANGED_FILES_MAX, type GitChangedFile, type GitChangedFiles } from '../../shared/gitChangedFiles'
-import { launchProcess, runToExit } from './gitLauncher'
+import { launchProcess, stopProcessTree } from './gitLauncher'
 import { baseRepository, GitHubHosts, GitHubRateLimit, GitHubRateLimited, isOwnHead, readGitHubRemotes, sameRepository, type GitHubAsk, type GitHubRepository } from './github'
 import { HEAD_GATHER_MS, PullRequestHeads } from './githubPullRequestHeads'
 
@@ -56,7 +56,14 @@ function spawnCommand(cwd: string, command: string, args: readonly string[], opt
   for (const key of REDIRECTING_GIT_VARIABLES) delete env[key]
   Object.assign(env, options.env)
   // Launched off main's thread, where a Windows launch would hold the window (`gitLauncher.ts`).
-  const child = launchProcess(command, args, { cwd, env, ...options.stdin !== undefined ? { stdin: options.stdin } : {} })
+  // A command that may be stopped leads its own process group off Windows, so stopping it reaches what it started.
+  const child = launchProcess(command, args, { cwd, env, ...options.stdin !== undefined ? { stdin: options.stdin } : {},
+    ...options.signal && process.platform !== 'win32' ? { detached: true } : {} })
+  // Its pid once it has started; undefined for one that never did. A stop that comes first waits for it.
+  const started = new Promise<number | undefined>(resolve => {
+    child.once('spawn', () => resolve(child.pid)); child.on('error', () => resolve(undefined)); child.on('close', () => resolve(undefined))
+  })
+  let stopping: Promise<void> | undefined
   let stdout = '', stderr = '', timedOut = false, settled = false
   const partial = { stdout: '', stderr: '' }
   const feed = (stream: 'stdout' | 'stderr', chunk: string): void => {
@@ -76,9 +83,17 @@ function spawnCommand(cwd: string, command: string, args: readonly string[], opt
     if (error) reject(error); else accept(stdout)
   }
   // Stopped from outside: its whole process tree is ended, since on Windows a fetch's own children, such as
-  // git-remote-https, outlive git and keep the folder open; it settles once that is done, without waiting for a close a
-  // grandchild holding the pipes may delay.
-  const stop = (): void => { void endTree(child).finally(() => { out.destroy(); err.destroy(); finish(stoppedError(command)) }) }
+  // git-remote-https, outlive git and keep the folder open. From then on the stop alone settles the call, once that tree
+  // is gone, so neither the process's own close nor a grandchild holding the pipes decides it.
+  const stop = (): void => {
+    if (settled || stopping) return
+    stopping = (async () => {
+      const pid = child.pid ?? await started
+      if (pid === undefined) return
+      try { await stopProcessTree(pid) } catch { child.kill('SIGKILL') }
+    })()
+    void stopping.finally(() => { out.destroy(); err.destroy(); finish(stoppedError(command)) })
+  }
   options.signal?.addEventListener('abort', stop, { once: true })
   // A hook or an ssh the command started can hold the pipes open after the command itself is gone, so a
   // timeout settles on its own grace rather than waiting for a close that a grandchild may never allow.
@@ -86,8 +101,9 @@ function spawnCommand(cwd: string, command: string, args: readonly string[], opt
     timedOut = true; child.kill()
     setTimeout(() => { out.destroy(); err.destroy(); finish(Object.assign(new Error(`${command} did not finish in time.`), { code: 'ETIMEDOUT' })) }, 2_000).unref?.()
   }, options.timeoutMs ?? 30_000)
-  child.on('error', error => finish((error as NodeJS.ErrnoException).code === 'ENOENT' ? new GitUnavailableError(`${command} is not installed or is not on PATH.`) : error))
+  child.on('error', error => stopping ? undefined : finish((error as NodeJS.ErrnoException).code === 'ENOENT' ? new GitUnavailableError(`${command} is not installed or is not on PATH.`) : error))
   child.on('close', code => {
+    if (stopping) return
     if (options.onLine) for (const stream of ['stdout', 'stderr'] as const) if (partial[stream]) options.onLine(partial[stream], stream)
     if (timedOut) finish(Object.assign(new Error(`${command} did not finish in time.`), { code: 'ETIMEDOUT' }))
     // What it printed rides along, out of sight of anything that prints the error: `gh api graphql` prints GitHub's
@@ -99,11 +115,6 @@ function spawnCommand(cwd: string, command: string, args: readonly string[], opt
 
 /** The longest `GitStatusReader.stop` waits for what was running to end once it is stopped (#1664). */
 const STOP_WAIT_MS = 5_000
-/** Ends a process with everything it started. Best effort: a process already gone ends nothing. */
-async function endTree(child: { readonly pid?: number | undefined; kill(signal?: NodeJS.Signals): boolean }): Promise<void> {
-  if (process.platform === 'win32' && child.pid) { await runToExit('taskkill', ['/pid', String(child.pid), '/T', '/F']).catch(() => undefined); return }
-  child.kill('SIGKILL')
-}
 /** What a command stopped from outside rejects with. */
 function stoppedError(command: string): Error { return Object.assign(new Error(`${command} was stopped.`), { code: 'ABORT_ERR' }) }
 
@@ -329,6 +340,8 @@ export class GitStatusReader implements GitStatusSource {
   /** Stops the remote half's processes, the fetch and the GitHub lookups, and refuses any more, for closing (#1664). */
   async stop(): Promise<void> {
     this.stopped.abort()
+    // The hosts gh is signed in to are looked up by the shared GitHubHosts, which runs its own commands.
+    this.hosts.stop()
     // Settles once what was running has ended, each stopped command's tree included, so nothing it started is still
     // writing in a folder closing goes on to leave or remove. Local reads, not stopped, end on their own. A command that
     // does not carry the signal, such as a lookup of the GitHub hosts a caller handed in, is waited for no longer than
