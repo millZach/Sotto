@@ -4,7 +4,7 @@ import { context, makeCanvas, NightScenePainter } from './nightScenePainter'
 import type { FamilyOwl, OwlMood, ThreadOwlPose } from './owlFamily'
 
 /**
- * A place's picture for Settings → Appearance (ADR-0148), drawn by the night scene's own painter in a small room of its
+ * A place's picture for Settings → Appearance (ADR-0149), drawn by the night scene's own painter in a small room of its
  * own, about the size of a small window's margins and column, with no header and no words, Watcher's owl at home and
  * two thread owls on their spots, moving as the room does unless motion is reduced. A smaller room would thin its trees
  * and limbs below a glyph's density; this one keeps them, and is shown smaller, so its glyphs are the scene's own, finer.

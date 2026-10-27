@@ -13,7 +13,7 @@ import { MASK, poly } from './sceneDraw'
  * Draws Watcher's night scene in the room's side margins, on two canvases: the landscape on one, under everything in
  * the pane, and the owls on the other, over the composer and under every menu. Shapes are drawn first as vectors on
  * small offscreen canvases, two field pixels to a glyph cell a side, whose coverage becomes each cell's density; a cell
- * is then drawn as the glyph for its density. The landscape is the chosen place's (`scenePlaces.ts`, ADR-0148), and its
+ * is then drawn as the glyph for its density. The landscape is the chosen place's (`scenePlaces.ts`, ADR-0149), and its
  * glyphs are drawn once per size, theme and place and kept. A frame copies them, clears the cells under the owls, and
  * redraws only the stars, the place's few moving glyphs, the whirlpool and the cells a ripple reaches; the owls are
  * drawn on their own canvas. A frame whose picture would not change is not painted at all.

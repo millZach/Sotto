@@ -27,7 +27,7 @@ function setup({ watcher = true, settings = {}, saves = true }: { watcher?: bool
 const group = () => screen.getByRole('radiogroup', { name: 'Watcher scene' })
 const radio = (name: RegExp) => within(group()).getByRole('radio', { name })
 
-describe('Settings → Appearance → Watcher scene (ADR-0148)', () => {
+describe('Settings → Appearance → Watcher scene (ADR-0149)', () => {
   it('is absent where Watcher is off, and keeps the saved place', () => {
     const { onSave } = setup({ watcher: false, settings: { watcherScene: 'desert' } })
     expect(screen.queryByRole('heading', { name: 'Watcher scene' })).not.toBeInTheDocument()

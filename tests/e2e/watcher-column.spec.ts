@@ -19,7 +19,7 @@ import { seedWatcherRoom } from './support/watcherRoom'
  * the composer floats over the conversation as a thread's does, as frosted glass with the night scene under it; the
  * scene runs under the column at 85% and never moves for the words; reading back slims the composer to one line without
  * moving the scene. Every word in the conversation keeps 4.5:1 against every pixel the scene draws in the column, the
- * glow left out, in every built-in theme, dark and light, and in every place the scene can be set in (ADR-0148), and
+ * glow left out, in every built-in theme, dark and light, and in every place the scene can be set in (ADR-0149), and
  * the composer's words keep it against the glass over the brightest of the scene. Run after `npm run build`. Captures go to disposable run evidence;
  * `SOTTO_E2E_EVIDENCE=publish` writes artifacts/watcher-column.
  */

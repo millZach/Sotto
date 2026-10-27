@@ -1,6 +1,6 @@
 # Watcher scenes
 
-Branch `feat/watcher-scenes`, Windows 11 on LAPTOP-RUSSH2J5, October 26, 2026. Zach's pick A of `docs/prototypes/watcher-theme-prototype.html` (ADR-0148): Watcher's night scene set in Night wood, Harbour, Snowfield or Desert, picked in Settings → Appearance → Watcher scene, its colours still the theme's.
+Branch `feat/watcher-scenes`, Windows 11 on LAPTOP-RUSSH2J5, October 26, 2026. Zach's pick A of `docs/prototypes/watcher-theme-prototype.html` (ADR-0149): Watcher's night scene set in Night wood, Harbour, Snowfield or Desert, picked in Settings → Appearance → Watcher scene, its colours still the theme's.
 
 ## What was checked on the built app
 

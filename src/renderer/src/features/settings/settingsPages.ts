@@ -220,6 +220,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'effort-color', label: msg`Effort color`, section: 'settings-appearance' },
     { id: 'show-creature', label: msg`Show the creature`, section: 'settings-appearance', words: 'hide off composer', gate: 'creature-toggle' },
     { id: 'creature', label: msg`Creature`, section: 'settings-appearance', words: 'claude bot sotto composer' },
+    { id: 'watcher-scene', label: msg`Watcher scene`, section: 'settings-appearance', words: 'night scene owls place harbour harbor snowfield snow desert wood theme', gate: 'watcher' },
     // The menu bar owl is a Mac's alone (ADR-0114).
     ...platform === 'darwin' ? [{ id: 'menu-bar-owl', label: msg`Menu bar owl`, section: 'settings-appearance', words: 'tray icon body eyes colour color', gate: 'menu-bar-owl' } as const] : [],
     { id: 'contrast', label: msg`Contrast`, section: 'settings-appearance' },

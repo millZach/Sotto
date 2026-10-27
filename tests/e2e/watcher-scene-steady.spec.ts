@@ -18,7 +18,7 @@ import { seedWatcherRoom } from './support/watcherRoom'
  * compositor draws it, while the room goes through what changes it: a reply arrives, the room's projection changes (an
  * owl wakes, a newcomer comes out of the moon, a question waits and the needs-you line appears), a fold opens and
  * closes, the composer slims and widens, the Watched tab opens and closes, a draft is typed, the window is resized and
- * the scene is set in each of its places in turn (ADR-0148). In every frame the scene's left margin keeps its glyphs: a
+ * the scene is set in each of its places in turn (ADR-0149). In every frame the scene's left margin keeps its glyphs: a
  * frame that loses most of the ones its place shows is a blink, and while one place gives way to the next, most of the
  * fainter one's. Run after
  * `npm run build`. Captures go to disposable run evidence; `SOTTO_E2E_EVIDENCE=publish` writes

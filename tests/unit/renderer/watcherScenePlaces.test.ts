@@ -69,7 +69,7 @@ beforeEach(() => {
 })
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
-describe('every place Watcher’s scene can be set in (ADR-0148)', () => {
+describe('every place Watcher’s scene can be set in (ADR-0149)', () => {
   const layouts = [room(1600, 1000), room(1280, 800), room(1100, 640)].map(measure => layoutScene(measure))
 
   it('is laid out alike, so every owl sits where it does in the night wood', () => {

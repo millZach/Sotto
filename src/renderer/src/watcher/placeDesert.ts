@@ -3,7 +3,7 @@ import { wrap, type Ambience, type ScenePlace } from './scenePlace'
 import { alongLimb, cutOut, drawMoon, ellipse, MASK, poly, strokePts, type Field } from './sceneDraw'
 
 /**
- * Desert (ADR-0148): mesas on the horizon, dunes with smooth backs and sharp crests, sand where the night wood has its
+ * Desert (ADR-0149): mesas on the horizon, dunes with smooth backs and sharp crests, sand where the night wood has its
  * ground, two tall saguaros where its trees stand, their arms where its limbs are and turning up at the ends, and a
  * small arm out of each side of the composer. The moon is drawn larger, about the same centre, its glow the accent.
  * Sand drifts low over the dunes.

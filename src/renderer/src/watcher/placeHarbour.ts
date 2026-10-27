@@ -3,7 +3,7 @@ import { wrap, type Ambience, type ScenePlace } from './scenePlace'
 import { alongLimb, cutOut, drawMoon, ellipse, MASK, poly, strokeLimb, strokePts, type Field } from './sceneDraw'
 
 /**
- * Harbour (ADR-0148): the sea under the moon, a stone quay where the night wood has its ground, a ship moored at the
+ * Harbour (ADR-0149): the sea under the moon, a stone quay where the night wood has its ground, a ship moored at the
  * quay whose mast and yards stand where Watcher's tree and its limbs do, a lighthouse where the bare tree stands, with
  * a rope from its tower to a signal pole where that tree's long limb is, and a spar with a lantern out of each side of
  * the composer. The accent is the light: the lamp, the lanterns, the masthead light and the moon's path on the water.

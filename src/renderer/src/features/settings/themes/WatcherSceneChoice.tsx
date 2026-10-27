@@ -26,7 +26,7 @@ const PLACE_NAMES = {
 } as const satisfies Record<WatcherScene, unknown>
 
 /**
- * Settings → Appearance → Watcher scene (ADR-0148): the place Watcher's night scene is set in, as a card for each with
+ * Settings → Appearance → Watcher scene (ADR-0149): the place Watcher's night scene is set in, as a card for each with
  * its picture drawn by the scene's own painter in the theme's inks. A radio group: one Tab stop, the arrows, Home and
  * End move to a place and choose it. Shown only where Watcher is (ADR-0072); elsewhere the saved choice is kept whole.
  */

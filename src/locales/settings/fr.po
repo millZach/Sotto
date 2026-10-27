@@ -6308,6 +6308,7 @@ msgstr ""
 msgid "Watcher runs on {watcherProviders}. Connect one to choose its model."
 msgstr ""
 
+#: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
 msgid "Watcher scene"
 msgstr ""

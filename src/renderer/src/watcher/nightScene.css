@@ -11,7 +11,7 @@
 .watcher-scene--owl { z-index: 3; }
 /* The thread owls' buttons, over their glyphs: the pointer's way to a thread's name and to the thread. */
 .watcher-scene--owls { z-index: 4; }
-/* When the place changes (ADR-0148), a copy of the last place's landscape lies over the new one, already drawn under
+/* When the place changes (ADR-0149), a copy of the last place's landscape lies over the new one, already drawn under
    it, and fades out as the new one fades in. The two run linearly and in step, so their opacities always add to one and
    the column's ink never passes its ceiling where they overlap; with motion reduced there is no copy and the new place
    replaces the last in one frame. */

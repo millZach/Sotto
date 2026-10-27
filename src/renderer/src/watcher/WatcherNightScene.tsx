@@ -129,7 +129,7 @@ interface Target {
  * paints only when that changed the picture, and draws nothing when nothing moves, the window is hidden or the scene
  * has gone. With motion reduced, or `held` for a capture, nothing flies: owls appear and fade, and the scene holds still.
  *
- * The scene is set in the place the user picked in Settings → Appearance (ADR-0148). A new place is drawn whole in the
+ * The scene is set in the place the user picked in Settings → Appearance (ADR-0149). A new place is drawn whole in the
  * frame it is picked, under a copy of the last place's landscape that fades away over it, so the scene never shows a
  * blank frame; with motion reduced the new place simply replaces the last in that one frame.
  */

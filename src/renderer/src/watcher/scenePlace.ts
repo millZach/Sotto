@@ -2,7 +2,7 @@ import type { SceneLayout } from './nightScene'
 import type { Field } from './sceneDraw'
 
 /**
- * The places Watcher's night scene is set in (ADR-0148). Every place is laid out by the same `layoutScene`, so the moon,
+ * The places Watcher's night scene is set in (ADR-0149). Every place is laid out by the same `layoutScene`, so the moon,
  * Watcher's owl's home and every thread owl's spot stand where they do in the night wood: a place only draws its own
  * things at that geometry, a mast's yard or a cactus arm where the wood has a limb, a quay or a drift where it has the
  * ground. It draws into the same two fields (the ink's and the accent's) the painter reads into glyphs, so it keeps the
