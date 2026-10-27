@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
+import { BUILT_IN_THEMES } from '../../src/shared/themes/library'
 import { withSotto } from '../fixtures/designCaptureProfile'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { composerEdges } from './support/composerEdge'
@@ -21,7 +22,8 @@ import { seedWatcherRoom } from './support/watcherRoom'
  * `SOTTO_E2E_EVIDENCE=publish` writes artifacts/composer-slim-steady.
  */
 const evidence = evidenceDirectory('artifacts/composer-slim-steady')
-const THEMES = ['t3-code', 'hush', 'linen', 'nocturne', 'tropic', 'citrine'] as const
+// Every built-in, so a palette added or replaced is covered without editing this list.
+const THEMES = BUILT_IN_THEMES.map(theme => theme.id)
 const hostKeys = hostKeysPerTest()
 test.beforeEach(() => { hostKeys.reset() })
 

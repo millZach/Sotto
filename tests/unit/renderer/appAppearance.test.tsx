@@ -12,7 +12,7 @@ describe('Sotto application onboarding integration', () => {
         ...DEFAULT_SETTINGS,
         theme: 'dark' as const,
         appearance: 'light' as const,
-        lightTheme: 'tropic',
+        lightTheme: 'fern',
         reducedMotion: 'on' as const,
       })),
     })
@@ -23,7 +23,7 @@ describe('Sotto application onboarding integration', () => {
     // effect, so the attributes need their own wait.
     await waitFor(() => expect(document.documentElement.dataset.reducedMotion).toBe('on'))
     expect(document.documentElement).toHaveAttribute('data-theme', 'light')
-    expect(document.documentElement).toHaveAttribute('data-theme-id', 'tropic')
+    expect(document.documentElement).toHaveAttribute('data-theme-id', 'fern')
   })
 
   it('removes a forced motion attribute when following system motion', () => {
@@ -127,9 +127,9 @@ describe('Sotto application onboarding integration', () => {
     await user.click(screen.getByRole('tab', { name: 'Appearance' }))
     const lightHalf = (): HTMLElement => screen.getByRole('radiogroup', { name: 'Light theme' })
     await user.click(screen.getByRole('radio', { name: 'Light' }))
-    await user.click(within(lightHalf()).getByRole('radio', { name: 'Tropic' }))
+    await user.click(within(lightHalf()).getByRole('radio', { name: 'Fern' }))
     expect(root).toHaveAttribute('data-theme', 'light')
-    expect(root).toHaveAttribute('data-theme-id', 'tropic')
+    expect(root).toHaveAttribute('data-theme-id', 'fern')
 
     await waitFor(() => expect(saves).toHaveLength(1))
     persisted = { ...persisted, appearance: 'light' }
@@ -144,13 +144,13 @@ describe('Sotto application onboarding integration', () => {
   })
 
   it('paints the next launch from the last applied look before settings answer', async () => {
-    renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'light' as const, lightTheme: 'linen', appearanceContrast: 135 })) }))
-    await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme-id', 'linen'))
+    renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'light' as const, lightTheme: 'clay', appearanceContrast: 135 })) }))
+    await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme-id', 'clay'))
     expect(document.documentElement.style.getPropertyValue('--theme-contrast-boost')).toBe('35%')
     const { readCachedAppearance } = await import('../../../src/renderer/src/state/appearance')
-    expect(readCachedAppearance()).toMatchObject({ appearance: 'light', lightTheme: 'linen', darkTheme: 't3-code', appearanceContrast: 135 })
-    localStorage.setItem('sotto.appearance', '{"appearance":"sepia","lightTheme":"linen","accent":"green"}')
-    expect(readCachedAppearance()).toMatchObject({ appearance: 'dark', lightTheme: 'linen' })
+    expect(readCachedAppearance()).toMatchObject({ appearance: 'light', lightTheme: 'clay', darkTheme: 't3-code', appearanceContrast: 135 })
+    localStorage.setItem('sotto.appearance', '{"appearance":"sepia","lightTheme":"clay","accent":"green"}')
+    expect(readCachedAppearance()).toMatchObject({ appearance: 'dark', lightTheme: 'clay' })
     expect(readCachedAppearance()).not.toHaveProperty('accent')
     localStorage.setItem('sotto.appearance', 'not json')
     expect(readCachedAppearance()).toMatchObject({ appearance: 'dark', lightTheme: 't3-code', darkTheme: 't3-code' })

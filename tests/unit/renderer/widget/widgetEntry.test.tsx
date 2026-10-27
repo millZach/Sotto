@@ -46,15 +46,15 @@ describe('WidgetEntry', () => {
   it('repaints the mark, voice bars and surfaces live when a new palette arrives, without a new session', async () => {
     const { bridge, emit } = liveBridge()
     render(<WidgetEntry bridge={bridge} platform="win32" preview={null} />)
-    const nocturne = widgetPaletteFor({ lightTheme: 'nocturne', darkTheme: 'nocturne', customThemes: [] })
-    const citrine = widgetPaletteFor({ lightTheme: 'nocturne', darkTheme: 'citrine', customThemes: [] })
+    const graphite = widgetPaletteFor({ lightTheme: 'graphite', darkTheme: 'graphite', customThemes: [] })
+    const citrine = widgetPaletteFor({ lightTheme: 'graphite', darkTheme: 'citrine', customThemes: [] })
     const listening = { status: 'listening', sessionId: 'live', startedAt: Date.now(), level: 0.4, cancellable: true } as const
     const root = document.documentElement
 
-    emit(snapshot({ ...listening, theme: 'dark', palette: nocturne }))
+    emit(snapshot({ ...listening, theme: 'dark', palette: graphite }))
     expect(screen.getByTestId('listening-bars')).toBeInTheDocument()
-    expect(root.style.getPropertyValue('--theme-accent')).toBe(nocturne.dark.accent)
-    expect(screen.getByTestId('widget-glyph').querySelector('svg')).toHaveAttribute('data-tile', themeBrand(nocturne.dark, 'dark').tile)
+    expect(root.style.getPropertyValue('--theme-accent')).toBe(graphite.dark.accent)
+    expect(screen.getByTestId('widget-glyph').querySelector('svg')).toHaveAttribute('data-tile', themeBrand(graphite.dark, 'dark').tile)
 
     // Same session, next level update carries the newly selected dark half.
     emit(snapshot({ ...listening, level: 0.5, theme: 'dark', palette: citrine }))
@@ -62,7 +62,7 @@ describe('WidgetEntry', () => {
     expect(root.style.getPropertyValue('--theme-surface-raised')).toBe(citrine.dark.surfaceRaised)
     expect(root.style.getPropertyValue('--theme-error-foreground')).toBe(citrine.dark.errorForeground)
     await waitFor(() => expect(screen.getByTestId('widget-glyph').querySelector('svg')).toHaveAttribute('data-tile', themeBrand(citrine.dark, 'dark').tile))
-    expect(themeBrand(citrine.dark, 'dark').tile).not.toBe(themeBrand(nocturne.dark, 'dark').tile)
+    expect(themeBrand(citrine.dark, 'dark').tile).not.toBe(themeBrand(graphite.dark, 'dark').tile)
 
     // Back to idle keeps the theme; the resting sliver paints from the same roles.
     emit(snapshot({ status: 'idle', theme: 'dark', palette: citrine }))
@@ -81,7 +81,7 @@ describe('WidgetEntry', () => {
     try {
       const { bridge, emit } = liveBridge()
       render(<WidgetEntry bridge={bridge} platform="win32" preview={null} />)
-      const palette = widgetPaletteFor({ lightTheme: 'tropic', darkTheme: 'citrine', customThemes: [] })
+      const palette = widgetPaletteFor({ lightTheme: 'fern', darkTheme: 'citrine', customThemes: [] })
       emit(snapshot({ status: 'requesting-permission', sessionId: 'scheme', theme: 'system', palette, cancellable: true }))
       const root = document.documentElement
       expect(root).toHaveAttribute('data-theme', 'light')

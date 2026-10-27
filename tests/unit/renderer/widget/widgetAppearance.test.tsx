@@ -107,8 +107,8 @@ describe('WidgetApp', () => {
     ['cancelled', snapshot({ status: 'cancelled', sessionId: 'mark' })],
     ['error', snapshot({ status: 'error', sessionId: 'mark', code: 'NO_SPEECH' })],
   ] as const)('leads the %s capsule with the decorative app mark', (_name, activeSnapshot) => {
-    const tropic = widgetPaletteFor({ lightTheme: 'tropic', darkTheme: 'tropic', customThemes: [] })
-    const release = applyRootPresentation({ theme: 'dark', palette: tropic, reducedMotion: 'system' }, true)
+    const fern = widgetPaletteFor({ lightTheme: 'fern', darkTheme: 'fern', customThemes: [] })
+    const release = applyRootPresentation({ theme: 'dark', palette: fern, reducedMotion: 'system' }, true)
     const { container } = render(
       <WidgetApp snapshot={activeSnapshot} platform="win32" now={1_000} />,
     )
@@ -118,7 +118,7 @@ describe('WidgetApp', () => {
     expect(glyph).toHaveAttribute('aria-hidden', 'true')
     expect(container.querySelector('.widget-capsule')?.firstElementChild).toBe(glyph)
     // The mark wears the painted theme half: its accent tile and a readable glyph.
-    const brand = themeBrand(tropic.dark, 'dark')
+    const brand = themeBrand(fern.dark, 'dark')
     expect(glyph.querySelector('rect')).toHaveAttribute('fill', brand.tile)
     expect(glyph.querySelector('path[fill-rule="evenodd"]')).toHaveAttribute('fill', brand.glyph)
     expect([...glyph.querySelectorAll('circle')].map((circle) => circle.getAttribute('fill')))
@@ -129,7 +129,7 @@ describe('WidgetApp', () => {
   it('wears the app icon on the half the default theme paints, and gives the attribute back on release', () => {
     const root = document.documentElement
     // One half on the default theme, the other on a built-in, so the two answers show in one palette.
-    const split = widgetPaletteFor({ lightTheme: DEFAULT_THEME_ID, darkTheme: 'tropic', customThemes: [] })
+    const split = widgetPaletteFor({ lightTheme: DEFAULT_THEME_ID, darkTheme: 'fern', customThemes: [] })
     expect(split.appIcon).toEqual({ light: true, dark: false })
 
     const release = applyRootPresentation({ theme: 'light', palette: split, reducedMotion: 'system' }, false)

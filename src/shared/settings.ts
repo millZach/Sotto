@@ -15,7 +15,7 @@ import {
   DEFAULT_THEME_ID,
   customThemesSchema,
   isThemeId,
-  parseCustomThemes,
+  parseSavedThemeLibrary,
   resolveThemeHalfId,
   type ThemeDefinition,
 } from './themes/library'
@@ -685,11 +685,14 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
   // The library is read leniently, one theme at a time, so a single damaged
   // entry never costs the user the rest of their themes. A half naming a theme
   // that is gone, or that cannot paint that half, lands on the default.
-  const customThemes = Array.isArray(persisted.customThemes)
-    ? parseCustomThemes(persisted.customThemes)
-    : [...defaults.customThemes]
+  // A theme of the user's own whose id a built-in has since taken is kept under a new id, and its halves follow it.
+  const library = Array.isArray(persisted.customThemes)
+    ? parseSavedThemeLibrary(persisted.customThemes)
+    : { themes: [...defaults.customThemes], moved: new Map<string, string>() }
+  const customThemes = library.themes
   const half = (key: 'lightTheme' | 'darkTheme'): string => {
-    const id = parseField(persisted, key, defaults)
+    const saved = parseField(persisted, key, defaults)
+    const id = library.moved.get(saved) ?? saved
     return allowOmarchy && id === OMARCHY_THEME_ID ? id : resolveThemeHalfId(id, key === 'lightTheme' ? 'light' : 'dark', customThemes)
   }
 

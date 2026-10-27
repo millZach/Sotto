@@ -107,7 +107,7 @@
 .watcher-head__list { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 8px 0 9px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; cursor: pointer; }
 .watcher-head__list:hover, .watcher-head__list[aria-expanded='true'] { border-color: var(--tt-hairline); background: var(--tt-hover); color: var(--tt-text); }
 .watcher-head__count { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }
-/* On the button's own fill the muted count falls short of 4.5:1 in some themes (Tropic dark), so it lifts with the label. */
+/* On the button's own fill the muted count falls short of 4.5:1 in some themes, so it lifts with the label. */
 .watcher-head__list:is(:hover, [aria-expanded='true']) .watcher-head__count { color: var(--tt-text-2); }
 @container thread-pane (width < 600px) { .watcher-head__list-text { display: none; } }
 
