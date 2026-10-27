@@ -864,7 +864,8 @@ describe('point at something (ADR-0154)', () => {
     const enabling = deferred<void>()
     command.mockImplementation(async (method: string, params?: Record<string, unknown>) => { if (method === 'Network.enable') await enabling.promise; return original(method, params) })
     unwrap(await service.point({ ...target, on: true, color }))
-    await vi.waitFor(() => expect(command).toHaveBeenCalledWith('Network.enable'))
+    // Matched by method alone: the deadline-bounded sender passes its parameters, undefined here, as a second argument.
+    await vi.waitFor(() => expect(command.mock.calls.some(([method]) => method === 'Network.enable')).toBe(true))
     unwrap(await service.point({ ...target, on: false }))
     enabling.resolve()
     await new Promise(resolve => setTimeout(resolve, 10))
