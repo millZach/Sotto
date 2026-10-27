@@ -143,7 +143,7 @@ test.describe('appearance rendered evidence', () => {
   })
 
   test('the floating widget keeps following the system scheme whatever the room is', async () => {
-    await withProfile({ appearance: 'light', lightTheme: 'tropic', darkTheme: 'tropic' }, async (launched) => {
+    await withProfile({ appearance: 'light', lightTheme: 'fern', darkTheme: 'fern' }, async (launched) => {
       await expect(launched.page.locator('html')).toHaveAttribute('data-theme', 'light')
       await expect.poll(() => launched.app.windows().some(candidate => candidate.url().endsWith('/widget.html'))).toBe(true)
       const widget = launched.app.windows().find(candidate => candidate.url().endsWith('/widget.html'))!
