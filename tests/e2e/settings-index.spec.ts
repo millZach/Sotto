@@ -144,7 +144,7 @@ test('Index settings: focused categories, real saves, failure feedback, themes a
     await expect.poll(async () => (await settings()).darkTheme).toBe('clay')
     await shot(page, 'appearance-clay-live')
     // A grid is one Tab stop: from the chosen theme, Tab leaves it rather than walking the others.
-    await expect(darkColumn.getByRole('radio')).toHaveCount(6)
+    await expect(darkColumn.getByRole('radio')).toHaveCount(7)
     await darkColumn.getByRole('radio', { name: 'Clay', exact: true }).focus()
     await page.keyboard.press('Tab')
     expect(await page.evaluate(() => document.activeElement?.closest('[data-half="dark"]') !== null)).toBe(false)
