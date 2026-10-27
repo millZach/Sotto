@@ -1,7 +1,7 @@
 import { plural, t } from '@lingui/core/macro'
 
 import { PROVIDER_LABELS, type AgentThread } from '../../../shared/agents'
-import { LIMIT_RESTART_NOTE_TAIL } from '../../../shared/limitRestart'
+import { isLimitRestartNoteText } from '../../../shared/limitRestart'
 import { providerIdSchema } from '../../../shared/providerIds'
 import { isResumeNoteText } from '../../../shared/restartResume'
 import { isThreadArchived } from '../../../shared/threadActivity'
@@ -14,18 +14,13 @@ import { localeFormatter } from './localeFormat'
  * Every claim is read from the `scheduledRestart` the thread's host published, never worked out here.
  */
 
-/** The longest provider name the schema allows, and the "’s " before the note's words. */
-const NOTE_LEAD_MAX = 64 + 3
-
 /**
  * Whether a message Sotto's own record has already marked as a wake-up is a restart note: the note sent when a limit
  * resets, or the resume note after Sotto itself restarted. Either opens the wake-up it is part of; text alone never makes
  * a message Sotto's.
  */
 export function isRestartNoteText(text: string): boolean {
-  if (isResumeNoteText(text)) return true
-  const at = text.trimStart().indexOf(LIMIT_RESTART_NOTE_TAIL)
-  return at > 0 && at <= NOTE_LEAD_MAX
+  return isResumeNoteText(text) || isLimitRestartNoteText(text)
 }
 
 /** The provider's own name for an ID the host published; a name it does not know is shown as it came. */

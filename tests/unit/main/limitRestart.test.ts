@@ -151,6 +151,35 @@ describe('restarting threads a usage limit stopped', () => {
     await expect.poll(f.saved).toEqual([])
   })
 
+  it('leaves a thread the user sent to after the stop to them, and schedules it again only when that turn stops at the limit too', async () => {
+    const f = await fixture({ threads: [thread('a'), thread('b')] })
+    const reset = new Date(START + 60 * 60_000).toISOString()
+    for (const id of ['a', 'b']) f.update(id, limitStop(id, reset))
+    // The user's send is first seen already over, failed for another reason: the thread is theirs, and no note goes.
+    f.update('a', { status: 'error', lastTurn: { id: 'a-2', status: 'failed' } })
+    expect(f.restart.scheduled('a')).toBeUndefined()
+    // The user's send stopped at the limit as well: it takes the old record's place, from none in a row.
+    const later = new Date(START + 2 * 60 * 60_000).toISOString()
+    f.update('b', limitStop('b', later, 'b-2'))
+    expect(f.restart.scheduled('b')?.at).toBe(later)
+    await f.fire()
+    expect(f.delivered.map(item => [item.threadId, item.news.restarts])).toEqual([['b', 1]])
+  })
+
+  it('saves a note as sent as soon as it is queued, so a start after a crash does not queue it again', async () => {
+    let release!: () => void
+    const held = new Promise<void>(resolve => { release = resolve })
+    const f = await fixture({ threads: [thread('a'), thread('b')], deliver: async id => { if (id === 'b') await held } })
+    const reset = new Date(START + 60_000).toISOString()
+    for (const id of ['a', 'b']) f.update(id, limitStop(id, reset))
+    const timer = f.live().at(-1)!
+    f.advance(timer.delay); timer.cancelled = true; timer.callback()
+    // While the second note is still on its way, the first is already on disk as sent.
+    await expect.poll(async () => (await f.saved() as { threadId: string; sent?: boolean }[]).find(item => item.threadId === 'a')?.sent).toBe(true)
+    release(); await f.restart.settled()
+    expect(f.delivered.map(item => item.threadId)).toEqual(['a', 'b'])
+  })
+
   it('records the provider’s threads working in the background at its first stop, and only that provider’s', async () => {
     const work = [{ id: 'job', kind: 'command', status: 'running' }] as unknown as AgentThread['backgroundWork']
     const f = await fixture({ threads: [thread('workshop'), thread('waiting', { status: 'idle', lastTurn: { id: 'w', status: 'completed' }, backgroundWork: work }),

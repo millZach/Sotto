@@ -183,6 +183,9 @@ export class LimitRestart {
     if (turn?.status === 'completed' && !isThreadTurnRunning(thread) && before !== undefined && before !== key) { this.drop(thread.id); return true }
     // Before its restart, a turn running is someone else's: the user, Watcher or the provider carried it on.
     if (!record.sent && isThreadTurnRunning(thread)) { this.drop(thread.id); return true }
+    // Before its restart, any other turn since the stop was someone's send, even one first seen already ended: the
+    // thread is theirs now. A limit stop of that turn was recorded above, in this record's place.
+    if (!record.sent && turn !== undefined && before !== undefined && before !== key) { this.drop(thread.id); return true }
     return false
   }
 
@@ -276,6 +279,8 @@ export class LimitRestart {
           await this.options.control.deliverWakeUp(record.threadId, news, { tool: this.options.tool?.(record.threadId) ?? false })
           if (this.records.get(record.threadId) === record) {
             this.set({ threadId: record.threadId, provider, stoppedAt: record.stoppedAt, restarts: news.restarts, sent: true })
+            // Saved at once: a start that read it unsent would queue the note a second time.
+            this.save()
             restarted.push(record.threadId)
           }
         } catch {
