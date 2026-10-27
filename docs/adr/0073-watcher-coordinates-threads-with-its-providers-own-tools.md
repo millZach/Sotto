@@ -686,3 +686,10 @@ The floating switch, Zach's 1C pick of October 11, kept a 54-pixel band under th
 - **More says when an update is in hand.** While a release is found, downloading or ready to install, the states the floating switch stayed open for, More wears a small accent dot and its name adds what the update control would say.
 - **The room is one row.** With no band to keep clear, the composer sits at the window's floor. The header's narrow-width steps give way 130 pixels sooner to make room for the switch and More, so at the 820 by 560 minimum, alone or beside a thread, nothing in the header overflows; All threads and Stop all shorten to their icons and counts first.
 - **Night falls** carries the owl from the sidebar foot to the header switch and back.
+
+## October 27, 2026: a message from the iPhone shows once
+
+Watcher's computer puts the phone's message in Watcher's conversation, or in its queue, as soon as it takes the send, and the page it pushes then often reaches the phone before the answer to the send. The phone kept its **Sending to Watcher…** bubble until that answer, so for that moment, seconds when Watcher was working, the message showed twice. Drake reported it from the Watcher tab.
+
+- **The page's word ends the bubble.** The bubble goes once the page shows the message itself: the computer says it took that draft or holds it in Watcher's queue, or a user message with the same words has joined the conversation since the send left. Messages carry no draft ID, so the last is read from the words and from which messages were already there.
+- **The box stays locked until the answer.** Only the bubble goes early. A refused or unconfirmed send still puts the message back in the box, under the same draft ID, as above.

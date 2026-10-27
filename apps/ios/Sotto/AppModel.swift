@@ -256,7 +256,8 @@ extension AppModel {
         guard let computer = computer(hostID) else { preparingSends.remove(box.id); return }
         // The host holds a draft ID to one packet, its photos' handles included: photos staged again go as another message.
         let draftID = watcherDrafts[hostID, default: WatcherDrafts()].id(for: text, photos: images.map(\.id))
-        watcherSending[hostID] = text; drafts[key] = ""
+        watcherSending[hostID] = WatcherSending(text: text, draftID: draftID, before: Set(watcherPage(hostID)?.conversation.messages.map(\.id) ?? []))
+        drafts[key] = ""
         if !photos.isEmpty { watcherSendingPhotos[hostID] = photos; draftPhotos[key] = nil; photoNotices[key] = nil }
         defer {
             watcherSending[hostID] = nil
@@ -292,7 +293,7 @@ extension AppModel {
             case .refused(let refusal):
                 // A page pushed while the words were on their way may already say Watcher took them or that they wait in
                 // its queue. Its word wins: put back in the box, they could be sent a second time.
-                if let page = watcherPage(hostID), page.delivery(of: draftID) == "accepted" || page.followup(of: draftID) != nil {
+                if let page = watcherPage(hostID), page.holds(draftID) {
                     watcherDrafts[hostID]?.resolve(draftID)
                     return
                 }
@@ -313,13 +314,20 @@ extension AppModel {
             // conversation, and the page is read again.
             watcherDrafts[hostID]?.end(draftID)
             // Taken, or waiting in Watcher's queue to go next: either way the computer has the words.
-            if watcherPage(hostID)?.delivery(of: draftID) == "accepted" || watcherPage(hostID)?.followup(of: draftID) != nil {
+            if watcherPage(hostID)?.holds(draftID) == true {
                 watcherDrafts[hostID]?.resolve(draftID)
             } else {
                 feedback = restoreWatcherDraft(text, photos: photos, on: hostID, unconfirmed: true) ? Self.watcherUnconfirmed : Self.watcherUnconfirmedSetAside
                 await readWatcher(hostID)
             }
         }
+    }
+    /// The words on their way to Watcher, to show under the conversation, until the page shows them itself: the computer
+    /// puts them in Watcher's conversation, or its queue, as soon as it takes the send, often before it answers it, and
+    /// shown in both they read twice.
+    func watcherSendingShown(_ hostID: String) -> WatcherSending? {
+        guard let sending = watcherSending[hostID], let page = watcherPage(hostID) else { return watcherSending[hostID] }
+        return sending.shown(in: page) ? nil : sending
     }
     static let watcherUnconfirmed = String(localized: "Watcher didn’t confirm your message, so it’s back in the box. Check the conversation before you send it again.")
     static let watcherUnconfirmedSetAside = String(localized: "Watcher didn’t confirm your message. It’s kept under the conversation, because the box has newer words. Check the conversation before you send it again.")
@@ -1205,8 +1213,8 @@ struct HeldDetail {
     @Published var watcherAlertOpened: String?
     /// The computer whose Watcher was last chosen for the Watcher tab, by its alert or the header's menu.
     @Published private var chosenWatcherHost: String?
-    /// Words on their way to Watcher, by computer, shown under the conversation until Watcher takes them.
-    @Published private(set) var watcherSending: [String: String] = [:]
+    /// The message on its way to Watcher, by computer. It locks the box until the computer answers the send.
+    @Published private(set) var watcherSending: [String: WatcherSending] = [:]
     /// The photos of the message on its way to Watcher, by computer. Watcher's box stays locked meanwhile, so they go back
     /// in it, with the words, when Watcher refuses them or doesn't confirm them.
     @Published private(set) var watcherSendingPhotos: [String: [DraftPhoto]] = [:]
