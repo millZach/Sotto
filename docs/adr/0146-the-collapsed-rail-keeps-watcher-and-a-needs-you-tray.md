@@ -4,6 +4,8 @@
 
 Accepted October 26, 2026. Drake picked **Owl apart** (column D of `tray.html`) on the tag `prototype/sidebar-rail-mockups`, after comparing ten directions for the collapsed rail (`index.html` on the same tag) and five refinements of the one he took further, the needs-you tray. It is the Owl feature `sidebar-rail` (ADR-0072). The number is provisional until merge (see `docs/agents/domain.md`).
 
+Amended October 27, 2026: the rail's group holds the threads Watcher watches, not the threads that wait on the user, and the tray is gone (below, "October 27, 2026 amendment: Watcher's threads").
+
 Amends ADR-0135 in one place: "The collapsed rail is unchanged" holds while this feature is off. While it is on, the rail says need with its own tray, reading the same Needs you queue the card does. Nothing in ADR-0004 changes: the tray opens threads and answers nothing.
 
 ## Context
@@ -27,3 +29,15 @@ While the feature is off the rail is exactly what it was.
 ## Considered
 
 The ten directions on the tag (monograms, project stacks, recency with a peek, pixel identicons and others), and four other refinements of the tray: the owl leading the tray, project stripes, a ring that says why the thread waits, and resting threads folded into one +N button. Owl apart keeps Watcher reachable whether or not anything waits, and leaves the tray to say only what waits.
+
+## October 27, 2026 amendment: Watcher's threads
+
+Looking at the tray's refinements again, Drake took the first, the owl heading an amber group, with two changes: the owl stays its own tile at the top, and the group holds the threads Watcher is watching rather than the threads that need him. Four ways to draw that are on the tag `prototype/sidebar-rail-watched` (`prototype/sidebar-rail-mockups/watched.html`, each in dark, light, nothing watched and eight watched): a neutral card, the amber panel kept with the owl counting what waits, a card in the accent, and no box with an owl on each watched tile. Drake picked the last, **No box, owl marks**, on October 27, 2026. Amber then keeps one meaning on the rail, that something waits on you, and the owl on a tile is the mark a watched row already wears in the expanded sidebar.
+
+Items 3 to 5 of the decision become:
+
+3. **Watcher's threads**, while Watcher watches any: each **watched thread** (CONTEXT.md) as a tile with a small owl at its top-left corner, in the muted text colour, directly under Watcher's tile and its hairline, with no box around them. They form a group named "Watched by Watcher", and each tile's tooltip ends with it. A watched thread shows here even once settled. With none watched the group and its hairline are gone.
+4. A hairline, then the **other** open threads.
+5. Inside each of the two parts the order is what waits on the user first, in the Needs you queue's order and settled threads that wait included, then the moving threads, then the resting ones as smaller tiles in muted text. In the other threads a hairline comes before the resting ones; among Watcher's threads it does not.
+
+A thread that waits on the user, watched or not, takes the attention colour on its whole edge as well as its ring; the full colour keeps the edge above 3:1 on the light sidebar, where a part-strength edge falls under it. There is no tray and no count: Watcher's tile shows only its own ring, and the Needs you queue in the expanded sidebar keeps the count. Not picked: the neutral card (amber kept one meaning there too, but a card is one more container on a narrow strip), the amber panel (amber would mean two things), and the accent card (in Citrine the accent is also the working arc).

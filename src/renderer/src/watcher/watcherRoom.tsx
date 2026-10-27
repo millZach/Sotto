@@ -248,6 +248,11 @@ export function useWatchedThread(threadId: string): boolean {
   return useContext(WatchedThreadsContext).has(threadId)
 }
 
+/** Every thread Watcher watches right now, by ID. Empty with the gate off. */
+export function useWatchedThreadIds(): ReadonlySet<string> {
+  return useContext(WatchedThreadsContext)
+}
+
 /** Watch and Stop watching, or null with the gate off or where the bridge offers neither. */
 export function useWatchActions(): WatchActions | null {
   return useContext(WatchActionsContext)
