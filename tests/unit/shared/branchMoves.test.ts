@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BRANCH_BUNDLE_CHUNK_BYTES, BRANCH_BUNDLE_MAX_BYTES, branchNameSchema, hostBranchMoveRequestSchema, incomingRef } from '../../../src/shared/branchMoves'
+import { BRANCH_BUNDLE_CHUNK_BYTES, BRANCH_BUNDLE_MAX_BYTES, branchMoveWords, branchNameSchema, branchStartWords, hostBranchMoveRequestSchema, incomingRef } from '../../../src/shared/branchMoves'
 import { hostRequestSchema } from '../../../src/shared/hostProtocol'
 
 describe('branch move requests (ADR-0105 decision 8)', () => {
@@ -22,5 +22,27 @@ describe('branch move requests (ADR-0105 decision 8)', () => {
     // Nothing else rides along: no path, no remote, no force.
     for (const extra of [{ path: '/tmp' }, { remote: 'origin' }, { force: true }]) expect(hostBranchMoveRequestSchema.safeParse({ ...begin, size: 1, ...extra }).success).toBe(false)
     expect(hostRequestSchema.safeParse({ v: 1, id: 'm', session: 's', op: 'branch-move', request: { action: 'end', moveId } }).success).toBe(true)
+  })
+})
+
+describe('a worker started from a thread’s branch (#1033)', () => {
+  it('says where it started and from which branch, and what a test run carried, in Zach’s words', () => {
+    expect(branchStartWords('forge', 'feat/x')).toBe('Started on forge from feat/x.')
+    expect(branchStartWords('forge', 'feat/x', { untracked: ['a', 'b', 'c'], untrackedCount: 3 })).toBe('Started on forge from feat/x with your uncommitted changes (3 untracked files).')
+    expect(branchStartWords('This computer', 'feat/x', { untracked: ['a'], untrackedCount: 1 })).toBe('Started on This computer from feat/x with your uncommitted changes (1 untracked file).')
+    expect(branchStartWords('forge', 'feat/x', { untracked: [], untrackedCount: 0 })).toBe('Started on forge from feat/x with your uncommitted changes.')
+  })
+
+  it('refuses a check whose submodule has changes of its own in Zach’s words', () => {
+    expect(branchMoveWords.submoduleChanges).toBe('A submodule in this thread has uncommitted changes, and a check can\'t carry them. Commit them inside the submodule first, then start again. Nothing was started.')
+  })
+
+  it('asks for a snapshot or a same-machine copy only in the shapes it names', () => {
+    const moveId = '5c4f1d3e-6f0a-4d4e-9b8a-1c2d3e4f5a6b'
+    expect(hostBranchMoveRequestSchema.safeParse({ action: 'send-begin', moveId, threadId: 't', bases: [], snapshot: true }).success).toBe(true)
+    expect(hostBranchMoveRequestSchema.safeParse({ action: 'copy', moveId, threadId: 't', projectId: 'p', snapshot: false }).success).toBe(true)
+    expect(hostBranchMoveRequestSchema.safeParse({ action: 'copy', moveId, threadId: 't', projectId: 'p', path: '/tmp' }).success).toBe(false)
+    expect(hostBranchMoveRequestSchema.safeParse({ action: 'forget', moveId, projectId: 'p' }).success).toBe(true)
+    expect(hostBranchMoveRequestSchema.safeParse({ action: 'forget', moveId, projectId: 'p', ref: 'refs/heads/main' }).success).toBe(false)
   })
 })

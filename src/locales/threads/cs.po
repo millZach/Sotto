@@ -51,6 +51,11 @@ msgstr ""
 msgid "{0, plural, one {It no longer lists {names}, so threads on it will fail until the server loads it again.} other {It no longer lists {names}, so threads on them will fail until the server loads them again.}}"
 msgstr ""
 
+#. placeholder {0}: models.length
+#: src/renderer/src/agents/ProviderModelList.tsx
+msgid "{0, plural, one {Show {label} models, # model} other {Show {label} models, # models}}"
+msgstr ""
+
 #. {about} is a sentence saying where the sign-in is; {host} is the name of a saved host.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "{about} Sotto’s OpenCode on {host} reads it there, and Sotto keeps no copy."
@@ -111,6 +116,11 @@ msgstr ""
 #. {choice} is the provider's words for an answer, such as Allow once; {title} is a thread's title.
 #: src/renderer/src/agents/NeedsYouQueue.tsx
 msgid "{choice} in {title}"
+msgstr ""
+
+#. {clientName} is a provider's client, such as Claude Code.
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "{clientName} lists no model you can use now. Check your {clientName} sign-in and plan, then refresh this provider."
 msgstr ""
 
 #: src/renderer/src/agents/threadActivityView.ts
@@ -483,12 +493,6 @@ msgstr ""
 msgid "{kindWord}: {name}, {stateWord}"
 msgstr ""
 
-#. {label} is a provider's name.
-#. {label} is a provider's name.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "{label} available models"
-msgstr ""
-
 #. {label} is the code's language, such as TypeScript, or the word "Code".
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "{label} code block"
@@ -501,6 +505,12 @@ msgstr ""
 #. {label} is Show changes or Show commits; {title} is the project.
 #: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "{label} in {title}"
+msgstr ""
+
+#. {label} is a provider's name.
+#. {label} is a provider's name.
+#: src/renderer/src/agents/ProviderModelList.tsx
+msgid "{label} models"
 msgstr ""
 
 #. {label} is a diagram's kind, such as Flowchart: its Mermaid source.
@@ -1457,7 +1467,7 @@ msgstr ""
 msgid "Agent controls are unavailable. Reopen Sotto to reconnect."
 msgstr ""
 
-#: src/renderer/src/agents/ProvidersSettings.tsx
+#: src/renderer/src/agents/ProviderModelList.tsx
 msgid "Agent setting"
 msgstr ""
 
@@ -1683,11 +1693,6 @@ msgstr ""
 
 #: src/renderer/src/agents/ProviderUpgradeNotice.tsx
 msgid "Automatic management and pending actions were stopped in Sotto. Native work was not cancelled or replayed."
-msgstr ""
-
-#. Beside a model that can be chosen.
-#: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Available"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadOptions.tsx
@@ -2049,8 +2054,9 @@ msgstr ""
 msgid "Choose or create a thread to review this draft."
 msgstr ""
 
+#: src/renderer/src/agents/ProviderModelList.tsx
 #: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "Choose what new threads start with under Agents."
+msgid "Choose what new threads start with in Settings > Threads."
 msgstr ""
 
 #: src/renderer/src/agents/BranchToolbar.tsx
@@ -2126,6 +2132,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "Close model picker"
+msgstr ""
+
+#: src/renderer/src/agents/ProviderModelList.tsx
+msgid "Close models"
 msgstr ""
 
 #: src/renderer/src/agents/NewThreadDialog.tsx
@@ -3822,6 +3832,10 @@ msgid "It asked for more permission than this thread has, or than your new-threa
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
+msgid "It asked to start from this thread's branch, and the branch could not go: this thread had uncommitted changes and it was not a check, it was not on a branch, or Git could not copy it. {nothing} Commit first, then ask again."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
 msgid "It had answered at {time}, when Sotto last read it."
 msgstr ""
 
@@ -4582,6 +4596,7 @@ msgid "No local commits to push."
 msgstr ""
 
 #: src/renderer/src/agents/ModelPicker.tsx
+#: src/renderer/src/agents/ProviderModelList.tsx
 msgid "No matching models."
 msgstr ""
 
@@ -5982,6 +5997,11 @@ msgstr ""
 msgid "Screenshot files"
 msgstr ""
 
+#. {label} is a provider's name.
+#: src/renderer/src/agents/ProviderModelList.tsx
+msgid "Search {label} models"
+msgstr ""
+
 #. {providerName} is a provider's name.
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "Search {providerName} models"
@@ -6016,6 +6036,7 @@ msgid "Search model sources"
 msgstr ""
 
 #: src/renderer/src/agents/ModelPicker.tsx
+#: src/renderer/src/agents/ProviderModelList.tsx
 msgid "Search models"
 msgstr ""
 
@@ -6974,6 +6995,10 @@ msgstr ""
 msgid "Takes longer and catches more."
 msgstr ""
 
+#: src/renderer/src/agents/movedWorktreeWords.ts
+msgid "That is not a branch Sotto moved here. Nothing was made."
+msgstr ""
+
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "That is not an address Sotto can reach. Type it like http://localhost:11434 or http://spark-head:8888."
 msgstr ""
@@ -7052,6 +7077,14 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "The branch could not be switched. Nothing was changed."
+msgstr ""
+
+#: src/renderer/src/agents/movedWorktreeWords.ts
+msgid "The branch this worker starts from is no longer here. Start the worker again. Nothing was made."
+msgstr ""
+
+#: src/renderer/src/agents/movedWorktreeWords.ts
+msgid "The branch this worker starts from is not in this project. Start the worker again. Nothing was made."
 msgstr ""
 
 #: src/renderer/src/agents/GitActionButton.tsx
@@ -7182,6 +7215,11 @@ msgstr ""
 msgid "the model's default effort"
 msgstr ""
 
+#. {clientName} is a provider's client, such as Claude Code.
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "The models {clientName} offers you now."
+msgstr ""
+
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "The Muse guide could not be opened. Try again."
 msgstr ""
@@ -7215,6 +7253,10 @@ msgstr ""
 
 #: src/renderer/src/agents/InteractiveVisual.tsx
 msgid "The page stopped."
+msgstr ""
+
+#: src/renderer/src/agents/movedWorktreeWords.ts
+msgid "The project subdirectory is not on the branch this worker starts from. Nothing was made."
 msgstr ""
 
 #. Stands for a provider whose name is not known, inside a sentence.
@@ -7774,9 +7816,7 @@ msgid "Ultrathink is in this prompt"
 msgstr ""
 
 #. Beside a model that cannot be chosen now.
-#. Beside a model that cannot be chosen now.
 #: src/renderer/src/agents/ModelPicker.tsx
-#: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Unavailable"
 msgstr ""
 

@@ -28,6 +28,8 @@ async function runtime(crossMachineEnabled: boolean | undefined, runsAs?: 'headl
 const startOffers = (host: Awaited<ReturnType<typeof runtime>>) =>
   Object.keys((host.watcherTools!.definitions.find(tool => tool.name === 'start_thread')!.inputSchema as { properties: Record<string, unknown> }).properties)
 const delegationMachines = (host: Awaited<ReturnType<typeof runtime>>) => (host.delegation as unknown as { options: { machines?: unknown } }).options.machines
+/** Who moves a branch for a start from a thread's branch (#1033): Watcher's and delegation's mover, the same one. */
+const movers = (host: Awaited<ReturnType<typeof runtime>>) => [host.watcher, host.delegation].map(service => (service as unknown as { options: { branchMoves?: unknown } } | undefined)?.options.branchMoves)
 
 it('is off on stable and on in Owl', () => {
   expect(owlFeaturesForTrack('stable')['cross-machine-work']).toBe(false)
@@ -40,6 +42,8 @@ it.each([[undefined], [false]] as const)('offers no machine choice and reports n
     expect(startOffers(host)).not.toContain('machine')
     expect(host.watcherTools!.instructions ?? '').not.toContain('newWorkersStart')
     expect(delegationMachines(host)).toBeUndefined()
+    expect(movers(host)).toEqual([undefined, undefined])
+    expect(startOffers(host)).not.toContain('fromThread')
     expect(host.hostService.supportsProjectOrigins).toBe(false)
   } finally { await host.close() }
 })
@@ -50,12 +54,18 @@ it('offers the choice on the desktop when the Owl answer is on, and a headless h
     expect(startOffers(desktop)).toEqual(expect.arrayContaining(['machine', 'os']))
     expect(desktop.watcherTools!.instructions).toContain('newWorkersStart')
     expect(delegationMachines(desktop)).toBeDefined()
+    const [watcherMover, delegationMover] = movers(desktop)
+    expect(watcherMover).toBeDefined()
+    expect(delegationMover).toBe(watcherMover)
+    expect(startOffers(desktop)).toEqual(expect.arrayContaining(['fromThread', 'testRun']))
     expect(desktop.hostService.supportsProjectOrigins).toBe(true)
     expect(await desktop.hostService.projectOrigins()).toEqual({ projects: expect.any(Array) })
   } finally { await desktop.close() }
   const headless = await runtime(true, 'headless-host')
   try {
     expect(headless.watcherTools).toBeUndefined()
+    // A headless host moves branches only when the desktop asks over its socket; it places and moves nothing itself.
+    expect(movers(headless)[0]).toBeUndefined()
     expect(headless.hostService.supportsProjectOrigins).toBe(true)
   } finally { await headless.close() }
 })

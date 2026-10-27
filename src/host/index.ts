@@ -125,7 +125,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   const agentsViewEnabled = owlFeatures['iphone-agents-view']
   // Work across machines (ADR-0082) only where the host's Owl answer turns it on: the host names its projects' GitHub
   // origins to a desktop placing work (#1032), and reads its live load and counts its work placed but not started
-  // (#1311); otherwise its facts are what they were.
+  // (#1311), and lists `branch-moves` and takes `branch-move` (ADR-0105 decision 8);
+  // otherwise its facts are what they were and it moves no branch.
   const crossMachineEnabled = owlFeatures['cross-machine-work']
   // Attached files (ADR-0131): the host keeps them and lists `file-staging` only on its own Owl answer.
   const attachAnyFile = owlFeatures['attach-any-file']

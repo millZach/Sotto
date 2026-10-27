@@ -140,8 +140,8 @@ test('three native providers coexist independently of Sotto reasoning and surviv
       await captureProviders(page, join(artifacts, 'initial-providers.png'))
       for (const provider of providers) {
         await providerAction(page, provider, 'Connect')
-        await expect(page.getByRole('list', { name: `${PROVIDER_LABELS[provider]} available models`, exact: true })).toBeVisible()
         await expect.poll(async () => (await state(page!)).host.models.filter(model => model.providerId === provider && model.ready).length).toBeGreaterThan(0)
+        await expect(page.getByRole('button', { name: new RegExp(`^Show ${PROVIDER_LABELS[provider]} models, `, 'u') })).toBeVisible()
         await captureProviders(page, join(artifacts, `${provider}-models.png`))
       }
       await expect.poll(async () => connections(await state(page!))).toEqual(allConnected)

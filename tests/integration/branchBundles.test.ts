@@ -2,7 +2,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BranchBundles, IncomingBundle, type AlreadyPresent, type PreparedBundle } from '../../src/main/agents/branchBundles'
 import { runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/gitStatus'
 import { branchMoveWords, incomingRef, type BranchMoveRefusal } from '../../src/shared/branchMoves'
@@ -290,5 +290,58 @@ describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8
     for (const receipt of await Promise.all(moves.map(({ receiving }) => forge.finish(receiving)))) expect(receipt).toMatchObject({ type: 'moved', commit })
     const records = JSON.parse(await readFile(machines.data('forge').recordsPath, 'utf8')) as { moves: Record<string, unknown> }
     expect(Object.keys(records.moves).sort()).toEqual(moves.map(({ moveId }) => moveId).sort())
+  })
+
+  it('abandons what a same-machine copy staged when reading or writing it fails, and lands nothing', async () => {
+    await writeFile(join(machines.laptop, 'notes.txt'), 'draft\n')
+    const laptop = new BranchBundles(machines.data('laptop'))
+    const source = await laptop.snapshotOf(machines.laptop)
+    if ('type' in source) throw new Error('The laptop could not snapshot its work.')
+    for (const failing of ['read', 'write'] as const) {
+      const spy = failing === 'read'
+        ? vi.spyOn(laptop, 'readChunk').mockRejectedValueOnce(new Error('read failed'))
+        : vi.spyOn(IncomingBundle.prototype, 'write').mockRejectedValueOnce(new Error('write failed'))
+      expect(await laptop.copy({ from: machines.laptop, source, repository: machines.forge, moveId: randomUUID() }))
+        .toEqual({ type: 'refused', reason: 'failed', message: branchMoveWords.failed })
+      spy.mockRestore()
+      expect(await readdir(machines.data('laptop').stagingDirectory)).toEqual([])
+    }
+    expect(git(machines.forge, 'for-each-ref', 'refs/sotto')).toBe('')
+  })
+
+  it('refuses a test run whose submodule has changes of its own, in plain words, rather than leave them behind', async () => {
+    const library = join(machines.root, 'library')
+    git(machines.root, 'init', '-q', library)
+    await commitFile(library, 'lib.txt', 'one')
+    git(machines.laptop, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', library, 'lib')
+    git(machines.laptop, 'commit', '-q', '-m', 'Add the library')
+    const laptop = new BranchBundles(machines.data('laptop'))
+    const refused = { type: 'refused', reason: 'uncommitted', message: branchMoveWords.submoduleChanges }
+    await writeFile(join(machines.laptop, 'lib', 'lib.txt'), 'edited in the submodule')
+    expect(await laptop.snapshotOf(machines.laptop)).toEqual(refused)
+    git(join(machines.laptop, 'lib'), 'checkout', '-q', '--', 'lib.txt')
+    await writeFile(join(machines.laptop, 'lib', 'new.txt'), 'untracked in the submodule')
+    expect(await laptop.snapshotOf(machines.laptop)).toEqual(refused)
+    git(join(machines.laptop, 'lib'), 'clean', '-qf')
+    // The parent's own uncommitted work beside a clean submodule still goes as a snapshot.
+    await writeFile(join(machines.laptop, 'app.txt'), 'edited in the parent')
+    expect(await laptop.snapshotOf(machines.laptop)).toMatchObject({ branch: 'main', snapshot: { untrackedCount: 0 } })
+    expect(await readdir(machines.data('laptop').stagingDirectory)).toEqual([])
+  })
+
+  it('still sees a changed submodule when the repository tells Git to ignore it', async () => {
+    const library = join(machines.root, 'library')
+    git(machines.root, 'init', '-q', library)
+    await commitFile(library, 'lib.txt', 'one')
+    git(machines.laptop, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', library, 'lib')
+    git(machines.laptop, 'commit', '-q', '-m', 'Add the library')
+    const laptop = new BranchBundles(machines.data('laptop'))
+    await writeFile(join(machines.laptop, 'lib', 'lib.txt'), 'edited in the submodule')
+    for (const ignore of ['dirty', 'all']) {
+      git(machines.laptop, 'config', 'submodule.lib.ignore', ignore)
+      expect(await laptop.snapshotOf(machines.laptop), ignore).toEqual({ type: 'refused', reason: 'uncommitted', message: branchMoveWords.submoduleChanges })
+      expect(await laptop.branchOf(machines.laptop), ignore).toEqual({ type: 'refused', reason: 'uncommitted', message: branchMoveWords.uncommitted })
+    }
+    expect(await readdir(machines.data('laptop').stagingDirectory)).toEqual([])
   })
 })
