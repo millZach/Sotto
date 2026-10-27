@@ -96,6 +96,17 @@ export function threadChordLabel(chord: string, platform: SottoPlatform): Thread
   return { suffix: `(${plainJoined})`, plain: plainJoined, keys: keys.join('+') }
 }
 
+/**
+ * A chord as a key cap draws it, as short as a button can carry: the Mac's own symbols ("⌘⇧S", "⌘↵"), or the
+ * words elsewhere ("Ctrl+Shift+S", "Ctrl+Enter").
+ */
+export function threadChordCap(chord: string, platform: SottoPlatform): string {
+  if (platform !== 'darwin') return threadChordLabel(chord, platform).plain
+  const parsed = parseChord(chord, platform)
+  const key = parsed.key === 'enter' ? '↵' : keyWords(parsed.key).plain
+  return `${parsed.ctrl ? '⌃' : ''}${parsed.alt ? '⌥' : ''}${parsed.shift ? '⇧' : ''}${parsed.meta ? '⌘' : ''}${key}`
+}
+
 /** A T3 chord as the canonical accelerator `ShortcutKey` and dictation's chord words read, for showing it in Settings. */
 export function acceleratorForChord(chord: string, platform: SottoPlatform): string {
   const parsed = parseChord(chord, platform)

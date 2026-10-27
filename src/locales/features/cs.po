@@ -62,14 +62,6 @@ msgstr ""
 msgid "{count, plural, =1 {Hide the file} other {Hide the {files} files}}"
 msgstr ""
 
-#: src/renderer/src/watcher/WatcherWatched.tsx
-msgid "{count, plural, =1 {It is watched for a request: if you send to it yourself, Watcher stops sending to it.} other {They are watched for a request: if you send to one yourself, Watcher stops sending to it.}}"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherWatched.tsx
-msgid "{count, plural, =1 {It stays watched until you stop it.} other {Each stays watched until you stop it.}}"
-msgstr ""
-
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
 msgid "{count, plural, =1 {Show the file} other {Show the {files} files}}"
 msgstr ""
@@ -78,20 +70,8 @@ msgstr ""
 msgid "{count, plural, =1 {Stop the thread Watcher started?} other {Stop the # threads Watcher started?}}"
 msgstr ""
 
-#: src/renderer/src/watcher/WatcherWatched.tsx
-msgid "{count, plural, =1 {Watcher keeps this thread going on its own and brings you its questions and permissions.} other {Watcher keeps these {count} threads going on its own and brings you their questions and permissions.}}"
-msgstr ""
-
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "{count, plural, one {{name}, # thread} other {{name}, # threads}}"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "{count, plural, one {{project} on {computer}, # thread} other {{project} on {computer}, # threads}}"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "{count, plural, one {{project}, # thread} other {{project}, # threads}}"
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
@@ -120,10 +100,6 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "{count, plural, one {Stopped # thread.} other {Stopped # threads.}}"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherView.tsx
-msgid "{count, plural, one {Watched, # thread} other {Watched, # threads}}"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
@@ -543,14 +519,6 @@ msgstr ""
 msgid "{rowTokens} tokens · {rowCache} from cache"
 msgstr ""
 
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "{said}. Its turn to merge."
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "{said}. Ready to merge, waiting for its turn."
-msgstr ""
-
 #: src/renderer/src/features/dictate/journalFacts.ts
 msgid "{seconds, plural, one {# second} other {# seconds}}"
 msgstr ""
@@ -615,14 +583,6 @@ msgstr ""
 msgid "{title} no longer waits on you."
 msgstr ""
 
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "{title}, details"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "{title}: {about}. Show details"
-msgstr ""
-
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "{topShare} of prompts"
 msgstr ""
@@ -653,10 +613,6 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherGlance.tsx
 msgid "{waiting, plural, one {# needs you} other {# need you}}"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "{waiting} waiting"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherStopAll.tsx
@@ -744,16 +700,8 @@ msgstr ""
 msgid "{working, plural, one {Updates once its # thread finishes.} other {Updates once its # threads finish.}}"
 msgstr ""
 
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "{working} working"
-msgstr ""
-
 #: src/renderer/src/features/dictate/journalFacts.ts
 msgid "{wpm} wpm"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "#{number} {step}, {title}. Show details"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherMachines.tsx
@@ -814,10 +762,6 @@ msgstr ""
 
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
 msgid "A thread shows the agent's work, and the questions and permissions it asks you to answer."
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherWatched.tsx
-msgid "A thread you watch stays watched until you stop it. One watched for a request stops when you send to it yourself."
 msgstr ""
 
 #. Heading over the running version and what Sotto sends where
@@ -984,16 +928,6 @@ msgstr ""
 msgid "Answer your threads from your iPhone"
 msgstr ""
 
-#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
-#: src/renderer/src/watcher/constellation.ts
-msgid "answered"
-msgstr ""
-
-#. How a message Watcher sent went
-#: src/renderer/src/watcher/constellation.ts
-msgid "Answered"
-msgstr ""
-
 #. Mid-sentence, after "Always confirm:" or in a list joined by semicolons, so it starts in lower case where the language has one
 #: src/renderer/src/features/memory/questions.ts
 msgid "answering permissions from a paired client"
@@ -1023,16 +957,8 @@ msgstr ""
 msgid "Approve access in Windows"
 msgstr ""
 
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "Asks permission: {asks}"
-msgstr ""
-
 #: src/renderer/src/watcher/WatcherPermissionChip.tsx
 msgid "Asks you before it edits a file or runs a command that changes something."
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "Asks: {asks}"
 msgstr ""
 
 #. Before a token figure some records left out
@@ -1092,15 +1018,6 @@ msgstr ""
 msgid "Back"
 msgstr ""
 
-#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
-#: src/renderer/src/watcher/constellation.ts
-msgid "background work running"
-msgstr ""
-
-#: src/renderer/src/watcher/constellation.ts
-msgid "Background work running"
-msgstr ""
-
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 msgid "Bars"
 msgstr ""
@@ -1152,7 +1069,7 @@ msgstr ""
 msgid "Can't be started"
 msgstr ""
 
-#: src/renderer/src/watcher/WatcherWatched.tsx
+#: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "Can’t reach it"
 msgstr ""
 
@@ -1270,22 +1187,6 @@ msgstr ""
 msgid "Checking…"
 msgstr ""
 
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "checks failed"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "checks passed"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "checks running"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "checks unknown"
-msgstr ""
-
 #: src/renderer/src/languages.ts
 msgid "Chinese"
 msgstr ""
@@ -1373,10 +1274,6 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "Close {name}’s panel"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "Close details"
 msgstr ""
 
 #: src/renderer/src/components/WindowControls.tsx
@@ -1544,11 +1441,6 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "Continue with the handover"
-msgstr ""
-
-#. The tab that shows Watcher’s own conversation
-#: src/renderer/src/watcher/WatcherView.tsx
-msgid "Conversation"
 msgstr ""
 
 #. A transcript copy button, after it copied
@@ -1731,16 +1623,6 @@ msgstr ""
 msgid "Deleting or making irreversible changes"
 msgstr ""
 
-#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
-#: src/renderer/src/watcher/constellation.ts
-msgid "delivered"
-msgstr ""
-
-#. How a message Watcher sent went
-#: src/renderer/src/watcher/constellation.ts
-msgid "Delivered"
-msgstr ""
-
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Devin account"
 msgstr ""
@@ -1778,15 +1660,6 @@ msgstr ""
 
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
 msgid "did not finish"
-msgstr ""
-
-#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
-#: src/renderer/src/watcher/constellation.ts
-msgid "did not reach it"
-msgstr ""
-
-#: src/renderer/src/watcher/constellation.ts
-msgid "Did not reach it"
 msgstr ""
 
 #: src/renderer/src/features/dictate/DictateRoom.tsx
@@ -2050,10 +1923,6 @@ msgstr ""
 msgid "From the last Watcher, on {provider}. Context, not a new request."
 msgstr ""
 
-#: src/renderer/src/watcher/constellation.ts
-msgid "Gave #{number} its merge turn"
-msgstr ""
-
 #: src/renderer/src/languages.ts
 msgid "German"
 msgstr ""
@@ -2076,23 +1945,6 @@ msgstr ""
 
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "Global shortcut"
-msgstr ""
-
-#. Short tag on a pull request chip: its turn to merge
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "GO"
-msgstr ""
-
-#. A pull request’s place in Watcher’s merge turns, in capitals as a tag: its turn to merge
-#. A tag in capitals on a moving mark in Watcher’s picture: a pull request’s turn to merge
-#: src/renderer/src/watcher/constellation.ts
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "GO MERGE"
-msgstr ""
-
-#. A tag in capitals on a moving mark in Watcher’s picture: a pull request’s turn to merge
-#: src/renderer/src/watcher/constellation.ts
-msgid "GO MERGE #{number}"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherGlance.tsx
@@ -2124,11 +1976,9 @@ msgstr ""
 msgid "Handover of the last Watcher"
 msgstr ""
 
-#. The Help page.
 #. The page link: the Help page
 #: src/renderer/src/components/AppShell.tsx
 #: src/renderer/src/features/help/HelpView.tsx
-#: src/renderer/src/watcher/WatcherView.tsx
 msgid "Help"
 msgstr ""
 
@@ -2138,10 +1988,6 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherHandover.tsx
 msgid "Hide it"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "Hide settled"
 msgstr ""
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
@@ -2384,21 +2230,8 @@ msgstr ""
 msgid "Its provider has not reported its context yet."
 msgstr ""
 
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "Its pull requests"
-msgstr ""
-
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
 msgid "Its reason:"
-msgstr ""
-
-#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
-#: src/renderer/src/watcher/constellation.ts
-msgid "its turn failed"
-msgstr ""
-
-#: src/renderer/src/watcher/constellation.ts
-msgid "Its turn failed"
 msgstr ""
 
 #: src/renderer/src/languages.ts
@@ -2463,7 +2296,6 @@ msgid "last turn failed"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherOverview.tsx
-#: src/renderer/src/watcher/WatcherWatched.tsx
 msgid "Last turn failed"
 msgstr ""
 
@@ -2660,11 +2492,9 @@ msgstr ""
 msgid "Measuring {chosenName}. Sotto cleans up a built-in sample on the server, never your dictation."
 msgstr ""
 
-#. The Memory page.
 #. The page link: the Memory page
 #: src/renderer/src/components/AppShell.tsx
 #: src/renderer/src/watcher/WatcherMachines.tsx
-#: src/renderer/src/watcher/WatcherView.tsx
 msgid "Memory"
 msgstr ""
 
@@ -2682,27 +2512,6 @@ msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Memory is unavailable. Restart Sotto and try again."
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "Merge turns"
-msgstr ""
-
-#. Short tag on a pull request chip
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "merged"
-msgstr ""
-
-#. A pull request’s place in Watcher’s merge turns, in capitals as a tag
-#. A tag in capitals on a moving mark in Watcher’s picture
-#: src/renderer/src/watcher/constellation.ts
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "MERGED"
-msgstr ""
-
-#. A tag in capitals on a moving mark in Watcher’s picture
-#: src/renderer/src/watcher/constellation.ts
-msgid "MERGED #{number}"
 msgstr ""
 
 #. First-run setup: the microphone step
@@ -2829,14 +2638,6 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "More usage actions"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherView.tsx
-msgid "More: {names}"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherView.tsx
-msgid "More: {names}. {ready}"
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
@@ -2968,10 +2769,6 @@ msgstr ""
 msgid "No prompts yet"
 msgstr ""
 
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "No pull request is ready to merge."
-msgstr ""
-
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "No reading from {from}"
 msgstr ""
@@ -3071,16 +2868,6 @@ msgstr ""
 msgid "Not checked yet"
 msgstr ""
 
-#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
-#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
-#: src/renderer/src/watcher/constellation.ts
-msgid "not confirmed"
-msgstr ""
-
-#: src/renderer/src/watcher/constellation.ts
-msgid "Not confirmed"
-msgstr ""
-
 #: src/renderer/src/watcher/WatcherReceipts.tsx
 msgid "Not confirmed yet"
 msgstr ""
@@ -3100,11 +2887,6 @@ msgstr ""
 
 #: src/renderer/src/features/onboarding/AgentsStep.tsx
 msgid "Not found on this computer."
-msgstr ""
-
-#: src/renderer/src/watcher/constellation.ts
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "Not in this window"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/AgentsStep.tsx
@@ -3223,10 +3005,6 @@ msgstr ""
 msgid "Nothing recorded yet"
 msgstr ""
 
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "nothing waiting"
-msgstr ""
-
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Nothing was stopped"
 msgstr ""
@@ -3294,8 +3072,6 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherAsks.tsx
 #: src/renderer/src/watcher/WatcherOverview.tsx
-#: src/renderer/src/watcher/WatcherPicture.tsx
-#: src/renderer/src/watcher/WatcherWatched.tsx
 msgctxt "Open a thread"
 msgid "Open"
 msgstr ""
@@ -3309,7 +3085,6 @@ msgstr ""
 #: src/renderer/src/watcher/WatcherOverview.tsx
 #: src/renderer/src/watcher/WatcherReceipts.tsx
 #: src/renderer/src/watcher/WatcherStopAll.tsx
-#: src/renderer/src/watcher/WatcherWatched.tsx
 msgid "Open {title} beside Watcher"
 msgstr ""
 
@@ -3327,10 +3102,6 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "Open {title} to review its prototype"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "Open beside Watcher"
 msgstr ""
 
 #: src/renderer/src/platformCopy.ts
@@ -3380,8 +3151,6 @@ msgid "Open the prototype, {name}"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherOverview.tsx
-#: src/renderer/src/watcher/WatcherPicture.tsx
-#: src/renderer/src/watcher/WatcherWatched.tsx
 msgid "Open to answer"
 msgstr ""
 
@@ -3453,10 +3222,6 @@ msgstr ""
 msgid "Other holds {list}."
 msgstr ""
 
-#: src/renderer/src/watcher/constellation.ts
-msgid "Other threads"
-msgstr ""
-
 #. After a token figure
 #: src/renderer/src/features/usage/UsageCharts.tsx
 msgid "output"
@@ -3486,7 +3251,6 @@ msgstr ""
 msgid "Pages"
 msgstr ""
 
-#: src/renderer/src/watcher/constellation.ts
 #: src/renderer/src/watcher/WatcherAsks.tsx
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "Paired computer"
@@ -3550,11 +3314,6 @@ msgstr ""
 #: src/renderer/src/watcher/WatcherAsks.tsx
 #: src/renderer/src/watcher/WatcherGlance.tsx
 msgid "permission"
-msgstr ""
-
-#. A tag on a moving mark in Watcher’s picture: a permission request going to the user
-#: src/renderer/src/watcher/constellation.ts
-msgid "Permission"
 msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
@@ -3662,7 +3421,7 @@ msgid "Press Test microphone, then say a few words."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherNightScene.tsx
-msgid "Press to see every watched thread on Watched."
+msgid "Press to see all threads."
 msgstr ""
 
 #: src/renderer/src/platformCopy.ts
@@ -3757,30 +3516,6 @@ msgstr ""
 msgid "Publishing or sending work outside Sotto"
 msgstr ""
 
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "pull request #{number}"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "Pull request #{number}"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "Pull request #{number}, {checks}"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "pull request #{number}, {state}"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "Pull request #{number}, closed"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "Pull request #{number}, merged"
-msgstr ""
-
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "Pull request open"
 msgstr ""
@@ -3792,9 +3527,7 @@ msgstr ""
 msgid "question"
 msgstr ""
 
-#. A tag on a moving mark in Watcher’s picture: a question going to the user
 #. What a thread waits on the user for, in Watcher’s state
-#: src/renderer/src/watcher/constellation.ts
 #: src/renderer/src/watcher/WatcherContextTile.tsx
 msgid "Question"
 msgstr ""
@@ -3925,26 +3658,9 @@ msgstr ""
 msgid "Ready"
 msgstr ""
 
-#. A tag in capitals on a moving mark in Watcher’s picture: a pull request joined the merge queue
-#. Short tag on a pull request chip: in the merge queue
-#: src/renderer/src/watcher/constellation.ts
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "READY"
-msgstr ""
-
-#. A tag in capitals on a moving mark in Watcher’s picture: a pull request joined the merge queue
-#: src/renderer/src/watcher/constellation.ts
-msgid "READY #{number}"
-msgstr ""
-
 #. A group of threads in Watcher’s room
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "Ready for review"
-msgstr ""
-
-#. A pull request’s place in Watcher’s merge turns, in capitals as a tag
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "READY TO MERGE"
 msgstr ""
 
 #: src/renderer/src/features/dictate/DictateRoom.tsx
@@ -4074,10 +3790,6 @@ msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Replacement memory"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "Reply: “{reply}”"
 msgstr ""
 
 #: src/renderer/src/features/help/HelpView.tsx
@@ -4241,16 +3953,6 @@ msgstr ""
 msgid "Search transcripts"
 msgstr ""
 
-#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
-#: src/renderer/src/watcher/constellation.ts
-msgid "sending"
-msgstr ""
-
-#. How a message Watcher sent went: still on its way
-#: src/renderer/src/watcher/constellation.ts
-msgid "Sending"
-msgstr ""
-
 #: src/renderer/src/watcher/WatcherHandover.tsx
 msgid "Sending starts the new Watcher with a <0>handover</0> of the last one, from {provider}."
 msgstr ""
@@ -4271,10 +3973,6 @@ msgstr ""
 #. Before a thread’s name on a receipt card
 #: src/renderer/src/watcher/WatcherReceipts.tsx
 msgid "Sent to"
-msgstr ""
-
-#: src/renderer/src/watcher/constellation.ts
-msgid "Sent to it"
 msgstr ""
 
 #: src/renderer/src/components/CleanupModelFields.tsx
@@ -4317,12 +4015,10 @@ msgstr ""
 msgid "Setting up"
 msgstr ""
 
-#. The Settings page.
 #. The page link: the Settings page
 #. The page link: the Settings page
 #: src/renderer/src/components/AppShell.tsx
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
-#: src/renderer/src/watcher/WatcherView.tsx
 msgid "Settings"
 msgstr ""
 
@@ -4330,20 +4026,11 @@ msgstr ""
 msgid "Settings are unavailable."
 msgstr ""
 
-#. A thread Watcher settled, in a list of what is true of it
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "settled"
-msgstr ""
-
 #. Before a thread’s name on a receipt card
 #. The fold of finished threads at the end of Idle
 #: src/renderer/src/watcher/WatcherOverview.tsx
 #: src/renderer/src/watcher/WatcherReceipts.tsx
 msgid "Settled"
-msgstr ""
-
-#: src/renderer/src/watcher/constellation.ts
-msgid "Settled it"
 msgstr ""
 
 #. Before a thread’s name on a receipt card
@@ -4397,16 +4084,12 @@ msgctxt "Usage chart"
 msgid "Show"
 msgstr ""
 
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "Show {settledCount} settled"
-msgstr ""
-
 #: src/renderer/src/features/onboarding/PhoneStep.tsx
 msgid "Show a pairing code"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherNightScene.tsx
-msgid "Show every watched thread"
+msgid "Show all threads"
 msgstr ""
 
 #: src/renderer/src/features/performance/MainActivityParts.tsx
@@ -4896,10 +4579,6 @@ msgstr ""
 msgid "Started"
 msgstr ""
 
-#: src/renderer/src/watcher/constellation.ts
-msgid "Started it"
-msgstr ""
-
 #. Before a thread’s name on a receipt card
 #: src/renderer/src/watcher/WatcherReceipts.tsx
 msgid "Starting"
@@ -4960,10 +4639,6 @@ msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "State"
-msgstr ""
-
-#: src/renderer/src/watcher/constellation.ts
-msgid "Steered its turn"
 msgstr ""
 
 #: src/renderer/src/features/updates/updateAll.ts
@@ -5039,14 +4714,6 @@ msgstr ""
 msgid "Stop the threads Watcher started?"
 msgstr ""
 
-#: src/renderer/src/watcher/WatcherWatched.tsx
-msgid "Stop watching"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherWatched.tsx
-msgid "Stop watching {title}"
-msgstr ""
-
 #: src/renderer/src/watcher/WatchControls.tsx
 msgid "Stop watching: Watcher lets this thread be"
 msgstr ""
@@ -5056,14 +4723,7 @@ msgstr ""
 msgid "Stop without saving"
 msgstr ""
 
-#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
-#: src/renderer/src/watcher/constellation.ts
-msgid "stopped"
-msgstr ""
-
 #. Before a thread’s name on a receipt card
-#. How a message Watcher sent went: the thread’s turn stopped
-#: src/renderer/src/watcher/constellation.ts
 #: src/renderer/src/watcher/WatcherReceipts.tsx
 msgid "Stopped"
 msgstr ""
@@ -5074,10 +4734,6 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Stopped {title}."
-msgstr ""
-
-#: src/renderer/src/watcher/constellation.ts
-msgid "Stopped it"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherStopAll.tsx
@@ -5357,7 +5013,6 @@ msgstr ""
 #: src/renderer/src/features/updates/updateAll.ts
 #: src/renderer/src/features/usage/usagePresentation.ts
 #: src/renderer/src/features/usage/UsageView.tsx
-#: src/renderer/src/watcher/constellation.ts
 #: src/renderer/src/watcher/machineWords.ts
 #: src/renderer/src/watcher/WatcherAsks.tsx
 #: src/renderer/src/watcher/WatcherView.tsx
@@ -5410,10 +5065,6 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "This Watcher is new, so there is nothing to hand over yet."
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "This window does not list this thread."
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageModels.tsx
@@ -5763,11 +5414,9 @@ msgstr ""
 msgid "Updating…"
 msgstr ""
 
-#. The Usage page.
 #. The page link: the Usage page
 #: src/renderer/src/components/AppShell.tsx
 #: src/renderer/src/features/usage/UsageView.tsx
-#: src/renderer/src/watcher/WatcherView.tsx
 msgid "Usage"
 msgstr ""
 
@@ -5843,11 +5492,6 @@ msgstr ""
 msgid "Verifying..."
 msgstr ""
 
-#. The tab that shows what Watcher is doing as a picture
-#: src/renderer/src/watcher/WatcherView.tsx
-msgid "Visualize"
-msgstr ""
-
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "Voxtype has these keys now. Sotto takes them over; Voxtype stays installed."
 msgstr ""
@@ -5888,15 +5532,6 @@ msgstr ""
 msgid "Waits for Watcher’s turn to end"
 msgstr ""
 
-#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
-#: src/renderer/src/watcher/constellation.ts
-msgid "waits for your turn there"
-msgstr ""
-
-#: src/renderer/src/watcher/constellation.ts
-msgid "Waits for your turn there"
-msgstr ""
-
 #: src/renderer/src/watcher/WatchControls.tsx
 msgctxt "Put a thread under Watcher's watch"
 msgid "Watch"
@@ -5904,10 +5539,6 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatchControls.tsx
 msgid "Watch {title}"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherWatched.tsx
-msgid "Watch a thread"
 msgstr ""
 
 #: src/renderer/src/watcher/WatchControls.tsx
@@ -5938,48 +5569,20 @@ msgstr ""
 msgid "Watcher has no running threads to stop."
 msgstr ""
 
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "Watcher has sent it nothing yet."
-msgstr ""
-
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "Watcher is a thread that starts and briefs your other threads, and keeps an eye on them while they work."
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherWatched.tsx
-msgid "Watcher is sending to it now."
 msgstr ""
 
 #: src/renderer/src/watcher/WatchControls.tsx
 msgid "Watcher is watching <0>{title}</0>."
 msgstr ""
 
-#: src/renderer/src/watcher/WatcherWatched.tsx
-msgid "Watcher last sent to it at {at}."
-msgstr ""
-
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "Watcher message"
 msgstr ""
 
-#: src/renderer/src/watcher/WatcherWatched.tsx
-msgid "Watcher settled it at {at}."
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherWatched.tsx
-msgid "Watcher started it at {at}."
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherWatched.tsx
-msgid "Watcher stopped it at {at}."
-msgstr ""
-
 #: src/renderer/src/watcher/WatchControls.tsx
 msgid "Watcher stopped watching <0>{title}</0>."
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherWatched.tsx
-msgid "Watcher watches no threads yet. Press the owl on a thread, here in All threads or on Threads, and Watcher keeps it going until you stop it."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherContextTile.tsx
@@ -5988,14 +5591,6 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherContextTile.tsx
 msgid "Watcher’s context and state"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherWatched.tsx
-msgid "Watcher’s last try at {at} did not reach it."
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherWatched.tsx
-msgid "Watcher’s last try at {at} is not confirmed."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherView.tsx
@@ -6014,17 +5609,9 @@ msgstr ""
 msgid "Watcher’s state"
 msgstr ""
 
-#: src/renderer/src/watcher/WatcherView.tsx
-msgid "Watcher’s view"
-msgstr ""
-
 #. The threads Watcher watches, a group of its state
 #: src/renderer/src/watcher/WatcherContextTile.tsx
 msgid "Watching"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherWatched.tsx
-msgid "Watching since {since}. Nothing sent yet."
 msgstr ""
 
 #. A subscription window inside a sentence: "37% left, week"
@@ -6075,10 +5662,6 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherReceipts.tsx
 msgid "What Watcher did"
-msgstr ""
-
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "What Watcher last did with it"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherPermissionChip.tsx
@@ -6153,15 +5736,6 @@ msgstr ""
 msgid "Working"
 msgstr ""
 
-#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
-#: src/renderer/src/watcher/constellation.ts
-msgid "working on it"
-msgstr ""
-
-#: src/renderer/src/watcher/constellation.ts
-msgid "Working on it"
-msgstr ""
-
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "Working preferences"
@@ -6186,11 +5760,6 @@ msgstr ""
 #: src/renderer/src/features/dictate/journalFacts.ts
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Yesterday"
-msgstr ""
-
-#. The user, at the foot of Watcher’s picture
-#: src/renderer/src/watcher/WatcherPicture.tsx
-msgid "You"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherAsks.tsx
@@ -6225,12 +5794,12 @@ msgstr ""
 msgid "You sent <0>{sent}</0>, Watcher <1>{watcher}</1> and wake-ups <2>{wakeUps}</2>."
 msgstr ""
 
-#: src/renderer/src/watcher/WatcherWatched.tsx
-msgid "You sent here yourself. Until that turn ends, Watcher can only steer it."
-msgstr ""
-
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "You set this policy"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "You skipped {title}’s question."
 msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx

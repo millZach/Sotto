@@ -111,7 +111,7 @@ export function opencodeFormPending(threadId: string, form: OpenCodeForm): Extra
       required: field.required !== false,
     }
   })
-  const request: AgentRequest = { id: `opencode-form-${form.id}`, kind: 'question', text: questions[0]!.question, options: [], questions }
+  const request: AgentRequest = { id: `opencode-form-${form.id}`, kind: 'question', text: questions[0]!.question, options: [], questions, skippable: true }
   return { kind: 'form', threadId, request, form }
 }
 

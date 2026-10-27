@@ -14,6 +14,14 @@ it('Claude exposes every question and round-trips selections plus free text to o
   expect(claudeAnswer(pending, '', undefined, { '0': { optionIds: ['Red', 'Blue'] }, '1': { optionIds: [], text: 'Zach' } })).toMatchObject({ updatedInput: { answers: { 'Choose colors': 'Red, Blue', 'Name?': 'Zach' } } })
   expect(() => claudeAnswer(pending, '', undefined, { '0': { optionIds: ['invented'] } })).toThrow()
 })
+it('Claude takes a skipped question as a refusal that says the user skipped it, and only a question may be skipped', () => {
+  const pending = claudePending({ type: 'control_request', request_id: 'request', request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion', input: { questions: [{ question: 'Which?' }] } } })!
+  expect(pending.request.skippable).toBe(true)
+  expect(claudeAnswer(pending, '', undefined, undefined, undefined, true)).toEqual({ behavior: 'deny', message: 'The user skipped this question. Proceed using your own judgement.' })
+  const resume = claudePending({ type: 'control_request', request_id: 'resume', request: { subtype: 'request_user_dialog', dialog_kind: 'resume_return', payload: {} } })!
+  expect(resume.request.skippable).toBeUndefined()
+  expect(() => claudeAnswer(resume, '', undefined, undefined, undefined, true)).toThrow()
+})
 it('Codex retains question ids and only offers actual decisions', () => {
   const pending = pendingRequest(3, 'item/tool/requestUserInput', { threadId: 't', questions: [{ id: 'q1', question: 'First?', options: [{ label: 'A', description: 'Detail' }] }, { id: 'q2', question: 'Second?', options: null }] }, 't')!
   expect(pending.request.questions?.map(q => q.id)).toEqual(['q1', 'q2'])

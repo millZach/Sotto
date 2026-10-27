@@ -1947,7 +1947,7 @@ export class CodexAppServerHost implements AgentHost {
           const pending = this.requests.get(command.requestId)
           if (!pending || pending.sessionId !== id) throw new Error('This Codex request is no longer pending.')
           if (this.watcherProfiles.has(id)) assertWatcherPermissionChoice(pending.request, command.permissionChoice)
-          const result = answerRequest(pending, command.answer, command.approved, command.questionAnswers, command.permissionChoice)
+          const result = answerRequest(pending, command.answer, command.approved, command.questionAnswers, command.permissionChoice, command.skipped)
           await this.respond(pending, result)
         } else if (command.type === 'interrupt') {
           if (!watcherGuard) await this.decline(id)

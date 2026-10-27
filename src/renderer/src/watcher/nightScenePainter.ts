@@ -146,6 +146,8 @@ export interface SceneFrame {
   readonly ripples: readonly Ripple[]
   /** Watcher's owl, where the margin has trees; null on the rail or with no scene. */
   readonly watcher: { readonly pose: OwlPose; readonly stage: OwlStage } | null
+  /** Whether Watcher's owl glows, while something waits on the user. */
+  readonly watcherGlows?: boolean
   readonly owls: readonly ThreadOwlPose[]
   /** How open the moon's whirlpool is, 0 to 1. */
   readonly whirl: number
@@ -372,7 +374,8 @@ export class NightScenePainter {
     const parts: Array<string | number> = [this.layout!.mode === 'trees' ? twinkleStep(t, still) : 0, ambienceStep(this.ambience, t, still)]
     if (frame.whirl > 0.01 || runningRipples(frame.ripples, t) > 0) parts.push('m', Math.round(t * 30))
     const w = frame.watcher?.pose
-    if (w !== undefined) parts.push(Math.round(w.x), Math.round(w.y), Math.round(w.turn * 20), Math.round(w.gx * 4), Math.round(w.gy * 4), w.blink ? 1 : 0, Math.round(w.flap * 4), Math.round(w.spread * 10))
+    if (w !== undefined) parts.push(Math.round(w.x), Math.round(w.y), Math.round(w.turn * 20), Math.round(w.gx * 4), Math.round(w.gy * 4), w.blink ? 1 : 0, Math.round(w.flap * 4), Math.round(w.spread * 10),
+      frame.watcherGlows === true ? glowStep(t, still) : -1)
     frame.owls.forEach((pose, k) => {
       parts.push(pose.owl.key, Math.round(pose.x / cw), Math.round(pose.y / ch), Math.round(pose.alpha * 10), owlLines[k]![0]!, pose.owl.mood,
         pose.owl.mood === 'waiting' ? glowStep(t, still) : 0)
@@ -533,11 +536,15 @@ export class NightScenePainter {
       let strongest = 0
       for (let r = box.r0; r < box.r0 + box.rn; r++) for (let c = box.c0; c < box.c0 + box.cn; c++) strongest = Math.max(strongest, this.owlAccent[r * cols + c]!)
       const eyeBar = Math.max(0.08, Math.min(0.35, strongest * 0.7))
+      // While something waits on the user, Watcher's owl glows as a waiting thread owl does: every glyph in the accent,
+      // at the thread owls' strength and pulse, shaded by the body under it so it keeps its shape. No wash behind it.
+      const glow = frame.watcherGlows === true ? 0.8 + 0.2 * glowStep(t, still) : null
       for (let r = box.r0; r < box.r0 + box.rn; r++) for (let c = box.c0; c < box.c0 + box.cn; c++) {
         const i = r * cols + c, d = this.owlInk[i]!
         if (d < 0.1) continue
         const eye = this.owlAccent[i]! > eyeBar
-        glyph(c, r, eye ? '@' : rampGlyph(d + (this.noise[i]! - 0.5) * 0.08), eye, eye ? 1 : 0.5 + 0.5 * d)
+        const strength = eye ? 1 : 0.5 + 0.5 * d
+        glyph(c, r, eye ? '@' : rampGlyph(d + (this.noise[i]! - 0.5) * 0.08), eye || glow !== null, glow === null || eye ? strength : glow * strength)
       }
     }
     for (const { pose, lines, cells } of sprites) {

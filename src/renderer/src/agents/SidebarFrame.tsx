@@ -113,18 +113,30 @@ export function PageLinks({ className, linkClassName }: { readonly className: st
 }
 
 /**
- * The sidebar's foot, one row of icons: the room switch, a hairline, the other pages as icon links, and the update
- * control at the far end. A page that carries the sidebar, or a column that wears its frame, has no app footer
- * under it, so this is the only way off the page.
+ * The way off the page as one row of icons: the room switch, a hairline, the other pages as icon links, then the update
+ * control. The sidebar's foot draws it, and so does Watcher's header, which has no sidebar (ADR-0152).
+ */
+export function WayOffThePage({ className, roomsClassName, pagesClassName, updateControl }: {
+  readonly className: string
+  readonly roomsClassName: string
+  readonly pagesClassName: string
+  readonly updateControl: ReactNode
+}): ReactNode {
+  return <div className={className}>
+    <RoomSwitch className={roomsClassName} iconOnly />
+    <span className="thread-nav__foot-rule" aria-hidden="true" />
+    <PageLinks className={pagesClassName} linkClassName="thread-nav__page" />
+    {updateControl}
+  </div>
+}
+
+/**
+ * The sidebar's foot, with the update control at the far end. A page that carries the sidebar, or a column that wears
+ * its frame, has no app footer under it, so this is the only way off the page.
  */
 export function SidebarFoot(): ReactNode {
   const { updateControl } = useContext(SidebarChromeContext)
-  return <div className="thread-nav__foot">
-    <RoomSwitch className="thread-nav__seg" iconOnly />
-    <span className="thread-nav__foot-rule" aria-hidden="true" />
-    <PageLinks className="thread-nav__pages" linkClassName="thread-nav__page" />
-    {updateControl}
-  </div>
+  return <WayOffThePage className="thread-nav__foot" roomsClassName="thread-nav__seg" pagesClassName="thread-nav__pages" updateControl={updateControl} />
 }
 
 /**

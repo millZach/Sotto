@@ -5,6 +5,8 @@ import { EMPTY_SELECTION, requestMode, textOnly, type RequestAnswer, type Reques
 
 /** The words a receipt uses for an answer written in the user's own words, which Sotto never repeats. */
 export const OWN_WORDS = 'in your own words'
+/** The words a receipt uses for a question the user skipped. */
+export const SKIPPED = 'skipped'
 const plainLabel = (label: string): string => label.replace(/\s*\(recommended\)\s*$/iu, '')
 
 /**
@@ -27,6 +29,7 @@ export function chosenWords(request: AgentRequest, entry: Pick<RequestEntry, 'ch
     return option === undefined ? null : plainLabel(option.label)
   }
   if (mode !== 'structured') return null
+  if (entry.choice === 'skip') return SKIPPED
   const labels: string[] = []
   let own = false
   for (const question of request.questions ?? []) {
@@ -47,6 +50,7 @@ export function answerWords(request: AgentRequest, answer: RequestAnswer): strin
   const mode = requestMode(request)
   if (mode === 'permission') return chosenWords(request, { choice: answer.permissionChoice ?? (answer.approved === true ? 'allow' : answer.approved === false ? 'deny' : null), selections: {} })
   if (mode === 'legacy-options') return chosenWords(request, { choice: answer.answer, selections: {} })
+  if (answer.skipped) return SKIPPED
   const selections = Object.fromEntries(Object.entries(answer.questionAnswers ?? {}).map(([id, given]) =>
     [id, { ...EMPTY_SELECTION, optionIds: given.optionIds, other: (given.text ?? '').trim() !== '', text: given.text ?? '' }]))
   return chosenWords(request, { choice: null, selections })
