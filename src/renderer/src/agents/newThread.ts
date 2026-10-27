@@ -62,6 +62,8 @@ export function unusedNewThread(state: AgentState, project: AgentProject): Agent
     && thread.modelId === modelId && (reasoningEffort === undefined || (thread.reasoningEffort ?? selectedModel?.defaultReasoningEffort) === reasoningEffort)
     && (permission.runtimeMode === undefined || thread.runtimeMode === permission.runtimeMode)
     && (permission.providerMode === undefined || thread.providerMode === permission.providerMode)
+    // A new thread starts with fast mode off (ADR-0143), so one the user turned it on for is not reused as new.
+    && thread.fastMode !== true
     && (thread.summary?.messageCount ?? thread.messages.length) === 0)
 }
 

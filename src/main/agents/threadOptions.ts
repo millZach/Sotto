@@ -8,6 +8,14 @@ export function validateThreadOptions(snapshot: AgentHostSnapshot, options: Agen
   if (options.reasoningEffort !== undefined && !model.reasoningEfforts?.includes(options.reasoningEffort)) throw new Error('That reasoning level is not supported by this model.')
   if (options.runtimeMode !== undefined && !model.runtimeModes?.includes(options.runtimeMode)) throw new Error('That permission mode is not supported by this provider.')
   if (options.providerMode !== undefined && !model.providerModes?.some(mode => mode.id === options.providerMode)) throw new Error('That permission mode is not supported by this provider.')
+  // Turning fast mode on needs a model that has it. A change of model keeps the thread's choice whichever model it lands
+  // on (ADR-0143): that model runs at normal speed and a later model with fast mode takes it up again.
+  if (options.fastMode === true && options.modelId === undefined && !model.fastMode) throw new Error('This model does not offer fast mode.')
+}
+
+/** Whether fast mode runs for a thread on this model: the user turned it on and the model offers it (ADR-0143). */
+export function fastModeRuns(snapshot: Pick<AgentHostSnapshot, 'models'>, modelId: string, fastMode: boolean | undefined): boolean {
+  return fastMode === true && resolveModel(snapshot.models, modelId)?.fastMode !== undefined
 }
 
 /**
