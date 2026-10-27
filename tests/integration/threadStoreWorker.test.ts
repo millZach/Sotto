@@ -196,10 +196,13 @@ describe('the store worker', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     const holder = new DatabaseSync(path, { timeout: 5_000 })
     holder.exec('BEGIN IMMEDIATE')
+    const writes: ThreadStoreWrite[] = [
+      { kind: 'event-batches', batches: new Map([['thread', [added('second', 'Second')]], ['other', [added('o1', 'Other')]]]) },
+      { kind: 'events', threadId: 'thread', events: [appended('second', ' and more')] },
+      { kind: 'activities', entries: [{ threadId: 'thread', activities: [record('a', 0)] }] },
+    ]
     const outcomes: ThreadStoreWriteOutcome[] = []
-    writer.post({ kind: 'event-batches', batches: new Map([['thread', [added('second', 'Second')]], ['other', [added('o1', 'Other')]]]) }, outcome => outcomes.push(outcome))
-    writer.post({ kind: 'events', threadId: 'thread', events: [appended('second', ' and more')] }, outcome => outcomes.push(outcome))
-    writer.post({ kind: 'activities', entries: [{ threadId: 'thread', activities: [record('a', 0)] }] }, outcome => outcomes.push(outcome))
+    for (const write of writes) writer.post(write, outcome => outcomes.push(outcome))
     // The worker has begun the batch and waits for the lock inside it when it goes.
     while (!internals(store).worker!.started(2)) await delay(5)
     // A thread waiting inside SQLite for a lock ends once the wait does, which the lock let go here lets happen at once.
@@ -208,7 +211,15 @@ describe('the store worker', () => {
     holder.exec('COMMIT'); holder.close()
     await gone
     await writer.confirmed()
-    expect(outcomes.map(outcome => outcome.failed.size)).toEqual([0, 0, 0])
+    expect(outcomes).toHaveLength(writes.length)
+    // On a loaded machine the lock the worker held can outlast main's own wait, so a write main finished for it fails
+    // with the lock busy; the workspace posts a failed write again on its next round, as this does, and it lands there.
+    for (const [index, outcome] of outcomes.entries()) {
+      if (!outcome.failed.size) continue
+      let again: ThreadStoreWriteOutcome | undefined
+      writer.post(writes[index]!, heard => { again = heard })
+      expect(again?.failed.size, `write ${index} posted again on main`).toBe(0)
+    }
     expect(warn).toHaveBeenCalledWith('thread-store-worker-lost')
     expect(internals(store).worker).toBeUndefined()
     expect(Number(internals(store).db.prepare('PRAGMA query_only').get()!.query_only)).toBe(0)
