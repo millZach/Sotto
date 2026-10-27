@@ -184,7 +184,7 @@ describe('the desktop side of the relay', () => {
     relay.useHosts({ subscribeConnected: () => () => undefined, remoteConnections: () => [{ hostId: HOST, kind: 'remote', service: { shell: () => ({ host: { threads } }) } }] })
     const calls: { threadId: string; args: unknown; waitMs?: number | undefined }[] = []
     relay.useDelegation({ delegate: async (threadId, args, context) => { calls.push({ threadId, args, waitMs: context?.waitMs }); return { status: 'ok', delegation: { id: DELEGATION, outcome: 'working' } } },
-      read: async () => ({ status: 'ok', delegation: { id: DELEGATION, outcome: 'answered' } }), cancel: async () => ({ status: 'ok' }) })
+      read: async () => ({ status: 'ok', delegation: { id: DELEGATION, outcome: 'answered' } }), cancel: async () => ({ status: 'ok' }), retriedDelegation: () => undefined })
     const answer = await relay.answer(HOST, ask())
     expect(answer).toMatchObject({ status: 'ok', placement: { hostId: DESKTOP, name: 'This computer' } })
     const key = `host:${HOST}:thread-a`
@@ -209,9 +209,30 @@ describe('the desktop side of the relay', () => {
     expect(await relay.answer(MAC, { type: 'cancel', threadId: 'thread-a', delegation: DELEGATION })).toMatchObject({ status: 'refused', code: 'UNKNOWN_DELEGATION' })
   })
 
+  it('finds what a start made while it is still waiting, and after a restart, by the retry key it was admitted under', async () => {
+    const root = await folder()
+    const admitted = new Map<string, string>()
+    const reads: unknown[] = []
+    const delegation = { delegate: (threadId: string, args: unknown) => { admitted.set(`${threadId}\n${(args as { retry_key: string }).retry_key}`, DELEGATION); return new Promise<unknown>(() => undefined) },
+      read: async (_threadId: string, args: unknown) => { reads.push(args); return { status: 'ok', delegation: { id: DELEGATION, outcome: 'working' } } }, cancel: async () => ({}),
+      retriedDelegation: (callerId: string, retryKey: string) => admitted.get(`${callerId}\n${retryKey}`) }
+    const relay = new DesktopDelegationRelay(root, { placement: placement(DESKTOP), localHostId: () => DESKTOP })
+    relay.useDelegation(delegation)
+    // The start waits for its outcome; its answer never goes.
+    void relay.answer(HOST, ask())
+    await expect.poll(() => admitted.size).toBe(1)
+    const relayId = '55555555-5555-4555-8555-555555555555'
+    expect(await relay.answer(HOST, { type: 'read', threadId: 'thread-a', relayId })).toMatchObject({ delegation: { id: DELEGATION } })
+    // This computer restarts in the middle of that wait: the ask and its retry key were saved before it.
+    const again = new DesktopDelegationRelay(root, { placement: placement(DESKTOP), localHostId: () => DESKTOP })
+    await again.load(); again.useDelegation(delegation)
+    expect(await again.answer(HOST, { type: 'read', threadId: 'thread-a', relayId })).toMatchObject({ delegation: { id: DELEGATION } })
+    expect(reads).toEqual([{ delegation: DELEGATION }, { delegation: DELEGATION }])
+  })
+
   it('refuses a start placed back on the asking machine or on a third machine, and starts nothing', async () => {
     const started: unknown[] = []
-    const delegation = { delegate: async (...args: unknown[]) => { started.push(args); return {} }, read: async () => ({}), cancel: async () => ({}) }
+    const delegation = { delegate: async (...args: unknown[]) => { started.push(args); return {} }, read: async () => ({}), cancel: async () => ({}), retriedDelegation: () => undefined }
     const home = new DesktopDelegationRelay(await folder(), { placement: placement(HOST), localHostId: () => DESKTOP }); home.useDelegation(delegation)
     expect(await home.answer(HOST, ask())).toMatchObject({ status: 'refused', code: 'MACHINE_UNAVAILABLE', message: expect.stringContaining('That is forge, where this thread runs') })
     const third = new DesktopDelegationRelay(await folder(), { placement: placement(MAC), localHostId: () => DESKTOP }); third.useDelegation(delegation)
@@ -221,7 +242,7 @@ describe('the desktop side of the relay', () => {
 
   it('answers each ask a relaying host pushes, and sends news back to the asking host', async () => {
     const relay = new DesktopDelegationRelay(await folder(), { placement: placement(DESKTOP), localHostId: () => DESKTOP })
-    relay.useDelegation({ delegate: async () => ({ status: 'ok', delegation: { id: DELEGATION, outcome: 'working' } }), read: async () => ({}), cancel: async () => ({}) })
+    relay.useDelegation({ delegate: async () => ({ status: 'ok', delegation: { id: DELEGATION, outcome: 'working' } }), read: async () => ({}), cancel: async () => ({}), retriedDelegation: () => undefined })
     let push: ((askId: string, ask: DelegationRelayAsk) => void) | undefined
     const answers: unknown[] = [], news: unknown[] = []
     const connection: RelayHostConnection = { hostId: HOST, kind: 'remote', service: { supportsDelegationRelay: true,

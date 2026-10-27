@@ -49,7 +49,7 @@ const callerSchema = z.object({ id, projectId: id, runtimeMode: agentRuntimeMode
   callerMessageId: id.optional() }).strict()
 const fileSchema = z.object({ version: z.literal(1), callers: z.array(callerSchema).max(1_000),
   /** Each host's ask, by its `relayId` under the host's thread key, to the delegation it made here. */
-  asks: z.array(z.object({ key: id, relayId: z.uuid(), delegation: z.uuid().optional() }).strict()).max(2_000) }).strict()
+  asks: z.array(z.object({ key: id, relayId: z.uuid(), retryKey: z.uuid(), delegation: z.uuid().optional() }).strict()).max(2_000) }).strict()
 type RelayFile = z.infer<typeof fileSchema>
 const CALLERS_MAX = 1_000, ASKS_MAX = 2_000
 const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -73,7 +73,7 @@ export class DesktopDelegationRelay {
   private readonly followed = new WeakSet<object>()
   private source: RelayHostSource | undefined
   private unfollow: (() => void) | undefined
-  private delegation: Pick<DelegationService, 'delegate' | 'read' | 'cancel'> | undefined
+  private delegation: Pick<DelegationService, 'delegate' | 'read' | 'cancel' | 'retriedDelegation'> | undefined
 
   constructor(directory: string, private readonly options: {
     readonly placement: RelayPlacement
@@ -88,7 +88,7 @@ export class DesktopDelegationRelay {
     this.asks = file.asks
   }
   /** The delegation that admits relayed starts: this computer's own. */
-  useDelegation(delegation: Pick<DelegationService, 'delegate' | 'read' | 'cancel'>): void { this.delegation = delegation }
+  useDelegation(delegation: Pick<DelegationService, 'delegate' | 'read' | 'cancel' | 'retriedDelegation'>): void { this.delegation = delegation }
   /** Follows the router: every connection it takes whose host relays through this desktop is heard from then on. */
   useHosts(source: RelayHostSource): void {
     this.source = source
@@ -131,7 +131,10 @@ export class DesktopDelegationRelay {
     if (ask.type === 'machines') return await this.options.placement.machines()
     const key = hostEntityKey(hostId, ask.threadId)
     if (ask.type === 'read') {
-      const delegationId = ask.delegation ?? this.asks.find(item => item.key === key && item.relayId === ask.relayId)?.delegation
+      // An ask's delegation is found by the retry key it was admitted under, saved before the start waited, so a lost answer
+      // or a restart in the middle of that wait still finds what it made (#1316 review).
+      const saved = ask.delegation === undefined ? this.asks.find(item => item.key === key && item.relayId === ask.relayId) : undefined
+      const delegationId = ask.delegation ?? saved?.delegation ?? (saved ? delegation.retriedDelegation(key, saved.retryKey) : undefined)
       if (!delegationId || !this.callers.has(key)) return { status: 'refused', code: 'UNKNOWN_DELEGATION', message: NOT_HELD }
       return await delegation.read(key, { delegation: delegationId })
     }
@@ -149,10 +152,11 @@ export class DesktopDelegationRelay {
     this.callers.delete(key)
     this.callers.set(key, { id: key, projectId: placed.projectId, runtimeMode: ask.runtimeMode, levels: this.provedLevels(hostId, ask.threadId, ask.levels), rootUserMessageId: ask.rootUserMessageId,
       ...(ask.callerMessageId ? { callerMessageId: ask.callerMessageId } : {}) })
-    this.asks.push({ key, relayId: ask.relayId })
-    // Saved before the start, so a read after a lost answer finds the ask, and an ask never recorded reads as unproved.
+    const retryKey = typeof ask.input.retry_key === 'string' && z.uuid().safeParse(ask.input.retry_key).success ? ask.input.retry_key : ask.relayId
+    this.asks.push({ key, relayId: ask.relayId, retryKey })
+    // Saved before the start, so a read after a lost answer finds the ask by its retry key, and an ask never recorded reads as unproved.
     await this.save()
-    const input = { ...ask.input, retry_key: typeof ask.input.retry_key === 'string' ? ask.input.retry_key : ask.relayId }
+    const input = { ...ask.input, retry_key: retryKey }
     const result = await delegation.delegate(key, input, { waitMs: ask.waitMs + 2_000 })
     const made = isObject(result) && isObject(result.delegation) && typeof result.delegation.id === 'string' ? result.delegation.id : undefined
     if (made) { const saved = this.asks.findLast(item => item.key === key && item.relayId === ask.relayId); if (saved) saved.delegation = made; await this.save().catch(() => undefined) }
