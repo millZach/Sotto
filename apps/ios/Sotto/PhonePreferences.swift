@@ -4,7 +4,8 @@ import Foundation
 /// changes its settings. SwiftUI views read these keys with `@AppStorage`; anything else, the app model included,
 /// reads them through `PhonePreferences`. This file imports Foundation only so the model's tests can compile it.
 enum PhonePreferenceKey {
-    /// A built-in palette's id: sotto, hush, linen, nocturne, tropic or citrine.
+    /// A built-in palette's id: sotto, hush, citrine, graphite, clay or fern. One saved before October 26, 2026 may
+    /// name linen, nocturne or tropic; `PhoneThemeID.current` reads it as the palette that replaced it.
     static let theme = "phoneTheme"
     /// dark, light or system.
     static let appearance = "phoneAppearance"
@@ -23,6 +24,14 @@ enum PhonePreferenceKey {
     static let newThreadEffort = "phoneNewThreadEffort"
     static let newThreadPermission = "phoneNewThreadPermission"
     static let newThreadWorkingCopy = "phoneNewThreadWorkingCopy"
+}
+
+/// The palettes the desktop retired on October 26, 2026, and the one each moved to (ADR-0024), so an iPhone that
+/// saved one paints its replacement.
+enum PhoneThemeID {
+    static let replacements = ["linen": "clay", "nocturne": "graphite", "tropic": "fern"]
+    /// The id a saved choice paints now: a retired palette's replacement, any other id as it was.
+    static func current(_ id: String) -> String { replacements[id] ?? id }
 }
 
 /// Dark, Light, or following the iPhone. Dark is the default.
@@ -83,7 +92,7 @@ enum PhoneWorkingCopy: String, CaseIterable {
 struct PhonePreferences {
     var defaults: UserDefaults = .standard
 
-    var themeID: String { defaults.string(forKey: PhonePreferenceKey.theme) ?? "sotto" }
+    var themeID: String { PhoneThemeID.current(defaults.string(forKey: PhonePreferenceKey.theme) ?? "sotto") }
     var appearance: PhoneAppearance {
         defaults.string(forKey: PhonePreferenceKey.appearance).flatMap(PhoneAppearance.init(rawValue:)) ?? .dark
     }

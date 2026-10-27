@@ -25,7 +25,7 @@ import { seedWatcherRoom } from './support/watcherRoom'
  */
 const evidence = evidenceDirectory('artifacts/watcher-column')
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
-const THEMES = ['t3-code', 'hush', 'linen', 'nocturne', 'tropic', 'citrine'] as const
+const THEMES = ['t3-code', 'hush', 'citrine', 'graphite', 'clay', 'fern'] as const
 const recorded: Record<string, unknown> = {}
 
 function launchOptions(appearance: 'dark' | 'light', options: { readonly live?: boolean } = {}) {

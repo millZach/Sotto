@@ -51,14 +51,14 @@ struct ThemePalette: Identifiable, Equatable {
 
 enum ThemePalettes {
     /// The six palettes in the order the desktop lists them. The first is the default.
-    static let all: [ThemePalette] = [sotto, hush, linen, nocturne, tropic, citrine]
+    static let all: [ThemePalette] = [sotto, hush, citrine, graphite, clay, fern]
 
     static let sotto = ThemePalette(id: "sotto", name: "Sotto", light: sottoLight, dark: sottoDark)
     static let hush = ThemePalette(id: "hush", name: "Hush", light: hushLight, dark: hushDark)
-    static let linen = ThemePalette(id: "linen", name: "Linen", light: linenLight, dark: linenDark)
-    static let nocturne = ThemePalette(id: "nocturne", name: "Nocturne", light: nocturneLight, dark: nocturneDark)
-    static let tropic = ThemePalette(id: "tropic", name: "Tropic", light: tropicLight, dark: tropicDark)
     static let citrine = ThemePalette(id: "citrine", name: "Citrine", light: citrineLight, dark: citrineDark)
+    static let graphite = ThemePalette(id: "graphite", name: "Graphite", light: graphiteLight, dark: graphiteDark)
+    static let clay = ThemePalette(id: "clay", name: "Clay", light: clayLight, dark: clayDark)
+    static let fern = ThemePalette(id: "fern", name: "Fern", light: fernLight, dark: fernDark)
 
     static let sottoLight = ThemeSwatch(
         canvas: ThemeRGB(0.9765, 0.9725, 0.9608),
@@ -164,162 +164,6 @@ enum ThemePalettes {
         dangerText: ThemeRGB(0.9961, 0.4863, 0.4667)
     )
 
-    static let linenLight = ThemeSwatch(
-        canvas: ThemeRGB(0.9608, 0.9412, 0.9020),
-        surface: ThemeRGB(0.9412, 0.9216, 0.8980),
-        surfaceRaised: ThemeRGB(0.8941, 0.8745, 0.8510),
-        surfaceOverlay: ThemeRGB(0.8627, 0.8431, 0.8196),
-        text: ThemeRGB(0.0980, 0.0824, 0.0667),
-        textMuted: ThemeRGB(0.4275, 0.4118, 0.3882),
-        border: ThemeRGB(0.8157, 0.7843, 0.7490),
-        accent: ThemeRGB(0.4627, 0.3843, 0.2902),
-        accentForeground: ThemeRGB(1.0000, 0.9804, 1.0000),
-        accentSurface: ThemeRGB(0.8784, 0.8314, 0.7804),
-        warning: ThemeRGB(0.9961, 0.6039, 0.0000),
-        warningSurface: ThemeRGB(0.9647, 0.9137, 0.8314),
-        error: ThemeRGB(0.9843, 0.1725, 0.2118),
-        errorSurface: ThemeRGB(0.9608, 0.8784, 0.8471),
-        messageSurface: ThemeRGB(0.8549, 0.8078, 0.7490),
-        messageForeground: ThemeRGB(0.0980, 0.0824, 0.0667),
-        codeBackground: ThemeRGB(0.9098, 0.8941, 0.8745),
-        codeForeground: ThemeRGB(0.0980, 0.0824, 0.0667),
-        placeholder: ThemeRGB(0.3804, 0.3608, 0.3451),
-        mutedText: ThemeRGB(0.3804, 0.3608, 0.3412),
-        accentText: ThemeRGB(0.3765, 0.3137, 0.2392),
-        warningText: ThemeRGB(0.4902, 0.3176, 0.1176),
-        dangerText: ThemeRGB(0.6745, 0.1804, 0.1686)
-    )
-
-    static let linenDark = ThemeSwatch(
-        canvas: ThemeRGB(0.1137, 0.1020, 0.0863),
-        surface: ThemeRGB(0.1294, 0.1137, 0.0941),
-        surfaceRaised: ThemeRGB(0.1608, 0.1490, 0.1294),
-        surfaceOverlay: ThemeRGB(0.1882, 0.1725, 0.1529),
-        text: ThemeRGB(0.9569, 0.9294, 0.8980),
-        textMuted: ThemeRGB(0.5608, 0.5412, 0.5176),
-        border: ThemeRGB(0.2824, 0.2549, 0.2196),
-        accent: ThemeRGB(0.8039, 0.7098, 0.5725),
-        accentForeground: ThemeRGB(0.1412, 0.0824, 0.1373),
-        accentSurface: ThemeRGB(0.2627, 0.2235, 0.1686),
-        warning: ThemeRGB(0.9961, 0.6039, 0.0000),
-        warningSurface: ThemeRGB(0.2549, 0.1804, 0.0706),
-        error: ThemeRGB(0.9843, 0.2549, 0.2902),
-        errorSurface: ThemeRGB(0.2549, 0.1255, 0.1176),
-        messageSurface: ThemeRGB(0.2745, 0.2314, 0.1725),
-        messageForeground: ThemeRGB(0.9569, 0.9294, 0.8980),
-        codeBackground: ThemeRGB(0.1451, 0.1333, 0.1176),
-        codeForeground: ThemeRGB(0.9569, 0.9294, 0.8980),
-        placeholder: ThemeRGB(0.6000, 0.5804, 0.5529),
-        mutedText: ThemeRGB(0.6667, 0.6471, 0.6196),
-        accentText: ThemeRGB(0.8275, 0.7451, 0.6235),
-        warningText: ThemeRGB(0.9922, 0.7333, 0.4745),
-        dangerText: ThemeRGB(1.0000, 0.5020, 0.4745)
-    )
-
-    static let nocturneLight = ThemeSwatch(
-        canvas: ThemeRGB(0.9333, 0.9451, 0.9608),
-        surface: ThemeRGB(0.9059, 0.9255, 0.9529),
-        surfaceRaised: ThemeRGB(0.8588, 0.8824, 0.9098),
-        surfaceOverlay: ThemeRGB(0.8275, 0.8510, 0.8745),
-        text: ThemeRGB(0.0667, 0.0902, 0.1137),
-        textMuted: ThemeRGB(0.3961, 0.4157, 0.4353),
-        border: ThemeRGB(0.7608, 0.7922, 0.8353),
-        accent: ThemeRGB(0.2392, 0.3451, 0.4706),
-        accentForeground: ThemeRGB(1.0000, 0.9804, 1.0000),
-        accentSurface: ThemeRGB(0.7922, 0.8471, 0.9137),
-        warning: ThemeRGB(0.9961, 0.6039, 0.0000),
-        warningSurface: ThemeRGB(0.9373, 0.9176, 0.8824),
-        error: ThemeRGB(0.9843, 0.1725, 0.2118),
-        errorSurface: ThemeRGB(0.9373, 0.8824, 0.9020),
-        messageSurface: ThemeRGB(0.7647, 0.8235, 0.8941),
-        messageForeground: ThemeRGB(0.0667, 0.0902, 0.1137),
-        codeBackground: ThemeRGB(0.8824, 0.9020, 0.9216),
-        codeForeground: ThemeRGB(0.0667, 0.0902, 0.1137),
-        placeholder: ThemeRGB(0.3451, 0.3686, 0.3961),
-        mutedText: ThemeRGB(0.3412, 0.3647, 0.3843),
-        accentText: ThemeRGB(0.2000, 0.2863, 0.3843),
-        warningText: ThemeRGB(0.4745, 0.3255, 0.1725),
-        dangerText: ThemeRGB(0.6667, 0.1922, 0.2000)
-    )
-
-    static let nocturneDark = ThemeSwatch(
-        canvas: ThemeRGB(0.0667, 0.0863, 0.1216),
-        surface: ThemeRGB(0.0863, 0.1020, 0.1176),
-        surfaceRaised: ThemeRGB(0.1176, 0.1333, 0.1529),
-        surfaceOverlay: ThemeRGB(0.1412, 0.1569, 0.1765),
-        text: ThemeRGB(0.9137, 0.9373, 0.9725),
-        textMuted: ThemeRGB(0.5098, 0.5333, 0.5686),
-        border: ThemeRGB(0.2157, 0.2431, 0.2745),
-        accent: ThemeRGB(0.5569, 0.6549, 0.7765),
-        accentForeground: ThemeRGB(0.1412, 0.0824, 0.1373),
-        accentSurface: ThemeRGB(0.1765, 0.2118, 0.2549),
-        warning: ThemeRGB(0.9961, 0.6039, 0.0000),
-        warningSurface: ThemeRGB(0.2157, 0.1686, 0.1020),
-        error: ThemeRGB(0.9843, 0.2549, 0.2902),
-        errorSurface: ThemeRGB(0.2118, 0.1137, 0.1490),
-        messageSurface: ThemeRGB(0.1843, 0.2235, 0.2745),
-        messageForeground: ThemeRGB(0.9137, 0.9373, 0.9725),
-        codeBackground: ThemeRGB(0.1059, 0.1176, 0.1333),
-        codeForeground: ThemeRGB(0.9137, 0.9373, 0.9725),
-        placeholder: ThemeRGB(0.5451, 0.5647, 0.5922),
-        mutedText: ThemeRGB(0.5882, 0.6157, 0.6510),
-        accentText: ThemeRGB(0.6118, 0.6980, 0.8078),
-        warningText: ThemeRGB(0.9765, 0.7412, 0.5098),
-        dangerText: ThemeRGB(0.9922, 0.4471, 0.4431)
-    )
-
-    static let tropicLight = ThemeSwatch(
-        canvas: ThemeRGB(0.9294, 0.9608, 0.9333),
-        surface: ThemeRGB(0.8824, 0.9529, 0.9020),
-        surfaceRaised: ThemeRGB(0.8392, 0.9059, 0.8588),
-        surfaceOverlay: ThemeRGB(0.8078, 0.8745, 0.8275),
-        text: ThemeRGB(0.1373, 0.0588, 0.0784),
-        textMuted: ThemeRGB(0.4471, 0.4118, 0.4118),
-        border: ThemeRGB(0.7490, 0.8157, 0.7686),
-        accent: ThemeRGB(0.7608, 0.0941, 0.3569),
-        accentForeground: ThemeRGB(1.0000, 0.9804, 1.0000),
-        accentSurface: ThemeRGB(0.9333, 0.8118, 0.8353),
-        warning: ThemeRGB(0.9961, 0.6039, 0.0000),
-        warningSurface: ThemeRGB(0.9333, 0.9333, 0.8588),
-        error: ThemeRGB(0.9843, 0.1725, 0.2118),
-        errorSurface: ThemeRGB(0.9333, 0.8980, 0.8745),
-        messageSurface: ThemeRGB(0.9255, 0.7804, 0.8039),
-        messageForeground: ThemeRGB(0.1373, 0.0588, 0.0784),
-        codeBackground: ThemeRGB(0.8588, 0.9255, 0.8784),
-        codeForeground: ThemeRGB(0.1373, 0.0588, 0.0784),
-        placeholder: ThemeRGB(0.4510, 0.3451, 0.3686),
-        mutedText: ThemeRGB(0.3961, 0.3490, 0.3529),
-        accentText: ThemeRGB(0.6118, 0.1059, 0.2902),
-        warningText: ThemeRGB(0.5137, 0.3020, 0.1333),
-        dangerText: ThemeRGB(0.7059, 0.1569, 0.1804)
-    )
-
-    static let tropicDark = ThemeSwatch(
-        canvas: ThemeRGB(0.0314, 0.0980, 0.0588),
-        surface: ThemeRGB(0.0196, 0.1176, 0.0667),
-        surfaceRaised: ThemeRGB(0.0549, 0.1490, 0.0980),
-        surfaceOverlay: ThemeRGB(0.0784, 0.1725, 0.1216),
-        text: ThemeRGB(1.0000, 0.9098, 0.9255),
-        textMuted: ThemeRGB(0.5451, 0.5294, 0.5176),
-        border: ThemeRGB(0.1608, 0.2588, 0.2039),
-        accent: ThemeRGB(1.0000, 0.4392, 0.5882),
-        accentForeground: ThemeRGB(0.1412, 0.0824, 0.1373),
-        accentSurface: ThemeRGB(0.1216, 0.2314, 0.1725),
-        warning: ThemeRGB(0.9961, 0.6039, 0.0000),
-        warningSurface: ThemeRGB(0.1843, 0.1804, 0.0510),
-        error: ThemeRGB(0.9843, 0.2549, 0.2902),
-        errorSurface: ThemeRGB(0.1843, 0.1216, 0.0941),
-        messageSurface: ThemeRGB(0.1137, 0.2353, 0.1725),
-        messageForeground: ThemeRGB(1.0000, 0.9098, 0.9255),
-        codeBackground: ThemeRGB(0.0392, 0.1333, 0.0863),
-        codeForeground: ThemeRGB(1.0000, 0.9098, 0.9255),
-        placeholder: ThemeRGB(0.6314, 0.5412, 0.5569),
-        mutedText: ThemeRGB(0.6118, 0.5882, 0.5765),
-        accentText: ThemeRGB(1.0000, 0.5294, 0.6431),
-        warningText: ThemeRGB(1.0000, 0.7294, 0.4980),
-        dangerText: ThemeRGB(1.0000, 0.4431, 0.4392)
-    )
-
     static let citrineLight = ThemeSwatch(
         canvas: ThemeRGB(0.9686, 0.9647, 0.9412),
         surface: ThemeRGB(0.9490, 0.9451, 0.9255),
@@ -370,5 +214,161 @@ enum ThemePalettes {
         accentText: ThemeRGB(0.9490, 0.8353, 0.3294),
         warningText: ThemeRGB(0.9922, 0.7373, 0.4431),
         dangerText: ThemeRGB(1.0000, 0.4824, 0.4353)
+    )
+
+    static let graphiteLight = ThemeSwatch(
+        canvas: ThemeRGB(0.9843, 0.9843, 0.9843),
+        surface: ThemeRGB(0.9961, 0.9961, 0.9961),
+        surfaceRaised: ThemeRGB(0.9373, 0.9373, 0.9373),
+        surfaceOverlay: ThemeRGB(0.9216, 0.9216, 0.9216),
+        text: ThemeRGB(0.0706, 0.0706, 0.0706),
+        textMuted: ThemeRGB(0.3647, 0.3647, 0.3647),
+        border: ThemeRGB(0.8510, 0.8510, 0.8510),
+        accent: ThemeRGB(0.0863, 0.0863, 0.0863),
+        accentForeground: ThemeRGB(0.9882, 0.9882, 0.9882),
+        accentSurface: ThemeRGB(0.8941, 0.8941, 0.8941),
+        warning: ThemeRGB(0.9961, 0.6039, 0.0000),
+        warningSurface: ThemeRGB(0.9686, 0.9373, 0.8902),
+        error: ThemeRGB(0.9843, 0.1725, 0.2118),
+        errorSurface: ThemeRGB(0.9725, 0.9020, 0.8941),
+        messageSurface: ThemeRGB(0.9020, 0.9020, 0.9020),
+        messageForeground: ThemeRGB(0.0706, 0.0706, 0.0706),
+        codeBackground: ThemeRGB(0.9529, 0.9529, 0.9529),
+        codeForeground: ThemeRGB(0.0706, 0.0706, 0.0706),
+        placeholder: ThemeRGB(0.3882, 0.3882, 0.3882),
+        mutedText: ThemeRGB(0.3647, 0.3647, 0.3647),
+        accentText: ThemeRGB(0.0824, 0.0824, 0.0824),
+        warningText: ThemeRGB(0.4745, 0.3098, 0.1294),
+        dangerText: ThemeRGB(0.6824, 0.1765, 0.1765)
+    )
+
+    static let graphiteDark = ThemeSwatch(
+        canvas: ThemeRGB(0.0314, 0.0314, 0.0314),
+        surface: ThemeRGB(0.0549, 0.0549, 0.0549),
+        surfaceRaised: ThemeRGB(0.0902, 0.0902, 0.0902),
+        surfaceOverlay: ThemeRGB(0.1176, 0.1176, 0.1176),
+        text: ThemeRGB(0.9529, 0.9529, 0.9529),
+        textMuted: ThemeRGB(0.6196, 0.6196, 0.6196),
+        border: ThemeRGB(0.1569, 0.1569, 0.1569),
+        accent: ThemeRGB(0.9333, 0.9333, 0.9333),
+        accentForeground: ThemeRGB(0.0353, 0.0353, 0.0353),
+        accentSurface: ThemeRGB(0.1804, 0.1804, 0.1804),
+        warning: ThemeRGB(0.9961, 0.6039, 0.0000),
+        warningSurface: ThemeRGB(0.2275, 0.1882, 0.1216),
+        error: ThemeRGB(0.9843, 0.2549, 0.2902),
+        errorSurface: ThemeRGB(0.2392, 0.1373, 0.1373),
+        messageSurface: ThemeRGB(0.1255, 0.1255, 0.1255),
+        messageForeground: ThemeRGB(0.9529, 0.9529, 0.9529),
+        codeBackground: ThemeRGB(0.0549, 0.0549, 0.0549),
+        codeForeground: ThemeRGB(0.9529, 0.9529, 0.9529),
+        placeholder: ThemeRGB(0.5725, 0.5725, 0.5725),
+        mutedText: ThemeRGB(0.6314, 0.6314, 0.6314),
+        accentText: ThemeRGB(0.9373, 0.9373, 0.9373),
+        warningText: ThemeRGB(0.9922, 0.7451, 0.5020),
+        dangerText: ThemeRGB(1.0000, 0.4667, 0.4510)
+    )
+
+    static let clayLight = ThemeSwatch(
+        canvas: ThemeRGB(0.9843, 0.9608, 0.9412),
+        surface: ThemeRGB(0.9922, 0.9765, 0.9647),
+        surfaceRaised: ThemeRGB(0.9647, 0.9059, 0.8745),
+        surfaceOverlay: ThemeRGB(0.9529, 0.8941, 0.8588),
+        text: ThemeRGB(0.1804, 0.1137, 0.0902),
+        textMuted: ThemeRGB(0.4392, 0.3569, 0.3255),
+        border: ThemeRGB(0.8824, 0.8078, 0.7686),
+        accent: ThemeRGB(0.6941, 0.2667, 0.1255),
+        accentForeground: ThemeRGB(0.9961, 0.9843, 0.9725),
+        accentSurface: ThemeRGB(0.9686, 0.8549, 0.8157),
+        warning: ThemeRGB(0.9961, 0.6039, 0.0000),
+        warningSurface: ThemeRGB(0.9765, 0.9294, 0.8667),
+        error: ThemeRGB(0.9843, 0.1725, 0.2118),
+        errorSurface: ThemeRGB(0.9804, 0.8941, 0.8824),
+        messageSurface: ThemeRGB(0.9608, 0.8510, 0.8000),
+        messageForeground: ThemeRGB(0.1804, 0.1137, 0.0902),
+        codeBackground: ThemeRGB(0.9725, 0.9373, 0.9176),
+        codeForeground: ThemeRGB(0.1804, 0.1137, 0.0902),
+        placeholder: ThemeRGB(0.4314, 0.3529, 0.3176),
+        mutedText: ThemeRGB(0.4392, 0.3569, 0.3255),
+        accentText: ThemeRGB(0.5725, 0.2353, 0.1255),
+        warningText: ThemeRGB(0.5451, 0.3333, 0.1294),
+        dangerText: ThemeRGB(0.7216, 0.1843, 0.1804)
+    )
+
+    static let clayDark = ThemeSwatch(
+        canvas: ThemeRGB(0.0980, 0.0588, 0.0471),
+        surface: ThemeRGB(0.1216, 0.0784, 0.0627),
+        surfaceRaised: ThemeRGB(0.1804, 0.1216, 0.1020),
+        surfaceOverlay: ThemeRGB(0.2118, 0.1490, 0.1255),
+        text: ThemeRGB(0.9725, 0.9333, 0.9020),
+        textMuted: ThemeRGB(0.7216, 0.6392, 0.5922),
+        border: ThemeRGB(0.2667, 0.1961, 0.1686),
+        accent: ThemeRGB(0.9412, 0.5294, 0.3686),
+        accentForeground: ThemeRGB(0.1333, 0.0667, 0.0431),
+        accentSurface: ThemeRGB(0.2863, 0.1647, 0.1216),
+        warning: ThemeRGB(0.9961, 0.6039, 0.0000),
+        warningSurface: ThemeRGB(0.2431, 0.1882, 0.1216),
+        error: ThemeRGB(0.9843, 0.2549, 0.2902),
+        errorSurface: ThemeRGB(0.2471, 0.1333, 0.1294),
+        messageSurface: ThemeRGB(0.2549, 0.1569, 0.1255),
+        messageForeground: ThemeRGB(0.9725, 0.9333, 0.9020),
+        codeBackground: ThemeRGB(0.1176, 0.0784, 0.0667),
+        codeForeground: ThemeRGB(0.9725, 0.9333, 0.9020),
+        placeholder: ThemeRGB(0.6706, 0.5882, 0.5451),
+        mutedText: ThemeRGB(0.7216, 0.6392, 0.5922),
+        accentText: ThemeRGB(0.9529, 0.5961, 0.4588),
+        warningText: ThemeRGB(0.9961, 0.7373, 0.4784),
+        dangerText: ThemeRGB(1.0000, 0.4471, 0.4314)
+    )
+
+    static let fernLight = ThemeSwatch(
+        canvas: ThemeRGB(0.9686, 0.9765, 0.9647),
+        surface: ThemeRGB(0.9843, 0.9882, 0.9804),
+        surfaceRaised: ThemeRGB(0.9059, 0.9373, 0.9059),
+        surfaceOverlay: ThemeRGB(0.8941, 0.9255, 0.8941),
+        text: ThemeRGB(0.0706, 0.1176, 0.0784),
+        textMuted: ThemeRGB(0.3294, 0.3843, 0.3373),
+        border: ThemeRGB(0.8078, 0.8549, 0.8078),
+        accent: ThemeRGB(0.0745, 0.4667, 0.2196),
+        accentForeground: ThemeRGB(0.9804, 0.9922, 0.9765),
+        accentSurface: ThemeRGB(0.8235, 0.9216, 0.8314),
+        warning: ThemeRGB(0.9961, 0.6039, 0.0000),
+        warningSurface: ThemeRGB(0.9647, 0.9373, 0.8824),
+        error: ThemeRGB(0.9843, 0.1725, 0.2118),
+        errorSurface: ThemeRGB(0.9725, 0.9020, 0.8941),
+        messageSurface: ThemeRGB(0.8353, 0.9176, 0.8353),
+        messageForeground: ThemeRGB(0.0706, 0.1176, 0.0784),
+        codeBackground: ThemeRGB(0.9412, 0.9569, 0.9373),
+        codeForeground: ThemeRGB(0.0706, 0.1176, 0.0784),
+        placeholder: ThemeRGB(0.3451, 0.3922, 0.3529),
+        mutedText: ThemeRGB(0.3294, 0.3843, 0.3373),
+        accentText: ThemeRGB(0.0941, 0.3843, 0.1882),
+        warningText: ThemeRGB(0.4824, 0.3412, 0.1255),
+        dangerText: ThemeRGB(0.6941, 0.2039, 0.1765)
+    )
+
+    static let fernDark = ThemeSwatch(
+        canvas: ThemeRGB(0.0353, 0.0510, 0.0431),
+        surface: ThemeRGB(0.0549, 0.0745, 0.0627),
+        surfaceRaised: ThemeRGB(0.0902, 0.1216, 0.1020),
+        surfaceOverlay: ThemeRGB(0.1098, 0.1451, 0.1255),
+        text: ThemeRGB(0.9412, 0.9608, 0.9373),
+        textMuted: ThemeRGB(0.6235, 0.6706, 0.6314),
+        border: ThemeRGB(0.1490, 0.1961, 0.1725),
+        accent: ThemeRGB(0.3686, 0.8588, 0.5059),
+        accentForeground: ThemeRGB(0.0235, 0.0824, 0.0471),
+        accentSurface: ThemeRGB(0.0980, 0.1961, 0.1255),
+        warning: ThemeRGB(0.9961, 0.6039, 0.0000),
+        warningSurface: ThemeRGB(0.2275, 0.1882, 0.1216),
+        error: ThemeRGB(0.9843, 0.2549, 0.2902),
+        errorSurface: ThemeRGB(0.2392, 0.1373, 0.1373),
+        messageSurface: ThemeRGB(0.1098, 0.1725, 0.1294),
+        messageForeground: ThemeRGB(0.9412, 0.9608, 0.9373),
+        codeBackground: ThemeRGB(0.0588, 0.0784, 0.0667),
+        codeForeground: ThemeRGB(0.9412, 0.9608, 0.9373),
+        placeholder: ThemeRGB(0.5765, 0.6235, 0.5843),
+        mutedText: ThemeRGB(0.6235, 0.6706, 0.6314),
+        accentText: ThemeRGB(0.4824, 0.8784, 0.5765),
+        warningText: ThemeRGB(0.9882, 0.7490, 0.4941),
+        dangerText: ThemeRGB(1.0000, 0.4510, 0.4353)
     )
 }

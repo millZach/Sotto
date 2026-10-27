@@ -21,7 +21,7 @@ import { seedWatcherRoom } from './support/watcherRoom'
  * `SOTTO_E2E_EVIDENCE=publish` writes artifacts/composer-slim-steady.
  */
 const evidence = evidenceDirectory('artifacts/composer-slim-steady')
-const THEMES = ['t3-code', 'hush', 'linen', 'nocturne', 'tropic', 'citrine'] as const
+const THEMES = ['t3-code', 'hush', 'citrine', 'graphite', 'clay', 'fern'] as const
 const hostKeys = hostKeysPerTest()
 test.beforeEach(() => { hostKeys.reset() })
 

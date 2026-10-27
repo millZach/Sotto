@@ -192,7 +192,7 @@ describe('iPhone palettes', () => {
   const palettes = iosPalettes()
 
   it('lists the six built-ins under their own names', () => {
-    expect(palettes.map(palette => palette.id)).toEqual(['sotto', 'hush', 'linen', 'nocturne', 'tropic', 'citrine'])
+    expect(palettes.map(palette => palette.id)).toEqual(['sotto', 'hush', 'citrine', 'graphite', 'clay', 'fern'])
   })
 
   it('keeps derived text readable on every tinted surface', () => {
