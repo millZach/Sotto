@@ -14,7 +14,7 @@ import { branchStartWords, systemClockTime, type BranchStartReceipt } from '../.
 import type { DesktopBranchMoves } from './branchMoves'
 import { rebuildReservations } from './watcherRecords'
 import { isWatcherWorkActive, WATCHER_QUIET_MS, watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
-import { CHECK_HOLDS_THROUGH_BACKGROUND, checkWaitingWords, WATCHER_CHECK_STOP, type CheckQueue } from './checkQueue'
+import { CHECK_HOLDS_THROUGH_BACKGROUND, checkWaitingWords, WATCHER_CHECK_STOP, WATCHER_CHECK_STOP_AWAY, type CheckQueue } from './checkQueue'
 import { DELEGATION_LEVELS_MAX, delegatedThreadsBelow } from '../../shared/delegation'
 import { WATCHER_COMPACT_AT } from '../../shared/settings'
 import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, WATCHER_STATE_COMPUTED_MAX, watcherToolSchemas,
@@ -1335,7 +1335,7 @@ export class WatcherService implements WatcherControlHooks {
    * it: the start's receipt, the choices it will start on, where it starts from and its place in this machine's queue. Its
    * outcome is working until its thread is made, when its turn comes.
    */
-  private waitingCheckResult(operation: WatcherOperation, create: WatcherToolInput<'start_thread'>): unknown {
+  private waitingCheckResult(operation: WatcherOperation, create: WatcherToolInput<'start_thread'>): object {
     const ahead = this.options.checks?.ahead(this.checkOf.get(operation.id)?.ticket ?? operation.id) ?? 0
     return { status: 'ok', receipt: this.receipt(operation), limits: this.limits(operation), target: operation.target,
       creationReceiptId: operation.creationReceiptId!, firstPromptReceiptId: operation.firstPromptReceiptId!,
@@ -1356,6 +1356,31 @@ export class WatcherService implements WatcherControlHooks {
     let check = this.heldChecks.get(ticket)
     if (!check) { check = { ticket }; this.heldChecks.set(ticket, check); this.options.checks!.join(ticket, () => this.checkTurn(ticket)) }
     return check
+  }
+  /**
+   * Watcher's stop_thread on a check still waiting its turn here (Zach, October 27, 2026): it has no thread to stop yet, so
+   * the start is stopped instead, as the user's Stop stops it. It takes no more of the queue, starts nothing, and lets go of
+   * the branch it would have started from. Undefined for any other target, which stop_thread stops as before.
+   */
+  private async stopWaitingCheck(threadId: string, input: WatcherToolInput<'stop_thread'>): Promise<unknown> {
+    let found: WatcherCheck | undefined
+    for (const check of this.checkOf.values()) {
+      const operation = check.waiting ? this.operationOfCheck(check, this.view().operations) : undefined
+      if (operation && key(operation.target) === key(input.target) && operation.deliveryState === 'queued') { found = check; break }
+    }
+    if (!found) return undefined
+    this.checkCaller(threadId)
+    const operationId = found.operationId!
+    await this.options.control.updateWatcher(record => {
+      const own = record.operations.find(item => item.id === operationId)
+      if (!own || own.deliveryState !== 'queued') return
+      const request = record.requests.find(item => item.id === own.requestId)
+      if (!request || request.watcher.threadId !== threadId) refuse('REQUEST_NOT_ACTIVE', 'This request is not active. Only a user Send to Watcher can start a request.')
+      this.recordOutcome(record, own, 'failed', 'REQUEST_NOT_ACTIVE')
+    })
+    this.releaseChecks()
+    const operation = this.record().operations.find(item => item.id === operationId)!
+    return { status: 'ok', receipt: this.receipt(operation), limits: this.limits(operation), state: this.operationState(operation.target), stopRequested: true }
   }
   /** Gives back a place a test run took as it was asked for, unless an admitted check here now holds it. */
   private dropTicket(ticket: string): void {
@@ -3400,6 +3425,10 @@ export class WatcherService implements WatcherControlHooks {
           finally { if (placed?.input.fromMove) this.branchStartsPlaced.delete(placed.input.fromMove) }
         } finally { if (ticket) this.dropTicket(ticket) }
       }
+      if (name === 'stop_thread') {
+        const stopped = await this.stopWaitingCheck(threadId, parsed.data as WatcherToolInput<'stop_thread'>)
+        if (stopped) return stopped
+      }
       return await this.mutate(threadId, name, parsed.data as WatcherToolInput<'stop_thread'>, undefined, undefined, progress)
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('PROVIDER_UNAVAILABLE', 'This Watcher call could not be completed. Check the operation receipt before trying again.', true) }
     finally { if (--this.invocations === 0) this.publish() }
@@ -4024,7 +4053,7 @@ ${operation.draftId}`)
       // stays this desktop's to let go of until the host makes its thread (#1312).
       const waitingOn = waitingThere ? this.machineName(operation.target.hostId) ?? 'that machine' : undefined
       if (waitingThere && waitingOn) {
-        const note = checkWaitingWords(waitingOn, waitingThere.ahead, WATCHER_CHECK_STOP)
+        const note = checkWaitingWords(waitingOn, waitingThere.ahead, WATCHER_CHECK_STOP_AWAY)
         this.checkOf.set(operation.id, { ticket: operation.id, operationId: operation.id, away: { landed, input: input as WatcherToolInput<'start_thread'>, ahead: waitingThere.ahead, note } })
         this.releaseChecks()
       }

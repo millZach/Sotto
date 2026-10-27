@@ -52,8 +52,10 @@ export const CHECK_HOLDS_THROUGH_BACKGROUND = true
 
 /** How a delegating thread takes a waiting check out of the queue, as its waiting words end. */
 export const DELEGATION_CHECK_STOP = 'cancel_delegation takes it out of the queue.'
-/** How a Watcher start that waits as a check leaves the queue (#1312): Watcher has no cancel of its own, the user's Stop does it. */
-export const WATCHER_CHECK_STOP = "Its thread is made when its turn comes. The user's Stop takes it out of the queue."
+/** How a Watcher start that waits as a check here leaves the queue (#1312): stop_thread on its target, or the user's Stop (Zach, October 27). */
+export const WATCHER_CHECK_STOP = "Its thread is made when its turn comes. stop_thread on its target, or the user's Stop, takes it out of the queue."
+/** The same for a check waiting in a paired host's queue, which only the user's Stop takes out for now. */
+export const WATCHER_CHECK_STOP_AWAY = "Its thread is made when its turn comes. The user's Stop takes it out of the queue."
 /** What a waiting check's result says of its place, for the model that asked for it. English: never shown on screen. */
 export function checkWaitingWords(machine: string, ahead: number, stop: string = DELEGATION_CHECK_STOP): string {
   return `Waiting for ${machine}'s ${ahead === 1 ? 'check' : 'checks'} to finish. ${ahead} ahead. One check runs at a time on a machine, so its outcome stays working until it has run. ${stop}`
