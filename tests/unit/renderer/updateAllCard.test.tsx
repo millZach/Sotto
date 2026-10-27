@@ -200,6 +200,19 @@ describe('the Update all card', () => {
     await waitFor(() => expect(actions.installUpdate).toHaveBeenCalledTimes(1))
   })
 
+  it('reads Restart stopped threads in place of Resume threads after a restart while that Owl feature is on (ADR-0144)', () => {
+    const downloaded: UpdateStatus = { ...available, owlFeatures: { ...available.owlFeatures, 'restart-stopped-threads': true }, phase: { phase: 'downloaded', version: '0.1.37-owl.20261013.1', problem: null } }
+    const restartSettings = (restart: boolean, resume: boolean) => vi.mocked(useOptionalApp).mockReturnValue({ update: downloaded,
+      settings: { resumeThreadsAfterRestart: resume, restartStoppedThreads: restart }, actions: { installUpdate: vi.fn(), checkForUpdates: vi.fn(), dismissUpdate: vi.fn() } } as unknown as AppContextValue)
+    provideAgents(agentState({ working: true }))
+    restartSettings(false, true)
+    const view = render(<UpdateAllCard hosts={hostsBridge({ hosts: [], localHostEnabled: true, localHostRunning: true }).asBridge} />)
+    expect(screen.getByRole('listitem', { name: 'Restart Sotto, ready' })).not.toHaveTextContent('resumes after')
+    restartSettings(true, false)
+    view.rerender(<UpdateAllCard hosts={hostsBridge({ hosts: [], localHostEnabled: true, localHostRunning: true }).asBridge} />)
+    expect(screen.getByRole('listitem', { name: 'Restart Sotto, ready' })).toHaveTextContent('1 working thread here stops and resumes after.')
+  })
+
   it('folds into a pill and back, keeping focus on the control that is shown', async () => {
     provideApp(available)
     provideAgents(agentState())

@@ -63,6 +63,11 @@ async function menu(label: string) {
 }
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.mocked(useOptionalApp).mockReset().mockReturnValue(null) })
+/** Restarting stopped threads on (ADR-0144), which takes babysitting away. */
+function restartStoppedOn(): void {
+  vi.mocked(useOptionalApp).mockReturnValue({ settings: DEFAULT_SETTINGS, actions: { updateSettings: vi.fn(async () => true) },
+    update: { owlFeatures: { 'restart-stopped-threads': true } } } as unknown as AppContextValue)
+}
 
 it('copies the pull request link through main when browser clipboard access is denied', async () => {
   const { writeText, onStatus } = mount()
@@ -619,6 +624,31 @@ describe('babysitting the pull request shown (ADR-0061, variant C)', () => {
     const [branchRow, linkedRow] = within(list).getAllByRole('listitem')
     expect(linkedRow!.querySelector('.pr-surface__link-babysat')).toHaveTextContent(/^Babysitting$/u)
     expect(branchRow!.querySelector('.pr-surface__link-babysat')).toBeNull()
+  })
+
+  it('shows no babysitting at all while restarting stopped threads is on (ADR-0144; Owl only)', async () => {
+    restartStoppedOn()
+    const other = 'https://github.com/o/r/pull/76'
+    mount({ babysit: { agent: 'Claude Code' }, thread: thread({
+      pullRequests: [{ number: 76, url: other, title: 'Mention the greeting in the README', state: 'open', draft: false, source: 'linked', linkedAt: '2026-09-23T00:00:00.000Z' }],
+      babysitting: [{ url: URL, number: 74, startedBy: 'agent', startedAt }, { url: other, number: 76, startedBy: 'agent', startedAt }],
+    }) })
+    await opened()
+    expect(screen.queryByRole('group', { name: /babysitting/iu })).toBeNull()
+    expect(document.querySelector('.pr-surface__babysit')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'More pull request actions' }))
+    expect(screen.queryByRole('menuitem', { name: 'Babysit pull request' })).toBeNull()
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: 'Linked pull requests 2' }))
+    expect(document.querySelector('.pr-surface__link-babysat')).toBeNull()
+    expect(screen.getByRole('list', { name: 'Linked pull requests' })).not.toHaveTextContent('Babysitting')
+  })
+
+  it('shows no ending of babysitting while restarting stopped threads is on', async () => {
+    restartStoppedOn()
+    mount({ babysit: { agent: 'Claude Code' }, thread: thread({ babysitEnded: [{ url: URL, number: 74, reason: 'comment-limit', endedAt: new Date().toISOString() }] }) })
+    await opened()
+    expect(screen.queryByRole('group', { name: 'Not babysitting' })).toBeNull()
   })
 
   it('offers nothing where the host cannot babysit, still showing what the thread babysits', async () => {

@@ -1,10 +1,11 @@
 import { z } from 'zod'
-import { AGENT_TEXT_MAX } from '../../shared/agents'
+import { AGENT_TEXT_MAX, PROVIDER_LABELS } from '../../shared/agents'
 import { babysitStarterSchema } from '../../shared/babysitting'
 import { printable, type BabysitChange, type BabysitCheckNews, type BabysitNews, type BabysitRemarkNews } from './babysitNews'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { watcherNewsSchema, type WatcherNews } from '../../shared/watcherNews'
 import { RESUME_NOTE, restartNewsSchema, type RestartNews } from '../../shared/restartResume'
+import { limitRestartNewsSchema, limitRestartNote, type LimitRestartNews } from '../../shared/limitRestart'
 import { foldWatcherNews, watcherNewsText, WATCHER_WAKE_UP_PROMPT, type WatcherNewsDetail, type WatcherNewsHeld } from './watcherNews'
 import { delegationNewsSchema, type DelegationNews } from '../../shared/delegation'
 import { delegationNewsText, foldDelegationNews } from './delegationNews'
@@ -52,22 +53,29 @@ export const babysitNewsSchema = z.object({
 })
 
 /** Old queue files remain readable; neither Watcher, a restart nor a delegation ever impersonates a pull request. */
-export const wakeUpNewsSchema = z.union([babysitNewsSchema, watcherNewsSchema, restartNewsSchema, delegationNewsSchema])
-export type WakeUpNews = BabysitNews | WatcherNews | RestartNews | DelegationNews
+export const wakeUpNewsSchema = z.union([babysitNewsSchema, watcherNewsSchema, restartNewsSchema, delegationNewsSchema, limitRestartNewsSchema])
+export type WakeUpNews = BabysitNews | WatcherNews | RestartNews | DelegationNews | LimitRestartNews
 export const isWatcherNews = (news: WakeUpNews): news is WatcherNews => 'source' in news && news.source === 'watcher'
 /** A resume note's news (ADR-0076): Sotto closing stopped the thread's turn. */
 export const isRestartNews = (news: WakeUpNews): news is RestartNews => 'source' in news && news.source === 'restart'
 /** News of this thread's delegations (ADR-0081): which delegation, which thread, which turn and its outcome. */
 export const isDelegationNews = (news: WakeUpNews): news is DelegationNews => 'source' in news && news.source === 'delegation'
-export const isBabysitNews = (news: WakeUpNews): news is BabysitNews => !isWatcherNews(news) && !isRestartNews(news) && !isDelegationNews(news)
+/** A limit restart's news (ADR-0144): the provider's usage limit that stopped the thread's turn has reset. */
+export const isLimitRestartNews = (news: WakeUpNews): news is LimitRestartNews => 'source' in news && news.source === 'limit-restart'
+/** News of either restart: Sotto closing stopped the turn, or a usage limit did. Each leads its thread's queue. */
+export const isAnyRestartNews = (news: WakeUpNews): news is RestartNews | LimitRestartNews => isRestartNews(news) || isLimitRestartNews(news)
+export const isBabysitNews = (news: WakeUpNews): news is BabysitNews => !isWatcherNews(news) && !isAnyRestartNews(news) && !isDelegationNews(news)
+/** The limit restart note for a provider, by its own name (ADR-0144); an ID this build does not know is named as it is. */
+export const limitRestartNoteFor = (provider: string): string => limitRestartNote(Object.hasOwn(PROVIDER_LABELS, provider) ? PROVIDER_LABELS[provider as keyof typeof PROVIDER_LABELS] : provider)
 /**
  * Later news folded into a waiting wake-up's: one resume note, the newest, first, then each pull request's part, then
  * Watcher's. The note opens the message, which is how a thread tells a resume from a wake-up about something else.
  */
 export function foldWakeUpNews(earlier: readonly WakeUpNews[], later: WakeUpNews): WakeUpNews[] {
-  const restart = earlier.filter(isRestartNews), workers = earlier.filter(isWatcherNews), prs = earlier.filter(isBabysitNews)
+  const restart = earlier.filter(isAnyRestartNews), workers = earlier.filter(isWatcherNews), prs = earlier.filter(isBabysitNews)
   const delegations = earlier.filter(isDelegationNews)
-  if (isRestartNews(later)) return [later, ...prs, ...workers, ...delegations]
+  // One restart note, the newest, whichever stopped the turn: the thread has one turn to carry on.
+  if (isAnyRestartNews(later)) return [later, ...prs, ...workers, ...delegations]
   if (isWatcherNews(later)) return [...restart, ...prs, foldWatcherNews(workers[0], later), ...delegations]
   // Kept for queues an earlier build saved: delegation news now waits in a wake-up of its own (`isDelegationOnlyWakeUp`).
   if (isDelegationNews(later)) return [...restart, ...prs, ...workers, foldDelegationNews(delegations[0], later)]
@@ -78,7 +86,8 @@ export function foldWakeUpNews(earlier: readonly WakeUpNews[], later: WakeUpNews
  * in it but beside it (`watcherWakeUpNote`), so a wake-up holding only that sends Watcher a short message instead.
  */
 export function queuedWakeUpText(news: readonly WakeUpNews[], options: WakeUpOptions): string {
-  const restart = news.some(isRestartNews) ? RESUME_NOTE : ''
+  const limit = news.find(isLimitRestartNews)
+  const restart = limit ? limitRestartNoteFor(limit.provider) : news.some(isRestartNews) ? RESUME_NOTE : ''
   const prs = news.filter(isBabysitNews)
   const delegation = news.filter(isDelegationNews).map(item => delegationNewsText(item)).join('\n\n')
   if (!restart && !prs.length && !delegation) return news.some(isWatcherNews) ? WATCHER_WAKE_UP_PROMPT : ''

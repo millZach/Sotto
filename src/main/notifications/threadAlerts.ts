@@ -10,6 +10,8 @@ export interface ThreadAlertsOptions {
   readonly shows: (threadId: string) => boolean
   /** Watcher keeps this thread going: it never alerts as finished. Absent where Watcher is off. */
   readonly watched?: (threadId: string) => boolean
+  /** Restart stopped threads retired babysitting (ADR-0144): a babysat pull request no longer keeps a thread from finishing. */
+  readonly babysittingRetired?: boolean
   readonly emit: (alert: ThreadAlert) => void
   readonly timers?: { set(fn: () => void, ms: number): unknown; clear(handle: unknown): void }
 }
@@ -52,9 +54,9 @@ const defaultTimers: Timers = {
  * The user's "completely finished" says no: a turn, background work, sub-agents or monitoring still running, a compaction,
  * a babysat pull request (decision 3), a request waiting on the user, or a send still on its way.
  */
-const holds = (thread: AgentThread, queued: ReadonlySet<string> | undefined): boolean =>
+const holds = (thread: AgentThread, queued: ReadonlySet<string> | undefined, babysits = true): boolean =>
   isThreadTurnRunning(thread) || watcherBackgroundWorkCount(thread) > 0 || thread.compaction?.status === 'running'
-  || (thread.babysitting?.length ?? 0) > 0 || thread.requests.length > 0 || queued?.has(thread.id) === true
+  || (babysits && (thread.babysitting?.length ?? 0) > 0) || thread.requests.length > 0 || queued?.has(thread.id) === true
 
 /** The top-level thread a delegated thread works for: the thread itself when it has none or the chain leaves the state. */
 function root(thread: AgentThread, delegations: Delegations | undefined): AgentThread {
@@ -175,7 +177,8 @@ export class ThreadAlerts {
     if (thread.kind === 'watcher' || thread.kind === 'watcher-history') return false
     if (thread.delegatedBy !== undefined && delegations?.byId.has(thread.delegatedBy)) return false
     if (thread.status === 'error' || thread.lastTurn?.status === 'failed' || thread.lastTurn?.status === 'interrupted') return false
-    if (holds(thread, queued) || (delegations && descendantHolds(thread.id, delegations, queued))) return false
+    const babysits = this.options.babysittingRetired !== true
+    if (holds(thread, queued, babysits) || (delegations && descendantHolds(thread.id, delegations, queued, babysits))) return false
     return this.options.watched?.(thread.id) !== true
   }
 
@@ -228,14 +231,14 @@ export class ThreadAlerts {
 }
 
 /** Some thread down the thread's delegation chain (ADR-0081) holds as the thread itself would. Cycle safe. */
-function descendantHolds(threadId: string, delegations: Delegations, queued: ReadonlySet<string> | undefined): boolean {
+function descendantHolds(threadId: string, delegations: Delegations, queued: ReadonlySet<string> | undefined, babysits = true): boolean {
   if (!delegations.children.has(threadId)) return false
   const visited = new Set([threadId])
   const pending = [threadId]
   for (let id = pending.pop(); id !== undefined; id = pending.pop()) {
     for (const child of delegations.children.get(id) ?? []) {
       if (visited.has(child.id)) continue
-      if (holds(child, queued)) return true
+      if (holds(child, queued, babysits)) return true
       visited.add(child.id)
       pending.push(child.id)
     }

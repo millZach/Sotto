@@ -1,6 +1,6 @@
-import type { AgentMessage, AgentThread } from '../../shared/agents'
+import { PROVIDER_LABELS, type AgentMessage, type AgentThread } from '../../shared/agents'
 import { pullRequestKey } from '../../shared/gitPullRequests'
-import { WATCHER_NEWS_BYTES_MAX, WATCHER_NEWS_REPLY_CHARS, WATCHER_NEWS_TARGETS_MAX, type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
+import { WATCHER_NEWS_BYTES_MAX, WATCHER_NEWS_REPLY_CHARS, WATCHER_NEWS_TARGETS_MAX, WATCHER_UNWATCHED_REQUEST_ID, type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
 import { observationDigest, targetKey, type WatcherAttentionKind } from './watcherEvidence'
 import { parsePrototypeSource, replySource, requestSource } from './prototypeSources'
 
@@ -48,7 +48,7 @@ export const requestRevision = (request: unknown): string => observationDigest(r
 /** What reaches a thread after a takeover fenced a request there (#1148), as its news and its refusals say it. */
 export const LATER_REQUEST_REACHES = 'A message the user sends Watcher after that starts a request that reaches the thread; while the user’s own turn there runs, it can only steer it.'
 /** Each kind's line; a closed card's depends on whose it was and whether Sotto saw the user answer it (`closedWords`). */
-const words: Record<Exclude<WatcherEvent['kind'], 'request-closed'>, string> = {
+const words: Record<Exclude<WatcherEvent['kind'], 'request-closed' | 'threads-restarted'>, string> = {
   'turn-finished': 'The foreground turn finished. This is not review or merge approval.',
   'work-settled': 'The background work and monitoring this turn left running have ended, so the turn is done. This is not review or merge approval.',
   'turn-failed': 'The provider confirmed that this turn failed. Read the thread for its error.',
@@ -82,7 +82,15 @@ function closedWords(event: WatcherEvent): string {
     ? `The user answered this thread’s ${card}, so it no longer waits on them for it. ${nothing}`
     : `This thread’s ${card} is no longer open, so it no longer waits on the user for it: the user answered it, or its turn ended without an answer.`
 }
-const kindWords = (event: WatcherEvent): string => event.kind === 'needs-user' && event.delegatedThreadId !== undefined
+/** A provider by its own name, for Sotto's words; an ID this build does not know is named as it is. */
+const providerName = (provider: string | undefined): string => provider === undefined ? 'Its provider' : Object.hasOwn(PROVIDER_LABELS, provider)
+  ? PROVIDER_LABELS[provider as keyof typeof PROVIDER_LABELS] : provider
+/** Whether a `threads-restarted` event's thread is one no request watches (ADR-0144). */
+const unwatched = (event: WatcherEvent): boolean => event.kind === 'threads-restarted' && event.requestId === WATCHER_UNWATCHED_REQUEST_ID
+/** A restarted thread's line (ADR-0144), in Sotto's words: which limit had stopped it, and whether Watcher watches it. */
+const restartedWords = (event: WatcherEvent): string => `${providerName(event.restartedBy)}’s usage limit had stopped this thread and has reset, so Sotto restarted it with a short note of its own, the same on every provider.${
+  unwatched(event) ? ' No request of yours watches it: read it with read_thread if its work matters to yours.' : ''} This approves nothing.`
+const kindWords = (event: WatcherEvent): string => event.kind === 'threads-restarted' ? restartedWords(event) : event.kind === 'needs-user' && event.delegatedThreadId !== undefined
   ? `A thread this one delegated to, ${event.delegatedThreadId}, has a ${event.requestCardKind === 'permission' ? 'permission request' : 'question'} for the user. Open that thread to answer it. Only the user can answer.`
   : event.kind === 'request-closed' ? closedWords(event) : words[event.kind]
 /**
@@ -103,11 +111,15 @@ export function watcherNewsText(news: WatcherNews, detail?: WatcherNewsDetail, h
     : `${kindWords(event)}${(event.kind === 'turn-finished' || event.kind === 'turn-failed') && event.backgroundWorkCount
       ? ` Background work or monitoring was still running when it ended (${event.backgroundWorkCount}), so the turn is not done: Sotto sends work-settled news for it when that work ends, unless the thread begins another turn first.` : ''}`
   const line = (event: WatcherEvent, index: number, extra: string | undefined) => `${JSON.stringify(event.target)}: ${said(event, index)}${event.operationId && event.kind !== 'delivery-changed'
-    ? ` This turn answers operation ${event.operationId}.` : ''}${extra ? ` ${extra}` : ''} Use requestId ${event.requestId} for this thread. [${event.id}]`
+    ? ` This turn answers operation ${event.operationId}.` : ''}${extra ? ` ${extra}` : ''}${unwatched(event) ? '' : ` Use requestId ${event.requestId} for this thread.`} [${event.id}]`
+  // Each provider whose limit reset is said once, before its threads' lines (ADR-0144).
+  const restarts = new Map<string, number>()
+  for (const event of shown) if (event.kind === 'threads-restarted') restarts.set(event.restartedBy ?? '', (restarts.get(event.restartedBy ?? '') ?? 0) + 1)
+  const restartLines = [...restarts].map(([provider, count]) => `Sotto restarted ${count === 1 ? 'one thread' : `${count} threads`} ${providerName(provider || undefined)}’s usage limit had stopped, now that it has reset. Each is named below, with whether a request of yours watches it.`)
   const compose = (count: number, detailed: number) => {
     const lines = shown.slice(0, count).map((event, index) => line(event, index, index < detailed ? details[index] : undefined))
     const omitted = news.omitted + shown.length - count
-    return [opening, ...lines, ...(omitted ? [`${omitted} more events omitted. Read list_threads for the current roster.`] : []),
+    return [opening, ...restartLines, ...lines, ...(omitted ? [`${omitted} more events omitted. Read list_threads for the current roster.`] : []),
       'A reply given whole here is enough to act on. Use read_operation for a brief’s receipt and outcome, and for a reply cut or left out here. Use read_thread only for what a reply does not say, such as evidence and other worker messages, or for a cut reply whose line names no operation. A standing watch requestId authorizes a bounded continuation for that watched thread. Share four prompts per target within this Watcher turn across request and standing-watch IDs.'].join('\n')
   }
   for (let detailed = shown.length; detailed >= 0; detailed--) {

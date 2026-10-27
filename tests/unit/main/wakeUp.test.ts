@@ -1,8 +1,9 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import type { BabysitNews } from '../../../src/main/agents/babysitNews'
-import { babysitNewsSchema, foldNews, WAKE_UP_LINES_MAX, WAKE_UP_NEWS_MAX, wakeUpText } from '../../../src/main/agents/wakeUp'
+import { babysitNewsSchema, foldNews, foldWakeUpNews, isAnyRestartNews, queuedWakeUpText, WAKE_UP_LINES_MAX, WAKE_UP_NEWS_MAX, wakeUpNewsSchema, wakeUpText } from '../../../src/main/agents/wakeUp'
 import { AGENT_TEXT_MAX } from '../../../src/shared/agents'
+import { isLimitRestartNoteText, limitRestartNote, type LimitRestartNews } from '../../../src/shared/limitRestart'
 
 /** The wake-up's words (ADR-0061 decision 7): Sotto's, the same for every provider, and never what anyone wrote. */
 const pull = { url: 'https://github.com/o/r/pull/42', number: 42, title: 'Babysit the pull request' }
@@ -160,5 +161,23 @@ describe('news folded into a waiting wake-up', () => {
     expect(text).toMatch(/And news of \d+ more pull requests; read them with gh\./u)
     expect(text).toContain('Sotto keeps babysitting them and will wake you again')
     expect(text).toContain('call stop_babysitting')
+  })
+})
+
+describe('a limit restart note in a wake-up (ADR-0144)', () => {
+  const limit = (provider = 'claude'): LimitRestartNews => ({ source: 'limit-restart', provider, since: '2026-10-26T20:00:00.000Z', restarts: 1 })
+  it('opens the wake-up with the note in the provider’s own name, ahead of any other news, and is told from its text', () => {
+    const folded = foldWakeUpNews([news()], limit())
+    expect(folded[0]).toEqual(limit())
+    const text = queuedWakeUpText(folded, { tool: false })
+    expect(text.startsWith(limitRestartNote('Claude Code'))).toBe(true)
+    expect(isLimitRestartNoteText(text)).toBe(true)
+    expect(isLimitRestartNoteText(wakeUpText([news()], { tool: false }))).toBe(false)
+    expect(wakeUpNewsSchema.parse(limit('codex'))).toEqual(limit('codex'))
+    expect(queuedWakeUpText([limit('codex')], { tool: false })).toBe(limitRestartNote('Codex'))
+  })
+  it('keeps one restart note, the newest, whichever restart it was', () => {
+    const folded = foldWakeUpNews([{ source: 'restart', since: '2026-10-26T19:00:00.000Z', resumes: 1 }], limit())
+    expect(folded.filter(isAnyRestartNews)).toEqual([limit()])
   })
 })
