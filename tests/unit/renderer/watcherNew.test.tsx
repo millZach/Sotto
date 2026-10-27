@@ -94,7 +94,7 @@ const newButton = async () => within(await watcherPane()).findByRole('button', {
 
 beforeEach(() => {
   vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset()
-  localStorage.clear(); roomView.set({ besideId: null, share: 0.5, tab: 'conversation' }); firstMessage.clear()
+  localStorage.clear(); roomView.set({ besideId: null, share: 0.5 }); firstMessage.clear()
 })
 afterEach(() => { cleanup(); localStorage.clear() })
 

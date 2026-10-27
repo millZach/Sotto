@@ -349,13 +349,10 @@ export const watcherToolSchemas = {
       check: z.object({ ahead: counter, note: shortText.min(1) }).strict().optional() }),
   },
   send_to_thread: {
-    // `mergeTurn` is the desktop's alone (#1339): it marks the send that gives a thread its merge turn, for Watcher's
-    // picture. Main takes it off before the send is admitted, so it changes nothing about the send, its digest or its
-    // retry, and a paired host is never sent it. A send that names no `delivery` steers (ADR-0130): main picks the mode
-    // from the thread before admission, and a paired host is sent the one it picked.
+    // A send that names no `delivery` steers (ADR-0130): main picks the mode from the thread before admission, and a
+    // paired host is sent the one it picked.
     input: z.object({ ...mutation, target: watcherThreadTargetSchema, text: prompt, delivery: deliveryMode.optional(),
-      expectedLastUserMessageId: id.optional(), expectedTurnId: id.optional(),
-      mergeTurn: z.object({ pullRequest: z.number().int().positive() }).strict().optional() }).strict(),
+      expectedLastUserMessageId: id.optional(), expectedTurnId: id.optional() }).strict(),
     // `note` is the desktop's alone: what a send that asked to steer did instead, when it went now or queued (ADR-0130).
     output: result({ ...receiptResult, delivery: deliveryMode, note: shortText.min(1).optional() }),
   },

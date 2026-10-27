@@ -2,9 +2,13 @@ import type { AgentHostCommand } from './host'
 import type { AgentRequest } from '../../shared/agents'
 import type { ScopedThreadTools } from './threadToolServer'
 
-/** The browser's standing grant and host setup remain outside Watcher's scoped tools. */
+/**
+ * Watcher's scoped tools are its pull request babysitting alone. The browser's standing grant and host setup stay
+ * outside them, and so does drawing a visual: Watcher's room is its conversation, with no picture to draw in (Zach,
+ * October 27, 2026).
+ */
 export function watcherThreadTools(tools: readonly ScopedThreadTools[]): readonly ScopedThreadTools[] {
-  return tools.filter(tool => tool.name === 'sotto_visual' || tool.name === 'sotto_pull_requests')
+  return tools.filter(tool => tool.name === 'sotto_pull_requests')
 }
 
 /** The user's runtime mode is separate from a native remembered permission grant. */
