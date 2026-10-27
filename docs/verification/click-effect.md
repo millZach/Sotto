@@ -31,14 +31,17 @@ In one Owl run, turning `clickEffect` off through the settings bridge takes the 
 
 ## Watcher's margin
 
-`watcher-margin-press-dark.png` holds Watcher's room just after a press in the open left margin with the click effect on. The waves run under the night scene, which draws over them unchanged, and the scene's own ripple is not sent: the night scene drew 0 ripple cells behind the column. The same press with the click effect off sent the ripple as before, with 1,157 cells behind the column. That was a one-off run, not a kept spec. The existing column spec (`tests/e2e/watcher-column.spec.ts`) keeps the ripple's contrast check, since the design profile leaves the click effect off.
+`watcher-margin-press-dark.png` holds Watcher's room just after a press in the open left margin with the click effect on. The waves run under the night scene, which draws over them unchanged, and the scene's own ripple is not sent: the night scene drew 0 ripple cells behind the column. With motion reduced and the effect still chosen, the same press showed nothing: no canvas and 0 ripple cells. With the click effect turned off it sent the ripple as before, 1,089 cells behind the column. Those were one-off runs, not a kept spec. The existing column spec (`tests/e2e/watcher-column.spec.ts`) keeps the ripple's contrast check, since the design profile leaves the click effect off.
+
+## Contrast
+
+The glyphs go no stronger than leaves every word over them at 4.5:1 (ADR-0154, decision 2). In one Owl run each built-in theme, dark and light (t3-code, hush, citrine, graphite, clay and fern), was saved in turn and a press read the ceiling the canvas took: 0.35 in all twelve, against the prototype's 0.65. The spec checks the ceiling is above nothing and no more than 0.65. The frames above are at that ceiling.
 
 ## Cost
 
-In Node, on this laptop, one step of the water at 1280 by 800 took about 0.1 ms and walking the glyph grid about 1 ms with eight presses' waves crossing; at 1600 by 1000, 0.14 ms and 0.14 ms. Many presses add drops to the same water, so the work per frame does not grow with them. A single press's waves leave nothing to draw after about nine to ten seconds, and the loop stops then.
+In Node, on this laptop, one step of the water at 1280 by 800 took about 0.1 ms and walking the glyph grid about 1 ms with eight presses' waves crossing; at 1600 by 1000, 0.14 ms and 0.14 ms. Many presses add drops to the same water, so the work per frame does not grow with them. A single press's waves leave nothing to draw after about nine to ten seconds, and the loop stops then; in the built app the loop drew about 400 frames and stopped 9 seconds after a press. The water steps by the clock, so a 120 Hz display draws more frames without running the water faster, and a window drawn slowly (an occluded one, about a frame a second) ages the water by the steps it missed rather than running it for minutes. The spec passed three times in a row after that change.
 
 ## Not checked here
 
 - macOS and Linux were not run; the canvas and the shell's stacking are the same code there.
-- The Glass theme was not captured. The canvas lies over the shell's own translucent background, under the panes.
-- Words over a passing wave can read below 4.5:1 for a moment, which ADR-0154 accepts for a transient effect that can be turned off; no contrast was measured over the waves.
+- The Glass theme was not captured. The canvas lies over the shell's own translucent background, under the panes, and its ceiling reads that background over pure white or pure black, whichever is nearer the text, as the night scene does.

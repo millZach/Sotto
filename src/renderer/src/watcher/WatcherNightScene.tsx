@@ -4,7 +4,7 @@ import { msg } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import type { WatcherScene } from '../../../shared/watcherScene'
 import { slimMoving } from '../agents/slimComposer'
-import { useClickEffectOn } from '../state/clickEffect'
+import { useClickEffectChosen } from '../state/clickEffect'
 import { useReducedMotion } from '../state/reducedMotion'
 import {
   addRipple, frameDelay, frameDue, frameSleep, glassOpacity, heldRoom, inMargin, liveRipples, nextPlace, owlAt, planFlight, sceneInk, stayAt,
@@ -144,7 +144,8 @@ interface Target {
  * Watcher's owl flies now and then, at random, to the other tree or onto a branch off the composer, and back. A new
  * watched thread's owl comes out of a whirlpool in the moon, which sends out a ripple; a settled or unwatched thread's
  * owl flies back into it. A press in the open margin sends out a ripple too, and Watcher's owl looks toward it; while the
- * click effect is on (ADR-0154) its waves stand in for that ripple, and the owl still looks. Below a
+ * click effect is chosen (ADR-0154) its waves stand in for that ripple, and with motion reduced nothing does; the owl
+ * still looks. Below a
  * margin of 160 pixels the trees give way to a rail of owl eyes, and without even that room nothing is drawn.
  *
  * The canvases are decoration, hidden from assistive technology and never pressed. The thread owls' buttons answer the
@@ -174,7 +175,7 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, onO
   const { t: say } = useLingui()
   const reduced = useReducedMotion()
   const still = reduced || held
-  const clickEffect = useClickEffectOn()
+  const clickEffect = useClickEffectChosen()
   const [phase, setPhase] = useState<'shown' | 'leaving' | 'gone'>(shown ? 'shown' : 'gone')
   const [targets, setTargets] = useState<readonly Target[]>([])
   const [tip, setTip] = useState<Target | null>(null)
@@ -495,8 +496,8 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, onO
     // Moving to a display with other scaling changes the pixel ratio but not always the window's size.
     const unwatchResolution = watchResolution(scheduleLayout)
 
-    // A press in the open margin sends out a ripple, unless the click effect's waves already run through the room there,
-    // and Watcher's owl looks toward it either way.
+    // A press in the open margin sends out a ripple, unless the click effect is chosen: its waves run through the room
+    // there instead, or with motion reduced nothing does. Watcher's owl looks toward the press either way.
     const press = (event: PointerEvent): void => {
       if (leaving.current || event.button !== 0 || !painter.ready || layout === null || layout.mode !== 'trees') return
       if (!(event.target instanceof Element) || event.target.closest(NOT_BACKGROUND) !== null) return

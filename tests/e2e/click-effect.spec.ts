@@ -65,6 +65,10 @@ test.describe('the click effect', () => {
           await page.waitForTimeout(140)
         }
         await expect.poll(() => glyphs(page)).toBeGreaterThan(200)
+        // No glyph is stronger than leaves every word over it at 4.5:1, nor than the effect's own 65%.
+        const ceiling = await layer(page).evaluate(canvas => Number((canvas as HTMLCanvasElement).dataset.clickEffectCeiling))
+        expect(ceiling).toBeGreaterThan(0)
+        expect(ceiling).toBeLessThanOrEqual(0.65)
         for (const name of ['spreading', 'crossing']) {
           await captureWindow(launched.app, resolve(evidence, `${name}-${appearance}.png`))
           await page.waitForTimeout(450)

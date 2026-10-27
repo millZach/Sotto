@@ -2,6 +2,8 @@
    While it is there the shell is its own stacking context, so the canvas's negative layer stays inside the shell, above
    the shell's background and below every page, card and control; where the effect is held or off there is no canvas and
    the shell stacks as it always has. The canvas never takes the pointer. Its 0s and 1s are drawn in the colour it computes
-   here, the theme's accent, in the theme's monospace face. */
+   here, the theme's accent, in the theme's monospace face; its borders, never drawn, carry the colours words are written
+   in over it (the text, its secondary and muted tiers, and links), which set how strong the glyphs may go. */
 .app-shell:has(> .click-effect) { isolation: isolate; }
-.click-effect { position: fixed; inset: 0; z-index: -1; width: 100vw; height: 100vh; pointer-events: none; color: var(--tt-accent); font-family: var(--tt-font-mono); }
+.click-effect { position: fixed; inset: 0; z-index: -1; width: 100vw; height: 100vh; pointer-events: none; color: var(--tt-accent);
+  border-top-color: var(--tt-text); border-right-color: var(--tt-text-2); border-bottom-color: var(--tt-text-muted); border-left-color: var(--tt-link); font-family: var(--tt-font-mono); }

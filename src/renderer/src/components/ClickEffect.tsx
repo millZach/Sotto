@@ -1,17 +1,31 @@
 import React, { useEffect, useRef, type ReactNode } from 'react'
 import { useClickEffectOn } from '../state/clickEffect'
-import { ClickWater, GLYPH_H, GLYPH_W, STEP_HZ } from './clickWater'
+import { toRgb } from '../watcher/canvasColor'
+import { columnCeiling, type Word } from '../watcher/nightScene'
+import { surfaceOf, toWord } from '../watcher/WatcherNightScene'
+import { watchResolution } from '../watcher/watchResolution'
+import { ClickWater, GLYPH_ALPHA, GLYPH_H, GLYPH_W, STEP_HZ } from './clickWater'
 import './clickEffect.css'
 
-/** The most steps one frame runs, so a frame that came late does not stall the next. */
+/** The most steps one frame runs, so a frame that came late does not stall the next; it ages the water by the rest. */
 const MAX_STEPS = 4
+const STEP_MS = 1000 / STEP_HZ
+
+/** What a run draws with: a 0 and a 1 in the accent, and the strongest any glyph may be. */
+interface Ink {
+  readonly key: string
+  readonly digits: readonly [HTMLCanvasElement, HTMLCanvasElement]
+  /** No stronger than GLYPH_ALPHA, nor than leaves every word over a glyph at 4.5:1. */
+  readonly ceiling: number
+}
 
 /**
  * The click effect (ADR-0154): a press anywhere in the main window sends waves of 0s and 1s in the theme's accent through
  * the room behind it. The canvas lies under the window's content, over only the room's own background, so a card, a
- * bubble or the composer sits over the waves and nothing pressed is ever covered; it never takes the pointer either. It
- * exists only while the effect is on, draws only while the water moves, and clears itself and stops when the water is
- * calm, the window is hidden or the effect goes.
+ * bubble or the composer sits over the waves and nothing pressed is ever covered; it never takes the pointer either. Its
+ * glyphs are never stronger than leaves every word written over them at 4.5:1 against the room. It exists only while the
+ * effect is on, draws only while the water moves, and clears itself and stops when the water is calm, the window is
+ * hidden or the effect goes.
  */
 export function ClickEffect(): ReactNode {
   return useClickEffectOn() ? <ClickEffectLayer /> : null
@@ -24,50 +38,66 @@ function ClickEffectLayer(): ReactNode {
     const ctx = canvas?.getContext('2d')
     // Without a canvas to draw on (a test's DOM) nothing listens.
     if (canvas == null || ctx == null) return
+    const pixel = Object.assign(document.createElement('canvas'), { width: 1, height: 1 }).getContext('2d', { willReadFrequently: true })
     let water: ClickWater | null = null
+    let ink: Ink | null = null
     let request: number | null = null
     let last = 0
-    let sprites: { readonly key: string; readonly digits: readonly [HTMLCanvasElement, HTMLCanvasElement] } | null = null
+    /** Time owed to the water since the last step, in milliseconds. */
+    let owed = 0
     // An end-to-end run marks whether the loop runs, and counts the frames drawn and the glyphs in the last, so a test can
     // tell the waves from the calm.
     let frames = 0
     const counted = window.sottoE2E !== undefined
+    const dpr = (): number => window.devicePixelRatio || 1
 
-    /** The water, sized to the window as it is now; a new size starts calm water. */
+    /** The water, sized to the window and its pixel ratio as they are now; a new size starts calm water. */
     const waterNow = (): ClickWater => {
-      const width = window.innerWidth, height = window.innerHeight
-      if (water?.width === width && water.height === height) return water
-      const dpr = window.devicePixelRatio || 1
-      canvas.width = Math.round(width * dpr)
-      canvas.height = Math.round(height * dpr)
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      const width = window.innerWidth, height = window.innerHeight, scale = dpr()
+      if (water?.width === width && water.height === height && canvas.width === Math.round(width * scale)) return water
+      canvas.width = Math.round(width * scale)
+      canvas.height = Math.round(height * scale)
+      ctx.setTransform(scale, 0, 0, scale, 0, 0)
       water = new ClickWater(width, height)
       return water
     }
 
-    /** A 0 and a 1 in the accent, drawn once for the theme and font in force and stamped wherever the water shows one. */
-    const digitsNow = (): readonly [HTMLCanvasElement, HTMLCanvasElement] => {
+    /**
+     * The ink for the theme in force, read once as a run starts: the accent (the canvas's colour), the words' colours (its
+     * borders: the text, its secondary and muted tiers, and links) and the room's surface under them, as the night scene
+     * reads its own (ADR-0126). The glyphs go no stronger than leaves every one of those words at 4.5:1 over a glyph.
+     */
+    const inkNow = (): Ink => {
       const style = getComputedStyle(canvas)
-      const dpr = window.devicePixelRatio || 1
-      const key = `${style.color}|${style.fontFamily}|${dpr}`
-      if (sprites?.key === key) return sprites.digits
+      const scale = dpr()
+      const shell = canvas.parentElement ?? document.body
+      const key = [style.color, style.borderTopColor, style.borderRightColor, style.borderBottomColor, style.borderLeftColor,
+        getComputedStyle(shell).backgroundColor, style.fontFamily, scale].join('|')
+      if (ink?.key === key) return ink
+      const accent = pixel === null ? null : toRgb(style.color, pixel)
+      const words = pixel === null ? [] : [style.borderTopColor, style.borderRightColor, style.borderBottomColor, style.borderLeftColor]
+        .map(value => toWord(value, pixel)).filter((word): word is Word => word !== null)
+      const surface = pixel === null || words[0] === undefined ? null : surfaceOf(shell, pixel, words[0])
+      // Colours that cannot be read draw nothing rather than risk a word.
+      const ceiling = accent === null || surface === null ? 0 : Math.min(GLYPH_ALPHA, columnCeiling(surface, accent, 1, words))
       const draw = (digit: string): HTMLCanvasElement => {
         const sprite = document.createElement('canvas')
-        sprite.width = Math.ceil(GLYPH_W * 1.4 * dpr)
-        sprite.height = Math.ceil(GLYPH_H * dpr)
+        sprite.width = Math.ceil(GLYPH_W * 1.4 * scale)
+        sprite.height = Math.ceil(GLYPH_H * scale)
         const pen = sprite.getContext('2d')
         if (pen !== null) {
-          pen.scale(dpr, dpr)
+          pen.scale(scale, scale)
           pen.font = `500 11px ${style.fontFamily}`
           pen.fillStyle = style.color
           pen.textAlign = 'center'
           pen.textBaseline = 'middle'
-          pen.fillText(digit, sprite.width / dpr / 2, GLYPH_H / 2)
+          pen.fillText(digit, sprite.width / scale / 2, GLYPH_H / 2)
         }
         return sprite
       }
-      sprites = { key, digits: [draw('0'), draw('1')] }
-      return sprites.digits
+      ink = { key, digits: [draw('0'), draw('1')], ceiling }
+      if (counted) canvas.dataset.clickEffectCeiling = String(ceiling)
+      return ink
     }
 
     const stop = (): void => {
@@ -80,16 +110,21 @@ function ClickEffectLayer(): ReactNode {
 
     const frame = (now: number): void => {
       request = null
-      if (water === null) return
-      const steps = Math.min(MAX_STEPS, Math.max(1, Math.round((now - last) / (1000 / STEP_HZ))))
+      if (water === null || ink === null) return
+      // Steps are owed by the clock, not by frames, so the waves keep their speed and their cost on any display.
+      owed += now - last
       last = now
-      for (let step = 0; step < steps; step++) water.step()
+      const due = Math.floor(owed / STEP_MS)
+      if (due < 1) { request = requestAnimationFrame(frame); return }
+      owed -= due * STEP_MS
+      for (let step = 0; step < Math.min(due, MAX_STEPS); step++) water.step()
+      water.age(due - MAX_STEPS)
       if (water.calm) { stop(); return }
-      const digits = digitsNow()
-      const width = GLYPH_W * 1.4, height = GLYPH_H
+      const { digits, ceiling } = ink
+      const width = GLYPH_W * 1.4, height = GLYPH_H, strength = ceiling / GLYPH_ALPHA
       ctx.clearRect(0, 0, water.width, water.height)
       const stamped = water.draw((digit, x, y, alpha) => {
-        ctx.globalAlpha = alpha
+        ctx.globalAlpha = alpha * strength
         ctx.drawImage(digits[digit], x - width / 2, y - height / 2, width, height)
       })
       ctx.globalAlpha = 1
@@ -102,17 +137,29 @@ function ClickEffectLayer(): ReactNode {
     const press = (event: PointerEvent): void => {
       if (event.button !== 0 || document.visibilityState === 'hidden') return
       waterNow().press(event.clientX, event.clientY)
-      if (request === null) { last = performance.now(); request = requestAnimationFrame(frame); if (counted) canvas.dataset.clickEffectRunning = 'true' }
+      if (request !== null) return
+      inkNow()
+      last = performance.now()
+      owed = STEP_MS
+      request = requestAnimationFrame(frame)
+      if (counted) canvas.dataset.clickEffectRunning = 'true'
     }
     const hidden = (): void => { if (document.visibilityState === 'hidden') stop() }
-    // A new window size stills the water; the next press starts water of the new size.
-    const resized = (): void => { if (water !== null && (water.width !== window.innerWidth || water.height !== window.innerHeight)) { stop(); water = null } }
+    // A new window size or pixel ratio stills the water; the next press starts water to fit.
+    const resized = (): void => {
+      if (water === null) return
+      if (water.width === window.innerWidth && water.height === window.innerHeight && canvas.width === Math.round(water.width * dpr())) return
+      stop()
+      water = null
+    }
     window.addEventListener('pointerdown', press, { capture: true, passive: true })
     window.addEventListener('resize', resized)
+    const unwatchResolution = watchResolution(resized)
     document.addEventListener('visibilitychange', hidden)
     return () => {
       window.removeEventListener('pointerdown', press, { capture: true })
       window.removeEventListener('resize', resized)
+      unwatchResolution()
       document.removeEventListener('visibilitychange', hidden)
       stop()
     }

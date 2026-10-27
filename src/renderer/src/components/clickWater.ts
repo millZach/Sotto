@@ -128,6 +128,19 @@ export class ClickWater {
     this.peak = top
   }
 
+  /**
+   * The water `steps` steps older without moving it: it fades as far as those steps would have damped it. A frame that
+   * comes late runs only a few steps and ages the water by the rest, so a press dies away in the same time on a window
+   * the system draws slowly.
+   */
+  age(steps: number): void {
+    if (steps <= 0) return
+    const keep = DAMPING ** steps
+    for (const field of [this.prev, this.cur]) for (let i = 0; i < field.length; i++) field[i]! *= keep
+    for (let row = 0; row < this.rows; row++) this.rowPeak[row]! *= keep
+    this.peak *= keep
+  }
+
   /** Stills the water at once. */
   clear(): void {
     this.prev.fill(0)

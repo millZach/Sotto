@@ -67,6 +67,18 @@ describe('the click effect water', () => {
     expect(drawn.every(glyph => Number.isFinite(glyph.x) && Number.isFinite(glyph.y) && Number.isFinite(glyph.alpha))).toBe(true)
   })
 
+  it('ages without moving, so water drawn slowly still dies away on time', () => {
+    const water = new ClickWater(800, 600, seeded(6))
+    water.press(400, 300)
+    steps(water, 0.2)
+    const before = water.peak, height = water.heightAt(400, 300)
+    water.age(STEP_HZ * LIFE_S)
+    expect(water.peak).toBeCloseTo(before * 0.02, 6)
+    expect(water.heightAt(400, 300)).toBeCloseTo(height * 0.02, 6)
+    water.age(STEP_HZ * LIFE_S)
+    expect(water.calm).toBe(true)
+  })
+
   it('stills at once when cleared', () => {
     const water = new ClickWater(400, 300, seeded(5))
     water.press(100, 100)

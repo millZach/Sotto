@@ -29,10 +29,10 @@ beforeEach(() => {
   vi.useFakeTimers()
   drawn = 0
   cleared = 0
-  // jsdom has no canvas; a stand-in counts what the layer draws.
+  // jsdom has no canvas; a stand-in counts what the layer draws, and reads one colour for every colour it is asked for.
   HTMLCanvasElement.prototype.getContext = (() => ({
     setTransform() {}, scale() {}, fillText() {}, globalAlpha: 1, font: '', fillStyle: '', textAlign: '', textBaseline: '',
-    clearRect() { cleared++ }, drawImage() { drawn++ },
+    clearRect() { cleared++ }, drawImage() { drawn++ }, fillRect() {}, getImageData: () => ({ data: [20, 20, 20, 255] }),
   })) as never
 })
 
