@@ -858,13 +858,19 @@ it.each([false, true])('keeps automatic Watcher sends blocked after recovery (mi
 })
 
 
-it.each([['wake-up', false], ['wake-up', true]] as const)('keeps a %s blocked by old set-aside evidence (missing main record %s)', async (kind, missing) => {
+/** A thread whose unconfirmed user prompt was set aside, with or without main's record of it, and Watcher in use. */
+async function setAsideEvidence(missing: boolean): Promise<Awaited<ReturnType<typeof fixture>>> {
   const f = await fixture(); const draftId = randomUUID(); f.host.result = { accepted: false, uncertain: true }
   if (!missing) await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Unconfirmed user prompt' })
   await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
   delete f.host.result
   f.control.useWatcher({ userCommand: () => undefined, beforeDispatch: command => command, observe: () => undefined,
     guardOperation: () => undefined, preserveUserQueue: () => false })
+  return f
+}
+
+it.each([['wake-up', false], ['wake-up', true]] as const)('keeps a %s blocked by old set-aside evidence (missing main record %s)', async (kind, missing) => {
+  const f = await setAsideEvidence(missing)
   if (kind === 'wake-up') await f.control.deliverWakeUp('workshop', { source: 'restart', since: new Date().toISOString(), resumes: 1 }, { tool: false })
   complete(f.host); await f.control.command({ type: 'refresh' }); await f.control.privacyChanged()
   expect(f.host.attempts).toHaveLength(missing ? 0 : 1)
@@ -873,12 +879,7 @@ it.each([['wake-up', false], ['wake-up', true]] as const)('keeps a %s blocked by
 })
 
 it.each([false, true])('lets a Watcher queue go past old set-aside evidence (missing main record %s, #1222)', async missing => {
-  const f = await fixture(); const draftId = randomUUID(); f.host.result = { accepted: false, uncertain: true }
-  if (!missing) await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Unconfirmed user prompt' })
-  await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
-  delete f.host.result
-  f.control.useWatcher({ userCommand: () => undefined, beforeDispatch: command => command, observe: () => undefined,
-    guardOperation: () => undefined, preserveUserQueue: () => false })
+  const f = await setAsideEvidence(missing)
   await f.control.commandFromWatcher(queued('Automatic queued continuation'), { operationId: randomUUID(), guard: () => undefined })
   complete(f.host); await f.control.command({ type: 'refresh' }); await f.control.privacyChanged()
   // Setting a send aside frees its thread to Watcher at once; the set-aside prompt itself is never sent again.
