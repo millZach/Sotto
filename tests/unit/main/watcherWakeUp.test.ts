@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { EMPTY_AGENT_HOST, type AgentThread, type AgentHostSnapshot } from '../../../src/shared/agents'
 import { WATCHER_QUIET_MS, watcherObservationKey, watcherOverview } from '../../../src/shared/watcherOverview'
-import { WATCHER_BATCH_MAX_MS, WATCHER_BATCH_MS, WATCHER_NEWS_REPLY_CHARS, WATCHER_ORDINARY_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MS, type WatcherNews } from '../../../src/shared/watcherNews'
+import { WATCHER_BATCH_MAX_MS, WATCHER_BATCH_MS, WATCHER_NEWS_REPLY_CHARS, WATCHER_ORDINARY_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MS, WATCHER_UNWATCHED_REQUEST_ID, type WatcherNews } from '../../../src/shared/watcherNews'
 import type { WatcherRecord } from '../../../src/shared/watcher'
 import { WatcherWakeUp, WAKE_UP_TRIES, WATCHER_OBSERVE_MS, watcherDelegationOwners, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
 import { WatcherEvidenceStore, observationDigest } from '../../../src/main/agents/watcherEvidence'
@@ -2192,4 +2192,28 @@ it('wakes once for a pull request Watcher saw open merging, and never for what G
   expect(f.delivered).toHaveLength(told + 1)
   for (const checks of ['unknown', 'failed', 'passed', 'unknown'] as const) { read(checks === 'failed' ? 'open' : 'merged', checks); await f.advance(120_000) }
   expect(f.delivered).toHaveLength(told + 1)
+})
+
+it('tells Watcher of every thread a usage limit’s reset restarted, watched or not, in Sotto’s words (ADR-0144)', async () => {
+  const f = fixture()
+  const unwatched: AgentThread = { id: 'unwatched', providerId: 'claude', projectId: 'project', modelId: 'model', title: 'Elsewhere',
+    status: 'running', lastTurn: { id: 'turn-2', status: 'running' }, messages: [], requests: [] }
+  f.snapshot.threads.push(unwatched)
+  f.wakes.threadsRestarted('claude', [centerTarget, { hostId: centerTarget.hostId, threadId: 'unwatched' }])
+  const events = f.wakes.news().filter(event => event.kind === 'threads-restarted')
+  expect(events).toHaveLength(2)
+  expect(events.find(event => event.target.threadId === 'unwatched')!.requestId).toBe(WATCHER_UNWATCHED_REQUEST_ID)
+  expect(events.find(event => event.target.threadId === centerTarget.threadId)!.requestId).not.toBe(WATCHER_UNWATCHED_REQUEST_ID)
+  await f.advance(WATCHER_BATCH_MAX_MS)
+  const told = f.delivered.flatMap(news => news.events).filter(event => event.kind === 'threads-restarted')
+  expect(told).toHaveLength(2)
+  const text = watcherNewsText({ source: 'watcher', watcher: centerTarget, events: told, omitted: 0 })
+  expect(text).toContain('Sotto restarted 2 threads Claude Code’s usage limit had stopped, now that it has reset.')
+  expect(text).toContain('No request of yours watches it')
+  // Only a watched thread's line names a request to use for it.
+  const unwatchedLine = text.split('\n').find(line => line.includes('"unwatched"'))!
+  expect(unwatchedLine).not.toContain('Use requestId')
+  // News of a thread that has since gone is no longer due.
+  f.snapshot.threads = f.snapshot.threads.filter(item => item.id !== 'unwatched')
+  expect(f.wakes.due(told.find(event => event.target.threadId === 'unwatched')!)).toBe(false)
 })

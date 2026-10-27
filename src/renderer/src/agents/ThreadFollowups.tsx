@@ -12,6 +12,8 @@ import { skillSigils } from './composerSkills'
 import { hasDraftContent, queueAdmissionOpen, submissionStatus, UNCONFIRMED_SUBMISSION, useSubmissions, useThreadComposer, type Submission, type ThreadDraftStore } from './threadDraftStore'
 import type { ThreadRow } from './threadFacts'
 import { isWakeUpFollowup } from './babysitting'
+import { useRestartStopped } from './RestartStopped'
+import { isRestartNoteText } from './restartWords'
 import { SottoMark } from '../components/SottoMark'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../../shared/agentSkills'
 import { PromptEditor, setPromptSelection, type PromptEditorElement } from './PromptEditor'
@@ -25,8 +27,12 @@ export function followupsFor(state: AgentState, threadId: string): AgentFollowup
   return state.followups?.filter(item => item.threadId === threadId) ?? []
 }
 
-/** How a queued item is said in one line: Sotto's wake-up by whose it is, the user's own by what it says. */
-const itemWords = (item: AgentFollowup): string => isWakeUpFollowup(item) ? t`Wake-up from Sotto` : item.text || item.attachments.map(image => image.name).join(', ')
+/** A restart note waiting in the queue (ADR-0144), told only once the host's own record has made the item Sotto's. */
+const isRestartFollowup = (item: AgentFollowup, restart: boolean): boolean => restart && isWakeUpFollowup(item) && isRestartNoteText(item.text)
+
+/** How a queued item is said in one line: Sotto's wake-up or restart note by whose it is, the user's own by what it says. */
+const itemWords = (item: AgentFollowup, restart: boolean): string => isRestartFollowup(item, restart) ? t`Restart note from Sotto`
+  : isWakeUpFollowup(item) ? t`Wake-up from Sotto` : item.text || item.attachments.map(image => image.name).join(', ')
 
 /** A focus move that follows a change made in this window alone, with no reply from main to wait for. */
 const shownNow = (): boolean => true
@@ -174,6 +180,8 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
   const { t } = useLingui()
   const threadId = row.thread.id
   const items = followupsFor(state, threadId)
+  // Restarting stopped threads (ADR-0144; Owl only) names its note as a restart, and takes babysitting away.
+  const restartOn = useRestartStopped()
   const { draft } = useThreadComposer(store, threadId)
   const admissions = useSubmissions(store).filter(item => item.threadId === threadId && queueAdmissionOpen(item, state))
   const short = useShortWindow()
@@ -231,7 +239,7 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
     if (!fresh.length) return
     for (const item of fresh) shown.current.add(item.id)
     const newest = fresh.at(-1)!
-    setArrival({ id: newest.id, text: itemWords(newest) })
+    setArrival({ id: newest.id, text: itemWords(newest, restartOn) })
     unseen.current = reveal(newest.id) ? null : newest.id
   })
   useEffect(() => {
@@ -322,7 +330,7 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
   const needsUser = (item: AgentFollowup): boolean => item.status === 'uncertain' || item.status === 'failed' || busy?.itemId === item.id && busy.error !== null
   const listed = expanded ? visible : visible.filter(needsUser)
   const listedAdmissions = expanded ? admissions : admissions.filter(item => ['failed', 'uncertain'].includes(submissionStatus(item, state).status))
-  const next = visible[0] ? itemWords(visible[0]) : admissions[0]?.text
+  const next = visible[0] ? itemWords(visible[0], restartOn) : admissions[0]?.text
   const added = arrival !== null && visible.some(item => item.id === arrival.id) ? arrival : null
   const count = visible.length
   const addedText = added?.text ?? ''
@@ -362,6 +370,7 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
         const images = item.attachments.length
         const editable = followupEditable(item)
         const wakeUp = isWakeUpFollowup(item)
+        const restartNote = isRestartFollowup(item, restartOn)
         const itemBusy = busy?.itemId === item.id && busy.error === null
         const itemError = busy?.itemId === item.id && editing?.id !== item.id ? busy.error : null
         const unconfirmed = item.status === 'uncertain'
@@ -369,11 +378,14 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
         // A busy or end-of-list control stays focusable (aria-disabled): disabling the focused button would drop focus to the page.
         const off = (blocked: boolean): { readonly 'aria-disabled'?: true } => blocked ? { 'aria-disabled': true } : {}
         return <li key={item.id} className="thread-followup" data-status={item.status} data-followup={item.id} data-wake-up={wakeUp || undefined} data-arriving={arrival?.id === item.id || undefined}>
-          <p className="thread-followup__text" title={item.text}>{wakeUp ? <span className="thread-followup__sotto"><SottoMark className="thread-followup__mark" />{t`Sotto · Wake-up`}</span> : null}{item.text}{images ? <span className="thread-followup__extra"> · {plural(images, { one: '# image', other: '# images' })}</span> : null}</p>
+          <p className="thread-followup__text" title={item.text}>{wakeUp ? <span className="thread-followup__sotto"><SottoMark className="thread-followup__mark" />{restartNote ? t`Sotto · Restart` : t`Sotto · Wake-up`}</span> : null}{item.text}{images ? <span className="thread-followup__extra"> · {plural(images, { one: '# image', other: '# images' })}</span> : null}</p>
           {item.status === 'queued' || item.status === 'paused' && queuePaused ? null : <span className="thread-followup__state" data-status={item.status}><i aria-hidden="true" />{STATUS_LABELS[item.status]}</span>}
           {editable && wakeUp ? <span className="thread-followup__tools">
-            {/* Sotto's own item: removed as the user's are, never edited, moved or steered. Babysitting goes on either way. */}
-            <Button variant="ghost" iconOnly data-tool="remove" aria-label={t`Remove the wake-up from the queue`} title={t`Remove the wake-up. Babysitting goes on.`} {...off(itemBusy)} onClick={() => { if (!itemBusy) remove(item) }}><X size={15} /></Button>
+            {/* Sotto's own item: removed as the user's are, never edited, moved or steered. Babysitting goes on either way; with
+                restarting stopped threads on there is none, and a restart note removed leaves the thread for the user's next message. */}
+            <Button variant="ghost" iconOnly data-tool="remove" aria-label={restartNote ? t`Remove the restart note from the queue` : t`Remove the wake-up from the queue`}
+              title={restartNote ? t`Remove the restart note. The thread waits for your next message.` : restartOn ? t`Remove the wake-up.` : t`Remove the wake-up. Babysitting goes on.`}
+              {...off(itemBusy)} onClick={() => { if (!itemBusy) remove(item) }}><X size={15} /></Button>
           </span> : editable ? <span className="thread-followup__tools">
             {steerVisible && item.status === 'queued' ? <Button variant="ghost" className="thread-followup__steer" data-tool="steer" {...off(!canSteer || itemBusy)} onClick={() => {
               if (!canSteer || itemBusy) return

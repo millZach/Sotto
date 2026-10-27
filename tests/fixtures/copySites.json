@@ -23,7 +23,7 @@
   },
   "src/main/agents/control.ts": {
     "structuredClone(": 21,
-    "shell()": 39,
+    "shell()": 40,
     "watcherRecord()": 2,
     "clonePlainData(": 2
   },
