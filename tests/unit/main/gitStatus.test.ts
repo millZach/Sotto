@@ -4,7 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import { mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { GitStatusReader, GitUnavailableError, parsePorcelain, runGitStatusCommand, type RunGitCommand } from '../../../src/main/agents/gitStatus'
+import { GitStatusReader, GitUnavailableError, parsePorcelain, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from '../../../src/main/agents/gitStatus'
 import { deferred } from '../../fixtures/deferred'
 
 const repositories: Awaited<ReturnType<Awaited<ReturnType<typeof gitRepositorySeed>>['copy']>>[] = []
@@ -499,5 +499,43 @@ describe('porcelain v2 parsing', () => {
       '1 .M N... 100644 100644 100644 abc abc work.txt', '2 R. N... 100644 100644 100644 abc abc R100 new.txt', 'old.txt', '? untracked.txt', ''].join('\0')
     expect(parsePorcelain(output)).toEqual({ branch: 'main', upstream: 'origin/main', ahead: 2, behind: 1, changedFiles: 3, unborn: false, oid: 'abc' })
     expect(parsePorcelain(['# branch.oid (initial)', '# branch.head (detached)', ''].join('\0'))).toEqual({ branch: null, upstream: null, ahead: 0, behind: 0, changedFiles: 0, unborn: true, oid: null })
+  })
+})
+
+describe('stopping the remote half when Sotto closes (#1664)', () => {
+  it('kills a command stopped from outside and rejects at once', async () => {
+    const stop = new AbortController()
+    // gh answered by a Node process that never exits on its own.
+    const run = runWithGhStandIn({ executable: process.execPath, args: ['-e', 'setInterval(() => undefined, 1000)'] })
+    const running = run(process.cwd(), 'gh', [], { signal: stop.signal })
+    stop.abort()
+    await expect(running).rejects.toMatchObject({ code: 'ABORT_ERR' })
+    await expect(run(process.cwd(), 'gh', [], { signal: stop.signal })).rejects.toMatchObject({ code: 'ABORT_ERR' })
+  })
+
+  it('stops a fetch under way and starts no more, while local reads go on', async () => {
+    const f = await fixture()
+    await f.reader.read(f.repo, { remote: false })
+    const fetching = deferred<void>()
+    const seen: Array<AbortSignal | undefined> = []
+    // The fixture's commands, with each fetch held until it is stopped, as one against a remote that hangs is.
+    const reader = new GitStatusReader({ fetchIntervalMs: () => 30_000, headGatherMs: { user: 1, background: 1 }, run: (cwd, command, args, options) => {
+      if (command === 'git' && args[0] === 'fetch') {
+        seen.push(options?.signal); fetching.resolve()
+        return new Promise<string>((_, reject) => options?.signal?.addEventListener('abort', () => reject(Object.assign(new Error('stopped'), { code: 'ABORT_ERR' })), { once: true }))
+      }
+      return runGitStatusCommand(cwd, command, args, options)
+    } })
+    await reader.read(f.repo, { remote: false })
+    const remote = reader.readRemote(f.repo)
+    await fetching.promise
+    await reader.stop()
+    await remote
+    expect(seen).toHaveLength(1)
+    expect(seen[0]?.aborted).toBe(true)
+    // A local read still answers, and the remote half asks nothing more.
+    expect(await reader.read(f.repo, { remote: false })).toMatchObject({ isRepository: true })
+    await reader.readRemote(f.repo)
+    expect(seen).toHaveLength(1)
   })
 })

@@ -995,6 +995,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * thread's folder, so a send never waits for one (issue #766). Closing waits for them as it waits for the lanes.
    */
   private readonly remoteStatusReads = new Set<Promise<void>>()
+  /** Aborts when closing begins: a remote half still running is stopped and no longer waited for (#1664). */
+  private readonly remoteStatusStop = new AbortController()
   /** Threads whose send has queued Git's inspection of the folder in the thread's lane, not yet begun. */
   private readonly inspectionsQueued = new Set<string>()
   /** Threads whose folder an inspection after a send or a turn could not confirm: their next send asks Git before the prompt. */
@@ -1837,7 +1839,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
           await this.onLane(threadId, () => this.readGitStatus(threadId, false))
           const folder = this.statusFolder(threadId)
           if (folder === undefined || this.stopping) return
-          if (await source.readRemote(folder, options)) break
+          const remote = await this.unlessClosing(source.readRemote(folder, options))
+          if (remote === undefined || this.stopping) return
+          if (remote) break
         }
       }
       await this.onLane(threadId, () => this.readGitStatus(threadId, true))
@@ -1845,6 +1849,16 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.remoteStatusReads.add(read)
     void read.finally(() => this.remoteStatusReads.delete(read))
     return read
+  }
+  /** `work`'s answer, or undefined as soon as closing begins: closing never waits for a fetch or a GitHub lookup (#1664). */
+  private unlessClosing<Result>(work: Promise<Result>): Promise<Result | undefined> {
+    const stop = this.remoteStatusStop.signal
+    if (stop.aborted) return Promise.resolve(undefined)
+    return new Promise<Result | undefined>((resolve, reject) => {
+      const closing = (): void => resolve(undefined)
+      stop.addEventListener('abort', closing, { once: true })
+      work.then(resolve, reject).finally(() => stop.removeEventListener('abort', closing))
+    })
   }
   /**
    * Reads the thread's folder, locally, and publishes only a status that changed. Callers hold the thread's lane, so
@@ -3836,11 +3850,15 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // A check's install stops with its whole process tree (#1312), and every working copy's setup, a check's included, ends
     // before the last save below, so nothing of either is still writing once the store closes.
     this.checkInstallsStop.abort()
+    // A fetch or GitHub lookup for a folder's status is stopped, and not waited for: what it would bring is never shown
+    // now, and on a slow network or a remote that hangs it held closing for the full minute below (#1664).
+    this.remoteStatusStop.abort()
+    const gitStopped = this.gitStatus?.stop?.()
     // Closing waits a minute at most, whatever holds it: a store worker that stops answering costs that, and what it did
     // not answer is reported as not saved (ADR-0016, October 26 amendment).
     const deadline = Date.now() + CLOSE_LIMIT_MS
     // A stored thread's records still on their way carry what its provider published meanwhile, which the last save keeps.
-    let inTime = await this.beforeDeadline(Promise.allSettled([...this.branchWrites, ...this.lanes.values(), ...this.interruptLanes.values(), ...this.preparations.values(), ...this.remoteStatusReads,
+    let inTime = await this.beforeDeadline(Promise.allSettled([...gitStopped ? [gitStopped] : [], ...this.branchWrites, ...this.lanes.values(), ...this.interruptLanes.values(), ...this.preparations.values(), ...this.remoteStatusReads,
       ...[...this.activityReads.values()].map(read => read.done)]), deadline)
     this.stopDelivery()
     // Quitting loses no commit: what was posted is confirmed before the store closes.
