@@ -5,6 +5,7 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import { capabilitiesForThread, isThreadBusy, PROVIDER_LABELS, type AgentFollowup, type AgentState } from '../../../shared/agents'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 import { Button } from '../components/Button'
+import { useOptionalApp } from '../state/AppContext'
 import type { AgentConnection } from './AgentContext'
 import { composerEnterIntent, readComposerKey } from './composerKeys'
 import { retainFileReferences } from './composerFiles'
@@ -105,6 +106,7 @@ function FollowupEditor({ item, current, catalog, providerId, saving, error, onS
   const empty = text.trim() === '' && item.attachments.length === 0
   const canSave = locked === null && !saving && !empty
   const save = (): void => { if (canSave) onSave(text, skills) }
+  const mac = useOptionalApp()?.platform === 'darwin'
   return <dialog ref={dialog} className="followup-editor" aria-labelledby={titleId}
     onCancel={event => { event.preventDefault(); if (!saving) onClose() }}
     onKeyDown={event => {
@@ -123,10 +125,11 @@ function FollowupEditor({ item, current, catalog, providerId, saving, error, onS
     <div className="followup-editor__foot">
       {error ? <p className="followup-editor__note tt-paragraph" data-tone="warning" id={hintId} role="alert">{error}</p>
         : locked ? <p className="followup-editor__note tt-paragraph" data-tone="warning" id={hintId} role="status">{locked}</p>
-          : <p className="followup-editor__note tt-paragraph" id={hintId}>{saving ? t`Saving…` : t`Enter to save · Shift+Enter for a new line`}</p>}
+          : <p className="followup-editor__note tt-paragraph" id={hintId}>{saving ? t`Saving…` : t`Shift+Enter for a new line`}</p>}
+      {/* Each button says the key that does the same, as the composer's do (ADR-0153). */}
       <div className="followup-editor__actions">
-        <Button variant="secondary" onClick={onClose} disabled={saving}><Trans>Cancel</Trans></Button>
-        <Button onClick={save} disabled={!canSave}><Trans>Save</Trans></Button>
+        <Button variant="secondary" aria-keyshortcuts="Escape" onClick={onClose} disabled={saving}><Trans>Cancel</Trans><kbd className="followup-editor__key" aria-hidden="true">Esc</kbd></Button>
+        <Button aria-keyshortcuts="Enter" onClick={save} disabled={!canSave}><Trans>Save</Trans><kbd className="followup-editor__key" aria-hidden="true">{mac ? '↵' : 'Enter'}</kbd></Button>
       </div>
     </div>
   </dialog>

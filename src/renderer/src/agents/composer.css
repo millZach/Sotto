@@ -1,8 +1,8 @@
 /* Queue and skills around the Threads composer. Same field, ink and accent as the prompt; nothing new competes with it. */
 
 .thread-prompt__actions { display: flex; flex: none; align-items: center; gap: 8px; }
-/* While a turn runs, Steer now is a text button in the accent beside Stop (ADR-0113). */
-.thread-prompt__steer.tt-button { height: 28px; min-height: 28px; padding: 0 7px; border-color: transparent; background: transparent; color: var(--tt-accent-text); font-size: 13px; font-weight: 600; }
+/* While a turn runs, Steer now is a flat key in the accent beside Stop (ADR-0113, ADR-0153). */
+.thread-prompt__steer.tt-button { border-color: transparent; background: transparent; color: var(--tt-accent-text); }
 .thread-prompt__steer.tt-button:hover:not(:disabled), .thread-prompt__steer.tt-button:active:not(:disabled) { border-color: transparent; background: var(--tt-hover); color: var(--tt-accent-text); }
 
 /* Follow-up queue (ADR-0113): a tray of its own surface tucked under the composer card, with no edge in any state, as the
@@ -61,6 +61,8 @@
 .followup-editor__note[data-tone='warning'] { color: var(--threads-warning-text); font-size: 13px; }
 .followup-editor__actions { display: flex; gap: 8px; margin-left: auto; }
 .followup-editor__actions .tt-button { min-height: 36px; padding: 0 16px; font-size: 14px; }
+.followup-editor__actions .tt-button { gap: 8px; padding-right: 8px; }
+.followup-editor__key { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 4px; background: color-mix(in oklab, currentcolor 14%, transparent); font: inherit; font-size: 12px; font-weight: 600; }
 
 /* Skills: a lookup list that opens over the transcript directly above the text it edits. It never takes
    height from the composer, so the typed text and its send action stay where they were. */
