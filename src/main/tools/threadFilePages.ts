@@ -80,7 +80,7 @@ export class ThreadFilePages {
     if (!token || !this.targets.has(token)) {
       token = (this.options.token ?? (() => randomBytes(24).toString('base64url')))()
       this.tokens.set(key, token)
-      this.targets.set(token, { kind: 'file', root: path.dirname(file), file, folder: root, threadId })
+      this.targets.set(token, { kind: 'file', root: path.dirname(file), file, folder: root, hidden: 'refused', threadId })
       this.trim()
     }
     return { ok: true, url: `http://127.0.0.1:${port}/page/${token}/${encodeURIComponent(path.basename(file))}${named.after}` }

@@ -36,6 +36,13 @@ Sol's two-axis review of the first commit found six things, fixed in the commit 
 - **The missing-folder message** now says to check that the folder is still there and open the file again, or serve the page.
 - **README** says what the agent can open, and in Privacy and cost that the file is served on `127.0.0.1` only.
 
+Sol's recheck of that commit found three more, fixed in the commit after it. Each test below was run against the previous commit's code, and with its own fix undone, and failed both times.
+
+- **Case.** `DOCS/Prototypes/X-PROTOTYPE.html?variant=A` opens and serves, as do its styles asked for as `ASSETS/LOOK.CSS` (`threadFilePages.test.ts`). A question's page named `PAGE/Greeting.html` serves (`questionPageRoute.test.ts`). Before, both answered 404, because the saved folder kept the spelling written and failed the comparison with the real one. The case test does not run on Linux, where `DOCS/` is another folder.
+- **8.3 short names.** On this laptop's C: volume, which makes them, `WORKTR~1/copy/page.html` is refused as `.worktrees/copy/page.html` is. A page's own `.secret/look.css` asked for as `SECRET~1/look.css` answers 403. Where a volume makes no short names, that test skips, and `threadFilePagesProbes.test.ts` covers the same check with a stubbed `realpath` that spells `docs/alias/` as `docs/.hidden/`.
+- **The page's folder walked again.** A page's folder replaced by a junction to an outside folder holding a page of the same name answers 404, and nothing there is touched (`threadFilePagesProbes.test.ts`).
+- **The file opened is the file walked.** A file replaced just before it is opened answers 404, not the new contents.
+
 The question page tests (`questionPageRoute.test.ts`, `tests/unit/main/questionPages*.test.ts`) and the socket server's tests pass on the shared admission and budget code.
 
 Not checked here: macOS and Linux, and a real provider turn. The spec drives the tool dispatcher directly, as `agent-browser.spec.ts` does, so the agents' use of the new descriptions is not observed. The folder-link cases ran through a junction. File symbolic links need Developer Mode on this computer, so those cases skipped here and run where the system allows them.

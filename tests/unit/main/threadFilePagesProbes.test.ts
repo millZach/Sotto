@@ -8,6 +8,9 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 // is touched: if it led to a network share, looking would reach the share (review finding on ADR-0085's October 27
 // amendment). Every path the file system is asked about, and every path `realpath` answers with, is recorded here.
 const touched = vi.hoisted(() => [] as string[])
+// `aliases` stands in for a file system that spells a path one way and keeps it another (a Windows 8.3 short name), and
+// `beforeOpen` runs just before a file is opened, to change the folder between the walk and the open.
+const stubs = vi.hoisted(() => ({ aliases: new Map<string, string>(), beforeOpen: undefined as (() => Promise<void>) | undefined }))
 vi.mock('node:fs/promises', async importOriginal => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
   // What realpath answers is where the system went to find it; what readlink answers is only the link's own words.
@@ -17,7 +20,13 @@ vi.mock('node:fs/promises', async importOriginal => {
     if (answers && typeof result === 'string') touched.push(result)
     return result
   }
-  return { ...actual, default: actual, stat: record(actual.stat), lstat: record(actual.lstat), realpath: record(actual.realpath, true), readlink: record(actual.readlink), readdir: record(actual.readdir) }
+  const realpath = async (target: string): Promise<string> => stubs.aliases.get(target) ?? actual.realpath(target)
+  const open = async (...args: Parameters<typeof actual.open>) => {
+    const hook = stubs.beforeOpen; stubs.beforeOpen = undefined
+    await hook?.()
+    return actual.open(...args)
+  }
+  return { ...actual, default: actual, stat: record(actual.stat), lstat: record(actual.lstat), realpath: record(realpath, true), readlink: record(actual.readlink), readdir: record(actual.readdir), open: record(open) }
 })
 
 const { ThreadFilePages } = await import('../../../src/main/tools/threadFilePages')
@@ -66,4 +75,40 @@ it('refuses a share or device path before looking at anything, the thread\'s own
     expect(await pages.open(written, 'thread', folder), written).toMatchObject({ ok: false, message: expect.stringContaining('is outside it') })
     expect(touched, written).toEqual([])
   }
+})
+
+it('judges hidden folders by the file system\'s own spelling of the path, not the one asked for (review finding)', async () => {
+  // As a short name would: `docs/alias/` is what the agent wrote, `docs/.hidden/` is where the file system keeps it.
+  await mkdir(join(folder, 'docs', 'alias'), { recursive: true })
+  await mkdir(join(folder, 'docs', '.hidden'), { recursive: true })
+  await writeFile(join(folder, 'docs', 'alias', 'page.html'), 'SECRET page')
+  await writeFile(join(folder, 'docs', '.hidden', 'page.html'), 'SECRET page')
+  stubs.aliases.set(join(folder, 'docs', 'alias', 'page.html'), join(folder, 'docs', '.hidden', 'page.html'))
+  try {
+    expect(await pages.open('docs/alias/page.html', 'thread', folder)).toMatchObject({ ok: false, message: expect.stringContaining('does not open a file in a hidden folder or in .git') })
+  } finally { stubs.aliases.clear() }
+})
+
+it('walks a page\'s folder again before looking at it, so a folder swapped for a link out is not touched (review finding)', async () => {
+  const opening = await pages.open('docs/prototypes/page.html', 'thread', folder)
+  if (!opening?.ok) throw new Error(JSON.stringify(opening))
+  // The page's folder is replaced by a link to somewhere else, which holds a page of the same name.
+  await writeFile(join(elsewhere, 'page.html'), 'SECRET swapped page')
+  await rm(join(folder, 'docs', 'prototypes'), { recursive: true, force: true })
+  await symlink(elsewhere, join(folder, 'docs', 'prototypes'), 'junction')
+  touched.length = 0
+  const response = await fetch(opening.url)
+  expect(response.status).toBe(404)
+  expect(await response.text()).not.toContain('SECRET')
+  expect(reachedElsewhere()).toEqual([])
+})
+
+it('serves only the file the walk found, when another takes its place before it is opened (review finding)', async () => {
+  const opening = await pages.open('docs/prototypes/page.html', 'thread', folder)
+  if (!opening?.ok) throw new Error(JSON.stringify(opening))
+  const page = join(folder, 'docs', 'prototypes', 'page.html')
+  stubs.beforeOpen = async () => { await rm(page); await writeFile(page, 'SECRET swapped in') }
+  const response = await fetch(opening.url)
+  expect(response.status).toBe(404)
+  expect(await response.text()).not.toContain('SECRET')
 })

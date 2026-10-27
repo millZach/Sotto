@@ -12,8 +12,12 @@ import { isSottoRequest } from './sottoRequests'
  * address of a page the agent serves on this machine.
  */
 export type QuestionPageTarget =
-  /** `folder`, for a thread file page: the thread's folder, from which no part of the way to a served file may be hidden. */
-  | { readonly kind: 'file'; readonly root: string; readonly file: string; readonly folder?: string }
+  /**
+   * `folder`: the thread's folder, in the file system's own spelling, from which the page's folder is walked again on
+   * every request, and `hidden`: which parts of the way from it refuse a file, as admission judged them (`refused` for a
+   * thread file page, `git-only` for a question's). Without `folder`, the walk starts at the top of the page folder's drive.
+   */
+  | { readonly kind: 'file'; readonly root: string; readonly file: string; readonly folder?: string; readonly hidden?: 'refused' | 'git-only' }
   | { readonly kind: 'server'; readonly origin: string }
 
 /** A page named in a question's words or the message before it, before Sotto has checked that it is there. */
@@ -103,16 +107,22 @@ export async function resolveInside(root: string, target: string): Promise<strin
   return 'file' in walked ? walked.file : undefined
 }
 
+/** What a walk found: the file, and the identity the file system gave its last part, or why the walk stopped. */
+export type Walked =
+  | { readonly file: string; readonly identity?: { readonly dev: bigint; readonly ino: bigint } }
+  | { readonly reason: 'outside' | 'missing' }
+
 /** `resolveInside`, saying why it stopped: a part of the way that is not there, or a way that leaves the folder. */
-export async function walkInside(root: string, target: string, hops = LINK_HOPS_MAX): Promise<{ readonly file: string } | { readonly reason: 'outside' | 'missing' }> {
+export async function walkInside(root: string, target: string, hops = LINK_HOPS_MAX): Promise<Walked> {
   if (onShareOrDevice(target) || !path.isAbsolute(target) || !inside(root, target)) return { reason: 'outside' }
   let current = root
+  let identity: { dev: bigint; ino: bigint } | undefined
   for (const part of path.relative(root, target).split(path.sep).filter(Boolean)) {
-    // `current` is always a real path inside the folder, so `next` names one entry of a folder inside it.
+    // `current` is always a path inside the folder with no link on the way, so `next` names one entry of a folder inside it.
     const next = path.join(current, part)
-    const info = await lstat(next).catch(() => undefined)
+    const info = await lstat(next, { bigint: true }).catch(() => undefined)
     if (!info) return { reason: 'missing' }
-    if (!info.isSymbolicLink()) { current = next; continue }
+    if (!info.isSymbolicLink()) { current = next; identity = { dev: info.dev, ino: info.ino }; continue }
     if (hops <= 0) return { reason: 'missing' }
     // A Windows junction may read back with the `\\?\` prefix before its drive; anything else after `\\` is a share or device.
     const link = (await readlink(next).catch(() => undefined))?.replace(/^\\\\\?\\(?=[A-Za-z]:\\)/u, '')
@@ -121,8 +131,31 @@ export async function walkInside(root: string, target: string, hops = LINK_HOPS_
     const followed = await walkInside(root, path.resolve(current, link), hops - 1)
     if (!('file' in followed)) return followed
     current = followed.file
+    identity = followed.identity
   }
-  return { file: current }
+  return identity ? { file: current, identity } : { file: current }
+}
+
+/**
+ * `walkInside`, then the path as the file system itself spells it: its true case and long names, never a Windows 8.3
+ * short name such as `WORKTR~1` for `.worktrees`. Every check of a part's name (hidden, `.git`) and every comparison of a
+ * saved path reads this spelling, never the caller's. `realpath` runs only once the walk has proved every part of the way
+ * inside the folder and found no link left on it, so it reads nothing outside. `root` must be in this spelling already,
+ * as `realpath` gives it.
+ */
+export async function canonicalInside(root: string, target: string): Promise<Walked> {
+  const walked = await walkInside(root, target)
+  if (!('file' in walked)) return walked
+  const canonical = await realpath(walked.file).catch(() => undefined)
+  if (!canonical) return { reason: 'missing' }
+  if (!inside(root, canonical)) return { reason: 'outside' }
+  return walked.identity ? { file: canonical, identity: walked.identity } : { file: canonical }
+}
+
+/** Whether a path inside `folder`, in the file system's own spelling, passes on its way through `.git`, or through any hidden part when `hidden` is refused. */
+export const hiddenOnTheWay = (folder: string, file: string, hidden: 'refused' | 'git-only'): boolean => {
+  const parts = path.relative(folder, file).split(path.sep)
+  return parts.some(part => part.toLowerCase() === '.git') || (hidden === 'refused' && parts.some(part => part.startsWith('.')))
 }
 
 /** Why a file is not admitted as a page: the reasons a thread file page tells its agent in words. */
@@ -137,14 +170,14 @@ export type PageFileRefusal = 'outside' | 'missing' | 'not-html' | 'hidden'
 export async function admitPageFile(root: string, candidate: string, options: { readonly hidden: 'refused' | 'git-only' }): Promise<{ readonly ok: true; readonly file: string } | { readonly ok: false; readonly reason: PageFileRefusal }> {
   if (onShareOrDevice(candidate) || !inside(root, candidate)) return { ok: false, reason: 'outside' }
   if (!HTML.test(candidate)) return { ok: false, reason: 'not-html' }
-  const walked = await walkInside(root, candidate, LINK_HOPS_MAX)
+  // The file's own spelling, not the caller's: `DOCS/` is saved as `docs/`, and `WORKTR~1/` is judged as `.worktrees/`.
+  const walked = await canonicalInside(root, candidate)
   if (!('file' in walked)) return { ok: false, reason: walked.reason }
-  // Only now, with its real path known to be inside the folder, is the file itself looked at.
   const file = walked.file
-  if (!await stat(file).then(info => info.isFile(), () => false)) return { ok: false, reason: 'missing' }
   if (!HTML.test(file)) return { ok: false, reason: 'not-html' }
-  const parts = path.relative(root, file).split(path.sep)
-  if (parts.some(part => part.toLowerCase() === '.git') || (options.hidden === 'refused' && parts.some(part => part.startsWith('.')))) return { ok: false, reason: 'hidden' }
+  if (hiddenOnTheWay(root, file, options.hidden)) return { ok: false, reason: 'hidden' }
+  // Only now, with its real path known to be inside the folder, is the file itself looked at.
+  if (!await stat(file).then(info => info.isFile(), () => false)) return { ok: false, reason: 'missing' }
   return { ok: true, file }
 }
 
@@ -218,7 +251,7 @@ export async function foundPages(mentions: readonly PageMention[], folder: strin
     }
     if (!file || files.has(file)) continue
     files.add(file)
-    pages.push({ page: { kind: 'file', name: path.basename(file), start: encodeURIComponent(path.basename(file)) }, target: { kind: 'file', root: path.dirname(file), file } })
+    pages.push({ page: { kind: 'file', name: path.basename(file), start: encodeURIComponent(path.basename(file)) }, target: { kind: 'file', root: path.dirname(file), file, folder: root, hidden: 'git-only' } })
   }
   return pages
 }

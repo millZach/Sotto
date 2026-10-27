@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -156,4 +156,37 @@ it('answers at most its budget of page requests a minute, all pages together, an
 it('says what to do next when the thread\'s folder is not there (review finding)', async () => {
   const message = refusal(await pages.open(page, 'thread', join(base, 'gone')))
   expect(message).toContain('Nothing was opened. Check that the thread\'s folder is still there, then open the file again')
+})
+
+// A Windows 8.3 short name, when the volume makes them: `WORKTR~1` for `.worktrees`. Undefined where it does not.
+const shortName = async (parent: string, short: string): Promise<string | undefined> =>
+  process.platform === 'win32' && await lstat(join(parent, short)).then(() => true, () => false) ? short : undefined
+
+it('opens a page written in another case, and serves it, by the file system\'s own spelling (review finding)', async () => {
+  // Case-insensitive file systems only: on Linux `DOCS/` is another folder.
+  if (process.platform === 'linux') return
+  const url = served(await pages.open('DOCS/Prototypes/X-PROTOTYPE.html?variant=A', 'thread', folder))
+  expect(new URL(url).pathname).toMatch(/\/x-prototype\.html$/u)
+  const response = await fetch(url)
+  expect([response.status, await response.text()]).toEqual([200, expect.stringContaining('<h1>Picker</h1>')])
+  expect((await fetch(url.replace(/x-prototype\.html.*$/u, 'ASSETS/LOOK.CSS'))).status).toBe(200)
+})
+
+it('judges a folder by its long name, so its 8.3 short name does not get past the hidden check (review finding)', async ctx => {
+  await mkdir(join(folder, '.worktrees', 'copy'), { recursive: true })
+  await writeFile(join(folder, '.worktrees', 'copy', 'page.html'), 'SECRET worktree page')
+  const short = await shortName(folder, 'WORKTR~1')
+  // Skipped where the volume makes no 8.3 names (`fsutil 8dot3name query`); threadFilePagesProbes.test.ts covers the
+  // same check with a stubbed realpath there.
+  if (!short) { ctx.skip(); return }
+  expect(refusal(await pages.open(`${short}/copy/page.html`, 'thread', folder))).toContain('does not open a file in a hidden folder or in .git')
+  // And a page's own hidden folder, asked for by its short name, is not served either.
+  await mkdir(join(folder, 'docs', 'prototypes', '.secret'), { recursive: true })
+  await writeFile(join(folder, 'docs', 'prototypes', '.secret', 'look.css'), 'SECRET style')
+  const secret = await shortName(join(folder, 'docs', 'prototypes'), 'SECRET~1')
+  if (!secret) return
+  const url = served(await pages.open(page, 'thread', folder))
+  const response = await fetch(url.replace(/x-prototype\.html$/u, `${secret}/look.css`))
+  expect(response.status).toBe(403)
+  expect(await response.text()).not.toContain('SECRET')
 })
