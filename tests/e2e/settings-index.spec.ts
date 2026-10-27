@@ -136,16 +136,18 @@ test('Index settings: focused categories, real saves, failure feedback, themes a
     // Native settings/theme IPC remains live; editor cancel and import errors never save.
     await category(page, 'Appearance')
     await page.getByRole('radiogroup', { name: 'Color scheme', exact: true }).getByRole('radio', { name: 'Dark', exact: true }).click()
+    // One grid paints both halves until the switch splits it; the Dark grid chooses the dark half alone.
+    await page.getByRole('switch', { name: 'A different theme when dark' }).click()
     const darkColumn = page.getByRole('radiogroup', { name: 'Dark theme', exact: true })
     await darkColumn.getByRole('radio', { name: 'Clay', exact: true }).click()
     await expect(page.locator('html')).toHaveAttribute('data-theme-id', 'clay')
     await expect.poll(async () => (await settings()).darkTheme).toBe('clay')
     await shot(page, 'appearance-clay-live')
-    // A column is one Tab stop: from the chosen theme, Tab leaves it rather than walking the other five.
+    // A grid is one Tab stop: from the chosen theme, Tab leaves it rather than walking the others.
     await expect(darkColumn.getByRole('radio')).toHaveCount(6)
     await darkColumn.getByRole('radio', { name: 'Clay', exact: true }).focus()
     await page.keyboard.press('Tab')
-    expect(await page.evaluate(() => document.activeElement?.closest('.theme-half') !== null)).toBe(false)
+    expect(await page.evaluate(() => document.activeElement?.closest('[data-half="dark"]') !== null)).toBe(false)
     await shot(page, 'appearance-keyboard-columns')
     const contrast = page.getByLabel('Contrast', { exact: true })
     await contrast.focus()

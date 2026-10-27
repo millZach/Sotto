@@ -1,6 +1,7 @@
 /*
- * Settings → Appearance → Themes (ADR-0011, ADR-0024): the color scheme track,
- * the Light and Dark columns, and the user's own themes. Every colour here comes
+ * Settings → Appearance → Themes (ADR-0011, ADR-0024): the sliders, the user's
+ * own themes, the editor and the import dialog (the page's layout, its tiles and
+ * its preview are appearanceStudio.css). Every colour here comes
  * from the --tt-* tokens, so the page wears the theme it edits. Theme chords and
  * the editor's wireframes paint their own theme's canonical colours inline.
  */
@@ -34,121 +35,6 @@
 }
 
 .theme-settings__status--error { color: var(--tt-error-text); }
-
-/* Color scheme ------------------------------------------------------------- */
-
-/* Light, the system and Dark as three stops on one rail; the chosen stop is filled with the accent. */
-.theme-scheme-track {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  max-width: 440px;
-}
-
-.theme-scheme-track__rail {
-  position: absolute;
-  top: 13px;
-  right: calc(100% / 6);
-  left: calc(100% / 6);
-  height: 2px;
-  border-radius: 2px;
-  background: var(--tt-border);
-}
-
-.theme-scheme-track__stop {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-  padding: 4px 4px 2px;
-  border: 0;
-  border-radius: 8px;
-  color: var(--tt-text-muted);
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.theme-scheme-track__stop:hover { color: var(--tt-text); }
-.theme-scheme-track__stop[aria-checked='true'] { color: var(--tt-text); font-weight: 600; }
-
-.theme-scheme-track__dot {
-  width: 18px;
-  height: 18px;
-  border: 2px solid var(--tt-border);
-  border-radius: 4px;
-  background: var(--tt-canvas);
-  transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
-}
-
-.theme-scheme-track__stop[aria-checked='true'] .theme-scheme-track__dot {
-  border-color: var(--tt-accent);
-  background: var(--tt-accent);
-  box-shadow: 0 0 0 4px var(--tt-accent-wash);
-}
-
-/* Light and Dark columns ------------------------------------------------------ */
-
-.theme-halves {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-/* The column painting the window now stands forward; the other keeps full-strength text. */
-.theme-half {
-  min-width: 0;
-  padding: 12px;
-  border: 1px solid var(--tt-border-faint);
-  border-radius: 14px;
-}
-
-.theme-half[data-live] { border-color: var(--tt-border); background: var(--tt-surface); }
-
-.theme-half__head {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 2px 8px;
-  margin-bottom: 10px;
-  color: var(--tt-text);
-}
-
-.theme-half__head h4 { margin: 0; font-size: 15px; font-weight: 600; }
-.theme-half__head p { grid-column: 1 / -1; margin: 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }
-
-.theme-half__options { display: grid; gap: 2px; }
-
-.theme-option {
-  display: grid;
-  grid-template-columns: 60px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  min-height: 36px;
-  padding: 4px 8px 4px 4px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  color: var(--tt-text);
-  background: none;
-  font: inherit;
-  font-size: 14px;
-  text-align: left;
-  cursor: pointer;
-  transition: background-color 120ms ease, border-color 120ms ease;
-}
-
-.theme-option:hover { background: var(--tt-hover); }
-.theme-option[aria-checked='true'] { border-color: var(--tt-selected-border); background: var(--tt-selected); font-weight: 600; }
-.theme-option__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.theme-option--omarchy { margin-bottom: 6px; }
-.theme-option__name small { display: block; overflow: hidden; text-overflow: ellipsis; font-size: 11px; font-weight: 400; color: var(--tt-text-muted); }
-.theme-option--omarchy .theme-option__name { white-space: normal; }
-.theme-option--omarchy .theme-option__name small { overflow: visible; text-overflow: clip; line-height: 1.35; }
-.theme-chord--waiting { border: 1px dashed var(--tt-border); box-shadow: none; }
-.theme-option__check { color: var(--tt-accent-text); }
 
 /* A half as one strip of its colours: room, sidebar, raised surface, bubble, accent. */
 .theme-chord {
@@ -205,10 +91,6 @@
 }
 
 .theme-remove-option__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-@media (max-width: 620px) {
-  .theme-halves { grid-template-columns: minmax(0, 1fr); }
-}
 
 /* Sliders ------------------------------------------------------------------- */
 
@@ -268,47 +150,6 @@
 
 /* Editor ---------------------------------------------------------------------- */
 
-/* Index appearance: compact palette choices beside a live, passive sample. */
-.theme-settings__layout { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(260px, 1fr); align-items: start; gap: 28px; }
-.theme-settings__controls { min-width: 0; }
-.theme-settings__scheme { padding-bottom: 16px; border-bottom: 1px solid var(--tt-hairline); }
-.theme-settings__scheme .theme-settings__subheading { margin: 0 0 12px; }
-.theme-own { margin-top: 8px; }
-.theme-settings__bar { margin: 20px 0 8px; gap: 4px 8px; }
-.theme-settings__actions { gap: 0; }
-.theme-settings__actions .tt-button { min-height: 32px; padding: 4px 7px; font-size: 14px; }
-.theme-settings__assignment-hint { margin: 0 0 14px; color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; }
-.theme-settings__status:empty { display: none; }
-.theme-settings__controls .settings-rows { margin-top: 16px; }
-.settings-view .theme-settings__controls .settings-rows .theme-slider { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'label value' 'description description' 'range range'; gap: 8px; padding: 18px 0; }
-.settings-view .theme-settings__controls .theme-slider .tt-field__label { grid-area: label; }
-.settings-view .theme-settings__controls .theme-slider .tt-field__description { grid-area: description; max-width: none; font-size: 12px; }
-.settings-view .theme-settings__controls .theme-slider__value { grid-area: value; }
-.settings-view .theme-settings__controls .theme-slider__input { grid-area: range; }
-.theme-slider__value { font-size: 14px; }
-.theme-live-preview { min-width: 0; padding: 17px; border: 1px solid var(--tt-border); border-radius: 16px; }
-.theme-live-preview h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 18px; color: var(--tt-text-muted); font-size: 12px; font-weight: 500; }
-.theme-live-preview__window { overflow: hidden; border: 1px solid var(--tt-border); border-radius: 11px; background: var(--tt-canvas); }
-.theme-live-preview__titlebar { display: flex; align-items: center; gap: 7px; padding: 10px; border-bottom: 1px solid var(--tt-hairline); font-size: 12px; }
-.theme-live-preview__titlebar svg { width: 20px; height: 20px; }
-.theme-live-preview__titlebar > span { margin-left: auto; color: var(--tt-text-muted); }
-.theme-live-preview__body { display: flex; flex-direction: column; align-items: center; gap: 20px; padding: 25px 12px; }
-.theme-live-preview__body > strong { font-size: 16px; font-weight: 600; text-align: center; }
-.theme-live-preview__composer { display: flex; align-items: center; gap: 7px; width: 72%; padding: 10px 14px; border: 1px solid var(--tt-border); border-radius: 6px; background: var(--tt-glass); backdrop-filter: var(--tt-glass-filter); color: var(--tt-accent-text); }
-.theme-live-preview__composer > span { flex: 1; height: 3px; border-radius: 2px; background: var(--tt-hairline); }
-.theme-live-preview__parts { display: flex; align-items: start; justify-content: space-between; gap: 14px; margin-top: 20px; }
-.theme-live-preview__parts > div { display: grid; justify-items: center; gap: 9px; }
-.theme-live-preview__parts > div > span { color: var(--tt-text-muted); font-size: 12px; }
-.theme-live-preview__app-icon { width: 44px; height: 44px; }
-.theme-live-preview__widget { display: flex; align-items: center; gap: 10px; min-height: 44px; min-width: 136px; padding: 10px 17px; border: 1px solid; border-radius: 15px; font-size: 14px; }
-.theme-live-preview > p { margin: 17px 0 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; }
-@media (max-width: 1050px) {
-  .theme-settings__layout { grid-template-columns: minmax(0, 1fr); }
-  .theme-live-preview { width: min(100%, 340px); }
-}
-@media (prefers-reduced-motion: reduce) { .theme-option, .theme-scheme-track__dot { transition: none; } }
-:root[data-reduced-motion='on'] .theme-option,
-:root[data-reduced-motion='on'] .theme-scheme-track__dot { transition: none; }
 
 .theme-editor {
   position: fixed;
@@ -726,73 +567,3 @@
 
 .theme-search__result-actions { display: flex; justify-content: flex-end; gap: 4px; }
 .theme-search__empty { margin: 0; color: var(--tt-text-muted); font-size: 13px; }
-
-/* Effort color (ADR-0019) --------------------------------------------------------
-   The six colourways between Themes and the sliders, each drawn as the effort card's own filled track. A
-   swatch carries its colourway on itself through data-effort-color, so tokens.css gives it its own hues. */
-
-.effort-colors { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--tt-hairline); }
-.effort-colors .theme-settings__subheading { margin: 0 0 10px; }
-.effort-colors .theme-settings__assignment-hint { margin-bottom: 12px; }
-.effort-colors__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 14px; }
-.effort-color { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; margin: 0 -4px; padding: 6px 4px 2px; border: 0; border-radius: 8px; background: none; color: var(--tt-text); font: inherit; font-size: 14px; font-weight: 500; line-height: 20px; text-align: left; cursor: pointer; }
-.effort-color:hover { background: var(--tt-hover); }
-.effort-color[aria-pressed='true'] { font-weight: 600; }
-.effort-color__pill { position: relative; flex: none; width: 84px; height: 14px; margin: 2px 0 0 2px; border-radius: 2px; background: var(--tt-effort-fill-image); box-shadow: 0 0 0 1px var(--tt-border); }
-.effort-color__pill::before { content: ''; position: absolute; inset: 0; border-radius: 2px; background: var(--tt-effort-fill-veil); }
-.effort-color__pill i { position: absolute; top: 50%; left: calc(7px + var(--effort-stop) * (100% - 14px)); width: 3px; height: 3px; border-radius: 50%; background: color-mix(in srgb, var(--tt-surface-elevated) 55%, var(--tt-effort-b)); transform: translate(-50%, -50%); }
-.effort-color__pill b { position: absolute; right: -1px; top: -1px; width: 16px; height: 16px; border-radius: 3px; background: var(--tt-effort-thumb); box-shadow: var(--tt-shadow-sm), 0 0 0 1px var(--tt-effort-thumb-edge); }
-.effort-color[aria-pressed='true'] .effort-color__pill { outline: 2px solid var(--tt-accent-text); outline-offset: 3px; }
-
-/* The Live appearance sample: the composer at a model's highest level, its card above the chip. The composer wears no
-   outline there, as in a thread (ADR-0110); the colourway shows in its tide, the chip and the card. */
-.effort-sample { margin-top: 18px; }
-.effort-sample__head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 8px; color: var(--tt-text-muted); font-size: 12px; }
-.effort-sample__replay { padding: 2px 6px; border: 0; border-radius: 5px; background: none; color: var(--tt-text-muted); font: inherit; font-size: 12px; cursor: pointer; }
-.effort-sample__replay:hover:not(:disabled) { color: var(--tt-text); background: var(--tt-hover); }
-.effort-sample__replay:disabled { opacity: .5; cursor: default; }
-.effort-sample__scene { position: relative; padding: 14px 14px 12px; border: 1px solid var(--tt-border); border-radius: 11px; background: var(--tt-canvas); overflow: hidden; }
-.effort-sample__card { position: relative; z-index: 2; width: 212px; margin: 0 6px -22px auto; padding: 9px 10px; border: 1px solid var(--tt-field-border); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: 0 10px 30px var(--tt-shadow-color); transition: border-color 2400ms cubic-bezier(.2, .8, .2, 1); }
-.effort-sample[data-arriving='true'] .effort-sample__card { border-color: color-mix(in srgb, var(--tt-effort-border) 55%, var(--tt-field-border)); transition-duration: 200ms; }
-.effort-sample__card-head { display: flex; align-items: baseline; justify-content: space-between; }
-.effort-sample__card-head > span { color: var(--tt-text-muted); font-size: 10px; }
-.effort-sample__word { margin: 0; font-size: 12px; font-weight: 600; color: var(--tt-effort-text-fill); background: var(--tt-effort-text-image); -webkit-background-clip: text; background-clip: text; }
-.effort-sample__word > span { display: inline-block; }
-.effort-sample__line { margin: 1px 0 0; color: var(--tt-text-muted); font-size: 9.5px; line-height: 1.4; }
-.effort-sample__track { position: relative; height: 18px; margin: 8px 0 0; }
-.effort-sample__pill { position: absolute; inset: 2px 0; border-radius: 2px; background: var(--tt-effort-track); overflow: hidden; }
-.effort-sample__fill { position: absolute; inset: 0; border-radius: 2px; background: var(--tt-effort-fill-image); }
-.effort-sample__fill::after { content: ''; position: absolute; inset: 0; background: var(--tt-effort-fill-veil); }
-.effort-sample__pill i { position: absolute; top: 50%; left: calc(9px + var(--effort-stop) * (100% - 18px)); width: 3px; height: 3px; border-radius: 50%; background: color-mix(in srgb, var(--tt-surface-elevated) 55%, var(--tt-effort-b)); transform: translate(-50%, -50%); }
-.effort-sample__thumb { position: absolute; right: 0; top: 0; width: 18px; height: 18px; border-radius: 3px; background: var(--tt-effort-thumb); box-shadow: var(--tt-shadow-sm), 0 0 0 1px var(--tt-effort-thumb-edge); }
-.effort-sample__ends { display: flex; justify-content: space-between; margin: 4px 1px 0; color: var(--tt-text-faint); font-size: 8.5px; }
-.effort-sample__composer { position: relative; padding: 10px 12px 8px; border: 1px solid transparent; border-radius: 12px; background: var(--tt-surface); }
-.effort-sample__text { display: block; width: 55%; height: 3px; margin: 4px 0 18px; border-radius: 2px; background: var(--tt-hairline); }
-.effort-sample__chips { display: flex; gap: 5px; }
-.effort-sample__chips > span { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border: 1px solid var(--tt-field-border); border-radius: 5px; color: var(--tt-text-muted); font-size: 11px; }
-.effort-sample__chips > span[data-effort-top='true'] { color: var(--tt-effort-text-fill); background: var(--tt-effort-text-image); -webkit-background-clip: text; background-clip: text; font-weight: 500; }
-.effort-sample__wash { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; }
-.effort-sample__wash::before { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 220%; background: var(--tt-effort-wash-image); opacity: .5;
-  -webkit-mask-image: linear-gradient(to top, transparent 0%, black 36%, black 58%, transparent 100%); mask-image: linear-gradient(to top, transparent 0%, black 36%, black 58%, transparent 100%); }
-@media (prefers-reduced-motion: no-preference) {
-  .effort-sample[data-still='false'][data-arriving='true'] .effort-sample__card > .effort-sample__wash::before { animation: effort-wash 1500ms cubic-bezier(.3, .6, .2, 1) both; }
-  .effort-sample[data-still='false'][data-arriving='true'] .effort-sample__composer > .effort-sample__wash::before { animation: effort-wash 1700ms 120ms cubic-bezier(.3, .6, .2, 1) both; }
-  .effort-sample[data-still='false'][data-arriving='true'] .effort-sample__word { animation: effort-word 520ms cubic-bezier(.2, .8, .2, 1) both; }
-  .effort-sample[data-still='false'][data-arriving='true'] .effort-sample__word > span { animation: effort-letter 520ms cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(140ms + var(--effort-letter) * 55ms); }
-}
-.effort-sample[data-still='true'] * { animation: none !important; transition: none !important; }
-
-/* Creature (Settings → Appearance → Creature) ----
-   Each character is a card (ADR-0110), the same selectable card the providers use: filled, no outline, the chosen one
-   wearing the accent edge and wash. It walks in an inset of the room above its name, standing on the inset's bottom
-   edge as it stands on the composer's. Reduced motion is handled inside CreatureWalk. */
-.creature-choice { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--tt-hairline); }
-.creature-choice .theme-settings__subheading { margin: 0 0 10px; }
-.creature-choice .theme-settings__assignment-hint { margin-bottom: 12px; }
-.creature-choice__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
-.creature-option { display: flex; flex-direction: column; align-items: stretch; gap: 10px; min-width: 0; padding: 10px; border: 1px solid transparent; border-radius: 12px; background: var(--tt-card); color: var(--tt-text); font: inherit; font-size: 14px; font-weight: 500; line-height: 20px; text-align: left; cursor: pointer; }
-.creature-option:hover:not([aria-pressed='true']) { background: color-mix(in srgb, var(--tt-accent-surface) 30%, var(--tt-card)); }
-.creature-option[aria-pressed='true'] { border-color: var(--tt-accent); background: var(--tt-card-selected); box-shadow: 0 0 0 1px var(--tt-accent); font-weight: 600; }
-.creature-option__preview { display: flex; align-items: flex-end; height: 76px; padding: 0 8px; overflow: hidden; border-radius: 6px; background: var(--tt-card-inset); }
-.creature-option__preview > * { flex: 1 1 auto; min-width: 0; }
-.creature-option__name { padding: 0 2px; }

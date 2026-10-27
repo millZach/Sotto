@@ -48,10 +48,10 @@ const OFF_WITH_EVERY_OWL = new Set<string>(['resume-after-restart', 'babysitting
 const pageLabel = (id: string): string => SETTINGS_PAGES.find(page => page.id === id)!.label
 const panelOf = (page: string): HTMLElement => document.getElementById(page === 'settings-appearance' ? 'settings-appearance-panel' : page)!
 
-/** Every form control a page shows, outside dialogs, by its element. */
+/** Every form control a page shows, outside dialogs and outside Appearance's preview (whose switches change only what it shows), by its element. */
 function controlsOn(panel: HTMLElement): HTMLElement[] {
   return [...panel.querySelectorAll<HTMLElement>('[role="switch"], [role="radiogroup"], select, textarea, input:not([type="hidden"]):not([type="search"])')]
-    .filter(control => !control.closest('[role="dialog"]') && !control.closest('[role="radiogroup"]:not(:scope)'))
+    .filter(control => !control.closest('[role="dialog"]') && !control.closest('.appearance-preview') && !control.closest('[role="radiogroup"]:not(:scope)'))
 }
 
 const nameOf = (control: HTMLElement): string => control.getAttribute('aria-label')
