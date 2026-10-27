@@ -14,7 +14,7 @@ import { ProviderMark } from '../agents/ProviderMark'
 import type { ThreadRow } from '../agents/threadFacts'
 import { AgentRequestCard } from '../agents/requests/AgentRequestCard'
 import { messageLinks } from '../agents/requests/messageLinks'
-import { answeredChoices, chosenWords, OWN_WORDS } from '../agents/requests/answeredChoices'
+import { answeredChoices, chosenWords, OWN_WORDS, SKIPPED } from '../agents/requests/answeredChoices'
 import { requestAnswerOwnerKey, requestAnswerStore } from '../agents/requests/requestAnswers'
 import { threadRequestBlocked, threadRequestOwner, threadRequestSubmit } from '../agents/requests/threadRequests'
 import type { ConversationThread } from './WatcherReceipts'
@@ -76,6 +76,7 @@ export function receiptWords(named: string, words: string | null | undefined): s
   if (words === undefined) return i18n._(msg`${title} no longer waits on you.`)
   if (words === null) return i18n._(msg`You answered ${title}.`)
   if (words === OWN_WORDS) return i18n._(msg`You answered ${title} in your own words.`)
+  if (words === SKIPPED) return i18n._(msg`You skipped ${title}’s question.`)
   return i18n._(msg`You answered ${title}: ${words}.`)
 }
 

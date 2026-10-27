@@ -12,7 +12,11 @@ export interface RequestAnswer {
   readonly approved?: boolean
   readonly questionAnswers?: AgentQuestionAnswers
   readonly permissionChoice?: string
+  readonly skipped?: true
 }
+
+/** Skips a `skippable` question: the provider is told so and the turn goes on without an answer. */
+export const SKIP_ANSWER: RequestAnswer = { answer: '', skipped: true }
 
 /** One question's in-progress choice. `other` marks the free-text choice as picked. */
 export interface QuestionSelection {

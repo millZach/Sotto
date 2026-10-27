@@ -348,6 +348,9 @@ export const agentRequestSchema = z.object({
   context: z.object({ toolName: text.optional(), toolCallId: id.optional(), command: text.optional(), cwd: text.optional(), details: text.optional(),
     /** A plan the agent asks the user to accept, in its parts (Cursor's `cursor/create_plan`, ADR-0128); `steps` is Markdown. */
     plan: z.object({ name: text.optional(), overview: text.optional(), steps: text.optional() }).strict().optional() }).optional(),
+  /** A question the user may skip: its provider takes a decline and the turn goes on (ADR-0135, October 27, 2026). The
+   * adapter adds it; a request without it, from any host that predates it, offers no Skip. */
+  skippable: z.literal(true).optional(),
   delivery: z.literal('uncertain').optional(),
   answerRetryReady: z.literal(true).optional(),
   /** When the host's coordinator first showed this request (ADR-0135), so a client can say how long it has waited.
@@ -1421,7 +1424,9 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('start-thread-session'), threadId: id }).strict(),
   z.object({ type: z.literal('interrupt'), threadId: id }).strict(),
   z.object({ type: z.literal('compact-thread'), threadId: id }).strict(),
-  z.object({ type: z.literal('answer'), threadId: id, requestId: id, answer: text, approved: z.boolean().optional(), questionAnswers: agentQuestionAnswersSchema.optional(), permissionChoice: id.optional() }).strict(),
+  z.object({ type: z.literal('answer'), threadId: id, requestId: id, answer: text, approved: z.boolean().optional(), questionAnswers: agentQuestionAnswersSchema.optional(), permissionChoice: id.optional(),
+    /** The user skipped a `skippable` question: its provider is told so and the turn goes on without an answer. */
+    skipped: z.literal(true).optional() }).strict(),
 ])
 export type AgentCommand = z.infer<typeof agentCommandSchema>
 /** The desktop exposes host-qualified client keys here. The preload decodes them before host IPC. */
