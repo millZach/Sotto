@@ -2,6 +2,8 @@
 
 Accepted September 22, 2026.
 
+Amended October 27, 2026: Auto-settle merged threads also settles a thread whose branch was deleted after its pull request merged, or that never recorded a branch, from the thread's own pull request links. See the correction at the end.
+
 Amended October 22, 2026 ([ADR-0115](0115-settings-is-nine-pages-in-four-runs-with-find-a-setting.md)): the cleanup rules moved from Settings → Application to the first group of Settings → Git & worktrees, **Removing worktrees**. Where this record says Application or Git below, read that.
 
 Amended October 21, 2026 (#1297): a removal cut off partway is finished, or repaired when Sotto did not start it, rather than left for Git to call prunable. See the correction at the end.
@@ -75,7 +77,7 @@ The preview is only the requesting command’s result. It is neither saved nor b
 
 ## Correction, October 1, 2026: match the merged branch tip (#574)
 
-The merged rule and Auto-settle merged threads require a merged pull request whose head commit equals the current local branch tip. A branch name alone is insufficient: forks and later work can reuse it. The tip is read again after GitHub answers; a moved or missing branch is left alone. A matching fork pull request counts because it merged the same commit.
+The merged rule and Auto-settle merged threads require a merged pull request whose head commit equals the current local branch tip. A branch name alone is insufficient: forks and later work can reuse it. The tip is read again after GitHub answers; a moved branch is left alone, and a missing one is left to the October 27 correction. A matching fork pull request counts because it merged the same commit.
 
 The validated tip travels into the thread lane. Reclaim checks it after acquiring the checkout guard and before removing the folder; Auto-settle checks the branch and tip under a read reservation before settling. Sibling sends can proceed; file mutations remain excluded while that read completes. A Git action queued ahead of either decision can advance the branch, in which case current work stays in place.
 
@@ -110,3 +112,12 @@ Considered and not taken: a longer or size-aware deadline for `git worktree remo
 ## October 23, 2026: the sweeps wait for background work
 
 A thread whose turn had ended while its background agents still worked in its folder could have that folder taken by a cleanup rule, or be settled by Auto-settle merged threads, since both sweeps asked only whether the thread was running or waiting on the user. On October 23 the on-settle rule took the folder of a thread that was working while wrongly settled (#1412). Both sweeps now also leave a thread alone while its background work, sub-agents working or not known to have ended, or monitoring run, as Settle finished threads counts them, and Auto-settle merged threads while a thread it delegated to does, since those settle with it. Each asks again from the workspace as it stands just before it settles or removes, since work can start while Git and GitHub are asked. The user's own Remove worktree and Settle are unchanged.
+
+## Correction, October 27, 2026: a merged branch that was deleted
+
+Merging a pull request deletes its branch, on GitHub and, in Sotto's own merge flow, on this computer. The rule above asked for the local branch first and gave up silently when it was gone, so the usual way a pull request ends was the one way Auto-settle merged threads could never see: eight threads whose pull requests had merged a day earlier sat in Ready for review with links still reading open. Two of them had no branch to ask about at all: one ran in a shared folder that is not a repository, one in a worktree that was never on a branch.
+
+A thread at rest whose last-sent branch is gone, or that never recorded one, is now settled from its own pull request links, the ones the user linked or the Git action made, asked about by URL through `gh pr view`. It settles when GitHub reports none of them open and one merged from that branch, or any one merged when there is no branch. A deleted branch holds no current work, so its tip is not compared; Sotto records no tip it last pushed to compare instead. Only the thread's own links count, so a fork's pull request with the same branch name never does. Gone means Git can read the repository and the branch is not in it; a folder Git cannot read settles nothing. The host checks under the thread's lane that the branch is still gone, or still unrecorded, before it settles, and the sweep that no pull request was linked to the thread while GitHub answered. A branch that is still there is asked about exactly as before, at its current tip, and a moved one is still left alone.
+
+Each answer also brings the thread's link to the state GitHub gave (#1147), so a merged pull request stops reading open on a thread no read had followed since Watcher stopped watching it. Merged answers are kept while Sotto runs; only links still open are asked again on the next sweep. Every ask is a background read under #820's reserve and pause. The sweep logs, once a sweep each and by name alone, when a branch was gone, when a link was still open and when a merged link came from another branch.
+

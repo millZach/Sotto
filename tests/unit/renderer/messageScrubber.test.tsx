@@ -110,6 +110,23 @@ describe('the message scrubber', () => {
     } finally { vi.unstubAllGlobals() }
   })
 
+  it('keeps its length when a waiting question stacks the composer under the transcript', () => {
+    // A question stacks the composer, so the transcript ends where the question starts; the lane still runs to the
+    // composer's foot, as it does beside a floating composer, and the ticks stay where they were.
+    const room = 280
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('thread-workspace__transcript') ? room : 0 })
+    const real = HTMLElement.prototype.getBoundingClientRect
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains('thread-workspace__transcript')) return { top: 0, bottom: room } as DOMRect
+      if (this.classList.contains('thread-workspace__compose')) return { top: room, bottom: VIEW } as DOMRect
+      return real.call(this)
+    })
+    mount(conversation(5), { thread: { requests: [{ id: 'settle', kind: 'question', text: 'How do you want to handle it?', options: [] }] } })
+    expect(document.querySelector('.thread-questions')).not.toBeNull()
+    expect(scrubber()!.style.getPropertyValue('--scrubber-height')).toBe(`${VIEW}px`)
+    expect(ticks().map(tick => tick.style.top)).toEqual(tickPlaces(5, VIEW).places.map(place => `${place}px`))
+  })
+
   it('shows only on a long conversation of three or more sent messages, and not on stable', () => {
     contentHeight = 2 * VIEW - 1
     mount(conversation(5))

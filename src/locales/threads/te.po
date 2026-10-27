@@ -8700,6 +8700,10 @@ msgstr ""
 msgid "was {from} tokens"
 msgstr ""
 
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "Watched by Watcher"
+msgstr ""
+
 #: src/renderer/src/agents/threadClearWords.ts
 msgid "Watcher is watching it"
 msgstr ""

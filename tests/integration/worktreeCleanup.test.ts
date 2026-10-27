@@ -9,6 +9,9 @@ import { runWorktreeGit as git, ThreadWorktrees } from '../../src/main/agents/th
 import { WorktreeCleanup } from '../../src/main/agents/worktreeCleanup'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread, type AgentWorktree } from '../../src/shared/agents'
 import { DEFAULT_WORKTREE_CLEANUP, type WorktreeCleanupRules } from '../../src/shared/settings'
+import type { GitPullRequestLink } from '../../src/shared/gitPullRequests'
+import type { PullRequestObservation } from '../../src/main/agents/watcherEvidence'
+import type { MergedSettleExpectation, PullRequestState } from '../../src/main/agents/worktreeCleanup'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -167,13 +170,16 @@ describe('auto-settle merged threads', () => {
   const own = (branch: string, extra: Partial<AgentWorktree> = {}): AgentWorktree => ({ mode: 'independent', status: 'ready', path: `/w/${branch}`, repositoryRoot: '/repo', branch, sentBranch: branch, ...extra })
   /** Records only: settling touches no folder, so no repository is needed. */
   function settlingHost(threads: AgentThread[]) {
-    const settled: string[] = [], reclaimed: string[] = []
+    const settled: string[] = [], reclaimed: string[] = [], expected: (MergedSettleExpectation | undefined)[] = [], noted: PullRequestObservation[] = []
     return {
-      settled, reclaimed,
+      settled, reclaimed, expected, noted,
       workspaceSnapshot: (): AgentHostSnapshot => ({ ...EMPTY_AGENT_HOST, projects: [{ id: 'project', providerId: 'codex', title: 'Project', path: '/repo' }], threads }),
       subscribe: () => () => undefined,
       async reclaimThreadWorktree(threadId: string) { reclaimed.push(threadId) },
-      async setWorkspaceSettled(_kind: 'thread', id: string) { settled.push(id); threads.find(item => item.id === id)!.workspaceSettledAt = new Date().toISOString() },
+      async setWorkspaceSettled(_kind: 'thread', id: string, _settled: true, options?: MergedSettleExpectation) {
+        settled.push(id); expected.push(options); threads.find(item => item.id === id)!.workspaceSettledAt = new Date().toISOString()
+      },
+      notePullRequestState(read: PullRequestObservation) { noted.push(read) },
     }
   }
   /** A repository whose default branch is `trunk`, as origin's HEAD records it; nothing else answers. */
@@ -251,6 +257,90 @@ describe('auto-settle merged threads', () => {
     })
     await new WorktreeCleanup({ host, git: trunkGit, rules: () => DEFAULT_WORKTREE_CLEANUP, autoSettleMerged: () => true, pullRequestMerged }).sweep()
     expect(host.settled).toEqual(['done'])
+  })
+
+  const link = (number: number): GitPullRequestLink => ({ number, url: `https://github.com/o/r/pull/${number}`, title: `PR ${number}`, state: 'open', draft: false, source: 'linked', linkedAt: '2026-10-26T00:00:00.000Z' })
+  /** Like `trunkGit`, but every branch under `gone/` was deleted after its pull request merged. */
+  const goneGit = vi.fn(async (cwd: string, args: string[]) => {
+    if (args[0] === 'rev-parse' && args.at(-1)?.startsWith('refs/heads/gone/')) throw new Error('unknown revision')
+    if (args[0] === 'rev-parse' && args[1] === '--git-dir') return '.git\n'
+    return trunkGit(cwd, args)
+  })
+  it('settles a thread whose branch was deleted after its pull request merged, or that never recorded one, from its own links', async () => {
+    const threads = [
+      thread('gone-merged', own('gone/merged'), { pullRequests: [link(1)] }),
+      thread('gone-open', own('gone/open'), { pullRequests: [link(2)] }),
+      thread('gone-elsewhere', own('gone/elsewhere'), { pullRequests: [link(3)] }),
+      thread('gone-unlinked', own('gone/unlinked')),
+      // A shared folder that is not a repository, and a worktree never on a branch, as the merge flow can leave them.
+      thread('no-repository', { mode: 'shared', status: 'ready', path: '/home' }, { pullRequests: [link(4)] }),
+      thread('detached', { mode: 'independent', status: 'ready', path: '/w/detached', repositoryRoot: '/repo' }, { pullRequests: [link(5), { ...link(6), state: 'closed' }] }),
+      thread('present', own('feature/present'), { pullRequests: [link(7)] }),
+    ]
+    const host = settlingHost(threads)
+    const answers: Record<number, PullRequestState> = {
+      1: { state: 'merged', headRefName: 'gone/merged', headRefOid: 'a1' }, 2: { state: 'open', headRefName: 'gone/open', headRefOid: 'a2' },
+      3: { state: 'merged', headRefName: 'feature/other', headRefOid: 'a3' }, 4: { state: 'merged', headRefName: 'any', headRefOid: 'a4' },
+      5: { state: 'merged', headRefName: 'any', headRefOid: 'a5' },
+    }
+    const pullRequestState = vi.fn(async (url: string) => answers[Number(url.split('/').at(-1))]!)
+    const pullRequestMerged = vi.fn(async () => false)
+    const log: string[] = []
+    const cleanup = new WorktreeCleanup({ host, git: goneGit, rules: () => DEFAULT_WORKTREE_CLEANUP, autoSettleMerged: () => true, pullRequestMerged, pullRequestState, log: code => log.push(code) })
+    await cleanup.sweep()
+    expect(host.settled).toEqual(['gone-merged', 'no-repository', 'detached'])
+    expect(host.expected).toEqual([{ expectedMergedBranch: 'gone/merged', expectedMergedTip: null },
+      { expectedMergedBranch: null, expectedMergedTip: null }, { expectedMergedBranch: null, expectedMergedTip: null }])
+    // A branch still there is asked about as before, at its tip, never through its links; a closed link is not asked.
+    expect(pullRequestMerged).toHaveBeenCalledTimes(1)
+    expect(pullRequestState.mock.calls.map(call => call[0]).sort()).toEqual([1, 2, 3, 4, 5].map(number => link(number).url))
+    // Every answer brings the thread's link up to date, so a merged one stops reading open.
+    expect(host.noted.map(read => [read.url.split('/').at(-1), read.state])).toEqual([['1', 'merged'], ['2', 'open'], ['3', 'merged'], ['4', 'merged'], ['5', 'merged']])
+    // Each reason once a sweep, by name only.
+    expect(log).toEqual(['thread-auto-settle-branch-gone', 'thread-auto-settled', 'thread-auto-settle-pull-request-open', 'thread-auto-settle-branch-differs', 'thread-auto-settled', 'thread-auto-settled'])
+    // Merged is final: the next sweep asks again only about the one still open.
+    pullRequestState.mockClear()
+    await cleanup.sweep()
+    expect(pullRequestState.mock.calls.map(call => call[0])).toEqual([link(2).url])
+    expect(host.settled).toEqual(['gone-merged', 'no-repository', 'detached'])
+  })
+  it('leaves a thread whose branch moved while GitHub answered, links or not', async () => {
+    let moved = false
+    const movingGit = vi.fn(async (cwd: string, args: string[]) => args[0] === 'rev-parse' && args.at(-1) === 'refs/heads/feature/moving^{commit}' ? (moved ? 'later-tip\n' : 'merged-tip\n') : trunkGit(cwd, args))
+    const host = settlingHost([thread('moving', own('feature/moving'), { pullRequests: [link(1)] })])
+    const pullRequestState = vi.fn(async (): Promise<PullRequestState> => ({ state: 'merged', headRefName: 'feature/moving', headRefOid: 'merged-tip' }))
+    await new WorktreeCleanup({ host, git: movingGit, rules: () => DEFAULT_WORKTREE_CLEANUP, autoSettleMerged: () => true,
+      pullRequestMerged: async () => { moved = true; return true }, pullRequestState }).sweep()
+    expect(host.settled).toEqual([])
+    // A branch that is there is current work: its links do not stand in for its tip.
+    expect(pullRequestState).not.toHaveBeenCalled()
+  })
+  it('settles from links only when Git can read the repository and no pull request was linked meanwhile, asking once for a shared one', async () => {
+    const unreadableGit = vi.fn(async (_cwd: string, args: string[]) => { if (args[0] === 'symbolic-ref') return 'origin/trunk\n'; if (args.at(-1) === 'refs/heads/trunk') return 'abc\n'; throw new Error('not a git repository') })
+    const unreadable = settlingHost([thread('unreadable', own('feature/unreadable'), { pullRequests: [link(1)] })])
+    const merged = vi.fn(async (): Promise<PullRequestState> => ({ state: 'merged', headRefName: 'feature/unreadable', headRefOid: 'a' }))
+    await new WorktreeCleanup({ host: unreadable, git: unreadableGit, rules: () => DEFAULT_WORKTREE_CLEANUP, autoSettleMerged: () => true, pullRequestMerged: async () => true, pullRequestState: merged }).sweep()
+    // A folder Git cannot read is not a deleted branch: nothing is asked or settled.
+    expect(unreadable.settled).toEqual([])
+    expect(merged).not.toHaveBeenCalled()
+    const threads = [thread('late', own('gone/late'), { pullRequests: [link(1)] }), thread('shared-a', own('gone/a'), { pullRequests: [link(2)] }), thread('shared-b', own('gone/b'), { pullRequests: [link(2)] })]
+    const host = settlingHost(threads)
+    const pullRequestState = vi.fn(async (url: string): Promise<PullRequestState> => {
+      // A new pull request is linked to the thread while GitHub answers about its old one.
+      if (url === link(1).url) threads[0]!.pullRequests = [link(1), link(8)]
+      return url === link(1).url ? { state: 'merged', headRefName: 'gone/late', headRefOid: 'a' } : { state: 'open', headRefName: 'gone/a', headRefOid: 'b' }
+    })
+    await new WorktreeCleanup({ host, git: goneGit, rules: () => DEFAULT_WORKTREE_CLEANUP, autoSettleMerged: () => true, pullRequestMerged: async () => true, pullRequestState }).sweep()
+    expect(host.settled).toEqual([])
+    expect(pullRequestState.mock.calls.map(call => call[0])).toEqual([link(1).url, link(2).url])
+  })
+  it('leaves a thread whose branch is gone while GitHub is limiting the sign-in', async () => {
+    const host = settlingHost([thread('gone', own('gone/limited'), { pullRequests: [link(1)] })])
+    const log: string[] = []
+    await new WorktreeCleanup({ host, git: goneGit, rules: () => DEFAULT_WORKTREE_CLEANUP, autoSettleMerged: () => true, pullRequestMerged: async () => true,
+      pullRequestState: async () => { throw new Error('GitHub is limiting requests from this sign-in.') }, log: code => log.push(code) }).sweep()
+    expect(host.settled).toEqual([])
+    expect(log).toEqual(['thread-auto-settle-branch-gone', 'thread-auto-settle-skipped'])
   })
 
   it('asks GitHub once per branch when the merged rule wants the same answer, and never without gh', async () => {

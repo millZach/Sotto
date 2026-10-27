@@ -84,9 +84,14 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
     const style = getComputedStyle(element)
     const padLeft = Number.parseFloat(style.paddingLeft) || 0
     const padRight = Number.parseFloat(style.paddingRight) || 0
-    const height = element.clientHeight
+    // The lane runs to the composer's foot. A floating composer lies over the transcript, so that is the transcript's own
+    // foot; a waiting question stacks the composer under the transcript instead, and the lane keeps the length it had
+    // rather than packing every tick into the room left above the question.
+    const top = element.getBoundingClientRect().top
+    const foot = element.closest('.thread-pane')?.querySelector(':scope > .thread-workspace__compose')?.getBoundingClientRect().bottom ?? top
+    const height = Math.max(element.clientHeight, Math.round(foot - top))
     const next: Geometry = { height, column: element.offsetLeft + padLeft, columnWidth: element.clientWidth - padLeft - padRight, lane: scrubberLane(padLeft),
-      long: scrubberShown(count, element.scrollHeight, height, moreAbove) }
+      long: scrubberShown(count, element.scrollHeight, element.clientHeight, moreAbove) }
     setGeometry(current => current && current.height === next.height && current.column === next.column && current.columnWidth === next.columnWidth
       && current.lane === next.lane && current.long === next.long ? current : next)
   }, [scroller, count, moreAbove])
@@ -129,6 +134,8 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
     // stays the column's width, and the lane, measured from that padding, would stay where the wider pane put it.
     observer?.observe(element, { box: 'border-box' })
     if (content.current) observer?.observe(content.current)
+    const compose = element.closest('.thread-pane')?.querySelector(':scope > .thread-workspace__compose')
+    if (compose) observer?.observe(compose, { box: 'border-box' })
     return () => { element.removeEventListener('scroll', onScroll); observer?.disconnect(); cancelAnimationFrame(frame.current) }
   }, [scroller, content, measure, readInView])
   useEffect(() => () => window.clearTimeout(leaveTimer.current), [])
@@ -250,7 +257,7 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
 
   if (!shown) return null
   const style = {
-    '--scrubber-left': `${geometry.column - geometry.lane}px`, '--scrubber-lane': `${geometry.lane}px`,
+    '--scrubber-height': `${geometry.height}px`, '--scrubber-left': `${geometry.column - geometry.lane}px`, '--scrubber-lane': `${geometry.lane}px`,
     '--scrubber-gap': `${geometry.lane < NARROW_LANE_PX ? 4 : 18}px`, '--scrubber-hit': `${Math.max(6, pitch)}px`,
   } as CSSProperties
   // The card is the lane's sibling, so it is placed on its own: over the column, beside the lane, never over it.
