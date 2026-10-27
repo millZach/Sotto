@@ -22,7 +22,8 @@ export function isDrawableVisual(message: AgentMessage): message is AgentMessage
  * A visual an agent drew in its thread (ADR-0056): a header with its title and kind, Read all (Step through while it
  * shows every step) when it has steps, Show source, Copy source and Expand; the diagram, drawn by the same safe
  * renderer and frame as a diagram in an answer; and its explanation. A visual with steps is a walkthrough (#793): one
- * step at a time, its part of the diagram lit and the rest dimmed, in the card and in Expand. Read all swaps the walkthrough for the intro and the numbered steps, with
+ * step at a time, its part of the diagram lit and the rest dimmed, in the card and in Expand, where it is stepped
+ * through from the same bar under the drawing and with Left and Right. Read all swaps the walkthrough for the intro and the numbered steps, with
  * the whole diagram lit. When the diagram cannot be drawn, its source and the reason take its place and the steps stay
  * readable.
  */
@@ -49,5 +50,5 @@ function DiagramVisualCard({ visual }: { readonly visual: AgentVisual }): ReactN
   return <VisualCardShell visual={visual} kind={kind} state={diagramFrameState(rendering)} frame={frame} showing={Boolean(drawn)} shownTitle={t`Show diagram`}
     place={place} movePlace={movePlace}
     stage={<DiagramStage frame={frame} name={name} sourceLabel={t({ message: `${title} source`, comment: '{title} is the title of a diagram: its Mermaid source.' })} block="visual-card" stage="visual-card__stage" picture={stepPicture} />}
-    expandedView={<DiagramExpanded frame={frame} name={name} picture={stepPicture} />} />
+    expandedView={walkthrough => <DiagramExpanded frame={frame} name={name} picture={stepPicture} walkthrough={walkthrough} />} />
 }

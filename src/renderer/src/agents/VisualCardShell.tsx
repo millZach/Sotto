@@ -4,13 +4,14 @@ import type { AgentVisual } from '../../../shared/visuals'
 import { VisualActions, VisualCopyStatus, type FrameControls } from './diagrams/DiagramFrame'
 import { VisualReadAll } from './VisualReadAll'
 import { VisualStepper } from './VisualStepper'
-import { ReadAllToggle, walkthroughView, type WalkthroughPlace } from './VisualWalkthrough'
+import { ReadAllToggle, expandedWalkthrough, walkthroughView, type ExpandedWalkthrough, type WalkthroughPlace } from './VisualWalkthrough'
 
 /**
  * What every visual's card is, whatever it shows (ADR-0056, ADR-0060): a header with the title and kind, Read all
  * (Step through while every step shows) when it has steps, Show source, Copy source and Expand; then what it shows,
  * `stage`; then the walkthrough, one step at a time (#793), or the intro and every step under Read all; then the
- * expanded view while it is open. A diagram's card and an interactive page's card each bring their stage.
+ * expanded view while it is open, given the same walkthrough to show under its picture. A diagram's card and an
+ * interactive page's card each bring their stage and expanded view.
  */
 export function VisualCardShell({ visual, kind, state, interactive = false, cardRef, frame, showing, shownTitle, place, movePlace, stage, expandedView }: {
   readonly visual: AgentVisual
@@ -28,7 +29,8 @@ export function VisualCardShell({ visual, kind, state, interactive = false, card
   readonly place: WalkthroughPlace
   readonly movePlace: (change: Partial<WalkthroughPlace>) => void
   readonly stage: ReactNode
-  readonly expandedView: ReactNode
+  /** The expanded view, with the walkthrough it shows under its picture while one is being stepped through. */
+  readonly expandedView: (walkthrough: ExpandedWalkthrough | undefined) => ReactNode
 }): ReactNode {
   const { t } = useLingui()
   const steps = visual.steps ?? []
@@ -51,6 +53,6 @@ export function VisualCardShell({ visual, kind, state, interactive = false, card
     {walking
       ? <VisualStepper steps={steps} index={current} onStep={index => movePlace({ step: index })} />
       : <VisualReadAll intro={visual.intro} steps={visual.steps} />}
-    {expandedView}
+    {expandedView(expandedWalkthrough(steps, place, movePlace))}
   </section>
 }
