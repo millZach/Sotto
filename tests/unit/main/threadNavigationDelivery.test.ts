@@ -291,7 +291,9 @@ describe('setting aside unconfirmed sends', () => {
     f.host.withheld = 'uncertain'
     await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Original unknown prompt' })
     expect(f.control.pendingThreadWorkReason('workshop')).toBe('uncertain-send')
+    expect(f.control.unconfirmedSendCanBeSetAside('workshop')).toBe(true)
     expect((await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })).error).toBeNull()
+    expect(f.control.unconfirmedSendCanBeSetAside('workshop')).toBe(false)
     // Set aside, it is never sent again, so a model or provider change need not wait for it; automatic work still does.
     expect(f.control.hasPendingThreadWork('workshop')).toBe(true)
     expect(f.control.hasPendingThreadWork('workshop', { setAsideIgnored: true })).toBe(false)

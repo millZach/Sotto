@@ -1533,6 +1533,15 @@ export class AgentControl {
     if (items.some(item => item.status === 'failed')) return 'failed-followups'
     return items.some(item => item.status === 'paused') ? 'paused-followups' : null
   }
+  /**
+   * Whether an unconfirmed send holding this thread is one the user can set aside with Continue with a new message: a
+   * prompt sent at once, with nothing in the thread's queue, as `assertCanSetAside` asks. An unconfirmed queued prompt
+   * cannot be, so a refusal must not send the user there for it (#1222).
+   */
+  unconfirmedSendCanBeSetAside(threadId: string): boolean {
+    return !this.followupStore.peek().items.some(item => item.threadId === threadId && !isWaitingWakeUp(item))
+      && (this.state.deliveries ?? []).some(item => item.threadId === threadId && item.status === 'uncertain' && item.setAside !== true)
+  }
   /** The existing pending-work guard's reason, so a refusal offers the recovery this work actually needs. */
   pendingThreadWorkReason(threadId: string, { setAsideIgnored = false }: { readonly setAsideIgnored?: boolean } = {}): CheckoutPendingWork | null {
     const released = (item: { readonly setAside?: boolean | undefined; readonly updatesResumed?: boolean | undefined }): boolean => item.setAside === true && (setAsideIgnored || item.updatesResumed === true)

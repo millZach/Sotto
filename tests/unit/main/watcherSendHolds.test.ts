@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { NO_TURN_TO_STEER, queueHold, RUNNING_TURN_HOLD, SLASH_COMMAND_REFUSAL, startsWithSlashCommand, UNCONFIRMED_SEND_HOLD, USER_TURN_RUNNING, WATCH_PAUSED_HOLD } from '../../../src/main/agents/watcherSendHolds'
+import { NO_TURN_TO_STEER, queueHold, RUNNING_TURN_HOLD, SLASH_COMMAND_REFUSAL, startsWithSlashCommand, UNCONFIRMED_SEND_HOLD, UNCONFIRMED_SEND_WAITS, USER_TURN_RUNNING, WATCH_PAUSED_HOLD } from '../../../src/main/agents/watcherSendHolds'
 
 describe('what a refused Watcher send says it waits on (#1203)', () => {
   it('names a different hold for each reason, and never background work as one', () => {
     const said = [RUNNING_TURN_HOLD, NO_TURN_TO_STEER, USER_TURN_RUNNING, WATCH_PAUSED_HOLD, queueHold('pending-work', false), queueHold('pending-work', true),
-      queueHold('paused-followups', false), queueHold('failed-followups', false), queueHold('uncertain-send', false)]
+      queueHold('paused-followups', false), queueHold('failed-followups', false), queueHold('uncertain-send', false), UNCONFIRMED_SEND_WAITS]
     expect(new Set(said).size).toBe(said.length)
     for (const text of said) expect(text).toMatch(/Nothing was sent\.$/u)
     expect(said.filter(text => /background/u.test(text))).toEqual([NO_TURN_TO_STEER])
@@ -15,6 +15,9 @@ describe('what a refused Watcher send says it waits on (#1203)', () => {
     expect(queueHold('uncertain-send', false)).toBe(UNCONFIRMED_SEND_HOLD)
     expect(UNCONFIRMED_SEND_HOLD).toContain('Continue with a new message')
     expect(UNCONFIRMED_SEND_HOLD).not.toMatch(/turn/u)
+    // Where the user cannot set it aside, it names no action they cannot take.
+    expect(UNCONFIRMED_SEND_WAITS).not.toContain('Continue with a new message')
+    expect(UNCONFIRMED_SEND_WAITS).not.toMatch(/turn/u)
     expect(USER_TURN_RUNNING).not.toMatch(/unconfirmed/u)
     // A pause held by something else names no turn, since none is running.
     expect(WATCH_PAUSED_HOLD).not.toMatch(/turn/u)

@@ -219,6 +219,8 @@ it('keeps uncertain dispatch immutable across restart and reconciles exact evide
   f.host.result = { accepted: false, uncertain: true }; complete(f.host)
   await expect.poll(() => f.control.get().followups?.[0]?.status).toBe('uncertain')
   expect(f.control.pendingThreadWorkReason('workshop')).toBe('uncertain-send')
+  // A queued prompt cannot be set aside, so Watcher's refusal must not send the user to Continue with a new message (#1222).
+  expect(f.control.unconfirmedSendCanBeSetAside('workshop')).toBe(false)
   const item = f.control.get().followups![0]!
   expect((await f.control.command({ type: 'remove-followup', threadId: item.threadId, itemId: item.id })).error).toMatch(/may already/)
   f.control.dispose(); await f.control.privacyChanged()

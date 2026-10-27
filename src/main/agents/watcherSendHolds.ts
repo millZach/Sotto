@@ -34,6 +34,12 @@ export const USER_TURN_RUNNING = 'The user’s own turn in this thread is runnin
 export const UNCONFIRMED_SEND_HOLD = 'An earlier send to this thread is unconfirmed. Read the thread to see what happened, then ask the user to set that send aside there with Continue with a new message. Nothing was sent.'
 
 /**
+ * The same hold where Continue with a new message is not offered, as for an unconfirmed queued prompt or a paired host's
+ * thread this computer cannot read (#1222): the refusal names no action the user cannot take.
+ */
+export const UNCONFIRMED_SEND_WAITS = 'An earlier send to this thread is unconfirmed, and Sotto will not send it twice. Read the thread to see what happened, and tell the user if it stays unconfirmed. Nothing was sent.'
+
+/**
  * The refusal while a watch stays paused after the user's turn for some other hold, or one this computer cannot see, as
  * on a paired host whose deliveries only that host knows (#1222). It names no turn, since none is running.
  */

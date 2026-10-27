@@ -36,7 +36,7 @@ import { watcherEndedPullRequests, watcherHostInput, watcherOpenPullRequests, wa
 import { watcherMergeQueue, watcherSettlesWhen, watcherStaleNotes, type WatcherKnownPullRequest, type WatcherOpenPullRequest } from './watcherComputedState'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { WATCHER_COMPACTED_NOTE, watcherRequestLine, watcherRequestNote } from './watcherRequestNote'
-import { defaultDelivery, NO_TURN_TO_STEER, queuedSendHeld, queueHold, RUNNING_TURN_HOLD, SLASH_COMMAND_REFUSAL, startsWithSlashCommand, STEER_TURN_CHANGED, steerFallbackNote, UNCONFIRMED_SEND_HOLD, USER_TURN_RUNNING, WATCH_PAUSED_HOLD } from './watcherSendHolds'
+import { defaultDelivery, NO_TURN_TO_STEER, queuedSendHeld, queueHold, RUNNING_TURN_HOLD, SLASH_COMMAND_REFUSAL, startsWithSlashCommand, STEER_TURN_CHANGED, steerFallbackNote, UNCONFIRMED_SEND_HOLD, UNCONFIRMED_SEND_WAITS, USER_TURN_RUNNING, WATCH_PAUSED_HOLD } from './watcherSendHolds'
 import { WatcherStateStore, watcherWaitsOn } from './watcherState'
 import { compactionPending } from '../../shared/compaction'
 import { watcherDisplayPrompt } from './watcherMessageDisplay'
@@ -1938,8 +1938,12 @@ export class WatcherService implements WatcherControlHooks {
     if (this.humanTurnRunning(thread, record)) refuse('THREAD_BUSY', USER_TURN_RUNNING, true)
     const target = { hostId: thread.hostId ?? this.hostId(), threadId: thread.id }
     if (!record.watches?.find(item => key(item.target) === key(target))?.pausedByUserMessageId) return
-    if (target.hostId === this.hostId() && this.options.control.pendingThreadWorkReason(thread.id, { setAsideIgnored: true }) === 'uncertain-send') refuse('DELIVERY_UNCERTAIN', UNCONFIRMED_SEND_HOLD)
+    if (target.hostId === this.hostId() && this.options.control.pendingThreadWorkReason(thread.id, { setAsideIgnored: true }) === 'uncertain-send') refuse('DELIVERY_UNCERTAIN', this.unconfirmedHold(target))
     refuse('THREAD_BUSY', WATCH_PAUSED_HOLD, true)
+  }
+  /** What an unconfirmed earlier send to a thread asks of Watcher: the user's Continue with a new message where it is offered. */
+  private unconfirmedHold(target: WatcherThreadTarget): string {
+    return target.hostId === this.hostId() && this.options.control.unconfirmedSendCanBeSetAside(target.threadId) ? UNCONFIRMED_SEND_HOLD : UNCONFIRMED_SEND_WAITS
   }
   /**
    * What a paused watch's busy refusal says, read again as the thread stands on its own computer, a paired host's too: the
@@ -3359,7 +3363,7 @@ export class WatcherService implements WatcherControlHooks {
         if (sent.delivery === 'now' && thread.status === 'running') refuse('THREAD_BUSY', RUNNING_TURN_HOLD)
         // A send the user set aside holds Watcher no longer (#1222).
         const queued = sent.delivery === 'now' && !remote ? this.options.control.pendingThreadWorkReason(thread.id, { setAsideIgnored: true }) : null
-        if (queued === 'uncertain-send') refuse('DELIVERY_UNCERTAIN', UNCONFIRMED_SEND_HOLD)
+        if (queued === 'uncertain-send') refuse('DELIVERY_UNCERTAIN', this.unconfirmedHold(target))
         if (queued) refuse('THREAD_BUSY', queueHold(queued, this.preserveUserQueue(thread.id) && this.userWorkPending(thread.id, record)))
         // A queue the user must review first takes nothing more, as a delegated brief is refused, rather than hold it unsaid.
         const review = sent.delivery === 'queue' && !remote ? this.options.control.queueAwaitsReview(thread.id) : null
@@ -3681,7 +3685,7 @@ ${operation.draftId}`)
           : this.takenOverRefusal(this.record(), operation.target, this.record().requests.find(item => item.id === operation.requestId), 'send')
         : operation.refusalCode === 'THREAD_BUSY' ? watched?.pausedByUserMessageId ? this.pausedHold(operation.target) : RUNNING_TURN_HOLD
         // A send the writer turned away as unconfirmed was held by an earlier send to its thread (#1222).
-        : operation.refusalCode === 'DELIVERY_UNCERTAIN' && operation.deliveryState === 'failed' && operation.action === 'send' ? UNCONFIRMED_SEND_HOLD
+        : operation.refusalCode === 'DELIVERY_UNCERTAIN' && operation.deliveryState === 'failed' && operation.action === 'send' ? this.unconfirmedHold(operation.target)
         : 'The operation could not be completed. Read its receipt before trying again.'), receipt: base.receipt }
     }
     if (name === 'start_thread') {
