@@ -207,16 +207,44 @@ function normalizeStoredTheme(value: unknown): ThemeDefinition | null {
   }
 }
 
-/** The saved library from an untrusted value: bad entries and duplicate ids dropped, capped. */
-export function parseCustomThemes(value: unknown): ThemeDefinition[] {
-  if (!Array.isArray(value)) return []
+/**
+ * The ids Graphite, Clay and Fern took on October 26, 2026 (ADR-0024). Until then a theme of the user's own could
+ * carry one, so a saved theme that does keeps its colours under a free id and a half that named it follows it.
+ */
+const CLAIMED_BUILT_IN_IDS: ReadonlySet<string> = new Set(['graphite', 'clay', 'fern'])
+
+/** The saved library, and the new id of each theme whose old id a built-in has since taken. */
+export interface SavedThemeLibrary {
+  readonly themes: ThemeDefinition[]
+  readonly moved: ReadonlyMap<string, string>
+}
+
+/** The saved library from an untrusted value: bad entries and duplicate ids dropped, capped, claimed ids moved. */
+export function parseSavedThemeLibrary(value: unknown): SavedThemeLibrary {
+  const moved = new Map<string, string>()
+  if (!Array.isArray(value)) return { themes: [], moved }
+  const taken = new Set(value.flatMap(entry => (isRecord(entry) && typeof entry.id === 'string' ? [entry.id] : [])))
   const themes: ThemeDefinition[] = []
   for (const entry of value) {
-    const theme = normalizeStoredTheme(entry)
+    let stored = entry
+    if (isRecord(entry) && typeof entry.id === 'string' && CLAIMED_BUILT_IN_IDS.has(entry.id) && !moved.has(entry.id)) {
+      let suffix = 2
+      while (taken.has(`${entry.id}-${suffix}`)) suffix += 1
+      const id = `${entry.id}-${suffix}`
+      taken.add(id)
+      moved.set(entry.id, id)
+      stored = { ...entry, id }
+    }
+    const theme = normalizeStoredTheme(stored)
     if (theme && !themes.some(existing => existing.id === theme.id)) themes.push(theme)
     if (themes.length === MAX_CUSTOM_THEMES) break
   }
-  return themes
+  return { themes, moved }
+}
+
+/** The saved library from an untrusted value; see `parseSavedThemeLibrary`. */
+export function parseCustomThemes(value: unknown): ThemeDefinition[] {
+  return parseSavedThemeLibrary(value).themes
 }
 
 // ---------------------------------------------------------------------------

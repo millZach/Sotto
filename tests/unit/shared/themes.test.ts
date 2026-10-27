@@ -207,7 +207,7 @@ describe('theme files', () => {
 
   it('reads a saved library leniently but stores it strictly, without duplicates or overflow', () => {
     const theme = canonicalizeTheme(parseThemeFile({ version: 1, name: 'Harbor', appearance: 'dark', colors: { canvas: '#102a33' } }))
-    const parsed = parseCustomThemes([theme, { ...theme }, { id: 'graphite', label: 'Graphite', appearance: 'dark', colors: {} }, 'junk', { ...theme, id: 'other', colors: { ...theme.colors, canvas: 'url(x)', extra: '#fff' } }])
+    const parsed = parseCustomThemes([theme, { ...theme }, { id: 'hush', label: 'Hush', appearance: 'dark', colors: {} }, 'junk', { ...theme, id: 'other', colors: { ...theme.colors, canvas: 'url(x)', extra: '#fff' } }])
     expect(parsed.map(entry => entry.id)).toEqual([theme.id, 'other'])
     expect(parsed[1]!.colors.canvas).toBe(getDefaultThemeColors('dark').canvas)
     expect(customThemesSchema.safeParse([theme, theme]).success).toBe(false)

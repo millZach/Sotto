@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
+import { BUILT_IN_THEMES } from '../../src/shared/themes/library'
 import { withSotto } from '../fixtures/designCaptureProfile'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { pageBoundProblems } from './support/designCapture'
@@ -25,7 +26,8 @@ import { seedWatcherRoom } from './support/watcherRoom'
  */
 const evidence = evidenceDirectory('artifacts/watcher-column')
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
-const THEMES = ['t3-code', 'hush', 'citrine', 'graphite', 'clay', 'fern'] as const
+// Every built-in, so a palette added or replaced is covered without editing this list.
+const THEMES = BUILT_IN_THEMES.map(theme => theme.id)
 const recorded: Record<string, unknown> = {}
 
 function launchOptions(appearance: 'dark' | 'light', options: { readonly live?: boolean } = {}) {

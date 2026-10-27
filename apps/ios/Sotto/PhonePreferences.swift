@@ -26,12 +26,10 @@ enum PhonePreferenceKey {
     static let newThreadWorkingCopy = "phoneNewThreadWorkingCopy"
 }
 
-/// The palettes the desktop retired on October 26, 2026, and the one each moved to (ADR-0024), so an iPhone that
-/// saved one paints its replacement.
+/// So an iPhone that saved a palette the desktop has since retired paints its replacement (ADR-0024).
 enum PhoneThemeID {
-    static let replacements = ["linen": "clay", "nocturne": "graphite", "tropic": "fern"]
     /// The id a saved choice paints now: a retired palette's replacement, any other id as it was.
-    static func current(_ id: String) -> String { replacements[id] ?? id }
+    static func current(_ id: String) -> String { ThemePalettes.retired[id] ?? id }
 }
 
 /// Dark, Light, or following the iPhone. Dark is the default.

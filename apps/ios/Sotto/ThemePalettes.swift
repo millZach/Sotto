@@ -52,6 +52,8 @@ struct ThemePalette: Identifiable, Equatable {
 enum ThemePalettes {
     /// The six palettes in the order the desktop lists them. The first is the default.
     static let all: [ThemePalette] = [sotto, hush, citrine, graphite, clay, fern]
+    /// The palettes the desktop retired, and the one each moved to (ADR-0024).
+    static let retired: [String: String] = ["linen": "clay", "nocturne": "graphite", "tropic": "fern"]
 
     static let sotto = ThemePalette(id: "sotto", name: "Sotto", light: sottoLight, dark: sottoDark)
     static let hush = ThemePalette(id: "hush", name: "Hush", light: hushLight, dark: hushDark)

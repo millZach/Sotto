@@ -319,6 +319,19 @@ describe('settings', () => {
     expect(parseSettings({ lightTheme: 'linen', darkTheme: 'citrine' })).toMatchObject({ lightTheme: 'clay', darkTheme: 'citrine' })
   })
 
+  it('keeps a theme of the user’s own whose id Graphite, Clay or Fern took, under a new id its halves follow', () => {
+    for (const claimed of ['graphite', 'clay', 'fern']) {
+      const own = { ...aurora, id: claimed, label: 'Mine' }
+      const taken = { ...aurora, id: `${claimed}-2`, label: 'Also mine' }
+      const parsed = parseSettings({ lightTheme: claimed, darkTheme: claimed, customThemes: [own, taken] })
+      // The colours survive under the first free id, and nothing else in the library moves.
+      expect(parsed.customThemes, claimed).toEqual([{ ...own, id: `${claimed}-3` }, taken])
+      expect(parsed[aurora.appearance === 'dark' ? 'darkTheme' : 'lightTheme'], claimed).toBe(`${claimed}-3`)
+      expect(settingsSchema.safeParse(parsed).success, claimed).toBe(true)
+      expect(parseSettings(JSON.parse(JSON.stringify(parsed))), claimed).toEqual(parsed)
+    }
+  })
+
   it('leaves a half on a theme of the user’s own that took a retired id', () => {
     const own = { ...aurora, id: 'nocturne', label: 'Nocturne' }
     const parsed = parseSettings({ lightTheme: 'tropic', darkTheme: 'nocturne', customThemes: [own] })
@@ -368,7 +381,7 @@ describe('settings', () => {
 
   it('keeps valid custom themes one by one and never lets a hostile colour through', () => {
     const hostile = { ...aurora, id: 'hostile', label: 'Hostile', colors: { ...aurora.colors, canvas: 'red;background:url(https://example.com/x)' } }
-    const reserved = { ...aurora, id: 'graphite' }
+    const reserved = { ...aurora, id: 'hush' }
     const parsed = parseSettings({ customThemes: [aurora, hostile, reserved, 'junk', { ...aurora }], darkTheme: aurora.id })
     // The damaged role is repaired from the theme's defaults; the reserved id, junk and duplicate are dropped.
     expect(parsed.customThemes.map(theme => theme.id)).toEqual([aurora.id, 'hostile'])

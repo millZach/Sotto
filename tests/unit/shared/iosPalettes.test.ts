@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 import { contrastRatio, mixRgb, oklchToRgb, parseThemeColor, rgbToOklch, type ThemeRgb } from '../../../src/shared/themes/color'
-import { BUILT_IN_THEMES, getThemeColorsForMode } from '../../../src/shared/themes/library'
+import { BUILT_IN_THEMES, RETIRED_BUILT_IN_THEMES, getThemeColorsForMode } from '../../../src/shared/themes/library'
 import type { ThemeAppearance, ThemeColorRole, ThemeColors } from '../../../src/shared/themes/palettes'
 
 const SWIFT_FILE = fileURLToPath(new URL('../../../apps/ios/Sotto/ThemePalettes.swift', import.meta.url))
@@ -168,6 +168,8 @@ function swiftSource(palettes: readonly IosPalette[]): string {
     'enum ThemePalettes {',
     '    /// The six palettes in the order the desktop lists them. The first is the default.',
     `    static let all: [ThemePalette] = [${palettes.map(palette => palette.id).join(', ')}]`,
+    '    /// The palettes the desktop retired, and the one each moved to (ADR-0024).',
+    `    static let retired: [String: String] = [${[...RETIRED_BUILT_IN_THEMES].map(([from, to]) => `"${from}": "${to}"`).join(', ')}]`,
     '',
   ]
   for (const palette of palettes) {
