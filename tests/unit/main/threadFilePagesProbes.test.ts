@@ -111,6 +111,18 @@ it('serves only the file the walk found, when another takes its place before it 
   const opening = await pages.open('docs/prototypes/page.html', 'thread', folder)
   if (!opening?.ok) throw new Error(JSON.stringify(opening))
   const page = join(folder, 'docs', 'prototypes', 'page.html')
+  // The old file is kept elsewhere so the new one cannot be given its number; a removed one can be, on Linux, which the
+  // change time catches (the next test).
+  stubs.beforeOpen = async () => { await rename(page, join(folder, 'docs', 'kept.html')); await writeFile(page, 'SECRET swapped in') }
+  const response = await fetch(opening.url)
+  expect(response.status).toBe(404)
+  expect(await response.text()).not.toContain('SECRET')
+})
+
+it('serves only the file the walk found, when a removed one is replaced and the file system gives the new one its number', async () => {
+  const opening = await pages.open('docs/prototypes/page.html', 'thread', folder)
+  if (!opening?.ok) throw new Error(JSON.stringify(opening))
+  const page = join(folder, 'docs', 'prototypes', 'page.html')
   stubs.beforeOpen = async () => { await rm(page); await writeFile(page, 'SECRET swapped in') }
   const response = await fetch(opening.url)
   expect(response.status).toBe(404)

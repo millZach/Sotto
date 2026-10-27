@@ -10,7 +10,8 @@ const BUCKETS_MAX = 1024
  */
 export class HttpBudgets {
   private readonly buckets = new Map<string, { window: number; count: number }>()
-  constructor(private readonly now: () => number = Date.now) {}
+  // Read at each request, never captured: a clock the caller swaps in later (a test's fake one) must be the one counted.
+  constructor(private readonly now: () => number = () => Date.now()) {}
 
   /**
    * Counts one request against a bucket, dropping buckets whose minute has passed. Undefined past its limit, when the

@@ -149,7 +149,7 @@ async function serveFile(request: IncomingMessage, response: ServerResponse, tar
   // without waiting where the system can, so one swapped in after the walk cannot hold the open, then refused below.
   const handle = file?.identity?.regular ? await open(file.file, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0)).catch(() => undefined) : undefined
   const info = handle ? await handle.stat({ bigint: true }).catch(() => undefined) : undefined
-  const same = !!info && !!file?.identity && info.dev === file.identity.dev && info.ino === file.identity.ino
+  const same = !!info && !!file?.identity && info.dev === file.identity.dev && info.ino === file.identity.ino && info.ctimeNs === file.identity.changed
   if (!handle || !info?.isFile() || !same) {
     await handle?.close().catch(() => undefined)
     const missingPage = path.join(target.root, ...parts) === target.file

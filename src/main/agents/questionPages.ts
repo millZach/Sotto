@@ -110,7 +110,11 @@ export async function resolveInside(root: string, target: string): Promise<strin
 }
 
 /** Who a file is to the file system: its device and file number, and whether it is a plain file (not a folder, pipe or device). */
-export type FileIdentity = { readonly dev: bigint; readonly ino: bigint; readonly regular: boolean }
+/**
+ * What the file system says a walked entry is. `changed` is its change time: a file removed and another made in its place
+ * can be given the same number on Linux, but not the same change time.
+ */
+export type FileIdentity = { readonly dev: bigint; readonly ino: bigint; readonly changed: bigint; readonly regular: boolean }
 
 /** What a walk found: the file, and the identity the file system gave its last part, or why the walk stopped. */
 export type Walked =
@@ -127,7 +131,7 @@ export async function walkInside(root: string, target: string, hops = LINK_HOPS_
     const next = path.join(current, part)
     const info = await lstat(next, { bigint: true }).catch(() => undefined)
     if (!info) return { reason: 'missing' }
-    if (!info.isSymbolicLink()) { current = next; identity = { dev: info.dev, ino: info.ino, regular: info.isFile() }; continue }
+    if (!info.isSymbolicLink()) { current = next; identity = { dev: info.dev, ino: info.ino, changed: info.ctimeNs, regular: info.isFile() }; continue }
     if (hops <= 0) return { reason: 'missing' }
     // A Windows junction may read back with the `\\?\` prefix before its drive; anything else after `\\` is a share or device.
     const link = (await readlink(next).catch(() => undefined))?.replace(/^\\\\\?\\(?=[A-Za-z]:\\)/u, '')
