@@ -1,9 +1,13 @@
 import React, { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Element, ElementContent, Root } from 'hast'
-import { Check, Copy, FileText, Image as ImageIcon } from 'lucide-react'
+import type { MessageDescriptor } from '@lingui/core'
+import { Check, Copy, FileText, Image as ImageIcon, Play } from 'lucide-react'
 import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from 'react-markdown'
+import { i18n } from '@lingui/core'
+import { msg, ph, plural } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 import remarkGfm from 'remark-gfm'
-import type { AgentAttachmentReference } from '../../../shared/agents'
+import { isImageAttachment, type AgentAttachmentReference } from '../../../shared/agents'
 import { externalLinkSchema } from '../../../shared/externalLinks'
 import { MermaidDiagram } from './diagrams/MermaidDiagram'
 import { isFenceClosed } from '../../../shared/diagramSource'
@@ -12,8 +16,16 @@ import { useAttachmentSource, type AttachmentOrigin } from './attachmentSources'
 import { AttachmentViewer } from './AttachmentViewer'
 import { LinkMenu, useWebLinkRouter, type LinkMenuItem, type WebLinkDestination, type WebLinkResult } from '../tools/webLinks'
 import { highlighterNow, loadHighlighter, type Highlighter } from './codeHighlighter'
+import { leftToRight, shownWords, type LaterWords } from './interfaceWords'
 import { useOwlFeature } from '../state/owlFeature'
+import { useInterfaceLanguageState } from '../state/interfaceLanguage'
+import { attachmentKind, AttachmentKindIcon, fileTypeLabel } from './attachmentKinds'
+import { formatAttachmentSize } from '../../../shared/attachmentLabels'
+import { runnableBlock, runnableInline } from '../../../shared/runnableCommand'
+import { RunCommandContext, useRunCommand, type RunCommand } from '../tools/runCommand'
+import { flipsBelow } from './ReplyQuoteButton'
 import './rich-messages.css'
+import './runCommand.css'
 
 export type { AttachmentOrigin } from './attachmentSources'
 
@@ -27,6 +39,8 @@ export interface MessageContentProps {
   readonly streaming?: boolean
   /** Opens a vetted absolute http:, https: or mailto: URL. Defaults to the surrounding link router: a thread's browser setting, else the system browser. */
   readonly onOpenLink?: (url: string) => Promise<LinkOpenResult> | LinkOpenResult
+  /** An agent's reply: its commands offer Run when the surrounding thread pane can run them (ADR-0139). */
+  readonly commands?: boolean
 }
 
 export interface AttachmentPreviewsProps {
@@ -86,7 +100,9 @@ export function localFilePath(raw: string | undefined): string | null {
 /** The file manager by its own name on each platform: File Explorer first, Finder on a Mac, the file manager on Linux. */
 const fileManager = (): string => {
   const platform = (window.sotto as { platform?: string } | undefined)?.platform
-  return platform === 'darwin' ? 'Finder' : platform === 'linux' ? 'the file manager' : 'File Explorer'
+  return platform === 'darwin' ? 'Finder' : platform === 'linux'
+    ? i18n._(msg({ message: 'the file manager', comment: 'Linux: what shows a file in its folder. Read inside "Show in {manager}: {file}".' }))
+    : i18n._(msg({ message: 'File Explorer', comment: 'Windows\' own name for its file manager, as Windows shows it in this language.' }))
 }
 
 function linkLabel(url: string): string {
@@ -98,19 +114,13 @@ async function openWithBridge(url: string): Promise<LinkOpenResult> {
   return open ? open(url) : { ok: false }
 }
 
-export function formatAttachmentSize(bytes: number | undefined): string | null {
-  if (bytes === undefined || !Number.isFinite(bytes) || bytes < 0) return null
-  if (bytes < 1024) return `${Math.round(bytes)} B`
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
-  const megabytes = bytes / (1024 * 1024)
-  return `${megabytes < 10 ? megabytes.toFixed(1) : Math.round(megabytes)} MB`
-}
+export { formatAttachmentSize }
 
 export function attachmentTypeLabel(mimeType: string | undefined): string | null {
   if (!mimeType) return null
   const subtype = mimeType.split(';')[0]!.split('/')[1] ?? ''
   const label = subtype.replace(/^(?:x-|vnd\.)/u, '').split(/[+.]/u)[0]!.replace(/[^a-z0-9-]/giu, '').slice(0, 12).toUpperCase()
-  return label || 'File'
+  return label || i18n._(msg({ message: 'File', comment: 'An attachment\'s type when its file type has no short name.' }))
 }
 
 interface LinkActions {
@@ -152,13 +162,85 @@ function highlight(code: string, language: string | undefined, highlighter: High
  */
 export interface CodeBlockCut { readonly keep: 'start' | 'end'; readonly line: string; readonly status: ReactNode }
 
-export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEnd = false }: {
+type RunState = 'idle' | 'starting' | 'ran'
+
+/**
+ * One Run control's state: idle, starting while the shell is created, then ran once main has typed the command.
+ * A shell that could not start goes back to idle; the drawer's notice says why. There is no pass or fail per command:
+ * a terminal reports only its shell's exit.
+ */
+function useRunState(run: RunCommand | undefined, command: string | null): [RunState, () => void] {
+  const [state, setState] = useState<RunState>('idle')
+  const live = useRef(true)
+  useEffect(() => { live.current = true; return () => { live.current = false } }, [])
+  const press = useCallback(() => {
+    if (!run || command === null || state === 'starting') return
+    setState('starting')
+    void run(command).catch(() => false).then(started => { if (live.current) setState(started ? 'ran' : 'idle') })
+  }, [run, command, state])
+  return [state, press]
+}
+
+/** What each Run control says in each state: the inline button's words (its name adds the command), and a block's. */
+const COMMAND_NOTE = '{command} is a shell command from the reply, shown as written.'
+const RUN_LABEL: Readonly<Record<RunState, { readonly text: MessageDescriptor; readonly name: MessageDescriptor }>> = {
+  idle: { text: msg`Run in terminal`, name: msg({ message: 'Run in terminal: {command}', comment: COMMAND_NOTE }) },
+  starting: { text: msg`Starting…`, name: msg({ message: 'Starting…: {command}', comment: COMMAND_NOTE }) },
+  ran: { text: msg`Run again`, name: msg({ message: 'Run again: {command}', comment: COMMAND_NOTE }) },
+}
+const BLOCK_RUN: Readonly<Record<RunState, { readonly text: MessageDescriptor; readonly name: MessageDescriptor; readonly icon: ReactNode }>> = {
+  idle: { text: msg({ message: 'Run', comment: 'Runs a code block\'s shell command in a new terminal.' }), name: msg`Run in terminal`, icon: <Play size={13} aria-hidden="true" /> },
+  starting: { text: msg`Starting…`, name: msg`Starting in terminal…`, icon: <span className="run-command__spinner" aria-hidden="true" /> },
+  ran: { text: msg`Run again`, name: msg`Run again in terminal`, icon: <Check size={14} aria-hidden="true" /> },
+}
+
+/** The element whose edges cut off what overflows it: the transcript's scroller, or a table that scrolls sideways. */
+function clippingAncestor(element: HTMLElement): HTMLElement | null {
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    const style = getComputedStyle(node)
+    if (/auto|scroll|hidden|clip/u.test(`${style.overflowX} ${style.overflowY}`)) return node
+  }
+  return null
+}
+
+/** The gap between the command's chip and its Run button, as in the prototype. */
+const RUN_GAP_PX = 7
+
+/**
+ * Inline code that reads as a command: Run floats above its start on pointing or keyboard focus, covering none of it,
+ * or below it when the transcript's top or a table's edge would cut it off, as Add to prompt does.
+ */
+function RunnableInline({ command, run, children }: { readonly command: string; readonly run: RunCommand; readonly children?: ReactNode }): ReactNode {
+  const [state, press] = useRunState(run, command)
+  const { i18n } = useLingui()
+  const [below, setBelow] = useState(false)
+  const root = useRef<HTMLSpanElement>(null)
+  const place = (): void => {
+    const element = root.current, chip = element?.querySelector('code'), button = element?.querySelector<HTMLElement>('.run-command__button')
+    if (!element || !chip || !button) return
+    const frame = clippingAncestor(element)
+    setBelow(flipsBelow(chip.getBoundingClientRect().top, button.offsetHeight, frame ? frame.getBoundingClientRect().top : 0, RUN_GAP_PX))
+  }
+  return <span ref={root} className="run-command" data-state={state} data-place={below ? 'below' : undefined} onPointerEnter={place} onFocus={place}>
+    <span className="run-command__anchor"><button type="button" className="run-command__button tt-focusable" aria-label={i18n._({ ...RUN_LABEL[state].name, values: { command } })}
+      aria-disabled={state === 'starting' || undefined} onClick={press}>
+      {state === 'starting' ? <span className="run-command__spinner" aria-hidden="true" /> : <Play size={11} aria-hidden="true" />}<span>{i18n._(RUN_LABEL[state].text)}</span>
+    </button></span>
+    <code>{children}</code>
+    {state === 'ran' ? <span className="run-command__ran" aria-hidden="true"><Check size={12} /></span> : null}
+  </span>
+}
+
+export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEnd = false, run }: {
   code: string; language: string | undefined
   readonly cut?: CodeBlockCut | undefined
+  /** Offers Run beside Copy when the block holds shell input (ADR-0139). */
+  readonly run?: RunCommand | undefined
   /** Opens scrolled to its end, and keeps the same lines in view as the code above them grows, as command output does. */
   readonly anchorEnd?: boolean | undefined
 }) {
-  const [feedback, showFeedback] = useTransientFlag()
+  // The flag holds what happened, and its words are read when shown, in the interface language.
+  const [outcome, showOutcome] = useTransientFlag<'copied' | 'failed'>()
   const [highlighter, setHighlighter] = useState(highlighterNow)
   const scroll = useRef<HTMLPreElement>(null)
   /** How far the reader is from the end, kept so the whole body lands with the same lines in view. */
@@ -174,20 +256,31 @@ export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEn
     if (anchorEnd && pre) pre.scrollTop = Math.max(0, pre.scrollHeight - pre.clientHeight - fromEnd.current)
   }, [anchorEnd, code, cut?.keep])
   const highlighted = useMemo(() => highlight(code, language, highlighter), [code, language, highlighter])
-  const label = language ? language.slice(0, 24) : 'Code'
-  const copy = (): void => { if (!cut) void writeClipboard(code).then(() => showFeedback('Copied'), () => showFeedback('Copy failed')) }
+  const command = run && !cut ? runnableBlock(code, language) : null
+  const [runState, pressRun] = useRunState(run, command)
+  const { i18n, t } = useLingui()
+  const label = language ? language.slice(0, 24) : t({ message: 'Code', comment: 'A code block\'s label when it names no language.' })
+  const copied = outcome === 'copied'
+  const feedback = outcome === null ? null : copied ? t`Copied` : t`Copy failed`
+  const copy = (): void => { if (!cut) void writeClipboard(code).then(() => showOutcome('copied'), () => showOutcome('failed')) }
   const marker = cut ? <span className="activity-body__cut">{cut.line}</span> : null
   return <div className="rich-code" data-language={language} data-cut={cut?.keep}>
     <div className="rich-code__bar">
       <span className="rich-code__language">{label}</span>
       <span className="rich-code__status" role="status" aria-live="polite">{feedback || cut?.status}</span>
-      <button type="button" className="rich-code__copy tt-focusable" data-copied={feedback === 'Copied' || undefined} aria-disabled={cut ? true : undefined}
-        aria-label={cut ? `Copy ${language ? `${label} ` : ''}code, once the rest arrives` : `Copy ${language ? `${label} ` : ''}code`}
-        title={cut ? 'Copy works once the rest arrives' : 'Copy code'} onClick={copy}>
-        {feedback === 'Copied' ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
+      {command !== null ? <button type="button" className="rich-code__run tt-focusable" data-state={runState} aria-disabled={runState === 'starting' || undefined}
+        aria-label={i18n._(BLOCK_RUN[runState].name)} title={t`Run in a new terminal drawer shell`} onClick={pressRun}>
+        {BLOCK_RUN[runState].icon}<span>{i18n._(BLOCK_RUN[runState].text)}</span>
+      </button> : null}
+      <button type="button" className="rich-code__copy tt-focusable" data-copied={copied || undefined} aria-disabled={cut ? true : undefined}
+        aria-label={cut
+          ? language ? t({ message: `Copy ${label} code, once the rest arrives`, comment: '{label} is the code\'s language, such as TypeScript.' }) : t`Copy code, once the rest arrives`
+          : language ? t({ message: `Copy ${label} code`, comment: '{label} is the code\'s language, such as TypeScript.' }) : t`Copy code`}
+        title={cut ? t`Copy works once the rest arrives` : t`Copy code`} onClick={copy}>
+        {copied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
       </button>
     </div>
-    <pre ref={scroll} className="rich-code__scroll" tabIndex={0} aria-label={`${label} code block`}
+    <pre ref={scroll} className="rich-code__scroll" tabIndex={0} aria-label={t({ message: `${label} code block`, comment: '{label} is the code\'s language, such as TypeScript, or the word "Code".' })}
       onScroll={anchorEnd ? event => { const pre = event.currentTarget; fromEnd.current = pre.scrollHeight - pre.clientHeight - pre.scrollTop } : undefined}>
       <code className={language ? `hljs language-${language}` : 'hljs'}>{cut?.keep === 'end' ? <>{marker}{'\n'}</> : null}{highlighted}{cut?.keep === 'start' ? <>{'\n'}{marker}</> : null}</code>
     </pre>
@@ -201,16 +294,26 @@ function DiagramBlock({ source, start, end }: { source: string; start: number | 
   return <MermaidDiagram source={source} complete={complete} />
 }
 
+/** A fenced block in Markdown. Run waits for the closing fence, so a block still being written never runs half a command. */
+function MarkdownCodeBlock({ source, language, start, end }: { source: string; language: string | undefined; start: number | undefined; end: number | undefined }): ReactNode {
+  const run = useRunCommand()
+  const { text, streaming } = useContext(MarkdownSourceContext)
+  const complete = !streaming || (start !== undefined && end !== undefined && isFenceClosed(text.slice(start, end)))
+  return <CodeBlock code={source} language={language} run={complete ? run : undefined} />
+}
+
 function MarkdownLink({ href, title, children }: { href?: string | undefined; title?: string | undefined; children?: ReactNode }): ReactNode {
+  const { t } = useLingui()
   const { open, menu, reveal } = useContext(LinkContext)
   const url = safeLinkUrl(href)
   const file = !url && reveal ? localFilePath(href) : null
+  const manager = fileManager()
   // No href: a file path never becomes something the window could navigate to.
-  if (file && reveal) return <a className="rich-link tt-focusable" role="link" tabIndex={0} title={`Show in ${fileManager()}: ${file}`}
-    aria-label={`Show ${file} in ${fileManager()}`}
+  if (file && reveal) return <a className="rich-link tt-focusable" role="link" tabIndex={0} title={t({ message: `Show in ${manager}: ${ph({ file: leftToRight(file) })}`, comment: '{manager} is File Explorer, Finder or the file manager; {file} is a path.' })}
+    aria-label={t({ message: `Show ${ph({ file: leftToRight(file) })} in ${manager}`, comment: '{manager} is File Explorer, Finder or the file manager; {file} is a path.' })}
     onClick={() => reveal(file)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); reveal(file) } }}>{children}</a>
   // The reason is read with the text, not only on hover, so keyboard and screen reader users get it too.
-  if (!url) return <span className="rich-link rich-link--inert" title={href ? `Not a web link: ${href}` : undefined}>{children}{href ? <span className="tt-visually-hidden"> (link not opened: not a web address)</span> : null}</span>
+  if (!url) return <span className="rich-link rich-link--inert" title={href ? t`Not a web link: ${href}` : undefined}>{children}{href ? <span className="tt-visually-hidden">{' '}{t`(link not opened: not a web address)`}</span> : null}</span>
   return <a className="rich-link tt-focusable" href={url} rel="noopener noreferrer" target="_blank" title={title || url}
     onClick={event => { event.preventDefault(); open(url) }}
     onAuxClick={event => event.preventDefault()}
@@ -229,10 +332,11 @@ function MarkdownLink({ href, title, children }: { href?: string | undefined; ti
 }
 
 function BlockedImage({ src, alt }: { src?: string | undefined; alt?: string | undefined }): ReactNode {
+  const { t } = useLingui()
   const url = safeLinkUrl(src)
   const host = url && !url.startsWith('mailto:') ? new URL(url).host : null
-  return <span className="rich-image-blocked" role="img" aria-label={`Image not loaded${alt ? `: ${alt}` : ''}`}>
-    <ImageIcon size={14} aria-hidden="true" /><span>{alt || 'Image'}</span><small>{host ? `not loaded from ${host}` : 'not loaded'}</small>
+  return <span className="rich-image-blocked" role="img" aria-label={alt ? t`Image not loaded: ${alt}` : t`Image not loaded`}>
+    <ImageIcon size={14} aria-hidden="true" /><span>{alt || t`Image`}</span><small>{host ? t`not loaded from ${host}` : t({ message: 'not loaded', comment: 'Under an image an agent linked, which Sotto does not load.' })}</small>
   </span>
 }
 
@@ -241,12 +345,40 @@ const heading = (level: 3 | 4 | 5 | 6, rank: number) => function Heading({ child
   return <Tag className={`rich-heading rich-heading--${rank}`}>{children}</Tag>
 }
 
+// Inline code inside a link stays plain, so a press does one thing.
+const InsideLink = createContext(false)
+
+/**
+ * Inline code that is a whole home, drive or absolute path shows that file when pressed, as a file link does. A
+ * `/`-rooted path needs two parts, so a slash command such as `/review` stays code. Otherwise a span that reads as a
+ * shell command offers Run (ADR-0139); a lone path stays a file link, so a press still does one thing.
+ */
+function InlineCode({ node, children }: { node?: Element | undefined; children?: ReactNode }): ReactNode {
+  const { reveal } = useContext(LinkContext)
+  const run = useRunCommand()
+  const insideLink = useContext(InsideLink)
+  const text = typeof children === 'string' ? children.trim() : ''
+  const file = reveal && !insideLink && /^(?:~[\\/]|\/[^/\s]+\/|[a-z]:[\\/])\S*$/iu.test(text) ? localFilePath(text) : null
+  const { t } = useLingui()
+  // What runs is the span's own text, the same characters the reply shows.
+  const command = !file && run && !insideLink ? runnableInline(hastText(node)) : null
+  if (run && command !== null) return <RunnableInline command={command} run={run}>{children}</RunnableInline>
+  if (!file || !reveal) return <code>{children}</code>
+  const manager = fileManager()
+  return <code className="rich-link tt-focusable" role="link" tabIndex={0} title={t({ message: `Show in ${manager}: ${ph({ file: leftToRight(file) })}`, comment: '{manager} is File Explorer, Finder or the file manager; {file} is a path.' })}
+    aria-label={t({ message: `Show ${ph({ file: leftToRight(file) })} in ${manager}`, comment: '{manager} is File Explorer, Finder or the file manager; {file} is a path.' })}
+    onClick={() => reveal(file)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); reveal(file) } }}>{children}</code>
+}
+
 // Every URL-bearing element is rendered by a component below, which vets it before it reaches the DOM.
 const urlTransform: UrlTransform = (url, key, node) =>
   (node.tagName === 'a' && key === 'href') || (node.tagName === 'img' && key === 'src') ? url : defaultUrlTransform(url)
 
 const components: Components = {
-  a: ({ href, title, children }) => <MarkdownLink href={href} title={title}>{children}</MarkdownLink>,
+  a: ({ href, title, children }) => <InsideLink.Provider value={true}><MarkdownLink href={href} title={title}>{children}</MarkdownLink></InsideLink.Provider>,
+  // Also called for a fenced block's own <code>, which `pre` below then ignores: that text always ends in the newline
+  // Markdown adds to fenced code, so `runnableInline` refuses it and only inline spans offer Run.
+  code: ({ node, children }) => <InlineCode node={node}>{children}</InlineCode>,
   img: ({ src, alt }) => <BlockedImage src={typeof src === 'string' ? src : undefined} alt={alt} />,
   pre: ({ node }) => {
     const code = node?.children.find((child): child is Element => child.type === 'element' && child.tagName === 'code')
@@ -254,11 +386,13 @@ const components: Components = {
     const language = classes.find(name => name.startsWith('language-'))?.slice('language-'.length)
     const source = hastText(code).replace(/\n$/u, '')
     if (language?.toLowerCase() === 'mermaid') return <DiagramBlock source={source} start={node?.position?.start.offset} end={node?.position?.end.offset} />
-    return <CodeBlock code={source} language={language} />
+    return <MarkdownCodeBlock source={source} language={language} start={node?.position?.start.offset} end={node?.position?.end.offset} />
   },
-  table: ({ children }) => <div className="rich-table tt-focusable" role="region" aria-label="Table" tabIndex={0}><table>{children}</table></div>,
+  table: ({ children }) => <div className="rich-table tt-focusable" role="region" aria-label={i18n._(msg`Table`)} tabIndex={0}><table>{children}</table></div>,
   input: ({ type, checked }) => type === 'checkbox'
-    ? <input className="rich-task" type="checkbox" checked={checked === true} disabled readOnly aria-label={checked ? 'Done' : 'Not done'} />
+    ? <input className="rich-task" type="checkbox" checked={checked === true} disabled readOnly aria-label={checked
+      ? i18n._(msg({ message: 'Done', context: 'ticked task', comment: 'A ticked task in a Markdown task list.' }))
+      : i18n._(msg({ message: 'Not done', comment: 'An unticked task in a Markdown task list.' }))} />
     : null,
   h1: heading(3, 1), h2: heading(4, 2), h3: heading(5, 3), h4: heading(6, 4), h5: heading(6, 5), h6: heading(6, 6),
 }
@@ -329,6 +463,8 @@ export function splitStreamingMarkdown(text: string): string[] {
 
 /** One parse unit. Memoized so an appended chunk only re-parses the block it lands in. */
 const MarkdownSegment = memo(function MarkdownSegment({ source, streaming }: { source: string; streaming: boolean }): ReactNode {
+  // Its tables and task boxes are named in the interface language, so it draws again when that changes.
+  useInterfaceLanguageState()
   // Node offsets are relative to this segment, so a fenced diagram is told its own source.
   const markdownSource = useMemo(() => ({ text: source, streaming }), [source, streaming])
   return <MarkdownSourceContext.Provider value={markdownSource}>
@@ -337,11 +473,15 @@ const MarkdownSegment = memo(function MarkdownSegment({ source, streaming }: { s
 })
 
 /** Renders one message's text as safe Markdown. Raw HTML stays literal text; only vetted web links are links. */
-export const MessageContent = memo(function MessageContent({ text, streaming = false, onOpenLink }: MessageContentProps): ReactNode {
+export const MessageContent = memo(function MessageContent({ text, streaming = false, onOpenLink, commands = false }: MessageContentProps): ReactNode {
+  const { t } = useLingui()
+  const runCommand = useRunCommand()
   const [failedLink, setFailedLink] = useState<string | null>(null)
-  const [linkNotice, setLinkNotice] = useState<string | null>(null)
+  // Sotto's words kept as messages and read when shown; main's as written.
+  const [linkNotice, setLinkNotice] = useState<LaterWords | null>(null)
   const [linkMenu, setLinkMenu] = useState<{ url: string; anchor: HTMLElement; at: { x: number; y: number } } | null>(null)
-  const [copyFeedback, showCopyFeedback] = useTransientFlag()
+  const [copyOutcome, showCopyOutcome] = useTransientFlag<'copied' | 'failed'>()
+  const copyFeedback = copyOutcome === 'copied' ? t`Link copied` : copyOutcome === 'failed' ? t`Could not copy the link` : null
   const router = useWebLinkRouter()
   const revealLinks = useOwlFeature('reveal-linked-files')
   const opener = useRef<(url: string, destination?: WebLinkDestination) => Promise<WebLinkResult> | WebLinkResult>(openWithBridge)
@@ -360,51 +500,56 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
     reveal: revealLinks && router.revealFile ? path => {
       setFailedLink(null)
       setLinkNotice(null)
-      void router.revealFile?.(path).then(result => setLinkNotice(result.message ?? null), () => setLinkNotice('Sotto could not show this file. Nothing was opened.'))
+      void router.revealFile?.(path).then(result => setLinkNotice(result.message ?? null), () => setLinkNotice(msg`Sotto could not show this file. Nothing was opened.`))
     } : undefined,
   }), [router, revealLinks])
   const menuItems = (url: string): LinkMenuItem[] => {
     const web = !url.startsWith('mailto:')
     return [
-      ...(web && router.canEmbed && !onOpenLink ? [{ id: 'embedded', label: 'Open in Sotto browser', run: () => context.open(url, 'embedded') }] : []),
-      { id: 'external', label: web ? 'Open in system browser' : 'Open in mail app', run: () => context.open(url, 'external') },
-      { id: 'copy', label: web ? 'Copy link' : 'Copy address', run: () => { void writeClipboard(web ? url : linkLabel(url)).then(() => showCopyFeedback('Link copied'), () => showCopyFeedback('Could not copy the link')) } },
+      ...(web && router.canEmbed && !onOpenLink ? [{ id: 'embedded', label: t`Open in Sotto browser`, run: () => context.open(url, 'embedded') }] : []),
+      { id: 'external', label: web ? t`Open in system browser` : t`Open in mail app`, run: () => context.open(url, 'external') },
+      { id: 'copy', label: web ? t`Copy link` : t`Copy address`, run: () => { void writeClipboard(web ? url : linkLabel(url)).then(() => showCopyOutcome('copied'), () => showCopyOutcome('failed')) } },
     ]
   }
   const closeLinkMenu = useMemo(() => () => setLinkMenu(null), [])
   const copyFailedLink = (): void => {
     if (!failedLink) return
-    void writeClipboard(failedLink).then(() => { setFailedLink(null); showCopyFeedback('Link copied') }, () => showCopyFeedback('Could not copy the link'))
+    void writeClipboard(failedLink).then(() => { setFailedLink(null); showCopyOutcome('copied') }, () => showCopyOutcome('failed'))
   }
   // A deferred copy can be repeatedly interrupted by incoming snapshots, leaving
   // a running answer stale even after its latest text has reached the renderer.
   // A finished message is one document; a running one re-parses only its last block.
   const segments = useMemo(() => streaming ? splitStreamingMarkdown(text) : [text], [text, streaming])
-  return <LinkContext.Provider value={context}>
+  const failedHost = failedLink ? linkLabel(failedLink) : ''
+  const menuHost = linkMenu ? linkLabel(linkMenu.url) : ''
+  return <LinkContext.Provider value={context}><RunCommandContext.Provider value={commands ? runCommand : undefined}>
     <div className="rich-message" data-streaming={streaming || undefined} aria-busy={streaming || undefined}>
       {segments.map((source, index) => <MarkdownSegment key={index} source={source} streaming={streaming && index === segments.length - 1} />)}
       <div className="rich-message__feedback" role="status" aria-live="polite">
-        {failedLink ? <><span>{linkNotice ?? `Could not open ${linkLabel(failedLink)}.`}</span><button type="button" className="rich-message__feedback-action tt-focusable" onClick={copyFailedLink}>Copy link</button></> : linkNotice ?? copyFeedback}
+        {failedLink ? <><span>{shownWords(linkNotice) ?? t({ message: `Could not open ${failedHost}.`, comment: '{failedHost} is a web site\'s host name or an email address.' })}</span><button type="button" className="rich-message__feedback-action tt-focusable" onClick={copyFailedLink}>{t`Copy link`}</button></> : shownWords(linkNotice) ?? copyFeedback}
       </div>
     </div>
-    {linkMenu ? <LinkMenu at={linkMenu.at} label={`Link: ${linkLabel(linkMenu.url)}`} items={menuItems(linkMenu.url)} returnFocus={linkMenu.anchor} onClose={closeLinkMenu} /> : null}
-  </LinkContext.Provider>
+    {linkMenu ? <LinkMenu at={linkMenu.at} label={t`Link: ${menuHost}`} items={menuItems(linkMenu.url)} returnFocus={linkMenu.anchor} onClose={closeLinkMenu} /> : null}
+  </RunCommandContext.Provider></LinkContext.Provider>
 })
 
 /** The name a tile shows: bidirectional controls dropped, so "gpj.exe" cannot read as "exe.jpg". */
-const attachmentName = (attachment: MessageAttachment): string => attachment.name.replace(BIDI_CONTROLS, '') || 'Attachment'
-const attachmentDetails = (attachment: MessageAttachment): string =>
-  [attachmentTypeLabel(attachment.mimeType), formatAttachmentSize(attachment.sizeBytes)].filter(Boolean).join(' · ')
+const attachmentName = (attachment: MessageAttachment): string => attachment.name.replace(BIDI_CONTROLS, '') || i18n._(msg({ message: 'Attachment', comment: 'An attachment with no name.' }))
+const attachmentDetails = (attachment: MessageAttachment, anyFile = false): string =>
+  [anyFile ? fileTypeLabel(attachment.mimeType, attachmentName(attachment)) : attachmentTypeLabel(attachment.mimeType), formatAttachmentSize(attachment.sizeBytes)].filter(Boolean).join(' · ')
 
 /**
  * One attachment. An image that can be shown is a button: a press opens it large, and right-click, Shift+F10 or the
  * ContextMenu key offers Open image and Copy image.
  */
-function AttachmentTile({ attachment, origin, onOpen, onShown }: {
+function AttachmentTile({ attachment, origin, onOpen, onShown, anyFile }: {
   attachment: MessageAttachment; origin?: AttachmentOrigin | undefined; onOpen: (from: HTMLElement) => void
   /** Whether the tile is showing its image, which is what puts it in the viewer. */
   onShown: (id: string, shown: boolean) => void
+  /** Once any file can be attached (ADR-0131), a file's tile names its type and claims no preview it could never have. */
+  anyFile: boolean
 }): ReactNode {
+  const { t } = useLingui()
   const { source, awaiting } = useAttachmentSource(attachment, origin)
   const [failed, setFailed] = useState(false)
   useEffect(() => setFailed(false), [source])
@@ -414,19 +559,20 @@ function AttachmentTile({ attachment, origin, onOpen, onShown }: {
   const [feedback, copyImage] = useCopyImage()
   const frame = useRef<HTMLButtonElement>(null)
   const name = attachmentName(attachment)
-  const isImage = attachment.mimeType?.startsWith('image/') ?? false
-  const details = attachmentDetails(attachment)
+  // Once any file can be attached, only the four raster types are images: an SVG, a BMP or a HEIC is a file (ADR-0131).
+  const isImage = attachment.mimeType ? anyFile ? isImageAttachment(attachment.mimeType) : attachment.mimeType.startsWith('image/') : false
+  const details = attachmentDetails(attachment, anyFile)
   if (source && !failed) {
     const openMenu = (point: { readonly x: number; readonly y: number } | null): void => {
       const rect = frame.current?.getBoundingClientRect()
       setMenuAt(point ?? { x: rect?.left ?? 0, y: (rect?.bottom ?? 0) + 4 })
     }
     const menuItems: LinkMenuItem[] = [
-      { id: 'open', label: 'Open image', run: () => { if (frame.current) onOpen(frame.current) } },
-      { id: 'copy', label: 'Copy image', run: () => copyImage(source) },
+      { id: 'open', label: t`Open image`, run: () => { if (frame.current) onOpen(frame.current) } },
+      { id: 'copy', label: t`Copy image`, run: () => copyImage(source) },
     ]
     return <figure className="rich-attachment rich-attachment--image" role="listitem">
-      <button type="button" ref={frame} className="rich-attachment__frame tt-focusable" aria-label={`Open ${name}`} title="Open image · Right-click to copy"
+      <button type="button" ref={frame} className="rich-attachment__frame tt-focusable" aria-label={t({ message: `Open ${name}`, comment: '{name} is an attached image\'s file name.' })} title={t`Open image · Right-click to copy`}
         aria-haspopup="menu" aria-expanded={menuAt ? true : undefined}
         onClick={event => onOpen(event.currentTarget)}
         onContextMenu={event => {
@@ -443,12 +589,13 @@ function AttachmentTile({ attachment, origin, onOpen, onShown }: {
       </button>
       <figcaption><span className="rich-attachment__name" title={name}>{name}</span>
         {(feedback ?? details) && <span className="rich-attachment__meta" role="status" aria-live="polite">{feedback ?? details}</span>}</figcaption>
-      {menuAt ? <LinkMenu at={menuAt} label={`Image: ${name}`} items={menuItems} returnFocus={frame.current} onClose={() => setMenuAt(null)} /> : null}
+      {menuAt ? <LinkMenu at={menuAt} label={t`Image: ${name}`} items={menuItems} returnFocus={frame.current} onClose={() => setMenuAt(null)} /> : null}
     </figure>
   }
-  const reason = !attachment.mimeType || awaiting ? null : !isImage ? 'No preview for this file type' : failed ? 'Preview could not be shown' : 'Preview unavailable'
+  const reason = !attachment.mimeType || awaiting ? null : !isImage ? (anyFile ? null : t`No preview for this file type`) : failed ? t`Preview could not be shown` : t`Preview unavailable`
   return <div className="rich-attachment rich-attachment--file" role="listitem">
-    {isImage || !attachment.mimeType ? <ImageIcon size={16} aria-hidden="true" /> : <FileText size={16} aria-hidden="true" />}
+    {anyFile && attachment.mimeType && !isImage ? <AttachmentKindIcon kind={attachmentKind(name, attachment.mimeType)} size={16} />
+      : isImage || !attachment.mimeType ? <ImageIcon size={16} aria-hidden="true" /> : <FileText size={16} aria-hidden="true" />}
     <span className="rich-attachment__text">
       <span className="rich-attachment__name" title={name}>{name}</span>
       {(details || reason) && <span className="rich-attachment__meta">{[details, reason].filter(Boolean).join(' · ')}</span>}
@@ -457,7 +604,12 @@ function AttachmentTile({ attachment, origin, onOpen, onShown }: {
 }
 
 /** Submitted images with their name, type and size; metadata alone when no trusted preview exists. */
-export function AttachmentPreviews({ attachments, notice, origin }: AttachmentPreviewsProps): ReactNode {
+export function AttachmentPreviews({ attachments: given, notice, origin }: AttachmentPreviewsProps): ReactNode {
+  useInterfaceLanguageState()
+  const anyFile = useOwlFeature('attach-any-file')
+  // Images come first, then every other file (ADR-0131).
+  const attachments = useMemo(() => anyFile ? [...given.filter(item => attachmentKind(item.name, item.mimeType) === 'image' || !item.mimeType),
+    ...given.filter(item => item.mimeType && attachmentKind(item.name, item.mimeType) !== 'image')] : given, [anyFile, given])
   const [open, setOpen] = useState<{ readonly id: string; readonly from: HTMLElement } | null>(null)
   const [shown, setShown] = useState<ReadonlySet<string>>(() => new Set())
   const onShown = useCallback((id: string, showing: boolean) => setShown(current => {
@@ -468,11 +620,12 @@ export function AttachmentPreviews({ attachments, notice, origin }: AttachmentPr
   }), [])
   if (!attachments.length && !notice) return null
   // The viewer steps through the message's images that its tiles are showing; one whose bytes are gone stays out.
+  const count = attachments.length
   const images = attachments.filter(attachment => shown.has(attachment.id))
-    .map(attachment => ({ id: attachment.id, preview: attachment.preview, name: attachmentName(attachment), details: attachmentDetails(attachment) }))
+    .map(attachment => ({ id: attachment.id, preview: attachment.preview, name: attachmentName(attachment), details: attachmentDetails(attachment, anyFile) }))
   return <div className="rich-attachments">
-    {!!attachments.length && <div className="rich-attachments__list" role="list" aria-label={attachments.length === 1 ? 'Attachment' : `${attachments.length} attachments`}>
-      {attachments.map(attachment => <AttachmentTile key={attachment.id} attachment={attachment} origin={origin} onShown={onShown} onOpen={from => setOpen({ id: attachment.id, from })} />)}
+    {!!attachments.length && <div className="rich-attachments__list" role="list" aria-label={plural(count, { one: 'Attachment', other: '# attachments' })}>
+      {attachments.map(attachment => <AttachmentTile key={attachment.id} attachment={attachment} origin={origin} onShown={onShown} anyFile={anyFile} onOpen={from => setOpen({ id: attachment.id, from })} />)}
     </div>}
     {notice && <p className="rich-attachments__notice" role="note">{notice}</p>}
     {open && images.some(image => image.id === open.id)

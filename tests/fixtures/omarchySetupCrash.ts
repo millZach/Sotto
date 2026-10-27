@@ -1,4 +1,6 @@
 // Runs only under the private process-integration fixture; no Electron or real desktop commands.
+// Main's own code runs here, so English is active first, as it is in main (tests/fixtures/desktopMainBundle.ts).
+import '../../src/main/interfaceLanguage'
 import { readFile, mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { OmarchySetup, type OmarchySetupOptions } from '../../src/main/omarchy/setup'

@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BranchToolbar } from '../../../src/renderer/src/agents/BranchToolbar'
 import { branchLabel, chordClaimed, chordMatches, createRefName, offersCreate, parseAccelerator, pickOutcome, pullRequestTitle, refBadges, switchFailure, toolbarApplies, workspaceLabel, workspaceLocked, workspaceOptions, type ToolbarThread } from '../../../src/renderer/src/agents/branchToolbar.logic'
 import type { ThreadRow } from '../../../src/renderer/src/agents/threadFacts'
+import { shownWords } from '../../../src/renderer/src/agents/interfaceWords'
 import { defaultAgentConfiguration, type AgentCommand, type AgentState, type AgentThread } from '../../../src/shared/agents'
 import type { GitRef, GitRefsPage } from '../../../src/shared/gitRefs'
 import type { GitStatus } from '../../../src/shared/gitStatus'
@@ -106,11 +107,12 @@ describe('branch toolbar logic', () => {
     expect(branchLabel(thread({ worktree: { mode: 'independent', status: 'pending', git: { ...git, branch: 'main' } } }))).toBe('From origin/main')
   })
   it('decides what a pick does before anything is sent', () => {
+    const refusal = (outcome: ReturnType<typeof pickOutcome>): string | null => outcome.kind === 'refuse' ? shownWords(outcome.reason) : null
     expect(pickOutcome(ref('feature'), thread())).toEqual({ kind: 'switch', ref: 'feature' })
     expect(pickOutcome(ref('origin/x', { remote: 'origin' }), thread())).toEqual({ kind: 'switch', ref: 'origin/x' })
     expect(pickOutcome(ref('main', { current: true }), thread())).toMatchObject({ kind: 'refuse' })
     expect(pickOutcome(ref('feature', { worktreePath: 'C:/wt' }), thread())).toEqual({ kind: 'repoint', path: 'C:/wt' })
-    expect(pickOutcome(ref('feature', { worktreePath: 'C:/wt' }), thread({ nativeSessionStarted: true }))).toMatchObject({ kind: 'refuse', reason: expect.stringContaining('another worktree') })
+    expect(refusal(pickOutcome(ref('feature', { worktreePath: 'C:/wt' }), thread({ nativeSessionStarted: true })))).toContain('another worktree')
     const draft = thread({ worktree: { mode: 'independent', status: 'pending', startFromOrigin: false } })
     expect(pickOutcome(ref('release'), draft)).toEqual({ kind: 'record-base', baseBranch: 'release', startFromOrigin: false })
     expect(pickOutcome(ref('origin/release', { remote: 'origin' }), draft)).toEqual({ kind: 'record-base', baseBranch: 'release', startFromOrigin: true })
@@ -120,7 +122,7 @@ describe('branch toolbar logic', () => {
     const previous = thread({ worktree: { mode: 'independent', status: 'pending', existingWorktreePath: 'C:/wt/other', branch: 'feat/other' } })
     expect(branchLabel(previous)).toBe('feat/other')
     expect(workspaceLabel(previous)).toBe('Previous worktree (feat/other)')
-    expect(pickOutcome(ref('release'), previous)).toMatchObject({ kind: 'refuse', reason: expect.stringContaining('feat/other') })
+    expect(refusal(pickOutcome(ref('release'), previous))).toContain('feat/other')
     expect(pickOutcome(ref('feat/third', { worktreePath: 'C:/wt/third' }), previous)).toEqual({ kind: 'repoint', path: 'C:/wt/third' })
   })
   it('offers Create new ref for a name nothing lists, dashes for whitespace, and never for a bad name', () => {
@@ -136,9 +138,9 @@ describe('branch toolbar logic', () => {
     expect(refBadges(ref('main', { current: true, isDefault: true, worktreePath: 'C:/wt' }))).toEqual(['current', 'worktree', 'default'])
     expect(refBadges(ref('origin/main', { remote: 'origin', isDefault: true }))).toEqual(['remote', 'default'])
     expect(pullRequestTitle({ number: 12, title: 'Ship it', url: 'https://github.com/o/r/pull/12', state: 'open', draft: false })).toBe('PR #12 - Open: Ship it')
-    expect(switchFailure('error: Your local changes would be overwritten')).toBe('Failed to switch ref. error: Your local changes would be overwritten')
-    expect(switchFailure('Failed to switch ref. pathspec did not match')).toBe('Failed to switch ref. pathspec did not match')
-    expect(switchFailure(null)).toBe('Failed to switch ref.')
+    expect(shownWords(switchFailure('error: Your local changes would be overwritten'))).toBe('Failed to switch ref. error: Your local changes would be overwritten')
+    expect(shownWords(switchFailure('Failed to switch ref. pathspec did not match'))).toBe('Failed to switch ref. pathspec did not match')
+    expect(shownWords(switchFailure(null))).toBe('Failed to switch ref.')
   })
   it('claims a chord only when the dictation hotkey does not already mean the same keys', () => {
     expect(parseAccelerator('CommandOrControl+Shift+Space', 'win32')).toEqual({ key: ' ', ctrl: true, shift: true, alt: false, meta: false })
@@ -151,6 +153,10 @@ describe('branch toolbar logic', () => {
     expect(chordMatches({ key: 'G', ctrlKey: true, shiftKey: true, altKey: false, metaKey: false }, 'mod+shift+g', 'win32')).toBe(true)
     expect(chordMatches({ key: 'G', ctrlKey: true, shiftKey: true, altKey: false, metaKey: false }, 'mod+shift+g', 'darwin')).toBe(false)
     expect(chordMatches({ key: 'g', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false }, 'mod+shift+g', 'win32')).toBe(false)
+    // Shift spells a digit as its symbol and Option a letter as another character; the physical key still matches.
+    expect(chordMatches({ key: '!', code: 'Digit1', ctrlKey: true, shiftKey: true, altKey: false, metaKey: false }, 'mod+shift+1', 'win32')).toBe(true)
+    expect(chordMatches({ key: 'å', code: 'KeyA', ctrlKey: false, shiftKey: false, altKey: true, metaKey: true }, 'mod+alt+a', 'darwin')).toBe(true)
+    expect(chordMatches({ key: '!', ctrlKey: true, shiftKey: true, altKey: false, metaKey: false }, 'mod+shift+1', 'win32')).toBe(false)
   })
 })
 

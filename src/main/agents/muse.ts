@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { version as appVersion } from '../../../package.json'
-import { agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread, type ProviderId } from '../../shared/agents'
+import { attachmentReferences, agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread, type ProviderId } from '../../shared/agents'
 import type { UsageTokens } from '../../shared/threadUsage'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
@@ -21,18 +21,21 @@ import { MUSE_CLI_VERSION, MUSE_MSP_VERSION, MuseRejected, MuseRpc, MuseTooOld, 
 import { needsPerson, unreadableRequest } from './nativeRequests'
 import { tokenCount } from './nativeUsage'
 import { ObservedUsage } from './observedUsage'
-import { parseMuseQuota, unavailableProviderQuota } from './providerQuota'
+import { exhaustedQuotaReset, parseMuseQuota, unavailableProviderQuota } from './providerQuota'
 import { OpenSessions } from './openSessions'
 import { verifyFileMentions } from './promptFiles'
 import { ProviderUnavailable } from './providerProblem'
 import { providerTakesNoSkills } from './providerSwitch'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
+import { AdapterThreadChanges, restOf } from './adapterThreadChanges'
+import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
 import { ReadsBeforeSend } from './readsBeforeSend'
 import { holdTurnEnd, markSendStage, type TurnEndTimings } from './sendStages'
 import { SessionReaper } from './sessionReaper'
 import type { BrowserAgentTools } from './browserAgentServer'
 import { ThreadMessageLog } from './threadMessageLog'
 import { scopedThreadServers, TOOL_WAIT_HEADER, type ScopedThreadTools, type ThreadMcpServer } from './threadToolServer'
+import { deliverAttachments, readBackUserText, withAttachedFilesNote } from './attachedFiles'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { markTurnActivity } from './turnActivity'
@@ -83,6 +86,10 @@ const aliasSchema = z.object({
   runtimeMode: museRuntimeModeSchema.optional(), pendingRuntimeMode: museRuntimeModeSchema.optional(),
   answeredRequestIds: z.array(z.string()).default([]),
   endedTurn: z.object({ turnId: z.string(), outcome: z.enum(['failed', 'interrupted']) }).optional(),
+  /** The command of a fork Sotto asked for and has not seen answered, so asking again cannot make a second copy. */
+  forkCommandId: z.string().optional(),
+  /** The messages Muse rebuilt into the history of the copy this thread runs on; already in Sotto's log, never read again. */
+  forkedMessages: z.array(z.string()).optional(),
 })
 type Alias = z.infer<typeof aliasSchema>
 const initializeSchema = z.looseObject({
@@ -120,6 +127,7 @@ const sessionResumeSchema = z.looseObject({
   session: museSessionSchema, history: historySchema, viewCursor: z.string().default(''),
   pendingRequests: z.array(z.looseObject({ kind: z.string() })).default([]),
 })
+const sessionForkSchema = z.looseObject({ session: museSessionSchema, history: historySchema })
 const turnStartSchema = z.looseObject({ turnId: z.string().min(1), disposition: z.string().default('started') })
 const listPendingSchema = z.looseObject({ approvals: z.array(museApprovalSchema).default([]), userInputs: z.array(museUserInputSchema).default([]) })
 const approvalResolvedSchema = z.looseObject({ sessionId: z.string().min(1), approvalId: z.string().min(1) })
@@ -188,6 +196,10 @@ const MUSE_PROFILE_REFUSALS: ReadonlySet<string> = new Set(['permission_profile_
 const MUSE_WATCHER_WITHOUT_TOOLS = 'This Muse cannot give Watcher its Sotto tools, so Watcher did not start. Nothing was sent. Update Muse to 1.4.7 or newer and connect it again, or choose a Codex, Claude Code or Grok Build model for Watcher.'
 const MUSE_WATCHER_REVIEWED = 'This Muse would let its own reviewer decide Watcher’s approvals instead of you, so Watcher did not start. Nothing was sent. Update Muse and connect it again, or choose a Codex, Claude Code or Grok Build model for Watcher.'
 const MUSE_WATCHER_UNPROVEN = 'This Muse cannot show that Watcher’s approvals stay with you, so Watcher did not start. Nothing was sent. Update Muse and connect it again, or choose a Codex, Claude Code or Grok Build model for Watcher.'
+const MUSE_COPYING_CONVERSATION = 'Muse could not give this thread its tools after its conversation was compacted, so Sotto is moving the thread onto a copy of the conversation. Nothing was lost. Send your message again.'
+const MUSE_COPY_FAILED = 'Muse could not give this thread its tools after its conversation was compacted, and Sotto could not copy the conversation. Nothing was lost. Start a new thread to carry on.'
+/** Muse 1.4.12's refusal of a compacted session's tool servers on a new host, from its turn's error. */
+const MUSE_TOOL_AUDIT_FAILED = 'MCP startup audit failed'
 /**
  * Watcher's instructions on Muse: `instructions` is the profile's own, with the worker-role lines when that feature is on,
  * or the base prompt (#1417). MSP takes no system prompt or instructions from a client, so they travel as a text part,
@@ -238,6 +250,8 @@ interface ThreadProcess {
   sessionMcp?: boolean
   /** Started for Watcher's thread with its launch profile: its session gets Watcher's tools and instructions, never the browser. */
   watcher: boolean
+  /** This host resumed a session it was given Sotto's tool servers for, rather than starting one. */
+  resumedWithTools?: boolean
   /**
    * Watcher's instructions are in its session's conversation: a turn Muse started on this host carried them, and nothing
    * since says the conversation was compacted (#1418). A new host, after a restart, a lost process or an idle close,
@@ -290,7 +304,14 @@ export interface MuseMspOptions {
   sessionIdleMs?: number
   /** Usage's startup answer (ADR-0083): count this computer's Muse threads and read Muse's subscription window. */
   usageEnabled?: boolean
+  /**
+   * Restart stopped threads (ADR-0144), the Owl answer read once at start: a turn Muse ended at its usage limit says so on its
+   * `lastTurn`, with the reset from the subscription window Muse last reported, which is kept for that even while Usage is off.
+   */
+  limitStops?: boolean
 }
+/** The error kinds Muse ends a turn with at its usage limit (ADR-0144). Read from its classification alone, never its words. */
+const MUSE_LIMIT_KINDS: ReadonlySet<string> = new Set(['usageLimit', 'usageLimitExceeded', 'usageLimitReached', 'quotaExceeded'])
 
 /** Muse owns its sign-in, tools and durable sessions. Only alias and origin metadata belongs to Sotto. */
 export class MuseMspHost implements AgentHost {
@@ -373,7 +394,7 @@ export class MuseMspHost implements AgentHost {
     this.activePrompts.delete(id); this.activeTurns.delete(id); this.turnTimes.delete(id); this.log.release(id)
     for (const [requestId, pending] of this.pending) if (pending.threadId === id) this.pending.delete(requestId)
     const thread = this.threads.get(id)
-    if (thread) { thread.requests = []; thread.status = 'error'; thread.requestNotice = reason }
+    if (thread) { thread.requests = []; thread.status = 'error'; thread.requestNotice = reason; this.changed(id) }
     if (entry) this.closeProcess(entry)
     try { profile?.revoke(reason) } finally { this.emit() }
   }
@@ -468,6 +489,10 @@ export class MuseMspHost implements AgentHost {
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
   private aliases: Record<string, Alias> = {}
+  /** Whether `this.aliases` reflects the store: false until a `connect()` has loaded it once (ADR-0140). */
+  private aliasesLoaded = false
+  /** Threads `forgetThread` removed, kept so a `connect()` racing its disk write cannot bring one back. */
+  private readonly forgottenAliasIds = new Set<string>()
   private readonly threads = new Map<string, AgentThread>()
   private readonly pending = new Map<string, Pending>()
   /** Only the current processes' request facts; a pending-list reply cannot overwrite a newer stream fact. */
@@ -493,9 +518,16 @@ export class MuseMspHost implements AgentHost {
   private readonly folds = new Map<string, Fold>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly activityListeners = new ActivitySubscribers()
+  /** Thread changes (ADR-0016, #925), published beside the activity snapshots from the same view. */
+  private readonly threadChanges = new AdapterThreadChanges({
+    view: historyFromEvents => this.activitySnapshot(historyFromEvents),
+    thread: (id, historyFromEvents) => this.activityThread(id, historyFromEvents),
+    rest: () => { certifyActivityView(this.state, []); return restOf(this.state) },
+  })
   private readonly publisher = new ProviderSnapshotPublisher(() => {
     for (const listener of this.listeners) listener(this.current())
     this.activityListeners.publish(historyFromEvents => this.activitySnapshot(historyFromEvents))
+    this.threadChanges.publish()
   }, () => adapterItemCount(this.log, this.threads.values()))
   /** One `muse serve` process per thread session (ADR-0038): one ending fails only its own thread. */
   private readonly processes = new Map<string, ThreadProcess>()
@@ -509,10 +541,10 @@ export class MuseMspHost implements AgentHost {
   /** The permission modes this machine's client let a probe select, which is all its threads may be offered. */
   private offeredModes: readonly MuseRuntimeMode[] = ['approval-required']
   private writing = Promise.resolve()
-  private readonly log = new ThreadMessageLog()
+  private readonly log = new ThreadMessageLog(id => this.threadChanges.mark(id))
   private history: ThreadHistorySource | undefined
   private readonly observed = new Set<string>()
-  private readonly loaded = new OpenSessions(id => this.threads.get(id))
+  private readonly loaded = new OpenSessions(id => this.threads.get(id), id => this.threadChanges.mark(id))
   private readonly loading = new Map<string, Promise<void>>()
   private readonly readsBeforeSend = new ReadsBeforeSend(id => this.readState(id))
   private readonly reaper: SessionReaper
@@ -569,14 +601,69 @@ export class MuseMspHost implements AgentHost {
     certifyActivityView(this.state, this.threads.values())
     return { ...this.state, threads: [...this.threads.values()].map(thread => this.log.activityThread(thread, historyFromEvents)) }
   }
+  /** One thread as `activitySnapshot` lists it, for the thread changes of the threads marked changed. */
+  private activityThread(id: string, historyFromEvents: boolean): AgentThread | undefined {
+    const thread = this.threads.get(id)
+    if (!thread) return undefined
+    certifyActivityView(this.state, [thread])
+    return this.log.activityThread(thread, historyFromEvents)
+  }
+  /**
+   * This thread's state changed (ADR-0016, #925): its next thread changes carry it. `thread`, which most paths that
+   * write into a thread take it from, marks it; a frame from the thread's host marks it again once applied; and a path
+   * that writes without it, or after a publication may have gone, marks it where it writes. One that writes into every
+   * thread marks them all. What goes through the message log and the open-session set is marked by them.
+   */
+  private changed(id: string): void { this.threadChanges.mark(id) }
   private emit(streaming = false): void { this.publisher.publish(streaming); this.stopOutdated() }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void {
     return this.activityListeners.add(listener, options)
   }
+  subscribeActivityChanges(listener: ActivityChangesListener, options?: ActivitySubscriptionOptions): ActivityChangesSubscription {
+    return this.threadChanges.subscribeActivityChanges(listener, options)
+  }
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.log.subscribeEvents(listener) }
   useThreadHistory(source: ThreadHistorySource): void { this.history = source }
   private persist(): Promise<void> { this.writing = this.aliasStore.write(structuredClone(this.aliases)); return this.writing }
+  /**
+   * ADR-0140: stop the thread's own `muse serve` host if it has one, remove its alias and every per-thread record
+   * this adapter keeps, and persist. Guarded with `forgottenAliasIds` against a `connect()` that reads the alias
+   * store before this removal reaches disk (see there).
+   */
+  async forgetThread(id: string): Promise<void> {
+    this.forgottenAliasIds.add(id)
+    if (!this.aliasesLoaded) {
+      const current = await this.aliasStore.read()
+      if (!(id in current)) return
+      const next = { ...current }
+      delete next[id]
+      await this.aliasStore.write(next)
+      return
+    }
+    if (!this.aliases[id]) return
+    await this.stopSession(id)
+    this.reaper.forget(id)
+    this.observed.delete(id)
+    this.outdated.delete(id)
+    this.holds.delete(id)
+    this.activePrompts.delete(id)
+    this.modelChanges.delete(id)
+    this.modelWants.delete(id)
+    this.activeTurns.delete(id)
+    this.turnTimes.delete(id)
+    for (const [requestId, pending] of [...this.pending]) if (pending.threadId === id) this.pending.delete(requestId)
+    for (const [messageId, delivery] of [...this.deliveries]) {
+      if (delivery.threadId !== id) continue
+      delivery.reject(new MuseUncertain('The thread was deleted.'))
+      this.deliveries.delete(messageId)
+    }
+    this.log.forget(id)
+    this.threads.delete(id)
+    delete this.aliases[id]
+    await this.persist()
+    if (this.state.connected) this.emit()
+  }
   private thread(id: string): AgentThread {
     const alias = this.aliases[id]; if (!alias) throw new Error('The Muse thread does not exist.')
     if (!this.threads.has(id)) this.threads.set(id, {
@@ -588,6 +675,7 @@ export class MuseMspHost implements AgentHost {
       status: alias.museSessionId ? settledStatus(alias) : 'error',
       messages: [], requests: [], manualCompactionSupported: true,
     })
+    this.changed(id)
     return this.threads.get(id)!
   }
   private fold(id: string): Fold {
@@ -604,6 +692,7 @@ export class MuseMspHost implements AgentHost {
       provider: 'muse', turnId: turn, status,
       ...(last === turn ? { afterMessageId: turn } : {}), ...(error !== undefined ? { error } : {}),
     })
+    this.changed(id)
   }
   private spawn(executable: string, lost: () => void, ephemeral = false): MuseRpc {
     const rpc: MuseRpc = new MuseRpc(executable, [...(this.options.args ?? []), ...museServeArguments(this.serveSandboxDisabled), ...(ephemeral ? ['--no-session-log'] : [])],
@@ -704,6 +793,7 @@ export class MuseMspHost implements AgentHost {
         thread.status = 'error'; this.markTurn(id, 'failed', active.messageId, THREAD_PROCESS_LOST)
         if (active.messageId) thread.lastTurn = { id: active.messageId, status: 'failed' }
       } else if (sending) thread.status = 'error'
+      this.changed(id)
     }
     // This also handles an unreadable notification: it must end the host, not just forget a live child.
     this.closeProcess(entry)
@@ -751,8 +841,10 @@ export class MuseMspHost implements AgentHost {
     await mkdir(this.userDataDirectory, { recursive: true })
     const executable = this.options.executable ?? await findMuseExecutable(this.options.environment)
     if (!executable || !isAbsolute(executable)) throw new ProviderUnavailable('not-installed', 'Install Muse and run muse login, then connect again. Your threads and drafts are kept.')
-    this.aliases = await this.aliasStore.read(); this.state.projects = await this.projectStore.read()
-    this.threads.clear(); this.activePrompts.clear(); this.activeTurns.clear(); this.folds.clear(); this.readsBeforeSend.clear()
+    const readAliases = await this.aliasStore.read()
+    for (const id of this.forgottenAliasIds) delete readAliases[id]
+    this.aliases = readAliases; this.aliasesLoaded = true; this.state.projects = await this.projectStore.read()
+    this.threads.clear(); this.threadChanges.markAll(); this.activePrompts.clear(); this.activeTurns.clear(); this.folds.clear(); this.readsBeforeSend.clear()
     if (generation !== this.generation) throw new Error('Muse connection was cancelled.')
     this.executable = executable
     // The sandbox posture for everything this connection spawns, probes included: sealed by each host at
@@ -948,6 +1040,7 @@ export class MuseMspHost implements AgentHost {
         if (!open.has(pending.request.id)) this.removeRequest(pending)
         else {
           pending.answering = false; delete pending.answerCommandId; delete pending.request.delivery; pending.request.answerRetryReady = true
+          this.changed(pending.threadId)
           this.recordRequestChange(pending)
         }
       }
@@ -1002,6 +1095,7 @@ export class MuseMspHost implements AgentHost {
         commandId: museCommandId(), sessionId: alias.museSessionId, excludeItems: false, ...tools.params,
       }))
       if (entry.watcher) await this.proveReviewer(id, entry, resumed.session)
+      if (tools.tools.size) entry.resumedWithTools = true
       this.builtWith(id, entry, tools.tools)
       if (this.processes.get(id) !== entry) return
       this.assertGeneration(generation)
@@ -1009,7 +1103,7 @@ export class MuseMspHost implements AgentHost {
       if (!items) throw new MuseUnreadable('Muse did not serve this thread’s history.')
       const fold = this.fold(id)
       fold.viewCursor = resumed.viewCursor
-      for (const item of items) this.foldItem(id, item)
+      this.foldHistory(id, alias, items)
       // Nothing is held back while the model is set again, and a running turn is left alone: the next send asks again.
       // A turn can start while the resume is answered, so the live turn counts as well as the session's description.
       const running = resumed.session.status === 'running' || this.activeTurns.has(id) || this.activePrompts.has(id)
@@ -1115,6 +1209,7 @@ export class MuseMspHost implements AgentHost {
     thread.status = alias.endedTurn.outcome === 'failed' ? 'error' : 'idle'
     thread.lastTurn = { id: messageId ?? alias.endedTurn.turnId, status: alias.endedTurn.outcome }
     this.markTurn(id, alias.endedTurn.outcome, messageId, alias.endedTurn.outcome === 'failed' ? THREAD_PROCESS_LOST : undefined)
+    this.changed(id)
     delete alias.endedTurn
   }
   private requestKey(pending: MusePending): string {
@@ -1175,12 +1270,13 @@ export class MuseMspHost implements AgentHost {
     this.pending.set(held.request.id, held)
     this.recordRequestChange(held)
     this.thread(held.threadId).requests.push(held.request)
+    this.changed(held.threadId)
     this.emit()
   }
   private removeRequest(pending: Pending): void {
     if (this.pending.delete(pending.request.id)) this.recordRequestChange(pending)
     const thread = this.threads.get(pending.threadId)
-    if (thread) thread.requests = thread.requests.filter(request => request.id !== pending.request.id)
+    if (thread) { thread.requests = thread.requests.filter(request => request.id !== pending.request.id); this.changed(pending.threadId) }
     this.emit()
   }
   /**
@@ -1188,7 +1284,7 @@ export class MuseMspHost implements AgentHost {
    * stream both come through here, and the log works out what is new, so reading the same history twice
    * records nothing twice. Older revisions are ignored; an equal-revision reply may still restate its stream.
    */
-  private foldItem(id: string, item: MuseItem): void {
+  private foldItem(id: string, item: MuseItem, turnOnly = false): void {
     const alias = this.aliases[id]; if (!alias) return
     const fold = this.fold(id)
     const previous = fold.items.get(item.itemId)
@@ -1207,10 +1303,14 @@ export class MuseMspHost implements AgentHost {
         const active = this.activeTurns.get(id)
         if (active?.turnId === merged.turnId) active.messageId = messageId
       }
+      if (turnOnly) return
       // A message Sotto sent with a display text is shown as that: Watcher's instructions and note are the model's alone.
       // When Muse kept none whole, the words come from the wire text with Sotto's own parts off.
-      const text = !origin ? merged.text : merged.displayText !== undefined && !merged.truncated ? merged.displayText
-        : museWatcherTyped(merged.text ?? '', origin.digest) ?? merged.text
+      // The note naming attached files comes off first, when the origin recorded one: it is the last thing Sotto put in
+      // the words (ADR-0131).
+      const wire = merged.text === undefined ? undefined : readBackUserText(merged.text, () => origin).text
+      const text = !origin ? wire : merged.displayText !== undefined && !merged.truncated ? merged.displayText
+        : museWatcherTyped(wire ?? '', origin.digest) ?? wire
       const message: AgentMessage = {
         id: messageId, role: 'user', text: text ?? '',
         createdAt: origin?.createdAt ?? (merged.recordedAt ?? new Date().toISOString()),
@@ -1227,6 +1327,7 @@ export class MuseMspHost implements AgentHost {
       return
     }
     if (merged.kind === 'agentMessage') {
+      if (turnOnly) return
       const messageId = `muse-msg-${merged.itemId}`
       const message: AgentMessage = { id: messageId, role: 'assistant', text: merged.text ?? '', createdAt: merged.recordedAt ?? new Date().toISOString() }
       if (museTerminal(merged.status)) {
@@ -1286,6 +1387,77 @@ export class MuseMspHost implements AgentHost {
       if (activity) this.thread(id).activities = mergeAgentActivities(this.thread(id).activities, [activity])
     }
   }
+  /**
+   * Muse 1.4.12 fails every turn of a compacted session whose runtime a new host built with tool servers, and nothing
+   * on that session clears it; a fork of it builds cleanly. Only that failure, on a host that resumed the session with
+   * Sotto's tools and whose history holds a compaction, moves the thread, once per thread in a run.
+   */
+  private toolsLostToCompaction(id: string, entry: ThreadProcess, error: { kind: string; message: string } | undefined): boolean {
+    if (error?.kind !== 'configError' || !error.message.includes(MUSE_TOOL_AUDIT_FAILED)) return false
+    const session = this.aliases[id]?.museSessionId
+    // A move waits for the thread's open to finish, so the open cannot end on the session it leaves.
+    if (!entry.resumedWithTools || !session || this.copied.has(session) || this.loading.has(id) || !this.loaded.has(id)) return false
+    return [...this.fold(id).items.values()].some(item => item.kind === 'compaction')
+  }
+  /** Sessions this run is moving or has moved a thread off, so a failure the move did not clear is not moved again. */
+  private readonly copied = new Set<string>()
+  /**
+   * Move the thread onto a fork of its session, then reopen it on a new host with its tools: the fork loaded its runtime
+   * without them on the host that made it. The move is the thread's open, so a send waits for it rather than reaching the
+   * old session. The fork's command is kept before it is asked for, so a lost answer is asked for again, not repeated.
+   * Muse rebuilds the fork's history, reusing the old messages' items for other words, so those messages are kept out of
+   * every later read of it; Sotto's log already holds what they said.
+   */
+  private moveToCopy(id: string, entry: ThreadProcess, messageId: string | undefined): void {
+    const alias = this.aliases[id]!, from = alias.museSessionId!, generation = this.generation
+    this.copied.add(from); this.loaded.delete(id)
+    let moved = false
+    // Set before its first await returns, so the end of the move finds itself in `loading`.
+    const move: { work?: Promise<void> } = {}
+    const work = move.work = (async () => {
+      try {
+        alias.forkCommandId ??= museCommandId(); await this.persist()
+        const forked = sessionForkSchema.parse(await entry.rpc.request('session/fork', { commandId: alias.forkCommandId, sessionId: from, excludeItems: false }))
+        this.assertGeneration(generation)
+        const items = forked.history.items ?? forked.history.snapshot?.state.items
+        if (!items) throw new MuseUnreadable('Muse did not serve the copy’s history.')
+        if (this.processes.get(id) === entry) await this.stopSession(id)
+        this.assertGeneration(generation)
+        // Requests the old host raised while it forked end with it; the copy's own are listed when it opens.
+        for (const pending of [...this.pending.values()]) if (pending.threadId === id) this.removeRequest(pending)
+        const thread = this.threads.get(id)
+        if (thread) { thread.requests = []; this.changed(id) }
+        alias.museSessionId = forked.session.sessionId
+        alias.forkedMessages = items.filter(item => item.kind === 'userMessage' || item.kind === 'agentMessage').map(item => item.itemId)
+        delete alias.forkCommandId; delete alias.endedTurn
+        moved = true
+        await this.persist()
+      } catch (error) {
+        if (!moved) this.copied.delete(from)
+        if (generation !== this.generation) throw error
+        const thread = this.threads.get(id)
+        // The failed turn said a copy was on its way; its record now says there is none.
+        if (thread) {
+          thread.status = 'error'
+          thread.activities = thread.activities?.map(record => record.kind === 'turn' && record.turnId === messageId ? { ...record, error: MUSE_COPY_FAILED } : record)
+          this.changed(id)
+          this.emit()
+        }
+        throw error
+      } finally { if (this.loading.get(id) === move.work) this.loading.delete(id) }
+      await this.open(id)
+    })()
+    work.catch(() => undefined)
+    this.loading.set(id, work)
+  }
+  /**
+   * Fold a history Muse served. The messages it rebuilt when it made the thread's copy still name their turns, so the
+   * activity of those turns keeps its place, but their words never reach the log: it already holds what was said.
+   */
+  private foldHistory(id: string, alias: Alias, items: readonly MuseItem[]): void {
+    const forked = alias.forkedMessages?.length ? new Set(alias.forkedMessages) : undefined
+    for (const item of items) this.foldItem(id, item, forked?.has(item.itemId) === true)
+  }
   /** Settle a turn Muse ended: its record, the thread's state, and any work it left showing as running. */
   /** Output of the thread's running turn arrived: an item, a delta or a token record, never the user's own message. */
   private turnOutput(id: string, turnId?: string | null): void {
@@ -1305,14 +1477,14 @@ export class MuseMspHost implements AgentHost {
       turnFinishWaitMs: times.lastOutputAt !== undefined ? now - times.lastOutputAt : null,
     })
   }
-  private settleTurn(id: string, turnId: string, outcome: 'completed' | 'interrupted' | 'failed', error?: string): void {
+  private settleTurn(id: string, turnId: string, outcome: 'completed' | 'interrupted' | 'failed', error?: string, limitStop?: { resetsAt?: string }): void {
     const thread = this.thread(id)
     const messageId = this.fold(id).turnMessages.get(turnId) ?? this.activeTurns.get(id)?.messageId
     this.activeTurns.delete(id); this.activePrompts.delete(id)
     for (const pending of [...this.pending.values()]) if (pending.threadId === id) this.removeRequest(pending)
     this.log.dropEmpty(id)
     thread.status = outcome === 'failed' ? 'error' : 'idle'
-    thread.lastTurn = { id: messageId ?? turnId, status: outcome }
+    thread.lastTurn = { id: messageId ?? turnId, status: outcome, ...(limitStop ? { limitStop } : {}) }
     if (thread.activities?.length) {
       thread.activities = thread.activities.map(record => record.kind !== 'turn' && record.status === 'running' && record.turnId === (messageId ?? turnId)
         ? { ...record, status: outcome === 'completed' ? 'unknown' : outcome } : record)
@@ -1389,9 +1561,15 @@ export class MuseMspHost implements AgentHost {
           // Before the turn shows finished, so its send's record has the times when the coordinator sees it end.
           this.reportTurnTimes(owner, parsed.turnId)
           this.usageTurnStarts.delete(parsed.turnId); this.readQuotaAfterTurn(rpc)
+          const copying = outcome === 'failed' && this.toolsLostToCompaction(owner, entry, parsed.error)
           const said = parsed.error?.kind === 'authRequired' ? 'Muse is not signed in on this machine. Run muse login, then send again.'
+            : copying ? MUSE_COPYING_CONVERSATION
             : outcome === 'failed' ? 'Muse could not finish this turn. Nothing else was lost. Send a message to carry on.' : undefined
-          this.settleTurn(owner, parsed.turnId, outcome, said)
+          const messageId = this.fold(owner).turnMessages.get(parsed.turnId) ?? this.activeTurns.get(owner)?.messageId
+          if (copying) this.moveToCopy(owner, entry, messageId)
+          const limitStop = outcome === 'failed' && this.options.limitStops === true && MUSE_LIMIT_KINDS.has(parsed.error?.kind ?? '')
+            ? (reset => reset ? { resetsAt: reset } : {})(exhaustedQuotaReset(this.quota)) : undefined
+          this.settleTurn(owner, parsed.turnId, outcome, said, limitStop)
           this.emit()
           return
         }
@@ -1491,7 +1669,7 @@ export class MuseMspHost implements AgentHost {
         }
         case 'usage/changed': {
           // The host's subscription window changed (MSP Developer Preview); Usage reads it when it asks.
-          if (this.readProviderQuota) this.keepQuota(frame.params)
+          if (this.readProviderQuota || this.options.limitStops === true) this.keepQuota(frame.params)
           return
         }
         case 'session/contextUsage': {
@@ -1539,6 +1717,9 @@ export class MuseMspHost implements AgentHost {
       // A frame Sotto cannot read ends this thread's host rather than half of its turn: the next action
       // starts a new one and resumes the session whole.
       if (current()) this.processLost(owner, entry)
+    } finally {
+      // Applied, whatever path the frame left by: anything it wrote reaches the next publication.
+      if (this.threads.has(owner)) this.changed(owner)
     }
   }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> { return this.executeNative(command) }
@@ -1637,16 +1818,16 @@ export class MuseMspHost implements AgentHost {
             watcherGuard?.()
             if (mode !== undefined && mode !== (alias.runtimeMode ?? 'approval-required')) {
               const previousPending = alias.pendingRuntimeMode, previousConfirmed = alias.settingsConfirmed, previousStatus = thread.status
-              alias.pendingRuntimeMode = mode; alias.settingsConfirmed = false; thread.status = 'error'; await this.persist(); this.emit()
+              alias.pendingRuntimeMode = mode; alias.settingsConfirmed = false; thread.status = 'error'; this.changed(command.threadId); await this.persist(); this.emit()
               try { watcherGuard?.() } catch (error) {
                 if (previousPending) alias.pendingRuntimeMode = previousPending; else delete alias.pendingRuntimeMode
-                alias.settingsConfirmed = previousConfirmed; thread.status = previousStatus; await this.persist(); this.emit()
+                alias.settingsConfirmed = previousConfirmed; thread.status = previousStatus; this.changed(command.threadId); await this.persist(); this.emit()
                 throw error
               }
               try {
                 await entry.rpc.request('session/setApprovalMode', { commandId: museCommandId(), sessionId: alias.museSessionId, mode: MSP_MODE[mode] })
                 alias.runtimeMode = mode; delete alias.pendingRuntimeMode
-                thread.runtimeMode = mode
+                thread.runtimeMode = mode; this.changed(command.threadId)
               } catch (error) {
                 if (error instanceof MuseRejected) {
                   delete alias.pendingRuntimeMode; this.settleSettings(command.threadId, alias); await this.persist(); this.emit()
@@ -1679,6 +1860,7 @@ export class MuseMspHost implements AgentHost {
             }
             alias.reasoningEffort = reasoningEffort
             if (reasoningEffort) thread.reasoningEffort = reasoningEffort; else delete thread.reasoningEffort
+            this.changed(command.threadId)
             this.settleSettings(command.threadId, alias)
             await this.persist()
             settled = alias.settingsConfirmed
@@ -1689,7 +1871,7 @@ export class MuseMspHost implements AgentHost {
           await this.open(command.threadId); this.assertGeneration(generation)
           if (!alias.museSessionId) throw new MuseUncertain('Muse has not confirmed this thread’s session.')
           if (alias.pendingRuntimeMode) throw new Error('Muse has not confirmed this thread’s permission mode. Reconnect to check before sending.')
-          const attachments = validatePromptAttachments(this.state, alias.modelId, command.attachments)
+          const attachments = validatePromptAttachments(this.state, alias.modelId, command.attachments, { workingDirectory: alias.cwd })
           // A loaded session streams live on this connection, so what the log holds is current; only a
           // session this send had to open needed the read its resume just did. `readForSend` still consumed
           // the coordinator's read receipt, so a later send repays it the same way.
@@ -1709,9 +1891,12 @@ export class MuseMspHost implements AgentHost {
           // wake-up's news for Watcher goes the same way as the note.
           const watcherNote = command.type === 'send' ? command.watcherRequestNote ?? command.watcherNews : undefined
           const note = watcherProfile && watcherNote ? watcherRequestLine(watcherNote) : ''
-          const parts: Record<string, unknown>[] = [{ type: 'text', text: command.text + note }]
-          const display = watcherProfile && command.type === 'send' ? { displayText: command.text } : {}
-          for (const attachment of attachments) {
+          // Any attached file that is not an image is saved into the thread's folder and named in a note after everything
+          // else in the words (ADR-0131), which the display text leaves out as it leaves out Watcher's note.
+          const delivered = await deliverAttachments(alias.cwd, attachments)
+          const parts: Record<string, unknown>[] = [{ type: 'text', text: withAttachedFilesNote(command.text + note, delivered.note) }]
+          const display = (watcherProfile || delivered.note) && command.type === 'send' ? { displayText: command.text } : {}
+          for (const attachment of delivered.images) {
             const bytes = await attachment.read()
             parts.push({
               type: 'image', mediaType: attachment.mimeType, base64Data: Buffer.from(bytes).toString('base64'),
@@ -1723,7 +1908,7 @@ export class MuseMspHost implements AgentHost {
           const origin: Origin = {
             messageId: command.messageId, commandId: command.commandId, nativeCommandId: museCommandId(),
             digest: digest(command.text), createdAt: new Date().toISOString(), confirmed: false,
-            attachments: attachments.map(({ id, name, mimeType, sizeBytes }) => ({ id, name, mimeType, sizeBytes })),
+            attachments: attachmentReferences(attachments),
           }
           const entry = await this.threadProcess(command.threadId)
           // A model Muse has not confirmed is asked for again before a new turn; a refusal sends on the model Muse has.
@@ -1787,6 +1972,7 @@ export class MuseMspHost implements AgentHost {
             thread.status = 'running'
             thread.lastTurn = { id: command.type === 'send' ? command.messageId : thread.lastTurn?.id ?? command.messageId, status: 'running' }
             if (command.type === 'send') this.markTurn(command.threadId, 'running', command.messageId)
+            this.changed(command.threadId)
           } catch (error) {
             clearTimeout(timer); this.deliveries.delete(command.messageId)
             this.activePrompts.delete(command.threadId)
@@ -1822,7 +2008,7 @@ export class MuseMspHost implements AgentHost {
             if (!remembered) alias.answeredRequestIds = alias.answeredRequestIds.filter(item => item !== pending.request.id)
             pending.answering = false; throw error
           }
-          delete pending.request.answerRetryReady
+          delete pending.request.answerRetryReady; this.changed(command.threadId)
           try {
             if (pending.kind === 'approval') {
               const choiceId = decision!
@@ -1862,7 +2048,7 @@ export class MuseMspHost implements AgentHost {
               alias.answeredRequestIds = alias.answeredRequestIds.filter(id => id !== pending.request.id)
               await this.persist(); throw error
             }
-            pending.request.delivery = 'uncertain'; this.emit()
+            pending.request.delivery = 'uncertain'; this.changed(command.threadId); this.emit()
             return { accepted: false, uncertain: true }
           }
         } else if (command.type === 'interrupt') {
@@ -1912,7 +2098,7 @@ export class MuseMspHost implements AgentHost {
     if (entry.watcher) await this.proveReviewer(id, entry, resumed.session)
     const items = resumed.history.items ?? resumed.history.snapshot?.state.items
     if (!items) throw new MuseUnreadable('Muse did not serve this thread’s history.')
-    for (const item of items) this.foldItem(id, item)
+    this.foldHistory(id, alias, items)
     this.fold(id).viewCursor = resumed.viewCursor
     // A running turn is left alone: the next send asks for the thread's model again.
     const running = resumed.session.status === 'running' || this.activeTurns.has(id) || this.activePrompts.has(id)
@@ -1975,6 +2161,7 @@ export class MuseMspHost implements AgentHost {
     // A pending approval is Muse's to settle when its host ends; Sotto sends no decision for it here.
     this.pending.clear(); this.requestChanges.clear(); this.requestReads.clear(); this.requestRevision = 0
     for (const thread of this.threads.values()) thread.requests = []
+    this.threadChanges.markAll()
     for (const delivery of this.deliveries.values()) delivery.reject(new MuseUncertain('Muse disconnected before acknowledgement.'))
     this.deliveries.clear()
     this.activePrompts.clear()

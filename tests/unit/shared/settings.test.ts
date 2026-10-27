@@ -35,6 +35,7 @@ const customSettings = {
   menuBarOwlEyes: 'amber',
   creature: 'claude',
   showCreature: false,
+  interfaceLanguage: 'ja',
   customThemes: [aurora],
   webLinkDestination: 'embedded',
   responseStreaming: 'complete',
@@ -43,16 +44,22 @@ const customSettings = {
   visualsInThreads: false,
   babysitPullRequests: false,
   resumeThreadsAfterRestart: false,
+  restartStoppedThreads: false,
   workerRoles: { building: { modelId: 'native:claude:model:sonnet', reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' } },
   watcherSettlesFinishedThreads: false,
+  newWorkerMachine: '0f6c2a8e-4d3b-4b1a-9c7e-2f5d8a1b3c4d',
+  watcherCompactAtTokens: 650_000,
+  compactIdleThreads: false,
   reducedMotion: 'on',
   roomTransition: false,
   roomTransitionSpeed: 1.5,
+  roomTransitionLook: 'stars',
   microphoneId: 'microphone-1',
   terminalFontSize: 17,
   hotkey: 'Alt+D',
   pressShortcuts: ['Alt+Shift+D'],
   holdShortcuts: ['Fn', 'Control+Alt'],
+  threadShortcuts: { settle: 'mod+alt+e', restore: null },
   maxRecordingSeconds: 300,
   soundCues: false,
   typingSpeedWpm: 55,
@@ -79,12 +86,16 @@ const customSettings = {
   llmMinWords: 4,
   llmModel: 'google/gemini-3.1-flash-lite',
   llmMode: 'nitro',
+  llmOwnModel: { server: 'own-sparks', model: 'deepseek-v4.1-flash' },
   threadTitles: false,
+  nextPromptSuggestions: false,
   threadWorkingCopyDefault: 'independent',
   projectThreadWorkingCopyDefaults: { workshop: 'shared' },
   worktreeCleanup: { afterDays: 30, merged: true, onSettle: false, unchanged: true },
   gitFetchIntervalSeconds: 60,
   gitAutoPull: true,
+  keepMainCurrent: false,
+  projectKeepMainCurrent: { workshop: 'on' },
   defaultMergeMethod: 'rebase',
   lastMergeMethod: 'squash',
   diffLayout: 'split',
@@ -94,6 +105,7 @@ const customSettings = {
   gitWritingInstructions: 'Subjects in the past tense.',
   followPullRequestTemplates: false,
   autoSettleMergedThreads: true,
+  clearSettledThreadsAfterDays: 90,
   proactivePanels: true,
   pullRequestText: false,
   commitMessages: false,
@@ -148,6 +160,23 @@ describe('settings', () => {
     expect(parseSettings({ resumeThreadsAfterRestart: false }).resumeThreadsAfterRestart).toBe(false)
     expect(parseSettings({ resumeThreadsAfterRestart: 'no' }).resumeThreadsAfterRestart).toBe(true)
   })
+  it('starts new workers on This computer for older profiles, keeps Watcher\'s choice or a machine, and recovers anything else (#1032)', () => {
+    expect(parseSettings({}).newWorkerMachine).toBe('this-computer')
+    expect(parseSettings({ newWorkerMachine: 'watcher' }).newWorkerMachine).toBe('watcher')
+    const forge = '6b8f1c2d-3e4a-4b5c-8d6e-7f8091a2b3c4'
+    expect(parseSettings({ newWorkerMachine: forge }).newWorkerMachine).toBe(forge)
+    for (const damaged of ['forge', 7, null, '../hosts']) expect(parseSettings({ newWorkerMachine: damaged }).newWorkerMachine).toBe('this-computer')
+  })
+  it('compacts idle threads for older profiles, keeps it off once turned off, and recovers an unusable value (ADR-0127)', () => {
+    expect(parseSettings({}).compactIdleThreads).toBe(true)
+    expect(parseSettings({ compactIdleThreads: false }).compactIdleThreads).toBe(false)
+    expect(parseSettings({ compactIdleThreads: 'no' }).compactIdleThreads).toBe(true)
+  })
+  it('suggests a next prompt for older profiles, keeps it off once turned off, and recovers an unusable value (ADR-0132)', () => {
+    expect(parseSettings({}).nextPromptSuggestions).toBe(true)
+    expect(parseSettings({ nextPromptSuggestions: false }).nextPromptSuggestions).toBe(false)
+    expect(parseSettings({ nextPromptSuggestions: 'no' }).nextPromptSuggestions).toBe(true)
+  })
   it('reads a saved Threads in flight limit as nothing, since Sotto no longer has one (#1183)', () => {
     const parsed = parseSettings({ ...DEFAULT_SETTINGS, watcherInFlightLimit: 6 })
     expect(parsed).toEqual(DEFAULT_SETTINGS)
@@ -185,6 +214,11 @@ describe('settings', () => {
       autoSettleMergedThreads: null, proactivePanels: 'sometimes',
     }
     expect(parseSettings({ ...unusable, gitFetchIntervalSeconds: 60 })).toMatchObject({ ...DEFAULT_SETTINGS, gitFetchIntervalSeconds: 60 })
+  })
+  it('keeps main up to date by default, and keeps each project\'s own answer while dropping one it cannot read (ADR-0142)', () => {
+    expect(parseSettings({})).toMatchObject({ keepMainCurrent: true, projectKeepMainCurrent: {} })
+    expect(parseSettings({ keepMainCurrent: false, projectKeepMainCurrent: { sotto: 'off', boiler: 'on' } })).toMatchObject({ keepMainCurrent: false, projectKeepMainCurrent: { sotto: 'off', boiler: 'on' } })
+    expect(parseSettings({ keepMainCurrent: 'yes', projectKeepMainCurrent: { sotto: 'sometimes' } })).toMatchObject({ keepMainCurrent: true, projectKeepMainCurrent: {} })
   })
   it('starts a merge on the chosen method, or the one used last, and remembers a choice only under Last selected', () => {
     expect(initialMergeMethod({ defaultMergeMethod: 'last', lastMergeMethod: 'squash' })).toBe('squash')
@@ -331,6 +365,8 @@ describe('settings', () => {
     expect(DEFAULT_SETTINGS).toEqual({
       workerRoles: {},
       watcherSettlesFinishedThreads: true,
+      newWorkerMachine: 'this-computer',
+      watcherCompactAtTokens: 400_000,
       terminalFontSize: 13,
       memoryEnabled: false,
       webLinkDestination: 'external',
@@ -340,6 +376,8 @@ describe('settings', () => {
       visualsInThreads: true,
       babysitPullRequests: true,
       resumeThreadsAfterRestart: true,
+      restartStoppedThreads: true,
+      compactIdleThreads: true,
       version: 1,
       theme: 'system',
       appearance: 'dark',
@@ -351,14 +389,17 @@ describe('settings', () => {
       menuBarOwlEyes: 'teal',
       creature: 'sotto',
       showCreature: true,
+      interfaceLanguage: 'system',
       customThemes: [],
       reducedMotion: 'system',
       roomTransition: true,
       roomTransitionSpeed: 1,
+      roomTransitionLook: 'band',
       microphoneId: null,
       hotkey: 'CommandOrControl+Shift+Space',
       pressShortcuts: [],
       holdShortcuts: [],
+      threadShortcuts: {},
       maxRecordingSeconds: 60,
       soundCues: true,
       typingSpeedWpm: 40,
@@ -385,12 +426,16 @@ describe('settings', () => {
       llmMinWords: 5,
       llmModel: null,
       llmMode: 'default',
+      llmOwnModel: null,
       threadTitles: true,
+      nextPromptSuggestions: true,
       threadWorkingCopyDefault: 'shared',
       projectThreadWorkingCopyDefaults: {},
       worktreeCleanup: { afterDays: null, merged: false, onSettle: false, unchanged: false },
       gitFetchIntervalSeconds: 30,
       gitAutoPull: false,
+      keepMainCurrent: true,
+      projectKeepMainCurrent: {},
       defaultMergeMethod: 'last',
       lastMergeMethod: 'merge',
       diffLayout: 'stacked',
@@ -400,6 +445,7 @@ describe('settings', () => {
       gitWritingInstructions: '',
       followPullRequestTemplates: true,
       autoSettleMergedThreads: false,
+      clearSettledThreadsAfterDays: 30,
       proactivePanels: false,
       pullRequestText: true,
       commitMessages: true,
@@ -607,6 +653,24 @@ describe('settings', () => {
   })
 })
 
+describe('Compact Watcher at', () => {
+  it('compacts Watcher at 400K by default and keeps a saved point from 200K to 1M on a 50K step', () => {
+    expect(DEFAULT_SETTINGS.watcherCompactAtTokens).toBe(400_000)
+    for (const tokens of [200_000, 250_000, 650_000, 1_000_000]) {
+      expect(parseSettings({ ...DEFAULT_SETTINGS, watcherCompactAtTokens: tokens }).watcherCompactAtTokens).toBe(tokens)
+    }
+  })
+
+  it('falls back to 400K for a point off the slider, or a saved file from before it', () => {
+    for (const tokens of [150_000, 199_999, 1_050_000, 425_000, Number.NaN, '600000', null]) {
+      expect(parseSettings({ ...DEFAULT_SETTINGS, watcherCompactAtTokens: tokens }).watcherCompactAtTokens, String(tokens)).toBe(400_000)
+    }
+    const older: Record<string, unknown> = { ...DEFAULT_SETTINGS }
+    delete older.watcherCompactAtTokens
+    expect(parseSettings(older).watcherCompactAtTokens).toBe(400_000)
+  })
+})
+
 describe('night falls settings', () => {
   it('defaults to on at speed 1 and keeps a saved choice', () => {
     expect(DEFAULT_SETTINGS.roomTransition).toBe(true)
@@ -614,6 +678,20 @@ describe('night falls settings', () => {
     const parsed = parseSettings({ ...DEFAULT_SETTINGS, roomTransition: false, roomTransitionSpeed: 0.5 })
     expect(parsed.roomTransition).toBe(false)
     expect(parsed.roomTransitionSpeed).toBe(0.5)
+  })
+
+  it('looks like the band by default and keeps Stars once chosen', () => {
+    expect(DEFAULT_SETTINGS.roomTransitionLook).toBe('band')
+    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionLook: 'stars' }).roomTransitionLook).toBe('stars')
+    expect(parseSettings(JSON.parse(JSON.stringify(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionLook: 'stars' })))).roomTransitionLook).toBe('stars')
+  })
+
+  it('falls back to the band for a look it does not know, or a saved file from before the look', () => {
+    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionLook: 'wing' }).roomTransitionLook).toBe('band')
+    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionLook: 1 }).roomTransitionLook).toBe('band')
+    const older: Record<string, unknown> = { ...DEFAULT_SETTINGS }
+    delete older.roomTransitionLook
+    expect(parseSettings(older).roomTransitionLook).toBe('band')
   })
 
   it('falls back to the default for a speed outside the dial', () => {

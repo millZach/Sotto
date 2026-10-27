@@ -21,19 +21,23 @@ declare global { var sottoRemoteHostE2E: RemoteHostE2E | undefined }
  * paired socket, router, request drafts, preload and renderer. Never installed in a normal session.
  */
 /**
- * `watcherEnabled` is the answer the real launcher passes its sockets (`DesktopHosts`), so a paired host's threads reach
- * Watcher here exactly as they would over SSH.
+ * `watcherEnabled` and `crossMachineEnabled` are the answers the real launcher passes its sockets (`DesktopHosts`), so a
+ * paired host's threads reach Watcher, and their delegations the window, here exactly as they would over SSH.
  */
 export function installRemoteHostE2E(router: DesktopHostRouter, retainedDrafts: RetainedDraftStore, watcherEnabled = false,
-  heldProviders?: HeldProviders): RemoteHostE2E {
+  heldProviders?: HeldProviders, crossMachineEnabled = false): RemoteHostE2E {
   const sockets = new Map<string, SocketHostService>()
+  const connections = new Map<string, { up: boolean }>()
   const gates = new Map<string, { wait: Promise<void>; release: () => void; reads: number; completed: number; completedIdle: number }>()
   const harness: RemoteHostE2E = {
     async connect(input) {
       const url = new URL(input.url)
       if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') throw new Error('The remote host test requires a loopback listener.')
       if (sockets.has(input.hostId)) throw new Error('The remote host test is already connected.')
-      const socket = new SocketHostService({ url: input.url, token: input.token, expectedHostId: input.hostId, catchUpEvents: false, retainedDrafts, watcherEnabled, ...(heldProviders ? { heldProviders } : {}) })
+      // Whether the socket is up, as the real launcher tells the router (`available`), so a dropped host reads as away.
+      const state = { up: false }
+      const socket = new SocketHostService({ url: input.url, token: input.token, expectedHostId: input.hostId, catchUpEvents: false, retainedDrafts, watcherEnabled, crossMachineEnabled, ...(heldProviders ? { heldProviders } : {}),
+        onConnectionChange: value => { state.up = value } })
       try {
         const hello = await socket.connect()
         let release = (): void => {}
@@ -50,13 +54,20 @@ export function installRemoteHostE2E(router: DesktopHostRouter, retainedDrafts: 
             if (idle) gate.completedIdle++
           },
           detail: id => socket.readThreadDetail(id), preview: request => socket.attachmentPreview(request),
-          observe: (ids, shown) => socket.observe(ids, shown), subscribeDetail: listener => socket.subscribeThreadDetail(listener),
+          observe: (ids, shown) => socket.observe(ids, shown), subscribeDetail: listener => socket.subscribeThreadDetail(listener), available: () => state.up,
+          // A thread's Agents, read on the host as the real launcher's connection reads them.
+          subagentPage: request => socket.subagentPage(request), subagentAssignments: request => socket.subagentAssignments(request),
           activityBody: (threadId, activityId) => socket.activityBody(threadId, activityId),
         })
         sockets.set(hello.hostId, socket)
+        connections.set(hello.hostId, state)
       } catch (error) { await socket.close(); throw error }
     },
     async disconnect(hostId, keepThreads = false) {
+      // Down before the router hears of it, as a dropped socket is: a close this harness makes may tell the socket nothing.
+      const state = connections.get(hostId)
+      connections.delete(hostId)
+      if (state) state.up = false
       const socket = sockets.get(hostId)
       sockets.delete(hostId)
       gates.get(hostId)?.release()

@@ -1,0 +1,388 @@
+msgid ""
+msgstr ""
+"POT-Creation-Date: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: te\n"
+
+#: src/shared/interfaceWords.ts
+msgid "{host} did not answer at first, so Sotto read its model sources again: {source} is signed in there."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "{host} did not answer at first, so Sotto read its model sources again: {source} is signed out there."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "{host} did not answer, so Sotto could not read its model sources. Nothing was changed. Check that {host} is connected, then try again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "{host} did not answer, so Sotto could not tell whether anything was signed in or out there, and could not read its model sources to find out. Check that {host} is connected, then look under its model sources before you try again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "{host} did not answer, so Sotto could not tell whether anything was signed in or out there. It is reading {host}’s model sources again; look under them before you try again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "{host} did not answer, so Sotto could not tell whether it took the code. The sign-in is still waiting. Paste the code again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "{host} did not answer, so Sotto read its model sources again: {source} is not signed in there, so nothing was saved. Try again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "{host} did not answer, so Sotto read its model sources again: {source} is still signed in there. Try again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "{host} did not answer, so the sign-in page did not open. Nothing was saved. Press Open the page again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "{models, plural, =0 {Signed in to {source}. OpenCode lists none of its models yet, so none are in the model menu.} one {Signed in to {source}. Its model is in the model menu, under OpenCode.} other {Signed in to {source}. Its {count} models are in the model menu, under OpenCode.}}"
+msgstr ""
+
+#. A notice once a provider connects: “Codex connected”.
+#: src/shared/interfaceWords.ts
+msgid "{name} connected"
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "{source} did not accept that code, so nothing was saved. Copy the code from the {source} page and paste it again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Agent is fixing it"
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Agent is installing it"
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Agent is updating it"
+msgstr ""
+
+#. The name of an effort colourway.
+#: src/shared/interfaceWords.ts
+msgid "Aurora"
+msgstr ""
+
+#. A worker role: the kind of work a thread is started for.
+#: src/shared/interfaceWords.ts
+msgid "Building"
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Clicking and typing in apps and the browser."
+msgstr ""
+
+#. A worker role.
+#: src/shared/interfaceWords.ts
+msgid "Code review"
+msgstr ""
+
+#. A worker role: clicking and typing in apps.
+#: src/shared/interfaceWords.ts
+msgid "Computer use"
+msgstr ""
+
+#. The name of an effort colourway.
+#: src/shared/interfaceWords.ts
+msgid "Cyberpunk"
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Each screenshot must be 10 MB or smaller. Nothing was attached. Choose a smaller file."
+msgstr ""
+
+#. The name of an effort colourway: the colour a thread’s effort control turns at the highest level.
+#: src/shared/interfaceWords.ts
+msgid "Ember"
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Fix {name} on {host}"
+msgstr ""
+
+#. What an agent does to a provider: “An agent {does} {name} on {hostName}”.
+#: src/shared/interfaceWords.ts
+msgid "fixes"
+msgstr ""
+
+#. What an agent is doing to a provider.
+#: src/shared/interfaceWords.ts
+msgid "fixing"
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Have my agent fix it"
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Have my agent install it"
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Have my agent update it"
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Install {name} on {host}"
+msgstr ""
+
+#. What an agent is doing to a provider.
+#: src/shared/interfaceWords.ts
+msgid "installing"
+msgstr ""
+
+#. What an agent does to a provider: “An agent {does} {name} on {hostName}”.
+#: src/shared/interfaceWords.ts
+msgid "installs"
+msgstr ""
+
+#. The kind of a visual an agent drew: an HTML page of its own.
+#: src/shared/interfaceWords.ts
+msgid "Interactive page"
+msgstr ""
+
+#. GitHub’s “Create a merge commit” method.
+#: src/shared/interfaceWords.ts
+msgctxt "merge method"
+msgid "Merge"
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Only PNG, JPEG, GIF, and WebP screenshots can be attached. Nothing was attached. Choose files of those types."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "OpenCode could not sign in to {source} with that key, so nothing was saved. Check the key in your {source} account and paste it again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "OpenCode could not start the {source} sign-in, so nothing was saved. Try again in a moment, or choose another way to sign in."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "OpenCode does not run on {host}’s host. To use it there, put this computer’s version of the host on {host}, stop the host and connect again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "OpenCode gave a sign-in page that is not a secure https address, so Sotto did not open it and nothing was saved."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "OpenCode needs every question answered before it signs in to {source}. Nothing was saved. Fill them in and try again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "OpenCode no longer lists that model source, so nothing was signed in. Close this and open it again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "OpenCode tries the key the first time a thread uses one of its models. If {source} refuses it then, sign out here and paste the key again."
+msgstr ""
+
+#. A worker role: the kind of work Watcher itself does.
+#: src/shared/interfaceWords.ts
+msgid "Orchestrating"
+msgstr ""
+
+#. The name of an effort colourway.
+#: src/shared/interfaceWords.ts
+msgid "Plasma"
+msgstr ""
+
+#. The name of an effort colourway.
+#: src/shared/interfaceWords.ts
+msgid "Rainbow"
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Reading a change and saying what is wrong with it."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Reading code, docs and the web, and reporting back."
+msgstr ""
+
+#. GitHub’s merge method of the same name.
+#: src/shared/interfaceWords.ts
+msgid "Rebase and merge"
+msgstr ""
+
+#. A worker role.
+#: src/shared/interfaceWords.ts
+msgid "Research"
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Run the microphone test in Settings to set one up."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Screens, styles and how they look."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Screenshots must total 20 MB or less. Nothing was attached. Remove an image or choose smaller files."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Signed out of {source}. Its key is gone from Sotto’s OpenCode."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Signed out of {source}. Its sign-in is gone from Sotto’s OpenCode."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Sotto could not read OpenCode’s model list again, so the model menu may be out of date. Each thread still moves to the new sign-ins when it next goes idle. Press Refresh OpenCode to read the list again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Sotto could not sign out of {source}, so it is still signed in. Try again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Sotto could not tell whether OpenCode saved the {source} key, and could not read OpenCode’s sign-ins to find out. Close this and look under Model sources: {source} is listed there if it was saved. If it is not, paste the key again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Sotto could not tell whether OpenCode saved the {source} key, so it read OpenCode’s sign-ins again: {source} is not signed in, so nothing was saved. Paste the key again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Sotto’s OpenCode is not running, so nothing was signed in. Connect OpenCode, then try again."
+msgstr ""
+
+#. GitHub’s merge method of the same name.
+#: src/shared/interfaceWords.ts
+msgid "Squash and merge"
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Start fix"
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Start install"
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Start update"
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "The {source} sign-in did not finish, so nothing was saved. Open the sign-in page again to start over."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "The {source} sign-in page expired before you finished, so nothing was saved. Open the sign-in page again to start over."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "The host is busy. Nothing was lost. Try again in a moment."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "The host on {host} cannot sign OpenCode in to model sources from here. Nothing was changed. Put this computer’s version of the host on {host}, stop the host and connect again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "The speech model could not transcribe this recording. The recording was not kept. Dictate again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "The speech model could not transcribe this recording. Your recording is kept until you try again or discard it."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "The speech model is not ready yet, so nothing was recorded. Choose one, or see where it stands, in Settings → Dictation."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "The speech model is not ready. Your recording is kept until you try again or discard it. Check the speech model in Settings → Dictation, then try again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "The speech model stopped before it could transcribe. The recording was not kept. Check the speech model in Settings → Dictation, then dictate again."
+msgstr ""
+
+#. The name of an effort colourway that takes the theme’s accent colour.
+#: src/shared/interfaceWords.ts
+msgid "Theme accent"
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "This host can’t start a thread from another yet, and nothing was made. Update Sotto on the host, then try again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "This host cannot keep screenshots. Update Sotto there, then attach them again. Nothing was attached."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "This host has no systemd user manager, so Sotto cannot start it at boot."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "This host runs macOS, where a program starts at boot only with an administrator’s help, so Sotto cannot start it at boot."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "This host still has thread management running. Its history and drafts are kept. Update the host from the Threads page before continuing."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "This screenshot’s content does not match its file type. Nothing was attached. Save it again as PNG, JPEG, GIF, or WebP, then attach it."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Thread providers connected"
+msgstr ""
+
+#. A worker role: work on user interfaces.
+#: src/shared/interfaceWords.ts
+msgid "UI"
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Update {name} on {host}"
+msgstr ""
+
+#. What an agent does to a provider: “An agent {does} {name} on {hostName}”.
+#: src/shared/interfaceWords.ts
+msgid "updates"
+msgstr ""
+
+#. What an agent is doing to a provider.
+#: src/shared/interfaceWords.ts
+msgid "updating"
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Voice control and thread management are no longer available. Your threads and drafts are kept. Use the thread composer to continue."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Watcher is available in Sotto Owl. Open an Owl build to continue. Nothing was sent."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Watcher itself."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Writing and changing code."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Your browser did not open the sign-in page. Nothing was saved. Open this address in your browser yourself, or press Open the page again."
+msgstr ""

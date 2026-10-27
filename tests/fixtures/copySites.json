@@ -23,9 +23,17 @@
   },
   "src/main/agents/control.ts": {
     "structuredClone(": 21,
-    "shell()": 38,
+    "shell()": 40,
     "watcherRecord()": 2,
-    "clonePlainData(": 3
+    "clonePlainData(": 2
+  },
+  "src/main/agents/cursor.ts": {
+    "cloneHostSnapshot(": 1,
+    "cloneActivitySnapshot(": 1
+  },
+  "src/main/agents/deepseek.ts": {
+    "cloneHostSnapshot(": 1,
+    "cloneActivitySnapshot(": 1
   },
   "src/main/agents/devin.ts": {
     "structuredClone(": 1,
@@ -44,7 +52,7 @@
     "structuredClone(": 2
   },
   "src/main/agents/hostService.ts": {
-    "shell()": 5
+    "shell()": 4
   },
   "src/main/agents/ipc.ts": {
     "shell()": 1
@@ -65,8 +73,7 @@
   "src/main/agents/providerSwitch.ts": {
     "structuredClone(": 2,
     "cloneHostSnapshot(": 5,
-    "clonePlainData(": 1,
-    "cloneActivitySnapshot(": 1
+    "clonePlainData(": 1
   },
   "src/main/agents/questionPages.ts": {
     "structuredClone(": 1
@@ -80,9 +87,6 @@
   "src/main/agents/retainedDraftStore.ts": {
     "structuredClone(": 5
   },
-  "src/main/agents/runtime.ts": {
-    "shell()": 1
-  },
   "src/main/agents/socketHostService.ts": {
     "structuredClone(": 9,
     "shell()": 10
@@ -90,8 +94,14 @@
   "src/main/agents/sottoRequests.ts": {
     "structuredClone(": 1
   },
+  "src/main/agents/threadChanges.ts": {
+    "cloneHostSnapshot(": 1
+  },
   "src/main/agents/threadMessageLog.ts": {
     "structuredClone(": 1
+  },
+  "src/main/agents/threadStore.ts": {
+    "clonePlainData(": 1
   },
   "src/main/agents/usageStore.ts": {
     "structuredClone(": 2
@@ -100,12 +110,6 @@
     "structuredClone(": 1,
     "shell()": 1,
     "watcherRecord()": 1
-  },
-  "src/main/agents/threadStore.ts": {
-    "clonePlainData(": 1
-  },
-  "src/main/agents/watcherRoomDesktop.ts": {
-    "clonePlainData(": 1
   },
   "src/main/agents/workspace.ts": {
     "structuredClone(": 6,
@@ -116,7 +120,7 @@
   },
   "src/main/hosts/desktopHostRouter.ts": {
     "structuredClone(": 1,
-    "shell()": 29
+    "shell()": 30
   },
   "src/main/hosts/desktopHosts.ts": {
     "structuredClone(": 1,

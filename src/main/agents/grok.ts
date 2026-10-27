@@ -4,14 +4,16 @@ import { BROWSER_MCP_SERVER, type BrowserAgentTools } from './browserAgentServer
 import { scopedThreadServers, type ScopedThreadTools } from './threadToolServer'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
+import { AdapterThreadChanges, restOf } from './adapterThreadChanges'
+import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
 import { NativeUsage, type NativeUsageContext } from './nativeUsage'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
-import { parseGrokQuota, unavailableProviderQuota } from './providerQuota'
+import { exhaustedQuotaReset, parseGrokQuota, unavailableProviderQuota } from './providerQuota'
 import { createHash } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
-import { agentProjectSchema, type AgentHostSnapshot, type AgentThread, type AgentMessage, type AgentRuntimeMode, type ProviderId } from '../../shared/agents'
+import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchema, type AgentHostSnapshot, type AgentThread, type AgentMessage, type AgentRuntimeMode, type ProviderId } from '../../shared/agents'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft, WorkerRoleSource } from './host'
@@ -30,6 +32,7 @@ import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from 
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { discoverGrokSkills, grokSkillPrompt } from './grokSkills'
 import { verifyFileMentions } from './promptFiles'
+import { deliverAttachments, readBackUserText, withAttachedFilesNote } from './attachedFiles'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { cutThinking, grokActivities, keepStreamedThinking } from './grokActivity'
 import { markTurnActivity } from './turnActivity'
@@ -80,11 +83,24 @@ export function grokArguments(): string[] {
  * One thread session's own Grok process. `clientRevision` is the client it was started from, which
  * `clientUpdated` moves on; `closing` marks a close Sotto asked for, and `lost` an exit nobody asked for.
  */
-interface ThreadProcess { rpc: GrokRpc; ready: Promise<ThreadProcess>; clientRevision: number; closing: boolean; lost: boolean; watcher: boolean }
+interface ThreadProcess { rpc: GrokRpc; ready: Promise<ThreadProcess>; clientRevision: number; closing: boolean; lost: boolean; watcher: boolean; signedIn: boolean }
 /** A Grok request as this adapter keeps it: answered on the process that asked, never another. */
 type Pending = GrokPending & { rpc: GrokRpc; reasked?: boolean }
+/**
+ * How long a Grok limits reading stands in for a refresh Usage makes on its own when no Grok process is running to
+ * ask. Usage refreshes on its own only readings over a minute old, so a shorter window would never be used (#1456).
+ */
+const QUOTA_REUSE_MS = 5 * 60_000
+/**
+ * How long a running thread's process has to answer a limits read before a process is started to ask instead. A remote
+ * host's whole refresh must answer within the desktop's 15-second call deadline, and starting a process to ask took
+ * 2.1 seconds on a busy Windows computer (#1456). Five seconds leaves room for that start even at three times as slow,
+ * and is several times what one billing request takes on a process that is not stuck.
+ */
+const LIVE_BILLING_TIMEOUT_MS = 5_000
 const THREAD_PROCESS_LOST = 'Grok Build stopped before this reply finished, so it may be cut short. Send a message to carry on.'
-const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), entryKey: z.string().optional() })
+/** `attachments`: the files a prompt carried (ADR-0131), by reference, so its message shows them however it is read back. */
+const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), entryKey: z.string().optional(), attachments: z.array(agentAttachmentReferenceSchema).optional() })
 const aliasSchema = z.object({ grokSessionId: z.string().uuid().optional(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(), nativeModelId: z.string().optional(), settingsConfirmed: z.boolean().default(false), createdAt: z.string(), origins: z.array(originSchema), reasoningEffort: z.string().optional(), runtimeMode: grokRuntimeModeSchema.optional(), pendingRuntimeMode: grokRuntimeModeSchema.optional(), answeredRequestIds: z.array(z.string()).default([]), endedTurn: z.object({ id: z.string(), outcome: z.enum(['failed', 'interrupted']) }).optional() }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A personal chat cannot have a project; a project thread requires one.')
 type Alias = z.infer<typeof aliasSchema>
 const catalogSchema = z.object({ currentModelId: z.string(), availableModels: z.array(z.object({ modelId: z.string(), name: z.string(), _meta: z.object({ reasoningEffort: z.string().optional(), supportsReasoningEffort: z.boolean().optional(), reasoningEfforts: z.array(z.object({ id: z.string(), value: z.string().optional(), default: z.boolean().optional() })).optional() }).optional() })).min(1) })
@@ -127,6 +143,8 @@ function completedStatus(stopReason: string | undefined): AgentThread['status'] 
   return ['end_turn', 'cancelled', 'max_tokens', 'max_turn_requests', 'refusal'].includes(stopReason ?? '') ? 'idle' : 'error'
 }
 
+/** The words a Grok Build refusal uses for its usage limit, which is all its refusal says of one (ADR-0144). Only matched, never shown. */
+const GROK_USAGE_LIMIT = /\b(?:usage limit|quota (?:exceeded|reached)|out of credits|credit limit)\b/iu
 function turnOutcome(reason: string | undefined): 'completed' | 'interrupted' | 'failed' {
   return reason === 'end_turn' ? 'completed' : reason === 'cancelled' ? 'interrupted' : 'failed'
 }
@@ -157,9 +175,13 @@ function freshHistory(history?: HistoryRead): HistoryRead {
 
 export interface GrokAcpOptions {
   usageEnabled?: boolean
+  /** Restart stopped threads (ADR-0144), the Owl answer read once at start: a prompt refused at a usage limit says so on its `lastTurn`. */
+  limitStops?: boolean
   executable?: string; args?: string[]; environment?: NodeJS.ProcessEnv; requestTimeoutMs?: number; pollIntervalMs?: number
   /** Session reaper cadence and idle threshold; see `sessionReaper.ts`. */
   reaperSweepMs?: number; sessionIdleMs?: number
+  /** How long a running thread's process has to answer a limits read; tests whose answer is held shorten it. */
+  liveBillingTimeoutMs?: number
   /** Test-only admission injection; desktop and host production wiring never supplies it. */
 }
 
@@ -167,10 +189,16 @@ export interface GrokAcpOptions {
 export class GrokAcpHost implements AgentHost {
   readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
   readonly visitUsage?: (id: string, visitor: (record: UsageTokenObservation) => void) => void
-  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
+  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean, background?: boolean) => Promise<UsageQuotaRead>
+  /** The newest good reading, which a failed read keeps showing. */
   private quota: UsageQuotaRead | undefined
-  private quotaReading: Promise<UsageQuotaRead> | undefined
-  private quotaProbe: GrokRpc | undefined
+  /** Each read's place in the order reads began, so an older read finishing late never replaces a newer one's answer. */
+  private quotaStarts = 0
+  /** The answer of the newest read to finish, by its place in that order, and when it finished by this computer's clock. */
+  private quotaLatest: { start: number; read: UsageQuotaRead; at: number } | undefined
+  /** The refresh under way, and whether Usage made it on its own; Read again never waits on one of those. */
+  private quotaReading: { read: Promise<UsageQuotaRead>; background: boolean } | undefined
+  private readonly quotaProbes = new Set<GrokRpc>()
   private readonly usagePromptStarts = new Map<string, string>()
   private readonly usageEnabled: boolean
   private launchProfiles: ThreadLaunchProfiles | undefined
@@ -228,7 +256,7 @@ export class GrokAcpHost implements AgentHost {
     this.activePrompts.delete(id); this.log.release(id)
     for (const [requestId, pending] of this.pending) if (pending.threadId === id) this.pending.delete(requestId)
     const thread = this.threads.get(id)
-    if (thread) { thread.requests = []; thread.status = 'error'; thread.requestNotice = reason }
+    if (thread) { thread.requests = []; thread.status = 'error'; thread.requestNotice = reason; this.changed(id) }
     if (entry) this.closeProcess(entry)
     try { profile?.revoke(reason) } finally { this.emit() }
   }
@@ -270,7 +298,7 @@ export class GrokAcpHost implements AgentHost {
   }
   private showRequest(pending: Pending): void {
     if (this.aliases[pending.threadId]!.answeredRequestIds.includes(pending.request.id)) { pending.reasked = true; pending.answering = true; pending.request.delivery = 'uncertain'; this.rememberAnswered(pending) }
-    this.pending.set(pending.request.id, pending); this.thread(pending.threadId).requests.push(pending.request); this.emit()
+    this.pending.set(pending.request.id, pending); this.thread(pending.threadId).requests.push(pending.request); this.changed(pending.threadId); this.emit()
   }
   /** Grok's prompt for one of this thread's own Sotto tool servers, answered here rather than shown (ADR-0020, ADR-0035). */
   private async toolAdmission(pending: Pending): Promise<unknown> {
@@ -300,6 +328,10 @@ export class GrokAcpHost implements AgentHost {
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
   private aliases: Record<string, Alias> = {}
+  /** Whether `this.aliases` reflects the store: false until a `connect()` has loaded it once (ADR-0140). */
+  private aliasesLoaded = false
+  /** Threads `forgetThread` removed, kept so a `connect()` racing its disk write cannot bring one back. */
+  private readonly forgottenAliasIds = new Set<string>()
   private readonly threads = new Map<string, AgentThread>()
   private readonly pending = new Map<string, Pending>()
   /** Duplicate guards belong to their process and do not retain a process after it closes. */
@@ -319,9 +351,16 @@ export class GrokAcpHost implements AgentHost {
   private readonly seenUpdates = new Set<string>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly activityListeners = new ActivitySubscribers()
+  /** Thread changes (ADR-0016, #925), published beside the activity snapshots from the same view. */
+  private readonly threadChanges = new AdapterThreadChanges({
+    view: historyFromEvents => this.activitySnapshot(historyFromEvents),
+    thread: (id, historyFromEvents) => this.activityThread(id, historyFromEvents),
+    rest: () => { certifyActivityView(this.state, []); return restOf(this.state) },
+  })
   private readonly publisher = new ProviderSnapshotPublisher(() => {
     for (const listener of this.listeners) listener(this.current())
     this.activityListeners.publish(historyFromEvents => this.activitySnapshot(historyFromEvents))
+    this.threadChanges.publish()
   }, () => adapterItemCount(this.log, this.threads.values()))
   /**
    * One ACP process per thread session, the way T3 Code runs Grok. The provider itself holds none between a
@@ -346,13 +385,13 @@ export class GrokAcpHost implements AgentHost {
   /** Threads the coordinator just read for a send (#765): that read stands for the send's own first one. */
   private readonly readsBeforeSend = new ReadsBeforeSend(id => this.readState(id))
   /** This adapter's append path: every change to what a thread said leaves through it as an event. */
-  private readonly log = new ThreadMessageLog()
+  private readonly log = new ThreadMessageLog(id => this.threadChanges.mark(id))
   /** What the host's event store already holds, so a session read from its start is not added twice. */
   private history: ThreadHistorySource | undefined
   /** Watched set: the threads the coordinator asked for. Their sessions are loaded eagerly, never reaped. */
   private readonly observed = new Set<string>()
   /** The sessions this connection has loaded; only these are polled for history. */
-  private readonly loaded = new OpenSessions(id => this.threads.get(id))
+  private readonly loaded = new OpenSessions(id => this.threads.get(id), id => this.threadChanges.mark(id))
   private readonly loading = new Map<string, Promise<void>>()
   private readonly reaper: SessionReaper
   private pollTimer: ReturnType<typeof setInterval> | undefined
@@ -364,12 +403,15 @@ export class GrokAcpHost implements AgentHost {
     if (options.usageEnabled) {
       this.subscribeUsage = listener => this.usage.subscribeUsage(listener)
       this.visitUsage = (id, visitor) => this.usage.visitUsage(id, visitor)
-      this.readProviderQuota = async (providerId, refresh) => {
+      this.readProviderQuota = async (providerId, refresh, background = false) => {
         if (providerId !== 'grok') return unavailableProviderQuota(providerId, 'unsupported')
         if (!this.state.connected || !this.executable) return unavailableProviderQuota('grok', 'not-connected')
         if (!refresh) return this.quota ?? unavailableProviderQuota('grok', 'not-read', true)
-        this.quotaReading ??= this.readQuota().finally(() => { this.quotaReading = undefined })
-        return this.quotaReading
+        const reading = this.quotaReading
+        if (reading && (background || !reading.background)) return reading.read
+        const read: Promise<UsageQuotaRead> = this.readQuota(background).finally(() => { if (this.quotaReading?.read === read) this.quotaReading = undefined })
+        this.quotaReading = { read, background }
+        return read
       }
     }
     this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'grok-threads.json'), preserveLegacyAliases(z.record(z.string(), aliasSchema).parse), () => ({}))
@@ -383,26 +425,93 @@ export class GrokAcpHost implements AgentHost {
       stop: id => this.stopSession(id),
     })
   }
-  private async readQuota(): Promise<UsageQuotaRead> {
-    const generation = this.generation, executable = this.executable
+  /**
+   * Read the signed-in account's limits. A thread's process that is already running and signed in is asked first, so
+   * a refresh starts no process while one is there (#1456). `_x.ai/billing` names no session, and Grok already answers
+   * history reads on a process beside its running prompt, so asking one disturbs no turn on it. Only when there is
+   * none to ask may a refresh Usage made on its own take a good reading from the last few minutes; a live read that
+   * failed is never covered by an earlier reading. Otherwise a process is started for the one question. No
+   * session/new, load or prompt is sent on any of them.
+   */
+  /**
+   * A refused prompt's usage-limit stop (ADR-0144), while restarting stopped threads is on: only when Grok Build's refusal
+   * says it was its usage limit, with the reset of the allowance its last limits reading showed used up.
+   */
+  private limitStopOf(error: unknown): { limitStop?: { resetsAt?: string } } {
+    if (this.options.limitStops !== true || !(error instanceof GrokRejected) || !GROK_USAGE_LIMIT.test(error.message)) return {}
+    const resetsAt = exhaustedQuotaReset(this.quota)
+    return { limitStop: resetsAt ? { resetsAt } : {} }
+  }
+  private async readQuota(background: boolean): Promise<UsageQuotaRead> {
+    const generation = this.generation, executable = this.executable, start = ++this.quotaStarts
     if (!executable) return unavailableProviderQuota('grok', 'not-connected')
-    // The existing signed-in account is asked for metadata. No session/new, load or prompt is sent.
+    const gone = () => generation !== this.generation || !this.state.connected
+    const live = this.liveProcess()
+    if (live) {
+      try {
+        const answer = await this.askBilling(live, this.options.liveBillingTimeoutMs ?? LIVE_BILLING_TIMEOUT_MS)
+        if (gone()) return unavailableProviderQuota('grok', 'not-connected')
+        return this.settleQuota(start, answer)
+      } catch {
+        // A process that stopped or refused partway is not the account's answer; the read below gives that.
+        if (gone()) return unavailableProviderQuota('grok', 'not-connected')
+      }
+    }
+    const latest = this.quotaLatest
+    if (background && !live && latest && latest.read.status !== 'error' && Date.now() - latest.at < QUOTA_REUSE_MS) return latest.read
     const probe = this.spawn(executable, () => undefined)
-    this.quotaProbe = probe
+    this.quotaProbes.add(probe)
     try {
       const client = await this.identify(probe)
-      if (generation !== this.generation || !this.state.connected) return unavailableProviderQuota('grok', 'not-connected')
-      if (clientRefusal(client)) return unavailableProviderQuota('grok', 'read-failed', true)
+      if (gone()) return unavailableProviderQuota('grok', 'not-connected')
+      if (clientRefusal(client)) return this.settleQuota(start, unavailableProviderQuota('grok', 'read-failed', true))
       await this.authenticate(probe)
-      if (generation !== this.generation || !this.state.connected) return unavailableProviderQuota('grok', 'not-connected')
-      let answer = unavailableProviderQuota('grok', 'not-reported', true)
-      await probe.request('_x.ai/billing', {}, value => { answer = parseGrokQuota(value, new Date().toISOString()) })
-      if (generation !== this.generation || !this.state.connected) return unavailableProviderQuota('grok', 'not-connected')
-      this.quota = answer; return answer
+      if (gone()) return unavailableProviderQuota('grok', 'not-connected')
+      const answer = await this.askBilling(probe)
+      if (gone()) return unavailableProviderQuota('grok', 'not-connected')
+      return this.settleQuota(start, answer)
     } catch {
-      if (generation !== this.generation || !this.state.connected) return unavailableProviderQuota('grok', 'not-connected')
-      return { ...(this.quota ?? unavailableProviderQuota('grok', 'read-failed', true)), status: 'error', reason: 'read-failed' }
-    } finally { if (this.quotaProbe === probe) this.quotaProbe = undefined; probe.close() }
+      if (gone()) return unavailableProviderQuota('grok', 'not-connected')
+      return this.settleQuota(start, { ...(this.quota ?? unavailableProviderQuota('grok', 'read-failed', true)), status: 'error', reason: 'read-failed' })
+    } finally { this.quotaProbes.delete(probe); probe.close() }
+  }
+  /**
+   * Keep a finished read's answer unless a read that began after it has already finished, in which case that newer
+   * answer stands and is what this read hands back too, so nothing downstream shows the older one over it.
+   */
+  private settleQuota(start: number, answer: UsageQuotaRead): UsageQuotaRead {
+    if (this.quotaLatest && this.quotaLatest.start > start) return this.quotaLatest.read
+    this.quotaLatest = { start, read: answer, at: Date.now() }
+    if (answer.status !== 'error') this.quota = answer
+    return answer
+  }
+  /**
+   * A thread's process that has started, signed in and is not being stopped: one on the current client whose thread
+   * is idle first, then one on the current client whose thread is busy, then an outdated one still running.
+   */
+  private liveProcess(): GrokRpc | undefined {
+    let best: { rpc: GrokRpc; rank: number } | undefined
+    for (const [id, entry] of this.processes) {
+      if (!entry.signedIn || entry.closing || entry.lost) continue
+      const rank = entry.clientRevision !== this.clientRevision ? 2 : this.busy(id) ? 1 : 0
+      if (rank === 0) return entry.rpc
+      if (!best || rank < best.rank) best = { rpc: entry.rpc, rank }
+    }
+    return best?.rpc
+  }
+  /**
+   * Ask one process for the account's credit use. A reader that throws ends the process it reads from, which may be a
+   * thread's own, so an answer Sotto cannot read fails this read after the reply is in and leaves the process alone.
+   * `timeoutMs` bounds this one request; when it passes, the read fails, the process keeps running, and a reply that
+   * comes later is ignored.
+   */
+  private async askBilling(rpc: GrokRpc, timeoutMs?: number): Promise<UsageQuotaRead> {
+    let answer = unavailableProviderQuota('grok', 'not-reported', true), unreadable = false
+    await rpc.request('_x.ai/billing', {}, value => {
+      try { answer = parseGrokQuota(value, new Date().toISOString()) } catch { unreadable = true }
+    }, false, timeoutMs)
+    if (unreadable) throw new Error('Grok sent limits Sotto could not read.')
+    return answer
   }
   private usageContext(id: string, params: z.infer<typeof updateSchema>, replay: boolean, at?: string): NativeUsageContext {
     const prompt = typeof params.update.prompt_id === 'string' ? params.update.prompt_id : params._meta?.promptId
@@ -548,7 +657,7 @@ export class GrokAcpHost implements AgentHost {
     const executable = this.executable
     if (!this.state.connected || !executable) return Promise.reject(new Error('Connect Grok before managing threads.'))
     const replacement = this.processes.get(id); if (replacement) return replacement.ready
-    const entry = { clientRevision: this.clientRevision, closing: false, lost: false, watcher: !!profile } as ThreadProcess
+    const entry = { clientRevision: this.clientRevision, closing: false, lost: false, watcher: !!profile, signedIn: false } as ThreadProcess
     entry.rpc = this.spawn(executable, () => this.processLost(id, entry))
     entry.ready = (async () => {
       try {
@@ -565,6 +674,7 @@ export class GrokAcpHost implements AgentHost {
         throw startupError
       }
       if (generation !== this.generation || this.processes.get(id) !== entry) throw new GrokUncertain('Grok connection changed while starting the thread.')
+      entry.signedIn = true
       return entry
     })()
     this.processes.set(id, entry)
@@ -588,6 +698,7 @@ export class GrokAcpHost implements AgentHost {
       if (this.endTurn(id, 'failed')) void this.persist().catch(() => undefined)
       // A Sotto prompt fails through its own request; a turn Sotto only watched fails here.
       if (thread.status === 'running' && !this.activePrompts.has(id)) { thread.status = 'error'; this.liveStatus.delete(id); this.markTurn(id, 'failed', undefined, THREAD_PROCESS_LOST) }
+      this.changed(id)
     }
     this.emit()
   }
@@ -633,18 +744,71 @@ export class GrokAcpHost implements AgentHost {
     return { ...this.state, threads: [...this.threads.values()]
       .filter((thread): thread is AgentThread => 'projectId' in thread).map(thread => this.log.activityThread(thread, historyFromEvents)) }
   }
+  /** One thread as `activitySnapshot` lists it, for the thread changes of the threads marked changed. */
+  private activityThread(id: string, historyFromEvents: boolean): AgentThread | undefined {
+    const thread = this.threads.get(id)
+    if (!thread || !('projectId' in thread)) return undefined
+    certifyActivityView(this.state, [thread])
+    return this.log.activityThread(thread, historyFromEvents)
+  }
+  /**
+   * This thread's state changed (ADR-0016, #925): its next thread changes carry it. `thread`, which most paths that
+   * write into a thread take it from, marks it, and a path that writes after a publication may have gone marks it again
+   * once it has. One that writes into every thread marks them all. What goes through the message log and the
+   * open-session set is marked by them.
+   */
+  private changed(id: string): void { this.threadChanges.mark(id) }
   private emit(streaming = false): void { this.publisher.publish(streaming); this.stopOutdated() }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void {
     return this.activityListeners.add(listener, options)
   }
+  subscribeActivityChanges(listener: ActivityChangesListener, options?: ActivitySubscriptionOptions): ActivityChangesSubscription {
+    return this.threadChanges.subscribeActivityChanges(listener, options)
+  }
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.log.subscribeEvents(listener) }
   useThreadHistory(source: ThreadHistorySource): void { this.history = source }
   private persist(): Promise<void> { this.writing = this.aliasStore.write(structuredClone(this.aliases)); return this.writing }
+  /**
+   * ADR-0140: stop the thread's own process if it has one, remove its alias and every per-thread record this
+   * adapter keeps, and persist. Guarded with `forgottenAliasIds` against a `connect()` that reads the alias store
+   * before this removal reaches disk (see there).
+   */
+  async forgetThread(id: string): Promise<void> {
+    this.forgottenAliasIds.add(id)
+    if (!this.aliasesLoaded) {
+      const current = await this.aliasStore.read()
+      if (!(id in current)) return
+      const next = { ...current }
+      delete next[id]
+      await this.aliasStore.write(next)
+      return
+    }
+    const alias = this.aliases[id]
+    if (!alias) return
+    await this.stopSession(id)
+    this.reaper.forget(id)
+    this.observed.delete(id)
+    this.outdated.delete(id)
+    this.holds.delete(id)
+    this.historyReads.delete(id)
+    this.activePrompts.delete(id)
+    this.liveStatus.delete(id)
+    for (const [requestId, pending] of [...this.pending]) if (pending.threadId === id) this.pending.delete(requestId)
+    for (const [streamId, stream] of [...this.streams]) if (stream.threadId === id) this.streams.delete(streamId)
+    for (const [messageId, authored] of [...this.authored]) if (authored.threadId === id) this.authored.delete(messageId)
+    if (alias.grokSessionId) this.selections.delete(alias.grokSessionId)
+    for (const key of [...this.usagePromptStarts.keys()]) { try { if ((JSON.parse(key) as unknown[])[0] === id) this.usagePromptStarts.delete(key) } catch { /* not this thread's key */ } }
+    this.log.forget(id)
+    this.threads.delete(id)
+    delete this.aliases[id]
+    await this.persist()
+    if (this.state.connected) this.emit()
+  }
   private thread(id: string): AgentThread {
     const alias = this.aliases[id]; if (!alias) throw new Error('The Grok thread does not exist.')
     if (!this.threads.has(id)) this.threads.set(id, { id, projectId: alias.projectId!, workingDirectory: alias.cwd, title: alias.title, modelId: alias.settingsConfirmed ? alias.modelId : alias.nativeModelId ?? '', runtimeMode: alias.runtimeMode ?? 'approval-required', ...(alias.reasoningEffort && alias.settingsConfirmed ? { reasoningEffort: alias.reasoningEffort } : {}), status: alias.grokSessionId && alias.settingsConfirmed ? 'idle' : 'error', messages: [], requests: [] })
-    const thread = this.threads.get(id)!; thread.usage = this.usage.get(id); return thread
+    const thread = this.threads.get(id)!; thread.usage = this.usage.get(id); this.changed(id); return thread
   }
   /** Applies a native load that carried the alias's pending (or committed) mode policy. */
   private confirmLoad(id: string, alias: Alias, value: unknown): void {
@@ -659,7 +823,7 @@ export class GrokAcpHost implements AgentHost {
   }
   private id(nativeId: string): string | undefined { return Object.keys(this.aliases).find(id => this.aliases[id]!.grokSessionId === nativeId) }
   async connect(): Promise<AgentHostSnapshot> {
-    if (this.usageEnabled) { this.quota = undefined; this.usagePromptStarts.clear() }
+    if (this.usageEnabled) { this.quota = undefined; this.quotaLatest = undefined; this.usagePromptStarts.clear() }
     this.disconnect(); await this.closed()
     const generation = this.generation
     await this.usage.load()
@@ -668,7 +832,10 @@ export class GrokAcpHost implements AgentHost {
     await sweepLeftoverSessions(join(this.userDataDirectory, 'writing', 'grok'))
     const executable = this.options.executable ?? await findGrokExecutable(this.options.environment)
     if (!executable || !isAbsolute(executable)) throw new ProviderUnavailable('not-installed', 'Install Grok CLI and sign in before connecting Grok.')
-    this.aliases = await this.aliasStore.read(); this.state.projects = await this.projectStore.read(); this.threads.clear(); this.streams.clear(); this.authored.clear(); this.liveStatus.clear(); this.selections.clear(); this.activePrompts.clear(); this.seenUpdates.clear(); this.histories.clear(); this.readsBeforeSend.clear()
+    const readAliases = await this.aliasStore.read()
+    for (const id of this.forgottenAliasIds) delete readAliases[id]
+    this.aliases = readAliases; this.aliasesLoaded = true
+    this.state.projects = await this.projectStore.read(); this.threads.clear(); this.threadChanges.markAll(); this.streams.clear(); this.authored.clear(); this.liveStatus.clear(); this.selections.clear(); this.activePrompts.clear(); this.seenUpdates.clear(); this.histories.clear(); this.readsBeforeSend.clear()
     if (generation !== this.generation) throw new Error('Grok connection was cancelled.')
     this.executable = executable
     /** The client's version when it is older than Sotto supports, which a host's tile names (ADR-0037). */
@@ -861,7 +1028,7 @@ export class GrokAcpHost implements AgentHost {
         delete pending.request.delivery; pending.request.answerRetryReady = true
         this.answeredRequests.get(pending.rpc)?.delete(pending.request.id)
       }
-      this.emit()
+      this.changed(id); this.emit()
     }
   }
   private async queueRead(id: string, maxPages = Number.POSITIVE_INFINITY): Promise<void> {
@@ -947,11 +1114,10 @@ export class GrokAcpHost implements AgentHost {
             if (update.sessionUpdate === 'user_message_chunk') {
               history.statusEvents.add(eventKey(parsed.data, 0))
               delete history.assistant; history.status = 'running'
-              const text = content.text
-              const origin = messageOrigin(alias, key, text, Date.parse(createdAt))
+              const { text, origin } = readBackUserText(content.text, words => messageOrigin(alias, key, words, Date.parse(createdAt)))
               history.lastTurn = { id: origin?.messageId ?? key, status: 'running' }
               if (origin && !origin.entryKey) { origin.entryKey = key; changed = true }
-              history.messages.push({ id: origin?.messageId ?? key, role: 'user', text: text, createdAt: origin?.createdAt ?? createdAt, ...(origin ? { commandId: origin.commandId } : {}) })
+              history.messages.push({ id: origin?.messageId ?? key, role: 'user', text: text, createdAt: origin?.createdAt ?? createdAt, ...(origin ? { commandId: origin.commandId, ...(origin.attachments ? { attachments: origin.attachments } : {}) } : {}) })
               if (origin) this.deliveries.get(origin.messageId)?.resolve()
             } else if (update.sessionUpdate === 'agent_message_chunk') {
               const assistantId = assistantKey(id, parsed.data, history.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', lastReportedId(history.activities))
@@ -987,6 +1153,7 @@ export class GrokAcpHost implements AgentHost {
     if (lastTurn && !this.activePrompts.has(id)) thread.lastTurn = lastTurn
     this.record(id, status)
     thread.status = !alias.settingsConfirmed ? 'error' : this.activePrompts.has(id) ? 'running' : status
+    this.changed(id)
     // A read that found nothing new and moved no status publishes nothing (#765): every send reads its thread,
     // and a publish is a copy of every thread for each subscriber.
     if (sawNew || restarted || thread.status !== before.status || !sameSnapshot(thread.lastTurn, before.lastTurn)) this.emit()
@@ -1152,6 +1319,7 @@ export class GrokAcpHost implements AgentHost {
               await this.checkLaunchProfile(command.threadId)
               alias.modelId = modelId; alias.nativeModelId = modelId; alias.reasoningEffort = reasoningEffort; alias.settingsConfirmed = true
               thread.modelId = modelId; if (reasoningEffort) thread.reasoningEffort = reasoningEffort; else delete thread.reasoningEffort
+              this.changed(command.threadId)
               await this.persist()
             } catch (error) {
               this.assertGeneration(generation)
@@ -1174,7 +1342,7 @@ export class GrokAcpHost implements AgentHost {
               let modeWritten = false
               try {
                 // Until the reload is confirmed, sends are blocked and reconnect finishes the change.
-                alias.pendingRuntimeMode = mode; alias.settingsConfirmed = false; thread.status = 'error'; await this.persist(); this.emit()
+                alias.pendingRuntimeMode = mode; alias.settingsConfirmed = false; thread.status = 'error'; this.changed(command.threadId); await this.persist(); this.emit()
                 // The change happens on the thread's own process, the one its session is resident in.
                 const entry = await this.threadProcess(command.threadId); const rpc = entry.rpc
                 this.assertGeneration(generation)
@@ -1187,12 +1355,12 @@ export class GrokAcpHost implements AgentHost {
                 await rpc.request('session/load', { sessionId: alias.grokSessionId, cwd: alias.cwd, mcpServers, _meta: meta }, async value => {
                   this.confirmLoad(command.threadId, alias, value); await this.persist()
                 })
-                thread.status = alias.settingsConfirmed ? 'idle' : 'error'
+                thread.status = alias.settingsConfirmed ? 'idle' : 'error'; this.changed(command.threadId)
               } catch (error) {
                 if (watcherGuard && !modeWritten) {
                   if (previousPending) alias.pendingRuntimeMode = previousPending
                   else delete alias.pendingRuntimeMode
-                  alias.settingsConfirmed = previousConfirmed; thread.status = previousStatus
+                  alias.settingsConfirmed = previousConfirmed; thread.status = previousStatus; this.changed(command.threadId)
                   await this.persist()
                 }
                 throw error
@@ -1204,7 +1372,7 @@ export class GrokAcpHost implements AgentHost {
           release = this.hold(command.threadId)
           if (alias.pendingRuntimeMode) throw new Error('Grok has not confirmed this thread’s permission mode. Reconnect to check before sending.')
           if (!alias.settingsConfirmed) throw new Error('Grok has not confirmed this thread’s model settings. Reconnect to check before sending.')
-          validatePromptAttachments(this.state, alias.modelId, command.attachments)
+          validatePromptAttachments(this.state, alias.modelId, command.attachments, { workingDirectory: alias.cwd })
           try { if (!readForSend()) await this.sync(command.threadId) }
           catch (error) { throw error instanceof GrokUncertain ? new Error('Grok history could not be verified before sending the prompt.', { cause: error }) : error }
           const thread = this.thread(command.threadId)
@@ -1222,10 +1390,14 @@ export class GrokAcpHost implements AgentHost {
           const note = command.watcherRequestNote ?? command.watcherNews
           const requestLine = note && await this.launchProfile(command.threadId) ? watcherRequestLine(note) : ''
           const nativeText = skillText + requestLine
+          // Grok reads no images, so every attachment here is a file: saved into the thread's folder and named in a note
+          // after everything else (ADR-0131). The origin's digest leaves the note out, as the history read takes it off.
+          const filesNote = (await deliverAttachments(alias.cwd, command.attachments)).note
           this.assertGeneration(generation)
           // Direct sends run beside configure-thread; a mode change that began during the awaits above owns the session now.
           if (alias.pendingRuntimeMode || !alias.settingsConfirmed) throw new Error('Grok is applying a new permission mode to this thread. Send again once it is confirmed.')
-          const origin = { messageId: command.messageId, commandId: command.commandId, digest: digest(nativeText), createdAt: new Date().toISOString() }
+          const origin = { messageId: command.messageId, commandId: command.commandId, digest: digest(nativeText), createdAt: new Date().toISOString(),
+            ...(command.attachments?.length ? { attachments: attachmentReferences(command.attachments) } : {}) }
           alias.origins.push(origin)
           this.activePrompts.add(command.threadId)
           // The prompt now holds the process itself.
@@ -1250,7 +1422,7 @@ export class GrokAcpHost implements AgentHost {
           const delivery = new Promise<void>((resolve, reject) => { this.deliveries.set(command.messageId, { resolve, reject }); timer = setTimeout(() => reject(new GrokUncertain('Grok prompt delivery is uncertain.')), this.options.requestTimeoutMs ?? 15000) })
           // ACP prompt responds at turn completion. Its authored-message echo acknowledges delivery.
           markSendStage(command.commandId, 'written')
-          void entry.rpc.request('session/prompt', { sessionId: alias.grokSessionId, prompt: [{ type: 'text', text: nativeText }] }, value => {
+          void entry.rpc.request('session/prompt', { sessionId: alias.grokSessionId, prompt: [{ type: 'text', text: withAttachedFilesNote(nativeText, filesNote) }] }, value => {
             const completion = z.object({ stopReason: z.enum(['end_turn', 'max_tokens', 'max_turn_requests', 'refusal', 'cancelled']) }).parse(value)
             this.thread(command.threadId).lastTurn = { id: command.messageId, status: turnOutcome(completion.stopReason) }
             this.markTurn(command.threadId, turnOutcome(completion.stopReason), command.messageId)
@@ -1258,7 +1430,7 @@ export class GrokAcpHost implements AgentHost {
           }, true).catch(async error => {
             if (error instanceof GrokRejected) { alias.origins = alias.origins.filter(item => item !== origin); await this.persist() }
             this.activePrompts.delete(command.threadId); this.deliveries.get(command.messageId)?.reject(error)
-            this.thread(command.threadId).status = 'error'; this.thread(command.threadId).lastTurn = { id: command.messageId, status: 'failed' }
+            this.thread(command.threadId).status = 'error'; this.thread(command.threadId).lastTurn = { id: command.messageId, status: 'failed', ...this.limitStopOf(error) }
             // A process that ended mid-turn failed this thread alone, and the next send starts a new one.
             this.cutThoughts(command.threadId)
             this.markTurn(command.threadId, 'failed', command.messageId, entry.lost ? THREAD_PROCESS_LOST : error instanceof Error ? error.message : undefined)
@@ -1277,11 +1449,11 @@ export class GrokAcpHost implements AgentHost {
           const remembered = alias.answeredRequestIds.includes(pending.request.id)
           if (!remembered) alias.answeredRequestIds.push(pending.request.id)
           try { await this.persist() } catch (error) { if (!remembered) alias.answeredRequestIds = alias.answeredRequestIds.filter(id => id !== pending.request.id); pending.answering = false; this.answeredRequests.get(pending.rpc)?.delete(pending.request.id); throw error }
-          delete pending.request.answerRetryReady
+          delete pending.request.answerRetryReady; this.changed(command.threadId)
           // The answer goes to the process that asked, and only while that process is still the thread's.
           if (pending.rpc !== this.processes.get(command.threadId)?.rpc || !this.state.connected || !this.pending.has(pending.request.id)) return { accepted: false, uncertain: true }
           try { await pending.rpc.reply(pending.wireId, result); this.removeRequest(pending) }
-          catch { pending.request.delivery = 'uncertain'; this.emit(); return { accepted: false, uncertain: true } }
+          catch { pending.request.delivery = 'uncertain'; this.changed(command.threadId); this.emit(); return { accepted: false, uncertain: true } }
         } else if (command.type === 'interrupt') {
           if (!watcherGuard) this.activePrompts.delete(command.threadId)
           if (!watcherGuard) await this.decline(command.threadId)
@@ -1363,10 +1535,10 @@ export class GrokAcpHost implements AgentHost {
       if (update.sessionUpdate === 'model_changed' && typeof update.model_id === 'string') this.selections.set(parsed.data.sessionId, { model: update.model_id, effort: typeof update.reasoning_effort === 'string' ? update.reasoning_effort : undefined })
       if (update.sessionUpdate === 'user_message_chunk' && content?.type === 'text' && typeof content.text === 'string') {
         const key = eventKey(parsed.data, Date.now())
-        const origin = messageOrigin(this.aliases[id]!, key, content.text, parsed.data._meta?.agentTimestampMs ?? Date.now())
+        const { text, origin } = readBackUserText(content.text, words => messageOrigin(this.aliases[id]!, key, words, parsed.data._meta?.agentTimestampMs ?? Date.now()))
         const messageId = origin?.messageId ?? key
         if (messageId && !this.authored.has(messageId) && !this.log.has(id, messageId)) {
-          const message: AgentMessage = { id: messageId, role: 'user', text: content.text, createdAt: origin?.createdAt ?? new Date(parsed.data._meta?.agentTimestampMs ?? Date.now()).toISOString(), ...(origin ? { commandId: origin.commandId } : {}) }
+          const message: AgentMessage = { id: messageId, role: 'user', text, createdAt: origin?.createdAt ?? new Date(parsed.data._meta?.agentTimestampMs ?? Date.now()).toISOString(), ...(origin ? { commandId: origin.commandId, ...(origin.attachments ? { attachments: origin.attachments } : {}) } : {}) }
           this.authored.set(messageId, { threadId: id, message })
         }
         if (origin) this.deliveries.get(origin.messageId)?.resolve()
@@ -1396,6 +1568,7 @@ export class GrokAcpHost implements AgentHost {
       }
       if (update.sessionUpdate === 'interaction_resolved') for (const pending of this.pending.values()) if (pending.threadId === id && pending.toolCallId === update.tool_call_id) this.removeRequest(pending)
       if (!appended || !this.appendLive(id, appended.streamId, appended.text)) this.record(id, thread.status)
+      this.changed(id)
       this.emit(!['user_message_chunk', 'turn_completed', 'interaction_resolved'].includes(update.sessionUpdate))
     }
   }
@@ -1404,7 +1577,7 @@ export class GrokAcpHost implements AgentHost {
    * that turn's end, so nothing else would settle it until the next prompt, and then as completed.
    */
   private cutThoughts(id: string): void {
-    const thread = this.threads.get(id); if (thread?.activities) thread.activities = cutThinking(thread.activities, true)
+    const thread = this.threads.get(id); if (thread?.activities) { thread.activities = cutThinking(thread.activities, true); this.changed(id) }
   }
   /**
    * Grok reports no turn lifecycle, so Sotto records the turn it watched. The turn is identified by
@@ -1417,8 +1590,9 @@ export class GrokAcpHost implements AgentHost {
     if (turn === undefined) return
     thread.activities = markTurnActivity(thread.activities, { provider: 'grok', turnId: turn, status,
       ...(last === turn ? { afterMessageId: turn } : {}), ...(error !== undefined ? { error } : {}) })
+    this.changed(id)
   }
-  private removeRequest(pending: Pending): void { this.pending.delete(pending.request.id); this.thread(pending.threadId).requests = this.thread(pending.threadId).requests.filter(request => request.id !== pending.request.id); this.emit() }
+  private removeRequest(pending: Pending): void { this.pending.delete(pending.request.id); this.thread(pending.threadId).requests = this.thread(pending.threadId).requests.filter(request => request.id !== pending.request.id); this.changed(pending.threadId); this.emit() }
   private refusal(pending: Pending): unknown { return pending.permission ? { outcome: { outcome: 'cancelled' } } : { outcome: 'cancelled' } }
   private async decline(id: string): Promise<void> { for (const pending of [...this.pending.values()]) if (pending.threadId === id && !pending.answering) { this.removeRequest(pending); await pending.rpc.reply(pending.wireId, this.refusal(pending)) } }
   private disconnecting = false
@@ -1429,9 +1603,11 @@ export class GrokAcpHost implements AgentHost {
   }
   private finishDisconnect(): void {
     this.generation++; clearInterval(this.pollTimer); this.reaper.dispose(); this.loaded.clear(); this.loading.clear()
-    this.quotaProbe?.close(); this.quotaProbe = undefined
+    for (const probe of this.quotaProbes) probe.close()
+    this.quotaProbes.clear()
     for (const pending of this.pending.values()) { if (pending.answering) continue; try { pending.rpc.write({ jsonrpc: '2.0', id: pending.wireId, result: this.refusal(pending) }) } catch { /* Closed pipes never grant permission. */ } }
     this.pending.clear(); for (const thread of this.threads.values()) thread.requests = []
+    this.threadChanges.markAll()
     for (const delivery of this.deliveries.values()) delivery.reject(new GrokUncertain('Grok disconnected before acknowledgement.'))
     this.deliveries.clear()
     // Each thread's turn ends with its process, and Grok's history will never say so.

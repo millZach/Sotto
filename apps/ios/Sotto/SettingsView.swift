@@ -8,20 +8,20 @@ struct SettingsView: View {
     @State private var toast: String?
     var body: some View {
         SheetPage {
-            PageHeading("Settings", subtitle: "These are kept on this iPhone. They don’t change any computer’s settings.")
+            PageHeading(String(localized: "Settings"), subtitle: String(localized: "These are kept on this iPhone. They don’t change any computer’s settings."))
                 .padding(.top, Space.s1)
-            SectionLabel("Look")
+            SectionLabel(String(localized: "Look", comment: "Settings section heading for appearance, theme, text size and density."))
             VStack(spacing: Space.s3) {
                 AppearancePanel()
                 ThemePanel { toast = $0 }
                 TextSizePanel()
                 DensityPanel()
             }
-            SectionLabel("Notifications")
+            SectionLabel(String(localized: "Notifications", comment: "Settings section heading for alerts."))
             NotificationsPanel()
-            SectionLabel("New thread defaults")
+            SectionLabel(String(localized: "New thread defaults"))
             DefaultsPanel { toast = $0 }
-            SectionLabel("About")
+            SectionLabel(String(localized: "About", comment: "Settings section heading for the app version and connection."))
             AboutPanel()
         }
         .toast($toast)
@@ -38,8 +38,8 @@ private struct AppearancePanel: View {
     var body: some View {
         let current = PhoneAppearance(rawValue: appearance) ?? .dark
         VStack(alignment: .leading, spacing: Space.s3) {
-            PanelHeader(title: "Appearance", value: current == .system ? "Following the iPhone: \(scheme == .dark ? "Dark" : "Light")" : nil)
-            Segmented(name: "Appearance", choices: PhoneAppearance.allCases, selection: current,
+            PanelHeader(title: String(localized: "Appearance"), value: current == .system ? (scheme == .dark ? String(localized: "Following the iPhone: Dark") : String(localized: "Following the iPhone: Light")) : nil)
+            Segmented(name: String(localized: "Appearance"), choices: PhoneAppearance.allCases, selection: current,
                       title: { $0.title }, identifier: { "setting-\($0.rawValue)" }) { appearance = $0.rawValue }
         }
         .card()
@@ -55,19 +55,19 @@ private struct ThemePanel: View {
         let current = ThemePalettes.named(themeID)
         let dark = scheme == .dark
         VStack(alignment: .leading, spacing: Space.s3) {
-            PanelHeader(title: "Theme", value: "\(current.name), \(dark ? "dark" : "light")")
+            PanelHeader(title: String(localized: "Theme", comment: "Settings panel heading: the colour theme."), value: dark ? String(localized: "\(current.name), dark", comment: "%@ is the colour theme’s name, shown in its dark version.") : String(localized: "\(current.name), light", comment: "%@ is the colour theme’s name, shown in its light version."))
             LazyVGrid(columns: columns, alignment: .leading, spacing: Space.s4) {
                 ForEach(ThemePalettes.all) { palette in
                     ThemeChoice(palette: palette, dark: dark, selected: palette.id == current.id) {
                         guard palette.id != current.id else { return }
                         themeID = palette.id
-                        announce("\(palette.name) theme on.")
+                        announce(String(localized: "\(palette.name) theme on.", comment: "%@ is the name of the colour theme just chosen."))
                     }
                 }
             }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Theme")
-            PanelHint(text: "The theme colours the light at the top of each screen, what’s working and what you can tap.")
+            PanelHint(text: String(localized: "The theme colours the light at the top of each screen, what’s working and what you can tap."))
         }
         .card()
     }
@@ -102,7 +102,7 @@ private struct ThemeChoice: View {
         }
         .buttonStyle(PressStyle())
         .accessibilityLabel("\(palette.name) theme")
-        .accessibilityValue(selected ? "Selected" : "Not selected")
+        .accessibilityValue(selected ? String(localized: "Selected", comment: "Accessibility value: this choice is the one in use.") : String(localized: "Not selected", comment: "Accessibility value: this choice is not the one in use."))
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier("setting-theme-\(palette.id)")
     }
@@ -147,7 +147,7 @@ private struct TextSizePanel: View {
     var body: some View {
         let current = PhoneTextSize.resolve(textSize, legacyLarger: legacyLarger)
         VStack(alignment: .leading, spacing: Space.s3) {
-            PanelHeader(title: "Text size", value: current.title)
+            PanelHeader(title: String(localized: "Text size"), value: current.title)
             HStack(spacing: 0) {
                 ForEach(PhoneTextSize.allCases, id: \.rawValue) { size in
                     TextSizeStep(size: size, selected: size == current) { textSize = size.rawValue }
@@ -181,7 +181,7 @@ private struct TextSizeStep: View {
         Button {
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) { pick() }
         } label: {
-            Text("A")
+            Text("A", comment: "A sample letter drawn at each text size.")
                 .font(.custom("Figtree-Bold", fixedSize: CGFloat(16 + size.offset * 3)))
                 .foregroundStyle(selected ? Palette.accentText : Palette.muted)
                 .frame(maxWidth: .infinity, minHeight: 52)
@@ -196,7 +196,7 @@ private struct TextSizeStep: View {
         }
         .buttonStyle(PressStyle())
         .accessibilityLabel(size.title)
-        .accessibilityValue(selected ? "Selected" : "Not selected")
+        .accessibilityValue(selected ? String(localized: "Selected", comment: "Accessibility value: this choice is the one in use.") : String(localized: "Not selected", comment: "Accessibility value: this choice is not the one in use."))
         .accessibilityAddTraits(selected ? .isSelected : [])
         // The Larger step keeps the earlier Larger text switch's identifier.
         .accessibilityIdentifier(size == .larger ? "setting-larger-text" : "setting-text-\(size.rawValue)")
@@ -225,10 +225,10 @@ private struct DensityPanel: View {
     var body: some View {
         let current = PhoneDensity(rawValue: density) ?? .comfortable
         VStack(alignment: .leading, spacing: Space.s3) {
-            PanelHeader(title: "Message density", value: nil)
-            Segmented(name: "Message density", choices: PhoneDensity.allCases, selection: current,
+            PanelHeader(title: String(localized: "Message density"), value: nil)
+            Segmented(name: String(localized: "Message density"), choices: PhoneDensity.allCases, selection: current,
                       title: { $0.title }, identifier: { "setting-density-\($0.rawValue)" }) { density = $0.rawValue }
-            PanelHint(text: current == .compact ? "Tighter spacing fits more of a thread on screen." : "Room between messages, lists and steps.")
+            PanelHint(text: current == .compact ? String(localized: "Tighter spacing fits more of a thread on screen.") : String(localized: "Room between messages, lists and steps."))
         }
         .card()
     }
@@ -252,19 +252,19 @@ private struct NotificationsPanel: View {
         let watcher = model.watcherHostID != nil
         VStack(alignment: .leading, spacing: 0) {
             VStack(spacing: 0) {
-                AlertSwitch(title: "When a thread needs you",
-                            detail: watcher ? "A question or permission is waiting, Watcher’s own too." : "A question or permission is waiting.",
+                AlertSwitch(title: String(localized: "When a thread needs you"),
+                            detail: watcher ? String(localized: "A question or permission is waiting, Watcher’s own too.") : String(localized: "A question or permission is waiting."),
                             identifier: "setting-notify-needs-you", isOn: asking($needsYou))
                 RowDivider()
-                AlertSwitch(title: "When a thread finishes",
-                            detail: watcher ? "Its turn ended while you weren’t looking. Watcher’s turns don’t count." : "Its turn ended while you weren’t looking.",
+                AlertSwitch(title: String(localized: "When a thread finishes"),
+                            detail: watcher ? String(localized: "Its turn ended while you weren’t looking. Watcher’s turns don’t count.") : String(localized: "Its turn ended while you weren’t looking."),
                             identifier: "setting-notify-finished", isOn: asking($finished))
                 RowDivider()
-                AlertSwitch(title: "When a thread stops with an error", detail: watcher ? "Watcher’s own errors too." : nil,
+                AlertSwitch(title: String(localized: "When a thread stops with an error"), detail: watcher ? String(localized: "Watcher’s own errors too.") : nil,
                             identifier: "setting-notify-failed", isOn: asking($failed))
                 RowDivider()
                 // A sound only goes with an alert, so it asks iOS for nothing and waits for one to be on.
-                AlertSwitch(title: "Play a sound", detail: anyAlert ? nil : "Turn on an alert above first.",
+                AlertSwitch(title: String(localized: "Play a sound"), detail: anyAlert ? nil : String(localized: "Turn on an alert above first."),
                             identifier: "setting-notify-sound", isOn: $sound)
                     .disabled(!anyAlert)
             }
@@ -272,7 +272,7 @@ private struct NotificationsPanel: View {
             .frame(maxWidth: .infinity)
             .sottoCard(.plain)
             if refused { refusal.padding(.top, Space.s3) }
-            NoteLine(text: "Alerts arrive only while Sotto is open on this iPhone.")
+            NoteLine(text: String(localized: "Alerts arrive only while Sotto is open on this iPhone."))
         }
         .task { await check() }
     }
@@ -306,6 +306,7 @@ private struct NotificationsPanel: View {
                 Light(tone: .warning, size: 7)
                 Text("iOS isn’t letting Sotto show alerts, so they’re off. To allow them, open Settings › Notifications › Sotto on this iPhone.")
                     .font(.sotto(.small)).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
+                    .paragraphDirection()
             }
             Button("Open iOS Settings") {
                 if let url = URL(string: UIApplication.openNotificationSettingsURLString) { openURL(url) }
@@ -332,6 +333,7 @@ private struct AlertSwitch: View {
                     .fixedSize(horizontal: false, vertical: true)
                 if let detail {
                     Text(detail).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                        .paragraphDirection()
                 }
             }
         }
@@ -352,13 +354,13 @@ private struct DefaultsPanel: View {
     @AppStorage(PhonePreferenceKey.newThreadEffort) private var effort = ""
     @AppStorage(PhonePreferenceKey.newThreadPermission) private var permission = ""
     @AppStorage(PhonePreferenceKey.newThreadWorkingCopy) private var workingCopy = ""
-    private static let computersChoice = "Use the computer’s choice"
-    private static let askingChoice = "Start by asking"
+    private static let computersChoice = String(localized: "Use the computer’s choice")
+    private static let askingChoice = String(localized: "Start by asking", comment: "A new-thread permission default: start every thread by asking for permission.")
     var body: some View {
         let models = model.defaultModelChoices
         VStack(alignment: .leading, spacing: 0) {
             VStack(spacing: 0) {
-                DefaultRow(label: "Model", value: modelValue(models), identifier: "setting-default-model") {
+                DefaultRow(label: String(localized: "Model", comment: "A new-thread default: the model a thread starts on."), spoken: String(localized: "New thread model"), value: modelValue(models), identifier: "setting-default-model") {
                     Picker("Model", selection: saving($modelID)) {
                         Text(Self.computersChoice).tag("")
                         if !modelID.isEmpty && !models.contains(where: { $0.id == modelID }) {
@@ -368,21 +370,21 @@ private struct DefaultsPanel: View {
                     }
                 }
                 RowDivider()
-                DefaultRow(label: "Effort", value: effort.isEmpty ? Self.computersChoice : effort.capitalized, identifier: "setting-default-effort") {
+                DefaultRow(label: String(localized: "Effort", comment: "A new-thread default: the model’s reasoning effort."), spoken: String(localized: "New thread effort"), value: effort.isEmpty ? Self.computersChoice : effort.capitalized, identifier: "setting-default-effort") {
                     Picker("Effort", selection: saving($effort)) {
                         Text(Self.computersChoice).tag("")
                         ForEach(efforts(models), id: \.self) { Text($0.capitalized).tag($0) }
                     }
                 }
                 RowDivider()
-                DefaultRow(label: "Permissions", value: permissionValue(models), identifier: "setting-default-permissions") {
+                DefaultRow(label: String(localized: "Permissions", comment: "A new-thread default: the permission mode a thread starts in."), spoken: String(localized: "New thread permissions"), value: permissionValue(models), identifier: "setting-default-permissions") {
                     Picker("Permissions", selection: saving($permission)) {
                         Text(Self.askingChoice).tag("")
                         ForEach(permissions(models)) { choice in Text(choice.name).tag(choice.id) }
                     }
                 }
                 RowDivider()
-                DefaultRow(label: "Working copy", value: currentWorkingCopy.title, identifier: "setting-default-working-copy") {
+                DefaultRow(label: String(localized: "Working copy", comment: "A new-thread default: where a thread works, the project folder or a new worktree."), spoken: String(localized: "New thread working copy"), value: currentWorkingCopy.title, identifier: "setting-default-working-copy") {
                     Picker("Working copy", selection: savingWorkingCopy) {
                         ForEach(WorkingCopy.allCases, id: \.self) { Text($0.title).tag($0) }
                     }
@@ -391,7 +393,7 @@ private struct DefaultsPanel: View {
             .padding(.horizontal, Space.s4).padding(.vertical, Space.s1)
             .frame(maxWidth: .infinity)
             .sottoCard(.plain)
-            NoteLine(text: "A default applies only where the chosen computer offers it. A computer that hasn’t let this iPhone answer starts every thread by asking.")
+            NoteLine(text: String(localized: "A default applies only where the chosen computer offers it. A computer that hasn’t let this iPhone answer starts every thread by asking."))
         }
     }
 
@@ -399,7 +401,7 @@ private struct DefaultsPanel: View {
 
     private func modelValue(_ models: [ThreadModel]) -> String {
         guard !modelID.isEmpty else { return Self.computersChoice }
-        return models.first { $0.id == modelID }.map(Self.modelName) ?? "A model no connected computer offers"
+        return models.first { $0.id == modelID }.map(Self.modelName) ?? String(localized: "A model no connected computer offers")
     }
 
     /// The chosen model's efforts, or every effort the connected computers' models offer.
@@ -423,14 +425,14 @@ private struct DefaultsPanel: View {
             }
         }
         if !permission.isEmpty && !seen.contains(permission) {
-            all.append(DefaultChoice(id: permission, name: "A mode no connected computer offers"))
+            all.append(DefaultChoice(id: permission, name: String(localized: "A mode no connected computer offers")))
         }
         return all
     }
 
     private func permissionValue(_ models: [ThreadModel]) -> String {
         guard !permission.isEmpty else { return Self.askingChoice }
-        return permissions(models).first { $0.id == permission }?.name ?? "A mode no connected computer offers"
+        return permissions(models).first { $0.id == permission }?.name ?? String(localized: "A mode no connected computer offers")
     }
 
     private var currentWorkingCopy: WorkingCopy { WorkingCopy(rawValue: workingCopy) ?? .shared }
@@ -440,7 +442,7 @@ private struct DefaultsPanel: View {
         Binding(get: { stored.wrappedValue }, set: { value in
             guard value != stored.wrappedValue else { return }
             stored.wrappedValue = value
-            announce("New thread defaults saved.")
+            announce(String(localized: "New thread defaults saved."))
         })
     }
 
@@ -448,7 +450,7 @@ private struct DefaultsPanel: View {
         Binding(get: { currentWorkingCopy }, set: { value in
             guard value != currentWorkingCopy else { return }
             workingCopy = value.rawValue
-            announce("New thread defaults saved.")
+            announce(String(localized: "New thread defaults saved."))
         })
     }
 }
@@ -462,6 +464,8 @@ private struct DefaultChoice: Identifiable {
 /// A default: its name, its value, and a chevron. The whole row opens its choices.
 private struct DefaultRow<Choices: View>: View {
     let label: String
+    /// The row’s name as VoiceOver says it, such as “New thread model”.
+    let spoken: String
     let value: String
     let identifier: String
     @ViewBuilder let choices: () -> Choices
@@ -481,7 +485,7 @@ private struct DefaultRow<Choices: View>: View {
         }
         .menuStyle(.button)
         .buttonStyle(PressStyle())
-        .accessibilityLabel("New thread \(label.lowercased())")
+        .accessibilityLabel(spoken)
         .accessibilityValue(value)
         .accessibilityHint("Shows the choices.")
         .accessibilityIdentifier(identifier)
@@ -521,8 +525,9 @@ private struct AboutPanel: View {
     private var connection: String {
         let total = model.computers.count
         let reached = model.computers.filter { model.online($0.hostID) }.count
-        if total == 1 { return reached == 1 ? "Connected to its computer" : "Not connected to its computer" }
-        return "Connected to \(reached) of \(total) computers"
+        if total == 1 { return reached == 1 ? String(localized: "Connected to its computer") : String(localized: "Not connected to its computer") }
+        let computers = total == 1 ? String(localized: "1 computer") : String(localized: "\(total) computers")
+        return String(localized: "Connected to \(reached) of \(computers)", comment: "%lld is how many paired computers are connected; %@ counts all of them, such as “3 computers”.")
     }
 }
 
@@ -593,7 +598,7 @@ private struct SegmentButton: View {
         }
         .buttonStyle(PressStyle())
         .accessibilityLabel(title)
-        .accessibilityValue(chosen ? "Selected" : "Not selected")
+        .accessibilityValue(chosen ? String(localized: "Selected", comment: "Accessibility value: this choice is the one in use.") : String(localized: "Not selected", comment: "Accessibility value: this choice is not the one in use."))
         .accessibilityAddTraits(chosen ? .isSelected : [])
     }
 }
@@ -603,6 +608,7 @@ private struct PanelHint: View {
     let text: String
     var body: some View {
         Text(text).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+            .paragraphDirection()
     }
 }
 
@@ -613,6 +619,7 @@ private struct NoteLine: View {
         Text(text).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, Space.s1).padding(.top, Space.s2)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .paragraphDirection()
     }
 }
 

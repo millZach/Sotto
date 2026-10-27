@@ -3,10 +3,30 @@ import type { Dirent, Stats } from 'node:fs'
 import { lstat, mkdir, opendir, readdir, readFile, readlink, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path'
 import { RECLAIM_WORKTREE_NEEDS_CONFIRMATION, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentWorktree } from '../../shared/agents'
+import { movedWorktreeWords } from '../../shared/branchMoves'
 import { FolderRemovalStalled, removeFolderContents } from './folderRemoval'
 import { launchProcess, runToExit } from './gitLauncher'
 import { QUIET_GIT_ENV } from './gitStatus'
 import { nativeEnvironment } from './subscriptionCodex'
+
+/** A move's incoming ref (ADR-0082 decision 2), `refs/sotto/incoming/<move>/<branch>`, with the moved branch's name. */
+const INCOMING_REF = /^refs\/sotto\/incoming\/[0-9a-f-]{36}\/(.+)$/u
+/** How far `<name>-<n>` counts before a worker started from a moved branch takes a `sotto/<token>` branch instead. */
+const MOVED_BRANCH_SUFFIXES_MAX = 99
+/** How many times a moved-branch worktree is tried again on the next free name when another process took the one it read. */
+const MOVED_BRANCH_ADD_ATTEMPTS = 3
+
+/**
+ * The incoming ref one move landed in this project's repository (#1033): the only ref under `refs/sotto/incoming/<move>/`.
+ * A worker started from a moved branch names its move, and its worktree is made from this ref.
+ */
+export async function movedBranchRef(projectPath: string, moveId: string, git: RunGit = runWorktreeGit): Promise<string> {
+  if (!/^[0-9a-f-]{36}$/u.test(moveId)) throw new Error(movedWorktreeWords.notMoved)
+  const refs = await existingWorkingDirectory(projectPath).then(folder => git(folder, ['for-each-ref', '--format=%(refname)', `refs/sotto/incoming/${moveId}/`]))
+    .then(output => output.split(/\r?\n/u).filter(Boolean), () => [] as string[])
+  if (refs.length !== 1 || !INCOMING_REF.test(refs[0]!)) throw new Error(movedWorktreeWords.notInProject)
+  return refs[0]!
+}
 
 /** `quiet` is for a fetch nobody pressed anything for: it fails rather than ask for a sign-in, as the background fetch does. */
 export type RunGit = (cwd: string, args: string[], options?: { readonly quiet?: boolean }) => Promise<string>
@@ -199,6 +219,8 @@ export async function checkoutIdentity(folder: string, git: RunGit = runWorktree
 // A host has separate thread and terminal services. They still share Git's registry,
 // including when their projects start in different linked checkouts of one repository.
 const registryOperations = new Map<string, Promise<void>>()
+/** Moved-branch worktrees being added, by repository: one at a time, so two starts never take the same `<name>-<n>`. */
+const movedBranchPicks = new Map<string, Promise<void>>()
 /** Removals of one reserved folder take turns (#1297), so a second finisher waits instead of deleting beside the first. */
 const removalOperations = new Map<string, Promise<void>>()
 interface RegistryIdentity { readonly common: string; readonly key: string }
@@ -631,7 +653,7 @@ export class ThreadWorktrees {
    * `checkoutBranch` names a branch that exists already, such as a pull request's head: the worktree checks it
    * out as it stands rather than cutting a new branch from a base.
    */
-  async allocate(projectPath: string, mode: 'independent' | 'shared', selection: Partial<AgentWorkingCopySelection> & { readonly checkoutBranch?: string | undefined } = {}): Promise<AgentWorktree> {
+  async allocate(projectPath: string, mode: 'independent' | 'shared', selection: Partial<AgentWorkingCopySelection> & { readonly checkoutBranch?: string | undefined; readonly incomingRef?: string | undefined } = {}): Promise<AgentWorktree> {
     const cwd = await existingWorkingDirectory(projectPath)
     if (mode === 'shared') return { mode, status: 'ready', path: cwd }
     let repositoryRoot: string
@@ -649,6 +671,7 @@ export class ThreadWorktrees {
       const projectRelativePath = relative(await realpath(repositoryRoot), cwd).split(sep).join('/')
       return (await this.inspectWithin({ mode, status: 'ready', path, repositoryRoot: await realpath(repositoryRoot), projectRelativePath, reused: true }, identity)).worktree
     }
+    if (selection.incomingRef) return this.allocateFromMove(repositoryRoot, cwd, mode, selection.incomingRef)
     const checkoutBranch = selection.checkoutBranch
     if (checkoutBranch) {
       await this.git(repositoryRoot, ['check-ref-format', `refs/heads/${checkoutBranch}`])
@@ -677,6 +700,64 @@ export class ThreadWorktrees {
     return { mode, status: 'pending', ...(originBase ? { originBase } : {}), path: join(await realpath(this.directory), this.home.folder, token), repositoryRoot: await realpath(repositoryRoot), branch: `${this.home.branchPrefix}${this.home === THREAD_WORKTREE_HOME ? token.slice(0, 8) : token}`, baseCommit, projectRelativePath, baseBranch, startFromOrigin: selection.startFromOrigin, temporaryBranch: this.home === THREAD_WORKTREE_HOME }
   }
 
+
+  /**
+   * A worktree for a worker started from a thread's branch (ADR-0082 decision 4, #1033): on a branch of the moved name,
+   * made from the move's incoming ref. A branch of that name that is already here, as the source thread's own is when the
+   * worker starts on the same machine, is never moved: the new branch takes the next free `<name>-<n>` instead. The record
+   * keeps the incoming ref, which goes when this worktree is removed (decision 3).
+   */
+  private async allocateFromMove(repositoryRoot: string, cwd: string, mode: 'independent' | 'shared', ref: string): Promise<AgentWorktree> {
+    const moved = INCOMING_REF.exec(ref)?.[1]
+    if (!moved) throw new Error(movedWorktreeWords.notMoved)
+    await this.git(repositoryRoot, ['check-ref-format', ref])
+    let baseCommit: string
+    try { baseCommit = (await this.git(repositoryRoot, ['rev-parse', '--verify', `${ref}^{commit}`])).trim() }
+    catch { throw new Error(movedWorktreeWords.gone) }
+    const root = await realpath(repositoryRoot), projectRelativePath = relative(root, cwd).split(sep).join('/')
+    if (projectRelativePath) {
+      try {
+        if ((await this.git(repositoryRoot, ['cat-file', '-t', `${baseCommit}:${projectRelativePath}`])).trim() !== 'tree') throw new Error('Not a committed directory')
+      } catch { throw new Error(movedWorktreeWords.noSubdirectory) }
+    }
+    const token = randomUUID()
+    return { mode, status: 'pending', path: join(await realpath(this.directory), this.home.folder, token), repositoryRoot: root,
+      branch: await this.freeBranch(repositoryRoot, moved, token), baseCommit, projectRelativePath, incomingRef: ref, temporaryBranch: false }
+  }
+  /** `name` when no branch has it here, else the first free `<name>-<n>`, so a branch already here is never moved. */
+  private async freeBranch(repositoryRoot: string, name: string, token: string): Promise<string> {
+    for (let n = 1; n <= MOVED_BRANCH_SUFFIXES_MAX; n++) {
+      const candidate = n === 1 ? name : `${name}-${n}`
+      try { await this.git(repositoryRoot, ['rev-parse', '--verify', '--quiet', `refs/heads/${candidate}`]) }
+      catch { return candidate }
+    }
+    return `${this.home.branchPrefix}${token.slice(0, 8)}`
+  }
+  /**
+   * Adds a moved-branch worktree on the first free name and answers the name it took. The free name is read and the
+   * branch made (`worktree add -b`, which refuses a branch that exists) one start at a time in this process, so two
+   * starts beside the same branch take `<name>-2` and `<name>-3`. Should another process take the name between the read
+   * and the add, `-b` refuses it and the next free name is tried; a branch is never reset.
+   */
+  private addMovedWorktree(repositoryRoot: string, path: string, name: string, baseCommit: string, identity: RegistryIdentity): Promise<string> {
+    return takeTurns(movedBranchPicks, identity.key, async () => {
+      for (let attempt = 1; ; attempt++) {
+        const branch = await this.freeBranch(repositoryRoot, name, basename(path))
+        try { await this.addWorktree(repositoryRoot, path, branch, ['worktree', 'add', '-b', branch, '--', path, baseCommit], identity); return branch }
+        catch (error) {
+          const takenMeanwhile = error instanceof Error && /already exists/u.test(error.message) && await this.git(repositoryRoot, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]).then(() => true, () => false)
+          if (!takenMeanwhile || attempt >= MOVED_BRANCH_ADD_ATTEMPTS) throw error
+        }
+      }
+    })
+  }
+  /** Removes the incoming ref a worktree was made from, once the worktree is gone (ADR-0082 decision 3). */
+  private async withoutIncomingRef(record: AgentWorktree): Promise<AgentWorktree> {
+    const { incomingRef: ref, ...rest } = record
+    if (!ref) return record
+    if (INCOMING_REF.test(ref) && record.repositoryRoot) await this.git(record.repositoryRoot, ['update-ref', '-d', '--no-deref', ref]).catch(() => undefined)
+    return rest
+  }
 
   async options(projectPath: string): Promise<AgentWorkingCopyOptions> {
     const cwd = await existingWorkingDirectory(projectPath)
@@ -772,11 +853,18 @@ export class ThreadWorktrees {
     if (!branch) throw new Error('The independent working-copy allocation is incomplete.')
     // An empty folder here, as a half-finished removal or a timed-out add on Windows leaves, is filled (ADR-0041).
     if (await reservedFolder(metadata.path) === 'occupied') throw new Error('The reserved working folder already exists but is not this thread’s Git worktree. Nothing was changed.')
-    if (entries.some(entry => entry.branch === `refs/heads/${branch}`)) throw new Error('The reserved branch is already checked out in another folder. Nothing was changed.')
+    // A worker started from a moved branch takes its name, or the next free `<name>-<n>`, only as its worktree is added:
+    // the name its allocation read may have been taken since, by another start beside it.
+    const moved = metadata.incomingRef && !metadata.checkoutBranch ? INCOMING_REF.exec(metadata.incomingRef)?.[1] : undefined
+    if (!moved && entries.some(entry => entry.branch === `refs/heads/${branch}`)) throw new Error('The reserved branch is already checked out in another folder. Nothing was changed.')
     // -b refuses any existing branch; never reset it with -B or force another checkout. A pull request's branch
     // exists already and is checked out as it stands, with no -b.
     await mkdir(allocationRoot, { recursive: true })
     if (pathKey(await realpath(allocationRoot)) !== pathKey(allocationRoot)) throw new Error('The reserved worktree parent folder was redirected. Nothing was changed.')
+    if (moved) {
+      const taken = await this.addMovedWorktree(repositoryRoot, metadata.path, moved, baseCommit, identity)
+      return (await this.inspectWithin({ ...metadata, branch: taken, status: 'ready', error: undefined }, identity)).worktree
+    }
     await this.addWorktree(repositoryRoot, metadata.path, branch, metadata.checkoutBranch ? ['worktree', 'add', '--', metadata.path, branch] : ['worktree', 'add', '-b', branch, '--', metadata.path, baseCommit], identity)
     return (await this.inspectWithin({ ...metadata, status: 'ready', error: undefined }, identity)).worktree
   }
@@ -1133,7 +1221,7 @@ export class ThreadWorktrees {
       // Outside the registry lane, so other threads' Git work in the repository does not wait for a large folder.
       try { await this.removeLocked(metadata.repositoryRoot!, facts.path, identity!, nestedWorktrees) }
       catch (error) { throw unfinishedRemoval(error) }
-      return reclaimedRecord(metadata, facts.path, facts.branch)
+      return this.withoutIncomingRef(reclaimedRecord(metadata, facts.path, facts.branch))
     })
   }
 
@@ -1254,7 +1342,7 @@ export class ThreadWorktrees {
       }
       try { await this.removeLocked(repositoryRoot, path, identity, settle.nested) }
       catch (error) { throw unfinishedRemoval(error) }
-      return reclaimedRecord(metadata, path, settle.branch ?? metadata.branch)
+      return this.withoutIncomingRef(reclaimedRecord(metadata, path, settle.branch ?? metadata.branch))
     })
   }
 
@@ -1366,10 +1454,13 @@ export class ThreadWorktrees {
    */
   async inspectSharedFolder(folder: string): Promise<(metadata: AgentWorktree) => AgentWorktree> {
     const path = await existingWorkingDirectory(folder)
+    const noRepository = (metadata: AgentWorktree): AgentWorktree => ({ ...metadata, branch: undefined, dirty: false, status: 'ready', error: undefined })
+    // No `.git` on disk at or above the folder: Git would only refuse, so it is not asked.
+    if ((await checkoutOnDisk(path))?.root === null) return noRepository
     let repositoryRoot: string
     try { repositoryRoot = (await this.git(path, ['rev-parse', '--show-toplevel'])).trim() }
     catch (error) {
-      if (error instanceof Error && /not a git repository|Git is unavailable/u.test(error.message)) return metadata => ({ ...metadata, branch: undefined, dirty: false, status: 'ready', error: undefined })
+      if (error instanceof Error && /not a git repository|Git is unavailable/u.test(error.message)) return noRepository
       throw error
     }
     return this.sharedFolderRecord(path, repositoryRoot)

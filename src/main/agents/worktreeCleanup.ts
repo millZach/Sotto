@@ -1,7 +1,10 @@
 import { execFile } from 'node:child_process'
 import type { AgentHostSnapshot, AgentThread } from '../../shared/agents'
 import type { WorktreeCleanupRules } from '../../shared/settings'
+import type { ThreadClearKeptReason } from '../../shared/threadClear'
 import { isWorkspaceThreadSettled } from '../../shared/threadActivity'
+import { isWatcherWorkActive } from '../../shared/watcherOverview'
+import { delegatedThreadsBelow } from '../../shared/delegation'
 import { baseRepository, GitHubRateLimited, isRateLimitAnswer, readGitHubRemotes, type GitHubHosts, type GitHubRateLimit } from './github'
 import { runWorktreeGit, type RunGit } from './threadWorktrees'
 
@@ -23,9 +26,23 @@ export interface WorktreeCleanupDependencies {
   readonly rules: () => WorktreeCleanupRules
   /** The Auto-settle merged threads setting, read at every sweep; absent, no thread is settled on its own. */
   readonly autoSettleMerged?: () => boolean
+  /**
+   * Clear settled threads after (ADR-0140), given only while the Owl feature is on: the setting, read at every sweep, and
+   * the coordinator's clear. It runs after the folders, so a folder a rule removes first is not read twice.
+   */
+  readonly clearSettledThreads?: {
+    readonly afterDays: () => number | null
+    /** `keep` is asked of each thread the coordinator would otherwise clear. */
+    readonly clear: (days: number, keep?: (thread: AgentThread) => Promise<ThreadClearKeptReason | null>) => Promise<void>
+  }
   readonly git?: RunGit
   /** Whether GitHub reports this branch's pull request merged. Absent, neither the merged rule nor auto-settle fires. */
   readonly pullRequestMerged?: (repositoryRoot: string, branch: string, github?: SharedGitHub) => Promise<boolean>
+  /**
+   * The head branches of the repository's open pull requests on GitHub now. Given, Clear settled threads after keeps a
+   * thread whose branch is among them, and every thread with a branch in a repository it could not ask (ADR-0140).
+   */
+  readonly openPullRequestBranches?: (repositoryRoot: string) => Promise<ReadonlySet<string>>
   readonly now?: () => number
   readonly intervalMs?: number
   /** Stable event names only; never a path, a branch or a message. */
@@ -33,6 +50,19 @@ export interface WorktreeCleanupDependencies {
 }
 export type WorktreeCleanupEvent = 'worktree-cleanup-reclaimed' | 'worktree-cleanup-skipped' | 'thread-auto-settled' | 'thread-auto-settle-skipped'
 const HOUR_MS = 3_600_000
+/**
+ * A thread still at work or waiting on the user: its turn, background work, sub-agents working or not yet known to have
+ * ended, or monitoring, as Settle finished threads counts them. Neither sweep settles it or takes its folder, where that
+ * work may still be writing (October 23, 2026).
+ */
+const busy = (thread: AgentThread): boolean => thread.requests.length > 0 || isWatcherWorkActive(thread) || (thread.subagentSummary?.unknown ?? 0) > 0
+/** The same of a thread or, when it is to be settled, a thread it delegated to (ADR-0081), which settles with it. */
+function atWork(threads: readonly AgentThread[], threadId: string, delegated: boolean): boolean {
+  const thread = threads.find(item => item.id === threadId)
+  if (!thread || busy(thread)) return true
+  if (!delegated || !threads.some(item => item.delegatedBy)) return false
+  return delegatedThreadsBelow(threads, threadId).some(id => { const below = threads.find(item => item.id === id); return below !== undefined && busy(below) })
+}
 const DAY_MS = 86_400_000
 const rulesOn = (rules: WorktreeCleanupRules): boolean => rules.afterDays !== null || rules.merged || rules.onSettle || rules.unchanged
 
@@ -108,7 +138,7 @@ export class WorktreeCleanup {
     const rules = this.dependencies.rules()
     let settle = false
     try { settle = this.dependencies.autoSettleMerged?.() === true } catch { /* Read as off, as the sweep does. */ }
-    return JSON.stringify([rules.afterDays, rules.merged, rules.onSettle, rules.unchanged, settle])
+    return JSON.stringify([rules.afterDays, rules.merged, rules.onSettle, rules.unchanged, settle, this.clearAfterDays()])
   }
   dispose(): void { this.disposed = true; if (this.timer) clearInterval(this.timer); this.unsubscribe?.() }
   /** Stops sweeping and waits for a sweep already under way, which stops before its next worktree. */
@@ -149,7 +179,7 @@ export class WorktreeCleanup {
       const worktree = thread.worktree
       const project = snapshot.projects.find(item => item.id === thread.projectId)
       if (!worktree?.repositoryRoot || thread.nativeSessionStarted === false || thread.archivedAt || isWorkspaceThreadSettled(thread, project)) continue
-      if (thread.status === 'running' || thread.requests.length) continue
+      if (atWork(snapshot.threads, thread.id, true)) continue
       const branch = worktree.mode === 'independent' ? worktree.sentBranch ?? worktree.branch : worktree.sentBranch
       if (!branch) continue
       const key = `${thread.id}\0${branch}`
@@ -158,6 +188,8 @@ export class WorktreeCleanup {
         if (branch === await this.defaultBranchOf(worktree.repositoryRoot)) continue
         const tip = await this.merged(worktree.repositoryRoot, branch)
         if (!tip) continue
+        // Asked again as it now stands: work may have started while Git and GitHub were asked.
+        if (atWork(this.dependencies.host.workspaceSnapshot().threads, thread.id, true)) continue
         await this.dependencies.host.setWorkspaceSettled!('thread', thread.id, true, { expectedMergedTip: tip, expectedMergedBranch: branch })
         this.autoSettled.add(key)
         this.dependencies.log?.('thread-auto-settled')
@@ -172,7 +204,35 @@ export class WorktreeCleanup {
   private settledThreads(snapshot: AgentHostSnapshot): Set<string> {
     return new Set(snapshot.threads.filter(thread => isWorkspaceThreadSettled(thread, snapshot.projects.find(project => project.id === thread.projectId))).map(thread => thread.id))
   }
+  /** Clear settled threads after's days, or null for Never or when the feature is off. */
+  private clearAfterDays(): number | null {
+    try { return this.dependencies.clearSettledThreads?.afterDays() ?? null } catch { return null }
+  }
   async sweep(): Promise<void> {
+    await this.sweepWorktrees()
+    const days = this.clearAfterDays()
+    if (days !== null && !this.disposed) await this.dependencies.clearSettledThreads!.clear(days, this.openPullRequestHold()).catch(() => undefined)
+  }
+  /**
+   * What a sweep's clear asks of a thread before it goes (ADR-0140 decision 3): whether GitHub has an open pull request
+   * for its branch now, since the one Sotto last read may be old or never read for a thread no one has opened in weeks.
+   * GitHub is asked once per repository in a sweep; a repository it could not ask keeps every thread with a branch.
+   */
+  private openPullRequestHold(): ((thread: AgentThread) => Promise<ThreadClearKeptReason | null>) | undefined {
+    const open = this.dependencies.openPullRequestBranches
+    if (!open) return undefined
+    const asked = new Map<string, Promise<ReadonlySet<string> | null>>()
+    return async thread => {
+      const worktree = thread.worktree
+      const branch = worktree?.mode === 'independent' ? worktree.sentBranch ?? worktree.branch : worktree?.sentBranch
+      if (!worktree?.repositoryRoot || !branch) return null
+      let branches = asked.get(worktree.repositoryRoot)
+      if (!branches) { branches = open(worktree.repositoryRoot).catch(() => null); asked.set(worktree.repositoryRoot, branches) }
+      const read = await branches
+      return read === null || read.has(branch) ? 'pull-request' : null
+    }
+  }
+  private async sweepWorktrees(): Promise<void> {
     const rules = this.dependencies.rules()
     const settle = this.autoSettleOn()
     if (!rulesOn(rules) && !settle) return
@@ -187,10 +247,12 @@ export class WorktreeCleanup {
       if (this.disposed) return
       const worktree = thread.worktree
       if (worktree?.mode !== 'independent' || worktree.status !== 'ready' || !worktree.path || !worktree.repositoryRoot || !worktree.branch || worktree.reused || worktree.reclaimedAt) continue
-      if (thread.status === 'running' || thread.requests.length) continue
+      if (busy(thread)) continue
       try {
         const eligibility = await this.eligible(thread, rules, defaults)
         if (!eligibility) continue
+        // Asked again as it now stands: work may have started while the folder was looked at.
+        if (atWork(this.dependencies.host.workspaceSnapshot().threads, thread.id, false)) continue
         await this.dependencies.host.reclaimThreadWorktree(thread.id, { automatic: true, ...eligibility })
         this.dependencies.log?.('worktree-cleanup-reclaimed')
       } catch { this.dependencies.log?.('worktree-cleanup-skipped') }
@@ -236,6 +298,29 @@ export interface SharedGitHub { readonly rateLimit: GitHubRateLimit; readonly ho
  * the reserve is reached, which rejects, so the branch is taken as not merged until the next sweep; and a rate-limited
  * answer pauses the status reader's background questions too. gh's words are only tested, never kept.
  */
+/** The head branches of the open pull requests GitHub lists for the repository at `cwd` (ADR-0140). Throws when it cannot ask. */
+export async function githubOpenPullRequestBranches(cwd: string, github?: SharedGitHub): Promise<ReadonlySet<string>> {
+  const host = github ? baseRepository(await readGitHubRemotes((folder, command, args) => command === 'git' ? runWorktreeGit(folder, [...args]) : Promise.reject(new Error('Only Git reads remotes.')), cwd, github.hosts))?.host ?? null : null
+  const retryAt = github && host ? github.rateLimit.retryAt(host, 'background') : null
+  if (retryAt !== null) throw new GitHubRateLimited(retryAt)
+  const asked = github && host ? github.rateLimit.asking() : 0
+  return new Promise<ReadonlySet<string>>((accept, reject) => {
+    const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1', GCM_INTERACTIVE: 'never' }
+    execFile('gh', ['pr', 'list', '--state', 'open', '--limit', '1000', '--json', 'headRefName'], { cwd, env, windowsHide: true, timeout: 30_000, maxBuffer: 2_000_000, encoding: 'utf8' }, (error, stdout, stderr) => {
+      if (error) {
+        const words = typeof stderr === 'string' ? stderr : ''
+        if (github && host && isRateLimitAnswer(words)) { reject(new GitHubRateLimited(github.rateLimit.limited(host, words))); return }
+        reject(error); return
+      }
+      if (github && host) github.rateLimit.answered(host, asked, null)
+      try {
+        const prs: unknown = JSON.parse(stdout)
+        if (!Array.isArray(prs)) throw new Error('GitHub did not list pull requests.')
+        accept(new Set(prs.flatMap(pr => pr && typeof pr === 'object' && typeof pr.headRefName === 'string' ? [pr.headRefName as string] : [])))
+      } catch (parseError) { reject(parseError) }
+    })
+  })
+}
 export async function githubPullRequestMerged(cwd: string, branch: string, github?: SharedGitHub): Promise<boolean> {
   const tip = await runWorktreeGit(cwd, ['rev-parse', '--verify', '--end-of-options', `refs/heads/${branch}^{commit}`]).then(value => value.trim(), () => '')
   if (!tip) return false

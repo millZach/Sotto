@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { EMPTY_AGENT_HOST, type AgentThread, type AgentHostSnapshot } from '../../../src/shared/agents'
 import { WATCHER_QUIET_MS, watcherObservationKey, watcherOverview } from '../../../src/shared/watcherOverview'
-import { WATCHER_BATCH_MAX_MS, WATCHER_BATCH_MS, WATCHER_NEWS_REPLY_CHARS, WATCHER_ORDINARY_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MS, type WatcherNews } from '../../../src/shared/watcherNews'
+import { WATCHER_BATCH_MAX_MS, WATCHER_BATCH_MS, WATCHER_NEWS_REPLY_CHARS, WATCHER_ORDINARY_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MS, WATCHER_UNWATCHED_REQUEST_ID, type WatcherNews } from '../../../src/shared/watcherNews'
 import type { WatcherRecord } from '../../../src/shared/watcher'
 import { WatcherWakeUp, WAKE_UP_TRIES, WATCHER_OBSERVE_MS, watcherDelegationOwners, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
 import { WatcherEvidenceStore, observationDigest } from '../../../src/main/agents/watcherEvidence'
@@ -1720,6 +1720,11 @@ it('tells Watcher a reply its news gives whole is enough to act on, and to read 
   expect(footer).toContain('Use read_thread only for what a reply does not say')
 })
 
+it('tells Watcher to end its turn while a watched thread works rather than reading it again to see whether it has finished (#1552)', () => {
+  expect(WATCHER_SYSTEM_PROMPT).toContain('While a watched thread works, end your turn and wait for its news.')
+  expect(WATCHER_SYSTEM_PROMPT).toContain('Do not read it again and again to see whether it has finished')
+})
+
 it('tells a finish again under the older request when the newer one it was made under stops before it goes', async () => {
   const f = fixture(), first = f.record.requests[0]!, id = randomUUID()
   const second: WatcherRecord['requests'][number] = { ...structuredClone(first), id, rootUserMessageId: 'root-2', participants: first.participants.map(item => ({ ...item, requestId: id })) }
@@ -2046,4 +2051,169 @@ describe('#1263: held finishes say they were released, and the same facts are no
     expect(again.map(event => event.kind).sort()).toEqual(['evidence-changed', 'turn-finished'])
     expect(f.wakes.untoldAttention(centerTarget).size).toBe(0)
   })
+})
+
+// October 24, 2026: Watcher kept telling the user a card waited on them after they had answered it, since nothing said so.
+describe('news that a card or prototype no longer waits on the user', () => {
+  const card = (id = 'card', kind: 'question' | 'permission' = 'permission') => ({ id, kind, text: 'synthetic private command', options: [] })
+  const events = (f: ReturnType<typeof fixture>) => f.delivered.flatMap(news => news.events)
+
+  it('tells Watcher the user answered a card it was told of, and carries none of the answer', async () => {
+    const f = fixture()
+    f.thread.requests = [card()]; f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    expect(kinds(f.delivered[0])).toEqual(['needs-user'])
+    // The coordinator says the user's answer is going; the provider then takes the card away.
+    f.wakes.answering(centerTarget, 'card', 'user')
+    f.thread.requests = []; f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    const closed = events(f).filter(event => event.kind === 'request-closed')
+    expect(closed).toEqual([expect.objectContaining({ target: centerTarget, requestCardId: 'card', requestCardKind: 'permission', answeredByUser: true })])
+    const text = watcherNewsText(f.delivered.at(-1)!)
+    expect(text).toContain('The user answered this thread’s permission request, so it no longer waits on them for it. This news carries none of their answer and approves nothing.')
+    expect(text).not.toContain('synthetic private command')
+    // Told once: the card staying closed is no news again.
+    f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    expect(events(f).filter(event => event.kind === 'request-closed')).toHaveLength(1)
+  })
+
+  it('says plainly when a card closed without an answer Sotto saw, and when an answer that did not go is undone', async () => {
+    const f = fixture()
+    f.thread.requests = [card('first', 'question'), card('second', 'question')]; f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    // An answer that failed is undone, so the card's later closing claims no answer.
+    f.wakes.answering(centerTarget, 'first', 'user')()
+    f.thread.requests = []; f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    const closed = events(f).filter(event => event.kind === 'request-closed')
+    expect(closed.map(event => [event.requestCardId, event.answeredByUser])).toEqual([['first', undefined], ['second', undefined]])
+    expect(watcherNewsText(f.delivered.at(-1)!)).toContain('This thread’s question is no longer open, so it no longer waits on the user for it: the user answered it, or its turn ended without an answer.')
+  })
+
+  it('says nothing of a card whose own news never went, or of one Sotto answered by sending a prototype’s question back', async () => {
+    const f = fixture()
+    f.thread.requests = [card('quick')]; f.wakes.observe()
+    // Answered inside the batch: Watcher never heard of it, so its closing is no news either.
+    f.thread.requests = []; f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    expect(events(f)).toEqual([])
+    f.thread.requests = [card('sent-back', 'question')]; f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    f.wakes.answering(centerTarget, 'sent-back', 'sotto')
+    f.thread.requests = []; f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    expect(events(f).map(event => event.kind)).toEqual(['needs-user'])
+  })
+
+  it('tells a delegated thread’s answered card as news of the watched thread that delegated it', async () => {
+    const f = fixture()
+    const child: AgentThread = { ...structuredClone(f.thread), id: 'delegated', title: 'Delegated', delegatedBy: f.thread.id, status: 'idle', lastTurn: { id: 'child-turn', status: 'completed' } }
+    f.snapshot.threads.push(child)
+    child.requests.push(question('child-question')); f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    f.wakes.answering({ ...centerTarget, threadId: child.id }, 'child-question', 'user')
+    child.requests = []; f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    const closed = events(f).filter(event => event.kind === 'request-closed')
+    expect(closed).toEqual([expect.objectContaining({ target: centerTarget, delegatedThreadId: child.id, requestCardId: 'child-question', answeredByUser: true })])
+    expect(watcherNewsText(f.delivered.at(-1)!)).toContain('The user answered the question in delegated, a thread this one delegated to, so it no longer waits on them for it.')
+    // A card that came back is open again, so its closing news is no longer due.
+    child.requests.push(question('child-question'))
+    expect(f.wakes.dueAll(closed)).toEqual([false])
+  })
+
+  it('takes back a claim the user answered when that answer did not go, even once the closing is made', async () => {
+    const f = fixture()
+    f.thread.requests = [card()]; f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    const undo = f.wakes.answering(centerTarget, 'card', 'user')
+    f.thread.requests = []; f.wakes.observe()
+    expect(f.wakes.news().find(event => event.kind === 'request-closed')).toMatchObject({ answeredByUser: true })
+    undo(); await f.advance(WATCHER_BATCH_MAX_MS)
+    const closed = events(f).find(event => event.kind === 'request-closed')!
+    expect(closed).not.toHaveProperty('answeredByUser')
+  })
+
+  it('tells a card’s closing once Watcher heard of it, though the card changed since and its newer news never went', async () => {
+    const f = fixture()
+    f.thread.requests = [card()]; f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    f.thread.requests = [{ ...card(), text: 'synthetic revised command' }]; f.wakes.observe()
+    f.thread.requests = []; f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    expect(events(f).filter(event => event.kind === 'request-closed')).toHaveLength(1)
+  })
+
+  it('tells a closing again when the wake-up that carried it may not have gone', async () => {
+    const f = fixture()
+    f.thread.requests = [card()]; f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    f.wakes.settled(f.delivered[0]!.events, 'told')
+    f.thread.requests = []; f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    expect(kinds(f.delivered.at(-1))).toEqual(['request-closed'])
+    f.wakes.settled(f.delivered.at(-1)!.events, 'unknown'); await f.wakes.drained(); await f.advance(WATCHER_BATCH_MAX_MS)
+    expect(f.delivered.map(kinds)).toEqual([['needs-user'], ['request-closed'], ['request-closed']])
+  })
+
+  it('tells Watcher a prototype it was told of no longer waits on review, but not when its thread was settled', async () => {
+    const f = fixture()
+    finish(f.thread)
+    const page = { token: 't'.repeat(32), kind: 'file' as const, name: 'greeting.html', start: 'greeting.html' }
+    f.thread.prototypeReady = { source: 'reply:reply-1', pages: [page] }
+    f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    delete f.thread.prototypeReady; f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    expect(events(f).filter(event => event.kind === 'prototype-closed')).toEqual([expect.objectContaining({ target: centerTarget, messageId: 'reply-1' })])
+    expect(watcherNewsText(f.delivered.at(-1)!)).toContain('This thread’s prototype no longer waits on the user’s review: the user opened it, or a message came after it. This approves nothing.')
+    f.thread.prototypeReady = { source: 'reply:reply-2', pages: [page] }
+    f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    delete f.thread.prototypeReady; f.thread.workspaceSettledAt = new Date(f.now()).toISOString(); f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    expect(events(f).filter(event => event.kind === 'prototype-closed')).toHaveLength(1)
+  })
+})
+
+it('makes one merge fact and at most one wake-up from alternating open and merged reads of one merged pull request (#1146)', async () => {
+  const f = fixture(), url = 'https://github.com/synthetic/project/pull/922'
+  f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }
+  // Its link was last told open, long ago, and the branch's own Git read says merged, as on October 15 and 17.
+  f.thread.pullRequests = [{ url, number: 922, title: 'Synthetic pull request', state: 'open', draft: false, source: 'created', linkedAt: centerTime }]
+  const git = (at: number) => ({ isRepository: true, branch: 'topic', upstream: 'origin/topic', hasRemote: true, defaultBranch: 'main', isDefaultBranch: false,
+    dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null,
+    pullRequest: { url, number: 922, title: 'Synthetic pull request', state: 'merged' as const, draft: false }, readAt: new Date(at).toISOString(), fetchedAt: null })
+  const worktree: NonNullable<AgentThread['worktree']> = { mode: 'independent', status: 'ready', branch: 'topic', baseBranch: 'main', git: git(f.now()) }
+  f.thread.worktree = worktree
+  f.wakes.observe(); await f.advance(WATCHER_BATCH_MS)
+  const told = f.delivered.length
+  const evidence = () => f.delivered.slice(told).flatMap(news => news.events).filter(event => event.kind === 'evidence-changed')
+  for (let n = 0; n < 20; n++) {
+    f.wakes.pullRequest({ url, head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available', state: n % 2 ? 'merged' : 'open', checks: 'unknown' })
+    worktree.git = git(f.now()); f.wakes.observe()
+    await f.advance(60_000)
+  }
+  expect(evidence().length).toBeLessThanOrEqual(1)
+  expect(f.wakes.evidence.read(centerTarget).filter(item => item.fact === 'merge-observed')).toHaveLength(1)
+  expect(f.wakes.evidence.read(centerTarget).filter(item => item.pullRequestState === 'open')).toHaveLength(0)
+})
+
+it('wakes once for a pull request Watcher saw open merging, and never for what GitHub says of it after (#1146)', async () => {
+  const f = fixture(), url = 'https://github.com/synthetic/project/pull/31'
+  f.thread.pullRequests = [{ url, number: 31, title: 'Synthetic pull request', state: 'open', draft: false, source: 'created', linkedAt: centerTime }]
+  const read = (state: 'open' | 'merged', checks: 'passed' | 'unknown' | 'failed') =>
+    f.wakes.pullRequest({ url, head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available', state, checks, checkCount: 1 })
+  read('open', 'passed'); await f.advance(WATCHER_BATCH_MS)
+  const told = f.delivered.length
+  read('merged', 'passed'); await f.advance(WATCHER_BATCH_MS)
+  expect(f.delivered).toHaveLength(told + 1)
+  for (const checks of ['unknown', 'failed', 'passed', 'unknown'] as const) { read(checks === 'failed' ? 'open' : 'merged', checks); await f.advance(120_000) }
+  expect(f.delivered).toHaveLength(told + 1)
+})
+
+it('tells Watcher of every thread a usage limit’s reset restarted, watched or not, in Sotto’s words (ADR-0144)', async () => {
+  const f = fixture()
+  const unwatched: AgentThread = { id: 'unwatched', providerId: 'claude', projectId: 'project', modelId: 'model', title: 'Elsewhere',
+    status: 'running', lastTurn: { id: 'turn-2', status: 'running' }, messages: [], requests: [] }
+  f.snapshot.threads.push(unwatched)
+  f.wakes.threadsRestarted('claude', [centerTarget, { hostId: centerTarget.hostId, threadId: 'unwatched' }])
+  const events = f.wakes.news().filter(event => event.kind === 'threads-restarted')
+  expect(events).toHaveLength(2)
+  expect(events.find(event => event.target.threadId === 'unwatched')!.requestId).toBe(WATCHER_UNWATCHED_REQUEST_ID)
+  expect(events.find(event => event.target.threadId === centerTarget.threadId)!.requestId).not.toBe(WATCHER_UNWATCHED_REQUEST_ID)
+  await f.advance(WATCHER_BATCH_MAX_MS)
+  const told = f.delivered.flatMap(news => news.events).filter(event => event.kind === 'threads-restarted')
+  expect(told).toHaveLength(2)
+  const text = watcherNewsText({ source: 'watcher', watcher: centerTarget, events: told, omitted: 0 })
+  expect(text).toContain('Sotto restarted 2 threads Claude Code’s usage limit had stopped, now that it has reset.')
+  expect(text).toContain('No request of yours watches it')
+  // Only a watched thread's line names a request to use for it.
+  const unwatchedLine = text.split('\n').find(line => line.includes('"unwatched"'))!
+  expect(unwatchedLine).not.toContain('Use requestId')
+  // News of a thread that has since gone is no longer due.
+  f.snapshot.threads = f.snapshot.threads.filter(item => item.id !== 'unwatched')
+  expect(f.wakes.due(told.find(event => event.target.threadId === 'unwatched')!)).toBe(false)
 })

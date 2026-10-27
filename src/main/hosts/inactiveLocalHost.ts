@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
@@ -49,17 +50,20 @@ export async function inactiveLocalHost(directory: string,
   } catch (error) { retentionError = error }
   const watcherThreadIds = (): readonly string[] => {
     // Unreadable ownership blocks answer cleanup rather than treating a saved Watcher answer as ordinary.
-    if (retentionError) throw new Error('Saved thread ownership could not be read. Your saved answers have not changed.')
+    if (retentionError) throw new Error(t`Saved thread ownership could not be read. Your saved answers have not changed.`)
     return [...retained]
   }
-  const unavailable = (): never => { throw new Error('The local host is off. Turn it on in Settings > Hosts & phones and restart Sotto.') }
+  const unavailable = (): never => { throw new Error(t`The local host is off. Turn it on in Settings > Hosts & phones and restart Sotto.`) }
   const idle = () => undefined
   const unsubscribe = () => idle
   const shell = () => structuredClone(state)
   const control = {
     get: shell, shell, hostId: () => state.hostId, configuration: () => state.configuration, command: async () => unavailable(),
     threadDetail: () => null, attachmentPreview: unavailable, stageAttachment: async () => unavailable(), attachmentContent: async () => null, gitRefs: async () => unavailable(), gitChangedFiles: async () => unavailable(), gitPullRequest: async () => unavailable(),
-    subscribe: unsubscribe, subscribeThreadDetail: unsubscribe, dispose: idle, closed: async () => undefined,
+    // Main listens for deleted threads at start (ADR-0140); with no local threads here, none is ever deleted.
+    subscribe: unsubscribe, subscribeThreadDetail: unsubscribe, onThreadsDeleted: unsubscribe, dispose: idle, closed: async () => undefined,
+    // A new Sotto version has every machine check its clients afresh (ADR-0077); this computer runs none of them.
+    checkClientsAfresh: async () => undefined,
     privacyChanged: async () => undefined, hasPendingThreadWork: () => false, watcherObservationsEnabled: () => false, useSottoRequests: idle,
     requestAnswerRecovery: () => ({ uncertainRequestIds: [], completed: [] }), refreshRequestDraft: async () => unavailable(),
     requestDraftView: () => ({ host: state.host, provider: state.configuration.provider }),
@@ -96,5 +100,5 @@ export async function inactiveLocalHost(directory: string,
 
 /** Refuse an explicit privacy change before saving settings if its local cleanup cannot run. */
 export function requireLocalHistoryCleanup(localHostRunning: boolean, historyEnabled: boolean, requestedHistoryEnabled: boolean | undefined): void {
-  if (!localHostRunning && historyEnabled && requestedHistoryEnabled === false) throw new Error('Turn on the local host in Settings > Hosts & phones and restart Sotto before turning off local history. Your saved history has not changed.')
+  if (!localHostRunning && historyEnabled && requestedHistoryEnabled === false) throw new Error(t`Turn on the local host in Settings > Hosts & phones and restart Sotto before turning off local history. Your saved history has not changed.`)
 }

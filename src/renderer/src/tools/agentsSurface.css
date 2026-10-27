@@ -95,6 +95,25 @@
 .delegated-row[data-needs] { background: var(--delegated-needs); box-shadow: inset 2px 0 0 var(--tt-attention); }
 .delegated-row[data-shown] { background: var(--tt-selected); box-shadow: inset 0 0 0 1px var(--tt-selected-border); }
 .subagent-result[data-needs] { border-color: var(--tt-attention); }
+/* A roster grouped by machine (#1310, variant B of the remote roster prototype): a heading per machine with its count, and
+   that machine's rows under it. A machine that is not connected says so beside its count, and a notice above the roster
+   says its threads are as Sotto last read them. */
+.roster-machine + .roster-machine { margin-top: 18px; }
+.roster-machine__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin: 2px 4px 6px; color: var(--tt-text-muted); font-size: 13px; font-weight: 400; line-height: 20px; }
+.roster-machine__name { display: inline-flex; align-items: center; gap: 6px; color: var(--tt-text); font-weight: 600; }
+.roster-machine__name > svg { flex: none; align-self: center; color: var(--tt-accent-text, var(--tt-text-muted)); }
+.roster-machine__off { color: var(--tt-warning-text); }
+.roster-machine__note { margin: 0 4px 8px; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.5; }
+.roster-notice { display: flex; gap: 8px; margin: 0 0 14px; padding: 10px 12px; border-radius: 6px; background: var(--tt-card); color: var(--tt-text); font-size: 13px; line-height: 1.5; }
+.roster-notice > svg { flex: none; margin-top: 2px; color: var(--tt-warning-text); }
+/* A row whose machine is not connected keeps its last outcome, greyed and still. */
+.delegated-row__status[data-last-read] { color: var(--tt-text-muted); }
+.delegated-row:is([data-needs], [data-shown]) .delegated-row__status[data-last-read] { color: var(--tt-text-2); }
+/* Why its start began at Ask for approval on its machine: a line of its own between the brief and the facts. */
+.subagent-item--thread .subagent-head[data-held] { grid-template-areas: 'lead title time' 'lead desc status' 'lead held held' 'lead meta meta'; }
+.delegated-row__held { grid-area: held; display: flex; gap: 6px; min-width: 0; margin-top: 6px; color: var(--tt-text-2); font-size: 12px; line-height: 18px; }
+.delegated-row__held > svg { flex: none; margin-top: 2px; color: var(--tt-warning-text); }
+.subagent-details p.delegated-row__source { margin-bottom: 4px; color: var(--tt-text-muted); font-size: 12.5px; }
 .tools-toggle { position: relative; }
 .tools-toggle__agents-dot { position: absolute; top: 3px; left: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-activity); box-shadow: 0 0 0 2px var(--tt-canvas); pointer-events: none; }
 .tools-toggle__agents-dot[data-needs] { background: var(--tt-attention); }

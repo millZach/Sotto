@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE — a stronger light across the working words, with the turn's clock</title>
+<!--
+  THROWAWAY PROTOTYPE. Not product code.
+  Question: the accent light crossing the Spaceballs working words is too faint to see. How strong should it be, and how
+  does the clock for the running turn sit beside the words? Today's light for reference, then A (a lit band), B (the
+  lit band with a soft halo) and C (B, wider and slower to leave), each in dark and light of the default theme and on
+  two other accents. Toggle reduced motion in the bar; ?freeze stops every light mid-word, ?zoom=2 enlarges.
+  Zach's pick (October 25, 2026): the glow on the letters with no accent halo, which became A as it stands here, and
+  the clock after the words with no dot between.
+  Starts from the real look: src/renderer/src/agents/ThreadActivity.tsx and activity.css.
+-->
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+* { box-sizing: border-box; }
+body { margin: 0; background: #2b2c31; color: #f1f1f3; font: 14px/1.4 system-ui, 'Segoe UI', sans-serif; padding: 0 0 40px; }
+.proto-top { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; padding: 12px 20px; background: #1d1e22; border-bottom: 1px solid #444; }
+.proto-top h1 { margin: 0; font-size: 15px; }
+.proto-tag { padding: 2px 7px; border-radius: 5px; background: #ffd34d; color: #222; font-size: 11px; font-weight: 800; }
+.proto-btn { min-height: 30px; padding: 0 10px; border: 0; border-radius: 6px; background: #3d3f47; color: #e9e9ee; font: inherit; font-size: 12.5px; cursor: pointer; }
+.proto-btn[aria-pressed='true'] { background: #f1f1f3; color: #1d1e22; font-weight: 650; }
+main { display: grid; gap: 34px; padding: 22px 20px; }
+.variant > h2 { margin: 0 0 4px; color: #ffd34d; font-size: 15px; }
+.variant > p { margin: 0 0 12px; color: #b7b8c0; font-size: 13px; max-width: 860px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+figure { margin: 0; }
+figcaption { margin: 0 0 6px; color: #a9aab3; font-size: 11.5px; letter-spacing: .05em; text-transform: uppercase; }
+
+/* First-paint values of the default theme, and two other accents over the same rooms. */
+.th-dark { --tt-canvas: oklch(0.115 0.008 265); --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-accent: oklch(0.714 0.104 183); --tt-accent-text: oklch(0.83 0.08 183); --tt-bubble: oklch(0.205 0.014 265); }
+.th-light { --tt-canvas: oklch(0.978 0.004 85); --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: color-mix(in oklab, oklch(0.235 0.014 75) 55%, oklch(0.5 0.014 75));
+  --tt-text-muted: color-mix(in oklab, oklch(0.5 0.014 75) 85%, oklch(0.235 0.014 75));
+  --tt-accent: oklch(0.53 0.095 186); --tt-accent-text: oklch(0.43 0.08 186); --tt-bubble: oklch(0.93 0.012 85); }
+.th-dark.ac-rose { --tt-accent: oklch(0.7 0.16 10); --tt-accent-text: oklch(0.8 0.12 10); }
+.th-light.ac-violet { --tt-accent: oklch(0.52 0.18 290); --tt-accent-text: oklch(0.45 0.16 290); }
+.frame { --tt-activity: var(--tt-accent-text); padding: 18px 22px 20px; border-radius: 10px; background: var(--tt-canvas); color: var(--tt-text); font-family: 'Figtree', system-ui, sans-serif; font-size: 14px; }
+.msg-user { margin: 0 0 18px 18%; padding: 11px 15px; border-radius: 14px 14px 4px 14px; background: var(--tt-bubble); font-size: 15px; }
+
+/* The working line as activity.css draws it. */
+.line { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; margin-left: -6px; padding: 0 10px 0 6px; color: var(--tt-text-2); font-variant-numeric: tabular-nums; }
+.pulse { display: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tt-activity); }
+body[data-still] .pulse { display: inline-block; }
+.word { position: relative; display: inline-block; }
+.clock { color: var(--tt-text-muted); font-size: 13px; }
+.chev { width: 14px; height: 14px; color: var(--tt-text-muted); }
+
+/* Today: a narrow band from muted ink to the accent's text tone and back. */
+body:not([data-still]) .v-today .word {
+  background: linear-gradient(100deg, var(--tt-text-muted) 38%, var(--tt-activity) 50%, var(--tt-text-muted) 62%) 100% 0 / 300% 100% no-repeat;
+  -webkit-background-clip: text; background-clip: text; color: transparent; animation: glow-bg 4.2s cubic-bezier(.45, 0, .55, 1) infinite; }
+@keyframes glow-bg { 0% { background-position: 100% 0; } 72%, 100% { background-position: 0% 0; } }
+
+/* A, B, C: the words keep their muted ink; a lit copy over them shows only inside a moving band, so the band can be
+   full strength instead of a tint. The halo is a new pair of tokens, stronger in dark than in light, where a wide
+   accent haze reads as a smudge. */
+.th-dark { --glow-near: var(--tt-accent); --glow-far: color-mix(in srgb, var(--tt-accent) 60%, transparent); }
+.th-light { --glow-near: color-mix(in srgb, var(--tt-accent) 55%, transparent); --glow-far: color-mix(in srgb, var(--tt-accent) 22%, transparent); }
+.v-a, .v-b, .v-c { --band: linear-gradient(100deg, transparent 38%, black 45%, black 55%, transparent 62%); }
+.th-dark { --lit: oklch(from var(--tt-accent) max(l, .9) min(calc(c * 1.6), .2) h); }
+.th-light { --lit: oklch(from var(--tt-accent) min(l, .38) min(calc(c * 1.6), .2) h); }
+.v-a .frame { --core: var(--lit); }
+:is(.v-b, .v-c) .frame { --core: var(--tt-text); }
+.v-c { --band: linear-gradient(100deg, transparent 32%, black 42%, black 58%, transparent 68%); }
+body:not([data-still]) :is(.v-a, .v-b, .v-c) .word { color: var(--tt-text-muted); }
+body:not([data-still]) :is(.v-a, .v-b, .v-c) .word::after {
+  content: attr(data-word); position: absolute; inset: 0; color: var(--core); pointer-events: none;
+  text-shadow: 0 0 4px var(--glow-near), 0 0 10px var(--glow-far), 0 0 18px var(--glow-far);
+  -webkit-mask: var(--band) 100% 0 / 300% 100% no-repeat; mask: var(--band) 100% 0 / 300% 100% no-repeat;
+  animation: glow-mask 4.2s cubic-bezier(.45, 0, .55, 1) infinite; }
+body:not([data-still]) .v-a .word::after { text-shadow: none; }
+.v-c .word::after { animation-duration: 4.8s; }
+@keyframes glow-mask { 0% { -webkit-mask-position: 100% 0; mask-position: 100% 0; } 72%, 100% { -webkit-mask-position: 0% 0; mask-position: 0% 0; } }
+/* Freeze every light at the same point, mid-word, to compare strength in one still. */
+body[data-freeze] .word, body[data-freeze] .word::after { animation-delay: -1.55s !important; animation-play-state: paused !important; }
+</style>
+</head>
+<body>
+<div class="proto-top">
+  <span class="proto-tag">PROTOTYPE</span><h1>Working words: stronger light, and the turn's clock</h1>
+  <button type="button" class="proto-btn" id="still" aria-pressed="false">Reduced motion</button>
+  <button type="button" class="proto-btn" id="freeze" aria-pressed="false">Freeze mid-sweep</button>
+</div>
+<main id="main"></main>
+<script>
+const WORDS = ['Combing the desert', 'Ludicrous speed', 'Going to plaid', 'Consulting Yogurt']
+const VARIANTS = [
+  ['v-today', 'Today', 'What ships now, for comparison: a narrow band tinting muted ink toward the accent text tone.'],
+  ['v-a', 'A — lit accent letters, no halo (picked)', 'The letters inside the band turn a vivid tone of the accent: lighter than the words in dark, deeper in light. No halo.'],
+  ['v-b', 'B — bright letters, accent halo', 'The letters inside the band go to the brightest ink (white in dark, near black in light) with an accent halo round them, so it reads as light passing.'],
+  ['v-c', 'C — B, wider and slower', 'B with a wider band and a 4.8 second cycle, so the light stays on each word a little longer.'],
+]
+const FRAMES = [['th-dark', 'Dark · default'], ['th-light', 'Light · default'], ['th-dark ac-rose', 'Dark · rose accent'], ['th-light ac-violet', 'Light · violet accent']]
+const start = Date.now() - 64_000
+const fmt = ms => { const s = Math.floor(ms / 1000); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s` }
+const main = document.getElementById('main')
+for (const [cls, title, note] of VARIANTS) {
+  const sec = document.createElement('section'); sec.className = `variant ${cls}`
+  sec.innerHTML = `<h2>${title}</h2><p>${note} The clock sits after the words in muted ink, with no dot between, and ticks once a second.</p><div class="grid"></div>`
+  for (const [theme, label] of FRAMES) {
+    const fig = document.createElement('figure')
+    fig.innerHTML = `<figcaption>${label}</figcaption><div class="frame ${theme}"><p class="msg-user">Fix the flaky sign-in test.</p>
+      <span class="line"><i class="pulse"></i><span class="word" data-word="${WORDS[0]}">${WORDS[0]}</span><span class="clock"></span>
+      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></div>`
+    sec.querySelector('.grid').append(fig)
+  }
+  main.append(sec)
+}
+const query = new URLSearchParams(location.search)
+if (query.has('zoom')) document.body.style.zoom = query.get('zoom') || '2'
+for (const name of ['freeze', 'still']) if (query.has(name)) { document.body.setAttribute(`data-${name}`, ''); document.getElementById(name).setAttribute('aria-pressed', 'true') }
+const tick = () => { for (const c of document.querySelectorAll('.clock')) c.textContent = fmt(Date.now() - start) }
+tick(); setInterval(tick, 1000)
+let i = 0
+setInterval(() => { i = (i + 1) % WORDS.length; for (const w of document.querySelectorAll('.word')) { w.textContent = WORDS[i]; w.dataset.word = WORDS[i] } }, 3800)
+document.getElementById('still').addEventListener('click', e => {
+  const on = e.currentTarget.getAttribute('aria-pressed') !== 'true'
+  e.currentTarget.setAttribute('aria-pressed', String(on)); document.body.toggleAttribute('data-still', on)
+})
+document.getElementById('freeze').addEventListener('click', e => {
+  const on = e.currentTarget.getAttribute('aria-pressed') !== 'true'
+  e.currentTarget.setAttribute('aria-pressed', String(on)); document.body.toggleAttribute('data-freeze', on)
+})
+</script>
+</body>
+</html>

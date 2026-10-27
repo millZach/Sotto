@@ -14,6 +14,8 @@ export interface ConfirmationDialogProps {
   readonly onDismiss?: () => void
   readonly danger?: boolean
   readonly confirmDisabled?: boolean
+  /** A question that can only be closed, such as one whose answer turned out to be no: the confirm button is left out. */
+  readonly withoutConfirm?: boolean
   readonly failureMessage?: ReactNode
   readonly pendingStatus?: ReactNode
   /** While the confirmation is under way, Cancel and Escape call this instead of waiting for it. Absent: they wait. */
@@ -37,6 +39,7 @@ export function ConfirmationDialog({
   onDismiss = onCancel,
   danger = true,
   confirmDisabled = false,
+  withoutConfirm = false,
   failureMessage,
   pendingStatus,
   onCancelPending,
@@ -62,7 +65,7 @@ export function ConfirmationDialog({
   const dialogRef = useDialogFocus({ onEscape: () => { if (!submittingRef.current) onDismissRef.current(); else onCancelPendingRef.current?.() }, initialFocus: initialFocus === 'confirm' ? confirmRef : initialFocus ?? cancelRef, fallbackFocus: fallbackFocusRef })
 
   const confirm = async (): Promise<void> => {
-    if (submittingRef.current || confirmDisabled) return
+    if (submittingRef.current || confirmDisabled || withoutConfirm) return
     submittingRef.current = true
     setFailed(false)
     setSubmitting(true)
@@ -80,7 +83,7 @@ export function ConfirmationDialog({
     }
   }
 
-  const confirmButton = <Button ref={confirmRef} variant={danger ? 'danger' : 'primary'} disabled={submitting || confirmDisabled} onClick={() => void confirm()}>
+  const confirmButton = withoutConfirm ? null : <Button ref={confirmRef} variant={danger ? 'danger' : 'primary'} disabled={submitting || confirmDisabled} onClick={() => void confirm()}>
     {confirmLabel}
   </Button>
 
@@ -102,12 +105,12 @@ export function ConfirmationDialog({
         }}
       >
         <h2 id={titleId}>{title}</h2>
-        <div id={descriptionId} className="tt-dialog__description">{description}</div>
+        <div id={descriptionId} className="tt-dialog__description tt-paragraph">{description}</div>
         {submitting && pendingStatus !== undefined
-          ? <div className="tt-dialog__status" role="status" aria-live="polite">{pendingStatus}</div>
+          ? <div className="tt-dialog__status tt-paragraph" role="status" aria-live="polite">{pendingStatus}</div>
           : null}
         {failed && failureMessage !== undefined
-          ? <div className="tt-dialog__status tt-dialog__status--error" role="alert">{failureMessage}</div>
+          ? <div className="tt-dialog__status tt-dialog__status--error tt-paragraph" role="alert">{failureMessage}</div>
           : null}
         <div className="tt-dialog__actions">
           {confirmFirst && confirmButton}

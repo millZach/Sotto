@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { afterTailnetFailure, TAILNET_ONLY_MS, classifyTailnetFailure, connectOrder, tryTailnetAfterSsh, type ConnectFacts } from '../../../src/main/hosts/hostConnectionPlan'
 import { isTailnetAddress } from '../../../src/shared/hostConnection'
 import { HostConnectionError, WrongHostError } from '../../../src/main/agents/socketHostService'
+import { HOST_UPDATE_RESTART_BUDGET_MS } from '../../../src/shared/hostSelfUpdate'
 
 // The order of a connect (ADR-0053), row by row.
 const ADDRESS = 'https://forge.tail5728ca.ts.net:8443'
@@ -27,6 +28,16 @@ describe('connectOrder', () => {
     expect(connectOrder(facts({ lastVia: 'tailnet', retryingForMs: 0 }))).toEqual(['tailnet'])
     expect(connectOrder(facts({ lastVia: 'tailnet', retryingForMs: TAILNET_ONLY_MS - 1 }))).toEqual(['tailnet'])
     expect(connectOrder(facts({ lastVia: 'tailnet', retryingForMs: TAILNET_ONLY_MS }))).toEqual(['tailnet', 'ssh'])
+  })
+  it('tries only the tailnet for the restart budget of retries after a host update’s restart sent over the tailnet (ADR-0088)', () => {
+    const tailnetOnlyMs = HOST_UPDATE_RESTART_BUDGET_MS
+    expect(connectOrder(facts({ lastVia: 'tailnet', retryingForMs: TAILNET_ONLY_MS, tailnetOnlyMs }))).toEqual(['tailnet'])
+    expect(connectOrder(facts({ lastVia: 'tailnet', retryingForMs: tailnetOnlyMs - 1, tailnetOnlyMs }))).toEqual(['tailnet'])
+    // After the budget, the normal rules: SSH follows the tailnet.
+    expect(connectOrder(facts({ lastVia: 'tailnet', retryingForMs: tailnetOnlyMs, tailnetOnlyMs }))).toEqual(['tailnet', 'ssh'])
+    // It never keeps a host off SSH that was on SSH, nor one the owner wants on SSH.
+    expect(connectOrder(facts({ lastVia: 'ssh', retryingForMs: 0, tailnetOnlyMs }))).toEqual(['tailnet', 'ssh'])
+    expect(connectOrder(facts({ prefer: 'ssh', lastVia: 'tailnet', retryingForMs: 0, tailnetOnlyMs }))).toEqual(['ssh'])
   })
   it('tries SSH after the tailnet for a host that was on SSH, and for a connect that is not a retry', () => {
     expect(connectOrder(facts({ lastVia: 'ssh', retryingForMs: 0 }))).toEqual(['tailnet', 'ssh'])

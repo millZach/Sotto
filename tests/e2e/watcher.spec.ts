@@ -8,7 +8,7 @@ import { hostEntityKey, parseHostEntityKey } from '../../src/shared/clientIdenti
 import { E2E_THREADS_NOW } from '../../src/shared/e2e'
 import { contrastRatio, parseThemeRgb } from '../../src/shared/themes/color'
 import { WATCHER_STAND_IN_KEY, type WatcherStandInSeed } from '../../src/renderer/src/e2e/watcherStandIn'
-import type { WatcherOwnChange } from '../../src/shared/watcher'
+import { MACHINE_FACTS_OLDER, MACHINE_NOT_CONNECTED, type WatcherOwnChange } from '../../src/shared/watcher'
 import type { WatcherRoomState } from '../../src/shared/watcherRoom'
 import type { AgentMessage } from '../../src/shared/agents'
 import type { AgentActivity } from '../../src/shared/agentActivity'
@@ -47,6 +47,8 @@ const newsEvidence = evidenceDirectory('artifacts/watcher-news-turns')
 const macEvidence = evidenceDirectory('artifacts/macos-traffic-light-room')
 /** New Watcher in Watcher's composer (Zach's pick A of prototype/new-watcher-button): captures for its note. */
 const newWatcherEvidence = evidenceDirectory('artifacts/new-watcher-button')
+/** The machines line, a machine's panel and Where new workers start (#1032, pick D): captures for their note. */
+const machinesEvidence = evidenceDirectory('artifacts/watcher-machines')
 /** The message scrubber in Watcher's conversation (ADR-0109), beside the thread captures in message-scrubber.spec.ts. */
 const scrubberEvidence = evidenceDirectory('artifacts/message-scrubber')
 const FOOT = 'When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.'
@@ -79,7 +81,9 @@ async function seedRoom(page: Page, options: { readonly current: boolean; readon
   readonly more?: (hostId: string, requestId: string) => Partial<WatcherRoomState>
   readonly stopResults?: WatcherStandInSeed['stopResults']; readonly stopDelayMs?: number
   /** The thread New Watcher makes the new Watcher, emptied first; without it, New Watcher refuses. */
-  readonly startNew?: string }): Promise<void> {
+  readonly startNew?: string
+  /** What the machines read answers (#1032), from the host's ID. */
+  readonly machines?: (hostId: string) => NonNullable<WatcherStandInSeed['machines']> }): Promise<void> {
   const hostId = await page.evaluate(async () => (await window.sotto!.agents!.get()).hostId)
   expect(hostId, 'the window names its host').toBeTruthy()
   const target = (threadId: string) => ({ hostId: hostId!, threadId })
@@ -102,6 +106,7 @@ async function seedRoom(page: Page, options: { readonly current: boolean; readon
     ...options.permissionConfirms === false ? { permissionConfirms: false } : {},
     ...options.stopResults ? { stopResults: options.stopResults } : {},
     ...options.stopDelayMs ? { stopDelayMs: options.stopDelayMs } : {},
+    ...options.machines ? { machines: options.machines(hostId!) } : {},
     ...options.startNew ? { startNew: { created: { ...identity, target: target(options.startNew), creationOperationId: randomUUID(), createdAt: at(0) },
       counts: { total: 2, carried: 2, tooLong: 0, notCarried: 0, images: 0, files: 0, visuals: 0, toolRecords: 0, historyKept: true, answered: true },
       text: 'This is a handover from another Sotto thread. The history below is context, not a new request.\n\nThe user:\nFind why the visual gate flakes and fix the footer links. Keep an eye on both.' } } : {},
@@ -267,16 +272,19 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
       }
       return hex(getComputedStyle(document.body).backgroundColor)
     }
-    // The night in the room's corner sits between the canvas and the header: text over it is measured against both.
+    // The night in the room's corner sits between the canvas and the header: text over it is measured against both,
+    // unless the text sits on an opaque fill of its own, such as Watched's badge, which hides the night under it.
     const sky = document.querySelector('.watcher-room__sky')?.getBoundingClientRect()
     const surfaces = (element: Element): string[] => {
       const under = background(element)
       const bounds = element.getBoundingClientRect()
-      const onSky = sky !== undefined && element.closest('.watcher-pane') !== null && bounds.top < sky.bottom && bounds.left < sky.right
+      const fill = getComputedStyle(element).backgroundColor
+      const ownFill = fill !== 'transparent' && !fill.startsWith('rgba(') && !fill.includes('/')
+      const onSky = !ownFill && sky !== undefined && element.closest('.watcher-pane') !== null && bounds.top < sky.bottom && bounds.left < sky.right
       return onSky ? [under, token(element.closest('.watcher-room')!, '--tt-owl-room-night')] : [under]
     }
     const selectors = ['.watcher-head h1', '.watcher-head__list', '.watcher-head__count', '.watcher-tabs__tab', '.watcher-tabs__count', '.watcher-glance__lead', '.watcher-glance__name', '.watcher-glance__why',
-      '.watcher-pane .thread-chip', '.thread-options__caption', '.thread-chip-menu__options small', '.thread-chip-menu__foot', '.watched-note', '.watched-note__stop', '.watch-toggle', '.watch-toast > span',
+      '.watcher-pane .thread-chip', '.thread-options__caption', '.thread-chip-menu__options small', '.thread-chip-menu__foot', '.watched-note', '.watch-toggle', '.watch-toast > span',
       '.watcher-dock__switch button', '.watcher-dock__tab', '.watcher-group__label', '.watcher-group__count', '.watcher-row__title', '.watcher-row__status',
       '.watcher-row__where', '.watcher-row__asks > span', '.watcher-answer', '.watcher-list__foot', '.watcher-list .thread-nav__time', '.watcher-first__intro h2', '.watcher-first__intro p',
       '.watcher-beside .thread-workspace__head h2', '.watcher-own__words > strong', '.watcher-own__said', '.watcher-own__none', '.watcher-own__toggle', '.watcher-own__files code',
@@ -287,7 +295,10 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
       '.watcher-ask__title', '.watcher-ask__meta', '.watcher-ask__kind', '.watcher-ask__open', '.watcher-ask__toggle', '.watcher-ask__said-body', '.watcher-ask-receipt__words',
       '.watcher-stop-all__button', '.watcher-stop h2', '.watcher-stop__name', '.watcher-stop__where', '.watcher-stop__state', '.watcher-stop__note', '.watcher-stop__said',
       '.watcher-stop .tt-button',
-      '.thread-message__status', '.thread-message__delivery > span', '.thread-message__delivery-actions .tt-button']
+      '.thread-message__status', '.thread-message__delivery > span', '.thread-message__delivery-actions .tt-button',
+      '.watcher-machines__name', '.watcher-machines__count', '.watcher-machines__words', '.watcher-machines__sep', '.watcher-machines__more', '.receipt-card__placement',
+      '.watcher-machine-panel h2', '.watcher-machine-panel dt', '.watcher-machine-panel dd', '.watcher-machine-panel p', '.watcher-machine-panel__title',
+      '.watcher-machine-panel__who', '.watcher-machine-panel__link']
     return selectors.flatMap(selector => [...document.querySelectorAll(selector)].filter(element => element.getClientRects().length > 0).slice(0, 6)
       .flatMap((element, index) => surfaces(element).map(on => ({ name: `${selector} ${index}${element.getAttribute('data-tone') ? ` (${element.getAttribute('data-tone')})` : ''}`, ink: hex(getComputedStyle(element).color), on }))))
   })
@@ -382,7 +393,7 @@ async function contrastHolds(page: Page, key: string): Promise<void> {
 test.describe("Watcher's room on the built app", () => {
   test.describe.configure({ mode: 'serial', timeout: 5 * 60_000 })
   test.beforeAll(async () => {
-    for (const folder of [evidenceRoot, permissionEvidence, handoverEvidence, polishEvidence, newsEvidence, answerEvidence, macEvidence, newWatcherEvidence]) await mkdir(folder, { recursive: true })
+    for (const folder of [evidenceRoot, permissionEvidence, handoverEvidence, polishEvidence, newsEvidence, answerEvidence, macEvidence, newWatcherEvidence, machinesEvidence, scrubberEvidence]) await mkdir(folder, { recursive: true })
   })
   test.afterAll(async () => {
     // Each folder gets its own readings, and a run that took none for a folder leaves that folder's file as it was.
@@ -393,11 +404,12 @@ test.describe("Watcher's room on the built app", () => {
     const answer = /^answer-/u
     const mac = /^mac-/u
     const fresh = /^new-watcher-/u
-    const folders = [[evidenceRoot, [...recorded].filter(([key]) => !note.test(key) && !handover.test(key) && !polish.test(key) && !news.test(key) && !answer.test(key) && !mac.test(key) && !fresh.test(key))],
+    const machines = /^machines-/u
+    const folders = [[evidenceRoot, [...recorded].filter(([key]) => !note.test(key) && !handover.test(key) && !polish.test(key) && !news.test(key) && !answer.test(key) && !mac.test(key) && !fresh.test(key) && !machines.test(key))],
       [permissionEvidence, [...recorded].filter(([key]) => note.test(key))], [handoverEvidence, [...recorded].filter(([key]) => handover.test(key))],
       [polishEvidence, [...recorded].filter(([key]) => polish.test(key))], [newsEvidence, [...recorded].filter(([key]) => news.test(key))],
       [answerEvidence, [...recorded].filter(([key]) => answer.test(key))], [macEvidence, [...recorded].filter(([key]) => mac.test(key))],
-      [newWatcherEvidence, [...recorded].filter(([key]) => fresh.test(key))]] as const
+      [newWatcherEvidence, [...recorded].filter(([key]) => fresh.test(key))], [machinesEvidence, [...recorded].filter(([key]) => machines.test(key))]] as const
     for (const [folder, entries] of folders) {
       if (entries.length > 0) await writeFile(resolve(folder, 'readings.json'), `${JSON.stringify(Object.fromEntries(entries), null, 2)}\n`, 'utf8')
     }
@@ -533,7 +545,7 @@ test.describe("Watcher's room on the built app", () => {
       await expect(beside(page)).toHaveAttribute('aria-label', 'Visual gate flake')
       await expect(beside(page).locator('.agent-request[data-kind="permission"]')).toBeFocused()
       await expect(beside(page).getByRole('img', { name: 'Watched by Watcher' })).toBeVisible()
-      await expect(beside(page).getByText('Watched by Watcher. It keeps this thread going and brings you its questions and permissions.')).toBeVisible()
+      await expect(beside(page).getByText(/Watched by Watcher\./)).toHaveCount(0)
       await expect(beside(page).getByRole('button', { name: 'Watch Visual gate flake', exact: true })).toHaveAttribute('aria-pressed', 'true')
       await expect(pane.getByRole('textbox', { name: 'Watcher message' })).toHaveText('Draft for Watcher')
       for (const [width, height] of SIZES) {
@@ -779,7 +791,7 @@ test.describe("Watcher's room on the built app", () => {
       await openThreads(page)
       await seedRoom(page, { current: true })
       await resizeContentWindow(launched, 1600, 1000)
-      // On Threads: the owl after a watched thread's provider logo, its pane says what a send does, and Watcher is not listed.
+      // On Threads: the owl after a watched thread's provider logo, Watch pressed in its pane with nothing under the composer, and Watcher is not listed.
       const threads = page.getByRole('complementary', { name: 'Thread sidebar' })
       await threads.getByRole('button', { name: /^Settled/ }).click()
       await expect(threads.getByRole('button', { name: 'Benchmark rerun', exact: true })).toBeVisible()
@@ -791,8 +803,8 @@ test.describe("Watcher's room on the built app", () => {
       await footer.click()
       const workerPane = page.getByRole('region', { name: 'Footer links' })
       await expect(workerPane.getByRole('img', { name: 'Watched by Watcher' })).toBeVisible()
-      await expect(workerPane.getByText('Watched by Watcher. It keeps this thread going and brings you its questions and permissions.')).toBeVisible()
-      await expect(workerPane.getByRole('button', { name: 'Stop watching Footer links', exact: true })).toBeVisible()
+      await expect(workerPane.getByText(/Watched by Watcher\./)).toHaveCount(0)
+      await expect(workerPane.getByRole('button', { name: 'Watch Footer links', exact: true })).toHaveAttribute('aria-pressed', 'true')
       await resizeContentWindow(launched, 1280, 800)
       expect(await pageBoundProblems(page)).toEqual([])
       await capture(launched, 'threads-watched-sotto-dark-1280x800.png')
@@ -1144,6 +1156,99 @@ test.describe("Watcher's room on the built app", () => {
     })
   })
 
+  test('Watcher’s conversation keeps a reader’s place while Watcher works on news, and follows the end only from the end', async () => {
+    // The wake-up that begins a news turn is left out of Watcher's conversation (watcherWakeUpsAsShown), so until its first
+    // reply the turn has nothing drawn: only its work, under your last turn. That turn stays as it finished (#1452).
+    const clock = (minute: number, second = 0): string => new Date(Date.UTC(2026, 6, 12, 18, minute, second)).toISOString()
+    const said = (id: string, role: AgentMessage['role'], minute: number, text: string, second = 0): AgentMessage => ({ id, role, text, createdAt: clock(minute, second) })
+    const long = (what: string): string => Array.from({ length: 14 }, (_, n) =>
+      `${what}, paragraph ${n + 1}. ${'Watcher read the thread and says what changed, what waits on you and what comes next. '.repeat(3)}`).join('\n\n')
+    let sequence = 1000
+    const work = (turnId: string, from: number, to: number, tools: readonly string[], status: 'running' | 'completed' = 'completed'): AgentActivity[] => [
+      { id: `turn-${turnId}`, turnId, afterMessageId: turnId, sequence: sequence++, kind: 'turn', status, title: 'Turn', startedAt: clock(from), ...status === 'completed' ? { completedAt: clock(to) } : {} },
+      ...tools.map((title): AgentActivity => ({ id: `${turnId}-${title}`, turnId, afterMessageId: turnId, sequence: sequence++, kind: title === 'Thinking' ? 'reasoning' : 'tool',
+        status, title, startedAt: clock(from), ...status === 'completed' ? { completedAt: clock(to) } : {} })),
+    ]
+    const messages: AgentMessage[] = []
+    const activities: AgentActivity[] = []
+    for (let turn = 0; turn < 4; turn++) {
+      const at = turn * 6
+      messages.push(said(`ask-${turn}`, 'user', at, `Question ${turn} for Watcher.`))
+      // The replies written on the way fold under the turn's Worked for line.
+      for (let step = 0; step < 4; step++) messages.push(said(`step-${turn}-${step}`, 'assistant', at + 1, `Looking at part ${step + 1} of question ${turn}. ${'Reading it first. '.repeat(8)}`, step * 10))
+      messages.push(said(`final-${turn}`, 'assistant', at + 2, long(`Answer ${turn}`)))
+      activities.push(...work(`ask-${turn}`, at, at + 2, ['Thinking', 'read_thread', 'list_threads', 'read_operation']))
+      if (turn < 3) {
+        messages.push(said(`news-reply-${turn}`, 'assistant', at + 4, `News ${turn}: Footer links pushed its branch.`, 5))
+        activities.push(...work(`news-${turn}`, at + 4, at + 5, ['Thinking', 'read_operation']))
+      }
+    }
+    await onReleaseTrack('owl', async () => withSotto(launchOptions('t3-code', 'dark'), async (launched) => {
+      const { page } = launched
+      await openThreads(page)
+      await seedRoom(page, { current: true, history: false })
+      const history = (next: { readonly messages: readonly AgentMessage[]; readonly activities: readonly AgentActivity[]; readonly status: 'idle' | 'running' }) =>
+        page.evaluate(async ({ master, next }) => window.sottoE2E!.agentEvent!({ type: 'history', threadId: master, text: '', ...next }),
+          { master: CURRENT, next: { ...next, messages: [...next.messages], activities: [...next.activities] } })
+      await history({ messages, activities, status: 'idle' })
+      await resizeContentWindow(launched, 1280, 800)
+      await openRoom(page)
+      const pane = watcherPane(page)
+      const log = pane.getByRole('log', { name: 'Thread transcript' })
+      // What the reader is reading: the first paragraph or line reaching the top of the view, and where it starts.
+      const reading = () => log.evaluate(element => {
+        const top = element.getBoundingClientRect().top
+        const first = [...element.querySelectorAll('.thread-transcript__content p, .thread-transcript__content button')].find(item => item.getBoundingClientRect().bottom > top + 1)
+        return { words: (first?.textContent ?? '').slice(0, 48), offset: first ? Math.round(first.getBoundingClientRect().top - top) : null }
+      })
+      const fromEnd = () => log.evaluate(element => element.scrollHeight - element.scrollTop - element.clientHeight)
+      const newsTurn = (id: string) => pane.locator(`.thread-activity[data-turn-id="${id}"]`)
+      const reply = (id: string) => pane.locator(`[data-message-id="${id}"]`)
+      // The control that takes the reader to the newest message, named for what it brings.
+      const toLatest = pane.getByRole('button', { name: /^(Jump to latest|New messages)$/u })
+      // Inside your last turn's answer, and higher up in the conversation.
+      for (const [answer, paragraph] of [['final-3', 'Answer 3, paragraph 4.'], ['final-1', 'Answer 1, paragraph 4.']] as const) {
+        // Each reading has news of its own, since a turn that ended is never reopened.
+        const news = `news-${answer}`, silent = `silent-${answer}`
+        const newsReply = said(`reply-${answer}`, 'assistant', 40, 'Footer links merged.', 20)
+        await history({ messages, activities, status: 'idle' })
+        await expect(reply(answer).getByText(paragraph)).toBeVisible()
+        await settle(page)
+        await reply(answer).getByText(paragraph).evaluate(element => element.scrollIntoView({ block: 'start' }))
+        await expect(toLatest).toBeVisible()
+        await settle(page)
+        const read = await reading()
+        expect(read.words, `reading ${answer}`).toContain(paragraph)
+        expect(await fromEnd(), `${answer} is away from the end`).toBeGreaterThan(400)
+        const steps = [
+          ['news starts', { messages, activities: [...activities, ...work(news, 40, 40, ['Thinking'], 'running')], status: 'running' },
+            () => expect(newsTurn(news)).toHaveCount(1)],
+          ['its reply arrives', { messages: [...messages, newsReply], activities: [...activities, ...work(news, 40, 40, ['Thinking'], 'running')], status: 'running' },
+            () => expect(reply(newsReply.id)).toBeVisible()],
+          ['it ends', { messages: [...messages, newsReply], activities: [...activities, ...work(news, 40, 41, ['Thinking'])], status: 'idle' },
+            () => expect(reply(newsReply.id).getByRole('button', { name: /^After news/u })).toBeVisible()],
+          ['silent news starts', { messages: [...messages, newsReply], activities: [...activities, ...work(news, 40, 41, ['Thinking']), ...work(silent, 42, 42, ['list_threads'], 'running')], status: 'running' },
+            () => expect(newsTurn(silent)).toHaveCount(1)],
+          ['it ends with no reply', { messages: [...messages, newsReply], activities: [...activities, ...work(news, 40, 41, ['Thinking']), ...work(silent, 42, 43, ['list_threads'])], status: 'idle' },
+            () => expect(newsTurn(silent)).toHaveCount(0)],
+        ] as const
+        for (const [what, next, drawn] of steps) {
+          await history(next)
+          await drawn()
+          await settle(page)
+          expect(await reading(), `reading ${answer} when ${what}`).toEqual(read)
+        }
+      }
+      // At the end, the conversation follows what arrives; the keyboard takes a reader there from higher up.
+      await toLatest.focus()
+      await page.keyboard.press('Enter')
+      await expect(toLatest).toHaveCount(0)
+      await history({ messages: [...messages, said('news-reply-later', 'assistant', 45, long('Later news'))], activities, status: 'idle' })
+      await expect(reply('news-reply-later')).toBeVisible()
+      await expect.poll(fromEnd).toBeLessThanOrEqual(1)
+    }))
+  })
+
   test('receipt cards, the takeover line and Stop all, from the keyboard at every size', async () => {
     // Watcher started Visual gate flake and Footer links and stopped Grok voice previews in its reply; the user then sent
     // in Weekly note, which Watcher was driving.
@@ -1220,6 +1325,169 @@ test.describe("Watcher's room on the built app", () => {
         await page.keyboard.press('Escape')
         // Visual gate flake is still running, so Stop all stays, now for it alone.
         await expect(page.getByRole('button', { name: 'Stop all threads Watcher started, 1 thread' })).toBeFocused()
+      })
+    })
+  })
+
+  test('the machines line names each machine, its panel opens and closes from the keyboard, and Settings chooses where new workers start (#1032)', async () => {
+    const FORGE = '0b7f4c1e-2a9d-4f61-8c3e-5d2b9a7e4f10', STUDIO = 'c5e2a1f8-9b3d-4e72-a6c1-3f8d2b5e9a07', LAB = '4e8a2c6f-1b7d-4a93-9e05-7c3f1d8b2a64'
+    const GIB = 1024 ** 3
+    const now = new Date().toISOString()
+    const load = (cpu: number, available: number) => ({ observedAt: now, windowMs: 2_000, cpuBusyPercent: cpu, loadAverage: null, availableMemoryBytes: available * GIB,
+      windowStartAvailableMemoryBytes: available * GIB, memoryPressurePercent: null })
+    const facts = (name: string, family: 'windows' | 'linux' | 'macos', cpus: number, total: number) => ({ observedAt: now, os: { family, name, version: null }, architecture: 'x64',
+      totalMemoryBytes: total * GIB, freeMemoryBytes: null, logicalCpuCount: cpus })
+    const machines = (hostId: string): NonNullable<WatcherStandInSeed['machines']> => ({ status: 'ok', observedAt: now, newWorkersStart: { choice: 'machine', hostId: FORGE, name: 'forge' }, machines: [
+      { hostId, name: 'This computer', thisComputer: true, connected: true, factsState: 'reported', facts: facts('Windows 11', 'windows', 16, 32), runningThreads: 2, load: load(34, 14),
+        placedNotStarted: 0, memoryState: 'enough', cpuState: 'not-busy' },
+      { hostId: FORGE, name: 'forge', thisComputer: false, connected: true, factsState: 'reported', facts: facts('Omarchy', 'linux', 24, 64), runningThreads: 3, load: load(93, 41),
+        placedNotStarted: 1, memoryState: 'enough', cpuState: 'busy' },
+      { hostId: STUDIO, name: 'studio', thisComputer: false, connected: true, factsState: 'unknown', facts: null, note: MACHINE_FACTS_OLDER, runningThreads: null, load: null,
+        placedNotStarted: null, memoryState: 'unknown', cpuState: 'unknown' },
+      { hostId: LAB, name: 'lab', thisComputer: false, connected: false, factsState: 'not-connected', facts: null, note: MACHINE_NOT_CONNECTED, runningThreads: null, load: null,
+        placedNotStarted: null, memoryState: 'unknown', cpuState: 'unknown' }] })
+    // Watcher started Visual gate flake here, not on forge where new workers start, and Footer links on forge.
+    const more = (hostId: string, requestId: string): Partial<WatcherRoomState> => {
+      const operation = (threadId: string) => ({ id: randomUUID(), requestId, retryKey: randomUUID(), digest: '0'.repeat(64), action: 'start' as const, target: { hostId, threadId },
+        generation: 0, deliveryState: 'accepted' as const, createdAt: at(8), updatedAt: at(8), receiptId: randomUUID(), cardId: randomUUID() })
+      const receipts = [operation('visual-gate'), operation('footer-links')]
+      return { receipts, receiptReplies: receipts.map(item => ({ operationId: item.id, messageId: 'watcher-reply' })),
+        receiptPlacements: [{ operationId: receipts[0]!.id, placement: { hostId, name: 'This computer', awayFromDefault: true, note: 'Forge, where new workers start, is not connected, so this one started on This computer.' } },
+          { operationId: receipts[1]!.id, placement: { hostId: FORGE, name: 'forge', awayFromDefault: false } }] }
+    }
+    await onReleaseTrack('owl', async () => {
+      for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance, 'reduced'), async (launched) => {
+        const { page } = launched
+        await openThreads(page)
+        await seedRoom(page, { current: true, more, machines })
+        await resizeContentWindow(launched, 1280, 800)
+        await openRoom(page)
+        // The night scene lays its owls out again a moment after the window resizes, so bounds are read once it has.
+        const line = page.getByRole('group', { name: 'Machines and what works on each' })
+        const wide = line.locator('.watcher-machines__wide')
+        await expect(wide).toHaveText(/^This computer \d+ working·forge 0 working, 1 starting, busy·studio 0 working, load unknown·lab not connected$/u)
+        await expect(page.locator('.receipt-card__placement')).toHaveText(['Forge, where new workers start, is not connected, so this one started on This computer.'])
+        for (const [width, height] of SIZES) {
+          await resizeContentWindow(launched, width, height)
+          await settle(page)
+          await page.locator('.receipt-card').last().scrollIntoViewIfNeeded()
+          await settle(page)
+          await expect.poll(() => pageBoundProblems(page), { message: `the machines line at ${width}x${height}` }).toEqual([])
+          await captureInto(machinesEvidence, launched, `machines-line-${appearance}-${width}x${height}.png`)
+          await contrastHolds(page, `machines-line-${appearance}-${width}x${height}`)
+        }
+        // From the keyboard: the name opens its panel with focus in it, Tab stays inside, and Escape closes it back to the name.
+        await resizeContentWindow(launched, 1280, 800)
+        const forge = wide.getByRole('button', { name: 'forge, 0 working, 1 starting, busy. Show forge’s load and what runs there.' })
+        await forge.focus()
+        await page.keyboard.press('Enter')
+        const panel = page.getByRole('dialog', { name: 'forge' })
+        await expect(panel).toBeFocused()
+        await expect(panel).toContainText('93% busy over the last 2 seconds. Busy')
+        await expect(panel).toContainText('41 GB of 64 GB available')
+        await expect(panel).toContainText('0 working, 1 starting. New workers start here.')
+        await page.keyboard.press('Tab')
+        await expect(panel.getByRole('button', { name: 'Close forge’s panel' })).toBeFocused()
+        await page.keyboard.press('Tab')
+        // What the panel says is its own stop, so what does not fit the room scrolls from the keyboard.
+        await expect(panel.getByRole('region', { name: 'forge’s load and what runs there' })).toBeFocused()
+        await page.keyboard.press('Tab')
+        await expect(panel.getByRole('button', { name: 'Change where new workers start' })).toBeFocused()
+        await page.keyboard.press('Tab')
+        await expect(panel.getByRole('button', { name: 'Close forge’s panel' })).toBeFocused()
+        for (const [width, height] of SIZES) {
+          await resizeContentWindow(launched, width, height)
+          await settle(page)
+          await expect.poll(() => pageBoundProblems(page), { message: `forge's panel at ${width}x${height}` }).toEqual([])
+          // The panel ends inside the room under its name, so its foot is always in reach; the rest scrolls inside it.
+          await expect(panel.getByRole('button', { name: 'Change where new workers start' })).toBeInViewport()
+          expect(await panel.evaluate(element => element.getBoundingClientRect().bottom <= element.closest('.thread-pane')!.getBoundingClientRect().bottom + 1),
+            `forge's panel ends inside the room at ${width}x${height}`).toBe(true)
+          await captureInto(machinesEvidence, launched, `machines-panel-${appearance}-${width}x${height}.png`)
+          await contrastHolds(page, `machines-panel-${appearance}-${width}x${height}`)
+        }
+        await page.keyboard.press('Escape')
+        await expect(panel).toHaveCount(0)
+        await expect(forge).toBeFocused()
+        // The older host's panel says why its load is unknown.
+        await resizeContentWindow(launched, 1280, 800)
+        await wide.getByRole('button', { name: /^studio, / }).click()
+        await expect(page.getByRole('dialog', { name: 'studio' })).toContainText('studio runs an older Sotto host that does not report its load. Watcher treats it as unknown, never idle.')
+        await settle(page)
+        await captureInto(machinesEvidence, launched, `machines-panel-older-${appearance}-1280x800.png`)
+        await page.keyboard.press('Escape')
+        // Beside a thread the room is narrow: the line keeps the machines with a problem and counts the rest.
+        await resizeContentWindow(launched, 820, 560)
+        await page.getByRole('button', { name: 'Open Footer links beside Watcher' }).click()
+        await expect(beside(page)).toBeVisible()
+        const narrow = line.locator('.watcher-machines__narrow')
+        await expect(narrow).toBeVisible()
+        await expect(narrow).toHaveText('forge 0 working, busy·studio 0 working, load unknown·lab not connected·1 more')
+        await settle(page)
+        await expect.poll(() => pageBoundProblems(page), { message: 'the short line at 820x560' }).toEqual([])
+        await captureInto(machinesEvidence, launched, `machines-narrow-${appearance}-820x560.png`)
+        await contrastHolds(page, `machines-narrow-${appearance}-820x560`)
+        await narrow.getByRole('button', { name: '1 more machine. Show every machine' }).click()
+        await expect(wide).toBeVisible()
+        await expect(wide.getByRole('button', { name: /^This computer, / })).toBeFocused()
+
+        // Settings, under Watcher: the group between Watched threads and Worker roles, and the note for a machine not connected.
+        await resizeContentWindow(launched, 1280, 800)
+        await wide.getByRole('button', { name: /^forge, / }).click()
+        await page.getByRole('dialog', { name: 'forge' }).getByRole('button', { name: 'Change where new workers start' }).click()
+        const group = page.getByRole('group', { name: 'Where new workers start' })
+        await expect(group).toBeVisible()
+        await expect(group.getByRole('radio')).toHaveCount(5)
+        await group.getByRole('radio', { name: 'lab' }).click()
+        await expect(group.getByRole('radio', { name: 'lab' })).toBeChecked()
+        await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).newWorkerMachine)).toBe(LAB)
+        await expect(group).toContainText('lab is not connected. Until it is, new workers start on this computer, and Watcher says so in its reply.')
+        for (const [width, height] of SIZES) {
+          await resizeContentWindow(launched, width, height)
+          await settle(page)
+          await group.scrollIntoViewIfNeeded()
+          await expect.poll(() => pageBoundProblems(page), { message: `Settings at ${width}x${height}` }).toEqual([])
+          await captureInto(machinesEvidence, launched, `machines-settings-${appearance}-${width}x${height}.png`)
+        }
+        // Arrow keys move the choice, as radio buttons do.
+        await group.getByRole('radio', { name: 'lab' }).focus()
+        await page.keyboard.press('ArrowUp')
+        await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).newWorkerMachine)).toBe(STUDIO)
+        await page.evaluate(async () => window.sotto!.updateSettings({ newWorkerMachine: 'this-computer' }))
+
+        // A long saved name gives way to an ellipsis inside the line at the minimum window, and its warning words stay
+        // clear of its count.
+        if (appearance === 'dark') {
+          const long = 'The build server under the stairs in the second-floor office'
+          await seedRoom(page, { current: true, more, machines: hostId => {
+            const read = machines(hostId)
+            if (read.status !== 'ok') return read
+            return { ...read, machines: read.machines.map(item => {
+              if (item.hostId !== STUDIO) return item
+              const { note: _note, ...studio } = item
+              void _note
+              return { ...studio, name: long, factsState: 'reported' as const, facts: facts('Omarchy', 'linux', 8, 16), runningThreads: 0, load: load(96, 0.5),
+                placedNotStarted: 0, memoryState: 'short' as const, cpuState: 'busy' as const }
+            }) }
+          } })
+          await resizeContentWindow(launched, 820, 560)
+          await openRoom(page)
+          const entry = wide.locator(`[data-host="${STUDIO}"]`)
+          await expect(entry.getByRole('button', { name: `${long}, 0 working, busy, short on memory. Show ${long}’s load and what runs there.` })).toBeVisible()
+          await settle(page)
+          const boxes = await entry.evaluate(element => {
+            const line = element.closest('.watcher-machines')!.getBoundingClientRect(), name = element.querySelector('.watcher-machines__name > span')!
+            const count = element.querySelector('.watcher-machines__count')!.getBoundingClientRect()
+            // The words' first piece follows the count on its line, or starts a line under it.
+            const words = element.querySelector('.watcher-machines__words')!.getClientRects()[0]!
+            return { inside: [...element.getClientRects()].every(rect => rect.right <= line.right + 1), cut: name.scrollWidth > name.clientWidth,
+              apart: count.right <= words.left + 1 || words.top >= count.bottom - 1 }
+          })
+          expect(boxes).toEqual({ inside: true, cut: true, apart: true })
+          await expect.poll(() => pageBoundProblems(page), { message: 'a long machine name at 820x560' }).toEqual([])
+          await captureInto(machinesEvidence, launched, 'machines-long-name-dark-820x560.png')
+          await contrastHolds(page, 'machines-long-name-dark-820x560')
+        }
       })
     })
   })
@@ -1367,8 +1635,8 @@ test.describe("Watcher's room on the built app", () => {
           await expect(beside(page)).toBeVisible()
           await expect(page.locator('.watcher-head .watcher-stop-all')).toHaveCount(stopAll ? 1 : 0)
           for (const counts of ['seeded', 'three-digit'] as const) {
-            // The counts are uncapped. The second pass draws both as 100, the widest three digits in tabular figures, at the
-            // window sizes whose panes span the sweep.
+            // All threads' count is uncapped and Watched's badge stops at 99+. The second pass draws both as 100, wider than
+            // either can be drawn, at the window sizes whose panes span the sweep.
             if (counts === 'three-digit') await page.locator('.watcher-head').evaluate(head => {
               for (const count of head.querySelectorAll('.watcher-head__count, .watcher-tabs__count')) count.textContent = '100'
             })
@@ -1465,7 +1733,7 @@ test.describe("Watcher's room on the built app", () => {
         await expect(watch).toHaveAttribute('aria-pressed', 'true')
         await expect(watch).toBeFocused()
         await expect(weekly.locator('.thread-workspace__head').getByRole('img', { name: 'Watched by Watcher' })).toBeVisible()
-        await expect(weekly.getByText('Watched by Watcher. It keeps this thread going and brings you its questions and permissions.')).toBeVisible()
+        await expect(weekly.getByText(/Watched by Watcher\./)).toHaveCount(0)
         const toast = page.locator('.watch-toast')
         await expect(toast).toHaveText(/Watcher is watching Weekly note\./)
         // The toast never takes focus, and does not cover a composer.
@@ -1494,7 +1762,7 @@ test.describe("Watcher's room on the built app", () => {
         }
         await page.keyboard.press('Enter')
         await expect(watch).toHaveAttribute('aria-pressed', 'true')
-        await weekly.getByRole('button', { name: 'Stop watching Weekly note', exact: true }).click()
+        await watch.click()
         await expect(watch).toHaveAttribute('aria-pressed', 'false')
         await watch.click()
         await expect(watch).toHaveAttribute('aria-pressed', 'true')
@@ -1705,7 +1973,7 @@ test.describe("Watcher's room on the built app", () => {
       await watch.click()
       await expect(watch).toHaveAttribute('aria-pressed', 'true')
       await expect(page.locator('.watch-toast')).toHaveText(/Watcher is watching Weekly worker\./)
-      await expect(workerPane.getByText('Watched by Watcher. It keeps this thread going and brings you its questions and permissions.')).toBeVisible()
+      await expect(workerPane.getByText(/Watched by Watcher\./)).toHaveCount(0)
       await expect(sidebar.getByRole('button', { name: 'Watch Weekly worker', exact: true })).toHaveAttribute('aria-pressed', 'true')
       expect((await mainRoom(page)).standingWatches).toEqual([expect.objectContaining({ target: worker.target })])
       expect((await mainRoom(page)).watchedThreads.find(row => row.target.threadId === worker.target.threadId)).toMatchObject({ watched: true, paused: false })

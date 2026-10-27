@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { HOST_READY_TIMEOUT_MS, HOST_STOP_DRAIN_MS } from './hostLaunchTimings'
-import { hostIsNewer, hostIsOlder } from './hostProtocol'
+import { HOST_DOWNLOAD_TIMEOUT_MS, HOST_READY_TIMEOUT_MS, HOST_STOP_DRAIN_MS } from './hostLaunchTimings'
+import { hostIsNewer, hostIsOlder, type HostUpdateRequestAction } from './hostProtocol'
 import { compareOwlHostTarget, HOST_ARCHIVE_PATTERN } from './hostUpdates'
 import { getReleaseTrack } from './releaseTrack'
 
@@ -13,6 +13,13 @@ import { getReleaseTrack } from './releaseTrack'
 
 /** The file in the host's data folder where a restart over the socket reports how it went, for `outcome` to read. */
 export const HOST_UPDATE_STATUS_FILE = 'host-update-status.json'
+/** One update step shared by the desktop's socket client and the host that runs it. */
+export interface HostUpdateRequest {
+  readonly action: HostUpdateRequestAction
+  readonly version?: string | undefined
+  readonly file?: string | undefined
+  readonly sha256?: string | undefined
+}
 /** The largest status file the host reads: a few small fields, so anything larger is not one it wrote. */
 export const HOST_UPDATE_STATUS_LIMIT_BYTES = 4096
 /** How long the host waits for its restart to say it has passed its checks, or why not, before it gives up on it. */
@@ -28,6 +35,23 @@ export const HOST_UPDATE_ANSWER_WAIT_MS = 5_000
  * whose process has gone, is a restart that was interrupted, as by a kill or the machine restarting.
  */
 export const HOST_UPDATE_RESTART_BUDGET_MS = HOST_UPDATE_ANSWER_WAIT_MS + HOST_STOP_DRAIN_MS + 2 * HOST_READY_TIMEOUT_MS + 60_000
+/** How long the host lets its download and the checksum's take, two downloads with room to spare, before it stops them. */
+export const HOST_UPDATE_FETCH_BUDGET_MS = 2 * HOST_DOWNLOAD_TIMEOUT_MS + 10_000
+/** How long the host lets an unpack run before it stops it. Over SSH an install has two minutes; the host allows far more. */
+export const HOST_UPDATE_INSTALL_BUDGET_MS = 10 * 60_000
+/**
+ * How long a desktop waits for the host's answer to each step it asks for over the socket, before it counts the answer as
+ * lost: past the host's own budget for that step, so a host that is slow but working always answers first. A restart's
+ * answer comes once its checks pass, after up to fifteen seconds for a start at boot host's transient unit to start and
+ * the host's own wait.
+ */
+export const HOST_UPDATE_ANSWER_DEADLINES_MS = {
+  fetch: HOST_UPDATE_FETCH_BUDGET_MS + 30_000,
+  install: HOST_UPDATE_INSTALL_BUDGET_MS + 30_000,
+  restart: HOST_UPDATE_RESTART_WAIT_MS + 30_000,
+  cancel: 30_000,
+  outcome: 30_000,
+} as const satisfies Readonly<Record<'fetch' | 'install' | 'restart' | 'cancel' | 'outcome', number>>
 /** The claim file that decides one restart attempt (`<status file>.<attempt>.claim`), and the host's word that it answered. */
 export const hostUpdateAttemptFile = (statusFile: string, attempt: string, kind: 'claim' | 'answered'): string => `${statusFile}.${attempt}.${kind}`
 
@@ -83,8 +107,8 @@ export const hostUpdateAnswerSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('update-outcome'), running: version,
     restart: z.discriminatedUnion('state', [
       z.object({ state: z.literal('none') }),
-      z.object({ state: z.literal('restarting'), version: version.nullable() }),
-      z.object({ state: z.literal('finished'), version: version.nullable(), result: hostUpdateRestartResultSchema }),
+      z.object({ state: z.literal('restarting'), version: version.nullable(), attempt: attempt.optional() }),
+      z.object({ state: z.literal('finished'), version: version.nullable(), attempt: attempt.optional(), result: hostUpdateRestartResultSchema }),
     ]) }),
   hostUpdateErrorSchema,
 ])

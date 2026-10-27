@@ -10,9 +10,10 @@ import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import type { RequestAnswerRecovery } from '../../../src/main/agents/hostService'
 import { requestQuestionsDigest } from '../../../src/main/agents/requestDrafts'
 import { desktopWindowClient } from '../../../src/main/agents/hostService'
+import { BABYSITTING_RETIRED } from '../../../src/main/agents/babysitting'
 import { HostConnectionError, SocketHostService } from '../../../src/main/agents/socketHostService'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
-import { agentStateSchema, MAX_DELIVERED_DRAFTS, hostForThread, capabilitiesForThread, noProviderRefusal, type AgentCommand, type AgentState, type AgentThreadDetailUpdate } from '../../../src/shared/agents'
+import { agentStateSchema, MAX_DELIVERED_DRAFTS, hostForThread, capabilitiesForThread, noProviderRefusal, SCREENSHOT_WRONG_TYPE, type AgentCommand, type AgentState, type AgentThreadDetailUpdate } from '../../../src/shared/agents'
 import { deferred } from '../../fixtures/deferred'
 
 const LOCAL = '11111111-1111-4111-8111-111111111111'
@@ -254,6 +255,27 @@ describe('desktop host routing', () => {
     await expect(router.stageAttachment({ threadId: hostEntityKey(REMOTE, 'thread'), name: 'Shot.png', mimeType: 'image/png', bytes })).rejects.toThrow('Nothing was attached.')
     expect(await router.attachmentContent({ threadId: hostEntityKey(REMOTE, 'thread'), digest: handle.digest })).toBeNull()
   })
+  it('asks no host to keep a file while this desktop’s attach-any-file answer is off, and forwards one when it is on (ADR-0131)', async () => {
+    const handle = { id: 'file', name: 'notes.txt', mimeType: 'text/plain', sizeBytes: 5, digest: 'b'.repeat(64) }
+    const bytes = new Uint8Array([104, 101, 108, 108, 111])
+    for (const attachAnyFile of [undefined, false, true]) {
+      const router = new DesktopHostRouter(emptyDesktopState, attachAnyFile === undefined ? {} : { attachAnyFile }), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+      const stages = { local: vi.fn(async () => handle), remote: vi.fn(async () => handle) }
+      router.add({ ...local.connection, stage: stages.local }); router.add({ ...remote.connection, stage: stages.remote })
+      const staged = router.stageAttachment({ threadId: hostEntityKey(REMOTE, 'thread'), name: 'notes.txt', mimeType: 'text/plain', bytes })
+      if (attachAnyFile) {
+        await expect(staged).resolves.toEqual(handle)
+        expect(stages.remote).toHaveBeenCalledWith({ name: 'notes.txt', mimeType: 'text/plain', bytes })
+      } else {
+        await expect(staged).rejects.toThrow(SCREENSHOT_WRONG_TYPE)
+        await expect(router.stageAttachment({ threadId: null, name: 'notes.txt', mimeType: 'text/plain', bytes })).rejects.toThrow(SCREENSHOT_WRONG_TYPE)
+        expect(stages.remote).not.toHaveBeenCalled(); expect(stages.local).not.toHaveBeenCalled()
+        // Images go as they always have.
+        await router.stageAttachment({ threadId: hostEntityKey(REMOTE, 'thread'), name: 'Shot.png', mimeType: 'image/png', bytes: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]) })
+        expect(stages.remote).toHaveBeenCalledOnce()
+      }
+    }
+  })
   it('passes each host\'s finished-unread mark to the window on that host\'s thread, and sends the window\'s panes to the host that owns them (ADR-0046)', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
     router.add(local.connection); router.add(remote.connection)
@@ -455,6 +477,20 @@ describe('desktop host routing', () => {
     router.add({ ...remote.connection, activityBody, available: () => false })
     await expect(router.activityBody({ threadId: hostEntityKey(REMOTE, 'thread'), activityId: 'build' })).rejects.toThrow('disconnected')
     expect(activityBody).toHaveBeenCalledTimes(1)
+  })
+  it('reads the prompts above a pane’s window on the thread’s own host, and null while it cannot say (ADR-0109)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const prompts = { prompts: [{ id: 'u0', createdAt: '2026-10-24T09:00:00.000Z', text: 'Why?' }] }
+    const threadPrompts = vi.fn(async () => prompts)
+    router.add(local.connection); router.add({ ...remote.connection, service: { ...remote.connection.service, threadPrompts } })
+    expect(await router.threadPrompts({ threadId: hostEntityKey(REMOTE, 'thread'), beforeMessageId: 'u3' })).toEqual(prompts)
+    expect(threadPrompts).toHaveBeenCalledExactlyOnceWith('thread', 'u3')
+    // A host that keeps no store, and one that is disconnected, leave the scrubber the window's ticks.
+    expect(await router.threadPrompts({ threadId: hostEntityKey(LOCAL, 'thread'), beforeMessageId: 'u3' })).toBeNull()
+    router.remove(REMOTE)
+    router.add({ ...remote.connection, service: { ...remote.connection.service, threadPrompts }, available: () => false })
+    expect(await router.threadPrompts({ threadId: hostEntityKey(REMOTE, 'thread'), beforeMessageId: 'u3' })).toBeNull()
+    expect(threadPrompts).toHaveBeenCalledOnce()
   })
   it('reads a paired host\'s Files, Changes and Agents by its own IDs and hands every ID back as the window\'s key (ADR-0025, October 5 amendment)', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
@@ -771,6 +807,17 @@ describe('a host restarting for an update (ADR-0040)', () => {
     const url = 'https://github.com/o/r/pull/42'
     await router.command({ type: 'stop-babysitting', threadId: hostEntityKey(REMOTE, 'thread'), url }, desktopWindowClient())
     expect(newer.command).toHaveBeenCalledWith({ type: 'stop-babysitting', threadId: 'thread', url }, desktopWindowClient())
+  })
+  it('offers babysitting on no host once Restart stopped threads retired it here, and refuses a press that arrives anyway (ADR-0144)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState, { babysittingRetired: true }), host = fixture(REMOTE, 'remote')
+    router.add({ ...host.connection, offersBabysitting: () => true })
+    expect(router.shell().host.clientHosts![0]).not.toHaveProperty('pullRequestBabysit')
+    const url = 'https://github.com/o/r/pull/42'
+    for (const type of ['babysit-pull-request', 'stop-babysitting'] as const) {
+      const state = await router.command({ type, threadId: hostEntityKey(REMOTE, 'thread'), url }, desktopWindowClient())
+      expect(state.error).toBe(BABYSITTING_RETIRED)
+    }
+    expect(host.command).not.toHaveBeenCalled()
   })
 })
 

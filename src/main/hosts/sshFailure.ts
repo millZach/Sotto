@@ -93,8 +93,19 @@ function nodeMessage(code: 'node-too-old' | 'node-too-new', version: string | un
     : `The SSH host runs Node ${version}, which is newer than this host release supports. Install ${HOST_NODE_INSTALL} for that SSH account, then reconnect.`
 }
 
-/** A command that fixes a failure, for the user to run, and the sentence that introduces it. Sotto never runs it. */
-export interface SshFix { readonly text: string; readonly command: string }
+/**
+ * A command that fixes a failure, for the user to run, and the sentence that introduces it. Sotto never runs it.
+ * `archive` is the host archive the sentence names, so the desktop can say it in the interface language.
+ */
+export interface SshFix { readonly text: string; readonly command: string; readonly archive?: string }
+/**
+ * What a failure's sentence names beyond its code, so the desktop can say the same sentence in the interface language
+ * (ADR-0123): this module is built into the headless host and keeps the English.
+ */
+export type SshFailureNamed =
+  | { readonly kind: 'node'; readonly version: string }
+  | { readonly kind: 'ssh-too-old'; readonly version: string; readonly platform: NodeJS.Platform }
+  | { readonly kind: 'hold'; readonly hold: 'forward' | 'request' }
 
 export class SshFailure extends Error {
   /** Set where there is one exact command that fixes the failure. */
@@ -104,19 +115,23 @@ export class SshFailure extends Error {
    * away (ADR-0054), so the forgotten host still starts at boot.
    */
   bootLeft?: boolean
-  constructor(readonly code: SshFailureCode, message: string = MESSAGES[code]) {
-    super(message)
+  /** The code's own sentence, which the desktop says again in the interface language; false for words given here. */
+  readonly standard: boolean
+  constructor(readonly code: SshFailureCode, message?: string, readonly named?: SshFailureNamed) {
+    super(message ?? MESSAGES[code])
+    this.standard = message === undefined
     this.name = 'SshFailure'
   }
   static node(code: 'node-too-old' | 'node-too-new', version: string | undefined): SshFailure {
-    return new SshFailure(code, nodeMessage(code, version))
+    const message = nodeMessage(code, version)
+    return message === MESSAGES[code] ? new SshFailure(code) : new SshFailure(code, message, { kind: 'node', version: version! })
   }
   /** This computer's ssh is older than askpass needs (OpenSSH 8.4). `version` is what `ssh -V` said, such as `8.1p1`. */
   static sshTooOld(version: string, platform: NodeJS.Platform): SshFailure {
     const update = platform === 'win32'
       ? 'Update it through Windows Update, or through OpenSSH Client in Settings > System > Optional features, then reconnect.'
       : 'Update OpenSSH on this computer, then reconnect.'
-    return new SshFailure('ssh-too-old', `This computer's OpenSSH is version ${version}, which is too old. Sotto needs OpenSSH 8.4 or later. ${update}`)
+    return new SshFailure('ssh-too-old', `This computer's OpenSSH is version ${version}, which is too old. Sotto needs OpenSSH 8.4 or later. ${update}`, { kind: 'ssh-too-old', version, platform })
   }
 }
 
@@ -169,7 +184,7 @@ export function classifySshExit(run: SshExit, fallback: SshFailureCode): SshFail
   if (run.exitCode === 127) return new SshFailure('node-missing')
   // Tailscale answers no keepalive while it holds a connection for approval, so the end of a held connection
   // (a timeout, or Tailscale closing it) means the approval never came.
-  if (run.heldForApproval) return run.liveWait ? new SshFailure('tailscale-unapproved', SHORT_HOLDS[run.liveWait]) : new SshFailure('tailscale-unapproved')
+  if (run.heldForApproval) return run.liveWait ? new SshFailure('tailscale-unapproved', SHORT_HOLDS[run.liveWait], { kind: 'hold', hold: run.liveWait }) : new SshFailure('tailscale-unapproved')
   const text = run.stderr.split(/\r?\n/u).filter(line => !/^debug\d?:/u.test(line)).join('\n')
   if (/REMOTE HOST IDENTIFICATION HAS CHANGED/iu.test(text)) return new SshFailure('host-key-changed')
   if (/Host key verification failed/iu.test(text)) return new SshFailure('host-key-rejected')
@@ -231,7 +246,7 @@ export function failureFix(code: SshFailureCode, context: {
     if (!folder || !/^\d+\.\d+\.\d+$/u.test(context.version)) return undefined
     const archive = `Sotto-host-${context.version}-linux-x64.tar.gz`
     return { text: `Download ${archive} from the Sotto releases page to the SSH host, then unpack it into the host installation folder there:`,
-      command: `mkdir -p ${folder} && tar -xzf ${archive} -C ${folder}` }
+      command: `mkdir -p ${folder} && tar -xzf ${archive} -C ${folder}`, archive }
   }
   return undefined
 }

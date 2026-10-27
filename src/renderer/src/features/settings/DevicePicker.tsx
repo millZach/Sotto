@@ -1,5 +1,9 @@
 import React, { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { ChevronDown } from 'lucide-react'
+import { i18n } from '@lingui/core'
+import { msg, plural } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
+import { shownCount } from '../../state/interfaceNumbers'
 import type { HostDevice, TailscaleSummary } from '../../../../shared/hostDevices'
 import './hostDevices.css'
 
@@ -9,19 +13,28 @@ export interface SavedHostName { readonly name: string; readonly host: string }
 /** "8 days ago", from an ISO time; rounded down, and never less than a minute. */
 export function timeAgo(iso: string, now: number): string {
   const minutes = Math.max(1, Math.floor((now - Date.parse(iso)) / 60_000))
-  const [count, unit] = minutes < 60 ? [minutes, 'minute'] : minutes < 24 * 60 ? [Math.floor(minutes / 60), 'hour'] : [Math.floor(minutes / (24 * 60)), 'day']
-  return `${count} ${unit}${count === 1 ? '' : 's'} ago`
+  if (minutes < 60) return plural(minutes, { one: '# minute ago', other: '# minutes ago' })
+  const hours = Math.floor(minutes / 60)
+  if (minutes < 24 * 60) return plural(hours, { one: '# hour ago', other: '# hours ago' })
+  // Days can pass 999, so the count is written ungrouped in English, as it always was.
+  const days = Math.floor(minutes / (24 * 60)), shownDays = shownCount(days)
+  return plural(days, { one: `${shownDays} day ago`, other: `${shownDays} days ago` })
 }
 
 /** Why a device is listed under "Can't use now", or undefined when it can be added. */
 export function unavailableReason(device: HostDevice, saved: readonly SavedHostName[], now: number): string | undefined {
   const names = new Set(device.names.map(name => name.toLowerCase()))
   const existing = saved.find(item => names.has(item.host.toLowerCase()))
-  if (existing) return `Already added as ${existing.name}`
-  if (device.unavailable === 'phone') return 'A phone cannot run the host'
-  if (device.unavailable === 'this-computer') return 'This computer runs its own local host'
-  if (device.unavailable === 'git-service') return 'A Git service, not a computer'
-  if (device.unavailable === 'offline') return device.tailscale?.lastSeen ? `Offline, last seen ${timeAgo(device.tailscale.lastSeen, now)}` : 'Offline'
+  const name = existing?.name ?? ''
+  if (existing) return i18n._(msg`Already added as ${name}`)
+  if (device.unavailable === 'phone') return i18n._(msg`A phone cannot run the host`)
+  if (device.unavailable === 'this-computer') return i18n._(msg`This computer runs its own local host`)
+  if (device.unavailable === 'git-service') return i18n._(msg`A Git service, not a computer`)
+  if (device.unavailable === 'offline') {
+    if (!device.tailscale?.lastSeen) return i18n._(msg({ message: 'Offline', comment: 'A device on the tailnet that is not online.' }))
+    const ago = timeAgo(device.tailscale.lastSeen, now)
+    return i18n._(msg({ message: `Offline, last seen ${ago}`, comment: '{ago} says how long ago, as in "8 days ago".' }))
+  }
   return undefined
 }
 
@@ -31,22 +44,27 @@ export function unavailableReason(device: HostDevice, saved: readonly SavedHostN
  * phone runs no host either way.
  */
 export function deviceDetails(device: HostDevice): string {
-  const tailscale = device.tailscale ? device.tailscale.ssh ? 'Tailscale SSH' : device.unavailable === 'phone' ? 'Tailscale' : 'Tailscale, SSH server not checked' : undefined
-  return [device.os, device.detail, tailscale, device.sshConfiguration ? 'SSH configuration' : undefined, device.knownHost ? 'Known hosts' : undefined].filter(Boolean).join(' · ')
+  const tailscale = device.tailscale ? device.tailscale.ssh ? 'Tailscale SSH' : device.unavailable === 'phone' ? 'Tailscale' : i18n._(msg`Tailscale, SSH server not checked`) : undefined
+  return [device.os, device.detail, tailscale,
+    device.sshConfiguration ? i18n._(msg({ message: 'SSH configuration', comment: 'Where Sotto learned of a device: the SSH configuration file.' })) : undefined,
+    device.knownHost ? i18n._(msg({ message: 'Known hosts', comment: 'Where Sotto learned of a device: SSH\'s known hosts file.' })) : undefined].filter(Boolean).join(' · ')
 }
 
 /** The sentence at the foot of the list. */
 function footnote(tailscale: TailscaleSummary | null): string | null {
-  if (tailscale?.state === 'running') return `Don't see your machine? Install Tailscale on it and sign in as ${tailscale.loginName || tailscale.user}.`
-  if (tailscale?.state === 'off') return 'Connect to Tailscale to see the machines on your tailnet here.'
-  if (tailscale?.state === 'missing') return 'Get Tailscale to see the machines on your tailnet here.'
+  if (tailscale?.state === 'running') {
+    const account = tailscale.loginName || tailscale.user
+    return i18n._(msg`Don't see your machine? Install Tailscale on it and sign in as ${account}.`)
+  }
+  if (tailscale?.state === 'off') return i18n._(msg`Connect to Tailscale to see the machines on your tailnet here.`)
+  if (tailscale?.state === 'missing') return i18n._(msg`Get Tailscale to see the machines on your tailnet here.`)
   return null
 }
 
 type Entry = { readonly kind: 'device'; readonly device: HostDevice; readonly reason?: string | undefined } | { readonly kind: 'other' }
 const OTHER: Entry = { kind: 'other' }
-const OTHER_LABEL = 'Another SSH host…'
-const entryName = (entry: Entry): string => entry.kind === 'other' ? OTHER_LABEL : entry.device.name
+const OTHER_LABEL = msg`Another SSH host…`
+const entryName = (entry: Entry): string => entry.kind === 'other' ? i18n._(OTHER_LABEL) : entry.device.name
 const pickable = (entry: Entry | undefined): boolean => entry !== undefined && (entry.kind === 'other' || entry.reason === undefined)
 /** Typed letters jump to a device when they come this close together. */
 const TYPEAHEAD_MS = 600
@@ -75,6 +93,7 @@ export function DevicePicker({ devices, failed = false, tailscale, saved, value,
   readonly disabled: boolean
   readonly autoFocus?: boolean
 }): ReactNode {
+  const { t } = useLingui()
   const labelId = useId(), listId = useId()
   const button = useRef<HTMLButtonElement>(null)
   // The list opens with the dialog, since choosing a machine is what Add host is for.
@@ -157,7 +176,7 @@ export function DevicePicker({ devices, failed = false, tailscale, saved, value,
       'data-active': index === active || undefined,
       onMouseEnter: () => { if (usableEntry) setActive(index) }, onClick: () => choose(index),
     } as const
-    if (entry.kind === 'other') return <li key="other" {...common} className="hosts-devices__other"><span className="hosts-dot hosts-dot--none" aria-hidden="true" /><b>{OTHER_LABEL}</b><small>Type a host name or user@server</small></li>
+    if (entry.kind === 'other') return <li key="other" {...common} className="hosts-devices__other"><span className="hosts-dot hosts-dot--none" aria-hidden="true" /><b>{i18n._(OTHER_LABEL)}</b><small>{t`Type a host name or user@server`}</small></li>
     const details = deviceDetails(entry.device)
     return <li key={`${entry.device.target}-${index}`} {...common}>
       <Dot device={entry.device} /><b>{entry.device.name}</b>
@@ -166,7 +185,7 @@ export function DevicePicker({ devices, failed = false, tailscale, saved, value,
   }
   const foot = footnote(tailscale)
   return <div ref={field} className="tt-field hosts-devices">
-    <span className="tt-field__label" id={labelId}>Device</span>
+    <span className="tt-field__label" id={labelId}>{t({ message: 'Device', comment: 'The field that picks the machine to add as a host.' })}</span>
     <button ref={button} type="button" role="combobox" className="hosts-devices__button tt-focusable" disabled={disabled} data-autofocus
       aria-haspopup="listbox" aria-expanded={shown} aria-controls={listId} aria-labelledby={labelId}
       aria-activedescendant={shown && active >= 0 ? optionId(active) : undefined}
@@ -177,21 +196,21 @@ export function DevicePicker({ devices, failed = false, tailscale, saved, value,
       }}
       onKeyDown={onKeyDown}>
       {value ? <><Dot device={value} /><span className="hosts-devices__value"><b>{value.name}</b><small>{deviceDetails(value)}</small></span></>
-        : <span className="hosts-devices__value hosts-devices__placeholder">{devices === null ? 'Looking for your devices…' : 'Choose a device'}</span>}
+        : <span className="hosts-devices__value hosts-devices__placeholder">{devices === null ? t`Looking for your devices…` : t`Choose a device`}</span>}
       <ChevronDown size={16} aria-hidden="true" className="hosts-devices__chevron" />
     </button>
     {/* Pressing inside the list keeps focus on the button, which owns the keyboard. */}
     <div className="hosts-devices__popup" hidden={!shown} onMouseDown={event => event.preventDefault()}>
-      {devices === null ? <p className="hosts-devices__status">Looking for your devices…</p>
-        : failed ? <p className="hosts-devices__status" role="status">Sotto could not read the devices on this computer. Nothing was changed. Choose Another SSH host to type one.</p> : null}
+      {devices === null ? <p className="hosts-devices__status tt-paragraph">{t`Looking for your devices…`}</p>
+        : failed ? <p className="hosts-devices__status tt-paragraph" role="status">{t`Sotto could not read the devices on this computer. Nothing was changed. Choose Another SSH host to type one.`}</p> : null}
       <ul className="hosts-devices__list" id={listId} role="listbox" aria-labelledby={labelId}>
-        {usable.length ? <li role="presentation"><ul role="group" aria-label="Can connect"><li role="presentation" className="hosts-devices__group" aria-hidden="true">Can connect</li>
+        {usable.length ? <li role="presentation"><ul role="group" aria-label={t`Can connect`}><li role="presentation" className="hosts-devices__group" aria-hidden="true">{t`Can connect`}</li>
           {usable.map((entry, index) => option(entry, index))}</ul></li> : null}
-        {greyed.length ? <li role="presentation"><ul role="group" aria-label="Can't use now"><li role="presentation" className="hosts-devices__group" aria-hidden="true">Can't use now</li>
+        {greyed.length ? <li role="presentation"><ul role="group" aria-label={t`Can't use now`}><li role="presentation" className="hosts-devices__group" aria-hidden="true">{t`Can't use now`}</li>
           {greyed.map((entry, index) => option(entry, usable.length + index))}</ul></li> : null}
         {option(OTHER, entries.length - 1)}
       </ul>
-      {foot ? <p className="hosts-devices__foot">{foot}</p> : null}
+      {foot ? <p className="hosts-devices__foot tt-paragraph">{foot}</p> : null}
     </div>
   </div>
 }

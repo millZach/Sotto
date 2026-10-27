@@ -1,9 +1,14 @@
-import { describe, expect, it } from 'vitest'
-import { HostFactsSource, hostMachineReport, parseOsRelease, readHostFacts, type HostFactsSystem } from '../../../src/main/agents/hostFacts'
-import { HOST_FACTS_REFRESH_MS } from '../../../src/shared/hostFacts'
+import { describe, expect, it, vi } from 'vitest'
+import { HostFactsSource, hostMachineReport, parseMemAvailable, parseMemoryPressure, parseOsRelease, readHostFacts, type HostFactsSystem, type MachineWork } from '../../../src/main/agents/hostFacts'
+import { HOST_FACTS_REFRESH_MS, HOST_LOAD_SAMPLE_MS, HOST_LOAD_WINDOW_MAX_MS, machineLoadStates } from '../../../src/shared/hostFacts'
 
 const NOW = new Date('2026-10-14T12:00:00.000Z')
 const GIB = 1024 ** 3
+
+type ShellThread = { id: string; status: string }
+type ShellSends = { deliveries?: { threadId: string; status: string }[]; followups?: { threadId: string; status: string }[] }
+/** A reader of the threads and sends the machine report counts. */
+const shell = (threads: ShellThread[], sends: ShellSends = {}) => () => ({ threads, ...sends }) as unknown as MachineWork
 
 function system(overrides: Partial<HostFactsSystem> = {}): HostFactsSystem {
   return {
@@ -147,7 +152,7 @@ describe('HostFactsSource', () => {
   function machine() {
     let free = 11 * GIB, at = NOW.getTime(), platformReads = 0, memoryReads = 0, fileReads = 0
     const os = system({ platform: () => { platformReads += 1; return 'linux' }, freemem: () => { memoryReads += 1; return free } })
-    const source = new HostFactsSource({ os, now: () => new Date(at),
+    const source = new HostFactsSource({ os, now: () => new Date(at), sleep: async () => undefined,
       readFile: async () => { fileReads += 1; return 'PRETTY_NAME="Omarchy"\nVERSION_ID="4.0.4"\n' } })
     return { source, setFree: (bytes: number) => { free = bytes }, advance: (ms: number) => { at += ms },
       counts: () => ({ platformReads, memoryReads, fileReads }) }
@@ -184,8 +189,202 @@ describe('HostFactsSource', () => {
 
   it('counts only the threads running a turn as the machine’s running threads', async () => {
     const m = machine()
-    const report = await hostMachineReport(m.source, [{ status: 'running' }, { status: 'idle' }, { status: 'running' }, { status: 'error' }])
+    const report = await hostMachineReport(m.source, shell([{ id: 'a', status: 'running' }, { id: 'b', status: 'idle' }, { id: 'c', status: 'running' }, { id: 'd', status: 'error' }]), true)
     expect(report).toMatchObject({ runningThreads: 2, facts: { os: { name: 'Omarchy' } } })
-    expect((await hostMachineReport(m.source, [])).runningThreads).toBe(0)
+    expect((await hostMachineReport(m.source, shell([]), true)).runningThreads).toBe(0)
+  })
+
+  it('answers the facts and running threads alone, reading no load, with Work across machines off', async () => {
+    const source = new HostFactsSource({ os: system(), now: () => NOW, sleep: async () => { throw new Error('No load is read with the feature off.') } })
+    const load = vi.spyOn(source, 'load')
+    const report = await hostMachineReport(source, shell([{ id: 'a', status: 'running' }, { id: 'b', status: 'idle' }], { deliveries: [{ threadId: 'b', status: 'queued' }] }), false)
+    expect(report).toEqual({ facts: expect.objectContaining({ os: expect.objectContaining({ name: 'Windows 11' }) }), runningThreads: 1 })
+    expect(load).not.toHaveBeenCalled()
+  })
+})
+
+describe('live load', () => {
+  /** A machine whose CPU counters, memory and clock the test moves. Each CPU's counters are given as busy and idle time. */
+  function loaded(platform: 'win32' | 'linux' | 'darwin', files: Readonly<Record<string, string>> = {}, { meminfo: meminfoText }: { meminfo?: string | null } = {}) {
+    let at = NOW.getTime(), busy = 0, idle = 0, free = 11 * GIB, available = 9 * GIB, cpuReads = 0
+    const sleeps: number[] = [], waits: (() => void)[] = []
+    const os = system({
+      platform: () => platform,
+      freemem: () => free,
+      cpus: () => { cpuReads += 1; return Array.from({ length: 4 }, () => ({ times: { user: busy, nice: 0, sys: 0, idle, irq: 0 } })) },
+      loadavg: () => [1.234, 0.5, 0.25],
+    })
+    const meminfo = () => `MemTotal:       32000000 kB\nMemFree:         1000000 kB\nMemAvailable:   ${available / 1024} kB\n`
+    const source = new HostFactsSource({ os, now: () => new Date(at),
+      readFile: async path => {
+        if (path === '/proc/meminfo') {
+          if (meminfoText === null) throw Object.assign(new Error('missing'), { code: 'ENOENT' })
+          return meminfoText ?? meminfo()
+        }
+        if (path === '/etc/os-release') return 'PRETTY_NAME="Omarchy"\n'
+        const content = files[path]
+        if (content === undefined) throw Object.assign(new Error('missing'), { code: 'ENOENT' })
+        return content
+      },
+      // Waiting moves the clock, after whatever the test has happen during that wait.
+      sleep: async ms => { sleeps.push(ms); waits.shift()?.(); at += ms },
+    })
+    return { source, sleeps, cpuReads: () => cpuReads, during: (...steps: (() => void)[]) => { waits.push(...steps) },
+      advance: (ms: number) => { at += ms },
+      work: (busyMs: number, idleMs: number) => { busy += busyMs; idle += idleMs },
+      setFree: (bytes: number) => { free = bytes }, setAvailable: (bytes: number) => { available = bytes } }
+  }
+
+  it('takes two samples a few seconds apart when it has none, and reads counters that did not move as unknown, not idle', async () => {
+    const m = loaded('win32')
+    const load = await m.source.load()
+    expect(m.sleeps).toEqual([HOST_LOAD_SAMPLE_MS])
+    expect(load).toEqual({ observedAt: new Date(NOW.getTime() + HOST_LOAD_SAMPLE_MS).toISOString(), windowMs: HOST_LOAD_SAMPLE_MS,
+      cpuBusyPercent: null, loadAverage: null, availableMemoryBytes: 11 * GIB, windowStartAvailableMemoryBytes: 11 * GIB, memoryPressurePercent: null })
+  })
+
+  it('reads over the window since the last sample, without waiting, once that sample is a few seconds old', async () => {
+    const m = loaded('win32')
+    await m.source.primeLoad()
+    m.work(900, 100); m.setFree(3 * GIB); m.advance(10_000)
+    const load = await m.source.load()
+    expect(m.sleeps).toEqual([])
+    expect(load).toMatchObject({ windowMs: 10_000, cpuBusyPercent: 90, availableMemoryBytes: 3 * GIB, windowStartAvailableMemoryBytes: 11 * GIB })
+    // Asked again inside the refresh window: the same reading, with nothing read again.
+    const reads = m.cpuReads()
+    m.advance(HOST_FACTS_REFRESH_MS - 1)
+    expect(await m.source.load()).toBe(load)
+    expect(m.cpuReads()).toBe(reads)
+    // Once it is old, the next window starts where the last one ended.
+    m.work(100, 900); m.advance(1)
+    expect(await m.source.load()).toMatchObject({ windowMs: HOST_FACTS_REFRESH_MS, cpuBusyPercent: 10, windowStartAvailableMemoryBytes: 3 * GIB })
+  })
+
+  it('waits out the rest of the sample gap when the last sample is too new, and samples twice afresh when it is over a minute old', async () => {
+    const m = loaded('win32')
+    await m.source.primeLoad()
+    m.advance(500)
+    await m.source.load()
+    expect(m.sleeps).toEqual([HOST_LOAD_SAMPLE_MS - 500])
+    m.advance(HOST_LOAD_WINDOW_MAX_MS + 1)
+    expect(await m.source.load()).toMatchObject({ windowMs: HOST_LOAD_SAMPLE_MS })
+    expect(m.sleeps).toEqual([HOST_LOAD_SAMPLE_MS - 500, HOST_LOAD_SAMPLE_MS])
+  })
+
+  it('samples afresh when the machine slept through the sample gap, rather than read an hour as now', async () => {
+    const m = loaded('win32')
+    await m.source.primeLoad()
+    // The laptop sleeps through the first wait: an hour the counters call busy, waking with 5 GiB free. Once awake it is idle.
+    m.during(() => { m.work(3_600_000, 0); m.setFree(5 * GIB); m.advance(60 * 60_000) }, () => { m.work(0, 2_000) })
+    const load = m.source.load()
+    expect(await load).toMatchObject({ windowMs: HOST_LOAD_SAMPLE_MS, cpuBusyPercent: 0, windowStartAvailableMemoryBytes: 5 * GIB })
+    expect(m.sleeps).toEqual([HOST_LOAD_SAMPLE_MS, HOST_LOAD_SAMPLE_MS])
+  })
+
+  it('reads CPU busy and the starting memory as unknown when the machine slept through both tries', async () => {
+    const m = loaded('win32')
+    const nap = () => { m.work(1_000, 1_000); m.advance(60 * 60_000) }
+    m.during(nap, nap)
+    const load = await m.source.load()
+    expect(load).toMatchObject({ cpuBusyPercent: null, windowStartAvailableMemoryBytes: null, availableMemoryBytes: 11 * GIB })
+    expect(load.windowMs).toBeGreaterThan(HOST_LOAD_WINDOW_MAX_MS)
+    expect(machineLoadStates(load, 32 * GIB, Date.parse(load.observedAt)).cpu).toBe('unknown')
+  })
+
+  it('answers several asks at once with one reading', async () => {
+    const m = loaded('win32')
+    const [a, b] = await Promise.all([m.source.load(), m.source.load()])
+    expect(a).toBe(b)
+    expect(m.sleeps).toHaveLength(1)
+  })
+
+  it('reads Linux available memory, load average and memory pressure', async () => {
+    const m = loaded('linux', { '/proc/pressure/memory': 'some avg10=3.25 avg60=1.00 avg300=0.50 total=12345\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n' })
+    await m.source.primeLoad()
+    m.setAvailable(5 * GIB); m.work(400, 400); m.advance(4_000)
+    expect(await m.source.load()).toMatchObject({ cpuBusyPercent: 50, loadAverage: 1.23, availableMemoryBytes: 5 * GIB,
+      windowStartAvailableMemoryBytes: 9 * GIB, memoryPressurePercent: 3.25 })
+  })
+
+  it('reads Linux without pressure where the kernel gives none', async () => {
+    const m = loaded('linux')
+    expect(await m.source.load()).toMatchObject({ memoryPressurePercent: null, availableMemoryBytes: 9 * GIB })
+  })
+
+  it('reads Linux available memory as unknown, not as free memory, when MemAvailable cannot be read', async () => {
+    const unreadable = loaded('linux', {}, { meminfo: null })
+    expect(await unreadable.source.load()).toMatchObject({ availableMemoryBytes: null, windowStartAvailableMemoryBytes: null })
+    const without = loaded('linux', {}, { meminfo: 'MemTotal:       32000000 kB\nMemFree:         1000000 kB\n' })
+    expect(await without.source.load()).toMatchObject({ availableMemoryBytes: null, windowStartAvailableMemoryBytes: null })
+  })
+
+  it('reads macOS memory as unknown, since its free memory understates, and keeps its load average', async () => {
+    const m = loaded('darwin')
+    expect(await m.source.load()).toMatchObject({ availableMemoryBytes: null, windowStartAvailableMemoryBytes: null, loadAverage: 1.23, memoryPressurePercent: null })
+  })
+
+  it('reads CPU busy as unknown when a CPU gives no counters', async () => {
+    const source = new HostFactsSource({ os: system({ cpus: () => [{ times: { user: 1, idle: 1 } }, {}] }), now: () => NOW, sleep: async () => undefined })
+    expect((await source.load()).cpuBusyPercent).toBeNull()
+  })
+
+  it('parses MemAvailable and memory pressure, and reads anything else as unknown', () => {
+    expect(parseMemAvailable('MemTotal: 10 kB\nMemAvailable:    2048 kB\n')).toBe(2 * 1024 * 1024)
+    expect(parseMemAvailable('MemTotal: 10 kB\n')).toBeNull()
+    expect(parseMemoryPressure('some avg10=0.00 avg60=0.00 avg300=0.00 total=0\n')).toBe(0)
+    expect(parseMemoryPressure('full avg10=1.00\n')).toBeNull()
+    expect(parseMemoryPressure('some avg10=101.00\n')).toBeNull()
+  })
+})
+
+describe('the machine report', () => {
+  const quiet = () => new HostFactsSource({ os: system(), now: () => NOW, sleep: async () => undefined })
+
+  it('counts work placed but not started: threads not running whose send has not begun, once each', async () => {
+    const report = await hostMachineReport(quiet(), shell(
+      [{ id: 'new', status: 'idle' }, { id: 'busy', status: 'running' }, { id: 'next', status: 'idle' }, { id: 'done', status: 'idle' }, { id: 'failed', status: 'error' }],
+      { deliveries: [{ threadId: 'new', status: 'queued' }, { threadId: 'new', status: 'submitting' }, { threadId: 'busy', status: 'submitting' },
+        { threadId: 'done', status: 'accepted' }, { threadId: 'failed', status: 'failed' }],
+        followups: [{ threadId: 'next', status: 'dispatching' }, { threadId: 'busy', status: 'queued' }] }), true)
+    expect(report).toMatchObject({ runningThreads: 1, placedNotStarted: 2 })
+    expect(report.load).toMatchObject({ availableMemoryBytes: 11 * GIB })
+  })
+
+  it('counts queued follow-ups until they start or are withdrawn, and not one held, failed or uncertain', async () => {
+    // Once the follow-up queue owns a send its delivery record goes, so the queue's own item is what is left to count.
+    const threads = ['queued', 'dispatching', 'paused', 'failed', 'uncertain', 'withdrawn'].map(id => ({ id, status: 'idle' }))
+    const followups = ['queued', 'dispatching', 'paused', 'failed', 'uncertain'].map(status => ({ threadId: status, status }))
+    expect(await hostMachineReport(quiet(), shell(threads, { followups }), true)).toMatchObject({ placedNotStarted: 2 })
+    // Withdrawn: the item is gone from the queue, and so is the count.
+    expect(await hostMachineReport(quiet(), shell(threads, { followups: followups.filter(item => item.status !== 'queued') }), true)).toMatchObject({ placedNotStarted: 1 })
+  })
+
+  it('counts Watcher’s starts not yet sent, created or not, once each, and not once their thread is running', async () => {
+    const report = await hostMachineReport(quiet(), () => ({ threads: [{ id: 'created', status: 'idle' }, { id: 'began', status: 'running' }],
+      deliveries: [{ threadId: 'created', status: 'queued' }], startsNotYetSent: ['pending', 'created', 'began'] }) as unknown as MachineWork, true)
+    expect(report).toMatchObject({ runningThreads: 1, placedNotStarted: 2 })
+    // The IDs it counted go with the count, so a desktop with a start on its way here can count it once.
+    expect([...report.placedThreadIds!].sort()).toEqual(['created', 'pending'])
+  })
+
+  it('sends no thread IDs with Work across machines off', async () => {
+    const report = await hostMachineReport(quiet(), () => ({ threads: [{ id: 'created', status: 'idle' }], deliveries: [{ threadId: 'created', status: 'queued' }] }) as unknown as MachineWork, false)
+    expect(report).not.toHaveProperty('placedThreadIds')
+  })
+
+  it('reads its counts after the load, so a thread that started while the load was read counts as running', async () => {
+    let threads: ShellThread[] = [{ id: 'new', status: 'idle' }]
+    let sends: ShellSends = { deliveries: [{ threadId: 'new', status: 'queued' }] }
+    // The load's window is waited out, and the start that was placed begins its turn meanwhile.
+    const source = new HostFactsSource({ os: system(), now: () => NOW,
+      sleep: async () => { threads = [{ id: 'new', status: 'running' }]; sends = { deliveries: [{ threadId: 'new', status: 'accepted' }] } } })
+    const report = await hostMachineReport(source, () => ({ threads, ...sends }) as unknown as MachineWork, true)
+    expect(report).toMatchObject({ runningThreads: 1, placedNotStarted: 0 })
+  })
+
+  it('keeps the facts when the load cannot be read', async () => {
+    const source = quiet()
+    vi.spyOn(source, 'load').mockRejectedValue(new Error('unreadable'))
+    expect(await hostMachineReport(source, shell([]), true)).toMatchObject({ load: null, placedNotStarted: 0, facts: { os: { name: 'Windows 11' } } })
   })
 })

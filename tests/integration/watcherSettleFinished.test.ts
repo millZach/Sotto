@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
+import { toldAtStart } from '../../src/main/agents/babysitNews'
 import type { AgentThread } from '../../src/shared/agents'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
@@ -12,7 +13,7 @@ import { agentControlFixture } from '../fixtures/agentControlFixture'
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
-async function fixture(on = true) {
+async function fixture(on = true, babysittingRetired = false) {
   const workspace = await workspaceFixture()
   cleanups.push(workspace.remove)
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
@@ -20,7 +21,7 @@ async function fixture(on = true) {
   const setting = { on }
   const log = vi.fn()
   const service = new WatcherService({ directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => true,
-    ordinaryBatch: { quietMs: 50, maxMs: 200 }, settleFinished: () => setting.on, settleFinishedAfterMs: 0, log })
+    ordinaryBatch: { quietMs: 50, maxMs: 200 }, settleFinished: () => setting.on, settleFinishedAfterMs: 0, log, ...babysittingRetired ? { babysittingRetired } : {} })
   const tools = new WatcherToolServer(service)
   workspace.host.useWatcherTools(tools)
   cleanups.push(async () => { service.close(); await tools.close(); f.control.dispose(); await f.control.closed(); await workspace.stop() })
@@ -114,6 +115,23 @@ it('leaves a thread with an open card, background work or sub-agents it cannot s
   expect(f.watching(busy.threadId)).toBe(true)
 })
 
+it('holds while three background agents work after the turn, and settles once they have ended (October 23, 2026)', async () => {
+  const f = await fixture(), target = await f.watched()
+  const summaries = f.workspace.host as unknown as { subagentSummaries: Map<string, NonNullable<AgentThread['subagentSummary']>> }
+  summaries.subagentSummaries.set(target.threadId, { total: 3, working: 3, completed: 0, failed: 0, interrupted: 0, unknown: 0 })
+  // Its finish waits for the agents' work-settled news, so Watcher is told nothing yet, and rests.
+  await f.endTurn(target.threadId)
+  await new Promise(resolve => setTimeout(resolve, 300))
+  expect(f.thread(target.threadId).subagentSummary?.working).toBe(3)
+  expect(f.settled(target.threadId)).toBe(false)
+  expect(f.watching(target.threadId)).toBe(true)
+  // The agents end. Their work-settled news is Watcher's to hear like any other; the settle waits only for that.
+  vi.spyOn(f.service.wakes, 'heardAllOf').mockReturnValue(true)
+  summaries.subagentSummaries.set(target.threadId, { total: 3, working: 0, completed: 3, failed: 0, interrupted: 0, unknown: 0 })
+  await f.emit()
+  await vi.waitFor(() => expect(f.settled(target.threadId)).toBe(true), { timeout: 15_000 })
+})
+
 it('leaves a thread whose pull request is still open alone, and settles it once that pull request merges', async () => {
   const f = await fixture(), target = await f.watched()
   // The workspace keeps a thread's pull request links and brings them up to date with what GitHub says.
@@ -130,6 +148,31 @@ it('leaves a thread whose pull request is still open alone, and settles it once 
   vi.spyOn(f.service.wakes, 'heardAllOf').mockReturnValue(true)
   links.linkPullRequestRecord(target.threadId, { ...pullRequest, state: 'merged' }, 'agent')
   await f.emit()
+  await vi.waitFor(() => expect(f.settled(target.threadId)).toBe(true), { timeout: 15_000 })
+  expect(f.watching(target.threadId)).toBe(false)
+})
+
+it('leaves a thread that babysits a pull request it never linked alone, since a settle would end the babysitting', async () => {
+  const f = await fixture(), target = await f.watched()
+  // Babysitting is Sotto's own record on the thread; one started on a pull request another agent opened is no link.
+  const startedAt = new Date().toISOString()
+  await f.workspace.host.changeBabysitting(target.threadId, () => [{ url: 'https://github.com/example/synthetic/pull/9', number: 9,
+    startedBy: 'agent', startedAt, told: toldAtStart(startedAt) }])
+  expect(f.thread(target.threadId).pullRequests ?? []).toEqual([])
+  await f.endTurn(target.threadId)
+  await f.watcherHears()
+  await new Promise(resolve => setTimeout(resolve, 300))
+  expect(f.settled(target.threadId)).toBe(false)
+  expect(f.watching(target.threadId)).toBe(true)
+})
+
+it('settles a thread that babysits once Restart stopped threads retired babysitting (ADR-0144)', async () => {
+  const f = await fixture(true, true), target = await f.watched()
+  const startedAt = new Date().toISOString()
+  await f.workspace.host.changeBabysitting(target.threadId, () => [{ url: 'https://github.com/example/synthetic/pull/9', number: 9,
+    startedBy: 'agent', startedAt, told: toldAtStart(startedAt) }])
+  await f.endTurn(target.threadId)
+  await f.watcherHears()
   await vi.waitFor(() => expect(f.settled(target.threadId)).toBe(true), { timeout: 15_000 })
   expect(f.watching(target.threadId)).toBe(false)
 })
@@ -178,8 +221,7 @@ it('tries a refused settle once, and again only after the thread finishes anothe
 it('leaves a finished thread alone while a thread it delegated to still works, and settles it once that work ends', async () => {
   const f = await fixture(), parent = await f.watched(), child = await f.watched()
   // The workspace keeps which thread delegated to which (ADR-0081); here the second thread is marked as the first's.
-  const kept = f.workspace.host as unknown as { state: { snapshot: { threads: AgentThread[] } } }
-  kept.state.snapshot.threads.find(thread => thread.id === child.threadId)!.delegatedBy = parent.threadId
+  await f.workspace.host.setDelegatedBy(child.threadId, parent.threadId)
   expect(await f.service.unwatchThread({ target: child }, undefined, 'watcher')).toMatchObject({ status: 'ok' })
   await f.endTurn(parent.threadId)
   await vi.waitFor(() => expect(f.thread(child.threadId).delegatedBy).toBe(parent.threadId))

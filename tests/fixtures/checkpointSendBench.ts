@@ -1,3 +1,5 @@
+// Main's own code runs here, so English is active first, as it is in main (tests/fixtures/desktopMainBundle.ts).
+import '../../src/main/interfaceLanguage'
 /**
  * One process of `tests/perf/checkpointSend.perf.test.ts`: takes a thread's checkpoints across several sends into
  * one working copy, the way the send hook and the completed-turn hook do, and prints what each cost as JSON.
@@ -32,6 +34,17 @@ fs.promises.readFile = (async (...args: Parameters<typeof readFile>) => {
   if (typeof args[0] === 'string' && resolve(args[0]).toLowerCase().startsWith(repo.toLowerCase())) { reads++; readBytes += result.length }
   return result
 }) as typeof readFile
+// Count the working-copy paths a send sizes: every listed file and directory when a folder is walked whole.
+let stats = 0
+const lstat = fs.promises.lstat
+fs.promises.lstat = ((...args: Parameters<typeof lstat>) => {
+  if (typeof args[0] === 'string' && resolve(args[0]).toLowerCase().startsWith(repo.toLowerCase())) stats++
+  return lstat(...args)
+}) as typeof lstat
+// With `SOTTO_PERF_CHECKPOINT_BUSY_MS`, the event loop is kept busy that long at every turn, as a main process busy
+// with streaming threads keeps it, so each batch of file work waits a turn the way it does there.
+const busyMs = Number(process.env.SOTTO_PERF_CHECKPOINT_BUSY_MS ?? 0)
+if (busyMs > 0) setInterval(() => { const end = performance.now() + busyMs; while (performance.now() < end) { /* busy */ } }, 1).unref()
 // Count the working-copy listings a send runs: none when a verdict is held.
 let listings = 0
 const execFile = childProcess.execFile
@@ -65,11 +78,11 @@ const storedAt = async (): Promise<number> => (await stat(stored)).mtimeMs
 const rows = []
 for (let send = 0; send < sends; send++) {
   const was = await storedAt()
-  reads = 0; readBytes = 0; listings = 0
+  reads = 0; readBytes = 0; listings = 0; stats = 0
   let started = performance.now()
   await service.beforeTurn(state.threadId)
   const beforeMs = performance.now() - started
-  const before = { reads, readBytes, listings }
+  const before = { reads, readBytes, listings, stats }
   const rewrote = await storedAt() !== was
   if (mode === 'edit') await writeFile(join(repo, 'bench-edit.txt'), `turn ${send} ${'x'.repeat(4000)}\n`)
   if (mode === 'commit') execFileSync('git', ['-c', 'user.name=Bench', '-c', 'user.email=bench@example.invalid', '-c', 'commit.gpgSign=false', 'commit', '-q', '--allow-empty', '-m', `Turn ${send}`], { cwd: repo, windowsHide: true })
@@ -78,7 +91,7 @@ for (let send = 0; send < sends; send++) {
   started = performance.now()
   await service.afterTurn(state.threadId)
   const afterMs = performance.now() - started
-  rows.push({ beforeMs, afterMs, beforeReads: before.reads, beforeReadBytes: before.readBytes, beforeListings: before.listings, afterReads: reads, rewrote })
+  rows.push({ beforeMs, afterMs, beforeReads: before.reads, beforeReadBytes: before.readBytes, beforeListings: before.listings, beforeStats: before.stats, afterReads: reads, rewrote })
 }
 const checkpoints = await service.checkpoints({ threadId: state.threadId })
 service.dispose()

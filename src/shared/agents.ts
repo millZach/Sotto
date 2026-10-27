@@ -1,3 +1,4 @@
+import { scheduledRestartSchema, turnLimitStopSchema } from './limitRestart'
 import { watcherOwnChangeSchema, watcherObservedChangesSchema } from './watcherChanges'
 import { watcherAsksSchema } from './watcherAsks'
 import { z } from 'zod'
@@ -10,6 +11,7 @@ import { agentActivitySchema, MAX_AGENT_ACTIVITIES, type AgentActivity } from '.
 import { threadUsageSchema } from './threadUsage'
 import { agentVisualSchema, VISUAL_MESSAGE_PREFIX, type AgentVisual } from './visuals'
 import { compactionSchema } from './compaction'
+import { clearThreadsAgeSchema, THREAD_CLEAR_MAX, threadClearKeptReasonSchema, threadClearPreviewSchema, threadClearResultSchema } from './threadClear'
 import { agentBackgroundWorkSchema, agentMonitoringSchema } from './agentMonitoring'
 import { gitStatusSchema } from './gitStatus'
 import { agentBabysitEndedSchema, agentBabysittingSchema, BABYSITTING_PER_THREAD_MAX } from './babysitting'
@@ -37,6 +39,7 @@ export const AGENT_START_HANDOVER = 'sotto:agents:start-handover'
 /** One activity record whole, for a remote row whose body its host sent cut (ADR-0025, October 18 amendment). */
 export const AGENT_ACTIVITY_BODY = 'sotto:agents:activity-body'
 export { everyProvider, providerIdSchema, type ProviderId } from './providerIds'
+import type { AgentThreadPrompts, AgentThreadPromptsRequest } from './threadPrompts'
 /** How many thread providers Sotto has: the cap on every list that names each provider at most once. */
 export const PROVIDER_COUNT = providerIdSchema.options.length
 /** Absent on older live snapshots; ordinary threads have the project kind. */
@@ -61,17 +64,59 @@ const providerEntityId = z.string().min(1).max(6_144)
 export const AGENT_TEXT_MAX = 100_000
 const text = z.string().max(AGENT_TEXT_MAX)
 export const AGENT_IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const
+export type AgentImageMimeType = typeof AGENT_IMAGE_MIME_TYPES[number]
+/**
+ * Whether an attachment is an image: one of the four raster types a model reads as a picture (ADR-0031). Anything else
+ * is an attached file (ADR-0131), whose bytes Sotto never inspects.
+ */
+export function isImageAttachment(mimeType: string): mimeType is AgentImageMimeType {
+  return (AGENT_IMAGE_MIME_TYPES as readonly string[]).includes(mimeType)
+}
+/** The type a file is staged as when the browser gives it none, or one that is not a well-formed MIME type. */
+export const AGENT_GENERIC_FILE_MIME_TYPE = 'application/octet-stream'
+/** A well-formed MIME type, `type/subtype`, lowercase, at most 127 characters, with no parameters. */
+export const agentMimeTypeSchema = z.string().max(127).regex(/^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/u)
+/** The MIME type a file is staged under: the browser's own, lowercased and without parameters, or the generic one. */
+export function attachmentMimeType(browserType: string): string {
+  const type = browserType.split(';')[0]!.trim().toLowerCase()
+  return agentMimeTypeSchema.safeParse(type).success ? type : AGENT_GENERIC_FILE_MIME_TYPE
+}
 export const AGENT_MAX_ATTACHMENTS = 8
 /** The most threads one Dismiss all names; a window with more failed threads sends them in turn. */
 export const AGENT_DISMISS_FAILURES_MAX = 500
 export const AGENT_MAX_IMAGE_BYTES = 10 * 1024 * 1024
+/** The bytes a set's images may hold between them, which keeps a Claude request under its 32 MB cap. */
 export const AGENT_MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+/** The most one attached file may hold (ADR-0131). */
+export const AGENT_MAX_FILE_BYTES = 25 * 1024 * 1024
+/** The most a set's images and files may hold between them (ADR-0131). */
+export const AGENT_MAX_ATTACHMENTS_TOTAL_BYTES = 50 * 1024 * 1024
+/** The most one attachment may hold, by what it is. */
+export function attachmentLimitBytes(mimeType: string): number {
+  return isImageAttachment(mimeType) ? AGENT_MAX_IMAGE_BYTES : AGENT_MAX_FILE_BYTES
+}
 // What a screenshot is refused with wherever it is checked: the composer before it reads a file, and staging after.
 // The guide gives these limits in MB, so the sentences do too.
 export const SCREENSHOT_WRONG_TYPE = 'Only PNG, JPEG, GIF, and WebP screenshots can be attached. Nothing was attached. Choose files of those types.'
 export const SCREENSHOT_TOO_LARGE = 'Each screenshot must be 10 MB or smaller. Nothing was attached. Choose a smaller file.'
 export const SCREENSHOTS_TOO_LARGE_IN_TOTAL = 'Screenshots must total 20 MB or less. Nothing was attached. Remove an image or choose smaller files.'
 export const SCREENSHOT_NOT_ITS_TYPE = 'This screenshot’s content does not match its file type. Nothing was attached. Save it again as PNG, JPEG, GIF, or WebP, then attach it.'
+// The same refusals once any file can be attached (ADR-0131). The window says them through its catalogs; these are
+// main's and the host's, in English, and match the window's source text.
+export const ATTACHMENTS_TOO_MANY = 'Attach up to 8 files at a time. Nothing was attached.'
+export const ATTACHED_FILE_TOO_LARGE = 'Each file must be 25 MB or smaller. Nothing was attached. Choose a smaller file.'
+export const ATTACHED_IMAGE_TOO_LARGE = 'Each image must be 10 MB or smaller. Nothing was attached. Choose a smaller image.'
+export const ATTACHED_IMAGES_TOO_LARGE_IN_TOTAL = 'Images must total 20 MB or less. Nothing was attached. Remove an image or choose smaller ones.'
+export const ATTACHMENTS_TOO_LARGE_IN_TOTAL = 'Attachments must total 50 MB or less. Nothing was attached. Remove a file or choose smaller ones.'
+/** An image on a model that reads none, naming the image. Files go to every model. */
+export function imagesNotReadRefusal(name: string): string {
+  return `This model does not read images. Choose a model with image support, or remove ${name}.`
+}
+/**
+ * A send that carries an attached file on a thread with no working folder to copy it into (ADR-0131). Checked before
+ * the provider hears anything.
+ */
+export const ATTACHED_FILES_NEED_A_FOLDER = 'This thread has no working folder, so files cannot be attached. Remove them, then send again. Your draft is saved.'
 /**
  * The refusal when nothing is connected to act with. Only a send has a draft to keep, so only a send says so. A
  * headless host cannot know the name a desktop saved it under, so it says "this host" and the desktop puts that name
@@ -95,6 +140,14 @@ export function nameHostInRefusal(message: string, name: string): string {
 }
 /** What a host from before staged images (ADR-0031) is refused with when asked to keep one. */
 export const HOST_CANNOT_STAGE_SCREENSHOTS = 'This host cannot keep screenshots. Update Sotto there, then attach them again. Nothing was attached.'
+/** What a host without `file-staging` is refused with when asked to keep a file that is not an image (ADR-0131). */
+export const HOST_CANNOT_STAGE_FILES = 'This host cannot keep files yet. Update Sotto there, then attach them again. Nothing was attached.'
+/** What a file is refused with when the host that would keep it is not connected (ADR-0131). */
+export const HOST_DISCONNECTED_BEFORE_FILES = 'This host is disconnected. Connect again before attaching files. Nothing was attached.'
+/** A file part a host refuses as not the one its upload expects: out of order, from an upload it no longer holds, or too large. */
+export const FILE_UPLOAD_INCOMPLETE = 'This file did not reach the host whole. Nothing was attached. Attach it again.'
+/** An upload whose parts, put together, are not the file its first part named. */
+export const FILE_UPLOAD_MISMATCH = 'This file changed on its way to the host. Nothing was attached. Attach it again.'
 export const agentRuntimeModeSchema = z.enum(['approval-required', 'auto-accept-edits', 'auto', 'full-access'])
 export type AgentRuntimeMode = z.infer<typeof agentRuntimeModeSchema>
 export function attachmentSizeBytes(dataUrl: string): number {
@@ -151,29 +204,39 @@ export const attachmentDigestSchema = z.string().regex(/^[a-f0-9]{64}$/u)
  */
 export const agentAttachmentHandleSchema = z.object({
   id: z.string().min(1).max(128).regex(/^[a-z0-9_-]+$/iu), name: z.string().trim().min(1).max(255),
-  mimeType: z.enum(AGENT_IMAGE_MIME_TYPES), sizeBytes: z.number().int().min(1).max(AGENT_MAX_IMAGE_BYTES), digest: attachmentDigestSchema,
+  mimeType: agentMimeTypeSchema, sizeBytes: z.number().int().min(1).max(AGENT_MAX_FILE_BYTES), digest: attachmentDigestSchema,
   /** The sizes the composer attached and staged it at, when it knew them (issue #321). */
   dimensions: agentAttachmentDimensionsSchema.optional(),
-}).strict()
+}).strict().refine(handle => handle.sizeBytes <= attachmentLimitBytes(handle.mimeType), 'An image must be no larger than 10 MiB.')
 export type AgentAttachmentHandle = z.infer<typeof agentAttachmentHandleSchema>
-/** The bytes a set of staged images holds between them: what the 20 MiB total is measured on. */
+/** The bytes a set of staged attachments holds between them: what the 50 MiB total is measured on. */
 export function attachmentHandlesBytes(items: readonly Pick<AgentAttachmentHandle, 'sizeBytes'>[]): number {
   return items.reduce((sum, item) => sum + item.sizeBytes, 0)
 }
+/** The bytes a set's images hold between them: what the 20 MiB image total is measured on. */
+export function attachmentImagesBytes(items: readonly Pick<AgentAttachmentHandle, 'sizeBytes' | 'mimeType'>[]): number {
+  return attachmentHandlesBytes(items.filter(item => isImageAttachment(item.mimeType)))
+}
 export const agentAttachmentHandlesSchema = z.array(agentAttachmentHandleSchema).max(AGENT_MAX_ATTACHMENTS)
   .refine(items => new Set(items.map(item => item.id)).size === items.length, 'Attachment IDs must be unique.')
-  .refine(items => attachmentHandlesBytes(items) <= AGENT_MAX_ATTACHMENT_BYTES, 'Images must total no more than 20 MiB.')
+  .refine(items => attachmentImagesBytes(items) <= AGENT_MAX_ATTACHMENT_BYTES, 'Images must total no more than 20 MiB.')
+  .refine(items => attachmentHandlesBytes(items) <= AGENT_MAX_ATTACHMENTS_TOTAL_BYTES, 'Attachments must total no more than 50 MiB.')
 const imageBytes = (limit: number) => z.custom<Uint8Array>(value => value instanceof Uint8Array && value.byteLength > 0 && value.byteLength <= limit,
   'Choose a PNG, JPEG, GIF or WebP image no larger than 10 MiB.')
-/** The window hands an image's bytes to main once; the handle comes back. `threadId` picks the host that runs it. */
+const attachmentBytes = z.custom<Uint8Array>(value => value instanceof Uint8Array && value.byteLength > 0 && value.byteLength <= AGENT_MAX_FILE_BYTES,
+  'Choose a file no larger than 25 MiB.')
+/**
+ * The window hands an attachment's bytes to main once; the handle comes back. `threadId` picks the host that runs it.
+ * An image holds at most 10 MiB and any other file at most 25 MiB; whether this build keeps files at all is main's to say.
+ */
 export const agentAttachmentStageRequestSchema = z.object({
-  threadId: id.nullable(), name: z.string().trim().min(1).max(255), mimeType: z.enum(AGENT_IMAGE_MIME_TYPES), bytes: imageBytes(AGENT_MAX_IMAGE_BYTES),
+  threadId: id.nullable(), name: z.string().trim().min(1).max(255), mimeType: agentMimeTypeSchema, bytes: attachmentBytes,
   dimensions: agentAttachmentDimensionsSchema.optional(),
-}).strict()
+}).strict().refine(request => request.bytes.byteLength <= attachmentLimitBytes(request.mimeType), 'Choose a PNG, JPEG, GIF or WebP image no larger than 10 MiB.')
 export type AgentAttachmentStageRequest = z.infer<typeof agentAttachmentStageRequestSchema>
 /** What a host is handed to stage: the image without the thread the window routed it by. */
 export type AgentAttachmentUpload = Omit<AgentAttachmentStageRequest, 'threadId'>
-/** A staged image's bytes, for a composer restoring a chip it holds no copy of. */
+/** A staged image's bytes, for a composer restoring a chip it holds no copy of. A file draws no chip, so none is read. */
 export const agentAttachmentContentRequestSchema = z.object({ threadId: id.nullable(), digest: attachmentDigestSchema }).strict()
 export type AgentAttachmentContentRequest = z.infer<typeof agentAttachmentContentRequestSchema>
 export const agentAttachmentContentSchema = z.object({ mimeType: z.enum(AGENT_IMAGE_MIME_TYPES), bytes: imageBytes(AGENT_MAX_IMAGE_BYTES) }).strict()
@@ -198,6 +261,10 @@ export const agentAttachmentReferenceSchema = z.object({ id, name: z.string(), m
   preview: agentAttachmentPreviewSchema.optional(),
 })
 export type AgentAttachmentReference = z.infer<typeof agentAttachmentReferenceSchema>
+/** The references a message records for its attachments: each one's ID, name, type and size, and nothing more. */
+export function attachmentReferences(attachments: readonly Pick<AgentAttachmentReference, 'id' | 'name' | 'mimeType' | 'sizeBytes'>[]): AgentAttachmentReference[] {
+  return attachments.map(({ id, name, mimeType, sizeBytes }) => ({ id, name, mimeType, sizeBytes }))
+}
 /**
  * A permission setting a provider names itself, for providers whose own modes are not Sotto's four. `name`
  * and `description` are the provider's words; `asks` is Sotto's, and says what it will still put to the
@@ -209,8 +276,17 @@ export const agentProviderModeSchema = z.object({ id: providerEntityId, name: id
   allows: z.enum(['nothing', 'edits', 'everything']).optional() }).strict()
 export type AgentProviderMode = z.infer<typeof agentProviderModeSchema>
 export const agentThreadOptionsSchema = z.object({ modelId: providerEntityId.optional(), reasoningEffort: z.string().min(1).max(64).optional(),
-  runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional() })
+  runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional(),
+  /** Fast mode on or off for this thread (ADR-0143): the user's choice, kept when the thread moves to a model without it. */
+  fastMode: z.boolean().optional() })
 export type AgentThreadOptions = z.infer<typeof agentThreadOptionsSchema>
+/**
+ * A model's fast mode (ADR-0143): faster output at a higher price. Present only on a model whose provider offers it,
+ * Claude Code from its catalog's `supportsFastMode` and Codex from a `priority` service tier. `description` is the
+ * provider's own line about what it costs, where it gives one (Codex's tier description).
+ */
+export const agentModelFastModeSchema = z.object({ description: z.string().max(300).optional() })
+export type AgentModelFastMode = z.infer<typeof agentModelFastModeSchema>
 export const agentModelSchema = z.object({ id: providerEntityId, provider: id, providerId: providerIdSchema.optional(), name: id, ready: z.boolean(),
   /**
    * The provider's own ids in Sotto's order, least to most thorough, so the last is the highest level.
@@ -226,6 +302,8 @@ export const agentModelSchema = z.object({ id: providerEntityId, provider: id, p
   providerModes: z.array(agentProviderModeSchema).max(20).optional(),
   /** The provider names one of its own models as the one to reach for; the picker keeps it at the top. */
   recommended: z.boolean().optional(),
+  /** Present only when the model offers fast mode (ADR-0143); the composer draws its toggle only then. */
+  fastMode: agentModelFastModeSchema.optional(),
   /**
    * Where the model runs, for a provider that offers models from several companies under one sign-in: OpenCode's
    * **model source**, such as OpenCode Zen or Anthropic (ADR-0087). The picker may group by it; `provider` stays the
@@ -265,9 +343,14 @@ export const agentRequestSchema = z.object({
   options: z.array(z.object({ id, label: text })).default([]),
   questions: z.array(z.object({ id, question: text, header: text.optional(), options: z.array(z.object({ id, label: text, description: text.optional(), preview: text.optional() })), multiSelect: z.boolean(), allowFreeText: z.boolean(), required: z.boolean().optional(), unavailableReason: text.optional() })).max(100).optional(),
   permissionChoices: z.array(z.object({ id, label: text, kind: z.enum(['allow-once', 'allow-session', 'allow-always', 'deny', 'cancel']), description: text.optional() })).optional(),
-  context: z.object({ toolName: text.optional(), toolCallId: id.optional(), command: text.optional(), cwd: text.optional(), details: text.optional() }).optional(),
+  context: z.object({ toolName: text.optional(), toolCallId: id.optional(), command: text.optional(), cwd: text.optional(), details: text.optional(),
+    /** A plan the agent asks the user to accept, in its parts (Cursor's `cursor/create_plan`, ADR-0128); `steps` is Markdown. */
+    plan: z.object({ name: text.optional(), overview: text.optional(), steps: text.optional() }).strict().optional() }).optional(),
   delivery: z.literal('uncertain').optional(),
   answerRetryReady: z.literal(true).optional(),
+  /** When the host's coordinator first showed this request (ADR-0135), so a client can say how long it has waited.
+   * The host adds it; no provider does. Absent from hosts that predate it, which say no wait at all. */
+  since: z.string().datetime().optional(),
 })
 export const agentQuestionAnswersSchema = z.record(id, z.object({ optionIds: z.array(id).max(100), text: text.optional() }).strict())
 export type AgentQuestionAnswers = z.infer<typeof agentQuestionAnswersSchema>
@@ -395,6 +478,13 @@ export const worktreeReclaimPreviewSchema = z.object({
   outsideLink: z.string().optional(),
 }).strict()
 export type WorktreeReclaimPreview = z.infer<typeof worktreeReclaimPreviewSchema>
+/**
+ * What Delete thread… shows before it asks (ADR-0140): why the thread is kept, or null when it may go, and, for a thread
+ * with a worktree folder of its own, what removing that folder would take, so the window can List and tick ignored items
+ * and nested work the way Remove worktree does (ADR-0041). Null when the thread has no folder of its own.
+ */
+export const threadDeletePreviewSchema = z.object({ threadId: z.string().min(1).max(512), kept: threadClearKeptReasonSchema.nullable(), worktree: worktreeReclaimPreviewSchema.nullable() }).strict()
+export type ThreadDeletePreview = z.infer<typeof threadDeletePreviewSchema>
 export const agentWorktreeSchema = z.object({
   mode: z.enum(['independent', 'shared']), status: z.enum(['pending', 'ready', 'error']),
   path: z.string().optional(), repositoryRoot: z.string().optional(), branch: z.string().optional(),
@@ -416,6 +506,9 @@ export const agentWorktreeSchema = z.object({
   /** The worktree checks `branch` out as it stands instead of cutting a new branch from the base: a pull request
    * checked out into a worktree of its own, whose branch the first send puts in the new folder. */
   checkoutBranch: z.boolean().optional(),
+  /** A worker started from a thread's branch (#1033): the move's incoming ref this worktree was made from, removed with
+   * the worktree (ADR-0082 decision 3). */
+  incomingRef: z.string().max(512).optional(),
 })
 export type AgentWorktree = z.infer<typeof agentWorktreeSchema>
 export const agentWorkingCopySelectionSchema = z.object({
@@ -469,6 +562,11 @@ export const agentThreadSchema = z.object({
   reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(),
   /** The provider's own permission mode this thread is set to, where the provider names its own. */
   providerMode: providerEntityId.optional(),
+  /**
+   * The user turned fast mode on for this thread (ADR-0143). It is the choice, not what runs: on a model without fast
+   * mode the thread runs at normal speed and keeps the choice for a model that has it. Absent when off, and from older hosts.
+   */
+  fastMode: z.boolean().optional(),
   status: z.enum(['idle', 'running', 'error']),
   workingDirectory: z.string().optional(), worktree: agentWorktreeSchema.optional(),
   /** The last stacked Git action run on this thread's folder, as it runs and once it is over (ADR-0027). */
@@ -489,6 +587,9 @@ export const agentThreadSchema = z.object({
   /** Which of those wake-ups carried only delegation news, which no window or phone shows (ADR-0081, October 19, 2026),
    * from the same record. A row never quotes one. Absent when there are none, and from older hosts. */
   hiddenWakeUpMessageIds: z.array(id).max(WAKE_UP_MESSAGE_IDS_MAX).optional(),
+  /** A restart Sotto has scheduled for this thread, which a usage limit stopped while it worked (ADR-0144). The host's
+   * coordinator sets and clears it; absent otherwise, on stable, and from older hosts. Read, never sent by a client. */
+  scheduledRestart: scheduledRestartSchema.optional().catch(undefined),
   /** Sotto organization only: does not close native work or suppress attention. */
   workspaceSettledAt: z.string().datetime().nullable().optional(),
   /** False only before Sotto dispatches native creation. Unknown is conservatively locked. */
@@ -527,6 +628,9 @@ export const agentThreadSchema = z.object({
   /** Why that failure happened, as the failed turn's own record says, cut to its first 600 characters; absent when it says
    * nothing, and from older hosts. The pane reads it to tell the thread's own failure from the provider's other errors. */
   failureReason: z.string().max(600).optional(),
+  /** When the coordinator named the failure `failureId` names (ADR-0135), so a client can say how long it has stood.
+   * Absent while the thread stands in none, for a failure named before the moment was kept, and from older hosts. */
+  failureSince: z.string().datetime().optional(),
   /** The newest message of the user's the provider's adapter has recorded, whether or not `messages` still
    * holds it. A send names it back so the adapter can refuse one that raced the user's own input; a window
    * the adapter put away and took back up carries none of the older messages, so it cannot say. */
@@ -547,7 +651,10 @@ export const agentThreadSchema = z.object({
   /** Native outcome evidence for queue admission; never an authority to replay work. */
   lastTurn: z.object({ id: z.string(), status: z.enum(['running', 'completed', 'interrupted', 'failed']),
     /** Exact Sotto user anchor when an adapter's native turn ID differs from its activity ID, as Claude's does. */
-    messageId: z.string().optional() }).optional(),
+    messageId: z.string().optional(),
+    /** A failed turn its provider stopped at a usage limit, with the reset when it said (ADR-0144). Its adapter sets it, only
+     * while that Owl feature is on, and the host's coordinator reads it; absent otherwise and from older hosts. */
+    limitStop: turnLimitStopSchema.optional().catch(undefined) }).optional(),
   /** Omitted by providers that already supply history; absence means ready. */
   historyStatus: z.enum(['loading', 'ready', 'error']).optional(), historyError: z.string().optional(),
   historySaveNotice: z.string().max(600).optional(),
@@ -606,10 +713,11 @@ export const clientChannelSchema = z.enum(['npm', 'self-update', 'mise', 'devin-
 export type ClientChannel = z.infer<typeof clientChannelSchema>
 /**
  * Why an update did not finish, as a code the tile words for itself: `download` when the installer could not fetch the
- * new version, `install-step` when mise installed Grok Build but its package's own install step did not finish, and
- * `installer` for anything else the installer refused.
+ * new version, `install-step` when mise installed Grok Build but its package's own install step did not finish,
+ * `not-listed` when mise's version list did not have the published version even after Sotto cleared mise's cache of it,
+ * so nothing was installed, and `installer` for anything else the installer refused.
  */
-export const clientUpdateFailureSchema = z.enum(['download', 'install-step', 'installer'])
+export const clientUpdateFailureSchema = z.enum(['download', 'install-step', 'installer', 'not-listed'])
 export type ClientUpdateFailure = z.infer<typeof clientUpdateFailureSchema>
 export const providerClientUpdateSchema = z.object({
   id: providerIdSchema,
@@ -651,6 +759,8 @@ export const agentClientHostSchema = z.object({ hostId: z.uuid(), connected: z.b
   clientUpdates: z.array(providerClientUpdateSchema).max(PROVIDER_COUNT).optional(), clientUpdateRun: clientUpdateRunSchema.optional(),
   /** The host lists `pull-request-babysit`: the Pull request surface offers Babysit pull request on its threads (ADR-0061 decision 11). */
   pullRequestBabysit: z.literal(true).optional(),
+  /** The host deletes its settled threads when asked: it lists `thread-delete` (ADR-0140 decision 7). Absent, Delete thread… is off. */
+  threadDelete: z.literal(true).optional(),
   /** Where a new project goes on this host, in its own format, for Settings → Threads' row per computer (ADR-0074). */
   projectsDirectory: z.string().max(4_096).optional(),
   /** Whether this host lets this computer answer, so a permission default that grants applies there (ADR-0074). */
@@ -658,7 +768,7 @@ export const agentClientHostSchema = z.object({ hostId: z.uuid(), connected: z.b
   /**
    * This computer's own entry only, for Settings > Providers: the providers it has turned on, whether it checks for client
    * updates, whether its Muse starts without the shell sandbox, and the model its agent setting starts new threads on, its
-   * Models tab's "Agent setting".
+   * open row's "Agent setting" in Settings > Providers.
    */
   enabledProviders: z.array(providerIdSchema).max(PROVIDER_COUNT).optional(), checkClientUpdates: z.boolean().optional(), museDisableSandbox: z.boolean().optional(),
   agentModelId: z.string().max(512).optional() })
@@ -723,6 +833,8 @@ export const subscriptionAccountSchema = z.object({
     /** Least to most thorough, the last being the highest level, as on `agentModelSchema.reasoningEfforts`. */
     reasoningEfforts: z.array(z.string()).optional(),
     defaultReasoningEffort: z.string().optional(),
+    /** As on `agentModelSchema.fastMode`: present only when the model offers fast mode. */
+    fastMode: agentModelFastModeSchema.optional(),
   })),
   defaultModelId: z.string().optional(), allowCustomModel: z.boolean().optional(),
 })
@@ -732,7 +844,7 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
 }
 
 export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
-  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode',
+  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor', deepseek: 'DeepSeek Harness',
 }
 const THREAD_PROVIDERS_CONNECTED = 'Thread providers connected'
 /** The bounded success vocabulary old hosts use, including a default provider discovered during connect. */
@@ -835,6 +947,10 @@ export const providerUpgradeSchema = z.object({ recoveryPath: z.string(), migrat
 export const agentStateSchema = z.object({
   legacyManagement: z.boolean().optional(),
   worktreeReclaimPreview: worktreeReclaimPreviewSchema.optional(),
+  /** The answers of `preview-delete-thread`, `preview-clear-threads` and `clear-threads` (ADR-0140), on that reply alone. */
+  threadDeletePreview: threadDeletePreviewSchema.optional(),
+  threadClearPreview: threadClearPreviewSchema.optional(),
+  threadClearResult: threadClearResultSchema.optional(),
   clientScoped: z.boolean().optional(),
   connections: z.array(z.object({ hostId: z.uuid(), name: z.string(), kind: z.enum(['local', 'remote']), connected: z.boolean() })).optional(),
   hostId: z.uuid().optional(),
@@ -1164,6 +1280,18 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('restore-project'), projectId: providerEntityId }).strict(),
   z.object({ type: z.literal('settle-thread'), threadId: id }).strict(),
   z.object({ type: z.literal('restore-thread'), threadId: id }).strict(),
+  /**
+   * Clearing settled threads (ADR-0140), an Owl feature. `preview-delete-thread` says whether one settled thread may be
+   * deleted and what its own worktree would take; `delete-thread` deletes it, with the same confirmations Remove worktree
+   * takes for its folder. `preview-clear-threads` lists this computer's settled threads quiet longer than `olderThanDays`
+   * (0 is any age) that would go and those kept; `clear-threads` deletes those of `threadIds` that still qualify. Each is
+   * checked again as it is deleted, and nothing can be taken back. Unlike Remove worktree, `delete-thread` takes no answer
+   * to uncommitted changes: a thread whose worktree has them is kept (ADR-0140 decision 3).
+   */
+  z.object({ type: z.literal('preview-delete-thread'), threadId: id }).strict(),
+  z.object({ type: z.literal('delete-thread'), threadId: id, confirmedIgnored: z.array(z.string()).optional(), confirmedItems: z.array(z.object({ path: z.string(), fileCount: z.number().int().nonnegative() }).strict()).optional(), confirmedRepositories: z.array(z.object({ path: z.string(), changeCount: z.number().int().nonnegative(), unpushedCommitCount: z.number().int().nonnegative().optional(), kind: z.enum(['worktree', 'repository']) }).strict()).optional() }).strict(),
+  z.object({ type: z.literal('preview-clear-threads'), olderThanDays: clearThreadsAgeSchema }).strict(),
+  z.object({ type: z.literal('clear-threads'), olderThanDays: clearThreadsAgeSchema, threadIds: z.array(id).min(1).max(THREAD_CLEAR_MAX) }).strict(),
   /** A pure Sotto-side edit of the thread's name; the trimmed title must not be empty. */
   z.object({ type: z.literal('rename-thread'), threadId: id, title: z.string().max(512) }).strict(),
   /** Ask the thread's own provider for its name again, on the side, replacing a generated or stand-in one. */
@@ -1175,6 +1303,9 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
     threadId: z.uuid().optional(),
     workingCopy: z.enum(['independent', 'shared']).optional(),
     baseBranch: z.string().min(1).max(512).optional(), startFromOrigin: z.boolean().optional(), existingWorktreePath: z.string().min(1).max(4096).optional(),
+    /** A worker started from a thread's branch (#1033): the move that landed it in this project's incoming ref, which the
+     * thread's new worktree is made from. Watcher's and delegation's own starts only; a person's create-thread is refused. */
+    startFromMove: z.uuid().optional(),
     reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional() }).strict(),
   /**
    * One of a thread's agents continued as a thread of its own (#1028). `threadId` is the agent's thread, so the command goes
@@ -1229,11 +1360,14 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   /** The user's Babysit pull request and Stop babysitting, on a pull request the thread knows (ADR-0061 decision 3). */
   z.object({ type: z.literal('babysit-pull-request'), threadId: id, url: gitPullRequestUrlSchema }).strict(),
   z.object({ type: z.literal('stop-babysitting'), threadId: id, url: gitPullRequestUrlSchema }).strict(),
+  /** The user's Don't restart on a thread's scheduled restart (ADR-0144): Sotto drops it and the thread waits for them. */
+  z.object({ type: z.literal('cancel-restart'), threadId: id }).strict(),
   /** T3's Checkout pull request: `local` checks it out in the thread's folder with `gh pr checkout`; `worktree` fetches its
    * head as a branch a draft's new worktree takes on first send. */
   z.object({ type: z.literal('git-checkout-pull-request'), threadId: id, reference: z.string().min(1).max(2_048), mode: z.enum(['local', 'worktree']) }).strict(),
   agentThreadOptionsSchema.extend({ type: z.literal('configure-thread'), threadId: id }).strict()
-    .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined || value.providerMode !== undefined, 'Choose a thread setting to change.'),
+    .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined || value.providerMode !== undefined
+      || value.fastMode !== undefined, 'Choose a thread setting to change.'),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),
   /** `shownThreadIds`: which of them the client shows now, where that is fewer; the socket server says so for the paired
    * desktops whose windows are behind another app (ADR-0092). Absent, every observed thread is shown. A paired client
@@ -1246,7 +1380,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('dismiss-failures'), failures: z.array(z.object({ threadId: id, failure: z.string().max(64) }).strict())
     .min(1).max(AGENT_DISMISS_FAILURES_MAX) }).strict(),
   /** Widen one thread's loaded window by another twenty turns, because the pane asked for earlier messages. */
-  z.object({ type: z.literal('load-earlier-messages'), threadId: id }).strict(),
+  z.object({ type: z.literal('load-earlier-messages'), threadId: id, throughMessageId: id.optional() }).strict(),
   /** Early start: the user began typing in this thread's composer, so its provider session is started now rather than
    * inside the next send. Starts nothing a send would not, creates no provider session, worktree or branch, sends no
    * prompt, and says nothing when it cannot start: the send reports its own error (#769). */
@@ -1281,6 +1415,8 @@ export interface AgentBridge {
   threadDetail?(threadId: string): Promise<AgentThreadDetail | null>
   /** One record of a remote thread whole, for a row whose body its host sent cut; null for this computer's threads. */
   activityBody?(request: AgentActivityBodyRequest): Promise<AgentActivity | null>
+  /** Every message the user sent above the window a pane holds, for the message scrubber (ADR-0109); null when the host cannot say. */
+  threadPrompts?(request: AgentThreadPromptsRequest): Promise<AgentThreadPrompts | null>
   /** Whole details and the deltas between them; a delta the window cannot apply sends it back to `threadDetail`. */
   onThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
   /**
@@ -1321,7 +1457,7 @@ export function hostForThread(host: AgentHostSnapshot, thread: Pick<AgentThread,
   const source = host.clientHosts?.find(item => item.hostId === thread.hostId)
   return source ? { ...host, ...source, providers: source.providers } : host
 }
-const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode'])
+const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor', 'deepseek'])
 /**
  * What Connect providers turns on: every thread client installed on this machine, Devin included, except one the user
  * turned off, added to the ones already on, as a headless host connects them all (ADR-0036). A client already on stays

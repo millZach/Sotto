@@ -17,17 +17,19 @@ describe('the pages a host sign-in may open (ADR-0037)', () => {
       ['claude', 'https://sub.claude.ai/'], ['devin', 'https://app.devin.ai/auth/cli/continue'], ['codex', 'https://auth.openai.com/a b'],
     ] as const) expect(isProviderSignInPage(provider, page), page).toBe(false)
   })
-  it('signs Codex and Grok Build in with a device code, Claude Code with a code pasted back, and leaves Devin to its terminal', () => {
-    expect(PROVIDER_SIGN_IN_SHAPES).toEqual({ codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null, muse: null, opencode: null })
+  it('signs Codex and Grok Build in with a device code, Claude Code with a code pasted back, Cursor on a page alone, and leaves Devin to its terminal', () => {
+    expect(PROVIDER_SIGN_IN_SHAPES).toEqual({ codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null, muse: null, opencode: null, cursor: 'page', deepseek: null })
+    expect(isProviderSignInPage('cursor', 'https://cursor.com/loginDeepControl?challenge=x&uuid=y&mode=login')).toBe(true)
+    expect(isProviderSignInPage('cursor', 'https://cursor.sh/loginDeepControl')).toBe(false)
   })
 })
 
 describe('the providers a host offers', () => {
   const HOST = '22222222-2222-4222-8222-222222222222'
-  it('takes OpenCode since hosts and phones took it (#1107), so a headless host holds only what its Owl answers hold', () => {
-    expect(HOST_PROVIDERS).toEqual(['claude', 'codex', 'grok', 'devin', 'muse', 'opencode'])
-    expect([...heldOnHost(new Set())]).toEqual([])
-    expect([...heldOnHost(new Set(['opencode']))]).toEqual(['opencode'])
+  it('takes OpenCode since hosts and phones took it (#1107), and Cursor with them (ADR-0128), but not DeepSeek Harness yet, whose servers are this computer’s (ADR-0138)', () => {
+    expect(HOST_PROVIDERS).toEqual(['claude', 'codex', 'grok', 'devin', 'muse', 'opencode', 'cursor'])
+    expect([...heldOnHost(new Set())]).toEqual(['deepseek'])
+    expect([...heldOnHost(new Set(['opencode']))]).toEqual(['opencode', 'deepseek'])
   })
   it('takes a host connect, sign-in or agent job for OpenCode, as for every provider', () => {
     expect(hostProviderActionSchema.safeParse({ id: HOST, provider: 'opencode', action: 'connect' }).success).toBe(true)

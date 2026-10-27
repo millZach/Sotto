@@ -311,6 +311,8 @@ export async function verifyPackagedResources(input, options = {}) {
   for (const required of [
     'out/main/index.js',
     'out/main/gitLauncherWorker.js',
+    'out/main/walCheckpointWorker.js',
+    'out/main/hangWatchdogWorker.js',
     'out/main/external-dependencies.json',
     'out/preload/index.js',
     'out/preload/visual.js',

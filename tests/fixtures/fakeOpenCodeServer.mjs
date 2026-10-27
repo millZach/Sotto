@@ -36,10 +36,14 @@ if (args.includes('--version')) {
   process.stdout.write(Number(VERSION.split('.')[0]) >= 2 ? `opencode v${VERSION}\n` : `${VERSION}\n`)
   process.exit(0)
 }
+// A test run killed partway leaves nobody to stop this server, so it ends once the process that started it has gone and
+// it has been handed to another parent. Its input is ignored, so the end of it says nothing.
+const parent = process.ppid
+setInterval(() => { if (process.ppid !== parent) process.exit(0) }, 2_000).unref()
 const record = frame => appendFileSync(path('requests.jsonl'), JSON.stringify({ ...frame, process: process.pid }) + '\n')
 const violation = reason => appendFileSync(path('violations.jsonl'), JSON.stringify({ reason, process: process.pid }) + '\n')
 const MODELS = startup.models ?? [
-  { id: 'fixture-model', modelID: 'fixture-model', providerID: 'opencode', name: 'Fixture Model', capabilities: { tools: true, input: ['text', 'image'], output: ['text'] },
+  { id: 'fixture-model', modelID: 'fixture-model', providerID: 'opencode', name: 'Fixture Model', capabilities: { tools: true, input: ['text', 'image', 'pdf'], output: ['text'] },
     variants: [{ id: 'low' }, { id: 'medium' }, { id: 'high' }], enabled: true, status: 'active', limit: { context: 200000, output: 32000 } },
   { id: 'text-only', modelID: 'text-only', providerID: 'opencode', name: 'Text Only', capabilities: { tools: true, input: ['text'], output: ['text'] },
     variants: [], enabled: true, status: 'active', limit: { context: 200000, output: 32000 } },
@@ -66,6 +70,15 @@ const SOURCE_MODELS = startup.sourceModels ?? {
   anthropic: [{ id: 'claude-fixture', name: 'Claude Fixture' }, { id: 'claude-fixture-small', name: 'Claude Fixture Small' }],
   openai: [{ id: 'gpt-fixture', name: 'GPT Fixture' }], xai: [{ id: 'grok-fixture', name: 'Grok Fixture' }], gitlab: [{ id: 'duo-fixture', name: 'Duo Fixture' }],
 }
+// The user's own model servers Sotto declares as provider blocks in OPENCODE_CONFIG_CONTENT (ADR-0124), listed as
+// OpenCode 2.1.4 lists a declared provider's models. A model the script lists itself is not listed twice.
+const declared = (() => { try { return JSON.parse(process.env.OPENCODE_CONFIG_CONTENT ?? '{}').providers ?? {} } catch { return {} } })()
+const DECLARED_PROVIDERS = Object.entries(declared).map(([id, block]) => ({ id, name: block.name ?? id, activation: 'enabled', package: block.package }))
+const DECLARED_MODELS = Object.entries(declared).flatMap(([providerID, block]) => Object.entries(block.models ?? {}).map(([id, model]) => ({ id, modelID: id, providerID,
+  name: model.name ?? id, capabilities: { tools: true, input: model.capabilities?.input ?? ['text'], output: ['text'] },
+  variants: model.capabilities?.reasoning?.supported ? (model.capabilities.reasoning.effort ?? []).map(effort => ({ id: effort })) : [],
+  enabled: true, status: 'active', limit: model.limit ?? { context: 128000, output: 32000 } })))
+const withDeclared = (listed, own, key) => [...listed, ...own.filter(item => !listed.some(known => key(known) === key(item)))]
 const credentials = () => read('credentials.json', [])
 const saveCredentials = list => writeFileSync(path('credentials.json'), JSON.stringify(list))
 const sourceModels = () => credentials().flatMap(credential => (SOURCE_MODELS[credential.integrationID] ?? []).map(model => ({ ...model, modelID: model.id, providerID: credential.integrationID,
@@ -197,7 +210,15 @@ function check() {
   if (action.type === 'takeover') enqueue(session, id('msg'), action.text, [])
   else if (action.type === 'complete') { reply(session, action.text); finish(session, 'succeeded') }
   else if (action.type === 'reply') reply(session, action.text)
-  else if (action.type === 'fail') finish(session, 'failed', { type: action.error ?? 'provider.auth', message: 'Refused' })
+  // `status` and `message` give the error OpenCode ends a turn with when a model source answered it (2.1.4 captures).
+  else if (action.type === 'fail') finish(session, 'failed', { type: action.error ?? 'provider.auth', message: action.message ?? 'Refused', ...(action.status ? { status: action.status } : {}) })
+  else if (action.type === 'retry') {
+    // As OpenCode 2.0.31 and 2.1.4 try a model source again: the step starts again and the retry names the next attempt.
+    const assistantMessageID = session.retryStep ??= id('msg')
+    emit('session.step.started', { sessionID: session.id, agent: 'build', model: session.model, assistantMessageID, started: now() })
+    emit('session.retry.scheduled', { sessionID: session.id, assistantMessageID, attempt: action.attempt ?? 2, at: now() + 2000,
+      error: { type: 'provider.transport', message: action.message ?? 'ECONNREFUSED: Unable to connect. Is the computer able to access the url?' } })
+  }
   else if (action.type === 'tool') tool(session, action)
   else if (action.type === 'exit') process.exit(0)
   else if (action.type === 'malformed') emit('session.text.delta', { sessionID: session.id, assistantMessageID: 7 })
@@ -335,13 +356,13 @@ function handle(name, sessionId, itemId, body, query, request, response, send, f
   if (name === 'server.info') { send(200, { version: script().infoVersion ?? VERSION, pid: process.pid, urls: [], paths: {}, capabilities: {} }); return }
   if (name === 'model.list') {
     if (unavailable > 0) { unavailable--; fail(503, 'ServiceUnavailableError'); return }
-    send(200, { location: { directory: query['location[directory]'] }, data: [...script().modelsByVersion?.[VERSION] ?? script().models ?? MODELS, ...sourceModels()] }); return
+    send(200, { location: { directory: query['location[directory]'] }, data: withDeclared([...script().modelsByVersion?.[VERSION] ?? script().models ?? MODELS, ...sourceModels()], DECLARED_MODELS, model => `${model.providerID}/${model.id}`) }); return
   }
   if (name === 'model.default') { send(200, { location: { directory: query['location[directory]'] }, data: (script().models ?? MODELS)[0] ?? null }); return }
   if (name === 'provider.list') {
     const signed = [...new Set(credentials().map(credential => credential.integrationID))].map(integrationID => ({ id: integrationID, integrationID,
       name: INTEGRATIONS.find(item => item.id === integrationID)?.name ?? integrationID, activation: 'enabled' }))
-    send(200, { location: { directory: query['location[directory]'] }, data: [...script().providers ?? PROVIDERS, ...signed.filter(item => item.id !== 'opencode')] }); return
+    send(200, { location: { directory: query['location[directory]'] }, data: withDeclared([...script().providers ?? PROVIDERS, ...signed.filter(item => item.id !== 'opencode')], DECLARED_PROVIDERS, provider => provider.id) }); return
   }
   if (name.startsWith('integration.') || name.startsWith('credential.')) { integration(name, sessionId, itemId, body, query, send); return }
   if (name === 'event.subscribe') {

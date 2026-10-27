@@ -26,7 +26,7 @@ public struct SavedComputer: Codable, Equatable, Sendable {
     public var hostID: String { pairing.hostId }
     public var endpoint: HostEndpoint? { try? HostEndpoint(address) }
     /// Its name on the tailnet, the first label of its address: `forge`.
-    public var machineName: String { endpoint?.machine ?? "Computer" }
+    public var machineName: String { endpoint?.machine ?? String(localized: "Computer", bundle: .module, comment: "Stands in for a computer's name when its address gives none") }
     /// The name every list shows: the one given here, else the computer's own, else its tailnet name.
     public var name: String { ComputerName.cleaned(localName) ?? ComputerName.cleaned(reportedName) ?? machineName }
     public func validate() throws { try pairing.validate(); _ = try HostEndpoint(address) }

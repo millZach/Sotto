@@ -79,6 +79,18 @@ func isHeld(_ code: Int64) -> Bool {
   return sessionFlags() & mask != 0
 }
 
+// Recording starts by naming every modifier already down, whose own event predates
+// the tap: Fn held while clicking Record, or pressed before the helper was ready.
+// One named again on the next recording is a duplicate main tolerates: a cancel
+// made it forget the first down while the key is still held.
+func seedHeldModifiers() {
+  for code in modifierKeys.keys.sorted() where isHeld(code) {
+    guard let modifier = modifierKeys[code] else { continue }
+    if modifiersDown.insert(code).inserted { report(modifier.token, down: true) }
+    else { emit("down \(modifier.token)") }
+  }
+}
+
 // The 0.5 s poll, run only between events so it never reorders them. Some ups never arrive
 // (lock screen, sleep): a tracked key read up by two polls in a row is released.
 func reconcile() {
@@ -147,7 +159,11 @@ func command(_ raw: String) {
   let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: " ").map(String.init)
   switch parts.first {
   case "keys": watched = Set(parts.dropFirst())
-  case "record": if parts.count == 2 { recording = parts[1] == "on" }
+  case "record":
+    if parts.count == 2 {
+      recording = parts[1] == "on"
+      if recording { seedHeldModifiers() }
+    }
   case "request": _ = CGRequestListenEventAccess()
   default: break
   }
@@ -265,6 +281,45 @@ func selftest() -> Int32 {
       FileHandle.standardError.write("selftest failed: \(test.name): got \(lines), expected \(test.expect)\n".data(using: .utf8)!)
       return 1
     }
+  }
+  // A modifier already down when recording starts is named at once: its own event
+  // predates the tap (Fn held while clicking Record, or pressed before the helper was ready).
+  resetState()
+  lines = []
+  watched = []
+  recording = false
+  lost = Set(modifierKeys.keys).subtracting([0x3F])  // hidKeyDown reads only Fn as held
+  sticky = 0
+  secure = false
+  command("record on")
+  for step in [event(.keyDown, 0x31), event(.keyUp, 0x31), event(.flagsChanged, 0x3F, 0)] {
+    handle(type: step.0, event: step.1)
+  }
+  if lines != ["down Fn", "down Space", "up Space", "up Fn"] {
+    FileHandle.standardError.write("selftest failed: record-on seeds a held Fn: got \(lines)\n".data(using: .utf8)!)
+    return 1
+  }
+  // With nothing held, record-on names nothing.
+  resetState()
+  lines = []
+  recording = false
+  lost = Set(modifierKeys.keys)
+  command("record on")
+  if lines != [] {
+    FileHandle.standardError.write("selftest failed: record-on seeds nothing unheld: got \(lines)\n".data(using: .utf8)!)
+    return 1
+  }
+  // A held modifier is named again for the next recording: main forgot the first down with the cancel.
+  resetState()
+  lines = []
+  recording = false
+  lost = Set(modifierKeys.keys).subtracting([0x3F])
+  command("record on")
+  command("record off")
+  command("record on")
+  if lines != ["down Fn", "down Fn"] {
+    FileHandle.standardError.write("selftest failed: record-on re-seeds a held Fn: got \(lines)\n".data(using: .utf8)!)
+    return 1
   }
   return 0
 }

@@ -12,8 +12,9 @@ import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from 
 import { LocalHostService } from '../../src/main/agents/hostService'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
-import { watcherRoomStateSchema, type WatcherRoomState } from '../../src/shared/watcherRoom'
+import { WATCHER_CHANGED, watcherRoomStateSchema, type WatcherRoomState, type WatcherRoomUpdate } from '../../src/shared/watcherRoom'
 import { stack, STREAMING_CHUNKS, STREAMING_CHUNK_GAP_MS, STREAMING_ROUNDS, records } from './windowThreadShellPipeline'
+import { sameShownRoom } from './watcherRoomCompletion'
 
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 const copyCpu = (before: NodeJS.CpuUsage) => { const used = process.cpuUsage(before); return used.user + used.system }
@@ -88,12 +89,17 @@ export async function measureWatcherRoom(window: BrowserWindow, streamCount: num
     let latestProjected: WatcherRoomState | undefined
     control.shell = () => { if (projecting) counts.projectionShellReads++; return originalShell() }
     watcher.state = () => { counts.projections++; projecting = true; try { const state = originalState(); latestProjected = state; revisions.set(state, ++sourceRevision); return state } finally { projecting = false } }
-    let sentRooms: WatcherRoomState[] = []
-    const send = (state: WatcherRoomState) => {
+    let sentRooms: (WatcherRoomState | WatcherRoomUpdate)[] = []
+    // What main sends the window, through the real preload's reassembly (#1450): the room itself with the publish window
+    // off, and room updates with it on. Either is built from the room projected just before it, whose revision goes
+    // first on a channel of the benchmark's own. A room built and found unchanged sends nothing, so the page waits for the
+    // revision last sent.
+    let sentRevision = 0
+    const send = (payload: WatcherRoomState | WatcherRoomUpdate) => {
       counts.attemptedSends++
-      const revision = revisions.get(state)
-      if (revision === undefined) throw new Error('Room send lost its source revision')
-      window.webContents.send('room', state, revision); counts.successfulSends++; sentRooms.push(state)
+      sentRevision = sourceRevision
+      window.webContents.send('room-revision', sentRevision)
+      window.webContents.send(WATCHER_CHANGED, payload); counts.successfulSends++; sentRooms.push(payload)
     }
     // Earlier steps remain true in stack/router; only this desktop room seam varies off/on.
     const desktop = createWatcherRoomDesktop({ watcherEnabled: true, streamingPublishCost: enabled, watcher,
@@ -141,7 +147,7 @@ export async function measureWatcherRoom(window: BrowserWindow, streamCount: num
       do {
         if (!latestProjected) throw new Error('Room source was not projected')
         const oracleCpu = process.cpuUsage(), oracleStarted = performance.now()
-        candidate = { revision: sourceRevision, expected: clone(latestProjected) }
+        candidate = { revision: sentRevision, expected: clone(latestProjected) }
         counts.oracleCopies++; counts.oracleCpuUs += copyCpu(oracleCpu); counts.oracleWallMs += performance.now() - oracleStarted
         const target = candidate.revision
         completionAttempts++
@@ -152,14 +158,15 @@ export async function measureWatcherRoom(window: BrowserWindow, streamCount: num
         } catch {
           throw new Error(`Room completion failed: target=${target}, source=${sourceRevision}, attempts=${completionAttempts}, projections=${counts.projections}, sends=${counts.successfulSends}`)
         }
-      } while (result.revision !== candidate.revision || sourceRevision !== candidate.revision)
+      } while (result.revision !== candidate.revision || sentRevision !== candidate.revision)
       const mainProcessCpuMs = copyCpu(cpu) / 1000, usedThread = process.threadCpuUsage(mainThreadCpu)
       const mainCpuMs = (usedThread.user + usedThread.system) / 1000
       const wallMs = performance.now() - started
       // Payload accounting and equality run after both CPU reads. Keeping the latest projected room
       // independently catches a dropped trailing event rather than only checking last-send transport.
       counts.wireBytes = sentRooms.reduce((bytes, room) => bytes + serialize(room).length, 0)
-      if (JSON.stringify(result.room) !== JSON.stringify(candidate.expected)) throw new Error('Latest projected room differs across actual IPC/contextBridge')
+      // A room projected after the last send differs from it, if at all, only in when it was read and which build it was.
+      if (!sameShownRoom(result.room, candidate.expected)) throw new Error('Latest projected room differs across actual IPC/contextBridge')
       if (counts.projectionShellReads !== 0) throw new Error('Room projection cloned a local shell')
       if (watcher.watchedThreadIds().length !== streamCount || result.room.watchedThreads.some(thread => thread.status !== 'idle')) throw new Error('Watcher fixture lost its participants or final quiet state')
       rows.push({ ...counts, completionAttempts, wallMs, mainCpuMs, mainProcessCpuMs, rendererCpuMs: result.cpuMs,

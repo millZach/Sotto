@@ -14,8 +14,8 @@ const reply = (id: string, text: string): AgentMessage => ({ id, role: 'assistan
 const command = (afterMessageId: string): AgentActivity =>
   ({ id: 'claude-tool-1', turnId: 'turn-1', sequence: 1, kind: 'command', status: 'running', title: 'Bash', command: 'git status', afterMessageId })
 
-function mount(messages: AgentMessage[], { running = true, streamText = true, activities = [] as AgentActivity[] } = {}) {
-  render(<MessageList messages={messages} provider="claude" running={running} placement={placeActivities(messages, messages, activities)} context={context} streamText={streamText} />)
+function mount(messages: AgentMessage[], { running = true, sending = false, streamText = true, activities = [] as AgentActivity[] } = {}) {
+  render(<MessageList messages={messages} provider="claude" running={running} sending={sending} placement={placeActivities(messages, messages, activities)} context={context} streamText={streamText} />)
   return document.querySelectorAll('.thread-message')
 }
 
@@ -43,16 +43,24 @@ describe('replies shown when finished', () => {
     expect(screen.getByText('Writing a reply…')).toHaveAttribute('role', 'status')
   })
 
-  it('shows the reply once a tool call follows it, and the tool call as it runs', () => {
+  it('shows the reply once a tool call follows it, and leaves the running tool call to the working line', () => {
     mount([user, reply('a-1', 'I will look.')], { streamText: false, activities: [command('a-1')] })
     expect(screen.getByText('I will look.')).toBeInTheDocument()
-    expect(screen.getByText('git status')).toBeInTheDocument()
+    // The running turn's steps fold under the working line, which the transcript draws after the messages.
+    expect(screen.queryByText('git status')).not.toBeInTheDocument()
   })
 
   it('shows the reply once a later provider call starts, even before it has text', () => {
     mount([user, reply('a-1', 'I will look.'), reply('a-2', 'Found i')], { streamText: false })
     expect(screen.getByText('I will look.')).toBeInTheDocument()
     expect(screen.queryByText('Found i')).not.toBeInTheDocument()
+  })
+
+  it('keeps the previous reply whole while the next prompt is sending', () => {
+    // The thread runs from the press, but the new prompt is drawn below the list until the history carries it.
+    mount([user, reply('a-1', 'Yes, you are on it.')], { sending: true, streamText: false })
+    expect(screen.getByText('Yes, you are on it.')).toBeInTheDocument()
+    expect(screen.queryByText('Writing a reply…')).not.toBeInTheDocument()
   })
 
   it('shows the whole reply when the turn ends', () => {

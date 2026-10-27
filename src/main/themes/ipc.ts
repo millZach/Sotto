@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { writeFile } from 'node:fs/promises'
 import { z } from 'zod'
 
@@ -18,7 +19,7 @@ async function settle<T>(operation: () => Promise<T>): Promise<ThemesResult<T>> 
     return { ok: true, value: await operation() }
   } catch (cause) {
     if (cause instanceof OpenVsxFailure) return { ok: false, error: { code: cause.code, message: cause.message.slice(0, 2000) } }
-    return { ok: false, error: { code: 'unavailable', message: 'Something went wrong. Try again.' } }
+    return { ok: false, error: { code: 'unavailable', message: t`Something went wrong. Try again.` } }
   }
 }
 
@@ -36,19 +37,19 @@ export function registerThemesIpc(ipc: IpcMainAdapter, services: ThemesIpcServic
   }
   register(THEMES_EXPORT, payload => settle(async () => {
     const request = themeExportRequestSchema.safeParse(payload)
-    if (!request.success) throw new OpenVsxFailure('invalid-request', 'That theme could not be exported.')
+    if (!request.success) throw new OpenVsxFailure('invalid-request', t`That theme could not be exported.`)
     // Only a real theme file is ever written, whatever the renderer sends.
     try {
       parseThemeFile(JSON.parse(request.data.contents))
     } catch {
-      throw new OpenVsxFailure('invalid-request', 'That theme could not be exported.')
+      throw new OpenVsxFailure('invalid-request', t`That theme could not be exported.`)
     }
     const path = await services.chooseExportPath(request.data.fileName)
     if (path === null) return { saved: false }
     try {
       await write(path, request.data.contents)
     } catch {
-      throw new OpenVsxFailure('unavailable', 'The theme file could not be written there. Choose another folder.')
+      throw new OpenVsxFailure('unavailable', t`The theme file could not be written there. Choose another folder.`)
     }
     return { saved: true }
   }))

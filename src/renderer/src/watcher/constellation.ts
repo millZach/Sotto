@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import { pullRequestKey } from '../../../shared/gitPullRequests'
 import type { WatcherMergeQueueItem, WatcherThreadTarget } from '../../../shared/watcher'
@@ -87,8 +88,6 @@ const pullNumber = (url: string | undefined): number | undefined => {
 }
 /** Needs you first, then what is landing or ready, then work, then the quiet and idle. */
 const TONE_ORDER: Readonly<Record<PictureTone, number>> = { needs: 0, landing: 1, ready: 2, working: 3, quiet: 4, idle: 5 }
-const OTHER_PROJECT = 'Other threads'
-const UNLISTED = 'Not in this window'
 
 /** A pull request's identity: its repository and number from its address, or its number alone without one. */
 function pullRequestId(url: string | undefined, number: number | undefined): string | undefined {
@@ -196,8 +195,8 @@ export function buildPicture(input: {
       settled: row.settled,
       waits: entry !== undefined && group === 'Needs you' ? waitKind(entry) : null,
       provider: entry?.facts.provider,
-      project: thread === undefined ? UNLISTED : entry?.facts.project?.title ?? OTHER_PROJECT,
-      computer: thread === undefined ? '' : remote ? thread.hostLabel ?? 'Paired computer' : 'This computer',
+      project: thread === undefined ? t`Not in this window` : entry?.facts.project?.title ?? t`Other threads`,
+      computer: thread === undefined ? '' : remote ? thread.hostLabel ?? t`Paired computer` : t`This computer`,
       pullRequest: shown ?? null, pullRequests,
     })
   }
@@ -338,12 +337,16 @@ export function pictureMessages(seen: PictureSeen | null, room: WatcherRoomState
 
 /** The words a blob's tag carries, when it carries one: the merge turns and a waiting card. */
 export function blobTag(message: Pick<PictureMessage, 'kind' | 'pullRequest'>, waits?: PictureNode['waits']): string | null {
-  const pr = message.pullRequest === undefined ? '' : ` #${message.pullRequest}`
+  const number = message.pullRequest
   switch (message.kind) {
-    case 'go': return `GO MERGE${pr}`
-    case 'ready': return `READY${pr}`
-    case 'merged': return `MERGED${pr}`
-    case 'card': return waits === 'permission' ? 'Permission' : 'Question'
+    case 'go': return number === undefined ? t({ message: 'GO MERGE', comment: 'A tag in capitals on a moving mark in Watcher’s picture: a pull request’s turn to merge' })
+      : t({ message: `GO MERGE #${number}`, comment: 'A tag in capitals on a moving mark in Watcher’s picture: a pull request’s turn to merge' })
+    case 'ready': return number === undefined ? t({ message: 'READY', comment: 'A tag in capitals on a moving mark in Watcher’s picture: a pull request joined the merge queue' })
+      : t({ message: `READY #${number}`, comment: 'A tag in capitals on a moving mark in Watcher’s picture: a pull request joined the merge queue' })
+    case 'merged': return number === undefined ? t({ message: 'MERGED', comment: 'A tag in capitals on a moving mark in Watcher’s picture' })
+      : t({ message: `MERGED #${number}`, comment: 'A tag in capitals on a moving mark in Watcher’s picture' })
+    case 'card': return waits === 'permission' ? t({ message: 'Permission', comment: 'A tag on a moving mark in Watcher’s picture: a permission request going to the user' })
+      : t({ message: 'Question', comment: 'A tag on a moving mark in Watcher’s picture: a question going to the user' })
     default: return null
   }
 }
@@ -356,6 +359,8 @@ export interface PictureActivity {
   readonly did: string
   /** How it went, from Sotto's receipt. */
   readonly went: string
+  /** The same inside a sentence, after what Watcher did and a comma, in the case it takes there. */
+  readonly wentPhrase: string
   readonly at: number
   /** The message Watcher sent, when the window holds the thread's history and it is there. */
   readonly messageId: string | undefined
@@ -364,25 +369,45 @@ export interface PictureActivity {
 type Receipt = WatcherRoomState['receipts'][number]
 function didWords(receipt: Receipt, goes: ReadonlyMap<string, number>): string {
   switch (receipt.action) {
-    case 'start': return 'Started it'
-    case 'stop': return 'Stopped it'
-    case 'settle': return 'Settled it'
-    default: return goes.has(receipt.id) ? `Gave #${goes.get(receipt.id)} its merge turn` : receipt.delivery === 'steer' ? 'Steered its turn' : 'Sent to it'
+    case 'start': return t`Started it`
+    case 'stop': return t`Stopped it`
+    case 'settle': return t`Settled it`
+    default: {
+      const number = goes.get(receipt.id)
+      return number !== undefined ? t`Gave #${number} its merge turn` : receipt.delivery === 'steer' ? t`Steered its turn` : t`Sent to it`
+    }
   }
 }
+// How it went, on its own.
 function wentWords(receipt: Receipt): string {
-  if (receipt.deliveryState === 'failed') return 'Did not reach it'
-  if (receipt.deliveryState === 'uncertain') return 'Not confirmed'
-  if (receipt.deliveryState !== 'accepted') return 'Sending'
+  if (receipt.deliveryState === 'failed') return t`Did not reach it`
+  if (receipt.deliveryState === 'uncertain') return t`Not confirmed`
+  if (receipt.deliveryState !== 'accepted') return t({ message: 'Sending', comment: 'How a message Watcher sent went: still on its way' })
   switch (receipt.outcome) {
-    case 'answered': return 'Answered'
-    case 'working': return 'Working on it'
-    case 'background': return 'Background work running'
-    case 'failed': return 'Its turn failed'
-    case 'stopped': return 'Stopped'
-    case 'paused': return 'Waits for your turn there'
-    case 'unknown': return 'Not confirmed'
-    default: return 'Delivered'
+    case 'answered': return t({ message: 'Answered', comment: 'How a message Watcher sent went' })
+    case 'working': return t`Working on it`
+    case 'background': return t`Background work running`
+    case 'failed': return t`Its turn failed`
+    case 'stopped': return t({ message: 'Stopped', comment: 'How a message Watcher sent went: the thread’s turn stopped' })
+    case 'paused': return t`Waits for your turn there`
+    case 'unknown': return t`Not confirmed`
+    default: return t({ message: 'Delivered', comment: 'How a message Watcher sent went' })
+  }
+}
+// How it went follows what Watcher did on a detail card, after a comma, so each is written in the case it takes there.
+function wentPhrase(receipt: Receipt): string {
+  if (receipt.deliveryState === 'failed') return t({ message: 'did not reach it', comment: 'How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered' })
+  if (receipt.deliveryState === 'uncertain') return t({ message: 'not confirmed', comment: 'How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered' })
+  if (receipt.deliveryState !== 'accepted') return t({ message: 'sending', comment: 'How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered' })
+  switch (receipt.outcome) {
+    case 'answered': return t({ message: 'answered', comment: 'How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered' })
+    case 'working': return t({ message: 'working on it', comment: 'How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered' })
+    case 'background': return t({ message: 'background work running', comment: 'How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered' })
+    case 'failed': return t({ message: 'its turn failed', comment: 'How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered' })
+    case 'stopped': return t({ message: 'stopped', comment: 'How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered' })
+    case 'paused': return t({ message: 'waits for your turn there', comment: 'How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered' })
+    case 'unknown': return t({ message: 'not confirmed', comment: 'How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered' })
+    default: return t({ message: 'delivered', comment: 'How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered' })
   }
 }
 /** What Watcher last did with one thread, newest first, from Sotto's receipts alone. */
@@ -391,7 +416,7 @@ export function nodeActivity(room: WatcherRoomState, key: string, goes: Readonly
   for (let at = room.receipts.length - 1; at >= 0 && found.length < limit; at--) {
     const receipt = room.receipts[at]!
     if (targetKey(receipt.target) !== key) continue
-    found.push({ id: receipt.id, did: didWords(receipt, goes), went: wentWords(receipt), at: Date.parse(receipt.updatedAt || receipt.createdAt),
+    found.push({ id: receipt.id, did: didWords(receipt, goes), went: wentWords(receipt), wentPhrase: wentPhrase(receipt), at: Date.parse(receipt.updatedAt || receipt.createdAt),
       messageId: receipt.messageId, replyMessageId: receipt.replyMessageId })
   }
   return found

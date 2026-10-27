@@ -151,7 +151,12 @@ async function complete(action) {
 // The settings this process runs: what it was launched with, then whatever a settings request changed. Written to
 // settings-<session>.json on every change so a test reads what the running CLI would use for its next turn.
 const bypassAllowed = args.includes('--allow-dangerously-skip-permissions')
-const settings = { model: value('--model'), effort: args.includes('--effort') ? value('--effort') : null, mode: value('--permission-mode') }
+// Fast mode arrives as a flag layer on every launch, `--settings '{"fastMode":true|false}'`, and on only for a model whose catalog entry offers it.
+const launchFlags = args.includes('--settings') ? JSON.parse(value('--settings')) : {}
+const settings = { model: value('--model'), effort: args.includes('--effort') ? value('--effort') : null, mode: value('--permission-mode'), fast: launchFlags.fastMode === true }
+const fastOffered = model => models.some(entry => (entry.value === model || entry.value === String(model).replace(/\[\d+[km]\]$/iu, '')) && entry.supportsFastMode === true)
+const checkFast = () => { if (settings.fast && !fastOffered(settings.model)) violation('Fast mode was on for a model without it') }
+checkFast()
 const saveSettings = () => { if (!metadata) writeFileSync(join(root, `settings-${session}.json`), JSON.stringify({ ...settings, pid: process.pid })) }
 saveSettings()
 // control-<session>.json: the one scripted action a test holds for this session, read every 10 ms or at once by `act`.
@@ -268,6 +273,8 @@ lines.on('line', async line => {
       if (script.silent) return
       const request = frame.request
       const refuse = error => output({ type: 'control_response', response: { subtype: 'error', request_id: frame.request_id, error } })
+      // `refuseFastMode` answers turning fast mode on with an error, as a CLI whose account or organisation has it off.
+      if (script.refuseFastMode && request.subtype === 'apply_flag_settings' && request.settings?.fastMode === true) { refuse('Fast mode is not available'); return }
       if (script.refuse === true || script.refuse?.includes?.(request.subtype)) {
         if (script.once) unlinkSync(join(root, 'settings-script.json'))
         refuse('Synthetic settings refusal'); return
@@ -279,14 +286,18 @@ lines.on('line', async line => {
         settings.model = request.model
       } else if (request.subtype === 'apply_flag_settings') {
         const keys = Object.keys(request.settings ?? {})
-        if (keys.length !== 1 || keys[0] !== 'effortLevel') violation('Settings requests may only carry effortLevel')
-        settings.effort = request.settings.effortLevel
+        if (keys.length !== 1 || !['effortLevel', 'fastMode'].includes(keys[0])) violation('Settings requests may only carry effortLevel or fastMode')
+        if (keys[0] === 'fastMode') {
+          if (typeof request.settings.fastMode !== 'boolean') violation('fastMode is a boolean')
+          settings.fast = request.settings.fastMode === true
+        } else settings.effort = request.settings.effortLevel
       } else {
         if (!['default', 'acceptEdits', 'auto', 'bypassPermissions'].includes(request.mode)) violation('Unknown permission mode')
         // The native CLI refuses bypassPermissions unless bypassing was allowed at launch.
         if (request.mode === 'bypassPermissions' && !bypassAllowed) { refuse('Cannot set permission mode to bypassPermissions'); return }
         settings.mode = request.mode
       }
+      checkFast()
       saveSettings()
       // A success with no body, which the SDK reads as empty.
       output({ type: 'control_response', response: { subtype: 'success', request_id: frame.request_id } })

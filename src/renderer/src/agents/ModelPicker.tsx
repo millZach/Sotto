@@ -1,10 +1,15 @@
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
+import { plural } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 import { OPENCODE_ZEN_SOURCE, type AgentModel, type ProviderId } from '../../../shared/agents'
+import type { OwnServersBridge } from '../../../shared/ownModelServers'
 import { catalogEntry, resolveModel } from '../../../shared/modelCatalog'
+import { useAnchoredMenu } from './anchoredMenu'
 import { moveListboxFocus } from './listboxKeys'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { ProviderMark } from './ProviderMark'
+import { AddOwnServerDialog, OwnServerMenuEntry } from './OwnModelServers'
 import './threadChips.css'
 import './modelPicker.css'
 
@@ -54,18 +59,31 @@ export interface ModelSourceGroup { readonly name: string; readonly models: Agen
 /**
  * A provider's models by model source, or undefined for a provider whose models name none, whose menu stays one list.
  * OpenCode Zen comes first, since every OpenCode folder has it, then the rest in the order the provider lists them. A
- * model without a source among ones that have one goes under the provider's own name.
+ * model without a source among ones that have one goes under the provider's own name. Cursor's groups are its model
+ * makers (ADR-0128), which arrive in Cursor's order, Cursor's own Auto and Composer first, and are kept in it, models too.
  */
 export function modelSources(models: readonly AgentModel[], provider: string): ModelSourceGroup[] | undefined {
   if (!models.some(model => model.source !== undefined)) return undefined
-  return [...groupModels(models, model => model.source ?? provider)].map(([name, items]) => ({ name, models: newestModelsFirst(items) }))
+  const byMaker = makerGrouped(models)
+  return [...groupModels(models, model => model.source ?? provider)].map(([name, items]) => ({ name, models: byMaker ? items : newestModelsFirst(items) }))
     .sort((left, right) => Number(right.name === OPENCODE_ZEN_SOURCE) - Number(left.name === OPENCODE_ZEN_SOURCE))
 }
+
+/** Whether a provider's groups are model makers rather than model sources: Cursor's are (ADR-0128). */
+const makerGrouped = (models: readonly AgentModel[]): boolean => models[0]?.providerId === 'cursor'
 
 /** A model source name longer than this many characters may give way on the chip, down to a floor; a shorter one never does. */
 const LONG_SOURCE = 9
 
-const countModels = (count: number): string => `${count} model${count === 1 ? '' : 's'}`
+/** What a search line holds, as the words a model must match, each on its own. */
+export const searchWords = (query: string): string[] => query.toLowerCase().split(/\s+/u).filter(Boolean)
+/** Whether every search word is somewhere in `text`, so "anthropic sonnet" finds Anthropic's Sonnets. */
+export const matchesWords = (text: string, words: readonly string[]): boolean => {
+  const lower = text.toLowerCase()
+  return words.every(word => lower.includes(word))
+}
+
+export const countModels = (count: number): string => plural(count, { one: '# model', other: '# models' })
 
 /** A provider the menu lists without models, and why: one the user turned on that cannot take the choice now. */
 export interface UnavailablePickerProvider { readonly name: string; readonly providerId?: ProviderId | undefined; readonly reason: string }
@@ -90,9 +108,11 @@ export interface PickerContinuation { readonly providers: ReadonlySet<string>; r
  * model count, the one holding the chosen model in the accent colour. Choosing one shows its models under a back
  * control; typing searches every source at once, under small source headings. Escape steps back one level at a time:
  * it clears the search, then leaves the source with focus on its row, then closes the menu. The chip names the source
- * before the model, and the source gives way first in a narrow composer.
+ * before the model, and the source gives way first in a narrow composer. With `ownServers`, OpenCode's source list ends
+ * with Your own server…, which closes the menu and opens the Add a server dialog (ADR-0124); closing that hands focus
+ * back to the chip.
  */
-export function ModelPicker({ models, modelId, disabled, onChange, note, unavailable = [], continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false, pending = false, describedBy }: {
+export function ModelPicker({ models, modelId, disabled, onChange, note, unavailable = [], continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false, pending = false, describedBy, ownServers }: {
   readonly models: AgentModel[]; readonly modelId: string; readonly disabled: boolean; readonly onChange: (id: string) => void
   /** A model the provider gave no result for: marked as the permission chip's is, and described by the line that says so. */
   readonly pending?: boolean | undefined; readonly describedBy?: string | undefined
@@ -103,11 +123,15 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   readonly label?: string | undefined
   /** Opens the menu as the chip appears, where a press elsewhere asked for it. */
   readonly openOnMount?: boolean | undefined
+  /** Your own model servers' bridge, where this menu may add one: present only on Owl, for a thread on this computer. */
+  readonly ownServers?: OwnServersBridge | undefined
 }): ReactNode {
+  const { t } = useLingui()
   // A long-context variant the catalog does not list (`opus[1m]`) shows as its base model's entry, by that name.
   const current = resolveModel(models, modelId)
   const currentEntryId = catalogEntry(models, modelId)?.id
   const [open, setOpen] = useState(openOnMount && !disabled)
+  const [addingServer, setAddingServer] = useState(false)
   const [provider, setProvider] = useState('')
   const [query, setQuery] = useState('')
   /** The model source whose models are showing, and whose provider it is, so another provider's tile starts on its own sources. */
@@ -123,6 +147,8 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   const rail = useRef<HTMLDivElement>(null)
   const back = useRef<HTMLButtonElement>(null)
   const dialogId = useId()
+  /** Whether the press now ending began on the backdrop, outside every part of the menu. */
+  const pressedBackdrop = useRef(false)
   const groups = useMemo(() => {
     if (!open) return []
     const result = groupModels(models, model => model.provider)
@@ -132,13 +158,15 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   const selectedProvider = groups.find(group => group.name === provider) ?? groups.find(group => group.name === current?.provider) ?? groups[0]
   const filtered = selectedProvider?.models.filter(model => `${model.name} ${model.id}`.toLowerCase().includes(query.toLowerCase())) ?? []
   const sources = selectedProvider?.sources
-  const sourceWords = query.toLowerCase().split(/\s+/u).filter(Boolean)
+  const makers = sources !== undefined && selectedProvider?.providerId === 'cursor'
+  // The words a menu of Cursor's model makers uses where a menu of model sources uses its own (ADR-0128).
+  const backToMakers = t`Back to Cursor’s model makers`
+  const makerModels = (maker: string): string => t({ message: `${maker} models in Cursor`, comment: '{maker} is the company that made the models, such as Anthropic.' })
+  const sourceWords = searchWords(query)
   // Across every source at once, matching the source's name too, so "anthropic" finds all of Anthropic's models. Each word
   // matches on its own, so "anthropic sonnet" finds Anthropic's Sonnets though no one name holds both words side by side.
-  const found = sources && sourceWords.length ? sources.map(source => ({ ...source, models: source.models.filter(model => {
-    const text = `${model.name} ${model.id} ${source.name}`.toLowerCase()
-    return sourceWords.every(word => text.includes(word))
-  }) })).filter(source => source.models.length) : undefined
+  const found = sources && sourceWords.length ? sources.map(source => ({ ...source, models: source.models.filter(model => matchesWords(`${model.name} ${model.id} ${source.name}`, sourceWords)) }))
+    .filter(source => source.models.length) : undefined
   const openSource = sources && step?.provider === selectedProvider?.name ? sources.find(source => source.name === step?.source) : undefined
   // A source that leaves while it is open (its sign-in ends, the folder reconnects without it) is forgotten, so its
   // return shows the sources rather than reopening it unasked.
@@ -185,46 +213,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
     element.addEventListener('wheel', wheel, { passive: false })
     return () => element.removeEventListener('wheel', wheel)
   }, [groups, selectedName])
-  const placeMenu = useRef<(() => void) | undefined>(undefined)
-  useLayoutEffect(() => {
-    if (!open) return
-    const element = dialog.current
-    if (!element) return
-    element.showModal?.()
-    if (!element.open) element.setAttribute('open', '')
-    // Anchored over the chip, below it only when there is room, and kept inside the window as it resizes. Where it fits
-    // on neither side, as in a small window with the composer mid-way down, it takes the roomier side and is shortened to
-    // fit there, so it never covers the chip it came from. Once open it keeps its side and holds the chip's edge: a menu
-    // above its chip keeps its foot there and grows and shrinks upward, one below keeps its head there and grows
-    // downward. It changes sides only when it no longer fits on its own.
-    let side: 'below' | 'above' | undefined
-    const place = (): void => {
-      const anchor = trigger.current?.getBoundingClientRect()
-      if (!anchor) return
-      element.style.maxHeight = ''
-      const width = element.offsetWidth || 336
-      const natural = element.offsetHeight || 360
-      const room = { below: innerHeight - anchor.bottom - 22, above: anchor.top - 22 }
-      if (!side || natural > room[side]) side = natural <= room.below ? 'below' : natural <= room.above ? 'above' : room.below > room.above ? 'below' : 'above'
-      const fit = Math.max(room[side], 160)
-      if (natural > fit) element.style.maxHeight = `${fit}px`
-      const height = Math.min(natural, fit)
-      const top = Math.max(16, Math.min(side === 'below' ? anchor.bottom + 6 : anchor.top - height - 6, innerHeight - height - 16))
-      element.style.left = `${Math.max(16, Math.min(anchor.left, innerWidth - width - 16))}px`
-      // The edge against the chip is the one set, so the menu's own height moves only its far edge. The other is set to
-      // auto, since a modal dialog's own style pins both to the window.
-      element.style.top = side === 'below' ? `${top}px` : 'auto'
-      element.style.bottom = side === 'above' ? `${innerHeight - top - height}px` : 'auto'
-    }
-    place()
-    placeMenu.current = place
-    addEventListener('resize', place)
-    search.current?.focus()
-    return () => { removeEventListener('resize', place); placeMenu.current = undefined; element.close?.(); trigger.current?.focus() }
-  }, [open])
-  // A step of the menu can be taller or shorter than the last (a provider's model sources, then one source's models),
-  // so each draw places it again before it shows, keeping it clear of the chip.
-  useLayoutEffect(() => { placeMenu.current?.() })
+  useAnchoredMenu(open, trigger, dialog, search)
   // The step a key or a press asked for has drawn: focus what it said. A source with no model to choose yet puts focus on
   // its back control. Whatever the step, focus stays in the menu: where what held it has gone (a source that left, a
   // model that went), it goes to search, so Escape still steps back rather than reaching the window behind.
@@ -249,10 +238,15 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
     else if (openSource) leaveSource()
     else setOpen(false)
   }
-  const name = current?.name ?? (modelId || 'Choose a model')
-  const spoken = current?.source ? `${current.name} from ${current.source}, in ${current.provider}` : name
+  const name = current?.name ?? (modelId || t`Choose a model`)
+  const spokenSource = current?.source
+  const spokenProvider = current?.provider ?? ''
+  const spoken = spokenSource ? t({ message: `${name} from ${spokenSource}, in ${spokenProvider}`, comment: 'The model chip\'s tooltip: a model, the model source it comes from, and the provider that runs it.' }) : name
   const option = (model: AgentModel): ReactNode => <button type="button" role="option" key={model.id} aria-selected={model.id === currentEntryId} disabled={disabled || !model.ready}
-    onClick={() => { onChange(model.id); setOpen(false) }}><span>{model.name}{!model.ready && <small>Unavailable</small>}</span>{model.id === currentEntryId && <Check size={14} aria-hidden="true" />}</button>
+    onClick={() => { onChange(model.id); setOpen(false) }}><span>{model.name}{!model.ready && <small>{t({ message: 'Unavailable', comment: 'Beside a model that cannot be chosen now.' })}</small>}</span>{model.id === currentEntryId && <Check size={14} aria-hidden="true" />}</button>
+  const providerName = selectedProvider?.name ?? ''
+  const openSourceName = openSource?.name ?? ''
+  const providerModels = t({ message: `${providerName} models`, comment: '{providerName} is a provider\'s name.' })
   return <div className="model-picker">
     <button ref={trigger} type="button" className="model-picker__trigger thread-chip tt-focusable" role="combobox" aria-label={label} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? dialogId : undefined}
       title={spoken} data-source={current?.source} aria-describedby={pending ? describedBy : undefined} data-pending={pending ? 'true' : undefined} disabled={disabled} onClick={() => { setProvider(current?.provider ?? groups[0]?.name ?? ''); setQuery(''); setStep(null); setSourceStop(undefined); wheelTurn.current = restingWheel(); setOpen(true) }}>
@@ -261,12 +255,16 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
       {current?.source ? <span className="model-picker__path"><span className="model-picker__source" data-long={current.source.length > LONG_SOURCE || undefined}>{current.source}</span><span className="model-picker__separator" aria-hidden="true">/</span><span className="model-picker__name">{name}</span></span> : <span>{name}</span>}
       <ChevronDown size={12} aria-hidden="true" />
     </button>
-    {open && <dialog ref={dialog} id={dialogId} className="model-picker__dialog" aria-label="Choose model" data-rail={groups.length > 1 || undefined}
+    {open && <dialog ref={dialog} id={dialogId} className="model-picker__dialog" aria-label={t`Choose model`} data-rail={groups.length > 1 || undefined}
       onKeyDown={stepBack}
       onCancel={event => { event.preventDefault(); event.stopPropagation(); setOpen(false) }}
-      onClick={event => { if (event.target === event.currentTarget) setOpen(false); event.stopPropagation() }}>
+      // A click outside closes the menu only when its press began outside too. A press on a provider tile can change the
+      // menu's height, and a menu above its chip moves its top edge, so the release may land beyond the menu; the click
+      // then goes to the dialog itself, and closing on it would close the menu on the tile the user pressed.
+      onPointerDown={event => { pressedBackdrop.current = event.target === event.currentTarget }}
+      onClick={event => { if (event.target === event.currentTarget && pressedBackdrop.current) setOpen(false); pressedBackdrop.current = false; event.stopPropagation() }}>
       {/* One tab stop for the whole rail: the arrows move along it and the tile they land on becomes the list. */}
-      {groups.length > 1 && <div ref={rail} className="model-picker__rail" role="tablist" aria-label="Model providers" aria-orientation="vertical"
+      {groups.length > 1 && <div ref={rail} className="model-picker__rail" role="tablist" aria-label={t`Model providers`} aria-orientation="vertical"
         onKeyDown={event => moveListboxFocus(event, rail.current)}>
         {groups.map(group => {
           const chosen = selectedProvider?.name === group.name
@@ -276,48 +274,59 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
         })}
       </div>}
       <div className="model-picker__panel">
-        <header className="model-picker__search"><Search size={15} aria-hidden="true" /><input ref={search} aria-label="Search models" placeholder={!selectedProvider ? 'Search models' : sources ? `Search all ${selectedProvider.name} models` : `Search ${selectedProvider.name} models`} value={query} onChange={event => setQuery(event.target.value)}
+        <header className="model-picker__search"><Search size={15} aria-hidden="true" /><input ref={search} aria-label={t`Search models`} placeholder={!selectedProvider ? t`Search models` : sources ? t({ message: `Search all ${providerName} models`, comment: '{providerName} is a provider\'s name.' }) : t({ message: `Search ${providerName} models`, comment: '{providerName} is a provider\'s name.' })} value={query} onChange={event => setQuery(event.target.value)}
           onKeyDown={event => {
             if (event.key === 'Enter') event.preventDefault()
             if (event.key === 'ArrowDown') { event.preventDefault(); list.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus() }
           }} />
           {found ? <span className="model-picker__count">{countModels(found.reduce((sum, source) => sum + source.models.length, 0))}</span> : null}
-          <button type="button" aria-label="Close model picker" title="Close model picker" onClick={() => setOpen(false)}><X size={15} aria-hidden="true" /></button>
+          <button type="button" aria-label={t`Close model picker`} title={t`Close model picker`} onClick={() => setOpen(false)}><X size={15} aria-hidden="true" /></button>
         </header>
         {continuing ? <p className="model-picker__heading">{continueOn!.heading(selectedProvider!.name)}</p> : null}
-        {!sources ? <div ref={list} role="listbox" aria-label={`${selectedProvider?.name ?? ''} models`} className="model-picker__models" onKeyDown={event => moveListboxFocus(event, list.current)}>
+        {!sources ? <div ref={list} role="listbox" aria-label={providerModels} className="model-picker__models" onKeyDown={event => moveListboxFocus(event, list.current)}>
           {filtered.map(option)}
-          {selectedProvider?.reason !== undefined ? <p className="model-picker__empty" role="note">{selectedProvider.reason}</p>
-            : !filtered.length && <p className="model-picker__empty">No matching models.</p>}
+          {selectedProvider?.reason !== undefined ? <p className="model-picker__empty tt-paragraph" role="note">{selectedProvider.reason}</p>
+            : !filtered.length && <p className="model-picker__empty tt-paragraph">{t`No matching models.`}</p>}
         </div>
-          : found ? <div ref={list} role="listbox" aria-label={`${selectedProvider!.name} models`} className="model-picker__models model-picker__models--grouped" onKeyDown={event => moveListboxFocus(event, list.current)}>
+          : found ? <div ref={list} role="listbox" aria-label={providerModels} className="model-picker__models model-picker__models--grouped" onKeyDown={event => moveListboxFocus(event, list.current)}>
             {found.map(source => <div key={source.name} role="group" aria-label={source.name}>
               <p className="model-picker__group" aria-hidden="true">{source.name}<span>{source.models.length}</span></p>
               {source.models.map(option)}
             </div>)}
-            {!found.length && <p className="model-picker__empty">No matching models.</p>}
+            {!found.length && <p className="model-picker__empty tt-paragraph">{t`No matching models.`}</p>}
           </div>
           : openSource ? <>
             <div className="model-picker__step">
-              <button ref={back} type="button" aria-label="Back to model sources" title="Back to model sources" onClick={leaveSource}><ChevronLeft size={14} aria-hidden="true" />Model sources</button>
+              <button ref={back} type="button" aria-label={makers ? backToMakers : t`Back to model sources`} title={makers ? backToMakers : t`Back to model sources`} onClick={leaveSource}><ChevronLeft size={14} aria-hidden="true" />{makers ? t({ message: 'Makers', comment: 'A back control in the model menu that returns to the list of the companies that made Cursor’s models.' }) : t`Model sources`}</button>
               <b>{openSource.name}</b><span>{countModels(openSource.models.length)}</span>
             </div>
-            <div ref={list} role="listbox" aria-label={`${openSource.name} models`} className="model-picker__models" onKeyDown={event => moveListboxFocus(event, list.current)}>
+            <div ref={list} role="listbox" aria-label={makers ? makerModels(openSource.name) : t({ message: `${openSourceName} models`, comment: '{openSourceName} is a model source, such as OpenCode Zen or Anthropic.' })} className="model-picker__models" onKeyDown={event => moveListboxFocus(event, list.current)}>
               {openSource.models.map(option)}
             </div>
           </>
           // One tab stop, as the rail is: the arrows move along it, and Up from the first row goes back to search.
-          : <div ref={list} role="group" aria-label={`${selectedProvider!.name} model sources`} className="model-picker__models model-picker__sources" onKeyDown={event => moveListboxFocus(event, list.current, search.current)}>
+          : <div ref={list} role="group" aria-label={makers ? t`Cursor’s model makers` : t({ message: `${providerName} model sources`, comment: '{providerName} is a provider\'s name.' })} className="model-picker__models model-picker__sources" onKeyDown={event => moveListboxFocus(event, list.current, search.current)}>
             {sources.map(source => {
-              const about = `${countModels(source.models.length)}${source.name === OPENCODE_ZEN_SOURCE ? ' · Free with OpenCode Zen' : ''}`
+              const modelCount = countModels(source.models.length)
+              const sourceName = source.name
+              const free = sourceName === OPENCODE_ZEN_SOURCE
+              const about = free ? t`${modelCount} · Free with OpenCode Zen` : modelCount
+              const spokenAbout = free
+                ? t({ message: `Show ${sourceName} models, ${modelCount}, Free with OpenCode Zen`, comment: '{sourceName} is a model source; {modelCount} is how many models it has, such as "3 models".' })
+                : t({ message: `Show ${sourceName} models, ${modelCount}`, comment: '{sourceName} is a model source; {modelCount} is how many models it has, such as "3 models".' })
               return <button type="button" key={source.name} data-source={source.name} aria-current={holdsChosen(source) || undefined} tabIndex={source.name === stopSource ? 0 : -1}
-                aria-label={`Show ${source.name} models, ${about.replace(' · ', ', ')}`} onFocus={() => setSourceStop(source.name)} onClick={() => { pendingFocus.current = { to: 'model' }; setStep({ provider: selectedProvider!.name, source: source.name }) }}>
+                aria-label={spokenAbout} onFocus={() => setSourceStop(source.name)} onClick={() => { pendingFocus.current = { to: 'model' }; setStep({ provider: selectedProvider!.name, source: source.name }) }}>
                 <span><b>{source.name}</b><small>{about}</small></span><ChevronRight size={14} aria-hidden="true" />
               </button>
             })}
+            {ownServers && selectedProvider?.providerId === 'opencode' ? <OwnServerMenuEntry onPress={() => { setOpen(false); setAddingServer(true) }} /> : null}
           </div>}
-        {continuing ? <p className="model-picker__note">{continueOn!.note}</p> : note ? <p className="model-picker__note">{note}</p> : null}
+        {continuing ? <p className="model-picker__note tt-paragraph">{continueOn!.note}</p> : note || selectedProvider?.providerId === 'cursor'
+          ? selectedProvider?.providerId === 'cursor'
+            ? <p className="model-picker__note tt-paragraph">{[t`Every model here runs through Cursor, on your Cursor plan.`, note].filter(Boolean).join(' ')}</p>
+            : <p className="model-picker__note tt-paragraph">{note}</p> : null}
       </div>
     </dialog>}
+    {addingServer && ownServers ? <AddOwnServerDialog bridge={ownServers} fallbackFocus={trigger} confirm onClose={() => setAddingServer(false)} /> : null}
   </div>
 }

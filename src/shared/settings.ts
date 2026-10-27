@@ -1,9 +1,14 @@
 import { z } from 'zod'
+import { clearSettledThreadsAfterDaysSchema, type ClearSettledThreadsAfterDays } from './threadClear'
 import { OMARCHY_THEME_ID, omarchyThemeSchema, type OmarchyTheme } from './themes/omarchy'
 
 import { DEFAULT_HOTKEY } from './constants'
+import { INTERFACE_LANGUAGE_SETTINGS, type InterfaceLanguageSetting } from './interfaceLanguages'
 import { DEFAULT_MENU_BAR_OWL_BODY, DEFAULT_MENU_BAR_OWL_EYES, MENU_BAR_OWL_BODIES, MENU_BAR_OWL_EYES, type MenuBarOwlBody, type MenuBarOwlEyes } from './menuBarOwl'
 import { parseWorkerRoleChoices, workerRoleChoicesSchema, type WorkerRoleChoices } from './workerRoles'
+import { DEFAULT_WORKER_MACHINE, workerMachineSettingSchema, type WorkerMachineSetting } from './workerMachine'
+import { parseThreadShortcutChoices, threadShortcutChoicesSchema, type ThreadShortcutChoices } from './threadShortcuts'
+import { ownCleanupChoiceSchema, type OwnCleanupChoice } from './ownServerCleanup'
 import {
   APPEARANCE_CONTRAST,
   DEFAULT_THEME_ID,
@@ -20,6 +25,14 @@ export type Theme = 'system' | 'light' | 'dark'
 export type Appearance = 'system' | 'light' | 'dark'
 export const APPEARANCES = ['system', 'light', 'dark'] as const satisfies readonly Appearance[]
 export type ReducedMotion = 'system' | 'on'
+/** Night falls' two looks (ADR-0119, decision 6): the shipped band, or a line of stars. */
+export type RoomTransitionLook = 'band' | 'stars'
+export const ROOM_TRANSITION_LOOKS = ['band', 'stars'] as const satisfies readonly RoomTransitionLook[]
+/**
+ * Compact Watcher at, in tokens: the slider's ends, its step and where it starts. Watcher's conversation is compacted at
+ * its next rest once it passes this point (#1189). 400K was Zach's first pick; he asked for the slider in October 2026.
+ */
+export const WATCHER_COMPACT_AT = { min: 200_000, max: 1_000_000, step: 50_000, default: 400_000 } as const
 /**
  * The effort colourway: the colour a thread's effort control turns at a model's highest level, in the
  * composer and in Settings. `ember` and `accent` derive from theme roles; the rest are fixed palettes (ADR-0019).
@@ -132,6 +145,11 @@ export interface AppSettings {
   creature: Creature
   /** Off hides the creature and its readout above every composer; the sidebar still says what a thread is doing. */
   showCreature: boolean
+  /**
+   * The interface language (ADR-0123): `system` follows the computer's language, a code chooses one. Read only while its
+   * Owl feature is on; elsewhere Sotto is English and the choice is kept for when the feature returns.
+   */
+  interfaceLanguage: InterfaceLanguageSetting
   /** Themes the user created, duplicated or imported, already canonical. */
   customThemes: ThemeDefinition[]
   /** Linux-only, read-only palette supplied by main. Never saved or patched. */
@@ -156,6 +174,9 @@ export interface AppSettings {
    * restart of the computer, is sent a resume note when Sotto opens again. Asked once at start.
    */
   resumeThreadsAfterRestart: boolean
+  /** Restart stopped threads (ADR-0144, an Owl feature): a thread a usage limit or Sotto closing stopped while it worked
+   * carries on when the limit resets or Sotto opens again. Read in place of `resumeThreadsAfterRestart` while the feature is on. */
+  restartStoppedThreads: boolean
   /**
    * Worker roles (#1041, an Owl feature): the rows the user chose under Settings, Watcher, by role. A role left out follows
    * its defaults over the providers connected now (`workerRoles.ts`), so nothing here changes when a provider comes or goes.
@@ -166,6 +187,22 @@ export interface AppSettings {
    * thread it watches once its work is done and Watcher has heard so, then stops watching it. Read live.
    */
   watcherSettlesFinishedThreads: boolean
+  /**
+   * Where new workers start (#1032), under Settings, Watcher, part of the Owl feature `cross-machine-work`: This computer
+   * by default, Watcher's own choice, or a connected machine by its saved host ID. A start that names a machine or a
+   * system overrides it for that start. Read when a start or a delegation is placed.
+   */
+  newWorkerMachine: WorkerMachineSetting
+  /**
+   * Compact Watcher at, under Settings, Watcher: the size in tokens past which Watcher's conversation is compacted at its
+   * next rest, 200K to 1M on a 50K step ({@link WATCHER_COMPACT_AT}). Part of Watcher's Owl feature. Read at every look.
+   */
+  watcherCompactAtTokens: number
+  /**
+   * On by default (ADR-0127): a Claude thread with a large context, quiet for 54 minutes, is compacted while its prompt
+   * cache is still warm, so the next message re-reads a summary instead of the whole conversation. Read at every sweep.
+   */
+  compactIdleThreads: boolean
   /** Applies only to new threads; existing provider sessions keep their working folder. */
   threadWorkingCopyDefault: 'shared' | 'independent'
   /** Explicit project overrides; an absent key inherits the global default. */
@@ -185,6 +222,14 @@ export interface AppSettings {
    * and behind with nothing of its own ahead, each time it reads the remote status (T3 Code's rule).
    */
   gitAutoPull: boolean
+  /**
+   * Keep main up to date (ADR-0142, an Owl feature): every 15 minutes and after a pull request merges, the host
+   * fast-forwards each project's checkout to its remote's default branch when that branch is checked out and nothing
+   * of the user's is in the way. On by default where the feature is on.
+   */
+  keepMainCurrent: boolean
+  /** Explicit project overrides of Keep main up to date, by the same key as the working-copy defaults; an absent key follows it. */
+  projectKeepMainCurrent: Record<string, 'on' | 'off'>
   /** The merge method a pull request's merge starts on; `last` reuses `lastMergeMethod`. */
   defaultMergeMethod: DefaultMergeMethod
   /** The merge method chosen last, kept while `defaultMergeMethod` is `last`. */
@@ -206,19 +251,33 @@ export interface AppSettings {
    * the worktree cleanup's hourly schedule. Settling removes no folder unless a cleanup rule says so.
    */
   autoSettleMergedThreads: boolean
+  /**
+   * 30 days by default; null is Never. A number of days, and this computer's settled threads quiet longer than that are
+   * cleared on their own at start, every hour and when it changes, beside the worktree cleanup (ADR-0140). Saved on every
+   * track; only Owl acts on it until the feature goes to stable.
+   */
+  clearSettledThreadsAfterDays: ClearSettledThreadsAfterDays
   /** Off by default. On, Changes opens on its own after a turn that changed at least 3 files or 50 lines. */
   proactivePanels: boolean
   reducedMotion: ReducedMotion
-  /** On by default. Moving between Threads and Watcher's room plays the night falls transition; off, the window swaps in one frame. */
+  /** On by default. Moving between Dictate or Threads and Watcher's room plays the night falls transition; off, the window swaps in one frame. */
   roomTransition: boolean
   /** How fast that transition plays: 0.5 is half speed, 2 is twice as fast. */
   roomTransitionSpeed: number
+  /** How that transition looks: `band`, a band of flickering text characters, or `stars`, a line of stars with a faint trail (ADR-0119, decision 6). */
+  roomTransitionLook: RoomTransitionLook
   microphoneId: string | null
   hotkey: string
   /** Further press shortcuts beyond `hotkey`; used only while the Owl feature `dictation-hold-shortcuts` is on. */
   pressShortcuts: string[]
   /** Shortcuts held to talk; used only while the Owl feature `dictation-hold-shortcuts` is on, and kept whole while it is off. */
   holdShortcuts: string[]
+  /**
+   * The keyboard shortcuts for working in threads the user changed under Settings › Keyboard (ADR-0133), by
+   * shortcut. A row left out follows its default (`threadShortcuts.ts`); a row set to null has no shortcut.
+   * Read live, so a change in Settings reaches every button and listener at once.
+   */
+  threadShortcuts: ThreadShortcutChoices
   /** Text size in every terminal, in pixels; changed from the focused terminal's zoom chords. */
   terminalFontSize: number
   /**
@@ -278,11 +337,21 @@ export interface AppSettings {
   /** How OpenRouter picks a host for the cleanup model: its own way, the fastest host (`:nitro`) or the cheapest (`:floor`). */
   llmMode: LlmMode
   /**
+   * A model on one of the user's own model servers that cleans up dictation instead of `llmModel`, by the server's and the
+   * model's saved IDs, or null. An Owl feature (ADR-0136): with it off the choice is kept and ignored.
+   */
+  llmOwnModel: OwnCleanupChoice | null
+  /**
    * Off stops thread-title and temporary-worktree-branch naming requests. Sotto's short writing is a
    * side call to the thread's own provider (ADR-0026); the OpenRouter writing model and its
    * `writingModel` setting are gone, and a settings file that still carries the key parses and drops it.
    */
   threadTitles: boolean
+  /**
+   * After each turn that ends with an answer, ask the thread's own provider for a next prompt (ADR-0132): one short side
+   * call per turn. Read only while the `next-prompt` Owl feature is on; off, nothing is asked.
+   */
+  nextPromptSuggestions: boolean
   /** Off stops every pull request draft; the form opens with the fields it would have had anyway. */
   pullRequestText: boolean
   /** Off stops every generated commit message; a commit whose dialog message was left empty takes the stand-in subject. */
@@ -351,6 +420,7 @@ const fieldSchemas = {
   menuBarOwlEyes: z.enum(MENU_BAR_OWL_EYES),
   creature: z.enum(CREATURES),
   showCreature: z.boolean(),
+  interfaceLanguage: z.enum(INTERFACE_LANGUAGE_SETTINGS),
   omarchyTheme: omarchyThemeSchema.nullable().optional(),
   customThemes: customThemesSchema as z.ZodType<ThemeDefinition[]>,
   webLinkDestination: z.enum(['external', 'embedded']),
@@ -360,15 +430,21 @@ const fieldSchemas = {
   visualsInThreads: z.boolean(),
   babysitPullRequests: z.boolean(),
   resumeThreadsAfterRestart: z.boolean(),
+  restartStoppedThreads: z.boolean(),
   workerRoles: workerRoleChoicesSchema,
   watcherSettlesFinishedThreads: z.boolean(),
+  newWorkerMachine: workerMachineSettingSchema,
+  watcherCompactAtTokens: z.number().int().min(WATCHER_COMPACT_AT.min).max(WATCHER_COMPACT_AT.max).multipleOf(WATCHER_COMPACT_AT.step),
+  compactIdleThreads: z.boolean(),
   reducedMotion: z.enum(['system', 'on']),
   roomTransition: z.boolean(),
   roomTransitionSpeed: z.number().min(0.5).max(2),
+  roomTransitionLook: z.enum(ROOM_TRANSITION_LOOKS),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
   pressShortcuts: z.array(z.string().min(1).max(64)).max(3),
   holdShortcuts: z.array(z.string().min(1).max(64)).max(4),
+  threadShortcuts: threadShortcutChoicesSchema,
   terminalFontSize: z.number().int().min(8).max(32),
   maxRecordingSeconds: z.union([z.literal(30), z.literal(60), z.literal(120), z.literal(300)]),
   soundCues: z.boolean(),
@@ -402,12 +478,16 @@ const fieldSchemas = {
   llmMinWords: z.number().int().min(0).max(50),
   llmModel: z.string().regex(/^[\w.\-/:]{1,128}$/u).nullable(),
   llmMode: z.enum(LLM_MODES),
+  llmOwnModel: ownCleanupChoiceSchema.nullable(),
   threadTitles: z.boolean(),
+  nextPromptSuggestions: z.boolean(),
   threadWorkingCopyDefault: z.enum(['shared', 'independent']),
   projectThreadWorkingCopyDefaults: z.record(z.string().min(1).max(256), z.enum(['shared', 'independent'])),
   worktreeCleanup: worktreeCleanupRulesSchema,
   gitFetchIntervalSeconds: z.union([z.literal(0), z.literal(15), z.literal(30), z.literal(60), z.literal(300)]),
   gitAutoPull: z.boolean(),
+  keepMainCurrent: z.boolean(),
+  projectKeepMainCurrent: z.record(z.string().min(1).max(256), z.enum(['on', 'off'])),
   defaultMergeMethod: z.enum(DEFAULT_MERGE_METHODS),
   lastMergeMethod: z.enum(GIT_MERGE_METHODS),
   diffLayout: z.enum(['stacked', 'split']),
@@ -417,6 +497,7 @@ const fieldSchemas = {
   gitWritingInstructions: z.string().max(GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS),
   followPullRequestTemplates: z.boolean(),
   autoSettleMergedThreads: z.boolean(),
+  clearSettledThreadsAfterDays: clearSettledThreadsAfterDaysSchema,
   proactivePanels: z.boolean(),
   pullRequestText: z.boolean(),
   commitMessages: z.boolean(),
@@ -449,6 +530,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   menuBarOwlEyes: DEFAULT_MENU_BAR_OWL_EYES,
   creature: 'sotto',
   showCreature: true,
+  interfaceLanguage: 'system',
   customThemes: [],
   webLinkDestination: 'external',
   responseStreaming: 'live',
@@ -457,15 +539,22 @@ export const DEFAULT_SETTINGS: AppSettings = {
   visualsInThreads: true,
   babysitPullRequests: true,
   resumeThreadsAfterRestart: true,
+  restartStoppedThreads: true,
   workerRoles: {},
   watcherSettlesFinishedThreads: true,
+  newWorkerMachine: DEFAULT_WORKER_MACHINE,
+  watcherCompactAtTokens: WATCHER_COMPACT_AT.default,
+  compactIdleThreads: true,
   reducedMotion: 'system',
   roomTransition: true,
   roomTransitionSpeed: 1,
+  roomTransitionLook: 'band',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
   pressShortcuts: [],
   holdShortcuts: [],
+  // Nothing chosen: every thread shortcut follows its default until the user changes one in Settings › Keyboard.
+  threadShortcuts: {},
   terminalFontSize: 13,
   maxRecordingSeconds: 60,
   soundCues: true,
@@ -493,9 +582,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   llmMinWords: 5,
   llmModel: null,
   llmMode: 'default',
+  llmOwnModel: null,
   // On by default: the thread's own provider names it, on the account the thread
   // already uses, and a provider that writes nothing (Devin) keeps the stand-in.
   threadTitles: true,
+  nextPromptSuggestions: true,
   threadWorkingCopyDefault: 'shared',
   projectThreadWorkingCopyDefaults: {},
   // Off, every rule: a folder is removed only when the user asks or has said in advance that Sotto may.
@@ -504,6 +595,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   gitFetchIntervalSeconds: 30,
   // Off: a pull changes the user's folder, so it happens on their word until they say otherwise.
   gitAutoPull: false,
+  // On: a fast-forward of a checkout on its default branch with nothing of the user's in the way loses nothing (ADR-0142).
+  keepMainCurrent: true,
+  projectKeepMainCurrent: {},
   // T3's defaults: the method chosen last, starting from a plain merge.
   defaultMergeMethod: 'last',
   lastMergeMethod: 'merge',
@@ -516,6 +610,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   followPullRequestTemplates: true,
   // Off: nothing moves in the sidebar on its own until the user asks for it.
   autoSettleMergedThreads: false,
+  // 30 days, Zach's pick on October 25, 2026 (ADR-0140); Never stays a choice.
+  clearSettledThreadsAfterDays: 30,
   // Off: nothing opens on its own until the user asks for it (ADR-0027).
   proactivePanels: false,
   pullRequestText: true,
@@ -606,6 +702,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     menuBarOwlEyes: parseField(persisted, 'menuBarOwlEyes', defaults),
     creature: parseField(persisted, 'creature', defaults),
     showCreature: parseField(persisted, 'showCreature', defaults),
+    interfaceLanguage: parseField(persisted, 'interfaceLanguage', defaults),
     customThemes,
     webLinkDestination: parseField(persisted, 'webLinkDestination', defaults),
     responseStreaming: parseField(persisted, 'responseStreaming', defaults),
@@ -614,12 +711,17 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     visualsInThreads: parseField(persisted, 'visualsInThreads', defaults),
     babysitPullRequests: parseField(persisted, 'babysitPullRequests', defaults),
     resumeThreadsAfterRestart: parseField(persisted, 'resumeThreadsAfterRestart', defaults),
+    restartStoppedThreads: parseField(persisted, 'restartStoppedThreads', defaults),
     // Row by row, so one damaged row costs only that row.
     workerRoles: persisted.workerRoles === undefined ? { ...defaults.workerRoles } : parseWorkerRoleChoices(persisted.workerRoles),
     watcherSettlesFinishedThreads: parseField(persisted, 'watcherSettlesFinishedThreads', defaults),
+    newWorkerMachine: parseField(persisted, 'newWorkerMachine', defaults),
+    watcherCompactAtTokens: parseField(persisted, 'watcherCompactAtTokens', defaults),
+    compactIdleThreads: parseField(persisted, 'compactIdleThreads', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     roomTransition: parseField(persisted, 'roomTransition', defaults),
     roomTransitionSpeed: parseField(persisted, 'roomTransitionSpeed', defaults),
+    roomTransitionLook: parseField(persisted, 'roomTransitionLook', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
     hotkey: linuxBeforeRecorder ? defaults.hotkey : parseField(persisted, 'hotkey', defaults),
     pressShortcuts: linuxBeforeRecorder ? [] : parseShortcutList(persisted.pressShortcuts, 3),
@@ -628,6 +730,8 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     holdShortcuts: linuxBeforeRecorder || persisted.holdShortcuts === undefined && Object.keys(persisted).length === 0
       ? [...defaults.holdShortcuts]
       : parseShortcutList(persisted.holdShortcuts, 4),
+    // Row by row, so one damaged shortcut falls back to its own default and no other.
+    threadShortcuts: persisted.threadShortcuts === undefined ? { ...defaults.threadShortcuts } : parseThreadShortcutChoices(persisted.threadShortcuts),
     terminalFontSize: parseField(persisted, 'terminalFontSize', defaults),
     maxRecordingSeconds: parseField(persisted, 'maxRecordingSeconds', defaults),
     soundCues: parseField(persisted, 'soundCues', defaults),
@@ -655,12 +759,16 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     llmMinWords: parseField(persisted, 'llmMinWords', defaults),
     llmModel: parseField(persisted, 'llmModel', defaults),
     llmMode: parseField(persisted, 'llmMode', defaults),
+    llmOwnModel: parseField(persisted, 'llmOwnModel', defaults),
     threadTitles: parseField(persisted, 'threadTitles', defaults),
+    nextPromptSuggestions: parseField(persisted, 'nextPromptSuggestions', defaults),
     threadWorkingCopyDefault: parseField(persisted, 'threadWorkingCopyDefault', defaults),
     projectThreadWorkingCopyDefaults: parseField(persisted, 'projectThreadWorkingCopyDefaults', defaults),
     worktreeCleanup: parseField(persisted, 'worktreeCleanup', defaults),
     gitFetchIntervalSeconds: parseField(persisted, 'gitFetchIntervalSeconds', defaults),
     gitAutoPull: parseField(persisted, 'gitAutoPull', defaults),
+    keepMainCurrent: parseField(persisted, 'keepMainCurrent', defaults),
+    projectKeepMainCurrent: parseField(persisted, 'projectKeepMainCurrent', defaults),
     defaultMergeMethod: parseField(persisted, 'defaultMergeMethod', defaults),
     lastMergeMethod: parseField(persisted, 'lastMergeMethod', defaults),
     diffLayout: parseField(persisted, 'diffLayout', defaults),
@@ -670,6 +778,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     gitWritingInstructions: parseField(persisted, 'gitWritingInstructions', defaults),
     followPullRequestTemplates: parseField(persisted, 'followPullRequestTemplates', defaults),
     autoSettleMergedThreads: parseField(persisted, 'autoSettleMergedThreads', defaults),
+    clearSettledThreadsAfterDays: parseField(persisted, 'clearSettledThreadsAfterDays', defaults),
     proactivePanels: parseField(persisted, 'proactivePanels', defaults),
     pullRequestText: parseField(persisted, 'pullRequestText', defaults),
     commitMessages: parseField(persisted, 'commitMessages', defaults),

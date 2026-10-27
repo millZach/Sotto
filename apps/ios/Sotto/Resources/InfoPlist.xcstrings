@@ -1,0 +1,198 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSCameraUsageDescription" : {
+      "comment" : "The iPhone asks for camera access with this sentence.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يستخدم Sotto الكاميرا فقط عندما تلتقط صورة لإرفاقها بردّ. تذهب الصورة إلى الكمبيوتر الذي يشغّل المحادثة ولا تُحفظ على هذا الـ iPhone."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "আপনি শুধু রিপ্লাইয়ে যোগ করার জন্য ছবি তুললে Sotto ক্যামেরা ব্যবহার করে। ছবিটি থ্রেড চালানো কম্পিউটারে যায় এবং এই iPhone-এ সংরক্ষিত হয় না।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto používá fotoaparát jen tehdy, když pořizujete fotku, kterou chcete přiložit ke zprávě. Fotka se odešle do počítače, na kterém vlákno běží, a v tomto iPhonu se neukládá."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto bruger kun kameraet, når du tager et billede til et svar. Billedet sendes til den computer, der kører tråden, og gemmes ikke på denne iPhone."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto verwendet die Kamera nur, wenn du ein Foto aufnimmst, um es an eine Antwort anzuhängen. Das Foto geht an den Computer, auf dem der Thread läuft, und wird nicht auf diesem iPhone gesichert."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Το Sotto χρησιμοποιεί την κάμερα μόνο όταν τραβάτε μια φωτογραφία για να την επισυνάψετε σε μια απάντηση. Η φωτογραφία πηγαίνει στον υπολογιστή που εκτελεί το νήμα και δεν αποθηκεύεται σε αυτό το iPhone."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto uses the camera only when you take a photo to attach to a reply. The photo goes to the computer that runs the thread and is not saved on this iPhone."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto solo usa la cámara cuando haces una foto para adjuntarla a una respuesta. La foto va al ordenador que ejecuta el hilo y no se guarda en este iPhone."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto usa la cámara solo cuando tomas una foto para adjuntarla a una respuesta. La foto va a la computadora que ejecuta el hilo y no se guarda en este iPhone."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto usa la cámara solo cuando tomas una foto para adjuntarla a una respuesta. La foto va a la computadora que ejecuta el hilo y no se guarda en este iPhone."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto käyttää kameraa vain, kun otat kuvan liitettäväksi vastaukseen. Kuva menee tietokoneelle, jolla ketju toimii, eikä sitä tallenneta tähän iPhoneen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto n’utilise l’appareil photo que lorsque vous prenez une photo à joindre à une réponse. La photo est envoyée à l’ordinateur qui exécute le fil et n’est pas enregistrée sur cet iPhone."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto कैमरे का इस्तेमाल सिर्फ़ तब करता है जब आप किसी रिप्लाई में अटैच करने के लिए फ़ोटो लेते हैं। फ़ोटो उस कंप्यूटर पर जाती है जिस पर थ्रेड चल रहा है और इस iPhone पर सहेजी नहीं जाती।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Sotto csak akkor használja a kamerát, ha fotót készítesz, hogy egy válaszhoz csatold. A fotó arra a számítógépre kerül, amelyen a szál fut, és nem lesz mentve ezen az iPhone-on."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto usa la fotocamera solo quando scatti una foto da allegare a una risposta. La foto va al computer che esegue il thread e non viene salvata su questo iPhone."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto がカメラを使用するのは、返信に添付する写真を撮るときだけです。写真はスレッドを実行しているコンピュータに送られ、この iPhone には保存されません。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "तुम्ही रिप्लायला जोडण्यासाठी फोटो घेता तेव्हाच Sotto कॅमेरा वापरते. फोटो थ्रेड चालवणाऱ्या कॉम्प्युटरकडे जातो आणि या iPhone वर जतन केला जात नाही."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto bruker kameraet bare når du tar et bilde for å legge det ved et svar. Bildet går til datamaskinen som kjører tråden, og lagres ikke på denne iPhonen."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto gebruikt de camera alleen als je een foto maakt om aan een reactie toe te voegen. De foto gaat naar de computer waarop de thread draait en wordt niet op deze iPhone bewaard."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto używa aparatu tylko wtedy, gdy robisz zdjęcie, aby załączyć je do wiadomości. Zdjęcie trafia do komputera, na którym działa wątek, i nie jest zapisywane na tym iPhonie."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Sotto usa a câmera só quando você tira uma foto para anexar a uma resposta. A foto vai para o computador que executa a conversa e não é salva neste iPhone."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Sotto só usa a câmara quando tira uma fotografia para anexar a uma resposta. A fotografia vai para o computador que executa a conversa e não é guardada neste iPhone."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto folosește camera doar când faci o fotografie pentru a o atașa la un răspuns. Fotografia ajunge la computerul care rulează firul și nu e salvată pe acest iPhone."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto använder bara kameran när du tar en bild att bifoga till ett svar. Bilden skickas till datorn som kör tråden och sparas inte på den här iPhone."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ஒரு மறுமொழியில் சேர்க்க நீங்கள் படம் எடுக்கும்போது மட்டுமே Sotto கேமராவைப் பயன்படுத்துகிறது. படம் த்ரெட்டை இயக்கும் கணினிக்குச் செல்லும், இந்த iPhone இல் சேமிக்கப்படாது."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "మీరు ప్రత్యుత్తరానికి జోడించడానికి ఫోటో తీసినప్పుడు మాత్రమే Sotto కెమెరాను ఉపయోగిస్తుంది. ఫోటో థ్రెడ్‌ను నడిపే కంప్యూటర్‌కు వెళ్తుంది, ఈ iPhoneలో సేవ్ చేయబడదు."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto kamerayı yalnızca bir yanıta eklemek için fotoğraf çektiğinizde kullanır. Fotoğraf, sohbeti çalıştıran bilgisayara gider ve bu iPhone’da saklanmaz."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto використовує камеру, лише коли ви робите фото, щоб додати його до відповіді. Фото надсилається на комп’ютер, де працює тред, і не зберігається на цьому iPhone."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto کیمرا صرف تب استعمال کرتا ہے جب آپ کسی ریپلائی کے ساتھ منسلک کرنے کے لیے تصویر لیں۔ تصویر اس کمپیوٹر کو جاتی ہے جو تھریڈ چلاتا ہے اور اس iPhone پر محفوظ نہیں ہوتی۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto 仅在你拍照以附加到回复时使用相机。照片会发送到运行该会话的电脑，不会保存在此 iPhone 上。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto 只會在你拍照以附加到回覆時使用相機。照片會傳送到執行該對話的電腦，不會儲存在此 iPhone 上。"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

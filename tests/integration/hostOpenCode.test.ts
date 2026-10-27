@@ -199,12 +199,13 @@ it('keeps waiting on a host’s sign-in through a lost answer, and says it canno
   expect(await ask({ action: 'wait', request: { attemptId: third } })).toEqual({ status: 'refused', message: SIGN_IN_WORDS.notRunning })
 })
 
-// A host gives no thread Sotto's tool servers: the browser, visuals, pull request tools and delegation are this computer's
-// own (docs/agent-control.md), so a host's Codex threads have none, and its OpenCode threads have none either.
-it('gives an OpenCode thread on a host none of Sotto’s tool servers, as the host gives no other provider’s threads', { timeout: 90_000 }, async () => {
+// A host gives its threads none of this computer's tool servers: the browser, visuals and pull request tools are this
+// computer's own (docs/agent-control.md). The one a host has is its own delegation (#1310): on Owl, with Work across
+// machines on, its threads get `sotto_delegate` and nothing else, OpenCode's as Codex's; on stable they get none.
+it.each([['Owl', OWL, ['sotto_delegate']], ['stable', STABLE, []]] as [string, string, string[]][])('gives an OpenCode thread on a host only the host’s own delegation, as its other threads: %s', { timeout: 90_000 }, async (_track, sottoVersion, servers) => {
   const f = await opencodeFixture()
   cleanup.push(f.cleanup)
-  const host = await startHeadlessHost({ dataDirectory: await scratch('sotto-host-opencode-tools-'), providers: { opencode: f.host }, reasoner: e2eAgentReasoner, sottoVersion: OWL })
+  const host = await startHeadlessHost({ dataDirectory: await scratch('sotto-host-opencode-tools-'), providers: { opencode: f.host }, reasoner: e2eAgentReasoner, sottoVersion })
   cleanup.push(host.close)
   const client = desktopWindowClient('host-opencode-tools')
   const command = (value: Parameters<typeof host.service.command>[0]) => host.service.command(value, client)
@@ -217,9 +218,11 @@ it('gives an OpenCode thread on a host none of Sotto’s tool servers, as the ho
   await command({ type: 'observe-threads', threadIds: [threadId] })
   expect((await command({ type: 'manual-send', threadId, text: 'Use whatever tools you have' })).error).toBeNull()
   await expect.poll(async () => (await f.driver.requests()).filter(record => record.method === 'session.prompt').length, { timeout: 30_000 }).toBe(1)
-  // Its server was asked to add no MCP server and was never asked which it had, and the thread is not marked as missing
-  // tools it was never offered.
-  expect((await f.driver.requests()).filter(record => record.method?.startsWith('experimental.mcp.') === true || record.method === 'mcp.list')).toEqual([])
+  // Its server was asked to add only those servers, and the thread is not marked as missing tools it was never offered.
+  const added = (await f.driver.requests()).filter(record => record.method === 'experimental.mcp.add').map(record => (record.params as { server?: string } | undefined)?.server)
+  expect(added).toEqual(servers)
+  expect((await f.driver.requests()).filter(record => record.method?.startsWith('experimental.mcp.') === true && record.method !== 'experimental.mcp.add')).toEqual([])
+  if (servers.length === 0) expect((await f.driver.requests()).filter(record => record.method === 'mcp.list')).toEqual([])
   expect(host.service.shell().host.threads.find(thread => thread.id === threadId)?.sottoToolsWithheld).toBeUndefined()
 })
 
