@@ -10,7 +10,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, vi } from 'vitest'
 import type { ThreadHostEvent } from '../../src/main/agents/host'
 import { ThreadStore } from '../../src/main/agents/threadStore'
-import type { ThreadStoreWriter } from '../../src/main/agents/threadStoreWriter'
+import { eventsOfWrite, type ThreadStoreWrite, type ThreadStoreWriter } from '../../src/main/agents/threadStoreWriter'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import type { AgentActivity } from '../../src/shared/agentActivity'
 import type { AgentMessage, AgentThreadSummary } from '../../src/shared/agents'
@@ -192,6 +192,20 @@ function heldEvents(host: WorkspaceHost, threadId: string): readonly ThreadEvent
   return (host as unknown as { heldEvents(threadId: string, withWaitingAppends: boolean): readonly ThreadEvent[] }).heldEvents(threadId, true)
 }
 
+/**
+ * Whether an alias for a thread is not yet confirmed, read for the comparison below alone. A summary lays an alias over
+ * only once it is confirmed, which reads the thread again, so a summary read while one was posted still counts the
+ * duplicate until then. The events laid over the store do not say so: the store worker's commit shows to main's reads
+ * before its confirmation arrives, and from then on they leave that write out. So the writes the writer still holds
+ * unconfirmed are read as well.
+ */
+function aliasUnconfirmed(host: WorkspaceHost, threadId: string): boolean {
+  const aliases = (events: readonly ThreadEvent[]): boolean => events.some(event => event.kind === 'message-aliased')
+  if (aliases(heldEvents(host, threadId))) return true
+  const writes = (host as unknown as { writes: { byThread?: ReadonlyMap<string, readonly { readonly write: ThreadStoreWrite }[]> } }).writes
+  return (writes.byThread?.get(threadId) ?? []).some(({ write }) => aliases(eventsOfWrite(write, threadId)))
+}
+
 /** Whether a workspace still holds events for a thread that it has not posted, read for the comparison below alone. */
 function waitingIn(host: WorkspaceHost, threadId: string): boolean {
   return (host as unknown as { pendingEvents: ReadonlyMap<string, unknown> }).pendingEvents.has(threadId)
@@ -202,7 +216,7 @@ function waitingIn(host: WorkspaceHost, threadId: string): boolean {
  * a reason the plan names (docs/plans/store-worker.md, step 1):
  * - the summary's record count and running turn, which are taken from the records when the summary is read again, and
  *   a confirmation that comes later reads it again sooner; the records themselves are compared;
- * - while an alias is held for a thread, its summary's count and excerpts, which show the alias once it is confirmed;
+ * - while an alias for a thread is unconfirmed (`aliasUnconfirmed`), its summary's count and excerpts, which show the alias once it is confirmed;
  * - while writes are held, the window's messages before the reference's first: a window asked for in turns keeps every
  *   message the events add until it is read again, and then the reference must have earlier messages too;
  * - a thread in `switched`: Keep local history changed the store it is read from, and the screen keeps what it showed
@@ -213,7 +227,7 @@ function waitingIn(host: WorkspaceHost, threadId: string): boolean {
  * wait longer than the writer on main holds them, so they move to memory where the reference committed them to the file
  * and took them out. Turning history back on drops the memory store on both, and the file is compared at the end.
  */
-function compareShown(reference: WorkspaceHost, later: WorkspaceHost, switched: ReadonlySet<string>): void {
+export function compareShown(reference: WorkspaceHost, later: WorkspaceHost, switched: ReadonlySet<string>): void {
   const shownBy = (host: WorkspaceHost) => new Map(host.workspaceSnapshot().threads.map(thread => [thread.id, thread]))
   const expected = shownBy(reference), received = shownBy(later)
   expect([...received.keys()]).toEqual([...expected.keys()])
@@ -228,7 +242,7 @@ function compareShown(reference: WorkspaceHost, later: WorkspaceHost, switched: 
       void _messages; void _user; void _assistant; void _at
       return left
     }
-    const aliasHeld = heldEvents(later, id).some(event => event.kind === 'message-aliased')
+    const aliasHeld = aliasUnconfirmed(later, id)
     expect(strip(mine.summary, aliasHeld), id).toEqual(strip(theirs.summary, aliasHeld))
     expect(mine.activities?.map(activity => activity.id), id).toEqual(theirs.activities?.map(activity => activity.id))
     const shown = namedVisuals(mine.messages), reference = namedVisuals(theirs.messages)

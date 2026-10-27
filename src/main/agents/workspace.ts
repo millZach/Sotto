@@ -2047,7 +2047,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     try { await this.waited(this.commit({ kind: 'forget', threadIds: deleted })) }
     catch {
       // Kept: their held words go once the store takes them, and their records are saved again.
-      for (const threadId of deleted) { this.forgetting.delete(threadId); this.unsaved.add(threadId) }
+      // A history held for them while they were being cleared is compared now, and the answers behind it follow it.
+      for (const threadId of deleted) { this.forgetting.delete(threadId); this.unsaved.add(threadId); this.recordOwed(threadId) }
       throw new Error(`Sotto could not erase these threads' history, so it kept them, but their sub-agent lists are gone. ${DELETION_FOLDERS_WORDS} Restore access to local storage and try again.`)
     }
     for (const threadId of deleted) {
@@ -3362,10 +3363,17 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const owed = this.recordsOwed.get(threadId)
     if (!owed || this.historyHeld(threadId)) return
     const thread = this.threadById(threadId)
-    if (thread && this.historyWritable() && !this.forgetting.has(threadId)) { this.recordHistory(thread, owed.messages, owed.previousEpoch); return }
-    // Nothing more of the thread is written now; its answers wait with whatever else it holds.
-    this.recordsOwed.delete(threadId)
-    this.follow(threadId, owed.answers)
+    if (!thread) {
+      // The thread went: nothing of it is compared again, and what it held waits with whatever else it holds.
+      this.recordsOwed.delete(threadId)
+      this.recordsFailed.delete(threadId)
+      this.follow(threadId, owed.answers)
+      return
+    }
+    // While the thread is being cleared, or Keep local history is switching, the history and its answers wait for the outcome:
+    // a clear that succeeds takes them with the thread, and one that fails, or a switch that finishes, compares them again.
+    if (!this.historyWritable() || this.forgetting.has(threadId)) return
+    this.recordHistory(thread, owed.messages, owed.previousEpoch)
   }
   private legacyMessages(thread: AgentThread, messages: readonly AgentMessage[]): readonly AgentMessage[] {
     let privateMessages = this.privateLegacyMessages.get(thread.id)
@@ -4619,6 +4627,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // Records, summaries and windows changed under every thread, and the activity inputs were let go.
     this.touchAll()
     this.dirty = true
+    // The switch stopped the history retry, and what failed is tried again at once in the store that now writes, as a failed
+    // batch is: a failed history held through the switch is compared now, and its answers follow it.
+    for (const threadId of [...this.recordsFailed]) this.recordOwed(threadId)
     await this.flush()
     if (dropped) this.publish()
     if (retryUnavailable && this.storeUnavailable) {

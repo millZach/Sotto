@@ -9,7 +9,7 @@ import type { StoreWorker } from '../../src/main/agents/storeWorker'
 import type { ThreadStoreWriter } from '../../src/main/agents/threadStoreWriter'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { builtStoreWorker } from '../fixtures/storeWorker'
-import { added, appended, answer, cleanUp, cleanup, EventProvider, runEquivalence, shown, storedMessages, WORKSHOP } from '../fixtures/storeWriterEquivalence'
+import { added, aliased, appended, answer, cleanUp, cleanup, compareShown, EventProvider, fixture, runEquivalence, shown, storedMessages, WORKSHOP } from '../fixtures/storeWriterEquivalence'
 
 /**
  * The workspace over the store worker as the build compiles it (#1457, step 2 of docs/plans/store-worker.md): the same
@@ -42,6 +42,31 @@ describe('the workspace over the store worker', () => {
   it.each([1457, 1026, 2026, 3])('leaves the same rows and shows the same threads as the writer on main over a seeded run (seed %i)', async seed => {
     await runEquivalence(seed, { worker: worker.path })
   }, 120_000)
+
+  it('compares a summary read while an alias was held with what it shows once the alias is confirmed, whenever its commit lands', async () => {
+    const reference = await fixture({ deferred: false })
+    const later = await fixture({ deferred: false, worker: worker.path })
+    const writes = (later.host as unknown as { writes: ThreadStoreWriter }).writes
+    // Nobody looks at the thread, so its summary is read from the store with what is posted laid over it.
+    for (const f of [reference, later]) { f.host.observeThreads([]); f.adapter.publish(added('m1', 'Same words', 'user')); f.host.workspaceSnapshot() }
+    await writes.confirmed()
+    for (const f of [reference, later]) { f.host.workspaceSnapshot(); f.adapter.publish(added('copy', 'Same words', 'user')); f.adapter.publish(aliased('copy', 'm1')); f.host.workspaceSnapshot() }
+    // The summary was read with the alias posted, and an alias shows in a summary once it is confirmed (step 1's notes).
+    expect(shown(later.host).summary).toMatchObject({ messageCount: 2, lastUser: { id: 'copy' } })
+    // The worker commits the alias; main has not yielded, so its confirmation has not arrived.
+    const side = new DatabaseSync(join(later.directory, 'threads.sqlite'), { readOnly: true })
+    try {
+      const deadline = performance.now() + 30_000
+      while (Number(side.prepare("SELECT COUNT(*) AS count FROM events WHERE kind = 'message-aliased'").get()!.count) === 0) {
+        if (performance.now() > deadline) throw new Error('The worker did not commit the alias')
+      }
+    } finally { side.close() }
+    expect(writes.unconfirmed(WORKSHOP)).toBe(true)
+    compareShown(reference.host, later.host, new Set())
+    await writes.confirmed()
+    expect(shown(later.host).summary).toMatchObject({ messageCount: 1, lastUser: { id: 'm1' } })
+    compareShown(reference.host, later.host, new Set())
+  })
 
   it('commits everything posted before quitting, and the worker closes before main', async () => {
     const { adapter, host, directory, store } = await workspace()

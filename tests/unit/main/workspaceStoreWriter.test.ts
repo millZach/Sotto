@@ -338,6 +338,54 @@ describe('a provider that publishes whole histories', () => {
     for (let second = 0; second < 5; second++) { await vi.advanceTimersByTimeAsync(1_000); settle(f) }
     expect(f.host.eventsAfter(0, WORKSHOP).map(item => item.event.kind)).toEqual(['message-added', 'answer-given'])
   })
+
+  it('keeps a failed history and its answer through a clear that fails, and writes both once the thread is kept', async () => {
+    const f = await fixture({ deferred: true, wholeHistories: true })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] })
+    const thread = f.adapter.state.threads.find(item => item.id === WORKSHOP)!
+    thread.messages = [message('ask', 'user', 'Asked before a failed save')]
+    f.adapter.emit()
+    f.writer!.failing = () => true
+    f.writer!.release()
+    f.writer!.failing = undefined
+    f.host.recordAnswer(WORKSHOP, answer('request-1'))
+    // The thread starts being cleared, and its retry comes while the forget is still held.
+    const clearing = f.host.deleteThreads([WORKSHOP], { automatic: false, hold: () => null }).catch((error: unknown) => error)
+    await releaseUntilPosted(f.writer!, 'forget')
+    await vi.advanceTimersByTimeAsync(1_000)
+    // The forget fails, so the thread stays.
+    f.writer!.failing = write => write.kind === 'forget'
+    f.writer!.release(1)
+    f.writer!.failing = undefined
+    expect(await clearing).toBeInstanceOf(Error)
+    for (let second = 0; second < 3; second++) { settle(f); await vi.advanceTimersByTimeAsync(1_000) }
+    settle(f)
+    expect(f.host.eventsAfter(0, WORKSHOP).map(item => item.event.kind)).toEqual(['message-added', 'answer-given'])
+  })
+
+  it('keeps a failed history and its answer while history turns off, and writes both in memory once it has', async () => {
+    let history = true
+    const f = await fixture({ deferred: true, wholeHistories: true, history: () => history })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] })
+    const thread = f.adapter.state.threads.find(item => item.id === WORKSHOP)!
+    thread.messages = [message('ask', 'user', 'Asked before a failed save')]
+    f.adapter.emit()
+    f.writer!.failing = () => true
+    f.writer!.release()
+    f.writer!.failing = undefined
+    f.host.recordAnswer(WORKSHOP, answer('request-1'))
+    // Keep local history turns off; the retry comes while the redaction is still held.
+    history = false
+    const switching = f.host.privacyChanged()
+    await releaseUntilPosted(f.writer!, 'history-off')
+    await vi.advanceTimersByTimeAsync(1_000)
+    await pumped(f, switching)
+    for (let second = 0; second < 3; second++) { settle(f); await vi.advanceTimersByTimeAsync(1_000) }
+    settle(f)
+    // This run's memory store holds the history and the answer after it; the file holds neither.
+    expect(f.host.eventsAfter(0, WORKSHOP).map(item => item.event.kind)).toEqual(['message-added', 'answer-given'])
+    expect(storedMessages(f.directory)).toEqual([])
+  })
 })
 
 describe('order, failure and durability through the seam', () => {
