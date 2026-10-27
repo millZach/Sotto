@@ -252,6 +252,8 @@ svg.owl .pupil { fill: currentcolor; }
 .w .owl-tile .n { position: absolute; top: -6px; right: -8px; min-width: 14px; height: 14px; padding: 0 2px; display: grid; place-items: center; border-radius: 3px; background: var(--tt-sidebar); font-size: 11px; font-weight: 700; line-height: 1; }
 .w .grp { flex: none; display: flex; flex-direction: column; align-items: center; gap: 7px; width: 46px; padding: 7px 0 8px; border-radius: 12px; }
 .w .grp .head { font-size: 11px; font-weight: 700; line-height: 14px; }
+/* Inside a group the muted letters sit on a tint, so they take 30% of the text colour to keep 4.5:1. */
+.w .grp .tile.rest, .wA .grp .head { color: color-mix(in srgb, var(--tt-text) 30%, var(--tt-text-muted)); }
 /* A neutral card */
 .wA .grp { background: var(--tt-card); }
 .wA .grp .head { color: var(--tt-text-muted); }
@@ -452,21 +454,21 @@ const WV = [
     unwatched: 'Under the card: waiting first (amber-edged), then running, a hairline, then done small and muted. The hairline stays.',
     edges: 'None watched: no card, the rail is today\'s minus the tray. Eight: the card grows and done ones inside it go small; fits 900px.',
     owl: 'Nothing but Watcher\'s own ring, as today.',
-    c: 'Amber 6.9 dark, 4.3 light on the card; muted letters 4.0 and 4.8. The card\'s fill is 1.15 on the rail, so the count heads it.' } },
+    c: 'Amber 6.9 dark, 4.3 light on the card. Muted letters drop to 4.0 on it in dark, so inside the card they take 30% of the text colour (6.0). The card\'s fill is 1.15 on the rail, so the count heads it.' } },
   { k: 'B', n: 'Amber kept, owl counts', a: {
     watched: 'The group keeps the amber panel Drake drew, now meaning watched; needs you moves to a solid amber tile and the owl\'s count.',
     needs: 'First in the panel as a solid amber tile with dark letters, so it outshouts the amber panel around it.',
     unwatched: 'Under the panel: waiting first (amber-edged), running, hairline, done. Outside the panel a waiting tile is edged, not filled.',
     edges: 'None watched: no panel, the owl still counts 2. Eight: Dh joins the panel as a second solid tile.',
     owl: 'How many wait on you across every thread, a bare amber digit at its corner.',
-    c: 'Solid tile 6.3 dark, 4.2 light on the panel, letters on it 8.5 and 6.0; muted letters 3.7 dark. Amber now means two things.' } },
+    c: 'Solid tile 6.3 dark, 4.2 light on the panel, letters on it 8.5 and 6.0; muted letters lifted from 3.7 to 5.5. Keeps the tray\'s 1px edge, departing from ADR-0110 as the shipped tray does. Amber now means two things.' } },
   { k: 'C', n: 'Watcher\'s ink', a: {
     watched: 'The card is tinted in the accent, the owl\'s own colour while its room is open, and hangs right under the owl with no hairline. In Citrine the accent is also the working arc.',
     needs: 'First in the card, amber-edged with the amber ring, as in A.',
     unwatched: 'Under the card: waiting first, running, hairline, done.',
     edges: 'None watched: no card and no count, the owl gets its hairline back. Eight: the card grows; fits 900px.',
     owl: 'How many it watches, a bare digit; the card has no head of its own.',
-    c: 'Amber 5.8 dark, 4.2 light on the tint; muted letters 3.3 dark, the closest to the line. In Citrine the tint and the working arc share a hue.' } },
+    c: 'Amber 5.8 dark, 4.2 light on the tint; muted letters lifted from 3.3 to 5.0, the closest to the line. In Citrine the tint and the working arc share a hue.' } },
   { k: 'D', n: 'No box, owl marks', a: {
     watched: 'No container: watched threads sit under the owl, each with a small owl at its corner, like the badge a watched row wears today.',
     needs: 'First under the owl, amber-edged with the amber ring.',
@@ -476,6 +478,7 @@ const WV = [
     c: 'Everything sits on the rail itself: amber 8.0 and 5.0, owl marks in muted 4.6 and 5.5. Nothing to lose contrast against.' } },
 ]
 const STAGES = [['Dark', 'base', ''], ['Light', 'base', 'lt'], ['None watched', 'zero', ''], ['Eight watched', 'eight', ''], ['Eight, light', 'eight', 'lt']]
+// Nothing watched in light is the Light stage without its group, so it is not drawn twice.
 const LBL = { watched: 'Watched', needs: 'Needs you', unwatched: 'Unwatched', edges: '0 and 8', owl: 'Owl button', c: '3:1' }
 function renderWatched() {
   document.querySelector('h1').textContent = 'Watcher\'s threads: refinements of A'
