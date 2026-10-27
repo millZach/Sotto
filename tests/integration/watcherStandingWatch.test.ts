@@ -1236,6 +1236,9 @@ it('lifts a watch an unconfirmed Watcher send paused once the user sets it aside
   adapter.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   expect(row()).toMatchObject({ watched: true, paused: true })
   expect(await send('Synthetic send while the turn runs')).toMatchObject({ status: 'refused', code: 'THREAD_BUSY', message: USER_TURN_RUNNING })
+  // A steer may go into the user's turn, but the unconfirmed send holds it, and the refusal says so.
+  expect(await f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic steer while it is unconfirmed', delivery: 'steer' }))
+    .toEqual({ status: 'refused', code: 'DELIVERY_UNCERTAIN', message: UNCONFIRMED_SEND_HOLD, retryable: false })
   await f.finish(target.threadId)
   // The turn is over, but the unconfirmed send holds the watch, and the refusal names it rather than a turn.
   expect(row()).toMatchObject({ paused: true })

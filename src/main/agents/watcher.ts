@@ -3361,9 +3361,11 @@ export class WatcherService implements WatcherControlHooks {
         if (sent.expectedLastUserMessageId && sent.expectedLastUserMessageId !== nativeHead(thread)) refuse('TARGET_CHANGED', 'This thread received another instruction. Read it before sending.')
         // Only the foreground turn and the thread's own queue hold a send, never background work, and a refusal says which (#1203).
         if (sent.delivery === 'now' && thread.status === 'running') refuse('THREAD_BUSY', RUNNING_TURN_HOLD)
-        // A send the user set aside holds Watcher no longer (#1222).
-        const queued = sent.delivery === 'now' && !remote ? this.options.control.pendingThreadWorkReason(thread.id, { setAsideIgnored: true }) : null
-        if (queued === 'uncertain-send') refuse('DELIVERY_UNCERTAIN', this.unconfirmedHold(target))
+        // A send the user set aside holds Watcher no longer. An unconfirmed one holds a steer too, which the coordinator would
+        // otherwise turn away without a word of what ends the hold (#1222).
+        const held = sent.delivery !== 'queue' && !remote ? this.options.control.pendingThreadWorkReason(thread.id, { setAsideIgnored: true }) : null
+        if (held === 'uncertain-send') refuse('DELIVERY_UNCERTAIN', this.unconfirmedHold(target))
+        const queued = sent.delivery === 'now' ? held : null
         if (queued) refuse('THREAD_BUSY', queueHold(queued, this.preserveUserQueue(thread.id) && this.userWorkPending(thread.id, record)))
         // A queue the user must review first takes nothing more, as a delegated brief is refused, rather than hold it unsaid.
         const review = sent.delivery === 'queue' && !remote ? this.options.control.queueAwaitsReview(thread.id) : null
