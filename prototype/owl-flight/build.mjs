@@ -40,7 +40,7 @@ const page = `<!doctype html>
 <!--
   PROTOTYPE, throwaway (prototype/owl-flight). Question: how should Watcher's owl fly between perches?
   Today's flight beside five candidates, each drawn by the app's real night-scene painter at real cell size.
-  Built by prototype/owl-flight/build.mjs from prototype/owl-flight/src. Picked: (waiting on Drake)
+  Built by prototype/owl-flight/build.mjs from prototype/owl-flight/src. Picked: E, Slow, deep beats (Drake, October 27, 2026)
 -->
 <html lang="en"><head><meta charset="utf-8"><title>Watcher's owl in flight</title>
 <style>${css.replaceAll('</style', '<\\/style')}</style></head>
