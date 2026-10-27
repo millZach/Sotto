@@ -3,7 +3,7 @@ import { fillPrompt, promptField } from './support/prompt'
  * Resuming threads after a restart (ADR-0076) in the built app, on the Owl track, with the real Claude adapter over the
  * fake CLI in `tests/fixtures/` (`SOTTO_E2E_NATIVE_FIXTURE_ROOT` in `src/main/index.ts`). A turn is still running when
  * Sotto quits; when Sotto opens again, the session is resumed and sent the resume note, which the thread shows as
- * Sotto's with the Resumed tag, word for word. The same holds for the real Codex adapter over the fake app-server, whose
+ * Sotto's with the Restarted tag (ADR-0144), word for word. The same holds for the real Codex adapter over the fake app-server, whose
  * thread is reported idle before its turns are read back.
  *
  *   npm run build && npx playwright test tests/e2e/restart-resume.spec.ts
@@ -77,10 +77,10 @@ test('a thread working when Sotto quits carries on, with the resume note, when S
       // The window names threads by host; the record keeps the local host's own thread ID.
       const recordId = threadId.slice(threadId.lastIndexOf(':') + 1)
 
-      // The setting is there, on, in Settings → Threads.
+      // On Owl the note runs under Restart stopped threads (ADR-0144), on, in Settings → Threads.
       await openPage(page, 'Settings')
       await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Threads', exact: true }).click()
-      await expect(page.getByRole('switch', { name: 'Resume threads after a restart' })).toBeChecked()
+      await expect(page.getByRole('switch', { name: 'Restart stopped threads' })).toBeChecked()
 
       // A turn starts and is still running: the fake CLI holds it open.
       const { pane } = await openThread(page, 'Lighthouse essay')
@@ -112,7 +112,7 @@ test('a thread working when Sotto quits carries on, with the resume note, when S
       const { transcript } = await openThread(page, 'Lighthouse essay')
       const note = transcript.locator('.thread-message[data-from="sotto"]')
       await expect(note).toHaveCount(1, { timeout: 30_000 })
-      await expect(note.locator('.thread-message__tag')).toHaveText('Resumed')
+      await expect(note.locator('.thread-message__tag')).toHaveText('Restarted')
       await expect(note).toContainText(RESUME_NOTE)
       await expect.poll(() => recorded(profile)).toEqual([recordId])
 

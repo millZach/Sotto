@@ -1,7 +1,7 @@
 // @vitest-environment node
 // A Claude turn that ends in error: the provider says what happened in plain words, for the thread that failed.
 import { afterEach, describe, expect, it } from 'vitest'
-import { CLAUDE_TURN_FAILED, claudeTurnFailure } from '../../src/main/agents/claudeTurnFailure'
+import { CLAUDE_TURN_FAILED, claudeLimitStop, claudeTurnFailure } from '../../src/main/agents/claudeTurnFailure'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import type { AgentHostSnapshot } from '../../src/shared/agents'
 
@@ -67,6 +67,38 @@ describe('the error a failed Claude turn leaves', () => {
 
   it('reads the reset time Claude Code appends as epoch seconds', () => {
     expect(claudeTurnFailure(failed({ result: 'Claude AI usage limit reached|1760000000' }))).toMatch(/^Claude Code has reached your plan’s usage limit.*Send again after it resets at \d{1,2}[:.]\d{2}/u)
+  })
+
+  it('keeps when a usage limit resets as an instant, for restarting the thread then (ADR-0144)', () => {
+    const now = Date.parse('2026-10-26T18:30:00.000Z')
+    expect(claudeLimitStop(failed({ result: 'Claude AI usage limit reached|1760000000' }), undefined, now)).toEqual({ resetsAt: '2025-10-09T08:53:20.000Z' })
+    // A spoken time is the next such time in the zone it names: 3pm in Chicago is 20:00 UTC in late October.
+    expect(claudeLimitStop(failed({ result: 'You’ve hit your limit · resets 3pm (America/Chicago)' }), undefined, now)).toEqual({ resetsAt: '2026-10-26T20:00:00.000Z' })
+    // Past it today, the next is tomorrow's.
+    expect(claudeLimitStop(failed({ result: 'You’ve hit your limit · resets 1:30pm (America/Chicago)' }), undefined, now)).toEqual({ resetsAt: '2026-10-27T18:30:00.000Z' })
+    // A stop that says no time, or a zone this computer cannot read, is still a limit stop, with no reset.
+    expect(claudeLimitStop(failed({ result: 'usage limit reached' }), undefined, now)).toEqual({})
+    expect(claudeLimitStop(failed({ result: 'You’ve hit your limit · resets 3pm (Nowhere/Atlantis)' }), undefined, now)).toEqual({})
+    expect(claudeLimitStop({ type: 'result', subtype: 'success', is_error: true, api_error_status: 429 }, undefined, now)).toEqual({})
+  })
+
+  it('reads a zone named on its own, such as UTC or GMT, in that zone and not on this computer’s clock', () => {
+    const now = Date.parse('2026-10-26T18:30:00.000Z'), zone = process.env.TZ
+    // A computer a long way from UTC, so reading the time on its own clock would give another instant.
+    process.env.TZ = 'America/Los_Angeles'
+    try {
+      expect(claudeLimitStop(failed({ result: 'You’ve hit your limit · resets 11pm (UTC)' }), undefined, now)).toEqual({ resetsAt: '2026-10-26T23:00:00.000Z' })
+      expect(claudeLimitStop(failed({ result: 'You’ve hit your limit · resets 7:15pm (GMT)' }), undefined, now)).toEqual({ resetsAt: '2026-10-26T19:15:00.000Z' })
+      expect(claudeTurnFailure(failed({ result: 'You’ve hit your limit · resets 11pm (UTC)' }))).toBe(`${USAGE} Send again after it resets at 11pm (UTC).`)
+    } finally {
+      if (zone === undefined) delete process.env.TZ; else process.env.TZ = zone
+    }
+  })
+
+  it('is no limit stop for a spending limit, any other failure, or a turn the user stopped', () => {
+    expect(claudeLimitStop({ type: 'result', subtype: 'error_max_budget_usd', is_error: true, errors: [] })).toBeUndefined()
+    expect(claudeLimitStop(failed({ result: 'API Error: 500 Internal server error' }))).toBeUndefined()
+    expect(claudeLimitStop({ type: 'result', subtype: 'error_during_execution', is_error: true, terminal_reason: 'aborted_streaming', errors: ['usage limit reached'] })).toBeUndefined()
   })
 
   it('never reads a failed result’s own `result`, and sets no error for a turn the user stopped', () => {

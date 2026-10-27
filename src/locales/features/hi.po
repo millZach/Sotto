@@ -3700,6 +3700,10 @@ msgid "Prompts"
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Prompts are what you and Watcher sent, and Sotto’s notes when it restarts a thread. Subagents add tokens but no prompts. A prompt counts under the model that served it."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "Prompts are what you, Watcher and wake-ups sent. Subagents add tokens but no prompts. A prompt counts under the model that served it."
 msgstr ""
 
@@ -6211,6 +6215,10 @@ msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "You chose this in working preferences"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "You sent <0>{sent}</0> and Watcher <1>{watcher}</1>."
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx

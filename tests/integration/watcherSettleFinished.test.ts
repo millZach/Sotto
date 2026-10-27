@@ -13,7 +13,7 @@ import { agentControlFixture } from '../fixtures/agentControlFixture'
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
-async function fixture(on = true) {
+async function fixture(on = true, babysittingRetired = false) {
   const workspace = await workspaceFixture()
   cleanups.push(workspace.remove)
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
@@ -21,7 +21,7 @@ async function fixture(on = true) {
   const setting = { on }
   const log = vi.fn()
   const service = new WatcherService({ directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => true,
-    ordinaryBatch: { quietMs: 50, maxMs: 200 }, settleFinished: () => setting.on, settleFinishedAfterMs: 0, log })
+    ordinaryBatch: { quietMs: 50, maxMs: 200 }, settleFinished: () => setting.on, settleFinishedAfterMs: 0, log, ...babysittingRetired ? { babysittingRetired } : {} })
   const tools = new WatcherToolServer(service)
   workspace.host.useWatcherTools(tools)
   cleanups.push(async () => { service.close(); await tools.close(); f.control.dispose(); await f.control.closed(); await workspace.stop() })
@@ -164,6 +164,17 @@ it('leaves a thread that babysits a pull request it never linked alone, since a 
   await new Promise(resolve => setTimeout(resolve, 300))
   expect(f.settled(target.threadId)).toBe(false)
   expect(f.watching(target.threadId)).toBe(true)
+})
+
+it('settles a thread that babysits once Restart stopped threads retired babysitting (ADR-0144)', async () => {
+  const f = await fixture(true, true), target = await f.watched()
+  const startedAt = new Date().toISOString()
+  await f.workspace.host.changeBabysitting(target.threadId, () => [{ url: 'https://github.com/example/synthetic/pull/9', number: 9,
+    startedBy: 'agent', startedAt, told: toldAtStart(startedAt) }])
+  await f.endTurn(target.threadId)
+  await f.watcherHears()
+  await vi.waitFor(() => expect(f.settled(target.threadId)).toBe(true), { timeout: 15_000 })
+  expect(f.watching(target.threadId)).toBe(false)
 })
 
 it('says in read_state which finished threads wait to be settled and on what, and nothing while the setting is off', async () => {

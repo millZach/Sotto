@@ -789,6 +789,10 @@ msgid "A thread shortcut needs Ctrl, so plain typing can never set it off."
 msgstr "A thread shortcut needs Ctrl, so plain typing can never set it off."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
+msgid "A thread stopped by a usage limit or by Sotto closing waits for your next message."
+msgstr "A thread stopped by a usage limit or by Sotto closing waits for your next message."
+
+#: src/renderer/src/features/settings/SettingsView.tsx
 msgid "A thread working when Sotto closes waits for your next message."
 msgstr "A thread working when Sotto closes waits for your next message."
 
@@ -4181,6 +4185,11 @@ msgstr "Restart Sotto"
 msgid "Restart Sotto to apply the local host setting."
 msgstr "Restart Sotto to apply the local host setting."
 
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Restart stopped threads"
+msgstr "Restart stopped threads"
+
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Restore defaults"
 msgstr "Restore defaults"
@@ -6294,6 +6303,10 @@ msgstr "What Sotto found on {name}"
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "What Sotto said about start at boot on {name}"
 msgstr "What Sotto said about start at boot on {name}"
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "When a provider’s usage limit resets, or Sotto opens again after closing, every thread that was working carries on, with a short note from Sotto in the thread."
+msgstr "When a provider’s usage limit resets, or Sotto opens again after closing, every thread that was working carries on, with a short note from Sotto in the thread."
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "When a pull request is made or merged"

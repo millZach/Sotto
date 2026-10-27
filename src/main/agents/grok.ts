@@ -8,7 +8,7 @@ import { AdapterThreadChanges, restOf } from './adapterThreadChanges'
 import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
 import { NativeUsage, type NativeUsageContext } from './nativeUsage'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
-import { parseGrokQuota, unavailableProviderQuota } from './providerQuota'
+import { exhaustedQuotaReset, parseGrokQuota, unavailableProviderQuota } from './providerQuota'
 import { createHash } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
@@ -143,6 +143,8 @@ function completedStatus(stopReason: string | undefined): AgentThread['status'] 
   return ['end_turn', 'cancelled', 'max_tokens', 'max_turn_requests', 'refusal'].includes(stopReason ?? '') ? 'idle' : 'error'
 }
 
+/** The words a Grok Build refusal uses for its usage limit, which is all its refusal says of one (ADR-0144). Only matched, never shown. */
+const GROK_USAGE_LIMIT = /\b(?:usage limit|quota (?:exceeded|reached)|out of credits|credit limit)\b/iu
 function turnOutcome(reason: string | undefined): 'completed' | 'interrupted' | 'failed' {
   return reason === 'end_turn' ? 'completed' : reason === 'cancelled' ? 'interrupted' : 'failed'
 }
@@ -173,6 +175,8 @@ function freshHistory(history?: HistoryRead): HistoryRead {
 
 export interface GrokAcpOptions {
   usageEnabled?: boolean
+  /** Restart stopped threads (ADR-0144), the Owl answer read once at start: a prompt refused at a usage limit says so on its `lastTurn`. */
+  limitStops?: boolean
   executable?: string; args?: string[]; environment?: NodeJS.ProcessEnv; requestTimeoutMs?: number; pollIntervalMs?: number
   /** Session reaper cadence and idle threshold; see `sessionReaper.ts`. */
   reaperSweepMs?: number; sessionIdleMs?: number
@@ -429,6 +433,15 @@ export class GrokAcpHost implements AgentHost {
    * failed is never covered by an earlier reading. Otherwise a process is started for the one question. No
    * session/new, load or prompt is sent on any of them.
    */
+  /**
+   * A refused prompt's usage-limit stop (ADR-0144), while restarting stopped threads is on: only when Grok Build's refusal
+   * says it was its usage limit, with the reset of the allowance its last limits reading showed used up.
+   */
+  private limitStopOf(error: unknown): { limitStop?: { resetsAt?: string } } {
+    if (this.options.limitStops !== true || !(error instanceof GrokRejected) || !GROK_USAGE_LIMIT.test(error.message)) return {}
+    const resetsAt = exhaustedQuotaReset(this.quota)
+    return { limitStop: resetsAt ? { resetsAt } : {} }
+  }
   private async readQuota(background: boolean): Promise<UsageQuotaRead> {
     const generation = this.generation, executable = this.executable, start = ++this.quotaStarts
     if (!executable) return unavailableProviderQuota('grok', 'not-connected')
@@ -1417,7 +1430,7 @@ export class GrokAcpHost implements AgentHost {
           }, true).catch(async error => {
             if (error instanceof GrokRejected) { alias.origins = alias.origins.filter(item => item !== origin); await this.persist() }
             this.activePrompts.delete(command.threadId); this.deliveries.get(command.messageId)?.reject(error)
-            this.thread(command.threadId).status = 'error'; this.thread(command.threadId).lastTurn = { id: command.messageId, status: 'failed' }
+            this.thread(command.threadId).status = 'error'; this.thread(command.threadId).lastTurn = { id: command.messageId, status: 'failed', ...this.limitStopOf(error) }
             // A process that ended mid-turn failed this thread alone, and the next send starts a new one.
             this.cutThoughts(command.threadId)
             this.markTurn(command.threadId, 'failed', command.messageId, entry.lost ? THREAD_PROCESS_LOST : error instanceof Error ? error.message : undefined)

@@ -47,12 +47,14 @@ import { GitHubHosts, GitHubRateLimit, type GitHubRateLimitEvent } from './githu
 import { GitActions } from './gitActions'
 import { Babysitter, type BabysitDeliver, type BabysitEndReason, type BabysitEvent } from './babysitting'
 import { wakeUpPartDue, type BabysitNews } from './babysitNews'
+import { WatchedPullRequestReader, type WatchedPullRequestEvent } from './watchedPullRequests'
 import { GitPullRequests } from './gitPullRequests'
 import { commitMessageWriter } from '../llm/commitMessage'
 import { pullRequestTextWriter } from '../llm/pullRequestText'
 import { WorktreeCleanup, type SharedGitHub, type WorktreeCleanupDependencies } from './worktreeCleanup'
 import { IdleCompaction } from './idleCompaction'
 import { RestartResume } from './restartResume'
+import { LimitRestart } from './limitRestart'
 import type { AgentHost } from './host'
 import { UsageService } from './usageService'
 import { mayGrantLocally } from './authority'
@@ -80,6 +82,11 @@ export interface AgentRuntimeOptions {
   usageEnabled?: boolean
   /** The Owl list's answer for resuming threads after a restart (ADR-0076), read once by the process owner. Absent fails closed. */
   resumeAfterRestart?: boolean
+  /**
+   * The Owl list's answer for restarting stopped threads (ADR-0144), read once by the process owner. Absent fails closed:
+   * no adapter reports a limit stop, nothing is scheduled, and the resume note reads `resumeThreadsAfterRestart`.
+   */
+  restartStoppedThreads?: boolean
   /** The Owl list's answer for cheaper publish windows while streaming (#991), read once by the process owner. Absent fails closed. */
   streamingPublishCost?: boolean
   /** The Owl list's answer for delegation between threads (ADR-0081), read once by the process owner. Absent fails closed. */
@@ -171,7 +178,7 @@ export interface AgentRuntimeOptions {
     ghStandIn?: { executable: string; args: readonly string[] }
     /** When GitHub's rate limit holds Sotto's questions back (#820), and what babysitting did (ADR-0061), as stable
      * event names; never gh's words, a pull request or a login. */
-    log?: (event: GitHubRateLimitEvent | BabysitEvent) => void }
+    log?: (event: GitHubRateLimitEvent | BabysitEvent | WatchedPullRequestEvent) => void }
   /** What the worktree cleanup (ADR-0041) may reach beyond the workspace: GitHub for the merged rule and Auto-settle
    * merged threads, and a log of stable event names. Without `pullRequestMerged` neither fires; the other rules read only the repository. */
   worktreeCleanup?: Pick<WorktreeCleanupDependencies, 'pullRequestMerged' | 'log'> & {
@@ -183,8 +190,13 @@ export interface AgentRuntimeOptions {
    * Codex and Grok Build threads have Sotto's pull request tools, so a wake-up tells the agent to stop with them. A
    * headless host has none, and its wake-ups say the user stops babysitting from the Pull request surface (decision 11).
    * `run` stands a test's scripted gh in for babysitting's reads alone.
+   *
+   * `retired` is the Owl list's answer for Restart stopped threads (ADR-0144), read once by the process owner: with it no
+   * thread is babysat or offered the pull request tools, the switch is not read, the host does not list
+   * `pull-request-babysit`, a babysitting wake-up saved in the queue is dropped at start, and the same reader follows the
+   * pull requests of the threads Watcher watches, for Watcher alone. `run` stands in for that reader's reads too.
    */
-  babysitting?: { agentTool?: () => boolean; run?: RunGitCommand }
+  babysitting?: { agentTool?: () => boolean; run?: RunGitCommand; retired?: boolean }
   /** What Watcher's Settle finished threads did, as stable event names; never a thread, a title or a pull request. */
   watcherLog?: (event: WatcherAutoSettleEvent) => void
 }
@@ -211,16 +223,19 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const machineFacts = (): Promise<HostMachineReport> => hostMachineReport(facts, (): MachineWork => ({ threads: agentControl.watcherSnapshot().threads, ...agentControl.watcherSendRecords(),
     ...crossMachine && watcher ? { startsNotYetSent: watcher.startsNotYetSent() } : {} }), crossMachine)
   const threadRegistry = options.host ? null : new ThreadRegistry(directory)
+  // Restarting stopped threads (ADR-0144): the adapters that can tell a usage limit report it on the failed turn, only with it on.
+  const restartStopped = options.restartStoppedThreads === true
+  const limitStops = restartStopped ? { limitStops: true } : {}
   const held = heldProvidersOption(options)
   // A held provider's adapter is never built: its stand-in starts nothing and refuses in the provider's name.
   const adapter = (id: ProviderId, build: () => NativeHost): NativeHost => held.has(id) ? new HeldProviderHost(id) : build()
   const providers: Partial<Record<ProviderId, NativeHost>> = options.host ? {} : {
-    codex: adapter('codex', () => options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...(options.codexLog ? { logEvent: options.codexLog } : {}) })),
-    claude: adapter('claude', () => options.providers?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}),
+    codex: adapter('codex', () => options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...limitStops, ...(options.codexLog ? { logEvent: options.codexLog } : {}) })),
+    claude: adapter('claude', () => options.providers?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...limitStops, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}),
       ...(options.claudeSettingsLog ? { logEvent: options.claudeSettingsLog } : {}) })),
-    grok: adapter('grok', () => options.providers?.grok ?? new GrokAcpHost(directory, { usageEnabled: options.usageEnabled === true })),
+    grok: adapter('grok', () => options.providers?.grok ?? new GrokAcpHost(directory, { usageEnabled: options.usageEnabled === true, ...limitStops })),
     devin: adapter('devin', () => options.providers?.devin ?? new DevinAcpHost(directory)),
-    muse: adapter('muse', () => options.providers?.muse ?? new MuseMspHost(directory, { disableSandbox: () => agentControl.configuration().museDisableSandbox, usageEnabled: options.usageEnabled === true })),
+    muse: adapter('muse', () => options.providers?.muse ?? new MuseMspHost(directory, { disableSandbox: () => agentControl.configuration().museDisableSandbox, usageEnabled: options.usageEnabled === true, ...limitStops })),
     // A desktop's OpenCode opens a sign-in page in the user's browser (#1104). A headless host's has no browser: a desktop signs
     // it in over the host connection and opens its pages itself (#1107).
     opencode: adapter('opencode', () => options.providers?.opencode ?? new OpenCodeHost(directory, options.runsAs === 'headless-host' ? { heldProviders: held, usageEnabled: options.usageEnabled === true } : { heldProviders: held, openExternal: options.openExternal, usageEnabled: options.usageEnabled === true,
@@ -312,11 +327,17 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     publish: entry => options.nextPromptChanged?.(entry),
     log: event => options.logFailure?.('next-prompt-failed', event === 'next-prompt-failed error' ? 'failed' : 'unreadable'),
   }) : undefined
+  // Restart stopped threads retires babysitting (ADR-0144): then no thread has Sotto's pull request tools, and the
+  // switch that offers them is never read.
+  const babysittingRetired = options.babysitting?.retired === true
+  const babysitTool = (threadId: string): boolean => !babysittingRetired && options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId)
   const agentControl: AgentControl = new AgentControl({
     directory, host: agentHost, credentials, turns, watcherEnabled: options.watcherEnabled ?? false,
     heldProviders: held, streamingPublishCost: options.streamingPublishCost ?? false, ...(usage ? { usage } : {}),
+    ...(restartStopped ? { restartStoppedThreads: true } : {}),
     ...(options.threadStartsEnabled === true ? { threadStartsEnabled: true } : {}),
     ...(options.clearThreadsEnabled === true ? { clearThreadsEnabled: true } : {}),
+    ...(babysittingRetired ? { babysittingRetired: true } : {}),
     ...(options.clearLog ? { logClear: options.clearLog } : {}),
     historyEnabled: options.historyEnabled,
     ...(options.observeActiveThread === undefined ? {} : { observeActiveThread: options.observeActiveThread }),
@@ -366,14 +387,14 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const watcher = moving.watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
       workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts, crossMachine,
-      settleFinished: () => options.settings().watcherSettlesFinishedThreads, compactAt: () => options.settings().watcherCompactAtTokens, ...options.watcherLog ? { log: options.watcherLog } : {},
+      settleFinished: () => options.settings().watcherSettlesFinishedThreads, ...babysittingRetired ? { babysittingRetired: true } : {}, compactAt: () => options.settings().watcherCompactAtTokens, ...options.watcherLog ? { log: options.watcherLog } : {},
       ...roles, ...placing }) : undefined
   if (options.delegationEnabled === true && options.runsAs !== 'headless-host') {
     agentHost.enableDelegation()
     // A delegating thread lists and names machines through Watcher's own reads (#1032), so only while Watcher runs too.
     const placingWatcher = 'workerMachine' in placing ? watcher : undefined
     delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
-      tool: threadId => options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId), ...roles,
+      tool: threadId => babysitTool(threadId), ...roles,
       ...placingWatcher ? { machines: { list: () => placingWatcher.machines(), place: (ask, project, setting) => placingWatcher.placement(ask, project, setting),
         name: hostId => placingWatcher.machineName(hostId), setting: () => options.settings().newWorkerMachine } } : {},
       // Offered with the machines, as the tool server offers from_my_branch and test_run only with them (#1033).
@@ -425,12 +446,11 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // window is in front, and hands each thread its news as a wake-up through the thread's own send path (decision 8).
   // A quiet ending takes back what a waiting wake-up said of that pull request (decision 9). An ending on its own, or the
   // switch's, is kept on the thread's record with why, for the Pull request surface to say (#825).
-  const babysitTool = (threadId: string): boolean => options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId)
   const deliverWakeUp: BabysitDeliver = (threadId, news) => agentControl.deliverWakeUp(threadId, news, { tool: babysitTool(threadId) })
   const QUIET_ENDINGS: ReadonlySet<BabysitEndReason> = new Set(['stopped-by-agent', 'stopped-by-user', 'switched-off', 'settled', 'archived', 'unlinked', 'forgotten'])
   const SAID_ENDINGS: ReadonlySet<BabysitEndReason> = new Set(babysitEndedReasonSchema.options)
   const babysitRun = options.babysitting?.run ?? gitRun
-  const babysitter = gitHubRateLimit && options.gitStatus ? new Babysitter({ store: agentHost, deliver: deliverWakeUp, rateLimit: gitHubRateLimit,
+  const babysitter = gitHubRateLimit && options.gitStatus && !babysittingRetired ? new Babysitter({ store: agentHost, deliver: deliverWakeUp, rateLimit: gitHubRateLimit,
     // Each read also brings the threads' links to that pull request to the state GitHub gave (#1147).
     observed: (read: PullRequestObservation) => {
       watcher?.pullRequestObserved(read)
@@ -448,16 +468,43 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // withdrawal managed.
   const wakeUpDue = (threadId: string, news: BabysitNews): boolean =>
     babysitter ? wakeUpPartDue(news, babysitter.list(threadId), options.babysitting?.agentTool?.() !== false) : true
+  // Restart stopped threads (ADR-0144): babysitting is gone, and Watcher keeps its pull request news from the same reads
+  // of the pull requests of the threads it watches, told only to Watcher, the threads' links and Keep main up to date.
+  const watchedPullRequests = babysittingRetired && watcher && gitHubRateLimit && options.gitStatus ? new WatchedPullRequestReader({
+    pullRequests: () => watcher.watchedThreadIds().flatMap(id => agentHost.openPullRequestUrls(id)), rateLimit: gitHubRateLimit,
+    observed: (read: PullRequestObservation) => {
+      watcher.pullRequestObserved(read)
+      agentHost.notePullRequestState(read)
+      if (read.state === 'merged') mainCheckout?.pullRequestMerged(read.url)
+    },
+    ...(babysitRun ? { run: babysitRun } : {}), ...(options.gitStatus.log ? { log: options.gitStatus.log } : {}) }) : undefined
   // Given before start, so a wake-up restored from the queue is asked about too, even when taking it back failed.
   if (babysitter) agentControl.useBabysitting(babysitter, { due: wakeUpDue, tool: babysitTool, current: (threadId, news) => babysitter.current(threadId, news) })
   // Resuming after a restart (ADR-0076): what was working is read before the coordinator starts, and recorded from then
   // on, so the threads this process's close stops are sent the resume note when it next starts.
+  // With restarting stopped threads on, its setting stands in for Resume threads after a restart (ADR-0144).
+  const resumeSetting = (): boolean => restartStopped ? options.settings().restartStoppedThreads : options.settings().resumeThreadsAfterRestart
   const restartResume = options.resumeAfterRestart === true
-    ? new RestartResume({ directory, control: agentControl, enabled: () => options.settings().resumeThreadsAfterRestart,
+    ? new RestartResume({ directory, control: agentControl, enabled: resumeSetting,
       tool: babysitTool, preservesDormantThread: id => agentHost.preservesDormantThread(id) }) : undefined
   // A note already waiting in a queue goes only while both are still on; without the feature, none goes.
-  if (restartResume) agentControl.useRestartResume({ due: () => options.settings().resumeThreadsAfterRestart,
+  if (restartResume) agentControl.useRestartResume({ due: resumeSetting,
     sending: threadId => restartResume.noteSending(threadId), unsent: threadId => restartResume.noteUnsent(threadId) })
+  // Restarting threads a usage limit stopped (ADR-0144): given before start, so the first snapshot is read for stops and a
+  // restart note restored from the queue is asked about. Watcher's own thread goes first, and Watcher hears of the others.
+  const watcherThreadHere = (): string | undefined => {
+    const target = agentControl.watcherRecordView().current?.target
+    return target && target.hostId === agentControl.hostId() ? target.threadId : undefined
+  }
+  const limitRestart = restartStopped ? new LimitRestart({ directory,
+    control: { host: () => agentControl.watcherSnapshot(), thread: id => agentControl.liveThread(id), deliverWakeUp: (id, news, given) => agentControl.deliverWakeUp(id, news, given) },
+    enabled: () => options.settings().restartStoppedThreads, watcherThreadId: watcherThreadHere, tool: babysitTool,
+    preservesDormantThread: id => agentHost.preservesDormantThread(id),
+    restarted: (provider, threadIds) => {
+      const hostId = agentControl.hostId(), own = watcherThreadHere()
+      if (watcher && hostId) watcher.wakes.threadsRestarted(provider, threadIds.filter(id => id !== own).map(threadId => ({ hostId, threadId })))
+    } }) : undefined
+  if (limitRestart) agentControl.useLimitRestart(limitRestart)
   // Idle compaction (ADR-0127): a large Claude thread quiet for 54 minutes is compacted while its prompt cache is warm.
   // The switch is read at every sweep, so turning it off stops the next one without a restart. Watcher's own conversation
   // is compacted too, while Watcher rests.
@@ -481,12 +528,13 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     stopWatcher()
     // Before anything is stopped: what closing does to a thread is not a turn ending.
     const resumeFrozen = restartResume?.freeze()
+    const limitClosed = limitRestart?.close()
     agentControl.dispose()
     stoppingProviders = (async () => {
       // The record's last write runs beside the providers' closing; nothing they do changes it now. A thread title still
       // being written gets up to two seconds before the side calls are stopped, so `closed()` saves it (#980).
       const results = await Promise.allSettled([reasoner.close?.(), agentControl.titleWritesSettled().then(() => shortTextWriter.close()), ...Object.values(providers).map(provider => provider.closed?.()),
-        ...(closingWatcherTools ? [closingWatcherTools] : []), ...(resumeFrozen ? [resumeFrozen] : [])])
+        ...(closingWatcherTools ? [closingWatcherTools] : []), ...(resumeFrozen ? [resumeFrozen] : []), ...(limitClosed ? [limitClosed] : [])])
       await agentControl.closed()
       // A connection already starting when stop was requested has now settled. Stop and drain
       // once more so it cannot leave a late child outside the first provider closure snapshot.
@@ -507,6 +555,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     worktreeCleanup.dispose()
     void mainCheckout?.close()
     void babysitter?.close().catch(() => undefined)
+    void watchedPullRequests?.close().catch(() => undefined)
     preparingForShutdown = stopProviders().finally(() => agentHost.flush())
     return preparingForShutdown
   }
@@ -519,6 +568,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       await worktreeCleanup.close()
       if (mainCheckout) await mainCheckout.close()
       if (babysitter) await babysitter.close()
+      if (watchedPullRequests) await watchedPullRequests.close()
       toolReads.dispose()
       try { await stopProviders(); await preparingForShutdown } finally { usage?.close(); await agentHost.close() }
     })()
@@ -531,15 +581,18 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   try {
     if (restartResume) await agentHost.initialize()
     await restartResume?.start()
+    await limitRestart?.start()
     await agentControl.start(switchedOff ? { beforeConnect: async () => { await switchedOff.stop({ startedBy: 'agent' }, 'switch').catch(() => 0) } } : {})
   } catch (error) {
     await restartResume?.freeze()
+    await limitRestart?.close()
     idleCompaction.stop()
     watcher?.close()
     delegation?.close()
     continuation?.close()
     const closingWatcherTools = watcherTools?.close()
     void babysitter?.close()
+    void watchedPullRequests?.close()
     void mainCheckout?.close()
     agentControl.dispose()
     await Promise.allSettled([reasoner.close?.(), shortTextWriter.close(), ...Object.values(providers).map(provider => provider.closed?.()), ...(closingWatcherTools ? [closingWatcherTools] : [])])
@@ -568,6 +621,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.runsAs === 'headless-host' && watcher ? { watcher } : {}),
     ...(options.runsAs !== 'headless-host' && watcher ? { watcherPhone: new WatcherPhoneService(agentControl, watcher, crossMachine) } : {}) })
   babysitter?.begin()
+  watchedPullRequests?.begin()
   mainCheckout?.start()
   // Signing Sotto's OpenCode in to model sources (#1104): only where its adapter runs, so a held OpenCode has none.
   const opencodeSignIn = providers.opencode instanceof OpenCodeHost ? providers.opencode.signIn : undefined

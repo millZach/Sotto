@@ -29,6 +29,8 @@ import { MOST_LIFTED, questionsIn } from './liftedQuestions'
 import { isWakeUpMessage, wakeUpMarkdown } from './babysitting'
 import { SottoMark } from '../components/SottoMark'
 import { isResumeNoteText } from '../../../shared/restartResume'
+import { useRestartStopped } from './RestartStopped'
+import { isRestartNoteText } from './restartWords'
 import { useOwlFeature } from '../state/owlFeature'
 import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import { WatcherOwl } from '../watcher/WatcherOwl'
@@ -262,12 +264,16 @@ function MessageCopy({ message, article }: { readonly message: AgentMessage; rea
 
 /**
  * Who sent a wake-up: Sotto, with its mark, and what it is. A wake-up that opens with the resume note is a resume
- * (ADR-0076); the text is read only once the host's own record has made the message Sotto's.
+ * (ADR-0076), and with restarting stopped threads on (ADR-0144; Owl only), it and the note sent when a limit resets are
+ * both restarts; the text is read only once the host's own record has made the message Sotto's.
  */
 function WakeUpWho({ text }: { readonly text: string }): ReactNode {
   const { t } = useLingui()
+  const restarted = useRestartStopped() && isRestartNoteText(text)
   const resumed = useOwlFeature('resume-after-restart') && isResumeNoteText(text)
-  return <><span className="thread-message__who"><SottoMark className="thread-message__mark" />Sotto</span><span className="thread-message__tag">{resumed
+  return <><span className="thread-message__who"><SottoMark className="thread-message__mark" />Sotto</span><span className="thread-message__tag">{restarted
+    ? t({ message: 'Restarted', comment: 'The tag on a message Sotto sent to restart a thread a usage limit or Sotto closing had stopped.' })
+    : resumed
     ? t({ message: 'Resumed', comment: 'The tag on a message Sotto sent to resume a thread after a restart.' })
     : t({ message: 'Wake-up', comment: 'The tag on a message Sotto sent to wake a thread.' })}</span></>
 }

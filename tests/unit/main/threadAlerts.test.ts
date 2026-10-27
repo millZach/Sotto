@@ -194,6 +194,15 @@ describe('finished', () => {
     expect(finishes(alerts)).toEqual(['a/finished/1'])
   })
 
+  it('is not held by babysitting once Restart stopped threads retired it (ADR-0144), its own or a child’s', () => {
+    const { alerts, tracker, settle } = setup({ babysittingRetired: true })
+    const babysitting = [{ url: 'https://github.com/o/r/pull/1', number: 1, startedBy: 'agent' as const, startedAt: AT }]
+    tracker.track(state([thread('a', { status: 'running' }), child('c', 'a')]))
+    tracker.track(state([marked('a', { babysitting }), child('c', 'a', { babysitting })]))
+    settle(ALERT_DELEGATION_SETTLE_MS)
+    expect(finishes(alerts)).toEqual(['a/finished/1'])
+  })
+
   it('is cancelled by the mark clearing or the thread running again before it fires', () => {
     const { alerts, tracker, settle } = setup()
     tracker.track(state([thread('a'), thread('b')]))
