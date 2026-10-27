@@ -33,6 +33,7 @@ import { WatcherService, type WatcherAutoSettleEvent } from './watcher'
 import { WatcherPhoneService } from './watcherPhone'
 import { WatcherToolServer } from './watcherTools'
 import { DelegationService } from './delegation'
+import { CheckQueue } from './checkQueue'
 import { ContinueService } from './continueThread'
 import { AgentControl } from './control'
 import { TurnRecorder } from './turns'
@@ -398,8 +399,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       tool: threadId => babysitTool(threadId), ...roles,
       ...placingWatcher ? { machines: { list: () => placingWatcher.machines(), place: (ask, project, setting) => placingWatcher.placement(ask, project, setting),
         name: hostId => placingWatcher.machineName(hostId), setting: () => options.settings().newWorkerMachine } } : {},
-      // Offered with the machines, as the tool server offers from_my_branch and test_run only with them (#1033).
-      ...placingWatcher && branchMoves ? { branchMoves } : {},
+      // Offered with the machines, as the tool server offers from_my_branch and test_run only with them (#1033). This
+      // computer's checks run one at a time, in the order asked (#1312).
+      ...placingWatcher && branchMoves ? { branchMoves, checks: new CheckQueue('This computer') } : {},
       // A delegated thread's own worktree is made from the delegating thread's branch, so it can bring changes back (#1030).
       ...crossMachine ? { bringBack: true } : {} })
   } else if (hostDelegation && desktopDefaults) {

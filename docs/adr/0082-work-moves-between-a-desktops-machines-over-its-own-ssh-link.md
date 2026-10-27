@@ -80,6 +80,19 @@ Zach accepted [ADR-0105](0105-hosts-reach-each-other-over-host-links-the-desktop
 - **The cap.** One move carries at most 256 MiB (Zach, October 23). Sotto's last 40 pull request branches bundled to a median of 27 KB and at most 2.9 MB. A bigger bundle is refused in plain words on either side, and nothing moves.
 - **What is built.** The operation is defined once on the host socket, with the desktop as its only caller (`src/main/agents/branchMoves.ts`); the Git half is shared by both sides (`src/main/agents/branchBundles.ts`), and a host's side is `src/host/branchMoves.ts`. A move ends in a receipt only. Starting the receiving worker from the moved branch (decision 4's worktree), Watcher's start from a thread's branch (decision 7) and the snapshot a check starts from come next; the sender takes a commit rather than a branch tip, which is where the snapshot's commit object goes. The worktree's removal of its incoming ref (decision 3) comes with that start.
 
+## Amended October 26, 2026: one check at a time on a machine (#1312, first part)
+
+Zach's answers of October 21 and 23 settle how checks are routed; the first part is built, behind `cross-machine-work`.
+
+1. **A check queue per machine.** A machine runs one **check** at a time. The next waits in that machine's own queue, in the order asked, for every thread that asks. The queue lives in the memory of the Sotto running on the machine, so a restart empties it, and a check that waited is never started after one: its outcome reads unknown, as any brief that was waiting does (ADR-0081 decision 7).
+2. **A waiting check is `working`.** There is no new outcome word. Nothing of it is started, so it counts as no working thread; its thread is made and sent its brief when its turn comes. The call's result carries `check: { ahead, note }`, the note saying "Waiting for This computer's check to finish. 1 ahead."
+3. **Stop takes a waiting check out.** `cancel_delegation`, or Stop on the thread that asked for it, ends it as stopped, starts nothing, and lets go of the branch it would have started from.
+4. **The snapshot is taken when asked**, not when the check's turn comes, so edits made while it waits are not what it tests. The receipt says when, by the clock of the machine that took it: "Started on forge from feat/x with your uncommitted changes as they were at 14:02 (3 untracked files)." A check still waiting "Starts on" its machine.
+5. **The reply is the contract.** `delegate`'s text asks the thread that starts a check to have the check's thread reply first with the verdict, the counts and the failing lines, inside the 32 KiB Sotto passes on; the full log stays in its history. Sotto passes the reply on as the thread's words and never reads pass or fail from it.
+6. **A check holds its place through background work** its turn left running, until that work is seen to end or the outcome is released after twenty idle minutes (#1263). Zach has not said; it is one named constant, `CHECK_HOLDS_THROUGH_BACKGROUND`.
+
+Not built in this part: Watcher's checks joining the queue, on This computer and on a host, which needs a new host operation that a stable host refuses; one reused check worktree per project per machine, with `npm ci` first when `package-lock.json` changed; and the queue's place in Tools › Agents and the machine's panel (variant C of the October 23 prototype).
+
 ## Amended October 23, 2026: a worker started from a thread's branch (#1033)
 
 The rest of #1033, step 8 of the research note's build order, is built on the transport above. Decisions 2 to 4 and 7 now run, and the snapshot a check starts from (ADR-0105 decision 8, which calls it a test run) with them. All of it is behind `cross-machine-work`: with it off, Watcher's `start_thread` and `delegate` offer none of it and refuse it as invalid, and a stable host neither lists nor takes `branch-move`.

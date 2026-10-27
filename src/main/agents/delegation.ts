@@ -14,6 +14,7 @@ import { HOST_CEILING_HOLD_WORDS, type HostCeilingHold } from '../../shared/desk
 import type { PlacementAsk, WorkerPlacement } from './workerPlacement'
 import type { DesktopBranchMoves } from './branchMoves'
 import { branchStartWords, type BranchStartReceipt } from '../../shared/branchMoves'
+import { CHECK_HOLDS_THROUGH_BACKGROUND, checkWaitingWords, type CheckQueue } from './checkQueue'
 import { WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
 import { cancelDelegationInputSchema, delegatedThreadsBelow, delegateInputSchema, delegationRefusalCodeSchema, delegationWorkSchema, readDelegationInputSchema,
   DELEGATION_BRIEF_MAX, DELEGATION_LEVELS_MAX, DELEGATION_PROMPTS_PER_THREAD, DELEGATION_VIEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES, RECORDED_REFUSALS,
@@ -108,6 +109,12 @@ export interface DelegationServiceOptions {
    * new thread's worktree, and is let go again when the start is refused before it runs.
    */
   readonly branchMoves?: Pick<DesktopBranchMoves, 'forStart' | 'forgetHere'>
+  /**
+   * This machine's checks (#1312), present only while Work across machines is on and `test_run` is offered: a new thread
+   * started as a check waits in the queue until the check ahead of it on this machine has finished, then starts. Absent, a
+   * check starts at once, as any start does.
+   */
+  readonly checks?: CheckQueue
   /**
    * Bringing changes back (#1030), on only while Work across machines is on: a new delegated thread's own worktree is made
    * from the delegating thread's branch, so its commits can be brought back to it. Off, it is made as any new worktree is.
@@ -254,6 +261,10 @@ function callerBranch(caller: AgentThread): string | undefined {
   const worktree = caller.worktree
   return (worktree?.git ? worktree.git.branch : worktree?.branch) ?? undefined
 }
+/** A delegating thread's branch landed for a new thread to start from (#1033), and when its check's snapshot was taken. */
+interface LandedBranch { readonly moveId: string; readonly projectId: string; readonly takenAt: Date; readonly receipt: BranchStartReceipt }
+/** A check waiting in this machine's queue (#1312): what it starts with once its turn comes, held in memory only. */
+interface WaitingCheck { readonly brief: string; readonly start: DelegatedStart; readonly branch: LandedBranch | undefined }
 /** How many times news of a thread's delegations is offered to its queue before it is left untold. */
 const NEWS_ATTEMPTS_MAX = 5
 /** The most ready models of one provider an answer lists. */
@@ -350,6 +361,10 @@ export class DelegationService {
   private readonly creating = new Set<string>()
   private readonly answeredThisRun = new Set<string>()
   private readonly dispatchRefusals = new Map<string, Failure>()
+  /** The starts this run made as checks (#1312), until each leaves its machine's queue. */
+  private readonly checkIds = new Set<string>()
+  /** The checks waiting their turn, with what each starts with; never saved, so a restart starts none of them. */
+  private readonly waitingChecks = new Map<string, WaitingCheck>()
   /** Briefs a Stop fenced while they were on their way: their guard refuses them at the writer. */
   private readonly fenced = new Set<string>()
   /** Delegations whose new outcome the delegating thread has not been told yet, by delegating thread, with attempts. */
@@ -462,17 +477,20 @@ export class DelegationService {
     // A call that raced the first one with the same retry key copied a branch of its own, which no thread will use.
     if (admitted.retry) { await this.letGo(branch); return this.result(record) }
     const start = admitted.start && branch ? { ...admitted.start, workingCopy: 'independent' as const, startFromMove: branch.moveId } : admitted.start
+    // A check waits for this machine's check ahead of it, in the order asked, before its thread is made (#1312).
+    const waiting = start !== undefined && input.test_run === true && this.queueCheck(record, input.brief, start, branch)
     this.calling.add(record.id)
     try {
-      await this.execute(record, input.brief, start)
-      // A new thread that could not be made owns no branch, and nothing started from it.
-      const made = !admitted.start || this.snapshot().threads.some(thread => thread.id === record.delegatedThreadId)
+      if (!waiting) await this.execute(record, input.brief, start)
+      // A new thread that could not be made owns no branch, and nothing started from it. A waiting check's thread is
+      // made once its turn comes, and its branch is let go then if it cannot be.
+      const made = !admitted.start || waiting || this.snapshot().threads.some(thread => thread.id === record.delegatedThreadId)
       if (!made) await this.letGo(branch)
       // Nothing is held back at any count (#1183); past ten working threads on this computer a start's reply says so. The
       // new thread counts as working while its first brief is on its way or its turn has not ended, whatever its status
       // says yet; one whose brief failed, or whose turn already ended, counts only if it is working.
       const started = this.record(record.id)
-      const pending = started !== undefined && (started.deliveryState === 'queued' || started.deliveryState === 'dispatching'
+      const pending = started !== undefined && !this.waitingChecks.has(started.id) && (started.deliveryState === 'queued' || started.deliveryState === 'dispatching'
         || started.deliveryState === 'uncertain' || started.deliveryState === 'accepted' && started.outcomeAt === undefined)
       const warning = admitted.start ? (this.options.warning ?? workingThreadsWarning)(countWorkingThreads(this.snapshot().threads, pending ? record.delegatedThreadId : undefined)) : undefined
       const waitMs = Math.max(0, Math.min((input.wait_seconds ?? DELEGATION_WAIT_MAX_SECONDS) * 1000,
@@ -485,7 +503,7 @@ export class DelegationService {
       }
       const answer = await this.result(this.record(record.id)!)
       return { ...answer, ...admitted.role ? { role: admitted.role } : {}, ...admitted.start && placed ? { placement: placed } : {},
-        ...admitted.start && branch && made ? { startedFrom: branch.receipt } : {}, ...warning ? { warning } : {} }
+        ...admitted.start && branch && made ? { startedFrom: this.startedFrom(record.id, branch) } : {}, ...warning ? { warning } : {} }
     } finally { this.calling.delete(record.id); this.touched(record) }
   }
 
@@ -626,7 +644,8 @@ export class DelegationService {
       if (refused) return { ...this.refusedResult(refused), note: REFUSED_CANCEL }
       const record = this.owned(caller.id, parsed.data.delegation)
       if (!this.open(record)) return { ...(await this.result(record)), note: 'This delegation had already ended. Nothing was stopped.' }
-      // A stop it asked for is not news to it, however it lands.
+      // A stop it asked for is not news to it, however it lands. A check still waiting its turn leaves the queue.
+      const queued = this.waitingChecks.has(record.id)
       this.update(record.id, saved => { saved.told = 'stopped' })
       // A brief on its way is fenced as a Stop fences it: the writer refuses it, or it landed and its turn is stopped below.
       if (record.deliveryState === 'queued' || record.deliveryState === 'dispatching') this.fenced.add(record.id)
@@ -639,6 +658,7 @@ export class DelegationService {
         if (thread && isThreadTurnRunning(thread) && this.answering(current, thread)) { await this.stopThreads([current.delegatedThreadId], new Set([caller.id])); stopping = true }
       }
       const answer = await this.result(this.record(record.id)!)
+      if (queued) return { ...answer, note: `It was waiting for its turn among ${this.options.checks!.machine}'s checks, and Sotto took it out of the queue. Nothing was started.` }
       if (!stopping || !this.open(current)) return answer
       this.update(current.id, saved => { saved.told = 'stopped' })
       await this.persist()
@@ -685,7 +705,7 @@ export class DelegationService {
    * when there is nothing to land: no branch asked for, a send to a thread, a retry, or a caller admission refuses. A
    * test run with no branch to start from starts as any start does until test runs queue (#1312).
    */
-  private async fromBranch(threadId: string, input: DelegateInput): Promise<{ readonly moveId: string; readonly projectId: string; readonly receipt: BranchStartReceipt } | DelegationRefusal | undefined> {
+  private async fromBranch(threadId: string, input: DelegateInput): Promise<LandedBranch | DelegationRefusal | undefined> {
     if (input.from_my_branch === undefined && input.test_run === undefined) return undefined
     const moves = this.options.branchMoves
     if (!moves) return delegationRefusal('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema. Nothing was started.')
@@ -695,14 +715,15 @@ export class DelegationService {
     const caller = this.snapshot().threads.find(thread => thread.id === threadId), local = this.options.control.hostId()
     if (!caller || !local || !this.admits(threadId)) return undefined
     if (this.retried(caller.id, input.retry_key)) return undefined
-    const moveId = randomUUID()
+    // A check's snapshot is taken now, when it is asked for, even when the check then waits its turn (#1312).
+    const moveId = randomUUID(), takenAt = new Date(this.clock())
     let moved: Awaited<ReturnType<DesktopBranchMoves['forStart']>>
     try { moved = await moves.forStart({ from: { hostId: local, threadId: caller.id }, to: { hostId: local, projectId: caller.projectId }, here: local, moveId, snapshot: input.test_run === true }) }
     catch { return delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not read this thread\'s branch just now. Nothing was started. Try again.') }
     if (moved.type === 'refused') return await this.refused(threadId, input, delegationRefusal('BRANCH_UNAVAILABLE', moved.message))
     const name = 'This computer'
-    return { moveId, projectId: caller.projectId, receipt: { hostId: local, name, branch: moved.branch, ...moved.snapshot ? { snapshot: moved.snapshot } : {},
-      note: branchStartWords(name, moved.branch, moved.snapshot) } }
+    return { moveId, projectId: caller.projectId, takenAt, receipt: { hostId: local, name, branch: moved.branch, ...moved.snapshot ? { snapshot: moved.snapshot } : {},
+      note: branchStartWords(name, moved.branch, moved.snapshot, { takenAt }) } }
   }
   /**
    * Records a delegation main refused under its rules, when a thread Sotto holds asked for it, and answers with the
@@ -1030,6 +1051,59 @@ export class DelegationService {
       this.options.control.refreshDelegationObservation()
     }
   }
+  /**
+   * Puts a new check in this machine's queue (#1312), in the order asked, whoever asked. Answers whether it waits: then its
+   * thread is made, and its brief sent, once the check ahead of it has finished, and until then its outcome is `working`.
+   * Without a queue, as with Work across machines off, nothing waits.
+   */
+  private queueCheck(record: DelegationRecord, brief: string, start: DelegatedStart, branch: LandedBranch | undefined): boolean {
+    const checks = this.options.checks
+    if (!checks) return false
+    this.checkIds.add(record.id)
+    if (checks.join(record.id, () => { void this.runCheck(record.id).catch(() => undefined) }) === 'running') return false
+    this.waitingChecks.set(record.id, { brief, start, branch })
+    return true
+  }
+  /** A waiting check whose turn came: its thread is made and sent its brief, as a start that never waited is. */
+  private async runCheck(delegationId: string): Promise<void> {
+    const waiting = this.waitingChecks.get(delegationId)
+    if (!waiting) return
+    this.waitingChecks.delete(delegationId)
+    const record = this.record(delegationId)
+    if (!record || this.closed || record.deliveryState !== 'queued') {
+      this.creating.delete(delegationId); this.checkIds.delete(delegationId); this.options.checks?.leave(delegationId)
+      await this.letGo(waiting.branch)
+      return
+    }
+    try { await this.execute(record, waiting.brief, waiting.start) }
+    finally {
+      if (!this.snapshot().threads.some(thread => thread.id === record.delegatedThreadId)) await this.letGo(waiting.branch)
+      this.touched(record)
+    }
+  }
+  /**
+   * A check leaves its machine's queue once it no longer holds its place: it ended, failed, was stopped or never started.
+   * One still waiting is let go with the branch it would have started from, and the next check ahead takes its turn.
+   */
+  private releaseCheck(record: DelegationRecord): void {
+    if (!this.checkIds.has(record.id) || this.holdsCheck(record)) return
+    this.checkIds.delete(record.id)
+    const waiting = this.waitingChecks.get(record.id)
+    if (waiting) { this.waitingChecks.delete(record.id); this.creating.delete(record.id); void this.letGo(waiting.branch) }
+    this.options.checks?.leave(record.id)
+  }
+  /** Whether a check still holds its machine's place: waiting, working, or in background work not yet seen to end. */
+  private holdsCheck(record: DelegationRecord): boolean {
+    if (!this.open(record)) return false
+    const outcome = this.outcomeOf(record)
+    return outcome === 'working' || CHECK_HOLDS_THROUGH_BACKGROUND && outcome === 'background' && record.releasedAt === undefined
+  }
+  /** Where a start from a branch begins, as its result says: a check still waiting its turn "Starts" there. */
+  private startedFrom(delegationId: string, branch: LandedBranch): BranchStartReceipt {
+    if (!this.waitingChecks.has(delegationId)) return branch.receipt
+    const { receipt } = branch
+    return { ...receipt, note: branchStartWords(receipt.name, receipt.branch, receipt.snapshot, { takenAt: branch.takenAt, waiting: true }) }
+  }
   /** Whether a delegated thread can take a brief now: idle, connected, asking nothing and holding nothing of the user's. */
   private free(thread: AgentThread, snapshot: AgentHostSnapshot): boolean {
     return !isThreadTurnRunning(thread) && !thread.requests.length && !this.sending.has(thread.id) && thread.clientConnected !== false
@@ -1308,6 +1382,7 @@ export class DelegationService {
   private changed(delegationId: string): void {
     const record = this.record(delegationId)
     if (!record) return
+    this.releaseCheck(record)
     const outcome = this.outcomeOf(record)
     if (!this.open(record)) this.waiters.get(record.id)?.forEach(wake => wake())
     if (this.calling.has(record.id) || outcome === 'working' || outcome === record.told && this.heldMinutes(record) === undefined) return
@@ -1375,6 +1450,8 @@ export class DelegationService {
       outcome, note, createdAt: record.createdAt, ...(record.turnMessageId ? { turnMessageId: record.turnMessageId } : {}),
       ...(latest && head !== null && head !== latest.messageId ? { userSentSince: true } : {}),
       ...(record.failure === 'target-changed' ? { refusal: 'TARGET_CHANGED' as const } : record.failure === 'paused' ? { refusal: 'PAUSED' as const } : {}) }
+    const ahead = this.waitingChecks.has(record.id) ? this.options.checks?.ahead(record.id) : undefined
+    if (ahead !== undefined) read.check = { ahead, note: checkWaitingWords(this.options.checks!.machine, ahead) }
     if (outcome === 'answered' && record.replyMessageId) {
       const reply = this.replyOf(record, thread)
       if (reply.replyUnavailable) read.replyUnavailable = reply.replyUnavailable

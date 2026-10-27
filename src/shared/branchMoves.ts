@@ -141,13 +141,20 @@ export type BranchStartReceipt = z.infer<typeof branchStartReceiptSchema>
 
 /**
  * A worker started from a thread's branch says where it started and from what (Zach, October 23, 2026): "Started on forge
- * from feat/x", and for a test run that carried uncommitted work, "with your uncommitted changes", counting the untracked
- * files it took.
+ * from feat/x", and for a check that carried uncommitted work, "with your uncommitted changes", counting the untracked
+ * files it took. A check's snapshot is taken when it is asked for, so the words say when, by the clock of the machine
+ * that says them (#1312): "… as they were at 14:02". A check still waiting in its machine's queue "Starts" there.
  */
-export function branchStartWords(machine: string, branch: string, snapshot?: SnapshotCarried): string {
-  if (!snapshot) return `Started on ${machine} from ${branch}.`
+export function branchStartWords(machine: string, branch: string, snapshot?: SnapshotCarried, check: { readonly takenAt?: Date; readonly waiting?: boolean } = {}): string {
+  const verb = check.waiting ? 'Starts' : 'Started'
+  if (!snapshot) return `${verb} on ${machine} from ${branch}.`
   const count = snapshot.untrackedCount
-  return `Started on ${machine} from ${branch} with your uncommitted changes${count ? ` (${count} untracked file${count === 1 ? '' : 's'})` : ''}.`
+  const at = check.takenAt ? ` as they were at ${clockTime(check.takenAt)}` : ''
+  return `${verb} on ${machine} from ${branch} with your uncommitted changes${at}${count ? ` (${count} untracked file${count === 1 ? '' : 's'})` : ''}.`
+}
+/** A time of day on this machine's clock, as 24-hour hours and minutes: "14:02". */
+export function clockTime(at: Date): string {
+  return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
 }
 /**
  * Why a worker's worktree could not be made from a moved branch (#1033). Main sets one as the worktree's error, and the

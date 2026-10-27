@@ -13,13 +13,14 @@ import { agentControlFixture } from './agentControlFixture'
 import { join } from 'node:path'
 import { BranchBundles } from '../../src/main/agents/branchBundles'
 import { DesktopBranchMoves, foldersOfSnapshot } from '../../src/main/agents/branchMoves'
+import { CheckQueue } from '../../src/main/agents/checkQueue'
 
 export type DelegationResult = { status: 'ok'; delegation: { id: string; thread: string; outcome: string; note: string; reply?: { from: string; text: string }; replyUnavailable?: string; refusal?: string; userSentSince?: boolean }; limits: { prompts?: number }; warning?: string }
 export type DelegationRefused = { status: 'refused'; code: string; message: string }
 
 /** Delegation over a workspace of fake providers. Each cleanup it needs is pushed onto `cleanups`, to run in reverse. */
-/** `branchStarts` gives delegation the desktop's mover over this computer's own threads and projects (#1033). */
-export async function delegationFixture(cleanups: (() => Promise<void>)[], options: { history?: boolean; titles?: boolean; delegation?: Pick<DelegationServiceOptions, 'now' | 'schedule' | 'machines'>; branchStarts?: boolean } = {}) {
+/** `branchStarts` gives delegation the desktop's mover over this computer's own threads and projects (#1033); `checks`, This computer's check queue (#1312), new at each restart as it is in the app. */
+export async function delegationFixture(cleanups: (() => Promise<void>)[], options: { history?: boolean; titles?: boolean; delegation?: Pick<DelegationServiceOptions, 'now' | 'schedule' | 'machines'>; branchStarts?: boolean; checks?: boolean } = {}) {
   const history = options.history ?? true
   let workspace = await workspaceFixture(undefined, { history, watcherEnabled: false })
   cleanups.push(workspace.remove)
@@ -33,7 +34,8 @@ export async function delegationFixture(cleanups: (() => Promise<void>)[], optio
   let control = await controlFor()
   const branchMoves = options.branchStarts ? new DesktopBranchMoves({ bundles: new BranchBundles({ stagingDirectory: join(root, 'branch-moves'), recordsPath: join(root, 'branch-moves.json') }),
     folders: foldersOfSnapshot(() => control.watcherSnapshot()), host: () => undefined, hostName: () => 'That machine' }) : undefined
-  const make = () => new DelegationService({ directory: root, control, host: workspace.host, historyEnabled: () => history, ...options.delegation, ...branchMoves ? { branchMoves } : {} })
+  const make = () => new DelegationService({ directory: root, control, host: workspace.host, historyEnabled: () => history, ...options.delegation, ...branchMoves ? { branchMoves } : {},
+    ...options.checks ? { checks: new CheckQueue('This computer') } : {} })
   let service = make()
   let tools = new DelegationToolServer(service)
   workspace.host.useThreadTools([tools])

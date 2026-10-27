@@ -1259,7 +1259,8 @@ export class WatcherService implements WatcherControlHooks {
     const moveId = create.fromMove, placed = moveId ? this.branchStartsPlaced.get(moveId) : undefined
     if (!moveId || !placed || !this.options.branchMoves) return undefined
     this.branchStartsPlaced.delete(moveId)
-    const local = this.hostId()
+    // A check's snapshot is taken as the move begins, and its receipt says when (#1312).
+    const local = this.hostId(), takenAt = new Date()
     const moved = await this.options.branchMoves.forStart({ from: placed.from, to: { hostId: operation.target.hostId, projectId: create.project.projectId },
       here: local, moveId, snapshot: placed.testRun })
     if (moved.type === 'refused') {
@@ -1268,7 +1269,7 @@ export class WatcherService implements WatcherControlHooks {
     }
     const name = operation.target.hostId === local ? 'This computer' : placed.name
     this.rememberBranchStart(operation.id, { hostId: operation.target.hostId, name, branch: moved.branch, ...moved.snapshot ? { snapshot: moved.snapshot } : {},
-      note: branchStartWords(name, moved.branch, moved.snapshot) })
+      note: branchStartWords(name, moved.branch, moved.snapshot, { takenAt }) })
     return { hostId: operation.target.hostId, projectId: create.project.projectId, moveId }
   }
   /**
