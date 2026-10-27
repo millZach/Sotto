@@ -4,6 +4,7 @@ import { isBuiltin } from 'node:module'
 import { lingui } from '@lingui/vite-plugin'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import { build as buildVite, type Plugin } from 'vite'
+import { storeWorkerBuild } from './scripts/store-worker-build.mjs'
 
 // Preview code is inert unless the renderer was built with this exact test-only gate.
 const visualPreviewEnvironment = process.env.SOTTO_VISUAL_PREVIEW === '1' ? '1' : '0'
@@ -74,20 +75,27 @@ function headlessHostBuild(): Plugin {
       await buildVite({
         configFile: false,
         build: {
-          // The host launches Git off its own thread too, from the worker file beside its index.js (`gitLauncher.ts`), and
-          // checkpoints its thread store on another (`walCheckpointer.ts`).
+          // The host launches Git off its own thread too, from the worker file beside its index.js (`gitLauncher.ts`).
           ssr: true, target: 'node24',
           outDir: resolve(__dirname, 'out/host'), emptyOutDir: true, minify: false,
           rollupOptions: {
-            input: { index: resolve(__dirname, 'src/host/index.ts'), gitLauncherWorker: resolve(__dirname, 'src/main/agents/gitLauncherWorker.ts'),
-              walCheckpointWorker: resolve(__dirname, 'src/main/storage/walCheckpointWorker.ts') },
+            input: { index: resolve(__dirname, 'src/host/index.ts'), gitLauncherWorker: resolve(__dirname, 'src/main/agents/gitLauncherWorker.ts') },
             external: id => isBuiltin(id) || id === 'zod' || id === 'node-pty',
             output: { format: 'cjs', entryFileNames: '[name].js' },
           },
         },
       })
+      await buildVite(storeWorkerBuild({ root: __dirname, outDir: resolve(__dirname, 'out/host') }))
     },
   }
+}
+
+/**
+ * Builds the store worker (`threadStoreWorker.ts`), which writes the thread store off main (#1457), beside main's bundle
+ * once main is built, as one file on its own (`scripts/store-worker-build.mjs`).
+ */
+function storeWorkerBesideMain(): Plugin {
+  return { name: 'sotto-store-worker', async closeBundle() { await buildVite(storeWorkerBuild({ root: __dirname, outDir: resolve(__dirname, 'out/main') })) } }
 }
 
 export default defineConfig({
@@ -102,8 +110,6 @@ export default defineConfig({
       dictationClient: resolve(__dirname, 'src/main/hotkeys/dictationClient.ts'),
       // Git and gh launch on this worker thread, not on main's, which in Electron is the window's (`gitLauncher.ts`).
       gitLauncherWorker: resolve(__dirname, 'src/main/agents/gitLauncherWorker.ts'),
-      // The thread store's log is checkpointed on this worker thread, so no save on main runs a checkpoint (`walCheckpointer.ts`).
-      walCheckpointWorker: resolve(__dirname, 'src/main/storage/walCheckpointWorker.ts'),
       // Main's hang watch runs on this worker thread, which can see main stop when main cannot (`hangWatchdog.ts`).
       hangWatchdogWorker: resolve(__dirname, 'src/main/performance/hangWatchdogWorker.ts'),
     } } },
@@ -117,6 +123,8 @@ export default defineConfig({
       lingui({ macroTransform: true, failOnCompileError: true }),
       externalizeDepsPlugin({ exclude: ['electron-updater'] }),
       headlessHostBuild(),
+      // The thread store's writes and its log's checkpoints run on this worker thread, so no save holds main (`storeWorker.ts`).
+      storeWorkerBesideMain(),
       externalDependencyInventory('main'),
       bundledDependencyInventory(),
     ],

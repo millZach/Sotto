@@ -34,6 +34,7 @@ import { SottoThreadHost } from '../../src/main/agents/threads'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { WatcherWakeUp } from '../../src/main/agents/watcherWakeUp'
 import { WatcherHosts, type WatcherHostsIndex } from '../../src/main/agents/watcherHosts'
+import { ThreadStore } from '../../src/main/agents/threadStore'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import type { AgentHostSnapshot, AgentState, AgentThread } from '../../src/shared/agents'
@@ -41,6 +42,7 @@ import type { WatcherThreadTarget } from '../../src/shared/watcher'
 import { ownerScalePipeline, type OwnerScalePipeline, type OwnerScaleTrack, type ThreadChangesReport } from '../fixtures/ownerScalePipeline'
 import { verifyingThreadChanges } from '../../src/main/agents/threadChanges'
 import type { OwnerScale } from '../fixtures/ownerScale'
+import { DeferredStoreWriter } from '../fixtures/deferredStoreWriter'
 
 /** The kinds of work counted. Each is per update while streaming, and per action for the user's actions. */
 const KINDS = ['copies', 'copiedObjects', 'wholeStateCopies', 'wholeCopyThreads', 'wholeCopyObjects', 'unsharedPublications', 'routerShellBuilds',
@@ -831,4 +833,69 @@ describe.each(TRACKS)('main\'s work at the owner\'s scale on %s (#1232)', track 
         .toEqual([...LAYERS_RUN[scenario]].sort())
     }
   })
+})
+
+/**
+ * A thread's whole history read while a write for it is unconfirmed (#1457, step 2 of docs/plans/store-worker.md). With
+ * the store worker that is routine: a streaming thread always has one. The adapters' identities, a delegation's reply and
+ * the handover then read the store with what is posted laid over it, and must read no more of the history than they do
+ * without a write in flight. This counts the stored messages they read, with the words, on Owl at the owner's scale with
+ * the open thread's history at the owner's size and at a quarter of it, over a writer that holds its confirmations.
+ */
+describe('a thread\'s history read while a write for it is held, at the owner\'s scale (#1457)', () => {
+  /** Stored messages in the open thread at the owner's history; each about two thousand characters. */
+  const HISTORY_MESSAGES = 800
+
+  async function rowsRead(history: number): Promise<{ identities: number; message: number; handover: number; handoverMessages: number }> {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-owner-scale-held-')); roots.push(root)
+    let writer: DeferredStoreWriter | undefined
+    const pipeline = await ownerScalePipeline(root, { threads: 1, history }, 1, 'owl', { storeWriter: store => { writer = new DeferredStoreWriter(store); writer.holding = false; return writer } })
+    try {
+      const { workspace } = pipeline
+      const threadId = workspace.workspaceSnapshot().threads.find(thread => thread.title === 'Synthetic thread open-0')!.id
+      const at = '2026-10-26T12:00:00.000Z'
+      const count = Math.round(HISTORY_MESSAGES * history)
+      writer!.post({ kind: 'events', threadId, events: Array.from({ length: count }, (_, index) => ({ kind: 'message-added' as const, at,
+        message: { id: `history-${index}`, role: index % 2 === 0 ? 'user' as const : 'assistant' as const, text: `Synthetic ${index} `.padEnd(2_000, 'x'), createdAt: at } })) })
+      writer!.holding = true
+      writer!.post({ kind: 'events', threadId, events: [{ kind: 'message-added', at, message: { id: 'held', role: 'assistant', text: 'Held', createdAt: at } }, { kind: 'message-text-appended', at, messageId: 'history-1', appendText: ' more' }] })
+      expect(writer!.unconfirmed(threadId)).toBe(true)
+      let rows = 0
+      const read = ThreadStore.prototype.readMessages, one = ThreadStore.prototype.message
+      const spies = [
+        vi.spyOn(ThreadStore.prototype, 'readMessages').mockImplementation(function (this: ThreadStore, ...args: Parameters<ThreadStore['readMessages']>) { const window = read.apply(this, args); rows += window.messages.length; return window }),
+        vi.spyOn(ThreadStore.prototype, 'message').mockImplementation(function (this: ThreadStore, ...args: Parameters<ThreadStore['message']>) { const found = one.apply(this, args); if (found) rows++; return found }),
+      ]
+      try {
+        const measure = (work: () => unknown): number => { rows = 0; work(); return rows }
+        let identities: readonly { id: string }[] = []
+        const counted = {
+          identities: measure(() => { identities = workspace.messageIdentities(threadId) }),
+          message: measure(() => { expect(workspace.threadMessage(threadId, 'history-1')?.text.endsWith(' more')).toBe(true) }),
+          handover: 0, handoverMessages: 0,
+        }
+        expect(identities).toHaveLength(count + 1)
+        let handover: ReturnType<WorkspaceHost['threadHandover']>
+        counted.handover = measure(() => { handover = workspace.threadHandover(threadId) })
+        counted.handoverMessages = handover!.summary.carried.length
+        return counted
+      } finally { for (const spy of spies) spy.mockRestore() }
+    } finally {
+      writer!.holding = false
+      writer!.release()
+      await pipeline.stop()
+    }
+  }
+
+  it('reads no more of the history with a write held than the reads need, however long the history is', async () => {
+    const owner = await rowsRead(1), quarter = await rowsRead(0.25)
+    // The identities are laid over the store's identities, not over the messages with their words.
+    expect(owner.identities).toBe(0)
+    // One message is read alone.
+    expect(owner.message).toBeLessThanOrEqual(1)
+    // The handover reads the pages it carries, as it does with nothing held: the same at the owner's history as at a quarter.
+    expect(owner.handover).toBe(quarter.handover)
+    expect(owner.handover).toBeLessThan(HISTORY_MESSAGES / 4)
+    expect({ identities: owner.identities, message: owner.message }).toEqual({ identities: quarter.identities, message: quarter.message })
+  }, 600_000)
 })
