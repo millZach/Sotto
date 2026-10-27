@@ -172,7 +172,7 @@
 .threads-view .thread-pane.thread-pane:has(> .thread-workspace__compose[data-slim-moving]) { overflow: clip; }
 .threads-view .thread-pane > .thread-workspace__compose[data-slim] > :is(.thread-pane__meta, .branch-toolbar) { visibility: hidden; }
 .threads-view .thread-pane > .thread-workspace__compose[data-slim] > .thread-prompt { padding-block: 9px; padding-inline: 16px 10px; cursor: text; }
-.threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt :is(textarea, .prompt-editor) { min-height: 22px; max-height: 22px; padding-right: 64px; overflow: hidden; resize: none; }
+.threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt :is(textarea, .prompt-editor) { min-height: 22px; max-height: 22px; padding-right: 100px; overflow: hidden; resize: none; }
 .threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt :is(.thread-prompt__meta, .thread-prompt__steer, .screenshot-input__tools > *) { display: none; }
 .threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt__actions > * > .thread-prompt__word:has(+ .thread-prompt__key) { display: none; }
 .threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt__actions > :has(> .thread-prompt__key) { padding: 0 4px; }

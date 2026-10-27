@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
-import { ArrowUp, Laptop, MessageSquare, Quote, Server, Sparkles, X } from 'lucide-react'
+import { Laptop, MessageSquare, Quote, Server, Sparkles, X } from 'lucide-react'
 import { msg, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { NextPrompt } from '../../../shared/nextPrompt'
@@ -425,7 +425,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   // Steer now's chord: Cmd+Enter on a Mac, Ctrl+Enter elsewhere, unless one of dictation's shortcuts already means those keys.
   const steerChord = [hotkey, ...(app?.settings?.pressShortcuts ?? []), ...(app?.settings?.holdShortcuts ?? [])]
     .every(accelerator => chordClaimed('mod+enter', accelerator, platform)) ? 'mod+enter' : null
-  const enterCap = platform === 'darwin' ? '↵' : 'Enter'
+  const enterCap = threadChordCap('enter', platform)
   const stopKeys = !watcher && stopChord ? stopChord : null
   // Kept with the thread it was opened on, so moving to another thread finds it closed and at its first row.
   const [nextListState, setNextListState] = useState<{ readonly threadId: string; readonly index: number; readonly from: 'prompt' | 'button' } | null>(null)
@@ -565,12 +565,12 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           {/* The filled button is always what Enter does. Its full name stays in the label and title, so Queue prompt is never called Send. */}
           {continuing !== undefined
             // A narrow pane shows Continue alone; the name keeps the provider, and the strip above says it too.
-            ? <Button className="thread-prompt__send" data-wide aria-label={t`Continue on ${continueTarget}`} title={reason ?? t`Start a new ${continueTarget} thread with a handover of this one and your message`} disabled={!canSend} type="submit">
-              <Trans>Continue<span className="thread-prompt__send-target"> on {continueTarget}</span></Trans><ArrowUp size={15} strokeWidth={2.25} aria-hidden="true" /></Button>
+            ? <Button className="thread-prompt__send" data-wide aria-label={t`Continue on ${continueTarget}`} aria-keyshortcuts="Enter" title={reason ?? t`Start a new ${continueTarget} thread with a handover of this one and your message`} disabled={!canSend} type="submit">
+              <Trans>Continue<span className="thread-prompt__send-target"> on {continueTarget}</span></Trans><kbd className="thread-prompt__key" aria-hidden="true">{enterCap}</kbd></Button>
             : handover !== null && !working
-            ? <Button className="thread-prompt__send" data-wide aria-label={handover.label} title={reason ?? handover.label} disabled={!canSend} type="submit">
-              <Trans>Continue</Trans><ArrowUp size={15} strokeWidth={2.25} aria-hidden="true" /></Button>
-            : !working || content ? <Button className="thread-prompt__send" aria-label={primaryLabel} title={reason ?? primaryLabel} disabled={!canSend} type="submit">
+            ? <Button className="thread-prompt__send" data-wide aria-label={handover.label} aria-keyshortcuts="Enter" title={reason ?? handover.label} disabled={!canSend} type="submit">
+              <KeyedLabel word={t`Continue`} keyCap={enterCap} /></Button>
+            : !working || content ? <Button className="thread-prompt__send" aria-label={primaryLabel} aria-keyshortcuts="Enter" title={reason ?? primaryLabel} disabled={!canSend} type="submit">
               <KeyedLabel word={queueing ? t({ message: 'Queue', comment: 'Button: puts the typed prompt in the queue to send when the turn ends.' }) : t({ message: 'Send', comment: 'Button: sends the typed prompt or answer.' })} keyCap={enterCap} /></Button> : null}
         </div>
       </div>

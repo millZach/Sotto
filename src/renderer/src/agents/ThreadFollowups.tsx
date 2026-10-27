@@ -6,6 +6,7 @@ import { capabilitiesForThread, isThreadBusy, PROVIDER_LABELS, type AgentFollowu
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 import { Button } from '../components/Button'
 import { useOptionalApp } from '../state/AppContext'
+import { threadChordCap } from './threadShortcuts'
 import type { AgentConnection } from './AgentContext'
 import { composerEnterIntent, readComposerKey } from './composerKeys'
 import { retainFileReferences } from './composerFiles'
@@ -106,7 +107,7 @@ function FollowupEditor({ item, current, catalog, providerId, saving, error, onS
   const empty = text.trim() === '' && item.attachments.length === 0
   const canSave = locked === null && !saving && !empty
   const save = (): void => { if (canSave) onSave(text, skills) }
-  const mac = useOptionalApp()?.platform === 'darwin'
+  const platform = useOptionalApp()?.platform ?? 'win32'
   return <dialog ref={dialog} className="followup-editor" aria-labelledby={titleId}
     onCancel={event => { event.preventDefault(); if (!saving) onClose() }}
     onKeyDown={event => {
@@ -129,7 +130,7 @@ function FollowupEditor({ item, current, catalog, providerId, saving, error, onS
       {/* Each button says the key that does the same, as the composer's do (ADR-0153). */}
       <div className="followup-editor__actions">
         <Button variant="secondary" aria-keyshortcuts="Escape" onClick={onClose} disabled={saving}><Trans>Cancel</Trans><kbd className="followup-editor__key" aria-hidden="true">Esc</kbd></Button>
-        <Button aria-keyshortcuts="Enter" onClick={save} disabled={!canSave}><Trans>Save</Trans><kbd className="followup-editor__key" aria-hidden="true">{mac ? '↵' : 'Enter'}</kbd></Button>
+        <Button aria-keyshortcuts="Enter" onClick={save} disabled={!canSave}><Trans>Save</Trans><kbd className="followup-editor__key" aria-hidden="true">{threadChordCap('enter', platform)}</kbd></Button>
       </div>
     </div>
   </dialog>
