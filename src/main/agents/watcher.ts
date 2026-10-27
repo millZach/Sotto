@@ -3324,7 +3324,7 @@ export class WatcherService implements WatcherControlHooks {
           const configuration = this.options.control.configuration()
           const reference = resolveModel(this.options.control.watcherSnapshot().models, configuration.newThreadModelId)?.reasoningEfforts ?? model.reasoningEfforts ?? []
           const effort = create.reasoningEffort ?? roleEffort ?? (configuration.newThreadReasoningEffort
-            ? nearestReasoningEffort(configuration.newThreadReasoningEffort, reference, model.reasoningEfforts ?? []) : undefined)
+            ? nearestReasoningEffort(configuration.newThreadReasoningEffort, reference, workerEfforts(model)) : undefined)
           // The concrete start carries no role, so its digest and a paired host's packet keep their shape.
           const { role: _role, ...concrete } = create; void _role
           input = watcherToolSchemas.start_thread.input.parse({ ...concrete, modelId, ...(effort !== undefined ? { reasoningEffort: effort } : {}), permission })

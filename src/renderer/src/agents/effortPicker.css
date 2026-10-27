@@ -33,6 +33,9 @@
 .effort-card__word[data-unknown='true'] { color: var(--tt-text-muted); font-weight: 500; }
 /* Ultracode's mark (ADR-0148): a workflow glyph before the word, in the word's own colour. */
 .effort-card__mark { margin-right: 6px; vertical-align: -2px; }
+/* At the highest level the word may be painted through a clipped gradient with a transparent fill (Rainbow), which would
+   leave a currentColor stroke invisible, so the mark takes the colourway's ink itself. */
+.effort-card__word[data-top='true'] .effort-card__mark { color: var(--tt-effort-text); }
 .effort-card__default { flex: none; min-height: 24px; padding: 0 4px; border: 0; border-radius: 4px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12.5px; cursor: pointer; }
 .effort-card__default:hover:not(:disabled) { color: var(--tt-text); background: var(--tt-hover); }
 .effort-card__default:disabled { opacity: .5; cursor: default; }

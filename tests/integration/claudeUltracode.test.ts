@@ -127,3 +127,18 @@ it('turns Ultracode on and off in place with the effort, never as an effort of i
   expect(await settingsAndPrompts(f)).toEqual([{ effortLevel: 'high', ultracode: true }, 'prompt', { effortLevel: 'max', ultracode: false }, { effortLevel: 'low' }])
   expect((await launchArgs(f)).length).toBe(launches)
 })
+
+it('brings the CLI to a changed setting before a steer, too', async () => {
+  const setting: { value: UltracodeEffort } = { value: 'xhigh' }
+  const f = await fixture(setting)
+  const id = await thread(f, 'fixture-opus', 'ultracode')
+  // The turn stays open until a steer cuts it, as Claude Code does for a prompt sent now.
+  await writeFile(join(f.root, 'script.json'), JSON.stringify({ steering: true }))
+  expect(await f.host.execute({ type: 'send', commandId: randomUUID(), messageId: randomUUID(), threadId: id, text: 'First' })).toEqual({ accepted: true })
+  await expect.poll(async () => (await shown(f, id)).status).toBe('running')
+
+  setting.value = 'medium'
+  expect(await f.host.execute({ type: 'steer', commandId: randomUUID(), messageId: randomUUID(), threadId: id, text: 'Steer' })).toMatchObject({ accepted: true })
+  expect(await settingsAndPrompts(f)).toEqual(['prompt', { effortLevel: 'medium', ultracode: true }, 'prompt'])
+  expect(await f.liveSettings.effective(id)).toMatchObject({ reasoningEffort: 'medium', ultracode: true })
+})

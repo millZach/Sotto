@@ -1225,7 +1225,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     return ultracodeRunsAt(resolveModel(this.state.models, modelId)?.reasoningEfforts ?? [], this.options.ultracodeEffort?.() ?? DEFAULT_ULTRACODE_EFFORT)
   }
   /**
-   * Before each prompt on a thread at Ultracode, the CLI is brought to the level this machine's setting now asks for
+   * Before each prompt on a thread at Ultracode, a steer included, the CLI is brought to the level this machine's setting now asks for
    * (ADR-0148): the setting may have changed since the CLI started or last changed level, and Claude Code keeps its
    * session's level until told. Ultracode itself stays on, so a CLI that does not confirm the change still runs the
    * thread's workflow at the level it had, and the prompt goes ahead; the log says so by name.
@@ -2140,6 +2140,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (this.dispatching.has(id)) throw new Error('A Claude prompt is already being submitted.')
     this.dispatching.add(id)
     try {
+      await this.applyUltracodeEffort(runtime!, alias)
       const { content, nativeText, origin } = await this.nativePrompt(id, command)
       await this.addOrigin(id, alias, origin)
       try { await this.sync(id); validate(); watcherGuard?.() }

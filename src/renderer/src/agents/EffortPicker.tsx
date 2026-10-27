@@ -197,16 +197,18 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
   })
   const magnet = (raw: number): number => { const near = Math.round(raw), d = raw - near; return Math.abs(d) < MAGNET ? near + d * Math.pow(Math.abs(d) / MAGNET, 2) : raw }
   const setLevel = value ? effortLabel(value) : t`Provider default`
-  const word = !known ? setLevel : effortLabel((dragging ? shown?.id : value) ?? value)
+  /** The level the word and line speak for: the stop under a dragging hand, else the level set. */
+  const showing = (dragging ? shown?.id : value) ?? value
+  const word = !known ? setLevel : effortLabel(showing)
   const line = !known ? t({ message: `${setLevel} is set. Choose a level this model offers.`, comment: '{setLevel} is a reasoning effort level, or "Provider default".' })
-    : effortLine((dragging ? shown?.id : value) ?? value, dragging ? selected : actual, count, ultracodeEffort)
+    : effortLine(showing, dragging ? selected : actual, count, ultracodeEffort)
   // The slider announces where the thumb is, so a drag is heard as it moves; the word above follows the same rule.
   const valueText = known ? effortLabel(shown?.id ?? value) : setLevel
   const defaultLevel = defaultValue === undefined ? '' : effortLabel(defaultValue)
   const defaultTitle = modelName !== undefined
     ? t({ message: `Use ${modelName}'s default, ${defaultLevel}`, comment: '{modelName} is a model\'s name; {defaultLevel} is a reasoning effort level.' })
     : t({ message: `Use the model's default, ${defaultLevel}`, comment: '{defaultLevel} is a reasoning effort level.' })
-  const wordUltracode = known && ((dragging ? shown?.id : value) ?? value) === ULTRACODE
+  const wordUltracode = known && showing === ULTRACODE
   /** The stop under the pointer, from where it is along the track, so the hint shows over the Ultracode stop only. */
   const hover = (event: React.PointerEvent<HTMLDivElement>): void => {
     if (count < 2) return
@@ -234,7 +236,7 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
         {choices.map((option, index) => <span key={option.id} className="effort-card__dot" data-under={index <= selected} style={{ '--effort-stop': count > 1 ? index / (count - 1) : 0 } as CSSProperties} />)}
       </div>
       <span className="effort-card__thumb" aria-hidden="true">{shown?.id === ULTRACODE ? <Workflow size={14} /> : null}</span>
-      {choices.some(option => option.id === ULTRACODE) ? <span className="effort-card__hint" data-shown={hinting} aria-hidden="true">{ultracodeHint()}</span> : null}
+      {choices.some(option => option.id === ULTRACODE) ? <span className="effort-card__hint tt-paragraph" data-shown={hinting} aria-hidden="true">{ultracodeHint()}</span> : null}
       <input ref={range} type="range" aria-label={t`Thread reasoning effort`} aria-valuetext={valueText} aria-valuenow={selected}
         aria-describedby={`${id}-description`} aria-disabled={disabled || count === 0} min={0} max={Math.max(0, count - 1)} step={.001} value={position}
         onPointerDown={event => { if (disabled) { event.preventDefault(); return } drag.current = true; setHeld(set); setDragging(true); event.currentTarget.setPointerCapture?.(event.pointerId) }}

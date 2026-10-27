@@ -91,6 +91,12 @@ test('Ultracode is the stop past Max, says what it costs, and runs at the effort
     await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'light' }))
     await expect(card).toBeVisible()
     await page.screenshot({ path: `${ARTIFACTS}/light-1280.png` })
+    // Rainbow paints the word through a clipped gradient with a transparent fill; the marks keep an ink of their own.
+    await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'dark', effortColor: 'rainbow' }))
+    for (const mark of [card.locator('.effort-card__mark'), chip.locator('.thread-chip__ultracode')]) {
+      await expect.poll(() => mark.evaluate(node => getComputedStyle(node).color)).not.toBe('rgba(0, 0, 0, 0)')
+    }
+    await page.evaluate(() => window.sotto!.updateSettings({ effortColor: 'ember' }))
     await page.keyboard.press('Escape')
     await expect(card).toBeHidden()
     await expect(chip).toBeFocused()
