@@ -1,12 +1,12 @@
-import { createReadStream } from 'node:fs'
-import { open, readdir, stat } from 'node:fs/promises'
+import { open, readdir, stat, type FileHandle } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import { USAGE_HISTORY_BATCH_MAX, type UsageHistoryCursor, type UsageHistoryPrompt, type UsageProviderId, type UsageTokenObservation } from '../../../shared/usageDashboard'
 import { usageHistoryCursorKey, yieldToEventLoop, type UsageHistorySink } from './sink'
 
 /** A line longer than this is skipped unread rather than held: no usage frame comes near it. */
 const LINE_MAX_BYTES = 64 * 1024 * 1024
-const CHUNK_BYTES = 128 * 1024
+/** The one read buffer per file: large enough that few lines run past it, small enough to hold for every file. */
+const CHUNK_BYTES = 1024 * 1024
 /** Parsing is done in slices: after this much of a file the reader lets everything else waiting run first. */
 const YIELD_BYTES = 1024 * 1024
 
@@ -141,17 +141,24 @@ export async function readHistoryFile<State>(providerId: UsageProviderId, file: 
   let carry: Buffer[] = []
   let carried = 0
   let skipping = false
-  const stream = createReadStream(file.path, { start: offset, end: size - 1, highWaterMark: CHUNK_BYTES })
   let position = offset
   let sinceYield = 0
+  let handle: FileHandle | undefined
   try {
-    for await (const chunk of stream as AsyncIterable<Buffer>) {
+    handle = await open(file.path, 'r')
+    // One buffer for the whole file, read into again and again: a fresh buffer per chunk cost a first import of a
+    // large history most of its time in allocation (#1619). Only a line that runs past a chunk is copied out.
+    const buffer = Buffer.allocUnsafe(Math.min(CHUNK_BYTES, size - offset))
+    while (position < size) {
+      const { bytesRead } = await handle.read(buffer, 0, Math.min(buffer.length, size - position), position)
+      if (bytesRead === 0) break
+      const chunk = buffer.subarray(0, bytesRead)
       let start = 0
       while (start < chunk.length) {
         const end = chunk.indexOf(0x0a, start)
         if (end === -1) {
           if (!skipping) {
-            carry.push(chunk.subarray(start)); carried += chunk.length - start
+            carry.push(Buffer.from(chunk.subarray(start))); carried += chunk.length - start
             if (carried > LINE_MAX_BYTES) { carry = []; carried = 0; skipping = true }
           }
           break
@@ -165,12 +172,14 @@ export async function readHistoryFile<State>(providerId: UsageProviderId, file: 
         if (batch.size >= USAGE_HISTORY_BATCH_MAX) await commit()
       }
       position += chunk.length
-      if (signal.aborted) { stream.destroy(); await commit(); return false }
+      if (signal.aborted) break
       sinceYield += chunk.length
       if (sinceYield >= YIELD_BYTES) { sinceYield = 0; await yieldToEventLoop() }
     }
   } catch {
     // A file that vanished or could not be read keeps whatever was read before it.
+  } finally {
+    await handle?.close().catch(() => undefined)
   }
   await commit()
   return !signal.aborted
