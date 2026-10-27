@@ -3,10 +3,11 @@ import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 
 import { WATCHER_SCENES, type WatcherScene } from '../../../../../shared/watcherScene'
+import { useReducedMotion } from '../../../state/reducedMotion'
 import { useWatcherEnabled } from '../../../state/watcherFeature'
 import { toRgb } from '../../../watcher/canvasColor'
 import { sceneInk, type SceneInk } from '../../../watcher/nightScene'
-import { paintSceneThumbnail } from '../../../watcher/sceneThumbnail'
+import { SceneThumbnail } from '../../../watcher/sceneThumbnail'
 import './watcherSceneChoice.css'
 
 /** Each place's name, and what its card says of it under the name. */
@@ -31,19 +32,21 @@ const PLACE_NAMES = {
  */
 export function WatcherSceneChoice({ value, onChoose }: {
   readonly value: WatcherScene
-  readonly onChoose: (scene: WatcherScene) => void
+  /** Saves the place; resolves false when it was not saved. */
+  readonly onChoose: (scene: WatcherScene) => Promise<boolean>
 }): ReactNode {
   const watcher = useWatcherEnabled()
   return watcher ? <SceneCards value={value} onChoose={onChoose} /> : null
 }
 
-function SceneCards({ value, onChoose }: { readonly value: WatcherScene; readonly onChoose: (scene: WatcherScene) => void }): ReactNode {
+function SceneCards({ value, onChoose }: { readonly value: WatcherScene; readonly onChoose: (scene: WatcherScene) => Promise<boolean> }): ReactNode {
   const { t, i18n } = useLingui()
   const headingId = useId()
   const hintId = useId()
-  // The choice shows at once; the saved value takes over when it arrives.
+  // The choice shows at once; the saved value takes over when it arrives, and comes back when the save fails.
   const [chosen, setChosen] = useState(value)
-  useEffect(() => setChosen(value), [value])
+  const saved = useRef(value)
+  useEffect(() => { saved.current = value; setChosen(value) }, [value])
   const buttons = useRef(new Map<WatcherScene, HTMLButtonElement>())
   const ink = useSceneInk()
 
@@ -51,7 +54,7 @@ function SceneCards({ value, onChoose }: { readonly value: WatcherScene; readonl
     if (focus) buttons.current.get(scene)?.focus()
     if (scene === chosen) return
     setChosen(scene)
-    onChoose(scene)
+    void onChoose(scene).then(ok => { if (!ok) setChosen(saved.current) }, () => setChosen(saved.current))
   }
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     // From the card that has focus, which is the chosen one unless something else put focus elsewhere.
@@ -133,12 +136,40 @@ function useSceneInk(): ThumbnailInk | null {
   return ink
 }
 
-/** A place's picture, drawn once for each theme and place and never moving. */
+/** How often a picture moves: its snow, sand and beam are slow, and four pictures share the page. */
+const PICTURE_FRAME_MS = 1000 / 12
+
+/**
+ * A place's picture, moving as the room does while it is on screen and the window shows; with motion reduced, or in a
+ * test's capture, it is drawn once and holds still. A new theme or place draws over the last picture in one frame.
+ */
 function ScenePicture({ place, ink }: { readonly place: WatcherScene; readonly ink: ThumbnailInk | null }): ReactNode {
   const canvas = useRef<HTMLCanvasElement>(null)
+  const reduced = useReducedMotion()
+  const still = reduced || window.sottoE2E !== undefined
   useEffect(() => {
-    if (canvas.current === null || ink === null) return
-    paintSceneThumbnail(canvas.current, place, ink.ink, ink.font, Math.min(2, window.devicePixelRatio || 1))
-  }, [place, ink])
+    const target = canvas.current
+    if (target === null || ink === null) return
+    const picture = new SceneThumbnail(place, ink.ink, ink.font, Math.min(2, window.devicePixelRatio || 1))
+    picture.paint(target, 0, true)
+    if (still || typeof IntersectionObserver === 'undefined') return
+    const start = performance.now()
+    let onScreen = false, timer: number | null = null
+    const tick = (): void => {
+      timer = null
+      if (!onScreen || document.hidden) return
+      picture.paint(target, (performance.now() - start) / 1000, false)
+      timer = window.setTimeout(tick, PICTURE_FRAME_MS)
+    }
+    const resume = (): void => { if (timer === null && onScreen && !document.hidden) tick() }
+    const seen = new IntersectionObserver(entries => { onScreen = entries.some(entry => entry.isIntersecting); resume() })
+    seen.observe(target)
+    document.addEventListener('visibilitychange', resume)
+    return () => {
+      if (timer !== null) window.clearTimeout(timer)
+      seen.disconnect()
+      document.removeEventListener('visibilitychange', resume)
+    }
+  }, [place, ink, still])
   return <span className="watcher-scene-option__picture" aria-hidden="true"><canvas ref={canvas} /></span>
 }

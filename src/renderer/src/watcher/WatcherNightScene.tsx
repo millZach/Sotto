@@ -201,8 +201,13 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, onO
     if (pixel === null) return
     const painter = new NightScenePainter(land, owl)
     painter.setPlace(placeRef.current)
-    /** Copies of the last place's landscape, fading over the new one. */
-    const outgoing = new Set<{ readonly canvas: HTMLCanvasElement; readonly timer: number }>()
+    /** A copy of the last place's landscape, fading out over the new one as it fades in. */
+    let outgoing: { readonly canvas: HTMLCanvasElement; readonly timer: number } | null = null
+    const endFade = (): void => {
+      if (outgoing === null) return
+      window.clearTimeout(outgoing.timer); outgoing.canvas.remove(); outgoing = null
+      delete land.dataset.arriving
+    }
     let disposed = false
     let timer: number | null = null
     let request: number | null = null
@@ -329,11 +334,15 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, onO
 
     /**
      * The place changed: the new landscape is drawn in this same frame, and unless the scene holds still, a copy of the
-     * last one lies over it and fades, so the change never shows a blank frame.
+     * last one lies over it. The copy fades out as the new one fades in, in step and linearly, so their opacities always
+     * add to one: the scene never shows a blank frame, and where the two overlap their ink stays under the column's
+     * ceiling (a and 1 - a of an ink c lay down c - a(1 - a)c², never more than c). A change during a fade starts it
+     * again from the scene as it stands.
      */
     const movePlace = (): void => {
       if (disposed || placeRef.current === painter.place) return
       const drawn = painter.ready && layout !== null
+      endFade()
       if (drawn && !stillRef.current && land.width > 0 && land.height > 0) {
         const copy = document.createElement('canvas')
         copy.width = land.width; copy.height = land.height
@@ -341,11 +350,10 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, onO
         copy.setAttribute('aria-hidden', 'true')
         copy.getContext('2d')?.drawImage(land, 0, 0)
         land.after(copy)
-        // Laid out at full strength first, so the fade runs from there.
-        void copy.offsetWidth
-        copy.dataset.fading = ''
-        const item = { canvas: copy, timer: window.setTimeout(() => { copy.remove(); outgoing.delete(item) }, PLACE_FADE_MS + 80) }
-        outgoing.add(item)
+        // Both fades start in the same style pass, so they stay in step.
+        void land.offsetWidth
+        land.dataset.arriving = ''
+        outgoing = { canvas: copy, timer: window.setTimeout(endFade, PLACE_FADE_MS + 80) }
       }
       painter.setPlace(placeRef.current)
       if (counted) pane.dataset.nightScenePlace = painter.place
@@ -485,8 +493,7 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, onO
       takeOwlsRef.current = () => undefined
       settleRef.current = () => undefined
       movePlaceRef.current = () => undefined
-      for (const item of outgoing) { window.clearTimeout(item.timer); item.canvas.remove() }
-      outgoing.clear()
+      endFade()
       halt()
       if (layoutRequest !== null) cancelAnimationFrame(layoutRequest)
       unwatchResolution()

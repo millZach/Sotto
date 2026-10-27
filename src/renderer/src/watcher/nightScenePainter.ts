@@ -7,7 +7,7 @@ import {
 import { glowStep, owlGlyphs, pileLabel, spriteCells, type ThreadOwlPose } from './owlFamily'
 import { ambienceStep, ambienceTime, type Ambience, type AmbientGlyph } from './scenePlace'
 import { SCENE_PLACES } from './scenePlaces'
-import { MASK } from './sceneDraw'
+import { MASK, poly } from './sceneDraw'
 
 /**
  * Draws Watcher's night scene in the room's side margins, on two canvases: the landscape on one, under everything in
@@ -59,9 +59,6 @@ export function prepare(ctx: CanvasRenderingContext2D, grid: Grid, layout: { rea
 
 function ellipse(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number, rot = 0): void {
   ctx.beginPath(); ctx.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2); ctx.fill()
-}
-function poly(ctx: CanvasRenderingContext2D, pts: ReadonlyArray<readonly [number, number]>): void {
-  ctx.beginPath(); ctx.moveTo(pts[0]![0], pts[0]![1]); for (const p of pts.slice(1)) ctx.lineTo(p[0], p[1]); ctx.closePath(); ctx.fill()
 }
 
 function wing(d: CanvasRenderingContext2D, side: 1 | -1, o: OwlPose): void {

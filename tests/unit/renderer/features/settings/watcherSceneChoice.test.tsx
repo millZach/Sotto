@@ -16,10 +16,10 @@ afterEach(() => {
   gate.watcher = true
 })
 
-function setup({ watcher = true, settings = {} }: { watcher?: boolean; settings?: Partial<AppSettings> } = {}) {
+function setup({ watcher = true, settings = {}, saves = true }: { watcher?: boolean; settings?: Partial<AppSettings>; saves?: boolean } = {}) {
   gate.watcher = watcher
   const all: AppSettings = { ...DEFAULT_SETTINGS, ...settings }
-  const onSave = vi.fn(async () => true)
+  const onSave = vi.fn(async () => saves)
   render(<AppearanceSettings settings={all} platform="win32" onSave={onSave} getSettings={() => all} />)
   return { onSave, user: userEvent.setup() }
 }
@@ -52,6 +52,15 @@ describe('Settings → Appearance → Watcher scene (ADR-0148)', () => {
     await user.click(radio(/in Snowfield$/))
     expect(onSave).toHaveBeenCalledExactlyOnceWith({ watcherScene: 'snowfield' }, saying('Watcher scene saved.'))
     expect(radio(/in Snowfield, in use$/)).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('goes back to the saved place when a save fails, and a second press tries again', async () => {
+    const { onSave, user } = setup({ saves: false })
+    await user.click(radio(/in Harbour$/))
+    await vi.waitFor(() => expect(radio(/Night wood, in use$/)).toHaveAttribute('aria-checked', 'true'))
+    expect(radio(/in Harbour$/)).toHaveAttribute('aria-checked', 'false')
+    await user.click(radio(/in Harbour$/))
+    expect(onSave).toHaveBeenCalledTimes(2)
   })
 
   it('moves to a place and chooses it with the arrows, Home and End, from one Tab stop', async () => {
