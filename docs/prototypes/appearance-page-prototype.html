@@ -1,0 +1,404 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Three directions for Settings → Appearance, each shorter than today's page, with the real
+  controls regrouped and a live preview of the composer, the Threads sidebar and Watcher's room in the chosen theme.
+  ?variant=A|B|C, or the bar at the bottom and the ← and → keys. Choices live in memory and repaint the whole window
+  at once, as Sotto does. The theme list is the one after the swap: Sotto, Hush and Citrine kept, the five proposed
+  added (see appearance-themes-prototype.html), and one imported theme under Your themes.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sotto · Appearance page (prototype)</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body { background: #0b0b0c; font: 13px/1.5 Figtree, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; padding: 0 0 84px; }
+  body[data-glass] { background: var(--wall) fixed; background-size: cover; }
+  .app { min-height: 100vh; background: var(--k-canvas); color: var(--k-text); display: flex; flex-direction: column; }
+  body[data-glass] .app { backdrop-filter: blur(34px) saturate(160%); -webkit-backdrop-filter: blur(34px) saturate(160%); }
+  .strip { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 14px; flex: none; }
+  .strip .mark { width: 16px; height: 16px; border-radius: 5px; background: var(--k-accent); display: grid; place-items: center; }
+  .strip .mark::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--k-accentFg); }
+  .strip .ctl { margin-left: auto; color: var(--k-muted); letter-spacing: 8px; font-size: 11px; }
+  .frame { flex: 1; display: flex; min-height: 0; }
+  .snav { width: 200px; flex: none; padding: 8px 8px 20px; background: var(--k-sidebar); display: flex; flex-direction: column; gap: 1px; }
+  .snav a { padding: 6px 10px; border-radius: 7px; color: var(--k-text); text-decoration: none; }
+  .snav a[aria-current] { background: var(--k-rowSel); font-weight: 600; }
+  .snav .sh { padding: 4px 10px 8px; font-weight: 650; font-size: 15px; }
+  .panel { flex: 1; min-width: 0; padding: 18px 26px 40px; }
+  @media (max-width: 760px) { .snav { display: none; } .panel { padding: 14px 12px 40px; } }
+  h2.page { margin: 0 0 2px; font-size: 20px; font-weight: 650; letter-spacing: -.01em; }
+  .sub { margin: 0 0 16px; color: var(--k-muted); }
+  .muted { color: var(--k-muted); }
+  .card { background: color-mix(in srgb, var(--k-raised) 100%, transparent); border-radius: 14px; padding: 14px 16px; }
+  .card h3 { margin: 0 0 10px; font-size: 13px; font-weight: 650; }
+  .row { display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 6px 0; }
+  .row + .row { border-top: 1px solid var(--k-canvas); }
+  .row > .lbl { flex: 1; min-width: 0; }
+  .row > .lbl b { display: block; font-weight: 550; }
+  .row > .lbl small { display: block; color: var(--k-muted); font-size: 12px; line-height: 1.35; }
+  button { font: inherit; color: inherit; }
+  .seg { display: inline-flex; padding: 2px; border-radius: 9px; background: var(--k-canvas); gap: 2px; flex: none; }
+  .seg button { all: unset; cursor: pointer; padding: 5px 11px; border-radius: 7px; white-space: nowrap; color: var(--k-text); }
+  .seg button[aria-checked=true] { background: var(--k-accent); color: var(--k-accentFg); font-weight: 600; }
+  .seg button:disabled { opacity: .45; cursor: default; }
+  .btn { all: unset; cursor: pointer; padding: 6px 11px; border-radius: 8px; background: color-mix(in srgb, var(--k-text) 7%, transparent); white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; }
+  .btn.ghost { background: transparent; color: var(--k-accent); padding: 6px 6px; }
+  .btn:hover { background: color-mix(in srgb, var(--k-text) 12%, transparent); }
+  :is(.seg button, .btn, .tile, .pill, .tog, .chip, .bcard button, select, input):focus-visible { outline: 2px solid var(--k-accent); outline-offset: 2px; }
+  .tog { all: unset; cursor: pointer; width: 34px; height: 20px; border-radius: 999px; background: color-mix(in srgb, var(--k-text) 22%, var(--k-canvas)); position: relative; flex: none; }
+  .tog::after { content: ''; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--k-canvas); transition: transform .15s; }
+  .tog[aria-checked=true] { background: var(--k-accent); }
+  .tog[aria-checked=true]::after { transform: translateX(14px); background: var(--k-accentFg); }
+  select { background: var(--k-canvas); color: var(--k-text); border: 0; border-radius: 8px; padding: 6px 9px; font: inherit; }
+  input[type=range] { accent-color: var(--k-accent); width: 160px; }
+  .rng { display: inline-flex; gap: 8px; align-items: center; }
+  .rng output { font-variant-numeric: tabular-nums; min-width: 38px; text-align: right; color: var(--k-text2); }
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pill { all: unset; cursor: pointer; display: inline-flex; flex-direction: column; align-items: center; gap: 3px; padding: 5px; border-radius: 9px; font-size: 11px; }
+  .pill i { width: 46px; height: 8px; border-radius: 999px; background-image: var(--g); }
+  .pill[aria-pressed=true] { background: color-mix(in srgb, var(--k-accent) 18%, transparent); font-weight: 600; }
+  .dots { display: inline-flex; gap: 6px; }
+  .dots .pill { padding: 3px; border-radius: 50%; }
+  .dots .pill i { width: 20px; height: 20px; border-radius: 50%; }
+  .dots .pill[aria-pressed=true] { box-shadow: 0 0 0 2px var(--k-accent); background: transparent; }
+
+  /* theme thumbnails: a tiny window in the theme's own roles */
+  .th { display: block !important; position: relative; border-radius: 8px; overflow: hidden; aspect-ratio: 16 / 10; padding: 0 !important; flex: none; }
+  .th > b { position: absolute; inset: 0; }
+  .th > b > i { position: absolute; display: block; }
+  .th .sb { left: 0; top: 0; bottom: 0; width: 30%; }
+  .th .rw { left: 4%; top: 30%; width: 22%; height: 11%; border-radius: 2px; }
+  .th .ms { right: 9%; top: 18%; width: 40%; height: 15%; border-radius: 3px; }
+  .th .tx { left: 38%; top: 44%; width: 44%; height: 5%; border-radius: 2px; opacity: .7; }
+  .th .cp { left: 37%; right: 7%; bottom: 10%; height: 22%; border-radius: 4px; }
+  .th .ac { right: 10%; bottom: 14%; width: 9%; aspect-ratio: 1; border-radius: 50%; }
+  .th > b.d { clip-path: polygon(62% 0, 100% 0, 100% 100%, 38% 100%); }
+  .th[data-only] > b.d { clip-path: none; }
+  .th[data-glass] { background: radial-gradient(circle at 25% 30%, #ff7a59, transparent 50%), radial-gradient(circle at 80% 70%, #5b8cff, transparent 50%), linear-gradient(135deg, #3a1c71, #d76d77); }
+
+  /* the live preview */
+  .pv { display: flex; flex-direction: column; gap: 8px; }
+  .pv .host { display: grid; }
+  .pv-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .pv-head .lead { font-weight: 650; margin-right: auto; }
+  .widget { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; font-size: 11.5px; }
+  .note { font-size: 12px; color: var(--k-muted); margin: 0; }
+  .tag { font-size: 10px; padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, var(--k-accent) 20%, transparent); color: var(--k-text); font-weight: 600; letter-spacing: .02em; }
+
+  /* ---------- A · Studio ---------- */
+  .A { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 16px; align-items: start; }
+  .A .stack { display: flex; flex-direction: column; gap: 12px; }
+  .A .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin: 6px 0 8px; }
+  .tile { all: unset; cursor: pointer; display: flex; flex-direction: column; gap: 5px; padding: 5px; border-radius: 11px; }
+  .tile .tl { font-size: 12px; display: flex; gap: 5px; align-items: center; padding-left: 2px; }
+  .tile[aria-checked=true] { background: color-mix(in srgb, var(--k-accent) 16%, transparent); box-shadow: inset 0 0 0 2px var(--k-accent); }
+  .tile[aria-checked=true] .tl { font-weight: 650; }
+  .A .pv { position: sticky; top: 12px; }
+  .A .pv .host { height: 380px; }
+  .A .foot { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; }
+  .own { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
+  .own .r { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
+  .own .r .th { width: 44px; flex: none; }
+  .own .r .n { flex: 1; min-width: 0; }
+  .own .r .n small { display: block; color: var(--k-muted); font-size: 11.5px; }
+  .own .r .acts { display: flex; gap: 0; }
+  .own .r .acts .btn { padding: 4px 7px; font-size: 12px; background: transparent; color: var(--k-text2); }
+  @media (max-width: 1100px) { .A { grid-template-columns: minmax(0, 1fr); } .A .pv { position: static; order: -1; } .A .pv .host { height: 320px; } }
+
+  /* ---------- B · Stage ---------- */
+  .B { display: flex; flex-direction: column; gap: 16px; }
+  .B .stage { border-radius: 16px; padding: 14px; background: color-mix(in srgb, var(--k-text) 5%, var(--k-canvas)); }
+  body[data-glass] .B .stage { background: color-mix(in srgb, var(--k-text) 5%, transparent); }
+  .B .stage .pv-head { margin-bottom: 10px; }
+  .B .stage .pair { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 12px; }
+  .B .stage .host { height: 330px; }
+  @media (max-width: 900px) { .B .stage .pair { grid-template-columns: minmax(0, 1fr); } .B .stage .host { height: 290px; } .B .stage [data-narrow-hide] { display: none; } }
+  .B .railhead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .B .railhead h3 { margin: 0 auto 0 0; font-size: 14px; font-weight: 650; }
+  .B .rail { display: flex; gap: 12px; overflow-x: auto; padding: 4px 2px 12px; scroll-snap-type: x mandatory; }
+  .bcard { flex: 0 0 188px; scroll-snap-align: start; border-radius: 14px; padding: 8px; background: var(--k-raised); display: flex; flex-direction: column; gap: 7px; }
+  .bcard[data-on] { box-shadow: inset 0 0 0 2px var(--k-accent); }
+  .bcard .nm { display: flex; align-items: center; gap: 6px; font-weight: 650; padding: 0 2px; }
+  .bcard .nt { font-size: 11.5px; color: var(--k-muted); padding: 0 2px; line-height: 1.35; min-height: 31px; }
+  .bcard .halves { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+  .bcard .halves button { all: unset; cursor: pointer; text-align: center; padding: 4px 0; border-radius: 7px; font-size: 11.5px; background: var(--k-canvas); }
+  .bcard .halves button[aria-checked=true] { background: var(--k-accent); color: var(--k-accentFg); font-weight: 650; }
+  .bcard .halves button:disabled { opacity: .4; cursor: default; }
+  .bcard.add { justify-content: center; align-items: stretch; gap: 8px; background: transparent; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--k-text) 16%, transparent); }
+  .B .tune { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 28px; }
+  .B .tune .row { border-top: 1px solid var(--k-canvas); }
+  .B .tune .row:nth-child(-n+2) { border-top: 0; }
+  @media (max-width: 900px) { .B .tune { grid-template-columns: minmax(0, 1fr); } .B .tune .row:nth-child(2) { border-top: 1px solid var(--k-canvas); } }
+
+  /* ---------- C · Rows ---------- */
+  .C { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+  .C .pv { padding: 10px; }
+  .C .pv .host { height: 270px; }
+  .C .card { padding: 4px 14px; }
+  .chip { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; padding: 4px 8px 4px 4px; border-radius: 9px; background: var(--k-canvas); }
+  .chip .th { width: 34px; border-radius: 5px; }
+  .chip::after { content: '›'; color: var(--k-muted); font-size: 15px; transform: rotate(var(--rot, 0deg)); transition: transform .15s; }
+  .chip[aria-expanded=true] { --rot: 90deg; }
+  .sheet { margin: 0 -6px 8px; padding: 6px; border-radius: 12px; background: var(--k-canvas); display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 4px; }
+  .sheet .opt { all: unset; cursor: pointer; display: flex; gap: 8px; align-items: center; padding: 5px; border-radius: 9px; }
+  .sheet .opt .th { width: 40px; flex: none; }
+  .sheet .opt small { display: block; color: var(--k-muted); font-size: 11px; }
+  .sheet .opt[aria-checked=true] { background: color-mix(in srgb, var(--k-accent) 18%, transparent); font-weight: 650; }
+  .sub-rows { margin: 0 0 6px 14px; padding-left: 12px; border-left: 2px solid var(--k-canvas); }
+  .sub-rows .row { min-height: 34px; }
+
+  @media (max-width: 640px) {
+    .row { flex-wrap: wrap; row-gap: 6px; } .row > .lbl { flex: 1 1 100%; }
+    .seg button { padding: 5px 8px; } input[type=range] { width: 130px; }
+    .A .tiles { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+  }
+  .proto-switcher span { max-width: 62vw; overflow: hidden; text-overflow: ellipsis; }
+  .banner { font-size: 12px; color: var(--k-text2); margin: -6px 0 14px; }
+</style>
+<script src="appearance-prototype-kit.js"></script>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="strip"><span class="mark"></span><b>Sotto</b><span class="ctl">— ▢ ✕</span></div>
+  <div class="frame">
+    <nav class="snav" aria-label="Settings">
+      <div class="sh">Settings</div>
+      <a href="#">Dictation</a><a href="#">Formatting</a><a href="#">Keyboard</a><a href="#">Threads</a><a href="#">Providers</a><a href="#">Watcher</a><a href="#">Git</a><a href="#">Hosts &amp; phones</a><a href="#">Cloud iPhone</a><a href="#">Performance</a><a href="#" aria-current="page">Appearance</a><a href="#">Application</a>
+    </nav>
+    <main class="panel" id="panel"></main>
+  </div>
+</div>
+
+<script>
+  const { THEMES, PROPOSED, KEPT, EFFORT, WALLPAPERS } = Kit
+  // One imported theme so Your themes has something in it. Dark only, as most VS Code imports are.
+  THEMES.dracula = { label: 'Dracula', note: 'Imported from a VS Code theme.', custom: true,
+    dark: { canvas: '#282a36', sidebar: '#21222c', raised: '#343746', message: '#44475a', code: '#21222c', text: '#f8f8f2', text2: '#d6d6e6', muted: '#b4b9d6', border: '#44475a', accent: '#bd93f9', accentFg: '#1e1f29', rowSel: '#44475a' } }
+  const BUILT = [...KEPT, ...PROPOSED]
+  const CUSTOM = ['dracula']
+  const ALL = [...BUILT, ...CUSTOM]
+  const has = (id, mode) => !!THEMES[id][mode]
+
+  const sysDark = matchMedia('(prefers-color-scheme: dark)')
+  const S = {
+    variant: 'A', scheme: 'system', light: 'sotto', dark: 'sotto', split: false,
+    effort: 'ember', creature: 'sotto', showCreature: true, contrast: 100,
+    motion: 'system', nf: true, nfLook: 'band', nfSpeed: 100, lang: 'system',
+    pv: 'threads', peek: null, open: null, ownOpen: false,
+  }
+  const modeNow = () => S.peek || (S.scheme === 'system' ? (sysDark.matches ? 'dark' : 'light') : S.scheme)
+  const themeFor = mode => (mode === 'dark' ? S.dark : S.light)
+
+  // ---------- pieces every variant uses ----------
+  function thumb(id, which = 'both') {
+    const t = THEMES[id]
+    const half = (mode, cls) => { const c = t[mode]; if (!c) return ''; return `<b class="${cls}" style="background:${c.canvas}"><i class="sb" style="background:${c.sidebar}"></i><i class="rw" style="background:${c.rowSel}"></i><i class="ms" style="background:${c.message}"></i><i class="tx" style="background:${c.text}"></i><i class="cp" style="background:${c.raised}"></i><i class="ac" style="background:${c.accent}"></i></b>` }
+    const only = !t.light ? 'dark' : !t.dark ? 'light' : which === 'both' ? '' : which
+    const l = only === 'dark' ? '' : half('light', 'l'), d = only === 'light' ? '' : half('dark', 'd')
+    return `<span class="th" ${only ? `data-only="${only}"` : ''} ${t.glass ? 'data-glass' : ''} aria-hidden="true">${l}${d}</span>`
+  }
+  const tag = id => PROPOSED.includes(id) ? ' <span class="tag">New</span>' : ''
+  const seg = (act, value, opts, label, disabled = false) => `<span class="seg" role="radiogroup" aria-label="${label}">${opts.map(([v, l]) => `<button role="radio" aria-checked="${value === v}" data-act="${act}:${v}" ${disabled ? 'disabled' : ''}>${l}</button>`).join('')}</span>`
+  const tog = (act, on, label) => `<button class="tog" role="switch" aria-checked="${on}" aria-label="${label}" data-act="${act}"></button>`
+  const scheme = () => seg('scheme', S.scheme, [['light', 'Light'], ['system', 'Match Windows'], ['dark', 'Dark']], 'Color scheme')
+  const effortPills = (dots = false) => `<span class="${dots ? 'dots' : 'pills'}" role="group" aria-label="Effort color">${Object.entries(EFFORT).map(([k, e]) => `<button class="pill" aria-pressed="${S.effort === k}" aria-label="Use ${e.label} as the effort color" title="${e.label}" data-act="effort:${k}" style="--g:${e.image}"><i></i>${dots ? '' : e.label}</button>`).join('')}</span>`
+  const creature = () => `<span class="rng">${tog('showCreature', S.showCreature, 'Show the creature')}${seg('creature', S.creature, [['sotto', 'Sotto'], ['claude', 'Claude bot']], 'Creature', !S.showCreature)}</span>`
+  const range = (id, value, min, max, label, disabled = false) => `<span class="rng"><input type="range" id="${id}" min="${min}" max="${max}" step="5" value="${value}" aria-label="${label}" ${disabled ? 'disabled' : ''}><output id="${id}-out">${value}%</output></span>`
+  const motion = () => `<select data-act="motion" aria-label="Reduced motion"><option value="system" ${S.motion === 'system' ? 'selected' : ''}>Follow system</option><option value="on" ${S.motion === 'on' ? 'selected' : ''}>Reduce motion</option></select>`
+  const lang = () => `<select data-act="lang" aria-label="Language"><option value="system">Match Windows (English)</option><option>English</option><option>Deutsch</option><option>Español</option><option>Français</option><option>日本語</option></select>`
+  const row = (label, hint, control, extra = '') => `<div class="row" ${extra}><span class="lbl"><b>${label}</b>${hint ? `<small>${hint}</small>` : ''}</span>${control}</div>`
+  const ownList = () => `<div class="own">${CUSTOM.map(id => `<div class="r">${thumb(id)}<span class="n">${THEMES[id].label}<small>Dark only · imported</small></span><span class="acts"><button class="btn" aria-label="Edit ${THEMES[id].label}">Edit</button><button class="btn" aria-label="Duplicate ${THEMES[id].label}">Duplicate</button><button class="btn" aria-label="Export ${THEMES[id].label}">Export</button><button class="btn" aria-label="Remove ${THEMES[id].label}">Remove</button></span></div>`).join('')}</div>`
+  const pvTabs = () => seg('pv', S.pv, [['threads', 'Threads'], ['watcher', 'Watcher']], 'Preview')
+  const peekTabs = () => seg('peek', S.peek || 'auto', [['auto', 'As set'], ['light', 'Light'], ['dark', 'Dark']], 'Preview mode')
+  const widgetNote = () => `<p class="note">The floating widget follows Windows light or dark mode. The app icon takes the theme’s accent.</p>`
+
+  // ---------- A · Studio: controls on the left in three short groups, the preview standing beside them ----------
+  function A() {
+    const pairs = BUILT.concat(CUSTOM)
+    const tiles = (mode, act) => pairs.filter(id => mode === 'both' ? true : has(id, mode)).map(id => {
+      const on = mode === 'both' ? (S.light === id && S.dark === id) || (!has(id, 'light') && S.dark === id) : themeFor(mode) === id
+      return `<button class="tile" role="radio" aria-checked="${on}" data-act="${act}:${id}">${thumb(id, mode === 'both' ? 'both' : mode)}<span class="tl">${THEMES[id].label}${tag(id)}</span></button>`
+    }).join('')
+    return `<div class="A">
+      <div class="stack">
+        <section class="card">
+          <h3>Theme</h3>
+          ${row('Color scheme', '', scheme())}
+          <div role="radiogroup" aria-label="${S.split ? 'Light theme' : 'Theme'}">
+            ${S.split ? `<p class="muted" style="margin:8px 0 0">Light</p>` : ''}
+            <div class="tiles">${S.split ? tiles('light', 'light') : tiles('both', 'both')}</div>
+          </div>
+          ${S.split ? `<div role="radiogroup" aria-label="Dark theme"><p class="muted" style="margin:0">Dark</p><div class="tiles">${tiles('dark', 'dark')}</div></div>` : ''}
+          ${row('A different theme when dark', S.split ? '' : 'Off: one theme paints both.', tog('split', S.split, 'Use a different theme when dark'))}
+          <div class="foot"><button class="btn">Create theme</button><button class="btn">Add theme</button><button class="btn ghost" data-act="ownOpen" aria-expanded="${S.ownOpen}">Your themes (${CUSTOM.length}) ${S.ownOpen ? '▾' : '›'}</button></div>
+          ${S.ownOpen ? ownList() : ''}
+        </section>
+        <section class="card">
+          <h3>Details</h3>
+          ${row('Effort color', 'At a thread’s highest effort.', '')}
+          <div style="margin:-4px 0 6px">${effortPills()}</div>
+          ${row('Creature', 'Stands above the composer while a thread works.', creature())}
+          ${row('Contrast', 'Color and border intensity.', range('contrast', S.contrast, 50, 150, 'Contrast'))}
+          ${row('Language', '', lang())}
+        </section>
+        <section class="card">
+          <h3>Motion</h3>
+          ${row('Reduced motion', '', motion())}
+          ${row('Night falls', 'Between Dictate or Threads and Watcher.', tog('nf', S.nf, 'Night falls between Dictate or Threads and Watcher'))}
+          ${S.nf ? row('Look', '', seg('nfLook', S.nfLook, [['band', 'Band'], ['stars', 'Stars']], 'Night falls look')) + row('Speed', '', range('nfSpeed', S.nfSpeed, 50, 200, 'Night falls speed')) : ''}
+        </section>
+      </div>
+      <aside class="card pv" aria-label="Appearance preview">
+        <div class="pv-head"><span class="lead">Preview</span>${pvTabs()}${peekTabs()}</div>
+        <div class="host" data-preview="${S.pv}"></div>
+        ${widgetNote()}
+      </aside>
+    </div>`
+  }
+
+  // ---------- B · Stage: the preview first, themes as a rail of cards, the rest as one fine-tune card ----------
+  function B() {
+    const card = id => {
+      const on = S.light === id || S.dark === id
+      return `<div class="bcard" ${on ? 'data-on' : ''}>
+        <button class="tile" style="padding:0" data-act="both:${id}" aria-label="Use ${THEMES[id].label} for light and dark">${thumb(id)}</button>
+        <span class="nm">${THEMES[id].label}${tag(id)}</span>
+        <span class="nt">${THEMES[id].note}</span>
+        <span class="halves" role="group" aria-label="${THEMES[id].label}">
+          <button role="radio" aria-checked="${S.light === id}" data-act="light:${id}" ${has(id, 'light') ? '' : 'disabled'} aria-label="Use ${THEMES[id].label} when light">☀ Light</button>
+          <button role="radio" aria-checked="${S.dark === id}" data-act="dark:${id}" ${has(id, 'dark') ? '' : 'disabled'} aria-label="Use ${THEMES[id].label} when dark">☾ Dark</button>
+        </span></div>`
+    }
+    return `<div class="B">
+      <section class="stage" aria-label="Appearance preview">
+        <div class="pv-head"><span class="lead">${THEMES[S.light].label}${S.light !== S.dark ? ` by day · ${THEMES[S.dark].label} by night` : ''}</span>${scheme()}</div>
+        <div class="pair"><div class="host" data-preview="threads"></div><div class="host" data-preview="watcher" data-narrow-hide></div></div>
+      </section>
+      <section>
+        <div class="railhead"><h3>Themes</h3><span class="muted">Press a card for both; Light or Dark for one half.</span></div>
+        <div class="rail">${ALL.map(card).join('')}
+          <div class="bcard add"><button class="btn">Create theme</button><button class="btn">Add theme</button><button class="btn ghost" data-act="ownOpen">Manage your themes</button></div>
+        </div>
+        ${S.ownOpen ? `<div class="card" style="margin-top:4px">${ownList()}</div>` : ''}
+      </section>
+      <section class="card">
+        <h3>Fine-tune</h3>
+        <div class="tune">
+          ${row('Effort color', '', effortPills(true))}
+          ${row('Creature', '', creature())}
+          ${row('Contrast', '', range('contrast', S.contrast, 50, 150, 'Contrast'))}
+          ${row('Reduced motion', '', motion())}
+          ${row('Night falls', S.nf ? '' : 'Off', `<span class="rng">${S.nf ? seg('nfLook', S.nfLook, [['band', 'Band'], ['stars', 'Stars']], 'Night falls look') : ''}${tog('nf', S.nf, 'Night falls between Dictate or Threads and Watcher')}</span>`)}
+          ${row('Night falls speed', '', range('nfSpeed', S.nfSpeed, 50, 200, 'Night falls speed', !S.nf))}
+          ${row('Language', '', lang())}
+        </div>
+      </section>
+    </div>`
+  }
+
+  // ---------- C · Rows: one column of rows, each theme choice opening in place ----------
+  function C() {
+    const pick = mode => {
+      const id = themeFor(mode), open = S.open === mode
+      return `<button class="chip" aria-expanded="${open}" data-act="open:${mode}" aria-label="${mode === 'light' ? 'Light' : 'Dark'} theme: ${THEMES[id].label}">${thumb(id, mode)}${THEMES[id].label}</button>`
+    }
+    const sheet = mode => S.open !== mode ? '' : `<div class="sheet" role="radiogroup" aria-label="${mode === 'light' ? 'Light theme' : 'Dark theme'}">${ALL.filter(id => has(id, mode)).map(id => `<button class="opt" role="radio" aria-checked="${themeFor(mode) === id}" data-act="${mode}:${id}">${thumb(id, mode)}<span>${THEMES[id].label}${tag(id)}<small>${THEMES[id].custom ? 'Yours' : ''}</small></span></button>`).join('')}</div>`
+    return `<div class="C">
+      <div class="card pv" aria-label="Appearance preview"><div class="pv-head"><span class="lead">Preview</span>${pvTabs()}</div><div class="host" data-preview="${S.pv}"></div></div>
+      <section class="card">
+        ${row('Color scheme', '', scheme())}
+        ${row('Light theme', S.scheme === 'dark' ? 'Used when you switch to Light.' : modeNow() === 'light' ? 'Painting the window now.' : 'Used when Windows turns light.', pick('light'))}
+        ${sheet('light')}
+        ${row('Dark theme', S.scheme === 'light' ? 'Used when you switch to Dark.' : modeNow() === 'dark' ? 'Painting the window now.' : 'Used when Windows turns dark.', pick('dark'))}
+        ${sheet('dark')}
+        ${row('Your themes', `${CUSTOM.length} imported`, `<span class="rng"><button class="btn">Create</button><button class="btn">Add</button><button class="btn ghost" data-act="ownOpen" aria-expanded="${S.ownOpen}">${S.ownOpen ? 'Hide' : 'Show'}</button></span>`)}
+        ${S.ownOpen ? ownList() : ''}
+      </section>
+      <section class="card">
+        ${row('Effort color', 'At a thread’s highest effort.', effortPills(true))}
+        ${row('Creature', '', creature())}
+        ${row('Contrast', '', range('contrast', S.contrast, 50, 150, 'Contrast'))}
+      </section>
+      <section class="card">
+        ${row('Reduced motion', '', motion())}
+        ${row('Night falls', 'Between Dictate or Threads and Watcher.', tog('nf', S.nf, 'Night falls between Dictate or Threads and Watcher'))}
+        ${S.nf ? `<div class="sub-rows">${row('Look', '', seg('nfLook', S.nfLook, [['band', 'Band'], ['stars', 'Stars']], 'Night falls look'))}${row('Speed', '', range('nfSpeed', S.nfSpeed, 50, 200, 'Night falls speed'))}</div>` : ''}
+      </section>
+      <section class="card">${row('Language', '', lang())}</section>
+    </div>`
+  }
+
+  const VARIANTS = { A: 'Studio: controls beside a standing preview', B: 'Stage: preview first, themes as cards', C: 'Rows: one column, choices open in place' }
+  const BUILD = { A, B, C }
+  const panel = document.getElementById('panel'), app = document.getElementById('app')
+
+  function paint() {
+    const mode = modeNow(), id = themeFor(mode), t = THEMES[id]
+    // The window itself wears the shown theme, so the page repaints with the choice, as Sotto does.
+    Kit.applyVars(app, t[mode])
+    document.body.toggleAttribute('data-glass', !!t.glass)
+    document.body.style.setProperty('--wall', WALLPAPERS.bloom.css)
+    for (const host of panel.querySelectorAll('[data-preview]')) {
+      const view = host.dataset.preview
+      if (!host.firstChild || host.firstChild.dataset.view !== view || host.dataset.cr !== `${S.creature}${S.showCreature}`) {
+        host.dataset.cr = `${S.creature}${S.showCreature}`
+        Kit.mountWindow(host, view, { creature: S.creature, showCreature: S.showCreature })
+      }
+      Kit.paintWindow(host.firstChild, id, mode, { effort: S.effort, platform: 'windows' })
+    }
+    Kit.Scene.setReduced(S.motion === 'on' || matchMedia('(prefers-reduced-motion: reduce)').matches)
+  }
+
+  function render() {
+    const focus = document.activeElement?.dataset?.act
+    panel.innerHTML = `<h2 class="page">Appearance</h2><p class="sub">Theme, details and motion</p>${BUILD[S.variant]()}`
+    paint()
+    if (focus) panel.querySelector(`[data-act="${CSS.escape(focus)}"]`)?.focus()
+  }
+
+  panel.addEventListener('click', e => {
+    const el = e.target.closest('[data-act]'); if (!el || el.tagName === 'SELECT') return
+    const [act, val] = el.dataset.act.split(':')
+    switch (act) {
+      case 'scheme': S.scheme = val; S.peek = null; break
+      case 'both': if (has(val, 'light')) S.light = val; if (has(val, 'dark')) S.dark = val; break
+      case 'light': S.light = val; if (S.variant === 'A' && !S.split) S.dark = has(val, 'dark') ? val : S.dark; S.peek = S.variant === 'C' ? 'light' : S.peek; break
+      case 'dark': S.dark = val; S.peek = S.variant === 'C' ? 'dark' : S.peek; break
+      case 'split': S.split = !S.split; if (!S.split) S.dark = has(S.light, 'dark') ? S.light : S.dark; break
+      case 'effort': S.effort = val; break
+      case 'creature': S.creature = val; break
+      case 'showCreature': S.showCreature = !S.showCreature; break
+      case 'nf': S.nf = !S.nf; break
+      case 'nfLook': S.nfLook = val; break
+      case 'pv': S.pv = val; break
+      case 'peek': S.peek = val === 'auto' ? null : val; break
+      case 'open': S.open = S.open === val ? null : val; S.peek = S.open; break
+      case 'ownOpen': S.ownOpen = !S.ownOpen; break
+      default: return
+    }
+    render()
+  })
+  panel.addEventListener('change', e => {
+    const el = e.target
+    if (el.dataset.act === 'motion') { S.motion = el.value; paint() }
+  })
+  // Sliders paint as they move and never rebuild the page under the pointer.
+  panel.addEventListener('input', e => {
+    const el = e.target; if (el.type !== 'range') return
+    S[el.id] = Number(el.value)
+    document.getElementById(`${el.id}-out`).textContent = `${el.value}%`
+  })
+  addEventListener('keydown', e => { if (e.key === 'Escape' && S.open) { S.open = null; S.peek = null; render() } })
+  sysDark.addEventListener('change', () => render())
+
+  const v = new URLSearchParams(location.search).get('variant')
+  if (v in VARIANTS) S.variant = v
+  // Start in the night half of Sotto so the first look is the default install.
+  S.scheme = 'dark'
+  Kit.switcher(VARIANTS, S.variant, key => { S.variant = key; S.open = null; S.peek = null; render() })
+</script>
+</body>
+</html>
