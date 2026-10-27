@@ -1941,10 +1941,13 @@ export class WatcherService implements WatcherControlHooks {
     if (target.hostId === this.hostId() && this.options.control.pendingThreadWorkReason(thread.id, { setAsideIgnored: true }) === 'uncertain-send') refuse('DELIVERY_UNCERTAIN', UNCONFIRMED_SEND_HOLD)
     refuse('THREAD_BUSY', WATCH_PAUSED_HOLD, true)
   }
-  /** What a paused watch's busy refusal says, read again as the thread stands: the user's running turn, or the pause alone. */
+  /**
+   * What a paused watch's busy refusal says, read again as the thread stands on its own computer, a paired host's too: the
+   * user's running turn, or the pause alone. A thread this computer cannot see now is not said to be running a turn.
+   */
   private pausedHold(target: WatcherThreadTarget): string {
-    const thread = target.hostId === this.hostId() ? this.options.control.watcherSnapshot().threads.find(item => item.id === target.threadId) : undefined
-    return thread && !this.humanTurnRunning(thread) ? WATCH_PAUSED_HOLD : USER_TURN_RUNNING
+    const thread = this.owningSnapshot(target.hostId)?.threads.find(item => item.id === target.threadId)
+    return thread && this.humanTurnRunning(thread) ? USER_TURN_RUNNING : WATCH_PAUSED_HOLD
   }
   /**
    * Watcher on its own never stops the user's running turn. It may only while it answers the user's own message asking
