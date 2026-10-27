@@ -36,8 +36,11 @@ extension EnvironmentValues {
 
 extension ThemePalettes {
     static let defaultID = "sotto"
-    /// A built-in palette by id; an id this build does not know reads as Sotto.
-    static func named(_ id: String) -> ThemePalette { all.first { $0.id == id } ?? sotto }
+    /// A built-in palette by id; a retired one reads as its replacement, and an id this build does not know as Sotto.
+    static func named(_ id: String) -> ThemePalette {
+        let current = PhoneThemeID.current(id)
+        return all.first { $0.id == current } ?? sotto
+    }
 }
 
 extension ThemePalette {

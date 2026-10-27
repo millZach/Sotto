@@ -10,7 +10,7 @@ import { BUILT_IN_THEMES, DEFAULT_THEME_ID, getThemeColorsForMode, parseThemeFil
 import type { ThemeAppearance } from '../../../src/shared/themes/palettes'
 
 const choice = (patch: Partial<AppearanceChoice> = {}): AppearanceChoice => ({
-  appearance: 'dark', lightTheme: 'nocturne', darkTheme: 'nocturne', appearanceContrast: 100, effortColor: 'ember', customThemes: [], ...patch,
+  appearance: 'dark', lightTheme: 'graphite', darkTheme: 'graphite', appearanceContrast: 100, effortColor: 'ember', customThemes: [], ...patch,
 })
 
 function builtIn(id: string, mode: ThemeAppearance) {
@@ -53,10 +53,10 @@ describe('SottoMark in the main window', () => {
       expect(svg.querySelector('path[fill-rule="evenodd"]')).toHaveAttribute('fill', brand.glyph)
       expect([...svg.querySelectorAll('circle')].map(circle => circle.getAttribute('fill'))).toEqual([brand.glyph, brand.glyph])
     }
-    await expectBrand(builtIn('nocturne', 'dark'), 'dark')
+    await expectBrand(builtIn('graphite', 'dark'), 'dark')
 
-    paint(choice({ darkTheme: 'tropic' }))
-    await expectBrand(builtIn('tropic', 'dark'), 'dark')
+    paint(choice({ darkTheme: 'fern' }))
+    await expectBrand(builtIn('fern', 'dark'), 'dark')
 
     paint(choice({ appearance: 'light', lightTheme: 'citrine' }))
     await expectBrand(builtIn('citrine', 'light'), 'light')
@@ -85,7 +85,7 @@ describe('SottoMark in the main window', () => {
     expect([...svg.querySelectorAll('circle')].every(circle => circle.getAttribute('fill') === override.glyph)).toBe(true)
 
     // The window's own theme changing afterward leaves the override painted.
-    paint(choice({ darkTheme: 'tropic' }))
+    paint(choice({ darkTheme: 'fern' }))
     await act(async () => undefined)
     expect(svg).toHaveAttribute('data-tile', override.tile)
   })

@@ -16,13 +16,13 @@ import { isCanonicalThemeColor, toCanonicalThemeColor } from './color'
 import { getDefaultThemeColors } from './engine'
 import {
   CITRINE_THEME,
+  CLAY_THEME,
+  FERN_THEME,
+  GRAPHITE_THEME,
   HUSH_THEME,
-  LINEN_THEME,
-  NOCTURNE_THEME,
   SOTTO_DARK_THEME_COLORS,
   SOTTO_LIGHT_THEME_COLORS,
   THEME_COLOR_ROLES,
-  TROPIC_THEME,
   type ThemeAppearance,
   type ThemeCollection,
   type ThemeColorRole,
@@ -75,11 +75,24 @@ export const T3_CODE_THEME: ThemeDefinition = {
 export const BUILT_IN_THEMES: readonly ThemeDefinition[] = [
   T3_CODE_THEME,
   HUSH_THEME,
-  LINEN_THEME,
-  NOCTURNE_THEME,
-  TROPIC_THEME,
   CITRINE_THEME,
+  GRAPHITE_THEME,
+  CLAY_THEME,
+  FERN_THEME,
 ]
+
+/**
+ * The built-ins Graphite, Clay and Fern replaced on October 26, 2026, each with
+ * the one closest to it (ADR-0024). A half saved on one moves there when
+ * settings are read, and the next save writes the new id. Their ids are free
+ * again, so a theme of the user's own may take one; a half naming it then
+ * paints that theme and is not moved.
+ */
+export const RETIRED_BUILT_IN_THEMES: ReadonlyMap<string, string> = new Map([
+  ['linen', 'clay'],
+  ['nocturne', 'graphite'],
+  ['tropic', 'fern'],
+])
 
 /**
  * Ids a saved theme may not take: appearance keywords, every built-in, T3's
@@ -194,16 +207,44 @@ function normalizeStoredTheme(value: unknown): ThemeDefinition | null {
   }
 }
 
-/** The saved library from an untrusted value: bad entries and duplicate ids dropped, capped. */
-export function parseCustomThemes(value: unknown): ThemeDefinition[] {
-  if (!Array.isArray(value)) return []
+/**
+ * The ids Graphite, Clay and Fern took on October 26, 2026 (ADR-0024). Until then a theme of the user's own could
+ * carry one, so a saved theme that does keeps its colours under a free id and a half that named it follows it.
+ */
+const CLAIMED_BUILT_IN_IDS: ReadonlySet<string> = new Set(['graphite', 'clay', 'fern'])
+
+/** The saved library, and the new id of each theme whose old id a built-in has since taken. */
+export interface SavedThemeLibrary {
+  readonly themes: ThemeDefinition[]
+  readonly moved: ReadonlyMap<string, string>
+}
+
+/** The saved library from an untrusted value: bad entries and duplicate ids dropped, capped, claimed ids moved. */
+export function parseSavedThemeLibrary(value: unknown): SavedThemeLibrary {
+  const moved = new Map<string, string>()
+  if (!Array.isArray(value)) return { themes: [], moved }
+  const taken = new Set(value.flatMap(entry => (isRecord(entry) && typeof entry.id === 'string' ? [entry.id] : [])))
   const themes: ThemeDefinition[] = []
   for (const entry of value) {
-    const theme = normalizeStoredTheme(entry)
+    let stored = entry
+    if (isRecord(entry) && typeof entry.id === 'string' && CLAIMED_BUILT_IN_IDS.has(entry.id) && !moved.has(entry.id)) {
+      let suffix = 2
+      while (taken.has(`${entry.id}-${suffix}`)) suffix += 1
+      const id = `${entry.id}-${suffix}`
+      taken.add(id)
+      moved.set(entry.id, id)
+      stored = { ...entry, id }
+    }
+    const theme = normalizeStoredTheme(stored)
     if (theme && !themes.some(existing => existing.id === theme.id)) themes.push(theme)
     if (themes.length === MAX_CUSTOM_THEMES) break
   }
-  return themes
+  return { themes, moved }
+}
+
+/** The saved library from an untrusted value; see `parseSavedThemeLibrary`. */
+export function parseCustomThemes(value: unknown): ThemeDefinition[] {
+  return parseSavedThemeLibrary(value).themes
 }
 
 // ---------------------------------------------------------------------------
@@ -222,9 +263,13 @@ export function findTheme(id: string, customThemes: readonly ThemeDefinition[]):
   return BUILT_IN_THEMES.find(theme => theme.id === id) ?? customThemes.find(theme => theme.id === id) ?? null
 }
 
-/** The id that really paints an appearance: a theme that can render it, else the default. */
+/**
+ * The id that really paints an appearance: a theme that can render it, a
+ * retired built-in's replacement, else the default.
+ */
 export function resolveThemeHalfId(id: string, appearance: ThemeAppearance, customThemes: readonly ThemeDefinition[]): string {
-  const theme = findTheme(id, customThemes)
+  const replacement = RETIRED_BUILT_IN_THEMES.get(id)
+  const theme = findTheme(id, customThemes) ?? (replacement === undefined ? null : findTheme(replacement, customThemes))
   return theme && getThemeColorsForMode(theme, appearance) ? theme.id : DEFAULT_THEME_ID
 }
 

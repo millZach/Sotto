@@ -259,7 +259,7 @@ test('mixed pane drafts, queued work, settlement and preferences recover without
     await expect(pane('footer-links').getByRole('region', { name: 'Queued messages' })).toContainText('Queued Codex follow-up after this turn.')
     await fillPrompt(prompt('footer-links'), 'Newer unsent Codex draft.')
     await page.evaluate(async () => {
-      await window.sotto!.updateSettings({ appearance: 'light', darkTheme: 'nocturne', lightTheme: 'linen', webLinkDestination: 'embedded' })
+      await window.sotto!.updateSettings({ appearance: 'light', darkTheme: 'graphite', lightTheme: 'clay', webLinkDestination: 'embedded' })
       await window.sotto!.agents!.command({ type: 'settle-thread', threadId: 'grok-previews' })
       await window.sotto!.agents!.command({ type: 'settle-project', projectId: 'workshop' })
       await window.sotto!.agents!.command({ type: 'restore-project', projectId: 'workshop' })
@@ -300,7 +300,7 @@ test('mixed pane drafts, queued work, settlement and preferences recover without
     await pane('footer-links').getByRole('button', { name: 'Tools', exact: true }).click()
     await expect(page.getByRole('complementary', { name: 'Tools' }).getByRole('button', { name: 'Pin to Footer links', exact: true })).toBeVisible()
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
-    expect(await page.evaluate(async () => window.sotto!.getSettings())).toMatchObject({ appearance: 'light', lightTheme: 'linen', darkTheme: 'nocturne', webLinkDestination: 'embedded' })
+    expect(await page.evaluate(async () => window.sotto!.getSettings())).toMatchObject({ appearance: 'light', lightTheme: 'clay', darkTheme: 'graphite', webLinkDestination: 'embedded' })
     const restored = await agentState(page)
     expect(restored.followups).toEqual([expect.objectContaining({ threadId: key('footer-links'), text: 'Queued Codex follow-up after this turn.' })])
     expect((await userMessageTexts(page, 'footer-links')).some(text => text === 'Queued Codex follow-up after this turn.')).toBe(false)

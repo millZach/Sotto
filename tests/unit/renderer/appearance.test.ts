@@ -22,8 +22,8 @@ afterEach(() => {
 
 const base: AppearanceChoice = {
   appearance: 'dark',
-  lightTheme: 'nocturne',
-  darkTheme: 'nocturne',
+  lightTheme: 'graphite',
+  darkTheme: 'graphite',
   appearanceContrast: 100,
   effortColor: 'ember',
   customThemes: [],
@@ -45,7 +45,7 @@ describe('main-window appearance', () => {
   it('paints the theme that owns the resolved half, as canonical colours only', () => {
     const root = document.createElement('html')
     const custom = aurora()
-    const choice: AppearanceChoice = { ...base, appearance: 'system', lightTheme: 'tropic', darkTheme: custom.id, customThemes: [custom] }
+    const choice: AppearanceChoice = { ...base, appearance: 'system', lightTheme: 'fern', darkTheme: custom.id, customThemes: [custom] }
 
     expect(applyAppearance(choice, root, true)).toBe('dark')
     expect(root.dataset.themeId).toBe(custom.id)
@@ -53,7 +53,7 @@ describe('main-window appearance', () => {
 
     // The system turning light hands the root to the independent light half.
     expect(applyAppearance(choice, root, false)).toBe('light')
-    expect(root.dataset.themeId).toBe('tropic')
+    expect(root.dataset.themeId).toBe('fern')
     expect(root.style.getPropertyValue('--theme-canvas')).toMatch(/^oklch\(/u)
     expect(root.style.getPropertyValue('--theme-canvas')).not.toBe(custom.colors.canvas)
   })
@@ -114,11 +114,11 @@ describe('main-window appearance', () => {
     expect(applyAppearance(base, root, true, { appearance: 'light', colors: draftColors })).toBe('light')
     expect(root.dataset.themeId).toBe(THEME_PREVIEW_ID)
     expect(root.style.getPropertyValue('--theme-canvas')).toBe(draftColors.canvas)
-    expect(readCachedAppearance().darkTheme).toBe('nocturne')
+    expect(readCachedAppearance().darkTheme).toBe('graphite')
 
     applyAppearance(base, root, true, null)
     expect(root.dataset.theme).toBe('dark')
-    expect(root.dataset.themeId).toBe('nocturne')
+    expect(root.dataset.themeId).toBe('graphite')
     expect(root.style.getPropertyValue('--theme-canvas')).toBe(saved)
   })
 
@@ -140,13 +140,20 @@ describe('main-window appearance', () => {
     expect(root.dataset.themeSwitching).toBeUndefined()
   })
 
+  it('paints a first frame cached on Linen, Nocturne or Tropic in Clay, Graphite or Fern', () => {
+    localStorage.setItem(APPEARANCE_CACHE_KEY, JSON.stringify({ appearance: 'light', lightTheme: 'linen', darkTheme: 'nocturne' }))
+    expect(readCachedAppearance()).toMatchObject({ lightTheme: 'clay', darkTheme: 'graphite' })
+    localStorage.setItem(APPEARANCE_CACHE_KEY, JSON.stringify({ appearance: 'dark', lightTheme: 'tropic', darkTheme: 'tropic' }))
+    expect(readCachedAppearance()).toMatchObject({ lightTheme: 'fern', darkTheme: 'fern' })
+  })
+
   it('caches the applied look with only the selected custom themes, and validates the cache like settings', () => {
     const root = document.createElement('html')
     const custom = aurora()
     const unused = parseThemeFile({ version: 1, name: 'Unused', appearance: 'light', colors: { canvas: '#ffffff' } })
     applyAppearance({ ...base, appearance: 'system', darkTheme: custom.id, appearanceContrast: 120, customThemes: [custom, unused] }, root, true)
     const cached = readCachedAppearance()
-    expect(cached).toMatchObject({ appearance: 'system', lightTheme: 'nocturne', darkTheme: custom.id, appearanceContrast: 120 })
+    expect(cached).toMatchObject({ appearance: 'system', lightTheme: 'graphite', darkTheme: custom.id, appearanceContrast: 120 })
     expect(cached.customThemes.map(theme => theme.id)).toEqual([custom.id])
 
     // A cache that cannot be trusted comes back as the shipped defaults, not as the chosen halves.
@@ -175,15 +182,15 @@ describe('main-window appearance', () => {
     expect(preview.effective(persisted)).toMatchObject({ appearance: 'light', lightTheme: 'citrine', darkTheme: DEFAULT_SETTINGS.darkTheme })
 
     // An older theme choice is superseded before its save answers.
-    const tropic = preview.choose({ lightTheme: 'tropic' })
+    const fern = preview.choose({ lightTheme: 'fern' })
     preview.settle(citrine, false, persisted)
-    expect(preview.effective(persisted)).toMatchObject({ appearance: 'light', lightTheme: 'tropic' })
+    expect(preview.effective(persisted)).toMatchObject({ appearance: 'light', lightTheme: 'fern' })
 
     preview.settle(light, true, persisted)
     const caughtUp = { ...persisted, appearance: 'light' as const }
-    expect(preview.effective(caughtUp)).toMatchObject({ appearance: 'light', lightTheme: 'tropic' })
+    expect(preview.effective(caughtUp)).toMatchObject({ appearance: 'light', lightTheme: 'fern' })
 
-    preview.settle(tropic, false, caughtUp)
+    preview.settle(fern, false, caughtUp)
     expect(preview.effective(caughtUp)).toMatchObject({ appearance: 'light', lightTheme: DEFAULT_SETTINGS.lightTheme })
   })
 
