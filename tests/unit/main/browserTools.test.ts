@@ -1,8 +1,9 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { EventEmitter } from 'node:events'
 import { BaseWindow, WebContentsView, type BrowserWindow } from 'electron'
 import { BrowserService } from '../../../src/main/tools/browser'
@@ -597,5 +598,45 @@ describe('browser grant (ADR-0029)', () => {
     on = false; emit.mockClear()
     service.settingChanged()
     for (const threadId of ['a', 'b']) expect(emit).toHaveBeenCalledWith({ type: 'browser-grant', threadId, grant: null })
+  })
+})
+
+describe('a thread file page (ADR-0085, October 27 amendment)', () => {
+  const openFrom = async () => {
+    const fixture = await browserFixture(false, new Set(), () => true)
+    const folder = unwrap(await fixture.service.list({ threadId: 'a' })).workspace.workingDirectory
+    await mkdir(join(folder, 'docs', 'prototypes'), { recursive: true })
+    await writeFile(join(folder, 'docs', 'prototypes', 'x-prototype.html'), '<!doctype html><title>Picker</title><h1>Picker</h1>')
+    await writeFile(join(folder, 'docs', 'prototypes', 'notes.json'), '{}')
+    return { ...fixture, folder }
+  }
+  it('opens an HTML file in the thread\'s folder, named by its file:// URL, at a loopback address Sotto serves', async () => {
+    const { service, target, folder } = await openFrom()
+    const written = `${pathToFileURL(join(folder, 'docs', 'prototypes', 'x-prototype.html')).href}?variant=A`
+    const opened = unwrap(await service.agentOpen({ threadId: target.threadId, workspaceId: target.workspaceId, url: written, description: 'Show the picker prototype' }))
+    expect(opened.approvalRequired).toBe(false)
+    const view = vi.mocked(WebContentsView).mock.results.at(-1)!.value as WebContentsView
+    const url = new URL(view.webContents.getURL())
+    expect([url.protocol, url.hostname, url.search]).toEqual(['http:', '127.0.0.1', '?variant=A'])
+    expect(url.pathname).toMatch(/^\/page\/[A-Za-z0-9_-]{32}\/x-prototype\.html$/u)
+    expect(unwrap(await service.list({ threadId: 'a' })).pages.find(page => page.id === opened.task.pageId)?.url).toBe(url.href)
+    const served = await fetch(url)
+    expect([served.status, await served.text()]).toEqual([200, expect.stringContaining('<h1>Picker</h1>')])
+  })
+  it('refuses a file outside the thread\'s folder, or one that is not HTML, in plain words and opens nothing', async () => {
+    const { service, target: { threadId, workspaceId }, folder } = await openFrom()
+    const target = { threadId, workspaceId }
+    const outside = await mkdtemp(join(tmpdir(), 'sotto-browser-outside-'))
+    cleanup.push(() => rm(outside, { recursive: true, force: true }))
+    await writeFile(join(outside, 'elsewhere.html'), 'outside')
+    const before = unwrap(await service.list({ threadId: 'a' })).pages.length
+    const away = await service.agentOpen({ ...target, url: pathToFileURL(join(outside, 'elsewhere.html')).href, description: 'Show it' })
+    expect(away).toMatchObject({ ok: false, error: { code: 'blocked', message: expect.stringMatching(/^Only HTML files inside this thread's folder can open in Sotto's browser\. .*elsewhere\.html is outside it\./u) } })
+    const data = await service.agentOpen({ ...target, url: join(folder, 'docs', 'prototypes', 'notes.json'), description: 'Show it' })
+    expect(data).toMatchObject({ ok: false, error: { code: 'blocked', message: expect.stringContaining('is not one') } })
+    const scheme = await service.phoneOpen({ ...target, url: 'ftp://example.com/page.html', description: 'Show it' })
+    expect(scheme).toMatchObject({ ok: false, error: { code: 'invalid-request', message: expect.stringContaining('or an HTML file in this thread\'s folder') } })
+    expect(JSON.stringify([away, data, scheme])).not.toContain('Use the tool\'s documented arguments')
+    expect(unwrap(await service.list({ threadId: 'a' })).pages.length).toBe(before)
   })
 })

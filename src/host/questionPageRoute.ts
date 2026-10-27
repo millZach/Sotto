@@ -45,6 +45,9 @@ const PROXY_TIMEOUT_MS = 15_000
  */
 const PAGE_MEDIA = /^(?:text\/(?:html|css|javascript)|application\/(?:javascript|x-javascript|ecmascript|wasm)|image\/|font\/|audio\/|video\/)/u
 
+/** Why a file in a page's folder is refused, for a question's page and a thread file page alike. */
+const REFUSED_LINE = 'A page Sotto serves from a folder opens the files a web page is made of, such as pages, styles, scripts, images and fonts, from the page’s own folder, and nothing else.'
+
 const escape = (value: string): string => value.replace(/[&<>"']/gu, character => `&#${character.charCodeAt(0)};`)
 
 /** A page that says what happened in plain words, with nothing loaded from anywhere. */
@@ -76,12 +79,15 @@ export async function serveQuestionPage(request: IncomingMessage, response: Serv
   target: (token: string) => QuestionPageTarget | undefined
   ownPort: () => number | undefined
   opened?: (token: string) => void
+  /** What a token nobody holds says, when the listener serves pages other than a question's (a thread file page). */
+  closed?: { readonly title: string; readonly lines: readonly string[] }
 }): Promise<void> {
   const url = new URL(request.url ?? '/', 'http://page.invalid')
   const match = QUESTION_PAGE_PATH.exec(url.pathname)
   const target = match ? options.target(match[1]!) : undefined
   if (!match || !target) {
-    explain(response, 404, 'This page has closed', ['The question it belonged to was answered over an hour ago, or Sotto restarted since it was asked. Nothing was lost.',
+    if (options.closed) explain(response, 404, options.closed.title, options.closed.lines)
+    else explain(response, 404, 'This page has closed', ['The question it belonged to was answered over an hour ago, or Sotto restarted since it was asked. Nothing was lost.',
       'Open the page again from the question, or ask the agent for it.'])
     return
   }
@@ -105,7 +111,7 @@ async function serveFile(request: IncomingMessage, response: ServerResponse, tar
   const extension = path.extname(parts.at(-1) ?? '').toLowerCase()
   const type = CONTENT_TYPES[extension]
   if (refused || !type) {
-    explain(response, 403, 'Sotto does not serve this file', ['A question’s page opens the files a web page is made of, such as pages, styles, scripts, images and fonts, from the page’s own folder, and nothing else.'])
+    explain(response, 403, 'Sotto does not serve this file', [REFUSED_LINE])
     return
   }
   // The folder is the one found when the question was asked, after links were followed. If it has since become a link to
@@ -114,7 +120,7 @@ async function serveFile(request: IncomingMessage, response: ServerResponse, tar
   const file = root ? await realpath(path.join(root, ...parts)).catch(() => undefined) : undefined
   // A link in the folder is followed before it is judged, so `look.css` that leads to `.env` is refused as `.env` would be.
   if (file && root && !servable(root, file)) {
-    explain(response, 403, 'Sotto does not serve this file', ['A question’s page opens the files a web page is made of, such as pages, styles, scripts, images and fonts, from the page’s own folder, and nothing else.'])
+    explain(response, 403, 'Sotto does not serve this file', [REFUSED_LINE])
     return
   }
   const info = file && root ? await stat(file).catch(() => undefined) : undefined
