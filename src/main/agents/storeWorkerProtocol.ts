@@ -49,7 +49,24 @@ export type WireWrite =
   | { readonly kind: 'activity-list'; readonly flushed?: boolean | undefined; readonly entry: WireActivityEntry }
   | (Extract<ThreadStoreWrite, { kind: 'history-off' }> & { readonly preserved: readonly string[] })
 
-export type WorkerRequest = { readonly kind: 'write'; readonly id: number; readonly write: WireWrite } | { readonly kind: 'stop' }
+/**
+ * A stored thread's activity read back for a window (step 3 of docs/plans/store-worker.md): the worker reads it behind every
+ * write posted before it, parses each row and checks it against the schema, and answers with its first piece; main asks
+ * for each piece after that (`read-more`). Reads count apart from writes.
+ */
+export type WorkerRequest =
+  | { readonly kind: 'write'; readonly id: number; readonly write: WireWrite }
+  | { readonly kind: 'read-activities'; readonly read: number; readonly threadId: string }
+  | { readonly kind: 'read-more'; readonly read: number }
+  | { readonly kind: 'stop' }
+
+/**
+ * How many records one piece of a read back carries. Receiving a list is a structured-clone read on main, and freezing it
+ * walks every record. Measured on October 26, 2026 (`docs/perf/2026-10-26-store-worker-reads.md`), 2,000 records of about
+ * 11 MB held main 14 ms at the median and 50 ms at worst in one piece, a frame or more, where a piece of 500 held it about
+ * 2 ms. Main asks for each next piece from a task of its own, so the window paints between them.
+ */
+export const READ_PIECE_RECORDS = 500
 
 /** The worker's answer to one write. `memory` says it took the file's words out and closed it for Keep local history. */
 export interface WorkerAnswer {
@@ -59,3 +76,16 @@ export interface WorkerAnswer {
   readonly removed?: number | undefined
   readonly memory?: true | undefined
 }
+
+/**
+ * The worker's answer to a read: the next piece of the thread's records in the order stored, `more` while pieces are left,
+ * or no records when it could not read them.
+ */
+export interface WorkerReadAnswer {
+  readonly read: number
+  readonly activities?: readonly AgentActivity[] | undefined
+  readonly more?: true | undefined
+}
+
+/** Whatever the worker posts main: a write's answer or a read's. */
+export type WorkerMessage = WorkerAnswer | WorkerReadAnswer

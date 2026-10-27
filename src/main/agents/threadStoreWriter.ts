@@ -41,6 +41,15 @@ export type ThreadStoreWrite =
 
 export interface ActivityListEntry { readonly threadId: string; readonly activities: readonly AgentActivity[]; readonly epoch?: string | undefined }
 
+/**
+ * A stored thread's activity as the store worker read it back (step 3 of docs/plans/store-worker.md): its records, frozen
+ * and owned on main as they arrived; that the worker could not read them; or that the worker went or stopped first.
+ */
+export type ActivityReadBack =
+  | { readonly activities: readonly AgentActivity[] }
+  | { readonly unreadable: true }
+  | { readonly lost: true }
+
 /** What one write did, once it committed or failed. */
 export interface ThreadStoreWriteOutcome {
   /** The threads whose part did not commit. Empty when all of it did. */
@@ -74,6 +83,11 @@ export interface ThreadStoreWriter {
   drain(limitMs?: number): void
   /** Commits and confirms everything posted, then closes the store, within `limitMs` as `drain` is. */
   close(limitMs?: number): void
+  /**
+   * Reads a stored thread's activity back off main, behind every write posted before it. Undefined where this writer
+   * cannot, as with no store worker, or while writes wait unsent: the caller reads on main, as before.
+   */
+  readActivities?(threadId: string): Promise<ActivityReadBack> | undefined
 }
 
 export const NO_EVENTS: readonly ThreadEvent[] = Object.freeze([])
@@ -242,6 +256,16 @@ export class ThreadStoreWriterOnWorker implements ThreadStoreWriter {
 
   unconfirmed(threadId?: string): boolean {
     return threadId === undefined ? this.queue.size > 0 : this.wholeCount > 0 || this.byThread.has(threadId)
+  }
+
+  /**
+   * On the worker, which takes requests in the order posted, so the read comes after every write sent before it. A write
+   * held unsent, behind a privacy switch or a recovery, would come after the read, so then the caller reads on main.
+   */
+  readActivities(threadId: string): Promise<ActivityReadBack> | undefined {
+    const worker = this.store.writer
+    if (!worker || this.held > 0 || this.switching || this.recovering) return undefined
+    return new Promise(resolve => { worker.read(threadId, resolve) })
   }
 
   confirmed(threadId?: string): Promise<void> {

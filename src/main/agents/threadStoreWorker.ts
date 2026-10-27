@@ -8,7 +8,7 @@ import type { MessagePort } from 'node:worker_threads'
 import { workerData } from 'node:worker_threads'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { immutableActivities, ownBuiltActivity } from './activitySnapshots'
-import { CHECKPOINT, CONTROL, LIFE, type StoreWorkerData, type WireActivityEntry, type WireWrite, type WorkerAnswer, type WorkerRequest } from './storeWorkerProtocol'
+import { CHECKPOINT, CONTROL, LIFE, READ_PIECE_RECORDS, type StoreWorkerData, type WireActivityEntry, type WireWrite, type WorkerAnswer, type WorkerReadAnswer, type WorkerRequest } from './storeWorkerProtocol'
 import { ThreadStore } from './threadStore'
 import { applyWrite, writeThreads, type ActivityListEntry, type ThreadStoreWrite, type ThreadStoreWriteOutcome } from './threadStoreWriter'
 
@@ -109,6 +109,34 @@ function apply(write: WireWrite): ThreadStoreWriteOutcome & { memory?: true } {
   }
 }
 
+/** What is left of each list being read back, sent a piece at a time as main asks for it. */
+const readsLeft = new Map<number, { readonly activities: readonly AgentActivity[]; readonly from: number }>()
+
+/**
+ * A stored thread's records read back for a window: the query, the parse and the schema check run here, and main receives
+ * the records a piece at a time. The store keeps them, as main's did, so the thread's next save compares with them; a
+ * release lets them go.
+ */
+function readBack(request: Extract<WorkerRequest, { kind: 'read-activities' }>): WorkerReadAnswer {
+  let activities: readonly AgentActivity[]
+  try { activities = store.readActivities(request.threadId, { shared: true }) } catch { return { read: request.read } }
+  return piece(request.read, activities, 0)
+}
+
+/** The piece of a list from `from`, keeping the rest for main's next ask. */
+function piece(read: number, activities: readonly AgentActivity[], from: number): WorkerReadAnswer {
+  const to = from + READ_PIECE_RECORDS
+  if (to < activities.length) readsLeft.set(read, { activities, from: to })
+  else readsLeft.delete(read)
+  return { read, activities: activities.slice(from, to), ...(to < activities.length ? { more: true as const } : {}) }
+}
+
+/** The next piece of a list main is receiving; one the worker does not hold answers as a read it could not make. */
+function readMore(read: number): WorkerReadAnswer {
+  const left = readsLeft.get(read)
+  return left ? piece(read, left.activities, left.from) : { read }
+}
+
 function answer(id: number, outcome: ThreadStoreWriteOutcome & { memory?: true }): WorkerAnswer {
   const error = outcome.error === undefined ? undefined
     : outcome.error instanceof Error ? { name: outcome.error.name, message: outcome.error.message } : { name: 'Error', message: 'Thread history could not be saved' }
@@ -171,6 +199,9 @@ if (Atomics.compareExchange(control, CONTROL.LIFE, STARTING, OPEN) === STARTING)
   port.on('message', (request: WorkerRequest) => {
     if (request.kind === 'stop') { stop(); return }
     if (!open) return
+    // A read changes nothing and is not a write main may finish itself, so it leaves the write identities alone.
+    if (request.kind === 'read-activities') { port.postMessage(readBack(request)); return }
+    if (request.kind === 'read-more') { port.postMessage(readMore(request.read)); return }
     Atomics.store(control, APPLYING, request.id)
     let outcome: ThreadStoreWriteOutcome & { memory?: true }
     try { outcome = apply(request.write) } catch (error) { outcome = { failed: new Set(writeThreads(request.write as ThreadStoreWrite)), error } }
