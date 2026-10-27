@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { access, constants, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, constants, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { findCli, withCliPath } from './cliLookup'
 import { launchProcess, runToExit } from './gitLauncher'
@@ -72,8 +72,12 @@ export async function installedFrom(projectFolder: string): Promise<string | und
   try { return (await readFile(join(projectFolder, 'node_modules', CHECK_INSTALLED_FROM), 'utf8')).trim() || undefined } catch { return undefined }
 }
 
-/** Records that `node_modules` in this project folder was installed from the lockfile with this hash. */
+/**
+ * Records that `node_modules` in this project folder was installed from the lockfile with this hash. A lockfile with no
+ * packages installs to no `node_modules` at all, so the folder is made to hold the record.
+ */
 export async function recordInstalled(projectFolder: string, hash: string): Promise<void> {
+  await mkdir(join(projectFolder, 'node_modules'), { recursive: true })
   await writeFile(join(projectFolder, 'node_modules', CHECK_INSTALLED_FROM), `${hash}\n`, 'utf8')
 }
 

@@ -106,3 +106,12 @@ it('stops an install’s whole process tree when Sotto closes, before it settles
   expect(await outcome).toBe('failed')
   expect(alive(grandchild)).toBe(false)
 }, 30_000)
+
+it('counts an install of a lockfile with no packages as installed, though npm makes no node_modules for it (#1312)', async () => {
+  const folder = await project()
+  await writeFile(join(folder, 'package-lock.json'), '{ "lockfileVersion": 3, "packages": { "": {} } }\n')
+  // As npm ci does with nothing to install: it succeeds and leaves no node_modules.
+  const install = async () => 'installed' as const
+  expect(await preparePackages(folder, install, never, () => undefined)).toBe('installed')
+  expect(await preparePackages(folder, install, never, () => undefined)).toBe('none')
+})
