@@ -118,7 +118,7 @@ export function delegationWaitLine(view: DelegatedView, now: number, delegator?:
  * what turned it down, that nothing was started or sent, and what would let it through where the user can change that.
  * Main's own words for a refusal were written for the agent that asked, so the row words the rule itself.
  */
-export function delegationRefusalLine(view: Pick<RefusedView, 'action' | 'refusal'>, parentMachine?: string, asked?: string): string {
+export function delegationRefusalLine(view: Pick<RefusedView, 'action' | 'refusal'> & Partial<Pick<RefusedView, 'away' | 'relayed'>>, parentMachine?: string, asked?: string): string {
   const start = view.action === 'start'
   const nothing = start ? t`Nothing was started.` : t`Nothing was sent.`
   const limit = DELEGATION_PROMPTS_PER_THREAD
@@ -126,6 +126,10 @@ export function delegationRefusalLine(view: Pick<RefusedView, 'action' | 'refusa
   // Zach's words (October 23, 2026); without, as the remote roster prototype words it.
   if (view.refusal === 'MACHINE_UNAVAILABLE' && parentMachine !== undefined) {
     const machine = parentMachine
+    // The desktop relay (#1316): This computer was not connected to that machine, so nothing started and nothing was queued (Zach, October 23, 2026).
+    if (view.away === true) return t`This computer isn't connected to ${machine}, so nothing was started there. Start it on ${machine} instead, or try again when this computer is back.`
+    // This computer refused a start relayed to it: another machine, or one without the project (Zach, October 27, 2026).
+    if (view.relayed === true && asked !== undefined) return t`Asked for ${asked}. ${machine} can start threads on ${machine} or on This computer for now.`
     return asked !== undefined ? t`Asked for ${asked}. ${machine} can start threads only on ${machine} for now. Nothing was started.`
       : t`This thread runs on ${machine}, and a thread on ${machine} can start threads only on ${machine}. Nothing was started. Ask again without naming a machine to start it on ${machine}.`
   }

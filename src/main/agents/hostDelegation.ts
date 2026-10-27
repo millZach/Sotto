@@ -9,6 +9,8 @@ import type { WatcherRefusal } from '../../shared/watcher'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { hostMachineReport, type HostFactsSource } from './hostFacts'
 import type { DelegationServiceOptions } from './delegation'
+import type { HostDelegationRelay } from './delegationRelayHost'
+import type { PlacementAsk, WorkerPlacement } from './workerPlacement'
 
 const keptSchema = z.object({
   /** The paired desktop that sent them, which must still be paired with a `remote-answer` grant on this host to count. */
@@ -109,32 +111,57 @@ export class DesktopDefaultsStore {
 export const THIS_MACHINE = 'This machine'
 const ONLY_HERE = 'A thread on this machine delegates only to threads on this machine for now.'
 const LEAVE_OUT = 'Leave out the machine and system to start it here. Nothing was started.'
+/** With the desktop relay (#1316): what a thread here may reach, and how its list says so. */
+const HERE_OR_RELAYED = 'A thread on this machine delegates to threads on this machine, or through This computer to threads on This computer.'
 const refusal = (message: string): WatcherRefusal => ({ status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE', message, retryable: false })
+/** `place`'s host ID for a start the desktop relays (#1316): another machine, which the desktop places. */
+export const RELAYED_HOST = 'relay'
+/** What the machine list and placement read of the desktop relay (#1316), present only where it runs. */
+export type HostRelayMachines = Pick<HostDelegationRelay, 'reachable' | 'awayWords' | 'machines'>
 
 /**
- * Where a thread on a headless host may delegate (#1310): this machine and nowhere else until #1316 carries delegations
- * between machines. `list_machines` lists this machine alone with its facts; a call that names this machine, or its own
- * system, starts here; another machine or system is refused in plain words and recorded, as the desktop refuses one.
+ * Where a thread on a headless host may delegate (#1310): this machine, and, with the desktop relay (#1316), other machines
+ * through the desktop while one that relays is connected. `list_machines` lists this machine with its facts, and the
+ * desktop's own list beside it while it relays; a call that names this machine, or its own system, starts here. Another
+ * machine or system goes to the desktop, which places it; while no desktop that relays is connected it is refused by name
+ * and recorded, and nothing is queued. Without the relay, another machine or system is refused in plain words and
+ * recorded, as before.
  */
-export function hostDelegationMachines(hostId: () => string | undefined, facts: HostFactsSource, threads: () => readonly Pick<AgentThread, 'id' | 'status'>[]): NonNullable<DelegationServiceOptions['machines']> {
+export function hostDelegationMachines(hostId: () => string | undefined, facts: HostFactsSource, threads: () => readonly Pick<AgentThread, 'id' | 'status'>[],
+  relay?: HostRelayMachines): NonNullable<DelegationServiceOptions['machines']> {
   const here = (id: string) => ({ hostId: id, projectId: '', receipt: { hostId: id, name: THIS_MACHINE, awayFromDefault: false } })
+  const elsewhere = (ask: PlacementAsk, project: { readonly projectId: string }, why: string): WorkerPlacement | WatcherRefusal => {
+    if (!relay) return refusal(why)
+    if (!relay.reachable()) return { status: 'refused', code: 'HOST_DISCONNECTED', message: relay.awayWords(), retryable: true }
+    return { hostId: ask.machine ?? RELAYED_HOST, projectId: project.projectId, receipt: { hostId: ask.machine ?? RELAYED_HOST, name: 'Another machine', awayFromDefault: false } }
+  }
   return {
     list: async () => {
       const id = hostId()
       let report: Awaited<ReturnType<typeof hostMachineReport>> | undefined
       try { report = await hostMachineReport(facts, () => ({ threads: threads() }), false) } catch { report = undefined }
-      return { status: 'ok', machines: [{ hostId: id, name: THIS_MACHINE, thisComputer: true, connected: true,
+      const self = { hostId: id, name: THIS_MACHINE, thisComputer: true, connected: true,
         ...report ? { factsState: 'reported', facts: report.facts, runningThreads: report.runningThreads }
-          : { factsState: 'unknown', facts: null, note: 'This machine\'s facts could not be read just now. Nothing was changed. Ask again.', runningThreads: null } }],
-      note: `${ONLY_HERE} Other machines cannot be reached from here yet.`, observedAt: new Date().toISOString() }
+          : { factsState: 'unknown', facts: null, note: 'This machine\'s facts could not be read just now. Nothing was changed. Ask again.', runningThreads: null } }
+      if (relay) {
+        // The desktop's own list, read when asked and never on a timer; this machine is listed once, as this machine.
+        const desktop = await relay.machines()
+        const listed = Array.isArray(desktop?.machines) ? (desktop.machines as unknown[]).filter(machine =>
+          machine !== null && typeof machine === 'object' && (machine as { hostId?: unknown }).hostId !== id).map(machine => ({ ...(machine as Record<string, unknown>), thisComputer: false })) : []
+        return { status: 'ok', machines: [self, ...listed],
+          note: desktop ? `${HERE_OR_RELAYED} Machines are listed as This computer lists them.` : `${relay.awayWords()} Only this machine is listed.`, observedAt: new Date().toISOString() }
+      }
+      return { status: 'ok', machines: [self], note: `${ONLY_HERE} Other machines cannot be reached from here yet.`, observedAt: new Date().toISOString() }
     },
     place: async (ask, project) => {
       const id = hostId() ?? project.hostId
-      if (ask.machine !== undefined && ask.machine !== id) return refusal(`${ONLY_HERE} It cannot start on another machine. ${LEAVE_OUT}`)
+      if (ask.machine !== undefined && ask.machine !== id) return elsewhere(ask, project, `${ONLY_HERE} It cannot start on another machine. ${LEAVE_OUT}`)
       if (ask.os !== undefined) {
         let family: string | null
         try { family = (await facts.read()).os.family } catch { family = null }
         const wanted = WORKER_SYSTEM_WORDS[ask.os]
+        // A machine named as this one keeps its own system's refusal; with none named, the desktop finds one of that system.
+        if (family !== ask.os && ask.machine === undefined && relay) return elsewhere(ask, project, '')
         if (family === null) return refusal(`This machine does not say which system it runs, so Sotto cannot tell whether it is ${wanted.a}. ${LEAVE_OUT}`)
         if (family !== ask.os) return refusal(`${ONLY_HERE} This machine is not ${wanted.a}, and a system never falls back to another. ${LEAVE_OUT}`)
       }

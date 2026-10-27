@@ -1827,6 +1827,10 @@ msgid "Ask for approval"
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
+msgid "Asked for {asked}. {machine} can start threads on {machine} or on This computer for now."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
 msgid "Asked for {asked}. {machine} can start threads only on {machine} for now. Nothing was started."
 msgstr ""
 
@@ -7855,6 +7859,10 @@ msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "This computer already had as many new threads working as Threads in flight allowed, a limit Sotto no longer has. {nothing}"
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "This computer isn't connected to {machine}, so nothing was started there. Start it on {machine} instead, or try again when this computer is back."
 msgstr ""
 
 #: src/renderer/src/agents/ProvidersSettings.tsx

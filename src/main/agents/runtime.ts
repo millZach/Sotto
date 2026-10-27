@@ -66,6 +66,10 @@ import { threadDelegations } from './agentsView'
 import { BranchBundles } from './branchBundles'
 import { desktopBranchMoves, foldersOfSnapshot } from './branchMoves'
 import { DesktopDefaultsStore, hostDelegationMachines } from './hostDelegation'
+import type { HostDelegationRelay } from './delegationRelayHost'
+import { DesktopDelegationRelay } from './delegationRelayDesktop'
+import type { DelegationNews } from '../../shared/delegation'
+import type { RelayedReply } from '../../shared/delegationRelay'
 import { machineWorkingThreadsWarning } from '../../shared/workingThreads'
 
 type ControlDependencies = ConstructorParameters<typeof AgentControl>[0]
@@ -130,7 +134,9 @@ export interface AgentRuntimeOptions {
    * pairing and policy records at every start. `roles` is the host's own Owl answer for worker roles: with it, a
    * delegation's kind of work starts on the desktop's roles.
    */
-  hostDelegation?: { counts(clientId: string): boolean; roles: boolean; revoked?(clientId: string): boolean }
+  hostDelegation?: { counts(clientId: string): boolean; roles: boolean; revoked?(clientId: string): boolean
+    /** The desktop relay (#1316): a thread here delegates to other machines through a desktop that relays, while one is connected. */
+    relay?: HostDelegationRelay }
   /**
    * The Owl list's answer for attaching any file (ADR-0131), read once by the process owner. With it the store keeps files
    * that are not images and the host lists `file-staging`. Absent fails closed: only the four image types are kept.
@@ -367,6 +373,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // Delegation between threads (ADR-0081): this computer's threads, and a headless host's own threads where its Owl answer
   // turns on Work across machines (#1310), each on its own machine, with its own tool tokens.
   let delegation: DelegationService | undefined
+  let delegationRelay: DesktopDelegationRelay | undefined
   const hostDelegation = options.runsAs === 'headless-host' && options.crossMachineEnabled === true ? options.hostDelegation : undefined
   // The desktop defaults a desktop sent this host: the only new-thread default and roles its delegations use.
   const desktopDefaults = hostDelegation ? new DesktopDefaultsStore(directory) : undefined
@@ -400,6 +407,12 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     agentHost.enableDelegation()
     // A delegating thread lists and names machines through Watcher's own reads (#1032), so only while Watcher runs too.
     const placingWatcher = 'workerMachine' in placing ? watcher : undefined
+    // The desktop relay (#1316): a host's threads delegate to This computer through this desktop, placed as its own are.
+    if (placingWatcher) {
+      delegationRelay = new DesktopDelegationRelay(directory, { placement: placingWatcher, localHostId: () => agentControl.hostId() })
+      await delegationRelay.load()
+    }
+    const relaying = delegationRelay
     delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
       tool: threadId => babysitTool(threadId), ...roles,
       ...placingWatcher ? { machines: { list: () => placingWatcher.machines(), place: (ask, project, setting) => placingWatcher.placement(ask, project, setting),
@@ -408,7 +421,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       // computer's checks run one at a time, in the order asked (#1312).
       ...placingWatcher && branchMoves ? { branchMoves, checks: new CheckQueue('This computer'), ...options.clockTime ? { clockTime: options.clockTime } : {} } : {},
       // A delegated thread's own worktree is made from the delegating thread's branch, so it can bring changes back (#1030).
-      ...crossMachine ? { bringBack: true } : {} })
+      ...crossMachine ? { bringBack: true } : {},
+      ...relaying ? { relayedCallers: { caller: (threadId: string) => relaying.caller(threadId), tell: (threadId: string, news: DelegationNews, replies: readonly RelayedReply[]) => relaying.tell(threadId, news, replies) } } : {} })
+    relaying?.useDelegation(delegation)
   } else if (hostDelegation && desktopDefaults) {
     agentHost.enableDelegation()
     // A thread here delegates on this machine alone until #1316. Its ceiling and roles are the desktop's, never this host's
@@ -418,7 +433,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       newThreadCeiling: () => defaults.ceiling(clientId => hostDelegation.counts(clientId), clientId => hostDelegation.revoked?.(clientId) === true),
       ...hostDelegation.roles ? { roles: () => defaults.roles(clientId => hostDelegation.counts(clientId)) } : {},
       warning: count => machineWorkingThreadsWarning(count, 'this machine'),
-      machines: hostDelegationMachines(() => agentControl.hostId(), facts, () => agentControl.watcherSnapshot().threads) })
+      ...hostDelegation.relay ? { relay: hostDelegation.relay } : {},
+      machines: hostDelegationMachines(() => agentControl.hostId(), facts, () => agentControl.watcherSnapshot().threads, hostDelegation.relay) })
   }
   // A cleared thread's finished delegations and links go with it (ADR-0140 decision 4), on the desktop and on a host alike.
   if (delegation) {
@@ -529,6 +545,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     idleCompaction.stop()
     watcher?.close()
     delegation?.close()
+    delegationRelay?.close()
     continuation?.close()
     closingWatcherTools = watcherTools?.close()
   }
@@ -656,5 +673,5 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     signedOut: async () => { await agentControl.command({ type: 'disconnect', provider: 'cursor' }) },
   }) : undefined
   idleCompaction.start()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, cursorSignIn, branchMoves, prepareForShutdown, close }
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, delegationRelay, continuation, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, cursorSignIn, branchMoves, prepareForShutdown, close }
 }
