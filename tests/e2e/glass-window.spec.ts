@@ -66,6 +66,14 @@ test('Glass lets the desktop through the window on Windows 11', async () => {
         await expect(page.locator('.watcher-room')).toBeVisible()
         await captureSotto(launched, join(evidence, `watcher-${appearance}-${desk}.png`), { mode: 'desktop-cropped', settleMs: 1500 })
       }
+      // In-app glass, what Linux, Windows 10 and a system asking for less transparency paint: the same stylesheet,
+      // keyed on the root's attribute, so it is set here as appearance.ts sets it there, and read off the page itself.
+      for (const room of ['Threads', 'Watcher'] as const) {
+        await page.getByRole('tablist', { name: 'Page' }).getByRole('tab', { name: room, exact: true }).click()
+        await page.evaluate(() => { document.documentElement.dataset.glass = 'in-app' })
+        await captureSotto(launched, join(evidence, `in-app-${room.toLowerCase()}-${appearance}.png`), { mode: 'composited' })
+        await page.evaluate(() => { document.documentElement.dataset.glass = 'see-through' })
+      }
     }
     // Leaving Glass turns the material off in place: the room is solid again, with no new window.
     await page.evaluate(async () => { await window.sotto!.updateSettings({ darkTheme: 't3-code' }) })
