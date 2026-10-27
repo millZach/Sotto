@@ -62,6 +62,8 @@ export async function inactiveLocalHost(directory: string,
     threadDetail: () => null, attachmentPreview: unavailable, stageAttachment: async () => unavailable(), attachmentContent: async () => null, gitRefs: async () => unavailable(), gitChangedFiles: async () => unavailable(), gitPullRequest: async () => unavailable(),
     // Main listens for deleted threads at start (ADR-0140); with no local threads here, none is ever deleted.
     subscribe: unsubscribe, subscribeThreadDetail: unsubscribe, onThreadsDeleted: unsubscribe, dispose: idle, closed: async () => undefined,
+    // A new Sotto version has every machine check its clients afresh (ADR-0077); this computer runs none of them.
+    checkClientsAfresh: async () => undefined,
     privacyChanged: async () => undefined, hasPendingThreadWork: () => false, watcherObservationsEnabled: () => false, useSottoRequests: idle,
     requestAnswerRecovery: () => ({ uncertainRequestIds: [], completed: [] }), refreshRequestDraft: async () => unavailable(),
     requestDraftView: () => ({ host: state.host, provider: state.configuration.provider }),

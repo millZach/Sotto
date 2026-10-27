@@ -31,6 +31,8 @@ it('leaves saved workspace data intact and constructs no provider or thread stor
     expect(() => runtime.agentControl.useSottoRequests({ requests: () => new Map(), answer: () => undefined, subscribe: () => () => undefined })).not.toThrow()
     // Main listens for deleted threads at start to drop their answer drafts (ADR-0140).
     expect(() => runtime.agentControl.onThreadsDeleted(() => undefined)()).not.toThrow()
+    // A found update asks every machine to check its clients afresh, then the hosts; a refusal here skips the hosts (ADR-0077).
+    await expect(runtime.agentControl.checkClientsAfresh()).resolves.toBeUndefined()
     await expect(runtime.agentHost.gitActionFinished('thread')).resolves.toBeUndefined()
     await expect(runtime.worktreeCleanup.close()).resolves.toBeUndefined()
     await runtime.close()
