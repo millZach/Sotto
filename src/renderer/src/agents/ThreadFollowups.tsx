@@ -197,13 +197,21 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
   const listId = useId()
   const section = useRef<HTMLElement>(null)
   const host = useRef<HTMLElement | null>(null)
-  /** The head and its notes never scroll away: the queue gives up height only from its rows, so its minimum is their height. */
+  /**
+   * The head and its notes never scroll away: the queue gives up height only from its rows, so its minimum is their height.
+   * The composer learns the queue's own height, so the creature above the card stands above the queue instead (threadMonitor.css).
+   */
   const measureTop = useCallback((element: HTMLDivElement | null) => {
     const owner = element?.parentElement
-    if (!element || !owner || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(() => owner.style.setProperty('--followups-top', `${Math.ceil(element.getBoundingClientRect().height)}px`))
+    const compose = owner?.parentElement
+    if (!element || !owner || !compose || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      owner.style.setProperty('--followups-top', `${Math.ceil(element.getBoundingClientRect().height)}px`)
+      compose.style.setProperty('--followups-height', `${owner.offsetHeight}px`)
+    })
     observer.observe(element)
-    return () => observer.disconnect()
+    observer.observe(owner)
+    return () => { observer.disconnect(); compose.style.removeProperty('--followups-height') }
   }, [])
   /**
    * Where keyboard focus goes once the queue re-renders after a change that removed the focused control, and the

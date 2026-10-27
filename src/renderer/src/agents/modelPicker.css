@@ -91,3 +91,16 @@
 .model-picker__dialog:has(.model-picker__group) .model-picker__panel, .model-picker__models--grouped, .model-picker__models--grouped > [role='group'] { background: inherit; }
 .model-picker__group { position: sticky; top: 0; z-index: 1; display: flex; align-items: baseline; gap: 8px; margin: 0 -6px; padding: 10px 16px 4px; background: inherit; color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
 .model-picker__group > span { margin-left: auto; font-size: 11.5px; font-weight: 500; }
+
+/* Favorites (ADR-0147): a star tile heads the rail, and a star ends each model row. The star shows on a row the pointer or
+   focus is on, and always where it is filled; a favorite carries its provider's mark before its name. */
+.model-picker__rail > .model-picker__favorites-tile { color: var(--tt-text-2); }
+.model-picker__rail > .model-picker__favorites-tile[aria-selected='true'] { color: var(--tt-activity); }
+.model-picker__models [role='option'] > span:first-child { flex: 1; }
+.model-picker__models [role='option'][data-favorite] > span:first-child { align-items: center; }
+.model-picker__models [role='option'][aria-disabled='true'] { opacity: .45; cursor: default; }
+.model-picker__models [role='option'][aria-disabled='true']:hover { background: transparent; color: var(--tt-text-2); }
+.model-picker__models [role='option'] > .model-picker__star { display: grid; flex: none; place-items: center; width: 22px; height: 22px; margin: -3px -6px -3px 0; border-radius: 6px; color: var(--tt-text-muted); visibility: hidden; cursor: pointer; }
+.model-picker__models [role='option']:hover > .model-picker__star, .model-picker__models [role='option']:focus-visible > .model-picker__star, .model-picker__star[data-starred] { visibility: visible; }
+.model-picker__models [role='option'] > .model-picker__star:hover { background: var(--tt-hover); color: var(--tt-text); }
+.model-picker__star[data-starred] { color: var(--tt-activity); }

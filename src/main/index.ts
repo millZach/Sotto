@@ -1037,6 +1037,8 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   app.on('browser-window-blur', windowFocusChanged)
   windowFocusChanged()
   localRuntime.watcher?.useRemoteHosts(hostRouter.watcherHosts())
+  // A child on another machine brings its changes back by moving its branch first (#1030), only while Work across machines is on.
+  if (localRuntime.branchMoves) hostRouter.useBranchMoves(localRuntime.branchMoves)
   // Desktop defaults (#1310): this computer's new-thread default and, while worker roles are on, its worker roles, sent to
   // each host whose own threads delegate there, when it connects and whenever either changes. Stable sends nothing.
   const desktopDefaultsPush = crossMachineEnabled ? new DesktopDefaultsPush({ connections: () => hostRouter.remoteConnections(),

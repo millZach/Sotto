@@ -1784,10 +1784,12 @@ it('starts a worker on the paired machine from a thread’s branch on This compu
   expect(moveId).toMatch(/^[0-9a-f-]{36}$/u)
   expect(packet.request.call.input).not.toHaveProperty('fromThread')
   expect(packet.request.call.input).not.toHaveProperty('testRun')
+  // Only which thread the branch came from, its machine, and this desktop, the one that may bring the commits back there (#1030).
+  expect(packet.request.call.input['madeFrom']).toEqual({ thread: f.fromThread.threadId, host: f.fromThread.hostId, by: f.control.hostId() })
   // The worker's worktree on the host is made from the move's incoming ref, on the branch's own name.
   await expect.poll(() => f.socket.shell().host.threads.find(thread => thread.id === started.target.threadId)?.worktree?.status, { timeout: 20_000 }).toBe('ready')
   const worktree = f.socket.shell().host.threads.find(thread => thread.id === started.target.threadId)!.worktree!
-  expect(worktree).toMatchObject({ branch: 'feat/x', incomingRef: `refs/sotto/incoming/${moveId}/feat/x` })
+  expect(worktree).toMatchObject({ branch: 'feat/x', incomingRef: `refs/sotto/incoming/${moveId}/feat/x`, madeFrom: { thread: f.fromThread.threadId, host: f.fromThread.hostId, by: f.control.hostId() } })
   expect((await git('git', ['-C', worktree.path!, 'rev-parse', 'HEAD'])).stdout.trim()).toBe(f.commit)
 })
 
@@ -1806,6 +1808,8 @@ it('refuses a start from a thread with uncommitted work in the move’s words, a
   const worktree = f.control.shell().host.threads.find(thread => thread.id === tested.target.threadId)!.worktree!
   // The source thread holds feat/x, so the worker's branch takes the next name; its folder has the uncommitted work.
   expect(worktree.branch).toBe('feat/x-2')
+  // Beside its source, the worker names it without a machine (#1030).
+  expect(worktree.madeFrom).toEqual({ thread: f.fromThread.threadId })
   // As committed: this computer's own `core.autocrlf` may give a checkout CRLF on the way out.
   expect((await readFile(join(worktree.path!, 'new.txt'), 'utf8')).replace(/\r\n/gu, '\n')).toBe('new\n')
   expect((await readFile(join(worktree.path!, 'x.txt'), 'utf8')).replace(/\r\n/gu, '\n')).toBe('edited\n')

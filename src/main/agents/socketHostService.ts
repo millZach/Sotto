@@ -1315,6 +1315,8 @@ export class SocketHostService implements HostService {
   get supportsThreadStarts(): boolean { return this.features.includes('thread-starts') }
   /** The host lists `failure-seen`: it publishes `failureSeen` and takes `dismiss-failures` (ADR-0092). */
   get supportsFailureSeen(): boolean { return this.features.includes('failure-seen') }
+  /** The host lists `bring-changes-back`: it brings a thread's commits back to its parent's branch (#1030). */
+  get supportsBringBack(): boolean { return this.features.includes('bring-changes-back') }
   async startHandover(threadId: string): Promise<{ readonly text: string } | null> {
     this.offers('thread-starts')
     return this.read(hostStartHandoverSchema, await this.call({ op: 'start-handover', threadId })).handover
