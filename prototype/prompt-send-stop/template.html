@@ -215,7 +215,7 @@ svg.sq { width: 11px; height: 11px; fill: currentcolor; stroke: none; }
 @keyframes swap { from { opacity: 0; transform: scale(.7); } }
 </style>
 </head>
-<body class="today-beside">
+<body>
 <h1>Composer send and stop: ten directions</h1>
 <div class="intro">
   <p>Every frame is the Threads composer at its real 760px width. Columns are Sotto's own dark (Ink) and light (paper) halves; <b>Today</b> beside them is the composer as it is now, in T3 Chat's dark half, which reproduces the crops.</p>
@@ -380,7 +380,7 @@ const today = DIRS[0]
 const main = document.getElementById('main')
 const bar = document.getElementById('bar')
 bar.innerHTML = DIRS.map(d => `<a href="#d${d.id}">${d.id === 0 ? 'Today' : d.id + ' ' + d.name}</a>`).join('') +
-  '<label><input type="checkbox" id="beside" checked> Today beside each</label>'
+  '<label><input type="checkbox" id="beside"> Today beside each</label>'
 document.getElementById('beside').addEventListener('change', e => document.body.classList.toggle('today-beside', e.target.checked))
 
 for (const d of DIRS) {
