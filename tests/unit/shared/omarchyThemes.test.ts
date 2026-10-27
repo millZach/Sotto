@@ -157,14 +157,14 @@ describe('Omarchy M3 and readability check', () => {
     expect(widgetPresentationFor(settings, false).theme).toBe('light')
     expect(resolveThemeFor({ ...settings, omarchyTheme: null }, 'light').theme.id).toBe(DEFAULT_THEME_ID)
   })
-  it.each(['Windows', 'macOS'])('%s keeps its defaults and six palettes, ignoring any persisted Omarchy state', () => {
+  it.each(['Windows', 'macOS'])('%s keeps its defaults and seven palettes, ignoring any persisted Omarchy state', () => {
     const settings = parseSettings({ lightTheme: OMARCHY_THEME_ID, darkTheme: OMARCHY_THEME_ID, omarchyTheme: parseOmarchyTheme(fixtures.themes.hackerman.rendered) })
     expect(settings.lightTheme).toBe(DEFAULT_THEME_ID)
     expect(settings.darkTheme).toBe(DEFAULT_THEME_ID)
     expect(settings.appearance).toBe('dark')
     expect(settings).not.toHaveProperty('omarchyTheme')
-    expect(BUILT_IN_THEMES).toHaveLength(6)
-    // Pin all twelve shipped halves and their token projection; the Linux repair
+    expect(BUILT_IN_THEMES).toHaveLength(7)
+    // Pin all fourteen shipped halves and their token projection; the Linux repair
     // must never change Windows/macOS palettes. They last changed on purpose for
     // #936, which needed new design baselines on Windows, and then when Graphite, Clay and Fern replaced Linen,
     // Nocturne and Tropic (ADR-0024, October 26, 2026 amendment). The token file last changed when glass turned solid and
@@ -177,8 +177,9 @@ describe('Omarchy M3 and readability check', () => {
     // October 25 amendment), and when DeepSeek's mark got its badge colour, and when the effort trace's halo got its
     // strength for dark and light rooms (ADR-0019, October 26 amendment), and when the Appearance preview could paint a
     // half of its own (`[data-theme-scope]`), and when the Glass theme's see-through tokens and the card's
-    // solid colour arrived (ADR-0150); none of them changes a palette.
-    expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('5e43d8dae0a93190f59afd80f75f3400076c21aa2cb023b1aec0f8348ca8aac1')
+    // solid colour arrived (ADR-0150); none of them changes a palette. The palettes last changed when Vellum joined
+    // them (ADR-0154, October 27, 2026), which changed none of the twelve before it.
+    expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('0870a919c33b29526cea159e89fe0c25e43b0340bb62eaa05650f3e2e6178e56')
     const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
     expect(createHash('sha256').update(tokenText).digest('hex')).toBe('048cabb692cf6265a437f7931ca7779e88cea38021037fea9cf297f50b58d0df')
     // Existing Windows and macOS imports named Omarchy remain user themes.

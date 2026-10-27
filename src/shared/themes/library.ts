@@ -24,6 +24,7 @@ import {
   SOTTO_DARK_THEME_COLORS,
   SOTTO_LIGHT_THEME_COLORS,
   THEME_COLOR_ROLES,
+  VELLUM_THEME,
   type ThemeAppearance,
   type ThemeCollection,
   type ThemeColorRole,
@@ -69,7 +70,7 @@ export const T3_CODE_THEME: ThemeDefinition = {
 }
 
 /**
- * Sotto's six palettes, in the order the picker lists them (ADR-0024). They
+ * Sotto's seven palettes, in the order the picker lists them (ADR-0024, ADR-0154). They
  * replaced T3 Code's five, whose ids no longer resolve: a half saved on one of
  * them falls back to Sotto when settings are read.
  */
@@ -80,6 +81,7 @@ export const BUILT_IN_THEMES: readonly ThemeDefinition[] = [
   GRAPHITE_THEME,
   CLAY_THEME,
   FERN_THEME,
+  VELLUM_THEME,
 ]
 
 /**
@@ -98,7 +100,7 @@ export const GLASS_THEME: ThemeDefinition = {
 /** Every built-in Sotto has, held ones included: the ids no saved theme may take, whichever build saved it. */
 export const EVERY_BUILT_IN_THEME: readonly ThemeDefinition[] = [...BUILT_IN_THEMES, GLASS_THEME]
 
-/** The built-ins a run offers: Glass joins the six only where its Owl feature is on. */
+/** The built-ins a run offers: Glass joins the seven only where its Owl feature is on. */
 export function builtInThemesFor(glass: boolean): readonly ThemeDefinition[] {
   return glass ? EVERY_BUILT_IN_THEME : BUILT_IN_THEMES
 }
@@ -230,11 +232,11 @@ function normalizeStoredTheme(value: unknown): ThemeDefinition | null {
 }
 
 /**
- * The ids Graphite, Clay and Fern (ADR-0024) and Glass (ADR-0150) took on October 26, 2026. Until then a theme of the
- * user's own could carry one, so a saved theme that does keeps its colours under a free id and a half that named it
- * follows it.
+ * The ids Graphite, Clay and Fern (ADR-0024) and Glass (ADR-0150) took on October 26, 2026, and Vellum (ADR-0154) on
+ * October 27. Until then a theme of the user's own could carry one, so a saved theme that does keeps its colours under
+ * a free id and a half that named it follows it.
  */
-const CLAIMED_BUILT_IN_IDS: ReadonlySet<string> = new Set(['graphite', 'clay', 'fern', GLASS_THEME_ID])
+const CLAIMED_BUILT_IN_IDS: ReadonlySet<string> = new Set(['graphite', 'clay', 'fern', GLASS_THEME_ID, 'vellum'])
 
 /** The saved library, and the new id of each theme whose old id a built-in has since taken. */
 export interface SavedThemeLibrary {

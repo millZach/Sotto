@@ -1,6 +1,6 @@
 // @vitest-environment node
 /*
- * The iPhone paints Sotto's six built-in palettes (ADR-0051). Its Swift copy,
+ * The iPhone paints Sotto's seven built-in palettes (ADR-0051). Its Swift copy,
  * apps/ios/Sotto/ThemePalettes.swift, is generated from the desktop's own
  * definitions here, so the two cannot drift: this test rebuilds the Swift
  * source and fails when the committed file differs.
@@ -166,7 +166,7 @@ function swiftSource(palettes: readonly IosPalette[]): string {
     '}',
     '',
     'enum ThemePalettes {',
-    '    /// The six palettes in the order the desktop lists them. The first is the default.',
+    '    /// The seven palettes in the order the desktop lists them. The first is the default.',
     `    static let all: [ThemePalette] = [${palettes.map(palette => palette.id).join(', ')}]`,
     '    /// The palettes the desktop retired, and the one each moved to (ADR-0024).',
     `    static let retired: [String: String] = [${[...RETIRED_BUILT_IN_THEMES].map(([from, to]) => `"${from}": "${to}"`).join(', ')}]`,
@@ -193,8 +193,8 @@ function swiftSource(palettes: readonly IosPalette[]): string {
 describe('iPhone palettes', () => {
   const palettes = iosPalettes()
 
-  it('lists the six built-ins under their own names', () => {
-    expect(palettes.map(palette => palette.id)).toEqual(['sotto', 'hush', 'citrine', 'graphite', 'clay', 'fern'])
+  it('lists the seven built-ins under their own names', () => {
+    expect(palettes.map(palette => palette.id)).toEqual(['sotto', 'hush', 'citrine', 'graphite', 'clay', 'fern', 'vellum'])
   })
 
   it('keeps derived text readable on every tinted surface', () => {

@@ -304,7 +304,7 @@ describe('appearance settings', () => {
     expect(within(dark).getByRole('radio', { name: 'Hush' })).toHaveFocus()
     await waitFor(() => expect(save).toHaveBeenCalledWith({ darkTheme: 'hush' }, expect.anything()))
     await user.keyboard('{End}')
-    await waitFor(() => expect(save).toHaveBeenCalledWith({ darkTheme: 'fern' }, expect.anything()))
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ darkTheme: 'vellum' }, expect.anything()))
     await user.keyboard('{ArrowDown}')
     expect(within(dark).getByRole('radio', { name: 'Sotto' })).toHaveFocus()
   })

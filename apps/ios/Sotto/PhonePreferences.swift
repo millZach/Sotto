@@ -4,8 +4,8 @@ import Foundation
 /// changes its settings. SwiftUI views read these keys with `@AppStorage`; anything else, the app model included,
 /// reads them through `PhonePreferences`. This file imports Foundation only so the model's tests can compile it.
 enum PhonePreferenceKey {
-    /// A built-in palette's id: sotto, hush, citrine, graphite, clay or fern. One saved before October 26, 2026 may
-    /// name linen, nocturne or tropic; `PhoneThemeID.current` reads it as the palette that replaced it.
+    /// A built-in palette's id: sotto, hush, citrine, graphite, clay, fern or vellum. One saved before October 26,
+    /// 2026 may name linen, nocturne or tropic; `PhoneThemeID.current` reads it as the palette that replaced it.
     static let theme = "phoneTheme"
     /// dark, light or system.
     static let appearance = "phoneAppearance"

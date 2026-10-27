@@ -79,7 +79,7 @@ const CUSTOM: ThemeDefinition[] = [
   dark('community-frappe', 'Frappé', fern, { collection: { id: 'community.catppuccin-vsc', label: 'Catppuccin Community' } }),
   dark('community-mocha', 'Mocha', graphite, { collection: { id: 'community.catppuccin-vsc', label: 'Catppuccin Community' } }),
 ]
-const BUILT_IN_NAMES = ['Sotto', 'Hush', 'Citrine', 'Graphite', 'Clay', 'Fern']
+const BUILT_IN_NAMES = ['Sotto', 'Hush', 'Citrine', 'Graphite', 'Clay', 'Fern', 'Vellum']
 
 /** Every option in one half's column, measured where it is drawn. */
 const columnLayout = (column: Locator) => column.evaluate(element => {

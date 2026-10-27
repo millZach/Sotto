@@ -321,8 +321,8 @@ describe('settings', () => {
     expect(parseSettings({ lightTheme: 'linen', darkTheme: 'citrine' })).toMatchObject({ lightTheme: 'clay', darkTheme: 'citrine' })
   })
 
-  it('keeps a theme of the user’s own whose id Graphite, Clay, Fern or Glass took, under a new id its halves follow', () => {
-    for (const claimed of ['graphite', 'clay', 'fern', 'glass']) {
+  it('keeps a theme of the user’s own whose id Graphite, Clay, Fern, Glass or Vellum took, under a new id its halves follow', () => {
+    for (const claimed of ['graphite', 'clay', 'fern', 'glass', 'vellum']) {
       const own = { ...aurora, id: claimed, label: 'Mine' }
       const taken = { ...aurora, id: `${claimed}-2`, label: 'Also mine' }
       const parsed = parseSettings({ lightTheme: claimed, darkTheme: claimed, customThemes: [own, taken] })

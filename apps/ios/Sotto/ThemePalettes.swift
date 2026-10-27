@@ -50,8 +50,8 @@ struct ThemePalette: Identifiable, Equatable {
 }
 
 enum ThemePalettes {
-    /// The six palettes in the order the desktop lists them. The first is the default.
-    static let all: [ThemePalette] = [sotto, hush, citrine, graphite, clay, fern]
+    /// The seven palettes in the order the desktop lists them. The first is the default.
+    static let all: [ThemePalette] = [sotto, hush, citrine, graphite, clay, fern, vellum]
     /// The palettes the desktop retired, and the one each moved to (ADR-0024).
     static let retired: [String: String] = ["linen": "clay", "nocturne": "graphite", "tropic": "fern"]
 
@@ -61,6 +61,7 @@ enum ThemePalettes {
     static let graphite = ThemePalette(id: "graphite", name: "Graphite", light: graphiteLight, dark: graphiteDark)
     static let clay = ThemePalette(id: "clay", name: "Clay", light: clayLight, dark: clayDark)
     static let fern = ThemePalette(id: "fern", name: "Fern", light: fernLight, dark: fernDark)
+    static let vellum = ThemePalette(id: "vellum", name: "Vellum", light: vellumLight, dark: vellumDark)
 
     static let sottoLight = ThemeSwatch(
         canvas: ThemeRGB(0.9765, 0.9725, 0.9608),
@@ -372,5 +373,57 @@ enum ThemePalettes {
         accentText: ThemeRGB(0.4824, 0.8784, 0.5765),
         warningText: ThemeRGB(0.9882, 0.7490, 0.4941),
         dangerText: ThemeRGB(1.0000, 0.4510, 0.4353)
+    )
+
+    static let vellumLight = ThemeSwatch(
+        canvas: ThemeRGB(0.9569, 0.9412, 0.9059),
+        surface: ThemeRGB(0.9725, 0.9608, 0.9333),
+        surfaceRaised: ThemeRGB(0.9255, 0.9059, 0.8706),
+        surfaceOverlay: ThemeRGB(0.9686, 0.9529, 0.9216),
+        text: ThemeRGB(0.1647, 0.1294, 0.0941),
+        textMuted: ThemeRGB(0.3451, 0.3059, 0.2627),
+        border: ThemeRGB(0.8510, 0.8275, 0.7922),
+        accent: ThemeRGB(0.1686, 0.2824, 0.5020),
+        accentForeground: ThemeRGB(0.9647, 0.9529, 0.9255),
+        accentSurface: ThemeRGB(0.8471, 0.8863, 0.9529),
+        warning: ThemeRGB(0.8745, 0.5686, 0.1020),
+        warningSurface: ThemeRGB(0.9647, 0.9098, 0.8157),
+        error: ThemeRGB(0.7843, 0.2275, 0.2078),
+        errorSurface: ThemeRGB(0.9804, 0.8941, 0.8824),
+        messageSurface: ThemeRGB(0.9098, 0.8784, 0.8314),
+        messageForeground: ThemeRGB(0.1647, 0.1294, 0.0941),
+        codeBackground: ThemeRGB(0.9294, 0.9137, 0.8824),
+        codeForeground: ThemeRGB(0.1647, 0.1294, 0.0941),
+        placeholder: ThemeRGB(0.3725, 0.3373, 0.2980),
+        mutedText: ThemeRGB(0.3451, 0.3059, 0.2627),
+        accentText: ThemeRGB(0.1725, 0.2510, 0.4078),
+        warningText: ThemeRGB(0.4824, 0.3294, 0.1373),
+        dangerText: ThemeRGB(0.5882, 0.2118, 0.1765)
+    )
+
+    static let vellumDark = ThemeSwatch(
+        canvas: ThemeRGB(0.1176, 0.1059, 0.0941),
+        surface: ThemeRGB(0.1333, 0.1216, 0.1059),
+        surfaceRaised: ThemeRGB(0.1529, 0.1373, 0.1216),
+        surfaceOverlay: ThemeRGB(0.1686, 0.1529, 0.1373),
+        text: ThemeRGB(0.9098, 0.8863, 0.8431),
+        textMuted: ThemeRGB(0.7098, 0.6863, 0.6431),
+        border: ThemeRGB(0.2118, 0.1961, 0.1765),
+        accent: ThemeRGB(0.6431, 0.7451, 0.9373),
+        accentForeground: ThemeRGB(0.0980, 0.1098, 0.1294),
+        accentSurface: ThemeRGB(0.1569, 0.1882, 0.2510),
+        warning: ThemeRGB(0.9490, 0.6863, 0.2824),
+        warningSurface: ThemeRGB(0.2275, 0.1686, 0.0863),
+        error: ThemeRGB(0.9490, 0.4431, 0.4000),
+        errorSurface: ThemeRGB(0.2667, 0.1373, 0.1294),
+        messageSurface: ThemeRGB(0.1843, 0.1686, 0.1451),
+        messageForeground: ThemeRGB(0.9098, 0.8863, 0.8431),
+        codeBackground: ThemeRGB(0.1020, 0.0902, 0.0745),
+        codeForeground: ThemeRGB(0.8902, 0.8667, 0.8235),
+        placeholder: ThemeRGB(0.6588, 0.6353, 0.6039),
+        mutedText: ThemeRGB(0.7098, 0.6863, 0.6431),
+        accentText: ThemeRGB(0.6863, 0.7686, 0.9255),
+        warningText: ThemeRGB(0.9373, 0.7647, 0.5255),
+        dangerText: ThemeRGB(0.9529, 0.5490, 0.4980)
     )
 }

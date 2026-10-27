@@ -6,8 +6,8 @@
  * and so are the T3 Chat colours below, which are no longer a built-in: they
  * fill the roles an imported theme file leaves out, as T3 Code does. MIT
  * License, Copyright (c) 2026 T3 Tools Inc.; the full notice is in
- * THIRD_PARTY_NOTICES.md. The six built-in palettes (Sotto, Hush, Citrine,
- * Graphite, Clay and Fern) are Sotto's own (ADR-0024).
+ * THIRD_PARTY_NOTICES.md. The seven built-in palettes (Sotto, Hush, Citrine,
+ * Graphite, Clay, Fern and Vellum) are Sotto's own (ADR-0024, ADR-0154).
  */
 
 export type ThemeAppearance = 'light' | 'dark'
@@ -971,6 +971,135 @@ export const FERN_DARK_THEME_COLORS: ThemeColors = {
   terminalScrollbarHover: 'oklch(0.4 0.012 160)',
 }
 
+/*
+ * Vellum, for long sessions (ADR-0154): warm paper by day and a lamp-lit sepia
+ * room by night, with an ink-blue accent kept to links, focus and the chosen
+ * row so it never meets the warning's amber. Its words hold 7:1 on every
+ * surface they sit on and its secondary words 4.5:1 or more; the surfaces sit a
+ * few lightness steps apart, so hairlines do the separating. By night the room
+ * is lifted off black and the text kept under white.
+ */
+
+export const VELLUM_LIGHT_THEME_COLORS: ThemeColors = {
+  canvas: 'oklch(0.955 0.013 85)',
+  chrome: 'oklch(0.955 0.013 85)',
+  toolbar: 'oklch(0.955 0.013 85)',
+  toolbarForeground: 'oklch(0.255 0.022 65)',
+  toolbarBorder: 'oklch(0.87 0.014 80)',
+  toolbarControl: 'oklch(0.93 0.013 83)',
+  toolbarControlForeground: 'oklch(0.255 0.022 65)',
+  toolbarControlHover: 'oklch(0.9 0.015 82)',
+  surface: 'oklch(0.97 0.01 85)',
+  surfaceRaised: 'oklch(0.93 0.014 83)',
+  surfaceOverlay: 'oklch(0.965 0.011 85)',
+  text: 'oklch(0.255 0.022 65)',
+  textMuted: 'oklch(0.43 0.022 70)',
+  border: 'oklch(0.87 0.014 80)',
+  input: 'oklch(0.78 0.018 78)',
+  focus: 'oklch(0.47 0.13 262)',
+  accent: 'oklch(0.41 0.1 262)',
+  accentForeground: 'oklch(0.965 0.01 85)',
+  secondary: 'oklch(0.915 0.014 82)',
+  secondaryForeground: 'oklch(0.255 0.022 65)',
+  muted: 'oklch(0.925 0.014 83)',
+  mutedForeground: 'oklch(0.43 0.022 70)',
+  placeholder: 'oklch(0.46 0.02 72)',
+  secondaryLabel: 'oklch(0.43 0.022 70)',
+  iconMuted: 'oklch(0.43 0.022 70)',
+  error: 'oklch(0.56 0.18 27)',
+  errorForeground: 'oklch(0.46 0.16 27)',
+  errorSurface: 'oklch(0.935 0.025 25)',
+  warning: 'oklch(0.72 0.15 70)',
+  warningForeground: 'oklch(0.45 0.12 55)',
+  warningSurface: 'oklch(0.935 0.035 80)',
+  update: 'oklch(0.41 0.1 262)',
+  updateForeground: 'oklch(0.39 0.1 262)',
+  updateSurface: 'oklch(0.905 0.03 262)',
+  accentSurface: 'oklch(0.91 0.025 262)',
+  accentSurfaceForeground: 'oklch(0.255 0.022 65)',
+  messageSurface: 'oklch(0.91 0.018 80)',
+  messageForeground: 'oklch(0.255 0.022 65)',
+  messageAction: 'oklch(0.41 0.1 262)',
+  messageActionForeground: 'oklch(0.965 0.01 85)',
+  messageActionHover: 'oklch(0.36 0.1 262)',
+  codeBackground: 'oklch(0.935 0.012 83)',
+  codeForeground: 'oklch(0.255 0.022 65)',
+  sidebar: 'oklch(0.935 0.015 82)',
+  sidebarForeground: 'oklch(0.255 0.022 65)',
+  sidebarMutedForeground: 'oklch(0.43 0.022 70)',
+  sidebarControlSurface: 'oklch(0.965 0.01 85)',
+  sidebarRowHover: 'oklch(0.915 0.014 82)',
+  sidebarRowActive: 'oklch(0.895 0.03 262)',
+  sidebarRowSelected: 'oklch(0.865 0.045 262)',
+  sidebarBorder: 'oklch(0.875 0.014 80)',
+  terminalBackground: 'oklch(0.955 0.013 85)',
+  terminalForeground: 'oklch(0.255 0.022 65)',
+  terminalCursor: 'oklch(0.41 0.1 262)',
+  terminalSelection: 'oklch(0.88 0.035 262)',
+  terminalScrollbar: 'oklch(0.82 0.012 80)',
+  terminalScrollbarHover: 'oklch(0.74 0.014 80)',
+}
+
+export const VELLUM_DARK_THEME_COLORS: ThemeColors = {
+  canvas: 'oklch(0.225 0.008 70)',
+  chrome: 'oklch(0.225 0.008 70)',
+  toolbar: 'oklch(0.225 0.008 70)',
+  toolbarForeground: 'oklch(0.915 0.016 85)',
+  toolbarBorder: 'oklch(0.32 0.01 72)',
+  toolbarControl: 'oklch(0.285 0.009 70)',
+  toolbarControlForeground: 'oklch(0.915 0.016 85)',
+  toolbarControlHover: 'oklch(0.32 0.01 70)',
+  surface: 'oklch(0.24 0.008 70)',
+  surfaceRaised: 'oklch(0.26 0.009 70)',
+  surfaceOverlay: 'oklch(0.275 0.009 70)',
+  text: 'oklch(0.915 0.016 85)',
+  textMuted: 'oklch(0.755 0.016 80)',
+  border: 'oklch(0.32 0.01 72)',
+  input: 'oklch(0.42 0.012 72)',
+  focus: 'oklch(0.83 0.09 262)',
+  accent: 'oklch(0.8 0.075 262)',
+  accentForeground: 'oklch(0.225 0.012 262)',
+  secondary: 'oklch(0.295 0.009 70)',
+  secondaryForeground: 'oklch(0.915 0.016 85)',
+  muted: 'oklch(0.205 0.008 70)',
+  mutedForeground: 'oklch(0.755 0.016 80)',
+  placeholder: 'oklch(0.715 0.014 78)',
+  secondaryLabel: 'oklch(0.755 0.016 80)',
+  iconMuted: 'oklch(0.755 0.016 80)',
+  error: 'oklch(0.7 0.16 27)',
+  errorForeground: 'oklch(0.77 0.13 27)',
+  errorSurface: 'oklch(0.3 0.05 25)',
+  warning: 'oklch(0.8 0.14 75)',
+  warningForeground: 'oklch(0.84 0.12 80)',
+  warningSurface: 'oklch(0.3 0.04 75)',
+  update: 'oklch(0.8 0.075 262)',
+  updateForeground: 'oklch(0.82 0.07 262)',
+  updateSurface: 'oklch(0.31 0.035 262)',
+  accentSurface: 'oklch(0.31 0.03 262)',
+  accentSurfaceForeground: 'oklch(0.915 0.016 85)',
+  messageSurface: 'oklch(0.29 0.012 75)',
+  messageForeground: 'oklch(0.915 0.016 85)',
+  messageAction: 'oklch(0.8 0.075 262)',
+  messageActionForeground: 'oklch(0.225 0.012 262)',
+  messageActionHover: 'oklch(0.85 0.07 262)',
+  codeBackground: 'oklch(0.205 0.008 70)',
+  codeForeground: 'oklch(0.9 0.016 85)',
+  sidebar: 'oklch(0.245 0.008 70)',
+  sidebarForeground: 'oklch(0.915 0.016 85)',
+  sidebarMutedForeground: 'oklch(0.755 0.016 80)',
+  sidebarControlSurface: 'oklch(0.29 0.008 70)',
+  sidebarRowHover: 'oklch(0.285 0.008 70)',
+  sidebarRowActive: 'oklch(0.32 0.03 262)',
+  sidebarRowSelected: 'oklch(0.345 0.04 262)',
+  sidebarBorder: 'oklch(0.33 0.01 72)',
+  terminalBackground: 'oklch(0.225 0.008 70)',
+  terminalForeground: 'oklch(0.915 0.016 85)',
+  terminalCursor: 'oklch(0.8 0.075 262)',
+  terminalSelection: 'oklch(0.34 0.04 262)',
+  terminalScrollbar: 'oklch(0.36 0.01 70)',
+  terminalScrollbarHover: 'oklch(0.46 0.01 70)',
+}
+
 function builtIn(id: string, label: string, light: ThemeColors, dark: ThemeColors): ThemeDefinition {
   return { id, label, appearance: 'light', colors: light, variants: { dark } }
 }
@@ -985,3 +1114,5 @@ export const GRAPHITE_THEME = builtIn('graphite', 'Graphite', GRAPHITE_LIGHT_THE
 export const CLAY_THEME = builtIn('clay', 'Clay', CLAY_LIGHT_THEME_COLORS, CLAY_DARK_THEME_COLORS)
 /** Clean white and charcoal with a fresh green. */
 export const FERN_THEME = builtIn('fern', 'Fern', FERN_LIGHT_THEME_COLORS, FERN_DARK_THEME_COLORS)
+/** Warm paper and ink blue, at 7:1. */
+export const VELLUM_THEME = builtIn('vellum', 'Vellum', VELLUM_LIGHT_THEME_COLORS, VELLUM_DARK_THEME_COLORS)

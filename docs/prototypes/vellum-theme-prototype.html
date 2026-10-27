@@ -1,0 +1,412 @@
+<!doctype html>
+<!-- THROWAWAY PROTOTYPE - Vellum, the warm high-contrast built-in theme (ADR-0154).
+     Every colour comes from the app's real src/renderer/src/styles/tokens.css: each window below is a
+     [data-theme-scope] element carrying Vellum's --theme-* roles from src/shared/themes/palettes.ts, so tokens.css
+     derives every --tt-* token from them exactly as it does in the app. The page's own rules read only --tt-* tokens.
+     Serve the repository root over HTTP (python3 -m http.server) so tokens.css and Figtree load.
+     URL: ?half=dark|light picks one half, &view=threads|watcher|settings one window, &contrast=50..200 the Contrast
+     setting. With no parameters every window shows, dark then light. Synthetic data only, outside every entrypoint. -->
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vellum (prototype)</title>
+<link rel="stylesheet" href="../../src/renderer/src/styles/tokens.css">
+<style>
+@font-face{font-family:Figtree;font-weight:300 900;src:url(../../src/shared/fonts/figtree-latin.woff2) format("woff2")}
+@font-face{font-family:'Spline Sans Mono';font-weight:300 700;src:url(../../src/renderer/src/assets/fonts/spline-sans-mono-latin.woff2) format("woff2")}
+
+/* Vellum's roles, generated from src/shared/themes/palettes.ts. */
+[data-theme-scope='dark'] {
+  --theme-canvas: oklch(0.225 0.008 70);
+  --theme-chrome: oklch(0.225 0.008 70);
+  --theme-toolbar: oklch(0.225 0.008 70);
+  --theme-toolbar-foreground: oklch(0.915 0.016 85);
+  --theme-toolbar-border: oklch(0.32 0.01 72);
+  --theme-toolbar-control: oklch(0.285 0.009 70);
+  --theme-toolbar-control-foreground: oklch(0.915 0.016 85);
+  --theme-toolbar-control-hover: oklch(0.32 0.01 70);
+  --theme-surface: oklch(0.24 0.008 70);
+  --theme-surface-raised: oklch(0.26 0.009 70);
+  --theme-surface-overlay: oklch(0.275 0.009 70);
+  --theme-text: oklch(0.915 0.016 85);
+  --theme-text-muted: oklch(0.755 0.016 80);
+  --theme-border: oklch(0.32 0.01 72);
+  --theme-input: oklch(0.42 0.012 72);
+  --theme-focus: oklch(0.83 0.09 262);
+  --theme-accent: oklch(0.8 0.075 262);
+  --theme-accent-foreground: oklch(0.225 0.012 262);
+  --theme-secondary: oklch(0.295 0.009 70);
+  --theme-secondary-foreground: oklch(0.915 0.016 85);
+  --theme-muted: oklch(0.205 0.008 70);
+  --theme-muted-foreground: oklch(0.755 0.016 80);
+  --theme-placeholder: oklch(0.715 0.014 78);
+  --theme-secondary-label: oklch(0.755 0.016 80);
+  --theme-icon-muted: oklch(0.755 0.016 80);
+  --theme-error: oklch(0.7 0.16 27);
+  --theme-error-foreground: oklch(0.77 0.13 27);
+  --theme-error-surface: oklch(0.3 0.05 25);
+  --theme-warning: oklch(0.8 0.14 75);
+  --theme-warning-foreground: oklch(0.84 0.12 80);
+  --theme-warning-surface: oklch(0.3 0.04 75);
+  --theme-update: oklch(0.8 0.075 262);
+  --theme-update-foreground: oklch(0.82 0.07 262);
+  --theme-update-surface: oklch(0.31 0.035 262);
+  --theme-accent-surface: oklch(0.31 0.03 262);
+  --theme-accent-surface-foreground: oklch(0.915 0.016 85);
+  --theme-message-surface: oklch(0.29 0.012 75);
+  --theme-message-foreground: oklch(0.915 0.016 85);
+  --theme-message-action: oklch(0.8 0.075 262);
+  --theme-message-action-foreground: oklch(0.225 0.012 262);
+  --theme-message-action-hover: oklch(0.85 0.07 262);
+  --theme-code-background: oklch(0.205 0.008 70);
+  --theme-code-foreground: oklch(0.9 0.016 85);
+  --theme-sidebar: oklch(0.245 0.008 70);
+  --theme-sidebar-foreground: oklch(0.915 0.016 85);
+  --theme-sidebar-muted-foreground: oklch(0.755 0.016 80);
+  --theme-sidebar-control-surface: oklch(0.29 0.008 70);
+  --theme-sidebar-row-hover: oklch(0.285 0.008 70);
+  --theme-sidebar-row-active: oklch(0.32 0.03 262);
+  --theme-sidebar-row-selected: oklch(0.345 0.04 262);
+  --theme-sidebar-border: oklch(0.33 0.01 72);
+  --theme-terminal-background: oklch(0.225 0.008 70);
+  --theme-terminal-foreground: oklch(0.915 0.016 85);
+  --theme-terminal-cursor: oklch(0.8 0.075 262);
+  --theme-terminal-selection: oklch(0.34 0.04 262);
+  --theme-terminal-scrollbar: oklch(0.36 0.01 70);
+  --theme-terminal-scrollbar-hover: oklch(0.46 0.01 70);
+}
+[data-theme-scope='light'] {
+  --theme-canvas: oklch(0.955 0.013 85);
+  --theme-chrome: oklch(0.955 0.013 85);
+  --theme-toolbar: oklch(0.955 0.013 85);
+  --theme-toolbar-foreground: oklch(0.255 0.022 65);
+  --theme-toolbar-border: oklch(0.87 0.014 80);
+  --theme-toolbar-control: oklch(0.93 0.013 83);
+  --theme-toolbar-control-foreground: oklch(0.255 0.022 65);
+  --theme-toolbar-control-hover: oklch(0.9 0.015 82);
+  --theme-surface: oklch(0.97 0.01 85);
+  --theme-surface-raised: oklch(0.93 0.014 83);
+  --theme-surface-overlay: oklch(0.965 0.011 85);
+  --theme-text: oklch(0.255 0.022 65);
+  --theme-text-muted: oklch(0.43 0.022 70);
+  --theme-border: oklch(0.87 0.014 80);
+  --theme-input: oklch(0.78 0.018 78);
+  --theme-focus: oklch(0.47 0.13 262);
+  --theme-accent: oklch(0.41 0.1 262);
+  --theme-accent-foreground: oklch(0.965 0.01 85);
+  --theme-secondary: oklch(0.915 0.014 82);
+  --theme-secondary-foreground: oklch(0.255 0.022 65);
+  --theme-muted: oklch(0.925 0.014 83);
+  --theme-muted-foreground: oklch(0.43 0.022 70);
+  --theme-placeholder: oklch(0.46 0.02 72);
+  --theme-secondary-label: oklch(0.43 0.022 70);
+  --theme-icon-muted: oklch(0.43 0.022 70);
+  --theme-error: oklch(0.56 0.18 27);
+  --theme-error-foreground: oklch(0.46 0.16 27);
+  --theme-error-surface: oklch(0.935 0.025 25);
+  --theme-warning: oklch(0.72 0.15 70);
+  --theme-warning-foreground: oklch(0.45 0.12 55);
+  --theme-warning-surface: oklch(0.935 0.035 80);
+  --theme-update: oklch(0.41 0.1 262);
+  --theme-update-foreground: oklch(0.39 0.1 262);
+  --theme-update-surface: oklch(0.905 0.03 262);
+  --theme-accent-surface: oklch(0.91 0.025 262);
+  --theme-accent-surface-foreground: oklch(0.255 0.022 65);
+  --theme-message-surface: oklch(0.91 0.018 80);
+  --theme-message-foreground: oklch(0.255 0.022 65);
+  --theme-message-action: oklch(0.41 0.1 262);
+  --theme-message-action-foreground: oklch(0.965 0.01 85);
+  --theme-message-action-hover: oklch(0.36 0.1 262);
+  --theme-code-background: oklch(0.935 0.012 83);
+  --theme-code-foreground: oklch(0.255 0.022 65);
+  --theme-sidebar: oklch(0.935 0.015 82);
+  --theme-sidebar-foreground: oklch(0.255 0.022 65);
+  --theme-sidebar-muted-foreground: oklch(0.43 0.022 70);
+  --theme-sidebar-control-surface: oklch(0.965 0.01 85);
+  --theme-sidebar-row-hover: oklch(0.915 0.014 82);
+  --theme-sidebar-row-active: oklch(0.895 0.03 262);
+  --theme-sidebar-row-selected: oklch(0.865 0.045 262);
+  --theme-sidebar-border: oklch(0.875 0.014 80);
+  --theme-terminal-background: oklch(0.955 0.013 85);
+  --theme-terminal-foreground: oklch(0.255 0.022 65);
+  --theme-terminal-cursor: oklch(0.41 0.1 262);
+  --theme-terminal-selection: oklch(0.88 0.035 262);
+  --theme-terminal-scrollbar: oklch(0.82 0.012 80);
+  --theme-terminal-scrollbar-hover: oklch(0.74 0.014 80);
+}
+
+*{box-sizing:border-box}html,body{margin:0;background:#777}
+.win{height:100vh;min-height:560px;display:grid;grid-template-rows:36px 1fr;background:var(--tt-canvas);color:var(--tt-text);
+  font:14px/1.5 var(--tt-font-ui);overflow:hidden;border-bottom:6px solid #777}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+:focus-visible{outline:2px solid var(--tt-focus-ring);outline-offset:2px}
+
+/* The strip */
+.strip{display:flex;align-items:center;gap:10px;padding:0 12px 0 78px;background:var(--tt-chrome);border-bottom:1px solid var(--tt-hairline);font-size:12.5px;color:var(--tt-text-muted)}
+.strip .seg{margin-left:auto}
+.dots{position:absolute;left:12px;display:flex;gap:8px}.dots i{width:12px;height:12px;border-radius:50%;background:var(--tt-border-faint)}
+.seg{display:inline-flex;padding:2px;border-radius:7px;background:var(--tt-surface-sunken);border:1px solid var(--tt-hairline)}
+.seg b{font-weight:500;padding:2px 10px;border-radius:5px;color:var(--tt-text-muted);font-size:12.5px}
+.seg b.on{background:var(--tt-segment-on);color:var(--tt-text);box-shadow:var(--tt-shadow-sm)}
+
+.body{display:grid;grid-template-columns:272px 1fr;min-height:0;position:relative}
+
+/* The sidebar rail */
+.side{background:var(--tt-sidebar);border-right:1px solid var(--tt-sidebar-border);padding:10px 8px;display:flex;flex-direction:column;gap:2px;min-height:0;overflow:hidden;color:var(--tt-sidebar-text)}
+.search{display:flex;align-items:center;gap:8px;height:30px;padding:0 10px;margin:0 2px 8px;border-radius:6px;background:var(--tt-field);border:1px solid var(--tt-field-border);color:var(--tt-text-faint);font-size:13px}
+.group{display:flex;align-items:center;gap:6px;padding:8px 8px 4px;font-size:12px;font-weight:600;color:var(--tt-sidebar-text-muted)}
+.group .count{margin-left:auto;font-weight:500}
+.row{display:flex;align-items:center;gap:8px;height:30px;padding:0 8px;border-radius:6px;font-size:13.5px;white-space:nowrap}
+.row > span:not(.mark){overflow:hidden;text-overflow:ellipsis;flex:1}
+.row time{font-size:12px;color:var(--tt-sidebar-text-muted)}
+.row:hover{background:var(--tt-sidebar-row-hover)}
+.row.sel{background:var(--tt-sidebar-row-selected);box-shadow:inset 2px 0 0 var(--tt-accent)}
+.row.sel time{color:var(--tt-text-2)}
+.mark{width:14px;height:14px;flex:none;display:grid;place-items:center}
+.ring{width:10px;height:10px;border-radius:50%;border:2px solid var(--tt-success)}
+.spin{width:10px;height:10px;border-radius:50%;border:2px solid var(--tt-activity);border-right-color:transparent}
+.needs{width:8px;height:8px;border-radius:50%;background:var(--tt-attention);box-shadow:0 0 0 3px color-mix(in srgb,var(--tt-attention) 22%,transparent)}
+.idle{width:6px;height:6px;border-radius:50%;background:var(--tt-text-faint)}
+.owl{width:14px;height:14px;color:var(--tt-sidebar-text-muted)}
+.row .owl.watching{color:var(--tt-accent-text)}
+.side .foot{margin-top:auto;display:flex;gap:6px;padding:6px 4px 0;border-top:1px solid var(--tt-sidebar-border)}
+.icon-btn{width:28px;height:28px;display:grid;place-items:center;border-radius:6px;color:var(--tt-text-muted)}
+.icon-btn:hover{background:var(--tt-hover);color:var(--tt-text)}
+.icon-btn.ring-demo{outline:2px solid var(--tt-focus-ring);outline-offset:1px}
+
+/* A thread */
+.pane{container-type:inline-size;display:grid;grid-template-rows:44px 1fr auto;min-height:0;min-width:0;position:relative}
+.head{display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--tt-hairline);font-weight:600;font-size:14px}
+.head .crumb{font-weight:400;color:var(--tt-text-muted);font-size:12.5px}
+.head .watch{margin-left:auto;display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px;border-radius:6px;border:1px solid var(--tt-accent-border);color:var(--tt-accent-text);font-weight:500;font-size:12.5px;background:var(--tt-accent-wash)}
+.scroll{overflow:hidden;padding:18px 40px 12px 24px;display:flex;flex-direction:column;gap:14px;min-height:0;position:relative}
+.msg{max-width:720px}
+.who{font-size:12px;color:var(--tt-text-muted);margin-bottom:2px}
+.bubble{align-self:flex-end;max-width:520px;background:var(--tt-bubble);color:var(--tt-bubble-text);padding:9px 13px;border-radius:10px}
+.bubble time{display:block;font-size:11.5px;color:var(--tt-text-muted);margin-top:2px;text-align:right}
+p{margin:0 0 6px}
+a{color:var(--tt-link);text-decoration:underline;text-underline-offset:2px;text-decoration-color:color-mix(in srgb,var(--tt-link) 45%,transparent)}
+code{font:12.5px/1.55 var(--tt-font-mono)}
+p code{background:var(--tt-code-bg);border:1px solid var(--tt-code-border);padding:0 4px;border-radius:4px;color:var(--tt-code-text)}
+pre{margin:6px 0;background:var(--tt-code-bg);border:1px solid var(--tt-code-border);border-radius:8px;padding:10px 12px;color:var(--tt-code-text);overflow:hidden}
+.k{color:var(--tt-accent-text)}.s{color:var(--tt-warning)}.c{color:var(--tt-text-muted)}
+.tool{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--tt-text-muted)}
+.tool b{font-weight:500;color:var(--tt-text-2)}
+.working{font-size:13px;color:var(--tt-text-muted);display:flex;gap:8px;align-items:center}
+.working .w{background:linear-gradient(90deg,var(--tt-text-muted) 30%,var(--tt-working-light) 50%,var(--tt-text-muted) 70%);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+/* The scrubber: a column of ticks */
+.scrub{position:absolute;right:10px;top:22px;bottom:16px;width:14px;display:flex;flex-direction:column;gap:9px;align-items:flex-end}
+.scrub i{display:block;height:2px;width:8px;border-radius:1px;background:var(--tt-text-faint);opacity:.55}
+.scrub i.on{width:12px;background:var(--tt-text);opacity:1}
+
+/* Question card */
+.card{background:var(--tt-card);border-radius:10px;padding:14px 16px}
+.q h4{margin:0 0 2px;font-size:14px}
+.q .sub{font-size:12.5px;color:var(--tt-text-muted);margin-bottom:10px}
+.opt{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:7px;margin:0 -10px}
+.opt .dot{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--tt-border);margin-top:3px;flex:none}
+.opt.chosen{background:var(--tt-card-selected)}
+.opt.chosen .dot{border:4px solid var(--tt-accent)}
+.opt small{display:block;color:var(--tt-text-muted);font-size:12.5px}
+.rec{color:var(--tt-accent-text);font-size:12px;font-weight:600;margin-left:6px}
+.qbar{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
+
+/* Buttons and keys (ADR-0110, ADR-0153) */
+.btn{display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 10px;border-radius:6px;font-size:13px;font-weight:500;color:var(--tt-text-2)}
+.btn:hover{background:var(--tt-hover);color:var(--tt-text)}
+.btn.fill{background:var(--tt-pill);color:var(--tt-pill-ink)}
+.btn.stop{position:relative}
+.btn.stop.trace{box-shadow:0 0 0 1.5px var(--tt-accent)}
+.kbd{font:500 11px/1 var(--tt-font-ui);padding:3px 5px;border-radius:4px;background:var(--tt-kbd);color:var(--tt-text-2);border:1px solid var(--tt-hairline)}
+.btn.fill .kbd{background:color-mix(in srgb,var(--tt-pill-ink) 16%,transparent);color:var(--tt-pill-ink);border-color:color-mix(in srgb,var(--tt-pill-ink) 30%,transparent)}
+@container (width < 600px){.word{display:none}}
+
+/* The composer */
+.composer{margin:0 18px 14px;background:var(--tt-glass-field);border:1px solid var(--tt-field-border);border-radius:12px;padding:10px 12px 8px}
+.composer.focus{border-color:var(--tt-field-border-focus)}
+.composer .text{min-height:22px;color:var(--tt-text)}
+.composer .text.ph{color:var(--tt-text-faint)}
+.cfoot{display:flex;align-items:center;gap:6px;margin-top:8px}
+.chip{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 8px;border-radius:5px;background:var(--tt-surface-elevated);font-size:12.5px;color:var(--tt-text-2)}
+.chip .pv{width:8px;height:8px;border-radius:2px;background:var(--tt-provider-claude)}
+.effort{font-size:12.5px;font-weight:600;color:var(--tt-effort-text-fill);padding:0 6px}
+.cfoot .end{margin-left:auto;display:flex;gap:6px;align-items:center}
+.branch{font-size:12px;color:var(--tt-text-muted);margin:0 22px 10px;display:flex;gap:12px}
+
+/* Watcher's room */
+.room{display:grid;grid-template-columns:minmax(0,1fr) 330px;min-height:0}
+.room .pane{border-right:1px solid var(--tt-hairline)}
+.watched{padding:14px 14px;display:flex;flex-direction:column;gap:10px;overflow:hidden;background:var(--tt-canvas)}
+.watched h5{margin:0 0 2px;font-size:12px;color:var(--tt-text-muted);font-weight:600}
+.wc{background:var(--tt-card);border-radius:10px;padding:10px 12px}
+.wc[data-tone=needs]{border-left:2px solid var(--tt-attention);padding-left:13px}
+.wc .t{display:flex;gap:8px;align-items:center;font-weight:600;font-size:13.5px}
+.wc .t > span:last-child{flex:1}
+.wc .l{font-size:12.5px;color:var(--tt-text-muted);margin-top:2px}
+.wc .needs-ink{color:color-mix(in oklab,var(--tt-warning-text) 80%,var(--tt-text));font-weight:600}
+.wc .ok{color:var(--tt-success)}
+.answer{margin-top:8px;display:inline-flex;height:26px;align-items:center;padding:0 9px;border:1px solid var(--tt-border);border-radius:6px;font-size:12.5px}
+.toast{background:var(--tt-warning-surface);color:var(--tt-text);border:1px solid var(--tt-warning);border-radius:8px;padding:8px 10px;font-size:12.5px}
+.toast b{color:var(--tt-warning-text)}
+
+/* Settings */
+.settings{display:grid;grid-template-columns:220px minmax(0,1fr);min-height:0}
+.snav{background:var(--tt-sidebar);border-right:1px solid var(--tt-sidebar-border);padding:12px 8px;display:flex;flex-direction:column;gap:2px}
+.snav .row{color:var(--tt-sidebar-text)}
+.spage{padding:22px 32px;overflow:hidden;display:flex;flex-direction:column;gap:14px;max-width:820px}
+.spage h2{margin:0;font-size:20px;font-weight:600}
+.spage .lede{color:var(--tt-text-muted);font-size:13px;margin-top:-8px}
+.srows{background:var(--tt-card);border-radius:10px;padding:0 16px}
+.srow{display:flex;align-items:center;gap:16px;padding:12px 0;border-top:1px solid var(--tt-card-inset)}
+.srow:first-child{border-top:0}
+.srow .lab{flex:1;min-width:0}.srow .lab div{font-weight:500}.srow .lab small{display:block;color:var(--tt-text-muted);font-size:12.5px}
+.toggle{width:36px;height:20px;border-radius:6px;background:var(--tt-accent);position:relative;flex:none}
+.toggle::after{content:'';position:absolute;right:3px;top:3px;width:14px;height:14px;border-radius:4px;background:var(--tt-on-accent)}
+.toggle.off{background:var(--tt-surface-sunken);box-shadow:inset 0 0 0 1px var(--tt-border)}
+.toggle.off::after{left:3px;right:auto;background:var(--tt-text-muted)}
+.slider{width:200px;height:4px;border-radius:2px;background:var(--tt-track);position:relative;flex:none;box-shadow:inset 0 0 0 1px var(--tt-hairline)}
+.slider i{position:absolute;left:0;top:0;bottom:0;width:33%;background:var(--tt-accent);border-radius:2px}
+.slider b{position:absolute;left:33%;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:4px;background:var(--tt-surface);box-shadow:0 0 0 1px var(--tt-border),var(--tt-shadow-sm)}
+.select{height:30px;display:inline-flex;align-items:center;gap:20px;padding:0 10px;border-radius:6px;background:var(--tt-card-inset);font-size:13px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:10px;padding:12px 0}
+.tile{border-radius:8px;padding:6px;border:1px solid var(--tt-hairline);font-size:12.5px}
+.tile.on{border-color:var(--tt-accent);box-shadow:0 0 0 1px var(--tt-accent)}
+.tile .sw{height:36px;border-radius:5px;margin-bottom:5px;display:grid;grid-template-columns:30% 1fr;overflow:hidden;border:1px solid var(--tt-hairline)}
+</style>
+</head>
+<body>
+<template id="threads">
+<div class="win" data-view="threads">
+  <div class="strip"><span class="dots"><i></i><i></i><i></i></span><span>Sotto</span><span class="seg"><b>Dictate</b><b class="on">Threads</b></span></div>
+  <div class="body">
+    <aside class="side" aria-label="Threads">
+      <div class="search">⌕ Search threads</div>
+      <div class="group">Watched <span class="count">3</span></div>
+      <div class="row"><span class="mark"><span class="needs"></span></span><span>Release notes for 0.9</span><time>2m</time></div>
+      <div class="row"><span class="mark"><span class="spin"></span></span><span>Fix the scrubber's far ticks</span><time>now</time></div>
+      <div class="row"><span class="mark"><span class="ring"></span></span><span>Move tray assets</span><time>14m</time></div>
+      <div class="group">Sotto <span class="count">5</span></div>
+      <div class="row sel"><span class="mark"><span class="spin"></span></span><span>Add a warm theme for long sessions</span><time>now</time></div>
+      <div class="row"><span class="mark"><span class="ring"></span></span><span>Composer keys on Windows</span><time>1h</time></div>
+      <div class="row"><span class="mark"><span class="idle"></span></span><span>Question pages in Watcher</span><time>3h</time></div>
+      <div class="row"><span class="mark"><span class="idle"></span></span><span>Trim the onboarding copy</span><time>Mon</time></div>
+      <div class="group">Website <span class="count">1</span></div>
+      <div class="row"><span class="mark"><span class="idle"></span></span><span>Pricing page draft</span><time>Sep 30</time></div>
+      <div class="foot"><span class="icon-btn" aria-label="Settings">⚙</span><span class="icon-btn ring-demo" aria-label="New thread (focused)">＋</span><span class="icon-btn" aria-label="Collapse sidebar">⇤</span></div>
+    </aside>
+    <section class="pane">
+      <div class="head">Add a warm theme for long sessions <span class="crumb">Sotto · feat/vellum-theme</span><span class="watch">◉ Watching</span></div>
+      <div class="scroll">
+        <div class="bubble">Make a theme that is high contrast but easy on the eyes. Warm, not blue. <time>9:41</time></div>
+        <div class="msg">
+          <div class="who">Claude Code</div>
+          <p>I added <code>VELLUM_THEME</code> beside Fern and measured every pair with the token resolver. Body text holds 13:1 on the canvas; see <a href="#">ADR-0154</a>.</p>
+          <pre><code><span class="k">export const</span> VELLUM_THEME = builtIn(<span class="s">'vellum'</span>, <span class="s">'Vellum'</span>, LIGHT, DARK)
+<span class="c">// warm paper and ink blue, at 7:1</span></code></pre>
+          <div class="tool"><b>Edited</b> src/shared/themes/palettes.ts <span class="ok" style="color:var(--tt-success)">+131</span> <span style="color:var(--tt-error)">−0</span></div>
+        </div>
+        <div class="card q">
+          <h4>Where should the theme go first?</h4>
+          <div class="sub">Claude Code is asking. Pick one or write your own.</div>
+          <div class="opt chosen"><span class="dot"></span><div>Straight to stable<span class="rec">Recommended</span><small>Every user sees it in Settings › Appearance.</small></div></div>
+          <div class="opt"><span class="dot"></span><div>Behind an Owl switch<small>Only the preview build shows it.</small></div></div>
+          <div class="qbar"><button class="btn">Skip</button><button class="btn fill">Answer <span class="kbd">↵</span></button></div>
+        </div>
+        <div class="working"><span class="spin"></span><span class="w">Measuring the selected row against the sidebar…</span></div>
+        <div class="scrub" aria-hidden="true"><i></i><i></i><i class="on"></i><i></i><i></i><i></i><i></i></div>
+      </div>
+      <div>
+        <div class="composer">
+          <div class="text ph">Ask for a change, or press ⌥Space to dictate</div>
+          <div class="cfoot"><span class="chip"><span class="pv"></span>Opus 5.5</span><span class="effort">High</span><span class="chip">＋</span>
+            <span class="end"><button class="btn"><span class="word">Steer</span> <span class="kbd">⌘↵</span></button><button class="btn fill stop trace"><span class="word">Stop</span> <span class="kbd">⇧⌘S</span></button></span></div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+</template>
+
+<template id="watcher">
+<div class="win" data-view="watcher">
+  <div class="strip"><span class="dots"><i></i><i></i><i></i></span><span>Watcher</span><span class="seg"><b class="on">Conversation</b><b>Watched</b><b>Visualize</b></span></div>
+  <div class="room">
+    <section class="pane">
+      <div class="head">Watcher <span class="crumb">watching 3 threads</span></div>
+      <div class="scroll">
+        <div class="bubble">Tell me when the release notes need me. <time>9:30</time></div>
+        <div class="msg"><div class="who">Watcher</div><p>Release notes for 0.9 is asking which version to name. The other two are fine: one is working and one finished.</p></div>
+        <div class="toast"><b>Not sent.</b> Watcher did not answer that question for you. Answer it in the thread.</div>
+        <div class="msg"><div class="who">Watcher</div><p>Move tray assets finished at 9:27 with <code>npm run assets:verify</code> passing.</p></div>
+        <div class="scrub" aria-hidden="true"><i></i><i class="on"></i><i></i><i></i></div>
+      </div>
+      <div>
+        <div class="composer focus">
+          <div class="text">Hold the release notes until I'm back</div>
+          <div class="cfoot"><span class="chip"><span class="pv"></span>Sonnet 5.5</span><span class="effort">Medium</span>
+            <span class="end"><button class="btn"><span class="word">Steer</span> <span class="kbd">⌘↵</span></button><button class="btn stop trace"><span class="word">Stop</span> <span class="kbd">⇧⌘S</span></button><button class="btn fill"><span class="word">Queue</span> <span class="kbd">↵</span></button></span></div>
+        </div>
+      </div>
+    </section>
+    <aside class="watched">
+      <h5>Watched</h5>
+      <div class="wc" data-tone="needs"><div class="t"><span class="needs"></span><span>Release notes for 0.9</span></div><div class="l"><span class="needs-ink">Needs you</span> · asks which version to name</div><button class="answer">Answer</button></div>
+      <div class="wc"><div class="t"><span class="spin"></span><span>Fix the scrubber's far ticks</span></div><div class="l">Working · 4 files changed</div></div>
+      <div class="wc"><div class="t"><span class="ring"></span><span>Move tray assets</span></div><div class="l"><span class="ok">Finished</span> · 9:27</div></div>
+    </aside>
+  </div>
+</div>
+</template>
+
+<template id="settings">
+<div class="win" data-view="settings">
+  <div class="strip"><span class="dots"><i></i><i></i><i></i></span><span>Settings</span></div>
+  <div class="settings">
+    <nav class="snav"><div class="row"><span>Providers</span></div><div class="row"><span>Dictation</span></div><div class="row sel"><span>Appearance</span></div><div class="row"><span>Keyboard</span></div><div class="row"><span>Git</span></div><div class="row"><span>Privacy</span></div></nav>
+    <div class="spage">
+      <h2>Appearance</h2>
+      <div class="lede">How the main window looks. The floating widget follows your system.</div>
+      <div class="srows">
+        <div class="srow"><div class="lab"><div>Color scheme</div><small>Match the system, or keep one.</small></div><span class="seg"><b>Light</b><b class="on">Match system</b><b>Dark</b></span></div>
+        <div class="tiles" id="tiles"></div>
+        <div class="srow"><div class="lab"><div>Contrast</div><small>100%. Higher pushes words and lines further from the room.</small></div><span class="slider"><i></i><b></b></span></div>
+        <div class="srow"><div class="lab"><div>Effort color</div><small>The colourway the highest effort wears.</small></div><span class="select">Ember <span class="c">⌄</span></span></div>
+        <div class="srow"><div class="lab"><div>Reduce motion</div><small>Stops the light round Stop and the working words.</small></div><span class="toggle off"></span></div>
+        <div class="srow"><div class="lab"><div>Show the scrubber</div><small>A column of ticks for every message you sent.</small></div><span class="toggle"></span></div>
+      </div>
+    </div>
+  </div>
+</div>
+</template>
+
+<script>
+const params = new URLSearchParams(location.search)
+const halves = params.get('half') ? [params.get('half')] : ['dark', 'light']
+const views = params.get('view') ? [params.get('view')] : ['threads', 'watcher', 'settings']
+const contrast = Number(params.get('contrast') ?? 100)
+for (const half of halves) for (const view of views) {
+  const node = document.getElementById(view).content.firstElementChild.cloneNode(true)
+  node.dataset.themeScope = half
+  // The effort colourway re-derives its ink from this window's own roles (tokens.css keys it on the attribute).
+  node.dataset.effortColor = 'ember'
+  node.style.setProperty('--theme-contrast-base', `${Math.min(contrast, 100)}%`)
+  node.style.setProperty('--theme-contrast-boost', `${Math.max(contrast - 100, 0)}%`)
+  node.style.setProperty('--theme-contrast-border-boost', `${Math.max(contrast - 100, 0) / 4}%`)
+  document.body.append(node)
+}
+// The theme tiles: each built-in drawn as a swatch of its own room and sidebar; Vellum chosen.
+const TILES = [{"id":"t3-code","label":"Sotto","dark":["oklch(0.115 0.008 265)","oklch(0.235 0.003 265)"],"light":["oklch(0.978 0.004 85)","oklch(0.955 0.008 85)"]},{"id":"hush","label":"Hush","dark":["oklch(0.219569 0.003601 164.707)","oklch(0.264569 0.00672 162.94)"],"light":["oklch(0.963318 0.003976 106.474)","oklch(0.918318 0.00672 162.302)"]},{"id":"citrine","label":"Citrine","dark":["oklch(0.181787 0.002007 106.597)","oklch(0.226787 0 0)"],"light":["oklch(0.972257 0.008005 98.878)","oklch(0.927257 0.008694 91.871)"]},{"id":"graphite","label":"Graphite","dark":["oklch(0.135 0 0)","oklch(0.175 0 0)"],"light":["oklch(0.988 0 0)","oklch(0.963 0 0)"]},{"id":"clay","label":"Clay","dark":["oklch(0.18 0.018 40)","oklch(0.225 0.022 40)"],"light":["oklch(0.973 0.01 60)","oklch(0.947 0.018 52)"]},{"id":"fern","label":"Fern","dark":["oklch(0.155 0.008 160)","oklch(0.198 0.012 160)"],"light":["oklch(0.98 0.005 140)","oklch(0.955 0.012 145)"]},{"id":"vellum","label":"Vellum","dark":["oklch(0.225 0.008 70)","oklch(0.245 0.008 70)"],"light":["oklch(0.955 0.013 85)","oklch(0.935 0.015 82)"]}]
+for (const tiles of document.querySelectorAll('#tiles')) {
+  const half = tiles.closest('[data-theme-scope]').dataset.themeScope
+  for (const tile of TILES) {
+    const [canvas, sidebar] = tile[half]
+    const el = document.createElement('div')
+    el.className = 'tile' + (tile.id === 'vellum' ? ' on' : '')
+    el.innerHTML = `<div class="sw"><span style="background:${sidebar}"></span><span style="background:${canvas}"></span></div>${tile.label}`
+    tiles.append(el)
+  }
+}
+</script>
+</body>
+</html>

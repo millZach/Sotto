@@ -68,8 +68,8 @@ describe('theme colours', () => {
 })
 
 describe('built-in themes', () => {
-  it('ships Sotto and its five companions in picker order, each with every role in both halves', () => {
-    expect(BUILT_IN_THEMES.map(theme => theme.id)).toEqual(['t3-code', 'hush', 'citrine', 'graphite', 'clay', 'fern'])
+  it('ships Sotto and its six companions in picker order, each with every role in both halves', () => {
+    expect(BUILT_IN_THEMES.map(theme => theme.id)).toEqual(['t3-code', 'hush', 'citrine', 'graphite', 'clay', 'fern', 'vellum'])
     expect(DEFAULT_THEME_ID).toBe('t3-code')
     for (const theme of BUILT_IN_THEMES) {
       for (const mode of ['light', 'dark'] as const) {
@@ -82,7 +82,7 @@ describe('built-in themes', () => {
 
   it('gives the built-ins Sotto names, once each, and carries no T3 name', () => {
     expect(BUILT_IN_THEMES.map(theme => [theme.id, theme.label])).toEqual([
-      ['t3-code', 'Sotto'], ['hush', 'Hush'], ['citrine', 'Citrine'], ['graphite', 'Graphite'], ['clay', 'Clay'], ['fern', 'Fern'],
+      ['t3-code', 'Sotto'], ['hush', 'Hush'], ['citrine', 'Citrine'], ['graphite', 'Graphite'], ['clay', 'Clay'], ['fern', 'Fern'], ['vellum', 'Vellum'],
     ])
     const labels = BUILT_IN_THEMES.map(theme => theme.label.toLowerCase())
     expect(new Set(labels).size).toBe(labels.length)

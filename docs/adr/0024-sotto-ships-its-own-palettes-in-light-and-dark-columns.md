@@ -1,5 +1,7 @@
 # Sotto ships its own palettes, chosen in Light and Dark columns
 
+October 27, 2026 amendment: [ADR-0154](0154-vellum-is-a-warm-built-in-theme-held-to-7-to-1.md) adds Vellum after Fern, so the picker lists seven: Sotto, Hush, Citrine, Graphite, Clay, Fern and Vellum. The design capture matrix names `theme-vellum`.
+
 October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The voice-sphere prototypes below are historical; the live orb and voice settings have been removed. The palette library, Light and Dark columns, Sotto mark and dictation widget remain.
 
 Amended October 9, 2026 by [ADR-0070](0070-sotto-follows-the-omarchy-theme.md): Linux gains the read-only Omarchy choice in both columns. A fresh Omarchy install follows it by default; a missing matching half waits on Sotto. Windows and macOS keep the six palettes and their defaults.

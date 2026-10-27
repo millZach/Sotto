@@ -115,7 +115,7 @@ test('themes: halves, system, contrast, editor, inspector, import, Open VSX, rem
     const scheme = section.getByRole('radiogroup', { name: 'Color scheme', exact: true })
     await expect(scheme).toBeVisible()
     // Sotto's palettes, in picker order, in one grid while both halves share a theme, Sotto chosen.
-    const palettes = ['Sotto', 'Hush', 'Citrine', 'Graphite', 'Clay', 'Fern']
+    const palettes = ['Sotto', 'Hush', 'Citrine', 'Graphite', 'Clay', 'Fern', 'Vellum']
     const both = section.getByRole('radiogroup', { name: 'Theme', exact: true })
     await expect(both.getByRole('radio')).toHaveText(palettes)
     await expect(both.getByRole('radio', { name: 'Sotto', exact: true })).toHaveAttribute('aria-checked', 'true')

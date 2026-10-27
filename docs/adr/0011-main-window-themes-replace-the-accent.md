@@ -1,5 +1,7 @@
 # Main-window themes replace the accent
 
+October 27, 2026 amendment: [ADR-0154](0154-vellum-is-a-warm-built-in-theme-held-to-7-to-1.md) adds a seventh built-in, Vellum, after Fern.
+
 October 14, 2026 amendment: [ADR-0084](0084-the-window-and-its-surfaces-are-always-solid.md) removes the Glass opacity setting. `glassOpacity` is gone, `--tt-glass` and `--tt-glass-field` are the theme's solid overlay and field colours, and no `--theme-glass-opacity` reaches the root. What follows about glass describes it before that.
 
 October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The voice sphere described below has been removed. Theme roles, the Sotto mark and the dictation widget retain the selected palettes.
