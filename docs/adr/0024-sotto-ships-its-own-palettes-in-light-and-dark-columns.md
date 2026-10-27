@@ -77,3 +77,22 @@ are gone and the new ones were captured on purpose. The sun-and-moon cards, the 
 Code (`ThemePreview.tsx`) and the variant chips are removed; THIRD_PARTY_NOTICES keeps T3 Code's entry for the
 role list, file format, editor, inspector, engine and Open VSX client, which still come from it.
 `docs/verification/sotto-palettes.md` records the rendered evidence.
+
+## Amendment, October 26, 2026: one grid of theme tiles, split on request
+
+Zach found the Appearance page too long and dated, and picked direction A, Studio, of the page prototypes (the tag
+`prototype/appearance-rework`). The picker changes in two ways that this decision had ruled out.
+
+- **A press can choose both halves.** Each theme is now a tile, a small window drawn in its own roles and split
+  corner to corner into its light and dark halves. While both halves hold the same theme, the page shows one grid,
+  and pressing a tile uses that theme for both; a theme with one half sets only that half. Above, this ADR said
+  there was no one-press "use for both". Most people want one theme in both modes, and two columns made them choose
+  it twice.
+- **The two columns are kept behind a switch.** **A different theme when dark** splits the grid into a Light grid
+  and a Dark grid, each choosing its own half, with the same notes ("Painting the window now.") and the same
+  keyboard path: arrows choose, each grid is one Tab stop. The switch is the page's view of whether the saved halves
+  differ, never a setting; turning it off gives the dark half the light theme where that theme has one. The two
+  saved halves, `lightTheme` and `darkTheme`, are unchanged.
+
+The scheme track becomes a segmented control, and the colour strips become the tiles. The page's preview, which
+shows either half without saving, is described in `CONTEXT.md` under Appearance preview.

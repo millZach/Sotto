@@ -21,9 +21,10 @@ import {
   type LibraryState,
 } from '../../../src/renderer/src/features/settings/themes/themeLibrary'
 import { appearancePreview } from '../../../src/renderer/src/state/appearance'
+import { themeBrand, wearsAppIcon } from '../../../src/shared/themeBranding'
 import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '../../../src/shared/settings'
 import { createVividThemeColors } from '../../../src/shared/themes/engine'
-import { BUILT_IN_THEMES, MAX_CUSTOM_THEMES, canonicalizeTheme, getThemeColorsForMode, parseThemeFile, serializeThemeFile, type ThemeDefinition } from '../../../src/shared/themes/library'
+import { BUILT_IN_THEMES, MAX_CUSTOM_THEMES, canonicalizeTheme, getThemeColorsForMode, parseThemeFile, resolveThemeFor, serializeThemeFile, type ThemeDefinition } from '../../../src/shared/themes/library'
 
 afterEach(() => {
   cleanup()
@@ -396,6 +397,64 @@ describe('appearance settings', () => {
     expect(document.body).toHaveFocus()
     expect(duplicate).not.toBeInTheDocument()
   })
+
+  it('closes Your themes with Escape on its own button, and keeps focus there', async () => {
+    const user = userEvent.setup()
+    renderSettings({ customThemes: [theme('Night', 'dark')] })
+    const opener = screen.getByRole('button', { name: 'Your themes (1)' })
+    opener.focus()
+    await user.keyboard('{Enter}')
+    expect(opener).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('list', { name: 'Your themes' })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    expect(opener).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('list', { name: 'Your themes' })).not.toBeInTheDocument()
+    expect(opener).toHaveFocus()
+  })
+
+  it('turns the split switch back on when the save that would join the halves is refused', async () => {
+    const user = userEvent.setup()
+    const settings: AppSettings = { ...DEFAULT_SETTINGS, appearance: 'dark', lightTheme: 'hush', darkTheme: 'citrine' }
+    const save = vi.fn(async () => false)
+    render(<AppearanceSettings settings={settings} platform="win32" onSave={save} getSettings={() => settings} />)
+    const split = screen.getByRole('switch', { name: 'A different theme when dark' })
+    expect(split).toHaveAttribute('aria-checked', 'true')
+    await user.click(split)
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ darkTheme: 'hush' }, expect.anything()))
+    await waitFor(() => expect(split).toHaveAttribute('aria-checked', 'true'))
+    expect(screen.getByRole('radiogroup', { name: 'Dark theme' })).toBeInTheDocument()
+    expect(within(screen.getByRole('radiogroup', { name: 'Dark theme' })).getByRole('radio', { name: 'Citrine' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByText('That theme could not be saved. Your previous theme is still active.')).toHaveAttribute('role', 'status')
+  })
+
+  it('paints the preview’s Sotto mark from the half it shows', async () => {
+    const user = userEvent.setup()
+    renderSettings({ appearance: 'dark', lightTheme: 'hush', darkTheme: 'hush' })
+    const mark = (): Element => document.querySelector('.appearance-preview__app-icon')!
+    const selection = { lightTheme: 'hush', darkTheme: 'hush', customThemes: [] }
+    const brandOf = (half: 'light' | 'dark') => themeBrand(resolveThemeFor(selection, half).colors, half, { appIcon: wearsAppIcon('hush') })
+    expect(mark()).toHaveAttribute('data-tile', brandOf('dark').tile)
+    await user.click(within(screen.getByRole('radiogroup', { name: 'Color scheme the preview shows' })).getByRole('radio', { name: 'Light' }))
+    expect(mark()).toHaveAttribute('data-tile', brandOf('light').tile)
+    expect(brandOf('light').tile).not.toBe(brandOf('dark').tile)
+  })
+
+  it.each([[1000, 'two', ['appearance-studio__cards', 'appearance-preview']], [600, 'one', ['appearance-preview', 'appearance-studio__cards']]] as const)(
+    'at %ipx of page, lays out %s column(s) and reads in that order: %j', (width, columns, order) => {
+      vi.stubGlobal('ResizeObserver', class {
+        constructor(private readonly callback: (entries: Array<{ contentRect: { width: number } }>) => void) {}
+        observe(): void { this.callback([{ contentRect: { width } }]) }
+        disconnect(): void {}
+      })
+      try {
+        renderSettings({})
+        const studio = document.querySelector('.appearance-studio')!
+        expect(studio).toHaveAttribute('data-columns', columns)
+        expect([...studio.children].map(child => child.classList[0])).toEqual(order)
+      } finally {
+        vi.unstubAllGlobals()
+      }
+    })
 
   it('previews every slider step at once and saves only where the hand settles', async () => {
     const { save } = renderSettings({})

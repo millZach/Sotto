@@ -3,14 +3,14 @@ import { ArrowUp, AudioLines } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
 
 import type { Creature } from '../../../../../shared/settings'
-import { themeBrand, widgetPaletteFor } from '../../../../../shared/themeBranding'
+import { themeBrand, wearsAppIcon, widgetPaletteFor } from '../../../../../shared/themeBranding'
 import { THEME_COLOR_ROLES, resolveThemeFor, type ThemeAppearance } from '../../../../../shared/themes/library'
 import { OMARCHY_THEME_ID } from '../../../../../shared/themes/omarchy'
 import { CreatureWalk } from '../../../agents/CreatureWalk'
 import { SegmentedControl } from '../../../components/SegmentedControl'
 import { SottoMark } from '../../../components/SottoMark'
 import { resolveAppearance, themeColorVariable, type AppearanceChoice } from '../../../state/appearance'
-import { useEffortArrival } from './EffortColor'
+import { useEffortArrival, type EffortArrival } from './EffortColor'
 import { PreviewNightScene } from './PreviewNightScene'
 
 /** Whether the operating system asks for reduced motion, updated live; the app's own setting is passed in beside it. */
@@ -63,7 +63,9 @@ export function AppearancePreview({ shown, systemDark, system, still = false, cr
   const scope = half === 'set' ? undefined : half
   const scoped = scope === undefined ? undefined : Object.fromEntries(THEME_COLOR_ROLES.map(role => [themeColorVariable(role), colors[role]])) as CSSProperties
   const motionless = still || systemStill
-  const { arriving, run } = useEffortArrival(shown.effortColor, motionless)
+  const arrival = useEffortArrival(shown.effortColor, motionless)
+  // The mark wears the shown half's own colours, or the app icon on the default theme, as the window's mark does.
+  const brand = themeBrand(colors, painted, { appIcon: wearsAppIcon(theme.id) })
 
   const widgetMode = resolveAppearance('system', systemDark, shown)
   const followsOmarchy = system === 'Linux' && shown.omarchyTheme &&
@@ -102,7 +104,7 @@ export function AppearancePreview({ shown, systemDark, system, still = false, cr
         data-room={shownRoom} data-theme-scope={scope} data-effort-color={scope === undefined ? undefined : shown.effortColor} style={scoped}>
         <div className="studio-window" aria-hidden="true">
           <div className="studio-window__strip">
-            <SottoMark className="appearance-preview__app-icon" />
+            <SottoMark className="appearance-preview__app-icon" brand={brand} />
             <strong>Sotto</strong>
             <span className="studio-window__rooms">
               <span>{t({ message: 'Dictate', comment: 'The Dictate room, named in the title bar' })}</span>
@@ -111,8 +113,8 @@ export function AppearancePreview({ shown, systemDark, system, still = false, cr
             </span>
           </div>
           {shownRoom === 'threads'
-            ? <ThreadsSample creature={creature} showCreature={showCreature} arriving={arriving} run={run} />
-            : <WatcherSample arriving={arriving} run={run} paint={`${painted}:${theme.id}:${JSON.stringify(colors.canvas)}:${shown.appearanceContrast}:${scope ?? ''}`} />}
+            ? <ThreadsSample creature={creature} showCreature={showCreature} arrival={arrival} />
+            : <WatcherSample arrival={arrival} paint={`${painted}:${theme.id}:${JSON.stringify(colors.canvas)}:${shown.appearanceContrast}:${scope ?? ''}`} />}
         </div>
       </div>
 
@@ -143,17 +145,17 @@ function Chips({ run }: { readonly run: number }): ReactNode {
 }
 
 /** The composer: a fill one step off the room with no edge, and the effort's arrival washing up through it. */
-function Composer({ placeholder, arriving, run, className = '' }: { readonly placeholder: string; readonly arriving: boolean; readonly run: number; readonly className?: string }): ReactNode {
+function Composer({ placeholder, arrival, className = '' }: { readonly placeholder: string; readonly arrival: EffortArrival; readonly className?: string }): ReactNode {
   return (
-    <div className={`studio-composer ${className}`.trim()} data-arriving={arriving || undefined}>
-      <div className="studio-composer__wash" key={run} />
+    <div className={`studio-composer ${className}`.trim()} data-arriving={arrival.arriving || undefined}>
+      <div className="studio-composer__wash" key={arrival.run} />
       <span className="studio-composer__placeholder">{placeholder}</span>
-      <Chips run={run} />
+      <Chips run={arrival.run} />
     </div>
   )
 }
 
-function ThreadsSample({ creature, showCreature, arriving, run }: { readonly creature: Creature; readonly showCreature: boolean; readonly arriving: boolean; readonly run: number }): ReactNode {
+function ThreadsSample({ creature, showCreature, arrival }: { readonly creature: Creature; readonly showCreature: boolean; readonly arrival: EffortArrival }): ReactNode {
   const { t } = useLingui()
   const selected = t({ message: 'Shorten the settings page', comment: 'A sample thread title in the Appearance preview' })
   return (
@@ -168,18 +170,18 @@ function ThreadsSample({ creature, showCreature, arriving, run }: { readonly cre
       <div className="studio-threads__main">
         <div className="studio-threads__head"><b>{selected}</b></div>
         <div className="studio-threads__transcript">
-          <p className="studio-bubble">{t({ message: 'Can you make the settings page shorter?', comment: 'A sample message from the user in the Appearance preview' })}</p>
-          <p className="studio-reply">{t({ message: 'Yes. The controls now sit in three short cards, beside a preview.', comment: 'A sample reply from a thread in the Appearance preview' })}</p>
+          <p className="studio-bubble tt-paragraph">{t({ message: 'Can you make the settings page shorter?', comment: 'A sample message from the user in the Appearance preview' })}</p>
+          <p className="studio-reply tt-paragraph">{t({ message: 'Yes. The controls now sit in three short cards, beside a preview.', comment: 'A sample reply from a thread in the Appearance preview' })}</p>
           <code className="studio-code"><i>+</i>{' <ThemeTiles />'}</code>
         </div>
         {showCreature ? <div className="studio-threads__creature"><CreatureWalk creature={creature} /></div> : null}
-        <Composer placeholder={t`What would you like to do next?`} arriving={arriving} run={run} />
+        <Composer placeholder={t`What would you like to do next?`} arrival={arrival} />
       </div>
     </div>
   )
 }
 
-function WatcherSample({ arriving, run, paint }: { readonly arriving: boolean; readonly run: number; readonly paint: string }): ReactNode {
+function WatcherSample({ arrival, paint }: { readonly arrival: EffortArrival; readonly paint: string }): ReactNode {
   const { t } = useLingui()
   return (
     <div className="studio-watcher">
@@ -190,10 +192,10 @@ function WatcherSample({ arriving, run, paint }: { readonly arriving: boolean; r
         <span>{t({ message: 'Watched', comment: 'The tab that lists the threads Watcher watches, in the Appearance preview' })}</span>
       </div>
       <div className="studio-watcher__column">
-        <p className="studio-bubble">{t({ message: 'How are my threads doing?', comment: 'A sample message to Watcher in the Appearance preview' })}</p>
-        <p className="studio-reply">{t({ message: 'Fix the login test is waiting on you. The other two are working.', comment: 'A sample reply from Watcher in the Appearance preview' })}</p>
+        <p className="studio-bubble tt-paragraph">{t({ message: 'How are my threads doing?', comment: 'A sample message to Watcher in the Appearance preview' })}</p>
+        <p className="studio-reply tt-paragraph">{t({ message: 'Fix the login test is waiting on you. The other two are working.', comment: 'A sample reply from Watcher in the Appearance preview' })}</p>
       </div>
-      <Composer className="studio-watcher__composer" placeholder={t`Ask about your threads, or say what to start or send`} arriving={arriving} run={run} />
+      <Composer className="studio-watcher__composer" placeholder={t`Ask about your threads, or say what to start or send`} arrival={arrival} />
     </div>
   )
 }

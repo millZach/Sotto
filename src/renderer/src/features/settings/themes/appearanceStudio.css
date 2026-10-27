@@ -6,17 +6,15 @@
 
 /* The page takes more of a wide window than the other pages: two columns need it. */
 .settings-form:has(> #settings-appearance-panel:not([hidden])) { max-width: 1180px; }
-.theme-settings { container: appearance-page / inline-size; }
 
 .appearance-studio { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; margin-top: 20px; }
 .appearance-studio__cards { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 
-@container appearance-page (min-width: 760px) {
-  .appearance-studio { grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 18px; }
-  .appearance-studio__cards { grid-column: 1; grid-row: 1; }
-  .appearance-preview { grid-column: 2; grid-row: 1; position: sticky; top: 12px; }
-  .appearance-studio .appearance-preview__window { height: 380px; }
-}
+/* Two columns from 760 pixels of page (STUDIO_COLUMNS_MIN_WIDTH in AppearanceSettings.tsx), which sets the attribute
+   and also puts the cards first in reading order; the preview then stays in view as the page scrolls. */
+.appearance-studio[data-columns='two'] { grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 18px; }
+.appearance-studio[data-columns='two'] > .appearance-preview { position: sticky; top: 12px; }
+.appearance-studio[data-columns='two'] .appearance-preview__window { height: 380px; }
 
 /* Cards --------------------------------------------------------------------------------------------------------- */
 
@@ -107,7 +105,7 @@
 .appearance-preview .segmented-control { background: var(--tt-card-inset); }
 .appearance-preview .segmented-control button { min-height: 26px; padding: 2px 9px; font-size: 13px; }
 .appearance-preview__window { display: grid; height: 260px; overflow: hidden; border-radius: 10px; color: var(--tt-text); background: var(--tt-canvas); box-shadow: var(--tt-shadow-sm); }
-@container appearance-page (max-width: 759px) { .appearance-preview__window { height: 230px; } }
+.appearance-studio[data-columns='one'] .appearance-preview__window { height: 230px; }
 .appearance-preview__widget { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .appearance-preview__widget-sample { display: inline-flex; flex: none; align-items: center; gap: 7px; padding: 5px 12px; border: 1px solid; border-radius: 12px; font-size: 12.5px; }
 .appearance-preview__widget > p { flex: 1 1 200px; margin: 0; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.45; }

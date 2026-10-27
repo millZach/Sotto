@@ -53,7 +53,14 @@ export const SAMPLE_ARRIVAL_MS = 1900
  * settled state. `run` changes on every play, so a scene keyed on it mounts fresh and an arrival already running
  * restarts: turning the attribute off and on again is never painted in between, so the browser has nothing to stop.
  */
-export function useEffortArrival(effortColor: EffortColor, still: boolean): { readonly arriving: boolean; readonly run: number } {
+/** The effort control's arrival as the preview plays it: whether it is playing, and which play it is. */
+export interface EffortArrival {
+  readonly arriving: boolean
+  /** Changes on every play, so a part keyed on it mounts fresh and an arrival already running starts over. */
+  readonly run: number
+}
+
+export function useEffortArrival(effortColor: EffortColor, still: boolean): EffortArrival {
   const [arriving, setArriving] = useState(false)
   const [run, setRun] = useState(0)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)

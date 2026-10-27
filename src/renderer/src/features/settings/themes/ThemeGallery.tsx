@@ -35,7 +35,8 @@ export interface ThemeGalleryProps {
   /** The operating system's name, for "Match Windows". */
   readonly system: string
   readonly onChooseMode: (mode: ThemeMode) => void
-  readonly onSelect: (patch: LibraryPatch) => void
+  /** Saves a choice of theme; answers whether it was saved, where it can tell. */
+  readonly onSelect: (patch: LibraryPatch) => Promise<boolean> | void
   readonly onRemove: (ids: readonly string[]) => Promise<boolean>
   readonly onExport: (theme: ThemeDefinition) => void
   readonly onAddTheme: () => void
@@ -87,7 +88,9 @@ export function ThemeGallery({ shown, resolved, system, onChooseMode, onSelect, 
     // One theme for both again: the dark half follows the light one, where the light theme has a dark half.
     const light = all.find(theme => theme.id === shown.lightTheme)
     if (light === undefined || shown.darkTheme === shown.lightTheme) return
-    if (light === omarchy || getThemeModes(light).includes('dark')) onSelect({ darkTheme: light.id })
+    if (light !== omarchy && !getThemeModes(light).includes('dark')) return
+    // A refused save leaves the halves different, so the switch goes back on to show them; the status line says why.
+    void Promise.resolve(onSelect({ darkTheme: light.id })).then(saved => { if (saved === false) setSplit(true) })
   }
 
   // In the one grid, the chosen tile is the theme on both halves, or a one-half theme on its own half (the one painting
@@ -197,7 +200,8 @@ export function ThemeGallery({ shown, resolved, system, onChooseMode, onSelect, 
           : (() => {
               const count = shownCount(shown.customThemes.length)
               return (
-                <button ref={ownButton} type="button" className="appearance-themes__own tt-focusable" aria-expanded={ownOpen} aria-controls={ownListId} onClick={() => setOwnOpen(open => !open)}>
+                <button ref={ownButton} type="button" className="appearance-themes__own tt-focusable" aria-expanded={ownOpen} aria-controls={ownListId} onClick={() => setOwnOpen(open => !open)}
+                  onKeyDown={event => { if (event.key === 'Escape' && ownOpen) { event.preventDefault(); setOwnOpen(false) } }}>
                   <Trans comment="Opens the list of the themes the user created or added, with how many there are">Your themes ({count})</Trans>
                   <ChevronRight size={14} aria-hidden="true" />
                 </button>
@@ -304,7 +308,7 @@ function TileGrid({ label, tiles, onPick, half, title, note, live }: {
   const focusable = tiles.find(tile => tile.checked)?.theme.id ?? tiles[0]?.theme.id
   return (
     <div className="appearance-tiles" data-half={half} data-live={live || undefined}>
-      {title === undefined ? null : <p className="appearance-tiles__title"><strong>{title}</strong> <span id={noteId}>{note}</span></p>}
+      {title === undefined ? null : <p className="appearance-tiles__title tt-paragraph"><strong>{title}</strong> <span id={noteId}>{note}</span></p>}
       <div className="appearance-tiles__grid" role="radiogroup" aria-label={label} aria-describedby={title === undefined ? undefined : noteId}>
         {tiles.map((tile, index) => {
           const { theme } = tile

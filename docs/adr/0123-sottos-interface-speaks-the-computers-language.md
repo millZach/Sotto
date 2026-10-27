@@ -36,3 +36,11 @@ Accepted October 23, 2026. Zach asked for Sotto's interface to support the major
 - Every new string a pull request adds is a message. The catalog check fails on a translation that drifts from English, and a new English message shows in English until its translations are drafted.
 - Text a remote host sends to the iPhone (a refusal, a failure) stays in the host's English until host protocol version 1 carries a code the client can translate.
 - Durations and relative times that Sotto writes by hand ("4 min", "2 h", "just now") move to `Intl`, and so do dates now pinned to `en-US`.
+
+## Amendment, October 26, 2026: Language moves into the Details card
+
+Zach picked direction A, Studio, for Settings > Appearance (the tag `prototype/appearance-rework`): three short cards,
+Theme, Details and Motion, beside a preview. The **Language** row is no longer at the top of the page; it is a row of
+the Details card, after the effort color, the creature and contrast. The page is short enough now that the row is in
+view or one scroll away, and Find a setting still reaches it by "Language" in English from any language. Everything
+else above holds: the row, its list, the English word beside the label and the immediate change.
