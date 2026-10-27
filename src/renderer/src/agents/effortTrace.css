@@ -1,0 +1,35 @@
+/* The effort trace (ADR-0019, October 26 amendment): while a thread is set to its model's top level, or to Max under a
+   level past it, a light of the colourway travels round the composer, one lap every nine seconds
+   (docs/prototypes/composer-effort-trace-prototype.html, variant a, the comet): a thin bright head on the card's edge
+   where the light is, and a soft halo spilling outward onto the room. Where the light is not, the edge is empty, and
+   below the top nothing is drawn at all. It is the one light the composer's edge carries (ADR-0110): the card itself
+   keeps no border, outline or shadow.
+
+   Only `transform` animates, so the compositor turns it without a repaint on main. Each light is one conic gradient on
+   a square that turns; a static scale stretches the square to the card's shape, so the light keeps an even pace along
+   the long edges. Static masks keep the head to a 1.5px band on the card's edge, and the halo, cut to the card plus
+   8px and blurred, to a band outside the card, so it falls on the room and never on the words. */
+.effort-trace { display: none; position: absolute; inset: -1px; z-index: 2; border-radius: 17px; pointer-events: none; }
+/* Placed automatically, so the card's padding box holds it rather than the grid area every other child spans. */
+.thread-prompt > .effort-trace { grid-area: auto; }
+.thread-prompt:has(.effort-picker-anchor[data-effort-trace='true']) > .effort-trace { display: block; }
+.effort-trace__halo, .effort-trace__line { position: absolute;
+  -webkit-mask: linear-gradient(black 0 0) content-box, linear-gradient(black 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(black 0 0) content-box exclude, linear-gradient(black 0 0); }
+.effort-trace__halo { inset: -30px; padding: 30px; border-radius: 47px; opacity: var(--tt-effort-trace-halo); }
+.effort-trace__glow { position: absolute; inset: 22px; overflow: hidden; border-radius: 25px; container-type: size; filter: blur(9px); }
+.effort-trace__line { inset: 0; overflow: hidden; padding: 1.5px; border-radius: inherit; container-type: size; }
+/* A square as tall as its box, scaled across to its width. The first scale is the fallback where lengths cannot divide. */
+.effort-trace__stretch { position: absolute; top: 50%; left: 50%; width: 100cqh; height: 100cqh; translate: -50% -50%; scale: 5 1; scale: calc(100cqw / 100cqh) 1; }
+/* The light: a long faint tail and a bright head. At rest, as reduced motion shows it, it sits past the top-left corner. */
+.effort-trace__light { position: absolute; inset: -25%; transform: rotate(-.16turn); will-change: transform;
+  background: conic-gradient(from 0turn, transparent 0turn .7turn, color-mix(in srgb, var(--tt-effort-a) 35%, transparent) .84turn, var(--tt-effort-b) .95turn, var(--tt-effort-c) .97turn, transparent 1turn); }
+/* The halo keeps to the colourway's two bright hues: the third is mixed toward the text, which in a light room is dark. */
+.effort-trace__glow .effort-trace__light {
+  background: conic-gradient(from 0turn, transparent 0turn .7turn, color-mix(in srgb, var(--tt-effort-a) 35%, transparent) .84turn, var(--tt-effort-a) .93turn, var(--tt-effort-b) .97turn, transparent 1turn); }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .effort-trace__light { animation: effort-trace-turn 9s linear infinite; }
+}
+/* A window nobody can see stops the lap (state/windowVisibility.ts). */
+:root[data-window-hidden] .effort-trace__light { animation-play-state: paused; }
+@keyframes effort-trace-turn { from { transform: rotate(-.16turn); } to { transform: rotate(.84turn); } }

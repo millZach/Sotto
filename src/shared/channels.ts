@@ -77,6 +77,8 @@ export const APP_HIDE = 'sotto:app:hide' as const
 export const APP_TOGGLE_MAXIMIZE = 'sotto:app:toggle-maximize' as const
 export const APP_MAXIMIZED = 'sotto:app:maximized' as const
 export const APP_WINDOW_HIDDEN = 'sotto:app:window-hidden' as const
+/** Whether the main window can be seen: sent once its page has loaded, then on every show, restore, hide and minimize. */
+export const APP_WINDOW_VISIBLE = 'sotto:app:window-visible' as const
 export const APP_RELOAD = 'sotto:app:reload' as const
 export const APP_MINIMIZE = 'sotto:app:minimize' as const
 export const APP_QUIT = 'sotto:app:quit' as const

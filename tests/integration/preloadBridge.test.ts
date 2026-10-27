@@ -1,5 +1,5 @@
 import { registerAgentIpc } from '../../src/main/agents/ipc'
-import { MICROPHONE_ENSURE_ACCESS, TRANSCRIPT_POLISH, TRANSCRIPTION_CANCEL, OPENROUTER_CHECK_KEY, TRANSCRIPTION_TRANSCRIBE } from '../../src/shared/channels'
+import { APP_WINDOW_VISIBLE, MICROPHONE_ENSURE_ACCESS, TRANSCRIPT_POLISH, TRANSCRIPTION_CANCEL, OPENROUTER_CHECK_KEY, TRANSCRIPTION_TRANSCRIBE } from '../../src/shared/channels'
 // @vitest-environment node
 import type { preloadElectron } from '../fixtures/preloadElectron'
 import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
@@ -181,6 +181,7 @@ describe('typed preload bridge', () => {
         'onUpdateStatus',
         'onWindowMaximized',
         'onWindowHidden',
+        'onWindowVisible',
         'openExternalLink',
         'openQuestionPage',
         'openSystemSettings',
@@ -413,9 +414,9 @@ describe('typed preload bridge', () => {
       ['electron', '--sotto-renderer-role=main'],
     )).toBe(true)
     expect(context.exposeInMainWorld).toHaveBeenCalledWith('sotto', expect.any(Object))
-    expect(electronMock.ipcRenderer.on).toHaveBeenCalledTimes(5)
+    expect(electronMock.ipcRenderer.on).toHaveBeenCalledTimes(6)
     expect(electronMock.ipcRenderer.on.mock.calls.map(([channel]) => channel).sort()).toEqual(
-      [DICTATION_COMMAND, RECOVERY_NOTICE, SETTINGS_CHANGED, SPEECH_MODEL_STATUS, UPDATE_STATUS].sort(),
+      [APP_WINDOW_VISIBLE, DICTATION_COMMAND, RECOVERY_NOTICE, SETTINGS_CHANGED, SPEECH_MODEL_STATUS, UPDATE_STATUS].sort(),
     )
 
     context.exposeInMainWorld.mockClear()
