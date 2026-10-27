@@ -47,13 +47,24 @@ extension AppModel {
     }
     /// The thread lists grouped as Threads shows them, worked out once until a computer's list changes.
     func focusThreads(show: ComputerFilter = .all, query: String = "", opened: ThreadRef? = nil) -> FocusThreads {
-        let key = Listed.GroupKey(show: show, query: query, opened: opened)
+        let holding = holdingThreads
+        let key = Listed.GroupKey(show: show, query: query, opened: opened, holding: holding)
         if let kept = listed.groups[key] { return kept }
         // Each search typed is its own key; a list that stays the same while the user types keeps only the latest few.
         if listed.groups.count >= 8 { listed.groups = [:] }
-        let groups = FocusThreads(lists, show: show, query: query, opened: opened)
+        let groups = FocusThreads(lists, show: show, query: query, opened: opened, holding: holding)
         listed.groups[key] = groups
         return groups
+    }
+    /// The threads this iPhone holds something for, by `ThreadRef.id`: words, photos or files in the reply box, a refused
+    /// reply, or anything sent and not yet confirmed. An unsent thread is listed only while it is one of these.
+    private var holdingThreads: Set<String> {
+        var refs = Set(drafts.filter { !$0.value.isEmpty }.keys)
+        refs.formUnion(draftPhotos.filter { !$0.value.isEmpty }.keys)
+        refs.formUnion(draftFiles.filter { !$0.value.isEmpty }.keys)
+        refs.formUnion(failedReplies.keys)
+        refs.formUnion(pending.map { ThreadRef(hostID: $0.hostID, threadID: $0.threadID).id })
+        return refs
     }
     /// The Threads tab's badge: the requests Needs you shows, and the Recent threads that finished while nothing showed
     /// them and have not been opened on either device (ADR-0046). A delegated thread counts only through the row that
@@ -1088,7 +1099,7 @@ struct HeldDetail {
     /// bar and a thread's top bar each ask on every redraw, and nearly every redraw comes from something else.
     private var listed = Listed()
     private struct Listed {
-        struct GroupKey: Hashable { let show: ComputerFilter; let query: String; let opened: ThreadRef? }
+        struct GroupKey: Hashable { let show: ComputerFilter; let query: String; let opened: ThreadRef?; let holding: Set<String> }
         var groups: [GroupKey: FocusThreads] = [:]
         var refs: Set<String>?
         var badge: (opened: ThreadRef?, count: Int)?
