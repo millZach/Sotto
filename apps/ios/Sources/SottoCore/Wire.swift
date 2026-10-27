@@ -210,6 +210,8 @@ public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     /// this iPhone or the desktop (ADR-0046). Older computers never send it.
     public var kind: String? = nil
     public var watchedByWatcher: Bool? = nil
+    /// `default` while the thread keeps the name it opened with, `user` or `generated` once renamed. Older computers may not send it.
+    public var titleSource: String? = nil
     /// The thread on the same computer that delegated to this one, by its Sotto thread ID (ADR-0081). Only a computer
     /// with delegation on sends it, and never for a delegating thread this iPhone can't read.
     public var delegatedBy: String? = nil
@@ -234,6 +236,8 @@ public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     /// What a row reads about the thread's history without holding it.
     public struct Summary: Decodable, Equatable, Sendable {
         public let lastMessageAt: String?; public let runningTurnStartedAt: String?
+        /// How many messages the thread holds. Absent from older computers.
+        public var messageCount: Int? = nil
     }
     /// The pull requests the thread babysits, and why babysitting each last ended on its own (ADR-0061), for the pull
     /// request sheet (ADR-0102). Read item by item, so a later host's record never fails the thread. Older hosts send none.
