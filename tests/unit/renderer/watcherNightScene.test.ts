@@ -10,11 +10,11 @@ import { RAIL_OWL, spriteCells } from '../../../src/renderer/src/watcher/owlFami
 import { watchResolution } from '../../../src/renderer/src/watcher/watchResolution'
 
 /**
- * Watcher's pane for a window `width` by `height`: the floating switch's band below it, the header at the top, and the
- * composer in the new thread's 760-pixel column near the bottom, the way the room lays it out.
+ * Watcher's pane for a window `width` by `height`: the whole window, the header at the top, and the composer in the
+ * new thread's 760-pixel column near the bottom, the way the room lays it out.
  */
 function room(width: number, height: number, patch: Partial<SceneMeasure> = {}): SceneMeasure {
-  const gutter = Math.max(24, (width - 760) / 2), pane = height - 54
+  const gutter = Math.max(24, (width - 760) / 2), pane = height
   return { width, height: pane, header: 48, composer: { x: gutter, y: pane - 150, w: width - gutter * 2, h: 110 }, words: [], ...patch }
 }
 

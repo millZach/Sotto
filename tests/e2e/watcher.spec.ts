@@ -25,7 +25,7 @@ import { resizeContentWindow } from './support/sottoWindow'
 /**
  * Watcher's room on the built app (ADR-0073, tickets 6 and 7's beside pane), with no sidebar as Zach picked on
  * October 11, 2026: the first entry by sending, the needs-you line, the Overview over the room on All threads, a thread
- * opened beside Watcher, the floating switch and the badges, on the Sotto Owl track, with stable showing none of it.
+ * opened beside Watcher, the header switch and the badges, on the Sotto Owl track, with stable showing none of it.
  * Main's Watcher side is stood in for by a seeded projection (src/renderer/src/e2e/watcherStandIn.ts), so these runs
  * check the room on a fixed picture, except the journeys that seed nothing and run against main's own Watcher over
  * the fake Codex app server: its start, and its permissions, Watch and Stop watching and own-change line through main's
@@ -138,7 +138,7 @@ const threadsList = (page: Page) => page.getByRole('dialog', { name: 'All thread
 
 async function openRoom(page: Page): Promise<void> {
   await switchTab(page, 'Watcher').click()
-  await expect(page.locator('.watcher-dock')).toBeVisible()
+  await expect(page.locator('.watcher-head__rooms')).toBeVisible()
   await expect(page.getByRole('heading', { level: 1, name: 'Watcher' })).toBeVisible()
 }
 
@@ -232,13 +232,15 @@ async function box(locator: Locator): Promise<{ x: number; y: number; width: num
 const overlaps = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }): boolean =>
   a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
 
-/** The floating switch never covers a composer, and the window controls never cover a pane header's controls. */
+/** The header's room switch and More stay inside the window, every composer reaches no lower than the window's floor,
+    and the window controls never cover a pane header's controls. */
 async function roomEdges(page: Page, width: number, height: number): Promise<void> {
-  const pill = await box(page.locator('.watcher-dock__pill'))
-  expect(pill.y + pill.height, `the floating switch at ${width}x${height}`).toBeLessThanOrEqual(height)
+  const more = await box(page.locator('.watcher-head__more > button'))
+  expect(more.x + more.width, `More at ${width}x${height}`).toBeLessThanOrEqual(width)
   const controls = await box(page.locator('.threads-view__winctl'))
   for (const composer of await page.locator('.thread-workspace__compose .thread-prompt').all()) {
-    expect(overlaps(await box(composer), pill), `a composer under the floating switch at ${width}x${height}`).toBe(false)
+    const card = await box(composer)
+    expect(card.y + card.height, `a composer at ${width}x${height}`).toBeLessThanOrEqual(height)
   }
   for (const control of await page.locator('.thread-workspace__head :is(button, [role="meter"])').all()) {
     if (!await control.isVisible()) continue
@@ -285,7 +287,7 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
     }
     const selectors = ['.watcher-head h1', '.watcher-head__list', '.watcher-head__count', '.watcher-tabs__tab', '.watcher-tabs__count', '.watcher-glance__lead', '.watcher-glance__name', '.watcher-glance__why',
       '.watcher-pane .thread-chip', '.thread-options__caption', '.thread-chip-menu__options small', '.thread-chip-menu__foot', '.watched-note', '.watch-toggle', '.watch-toast > span',
-      '.watcher-dock__switch button', '.watcher-dock__tab', '.watcher-group__label', '.watcher-group__count', '.watcher-row__title', '.watcher-row__status',
+      '.watcher-head__rooms button', '.watcher-group__label', '.watcher-group__count', '.watcher-row__title', '.watcher-row__status',
       '.watcher-row__where', '.watcher-row__asks > span', '.watcher-answer', '.watcher-list__foot', '.watcher-list .thread-nav__time', '.watcher-first__intro h2', '.watcher-first__intro p',
       '.watcher-beside .thread-workspace__head h2', '.watcher-own__words > strong', '.watcher-own__said', '.watcher-own__none', '.watcher-own__toggle', '.watcher-own__files code',
       '.watcher-watched__lead > p', '.watcher-watched__label', '.watched-card__title', '.watched-card__meta', '.watched-card__doing', '.watched-card__stop',
@@ -731,7 +733,7 @@ test.describe("Watcher's room on the built app", () => {
     recorded.set('mac-header', result)
   })
 
-  test('the floating switch answers the keyboard, and Tab follows the eye through the room', async () => {
+  test('the header switch answers the keyboard, and Tab follows the eye through the room', async () => {
     await onReleaseTrack('owl', () => withSotto(launchOptions('t3-code', 'dark'), async (launched) => {
       const { page } = launched
       await openThreads(page)
@@ -748,33 +750,43 @@ test.describe("Watcher's room on the built app", () => {
       }
       await switchTab(page, 'Threads').focus()
       await press('ArrowLeft', 'Watcher')
-      // In Watcher's room the switch floats at the bottom centre, and focus is on its lit owl.
-      await expect(page.locator('.watcher-dock').getByRole('tab', { name: 'Watcher' })).toBeFocused()
-      const pill = await box(page.locator('.watcher-dock__pill'))
-      expect(Math.abs(pill.x + pill.width / 2 - 640)).toBeLessThanOrEqual(2)
+      // In Watcher's room the switch sits at the header's right end, and focus is on its lit owl.
+      await expect(page.locator('.watcher-head').getByRole('tab', { name: 'Watcher' })).toBeFocused()
+      const rooms = await box(page.locator('.watcher-head__rooms'))
+      expect(rooms.y + rooms.height).toBeLessThanOrEqual(44)
+      expect(rooms.x).toBeGreaterThan(640)
       await press('ArrowLeft', 'Dictate')
       await press('End', 'Threads')
       await press('Home', 'Dictate')
       await press('ArrowRight', 'Watcher')
       await press('ArrowRight', 'Threads')
       await press('ArrowLeft', 'Watcher')
-      // Tab from All threads: the header (its tabs, one stop on the one shown, then Stop all while threads Watcher started run;
-      // with no limit to set, nothing follows it), the needs-you
-      // line, the conversation, the composer, then the floating switch's row.
+      // Tab from All threads: the header (its tabs, one stop on the one shown, then Stop all while threads Watcher started run,
+      // the room switch's one stop on the lit owl, and More), the needs-you line, the conversation, then the composer.
       await allThreads(page).focus()
       const order: string[] = []
-      for (let step = 0; step < 50 && !order.includes('Check for updates'); step++) {
+      for (let step = 0; step < 50 && !order.includes('Watcher message'); step++) {
         await page.keyboard.press('Tab')
         order.push(await focusedName(page))
       }
       recorded.set('tab-order', order)
       const indexOf = (name: string | RegExp): number => order.findIndex(entry => typeof name === 'string' ? entry === name : name.test(entry))
-      expect(order.slice(0, 2)).toEqual(['Conversation', 'Stop all threads Watcher started, 2 threads'])
+      expect(order.slice(0, 3)).toEqual(['Conversation', 'Stop all threads Watcher started, 2 threads', 'Watcher'])
+      expect(order[3]).toMatch(/^More: Usage, Settings, Help/)
       expect(order).not.toContain('More Watcher actions')
-      expect(indexOf(/^Open Visual gate flake to answer/)).toBeGreaterThan(indexOf('Stop all threads Watcher started, 2 threads'))
+      expect(indexOf(/^Open Visual gate flake to answer/)).toBeGreaterThan(indexOf(/^More: /))
       expect(indexOf('Watcher message')).toBeGreaterThan(indexOf(/^Open Streaming WAV stall/))
-      expect(indexOf('Usage')).toBeGreaterThan(indexOf('Watcher message'))
-      expect(order.slice(indexOf('Usage'), indexOf('Usage') + 5)).toEqual(['Usage', 'Settings', 'Help', 'Watcher', 'Check for updates'])
+      // More opens on its first page, lists the pages and then the update, and Escape gives focus back to it.
+      const more = page.locator('.watcher-head__more > button')
+      await more.focus()
+      await page.keyboard.press('Enter')
+      const items = page.getByRole('menu').getByRole('menuitem')
+      expect((await items.allTextContents()).slice(0, 3)).toEqual(['Usage', 'Settings', 'Help'])
+      await expect(items).toHaveCount(4)
+      await expect(items.first()).toBeFocused()
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('menu')).toHaveCount(0)
+      await expect(more).toBeFocused()
       for (const name of ['Settings', 'Help'] as const) {
         await openPage(page, name)
         await expect(switchTab(page, 'Dictate')).toHaveAttribute('tabindex', '0')
@@ -2265,7 +2277,7 @@ test.describe("Watcher's room on the built app", () => {
       await expect(page.getByText(/Watched by Watcher/)).toHaveCount(0)
       await expect(page.getByRole('button', { name: /^Watch |^Stop watching/ })).toHaveCount(0)
       await expect(page.getByRole('combobox', { name: 'Watcher’s permissions' })).toHaveCount(0)
-      await expect(page.locator('.watcher-dock')).toHaveCount(0)
+      await expect(page.locator('.watcher-head__rooms')).toHaveCount(0)
       await expect(page.getByRole('button', { name: 'New Watcher' })).toHaveCount(0)
       // Stable lists the thread the projection names as Watcher, since stable has no Watcher to give it to.
       const threads = page.getByRole('complementary', { name: 'Thread sidebar' })
