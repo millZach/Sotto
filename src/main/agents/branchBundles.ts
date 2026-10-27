@@ -46,9 +46,10 @@ const RECORDS_MAX = 1000
 
 /**
  * The bundle and test-run snapshot index file names this module stages, so a start clears what a crash left and nothing else: the move, then the
- * attempt, so an attempt that outlives its connection can only ever remove its own file.
+ * attempt, so an attempt that outlives its connection can only ever remove its own file. A snapshot index's `.lock` is
+ * Git's, left when a `git add -A` against the copy was killed part way.
  */
-const STAGED = /^[0-9a-f-]{36}\.(?:[0-9a-f-]{36}\.(?:in|out)\.bundle|snapshot\.index)$/u
+const STAGED = /^[0-9a-f-]{36}\.(?:[0-9a-f-]{36}\.(?:in|out)\.bundle|snapshot\.index(?:\.lock)?)$/u
 
 export interface BranchBundlesOptions {
   /** A folder of Sotto's own, in its data folder, where bundles wait while they cross. Emptied of them at start. */

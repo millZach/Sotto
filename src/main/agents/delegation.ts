@@ -109,6 +109,11 @@ export interface DelegationServiceOptions {
    */
   readonly branchMoves?: Pick<DesktopBranchMoves, 'forStart' | 'forgetHere'>
   /**
+   * Bringing changes back (#1030), on only while Work across machines is on: a new delegated thread's own worktree is made
+   * from the delegating thread's branch, so its commits can be brought back to it. Off, it is made as any new worktree is.
+   */
+  readonly bringBack?: boolean
+  /**
    * The user's new-thread default as this machine may use it, in place of its own coordinator's (#1310). A headless host
    * gives it: the desktop defaults its desktop last sent, held to Ask for approval when it was never told them or that
    * desktop may not answer there, with why. Absent, the coordinator's own new-thread default applies, as on the desktop.
@@ -241,6 +246,13 @@ interface DelegatedStart {
   readonly runtimeMode?: AgentRuntimeMode; readonly providerMode?: string; readonly workingCopy: 'shared' | 'independent'
   /** The move that landed the delegating thread's branch for this thread's worktree (#1033). */
   readonly startFromMove?: string
+  /** A new worktree starts from the delegating thread's branch, so its commits can be brought back to it (#1030). */
+  readonly baseBranch?: string
+}
+/** The branch the delegating thread works on, as its folder was last read; none for a detached HEAD or a folder that is no repository. */
+function callerBranch(caller: AgentThread): string | undefined {
+  const worktree = caller.worktree
+  return (worktree?.git ? worktree.git.branch : worktree?.branch) ?? undefined
 }
 /** How many times news of a thread's delegations is offered to its queue before it is left untold. */
 const NEWS_ATTEMPTS_MAX = 5
@@ -969,7 +981,8 @@ export class DelegationService {
     this.touched(record)
     const start: DelegatedStart = { projectId: project.id, title: input.title ?? DELEGATION_WORK_TITLES[input.work], titleSource: input.title ? 'user' : 'default',
       // A role's own choice may name a long-context variant the catalog lists under its base, so its ID is kept.
-      modelId: byRole && !named ? byRole.modelId! : model.id, ...(effort ? { reasoningEffort: effort } : {}), ...permission, workingCopy: input.working_copy ?? 'shared' }
+      modelId: byRole && !named ? byRole.modelId! : model.id, ...(effort ? { reasoningEffort: effort } : {}), ...permission, workingCopy: input.working_copy ?? 'shared',
+      ...(this.options.bringBack === true && input.working_copy === 'independent' && callerBranch(caller) ? { baseBranch: callerBranch(caller)! } : {}) }
     const role: RoleReceipt | undefined = byRole ? { work: input.work, named: [...byRole.named], note: roleStartNote(byRole, snapshot.models, fromRole?.held) } : undefined
     return { record, retry: false, start, ...(role ? { role } : {}) }
   }
@@ -994,7 +1007,9 @@ export class DelegationService {
     if (record.action === 'start' && start) {
       try {
         const created = await this.options.control.commandFromDelegation({ type: 'create-thread', threadId: record.delegatedThreadId, projectId: start.projectId,
-          title: start.title, titleSource: start.titleSource, modelId: start.modelId, workingCopy: start.workingCopy, ...start.startFromMove ? { startFromMove: start.startFromMove } : {},
+          title: start.title, titleSource: start.titleSource, modelId: start.modelId, workingCopy: start.workingCopy,
+          // A start from the delegating thread's branch cuts its worktree from the moved branch; any other new worktree from that branch (#1030).
+          ...start.startFromMove ? { startFromMove: start.startFromMove } : start.baseBranch ? { baseBranch: start.baseBranch } : {},
           ...(start.reasoningEffort ? { reasoningEffort: start.reasoningEffort } : {}),
           ...(start.runtimeMode ? { runtimeMode: start.runtimeMode } : {}), ...(start.providerMode ? { providerMode: start.providerMode } : {}) },
         () => { this.guardLive(record.id); this.guardCeiling(record, start) })

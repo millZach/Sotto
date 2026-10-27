@@ -1,0 +1,212 @@
+[
+  {
+    "name": "ready",
+    "width": 1600,
+    "height": 1000,
+    "appearance": "dark",
+    "lowestContrast": 17.84
+  },
+  {
+    "name": "ready",
+    "width": 1600,
+    "height": 1000,
+    "appearance": "light",
+    "lowestContrast": 14.69
+  },
+  {
+    "name": "ready",
+    "width": 1280,
+    "height": 800,
+    "appearance": "dark",
+    "lowestContrast": 17.84
+  },
+  {
+    "name": "ready",
+    "width": 1280,
+    "height": 800,
+    "appearance": "light",
+    "lowestContrast": 14.69
+  },
+  {
+    "name": "ready",
+    "width": 820,
+    "height": 560,
+    "appearance": "dark",
+    "lowestContrast": 17.84
+  },
+  {
+    "name": "ready",
+    "width": 820,
+    "height": 560,
+    "appearance": "light",
+    "lowestContrast": 14.69
+  },
+  {
+    "name": "fast-forward",
+    "width": 1600,
+    "height": 1000,
+    "appearance": "dark",
+    "lowestContrast": 12.41
+  },
+  {
+    "name": "fast-forward",
+    "width": 1600,
+    "height": 1000,
+    "appearance": "light",
+    "lowestContrast": 9.75
+  },
+  {
+    "name": "fast-forward",
+    "width": 1280,
+    "height": 800,
+    "appearance": "dark",
+    "lowestContrast": 12.41
+  },
+  {
+    "name": "fast-forward",
+    "width": 1280,
+    "height": 800,
+    "appearance": "light",
+    "lowestContrast": 9.75
+  },
+  {
+    "name": "fast-forward",
+    "width": 820,
+    "height": 560,
+    "appearance": "dark",
+    "lowestContrast": 12.41
+  },
+  {
+    "name": "fast-forward",
+    "width": 820,
+    "height": 560,
+    "appearance": "light",
+    "lowestContrast": 9.75
+  },
+  {
+    "name": "question",
+    "width": 1600,
+    "height": 1000,
+    "appearance": "dark",
+    "lowestContrast": 13.19
+  },
+  {
+    "name": "question",
+    "width": 1600,
+    "height": 1000,
+    "appearance": "light",
+    "lowestContrast": 10.81
+  },
+  {
+    "name": "question",
+    "width": 1280,
+    "height": 800,
+    "appearance": "dark",
+    "lowestContrast": 13.19
+  },
+  {
+    "name": "question",
+    "width": 1280,
+    "height": 800,
+    "appearance": "light",
+    "lowestContrast": 10.81
+  },
+  {
+    "name": "question",
+    "width": 820,
+    "height": 560,
+    "appearance": "dark",
+    "lowestContrast": 13.19
+  },
+  {
+    "name": "question",
+    "width": 820,
+    "height": 560,
+    "appearance": "light",
+    "lowestContrast": 10.81
+  },
+  {
+    "name": "merged",
+    "width": 1600,
+    "height": 1000,
+    "appearance": "dark",
+    "lowestContrast": 12.41
+  },
+  {
+    "name": "merged",
+    "width": 1600,
+    "height": 1000,
+    "appearance": "light",
+    "lowestContrast": 9.75
+  },
+  {
+    "name": "merged",
+    "width": 1280,
+    "height": 800,
+    "appearance": "dark",
+    "lowestContrast": 12.41
+  },
+  {
+    "name": "merged",
+    "width": 1280,
+    "height": 800,
+    "appearance": "light",
+    "lowestContrast": 9.75
+  },
+  {
+    "name": "merged",
+    "width": 820,
+    "height": 560,
+    "appearance": "dark",
+    "lowestContrast": 12.41
+  },
+  {
+    "name": "merged",
+    "width": 820,
+    "height": 560,
+    "appearance": "light",
+    "lowestContrast": 9.75
+  },
+  {
+    "name": "conflict",
+    "width": 1600,
+    "height": 1000,
+    "appearance": "dark",
+    "lowestContrast": 4.97
+  },
+  {
+    "name": "conflict",
+    "width": 1600,
+    "height": 1000,
+    "appearance": "light",
+    "lowestContrast": 5.33
+  },
+  {
+    "name": "conflict",
+    "width": 1280,
+    "height": 800,
+    "appearance": "dark",
+    "lowestContrast": 4.97
+  },
+  {
+    "name": "conflict",
+    "width": 1280,
+    "height": 800,
+    "appearance": "light",
+    "lowestContrast": 5.33
+  },
+  {
+    "name": "conflict",
+    "width": 820,
+    "height": 560,
+    "appearance": "dark",
+    "lowestContrast": 4.97
+  },
+  {
+    "name": "conflict",
+    "width": 820,
+    "height": 560,
+    "appearance": "light",
+    "lowestContrast": 5.33
+  }
+]

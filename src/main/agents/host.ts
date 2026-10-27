@@ -1,3 +1,4 @@
+import type { BringBackAway, WorktreeMadeFrom } from '../../shared/bringChangesBack'
 import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
 import type { BrowserAgentTools } from './browserAgentServer'
 import type { ScopedThreadTools, ThreadMcpServer } from './threadToolServer'
@@ -52,7 +53,7 @@ export interface WatcherProfileTools extends ScopedThreadTools {
 
 export type AgentHostCommand =
   | { readonly type: 'create-project'; readonly provider?: ProviderId; readonly commandId: string; readonly projectId: string; readonly title: string; readonly path: string }
-  | ({ readonly type: 'create-thread'; readonly commandId: string; readonly threadId: string; readonly projectId: string; readonly title: string; readonly modelId: string; readonly titleSource?: 'user' | 'default'; readonly project?: AgentProject; readonly workingCopy?: 'independent' | 'shared'; readonly baseBranch?: string; readonly startFromOrigin?: boolean; readonly existingWorktreePath?: string; readonly workingDirectory?: string; readonly startFromMove?: string } & AgentThreadOptions)
+  | ({ readonly type: 'create-thread'; readonly commandId: string; readonly threadId: string; readonly projectId: string; readonly title: string; readonly modelId: string; readonly titleSource?: 'user' | 'default'; readonly project?: AgentProject; readonly workingCopy?: 'independent' | 'shared'; readonly baseBranch?: string; readonly startFromOrigin?: boolean; readonly existingWorktreePath?: string; readonly workingDirectory?: string; readonly startFromMove?: string; readonly madeFrom?: WorktreeMadeFrom } & AgentThreadOptions)
   | ({ readonly type: 'configure-thread'; readonly commandId: string; readonly threadId: string
     /** The caller keeps history from the host's events, so the result's snapshot may leave every thread's messages out (`ThreadReadPurpose`, #368). */
     readonly historyFromEvents?: boolean } & AgentThreadOptions)
@@ -400,6 +401,11 @@ export interface AgentHost {
   /** T3's stacked Git action on the thread's folder, reported on the thread record as it runs (ADR-0027). */
   runGitAction?(command: { threadId: string; actionId: string; action: GitStackedAction; commitMessage?: string | undefined; featureBranch?: boolean | undefined; filePaths?: readonly string[] | undefined; allowDefaultBranch?: boolean | undefined }): Promise<AgentHostSnapshot>
   pullThreadBranch?(threadId: string): Promise<{ snapshot: AgentHostSnapshot; result: GitPullResult }>
+  /**
+   * Bring changes to the branch of the thread this one began from (#1030); the outcome or question goes on its record. With
+   * `away`, a child's branch from another machine is already here, and `threadId` is the thread its commits go to.
+   */
+  bringChangesBack?(command: { readonly threadId: string; readonly actionId: string; readonly mergeCommit?: string | undefined; readonly away?: BringBackAway | undefined }): Promise<AgentHostSnapshot>
   /** The branches the thread's folder offers, for the picker (ADR-0027). */
   listThreadRefs?(request: GitRefsRequest): Promise<GitRefsPage>
   /** The changed files of the thread's folder with their line counts, for the commit dialog (ADR-0027). */

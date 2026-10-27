@@ -377,7 +377,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         {/* Watch, pressed while Watcher watches this thread (Owl only; nothing without Watcher's bridge). */}
         {thread.kind === 'watcher' || thread.kind === 'watcher-history' ? null : <WatchHeaderToggle threadId={thread.id} title={thread.title} />}
         {/* T3's Git action: the quick action its status decides, the chevron with the rest (ADR-0027). */}
-        {!closed ? <GitActionButton thread={thread} command={command} noticeSlot={gitNoticeSlot} onExplainedError={setGitExplained} /> : null}
+        {!closed ? <GitActionButton thread={thread} state={state} command={command} noticeSlot={gitNoticeSlot} onExplainedError={setGitExplained} /> : null}
         {actions}
         <PaneMenu groups={[naming, continuing, context, shelf, recovery, removal]} />
       </div>

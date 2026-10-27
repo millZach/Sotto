@@ -143,6 +143,8 @@ export interface HostService {
   readonly supportsPullRequestView?: boolean
   /** The host deletes its settled threads when asked (ADR-0140), present only when its Owl answer turns clearing on. */
   readonly supportsThreadDelete?: boolean
+  /** The host brings a thread's commits back to the branch of the thread it began from (#1030): it takes `bring-changes-back`. */
+  readonly supportsBringBack?: boolean
   /** The words of the handover a thread that began from another goes with on its first message, or null when it has none (#1028). */
   startHandover?(threadId: string): Promise<{ readonly text: string } | null>
   /**
@@ -341,7 +343,9 @@ export class LocalHostService implements HostService {
     /** Where a headless host keeps the desktop defaults (#1310), present only where it runs delegation for its own threads. */
     desktopDefaults?: { record(clientId: string, defaults: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> }
     /** Delegation's own record of the host's threads (#1310), present only where a headless host runs delegation for them. */
-    delegationViews?: DelegationViews }) {
+    delegationViews?: DelegationViews
+    /** Bringing changes back (#1030), true only when the host's Owl answer turns it on and it runs Git. */
+    bringBack?: boolean }) {
     this.control = options.control
     this.supportsBabysitting = options.babysitting === true
     this.eventSource = options.events
@@ -391,6 +395,7 @@ export class LocalHostService implements HostService {
   }
   /** Every coordinator keeps the failures its clients have seen (ADR-0092). */
   readonly supportsFailureSeen = true
+  get supportsBringBack(): boolean { return this.options.bringBack === true }
   async startHandover(threadId: string): Promise<{ readonly text: string } | null> {
     if (!this.options.threadStarts) throw new Error('Continuing an agent as a thread is unavailable on this host.')
     const built = this.options.threadStarts.startHandover(threadId)

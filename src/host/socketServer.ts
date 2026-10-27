@@ -287,6 +287,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'failure-seen' || service.supportsFailureSeen === true)
     // The iPhone's pull request sheet (#1281) only where the host's Owl answer turns it on.
     && (feature !== 'pull-request-view' || service.supportsPullRequestView === true)
+    // Bringing changes back (#1030) only where the host's Owl answer turns it on.
+    && (feature !== 'bring-changes-back' || service.supportsBringBack === true)
     // A host that can update itself offers it on both listeners, to SSH-recorded desktops only (ADR-0088).
     && (feature !== 'host-update' || options.hostUpdate !== undefined && options.watcherDesktops !== undefined)
     // Cut bodies are for a desktop on a slow link (ADR-0025, October 18 amendment); the desktop's own phone listener serves none.
@@ -809,7 +811,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const refusal = remoteCommandRefusal(input, { mayAnswer: options.mayAnswer?.(peer.client) ?? false, askingProviderModes: askingProviderModes(input),
       draftRequestId: input.type === 'send' || input.type === 'compose' && input.threadId === undefined ? draftRequestId : undefined,
       selectedThreadId: targetThreadId, clientUpdates: options.clientUpdates === true && offers(peer, 'client-updates'), threadStarts: offers(peer, 'thread-starts'),
-      threadDelete: offers(peer, 'thread-delete') })
+      threadDelete: offers(peer, 'thread-delete'), bringBack: offers(peer, 'bring-changes-back'), desktop: options.watcherDesktops?.has(peer.client.clientId) ?? false })
     if (refusal) throw new Refusal(refusal)
     if (input.type === 'preview-reclaim-thread-worktree') {
       const result = await service.command(input, peer.client)

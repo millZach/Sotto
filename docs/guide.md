@@ -1015,6 +1015,25 @@ Watcher keeps what it must not lose through compaction: your pending decisions a
 
 Press the owl in Watcher's header to see its context against the compaction point, **Compact context** to compact it now, and Watcher's state as it stands: the threads it watches, what waits on you among them, worked out just now, and the decisions it noted, your rules and the issues it filed. The thin bar under the owl fills toward the point, and a dot shows when it is close. Escape closes the panel.
 
+### Bring changes back to the branch a thread began from
+
+In an Owl build, a thread in a new worktree made from another thread's branch can hand its commits back to that branch. That covers a delegated thread, a thread continued on another provider, an agent continued as a thread, a fork at a reply, and a worker Watcher started from a thread's branch. A strip above its composer says so, for example "sotto/wav-mid-chunk was made from main. main is checked out in the project folder, where WAV preview stall works.", with **Bring changes to main**. When the thread it began from is on another machine, the strip names the machine: "main is checked out in the project folder on forge, where WAV preview stall works." The same press is first in the Git action's menu. A delegated thread's new worktree starts from the delegating thread's branch, so its work can come back this way. **Hide until this branch changes** puts the strip away until the thread commits again. Nothing is offered while the thread is working; the strip comes back when its turn ends.
+
+Nothing runs until you press. Then Sotto brings the branch's commits to main, in the folder where the thread it began from works:
+
+- When main has nothing this branch lacks, Git fast-forwards main, and the strip says how many commits came and where main is now. The folder's files follow; **Open** the thread that works there to see them.
+- When main has moved on, Git can't fast-forward, so Sotto asks **Make a merge commit on main?** and says how many commits each side has. Nothing changes until you press **Make merge commit**; **Not now**, or Escape, leaves everything as it was. The merge commit is "Merge branch 'sotto/wav-mid-chunk' into main", and this worktree stays as it is.
+- Uncommitted work in this worktree is refused: Sotto brings back commits only. **Commit…** opens the commit dialog.
+- Uncommitted changes where main is checked out are refused too, including new files, and Sotto doesn't touch that folder. Commit or set them aside there, then press again.
+- If the thread it began from has switched to another branch, the press is refused. Sotto never switches a branch: switch it back to main there, then press again.
+- If these commits add a file that the folder where main is checked out already has as an ignored file, such as a local `.env` or build output, the press is refused and names the file, so Sotto never replaces it. Move it aside there, then press again.
+- A conflict is refused in Git's own words, with main unchanged. Sotto never resolves a conflict: ask the thread to merge main into its branch and resolve it, then press again.
+- A worker started as a check begins from a snapshot of uncommitted changes. Sotto won't bring that snapshot back as a commit, so the press is refused; ask the worker to put its own commits on a branch made from main.
+
+When the thread it began from is on another machine, Sotto on your desktop first moves this thread's committed branch there over the connection it already keeps, then brings it to main on that machine. Nothing else goes there, and nothing goes through GitHub. If that machine isn't connected, the press says so and nothing changes. Only the desktop whose Watcher started the worker offers this; on another desktop paired with the same machines, the worker shows no strip and no menu item.
+
+Nothing is rebased, stashed or forced. A thread on a paired host brings its changes back on that host, once the host's Sotto is an Owl build that offers it; an older host says it can't yet, and nothing changes. Stable builds offer none of it.
+
 ### Watcher permissions and standing watching
 
 Watcher uses the ordinary thread permission modes its provider offers: Ask for approval, Allow edits, Auto and Full access. On Muse, whatever Muse asks reaches you: Watcher's session never lets Muse's own reviewer decide for you. On Cursor, Auto is Cursor's own auto-review, run on Cursor's servers, as for any Cursor thread, and Ask for approval still lets Cursor edit inside the project folder without asking. Its first mode is Ask for approval, and later Watchers use your last Watcher choice. Changing that mode does not change ordinary new-thread defaults. Remembered permission-card answers such as Always allow remain unavailable; the user still answers every question and permission card.
