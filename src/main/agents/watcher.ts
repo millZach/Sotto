@@ -16,16 +16,17 @@ import type { DesktopBranchMoves } from './branchMoves'
 import { rebuildReservations } from './watcherRecords'
 import { isWatcherWorkActive, WATCHER_QUIET_MS, watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
 import { CHECK_HOLDS_THROUGH_BACKGROUND, checkWaitingWords, WATCHER_CHECK_STOP, WATCHER_CHECK_STOP_AWAY, type CheckQueue } from './checkQueue'
+import { checkInstallFailedWords, checkInstallWords } from './checkWorktree'
 import { DELEGATION_LEVELS_MAX, delegatedThreadsBelow } from '../../shared/delegation'
 import { WATCHER_COMPACT_AT } from '../../shared/settings'
-import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, WATCHER_STATE_COMPUTED_MAX, watcherToolSchemas,
+import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, watcherToolSchemas,
   type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
   type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX, type WatcherKeptState,
   MACHINE_FACTS_OLDER, MACHINE_FACTS_UNREAD, MACHINE_NOT_CONNECTED, type WatcherEvidence, type WatcherMergeQueueItem, type WatcherPendingSettle, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread,
   type WatcherWaitingOnUser } from '../../shared/watcher'
 import { machineLoadStates, placedNotStartedWith, type HostMachineReport } from '../../shared/hostFacts'
-import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, WATCHER_MERGE_TURNS_KEPT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
-  type WatcherMergeTurn, type WatcherMergeTurnsRead,
+import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
+  
   type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest,
   type WatcherPrepareStopAllResult, type WatcherStopAllResult, type WatcherMachine } from '../../shared/watcherRoom'
 import type { AgentHostCommand } from './host'
@@ -277,8 +278,6 @@ const STILL_READING = 'This read took longer than your provider waits for a tool
 /** What a call that may outlast its client's wait has reached: the operation its start, send, stop or settle admitted. */
 interface CallProgress {
   operationId?: string
-  /** Called once the call's operation is admitted, before it runs: a send's merge turn is remembered here (#1339). */
-  admitted?: (operation: WatcherOperation) => void
 }
 const MUTATIONS: ReadonlySet<WatcherToolName> = new Set(['start_thread', 'send_to_thread', 'stop_thread', 'settle_thread'])
 const LATE: unique symbol = Symbol('late')
@@ -396,17 +395,6 @@ export class WatcherService implements WatcherControlHooks {
   private recoveryNotice: string | null = null
   /** Told that the room may have changed. Each builds the room, if at all, when it needs it (#1450). */
   private readonly listeners = new Set<() => void>()
-  /**
-   * The sends Watcher marked as giving a thread its merge turn (#1339), oldest first, for Watcher's picture. In memory
-   * only: the saved record keeps no new key, since a build that cannot read it loses the whole file, and a restart
-   * forgets them until history is kept (#1340).
-   */
-  private readonly mergeTurns: WatcherMergeTurn[] = []
-  /**
-   * The watched rows of the room last built, as they were built for it: the picture's merge read takes the threads
-   * Watcher watches from here, rather than walking the record's requests again (#1339). Read only, never copied.
-   */
-  private publishedWatched: WatcherRoomState['watchedThreads'] | undefined
   private readonly active = new Map<string, Promise<unknown>>()
   private invocations = 0
   /** What Watcher keeps through compaction (#1189), and whether a compaction since it last read it owes it a note. */
@@ -1358,6 +1346,16 @@ export class WatcherService implements WatcherControlHooks {
     const checks = this.options.checks
     return checkWaitingWords(checks?.machine ?? 'This computer', checks?.ahead(this.checkOf.get(operationId)?.ticket ?? operationId) ?? 0, WATCHER_CHECK_STOP)
   }
+  /**
+   * A check here whose turn came and that installs packages first, or whose install failed (#1312, third part): its first
+   * prompt waits for the install, so its outcome is working until then.
+   */
+  private checkInstallNote(operation: WatcherOperation, outcome: WatcherOutcome, thread: AgentThread | undefined): string | undefined {
+    const checks = this.options.checks, install = thread?.worktree?.check?.install
+    if (!checks || !install || operation.action !== 'start' || operation.target.hostId !== this.hostId()) return undefined
+    if (install === 'running' && outcome === 'working') return checkInstallWords(checks.machine)
+    return install === 'failed' && (outcome === 'working' || outcome === 'background') ? checkInstallFailedWords(checks.machine) : undefined
+  }
   /** Whether this operation is a check waiting its turn here (#1312). */
   private checkWaits(operationId: string): boolean { return this.checkOf.get(operationId)?.waiting !== undefined }
   /** Puts a check in this machine's queue, under `ticket`: its own operation's ID for a start a paired desktop sent. */
@@ -1713,7 +1711,6 @@ export class WatcherService implements WatcherControlHooks {
     room.state = { watching: watched.watching, waitingOnUser: watched.waiting, kept: this.kept.read(),
       ...this.kept.readable() ? {} : { unread: true as const } }
     if (current && !live.creation) room.newWatcher = this.newWatcherAnswer(live, current)
-    this.publishedWatched = room.watchedThreads
     return room
   }
   /** Each operation with where it stands (`outcomeOf`), the same list while nothing it was made from changed. */
@@ -1862,25 +1859,6 @@ export class WatcherService implements WatcherControlHooks {
   private currentOffer(): NonNullable<WatcherService['handoverOffer']> | null {
     const offer = this.handoverOffer, current = this.view().current
     return offer && current && key(offer.to) === key(current.target) ? offer : null
-  }
-  private noteMergeTurn(operation: WatcherOperation, pullRequest: number): void {
-    if (this.mergeTurns.some(turn => turn.operationId === operation.id)) return
-    this.mergeTurns.push({ operationId: operation.id, target: operation.target, pullRequest, at: now() })
-    if (this.mergeTurns.length > WATCHER_MERGE_TURNS_KEPT) this.mergeTurns.splice(0, this.mergeTurns.length - WATCHER_MERGE_TURNS_KEPT)
-  }
-  /**
-   * The merge turns for Watcher's picture (#1339): the merge queue read_state computes from live data (#1274), for the
-   * threads the room last published as watched, and the merge turns Watcher gave, each with its thread from the moment
-   * its send was admitted. Nothing here walks Watcher's history: the window drops a turn whose send failed from its own
-   * receipts. Read only while the picture shows, never published.
-   */
-  readMergeTurns(): WatcherMergeTurnsRead {
-    try {
-      if (!this.view().current) return { status: 'ok', queue: [], turns: [] }
-      // The window's room listens whenever the picture shows; with no room published yet, one is built for this read.
-      const watched = (this.publishedWatched ?? this.state().watchedThreads).filter(row => row.watched !== false).map(row => ({ target: row.target, title: row.title }))
-      return { status: 'ok', queue: watcherMergeQueue(this.withOpenPullRequests(watched)).slice(0, WATCHER_STATE_COMPUTED_MAX), turns: [...this.mergeTurns] }
-    } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not read the merge turns just now. Nothing was changed.', true) }
   }
   /** The offered handover's words, as the new Watcher would receive them. Read only when the user asks to read it. */
   readHandover(): WatcherHandoverRead {
@@ -3130,7 +3108,8 @@ export class WatcherService implements WatcherControlHooks {
     const read: OutcomeRead = { outcome, reference: { target: operation.target, ...(operation.turnMessageId ? { turnMessageId: operation.turnMessageId } : {}),
       ...(operation.nativeTurnId ? { nativeTurnId: operation.nativeTurnId } : {}), ...(operation.replyMessageId ? { replyMessageId: operation.replyMessageId } : {}) },
     outcomeNote: outcome === 'background' && thread && operation.turnMessageId !== undefined && !watcherBriefTurnIsNewest(thread, operation.turnMessageId)
-      ? BACKGROUND_MOVED_ON : held ? queuedSendHeld(held) : this.checkWaits(operation.id) ? this.checkNote(operation.id) : OUTCOME_NOTES[outcome],
+      ? BACKGROUND_MOVED_ON : held ? queuedSendHeld(held) : this.checkWaits(operation.id) ? this.checkNote(operation.id)
+        : this.checkInstallNote(operation, outcome, thread) ?? OUTCOME_NOTES[outcome],
     ...(evidence.length ? { evidence } : {}) }
     if (outcome !== 'answered' || !operation.replyMessageId) return read
     if (!this.options.historyEnabled() && !this.answeredThisRun.has(operation.id)) return { ...read, replyUnavailable: { reason: 'history-off',
@@ -3417,13 +3396,6 @@ export class WatcherService implements WatcherControlHooks {
         }
         return this.slim(name, parsed.data, await this.dispatchRead(call, operation))
       }
-      if (name === 'send_to_thread') {
-        // The merge turn marks the send for Watcher's picture alone (#1339): the send is admitted, digested, retried and
-        // forwarded without it, so it changes nothing about the send, and is remembered once the send is admitted.
-        const { mergeTurn, ...send } = parsed.data as WatcherToolInput<'send_to_thread'>
-        if (mergeTurn) progress.admitted = operation => this.noteMergeTurn(operation, mergeTurn.pullRequest)
-        return await this.mutate(threadId, name, send, undefined, undefined, progress)
-      }
       if (name === 'start_thread') {
         const asked = parsed.data as WatcherToolInput<'start_thread'>
         // A test run takes its place in this machine's queue as it is asked for, before it is placed and admitted, so a
@@ -3442,7 +3414,7 @@ export class WatcherService implements WatcherControlHooks {
         const stopped = await this.stopWaitingCheck(threadId, parsed.data as WatcherToolInput<'stop_thread'>)
         if (stopped) return stopped
       }
-      return await this.mutate(threadId, name, parsed.data as WatcherToolInput<'stop_thread'>, undefined, undefined, progress)
+      return await this.mutate(threadId, name, parsed.data as WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, undefined, undefined, progress)
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('PROVIDER_UNAVAILABLE', 'This Watcher call could not be completed. Check the operation receipt before trying again.', true) }
     finally { if (--this.invocations === 0) this.publish() }
   }
@@ -3664,7 +3636,7 @@ export class WatcherService implements WatcherControlHooks {
       if (steerFallback) this.rememberSteerFallback(operation.id, steerFallback)
       return { operation, retry: false }
     })
-    if (progress) { progress.operationId = admitted.operation.id; progress.admitted?.(admitted.operation) }
+    if (progress) progress.operationId = admitted.operation.id
     if (admitted.retry) {
       // A retry reads its receipt again; only the start's first run says how many threads are working (#1183).
       const active = this.active.get(admitted.operation.id)
@@ -3727,8 +3699,10 @@ export class WatcherService implements WatcherControlHooks {
         try {
           // Read inside the try: a permission that no longer fits once the branch has landed lets go of its ref too.
           // A start from a moved branch gets a new worktree made from it, on this machine as on a paired host (#1033).
-          const choices = create.fromMove ? { workingCopy: 'independent' as const, startFromMove: create.fromMove, ...create.madeFrom ? { madeFrom: create.madeFrom } : {} }
+          const copies = create.fromMove ? { workingCopy: 'independent' as const, startFromMove: create.fromMove, ...create.madeFrom ? { madeFrom: create.madeFrom } : {} }
             : await this.resolveCopies(create)
+          // A check this machine queues works in the machine's check worktree when it gets a new worktree (#1312).
+          const choices = checks ? { ...copies, check: true as const } : copies
           const limits = this.permissionLimits(this.record().requests.find(item => item.id === operation.requestId), this.hostId())
           const permission = this.permission(resolveModel(this.options.control.watcherSnapshot().models, modelId), create.permission, limits)
           const createOrigin: WatcherCommandOrigin = { operationId: operation.id, guard: () => {

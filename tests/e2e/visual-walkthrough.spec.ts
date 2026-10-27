@@ -55,6 +55,22 @@ const ENTITIES = {
   steps: [{ text: 'A thread has visuals.', highlight: ['THREAD', 'VISUAL'] }, { text: 'And messages.', highlight: ['MESSAGE'] }],
 }
 
+// A long step, to see the bar under the picture in Expand give up room to it at every size.
+const LONG = {
+  title: 'How SLK6_DT calculates ΔT', kind: 'diagram',
+  source: ['flowchart LR', '  IN[Read TT-601 inlet] --> F[Filter 2 s]', '  OUT[Read TT-602 outlet] --> F', '  F --> G{Inputs good?}', '  G -->|yes| S[Out - In]',
+    '  G -->|no| H[Hold last good]', '  S --> C[Clamp 0-150]', '  C --> W[SLK6_DT.Out]'].join('\n'),
+  steps: [
+    { text: 'SLK6_DT reads the inlet temperature, TT-601, every scan.', highlight: ['IN'] },
+    { text: 'It reads the outlet temperature, TT-602, the same way.', highlight: ['OUT'] },
+    { text: 'Each reading goes through a first-order filter with a 2 second time constant.', highlight: ['F'] },
+    { text: 'If either transmitter reports bad quality (open circuit, out of range below 3.8 mA or above 20.5 mA, or a module fault), the block holds the last good ΔT, sets SLK6_DT.BadPV, and keeps holding until both inputs have been good for five consecutive seconds. Operators see the value change colour on the faceplate and an "Input bad" note under it; nothing downstream trips on a held value, but the firing-rate trim stops adjusting until the inputs recover.', highlight: ['G', 'H'] },
+    { text: 'With both inputs good, it subtracts: outlet minus inlet.', highlight: ['S'] },
+    { text: 'The result is clamped to 0 to 150 °F.', highlight: ['C'] },
+    { text: 'The clamped ΔT is written to SLK6_DT.Out.', highlight: ['W'] },
+  ],
+}
+
 async function openWorkshop(launched: LaunchedSotto): Promise<Locator> {
   const { page } = launched
   await page.evaluate(async () => {
@@ -105,12 +121,12 @@ test('a visual walks through its steps, lighting each step\'s part of the diagra
     const log = await openWorkshop(launched)
     await page.evaluate(value => window.sottoE2E!.agentEvent!({ type: 'history', threadId: 'workshop', text: '', messages: value }), HISTORY)
     await expect(log).toContainText('Here it is one step at a time.')
-    for (const visual of [FLOW, SEQUENCE, STATE, CLASSES, ENTITIES]) expect((await visualize(page, visual)).isError).not.toBe(true)
+    for (const visual of [FLOW, SEQUENCE, STATE, CLASSES, ENTITIES, LONG]) expect((await visualize(page, visual)).isError).not.toBe(true)
 
     const card = (title: string): Locator => log.getByRole('region', { name: `Visual: ${title}` })
     const image = (title: string): Locator => card(title).locator('.visual-card__layers img[data-layer]:not([data-layer="leaving"])')
     const stepper = (title: string): Locator => card(title).getByRole('group', { name: 'Walkthrough' })
-    for (const title of [FLOW, SEQUENCE, STATE, CLASSES, ENTITIES].map(visual => visual.title)) await expect(card(title).getByRole('img')).toBeVisible({ timeout: 20_000 })
+    for (const title of [FLOW, SEQUENCE, STATE, CLASSES, ENTITIES, LONG].map(visual => visual.title)) await expect(card(title).getByRole('img')).toBeVisible({ timeout: 20_000 })
 
     // A flowchart: a node, an edge written A->B with its ends and label, a subgraph with what is inside it, and a step
     // that names nothing, which leaves the whole drawing lit.
@@ -165,16 +181,32 @@ test('a visual walks through its steps, lighting each step\'s part of the diagra
     await page.keyboard.press('ArrowRight')
     await expect(stepper(FLOW.title)).toContainText('Step 2 of 4')
 
-    // Expand shows the step as it is lit; Escape closes it, back on Expand.
+    // Expand opens on the card's step, lit, with the card's bar under the picture. Right steps from the picture, the
+    // bar's Back steps too, and Escape closes it back on Expand with the card on the step Expand closed on.
     await expand.focus()
     await page.keyboard.press('Enter')
     const viewer = page.getByRole('dialog')
     await expect(viewer).toBeVisible()
-    expect(await lit(viewer.getByRole('img'))).toEqual(['L_B_C_0', 'edgeLabel:L_B_C_0', 'flowchart-B-1', 'flowchart-C-3'])
+    const expandedImage = viewer.getByRole('img')
+    const expandedBar = viewer.getByRole('group', { name: 'Walkthrough' })
+    expect(await lit(expandedImage)).toEqual(['L_B_C_0', 'edgeLabel:L_B_C_0', 'flowchart-B-1', 'flowchart-C-3'])
+    await expect(expandedBar).toContainText('Step 2 of 4')
+    await expect(expandedBar).toContainText(FLOW.steps[1]!.text)
+    await expect(viewer.getByRole('group', { name: 'Diagram view' })).toBeFocused()
+    await page.keyboard.press('ArrowRight')
+    await expect(expandedBar).toContainText('Step 3 of 4')
+    await expect.poll(() => lit(expandedImage)).toContain('Provider')
     await page.screenshot({ path: join(SHOTS, 'flowchart-expanded-1280x800-dark.png'), animations: 'disabled' })
+    await page.keyboard.press('ArrowLeft')
+    await expect(expandedBar).toContainText('Step 2 of 4')
+    await expandedBar.getByRole('button', { name: 'Next' }).click()
+    await expect(expandedBar).toContainText('Step 3 of 4')
     await page.keyboard.press('Escape')
     await expect(viewer).toBeHidden()
     await expect(expand).toBeFocused()
+    await expect(stepper(FLOW.title)).toContainText('Step 3 of 4')
+    await flow.getByRole('button', { name: 'Back' }).click()
+    await expect(stepper(FLOW.title)).toContainText('Step 2 of 4')
 
     // Read all, from the keyboard: the intro and the numbered steps instead of the walkthrough, nothing dimmed. Its
     // place in the header is before Show source, and while every step shows it reads Step through.
@@ -262,6 +294,30 @@ test('a visual walks through its steps, lighting each step\'s part of the diagra
         if (width !== 1280 || mode === 'light') await quietShot(page, join(SHOTS, `flowchart-step-${width}x${height}-${mode}.png`))
         // The sequence diagram is taller than the minimum window, so its capture shows the lit arrow and the stepper.
         if (width === 820) { await scrollToCard(sequence, -230); await quietShot(page, join(SHOTS, `sequence-step-${width}x${height}-${mode}.png`)) }
+
+        // Expand on a long step: the bar under the picture grows for it, nothing in the dialog clips, and the picture
+        // keeps room to be read.
+        const long = card(LONG.title)
+        await scrollToCard(long, 60)
+        await long.getByRole('button', { name: 'Go to step 4' }).click()
+        await long.getByRole('button', { name: `Expand ${LONG.title}` }).click()
+        const longViewer = page.getByRole('dialog')
+        await expect(longViewer.getByRole('group', { name: 'Walkthrough' })).toContainText('Step 4 of 7')
+        const room = await longViewer.evaluate(element => {
+          const box = element.getBoundingClientRect()
+          const inside = (selector: string): boolean => [...element.querySelectorAll(selector)].every(item => {
+            const rect = item.getBoundingClientRect()
+            return rect.left >= box.left - 0.5 && rect.right <= box.right + 0.5 && rect.top >= box.top - 0.5 && rect.bottom <= box.bottom + 0.5 && rect.width > 0
+          })
+          const text = element.querySelector('.visual-stepper__text')!
+          return { dialog: box.bottom <= innerHeight && box.right <= innerWidth, bar: inside('.visual-stepper button'), text: inside('.visual-stepper__text') && text.scrollHeight <= text.clientHeight + 1,
+            hint: inside('.rich-diagram-viewer__hint'), picture: element.querySelector('.rich-diagram-viewer__viewport')!.getBoundingClientRect().height >= 150 }
+        })
+        expect(room, `Expand at ${width}x${height} ${mode}`).toEqual({ dialog: true, bar: true, text: true, hint: true, picture: true })
+        for (const ratio of await textContrasts(longViewer, ['.visual-stepper__count', '.visual-stepper__text', '.visual-stepper__button', '.rich-diagram-viewer__hint'])) expect(ratio, `Expand at ${width}x${height} ${mode}`).toBeGreaterThanOrEqual(4.5)
+        await page.screenshot({ path: join(SHOTS, `long-step-expanded-${width}x${height}-${mode}.png`), animations: 'disabled' })
+        await page.keyboard.press('Escape')
+        await expect(longViewer).toBeHidden()
       }
     }
     expect(errors).toEqual([])

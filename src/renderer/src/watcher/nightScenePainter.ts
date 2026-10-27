@@ -146,6 +146,8 @@ export interface SceneFrame {
   readonly ripples: readonly Ripple[]
   /** Watcher's owl, where the margin has trees; null on the rail or with no scene. */
   readonly watcher: { readonly pose: OwlPose; readonly stage: OwlStage } | null
+  /** Whether Watcher's owl glows, while something waits on the user. */
+  readonly watcherGlows?: boolean
   readonly owls: readonly ThreadOwlPose[]
   /** How open the moon's whirlpool is, 0 to 1. */
   readonly whirl: number
@@ -175,6 +177,8 @@ export class NightScenePainter {
   private behindCells = new Uint8Array(0)
   /** What the last painted frame drew behind the words over the column and the scrubber's lane: ripple cells and owl glyphs. */
   behind = { ripple: 0, owl: 0 }
+  /** Where the flying owl's wings just were: each cell's ink, fading frame by frame, for the faint trail behind them. */
+  private owlTrail = new Float32Array(0)
   private noise = new Float32Array(0)
   private stars: Star[] = []
   private starAt = new Int32Array(0)
@@ -204,7 +208,7 @@ export class NightScenePainter {
     const cells = grid.cols * grid.rows
     for (const canvas of [this.owlCanvas, this.owlAccentCanvas]) { canvas.width = grid.cols * SS; canvas.height = grid.rows * SS }
     if (!this.buildLand(layout, grid)) { this.layout = null; return null }
-    this.owlInk = new Float32Array(cells); this.owlAccent = new Float32Array(cells)
+    this.owlInk = new Float32Array(cells); this.owlAccent = new Float32Array(cells); this.owlTrail = new Float32Array(cells)
     this.cleared = new Uint8Array(cells); this.touched = new Uint8Array(cells)
     const N = seeded(99)
     this.noise = new Float32Array(cells); for (let i = 0; i < cells; i++) this.noise[i] = N()
@@ -372,7 +376,8 @@ export class NightScenePainter {
     const parts: Array<string | number> = [this.layout!.mode === 'trees' ? twinkleStep(t, still) : 0, ambienceStep(this.ambience, t, still)]
     if (frame.whirl > 0.01 || runningRipples(frame.ripples, t) > 0) parts.push('m', Math.round(t * 30))
     const w = frame.watcher?.pose
-    if (w !== undefined) parts.push(Math.round(w.x), Math.round(w.y), Math.round(w.turn * 20), Math.round(w.gx * 4), Math.round(w.gy * 4), w.blink ? 1 : 0, Math.round(w.flap * 4), Math.round(w.spread * 10))
+    if (w !== undefined) parts.push(Math.round(w.x), Math.round(w.y), Math.round(w.turn * 20), Math.round(w.gx * 4), Math.round(w.gy * 4), w.blink ? 1 : 0, Math.round(w.flap * 4), Math.round(w.spread * 10),
+      Math.round(w.bank * 40), Math.round(w.squash * 50), Math.round(w.legs * 8), frame.watcherGlows === true ? glowStep(t, still) : -1)
     frame.owls.forEach((pose, k) => {
       parts.push(pose.owl.key, Math.round(pose.x / cw), Math.round(pose.y / ch), Math.round(pose.alpha * 10), owlLines[k]![0]!, pose.owl.mood,
         pose.owl.mood === 'waiting' ? glowStep(t, still) : 0)
@@ -533,13 +538,28 @@ export class NightScenePainter {
       let strongest = 0
       for (let r = box.r0; r < box.r0 + box.rn; r++) for (let c = box.c0; c < box.c0 + box.cn; c++) strongest = Math.max(strongest, this.owlAccent[r * cols + c]!)
       const eyeBar = Math.max(0.08, Math.min(0.35, strongest * 0.7))
+      // While something waits on the user, Watcher's owl glows as a waiting thread owl does: every glyph in the accent,
+      // at the thread owls' strength and pulse, shaded by the body under it so it keeps its shape. No wash behind it.
+      const glow = frame.watcherGlows === true ? 0.8 + 0.2 * glowStep(t, still) : null
+      // In flight the owl's glyphs follow its ink alone: the grid's noise would change them as it moves, and a lone faint
+      // cell at a wing's edge reads as a stray dot. Where a wing just was, a faint glyph fades over a few frames.
+      const flying = frame.watcher!.pose.spread > 0.05
+      const dense = (c: number, r: number): number => c < 0 || c >= cols || r < 0 || r >= rows ? 0 : this.owlInk[r * cols + c]!
       for (let r = box.r0; r < box.r0 + box.rn; r++) for (let c = box.c0; c < box.c0 + box.cn; c++) {
         const i = r * cols + c, d = this.owlInk[i]!
+        if (flying) {
+          const was = this.owlTrail[i]! * 0.42
+          this.owlTrail[i] = Math.max(d, was)
+          if (d < 0.1 && was >= 0.12 && this.cleared[i]) glyph(c, r, was > 0.24 ? ':' : '·', false, 0.22 + 0.6 * was)
+        }
         if (d < 0.1) continue
+        if (flying && d < 0.24 && Math.max(dense(c - 1, r), dense(c + 1, r), dense(c, r - 1), dense(c, r + 1), dense(c - 1, r - 1), dense(c + 1, r - 1), dense(c - 1, r + 1), dense(c + 1, r + 1)) < 0.34) continue
         const eye = this.owlAccent[i]! > eyeBar
-        glyph(c, r, eye ? '@' : rampGlyph(d + (this.noise[i]! - 0.5) * 0.08), eye, eye ? 1 : 0.5 + 0.5 * d)
+        const strength = eye ? 1 : 0.5 + 0.5 * d
+        glyph(c, r, eye ? '@' : rampGlyph(flying ? d : d + (this.noise[i]! - 0.5) * 0.08), eye || glow !== null, glow === null || eye ? strength : glow * strength)
       }
     }
+    if (frame.watcher === null || frame.watcher.pose.spread <= 0.05) this.owlTrail.fill(0)
     for (const { pose, lines, cells } of sprites) {
       const waiting = pose.owl.mood === 'waiting', base = pose.owl.mood === 'asleep' ? 0.5 : 0.85
       const strength = waiting ? (0.8 + 0.2 * glowStep(t, still)) * pose.alpha : 0

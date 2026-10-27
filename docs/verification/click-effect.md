@@ -1,6 +1,6 @@
 # A press sends waves of 0s and 1s through the room: verification
 
-October 27, 2026. On Windows 11 with the built app (`npm run build`), an Owl build through the end-to-end harness, on its own throwaway profile. It covers [ADR-0154](../adr/0154-a-press-sends-waves-of-0s-and-1s-through-the-room.md): Zach's pick N, **Both, ragged**, from round four of `docs/prototypes/click-binary-prototype.html`.
+October 27, 2026. On Windows 11 with the built app (`npm run build`), an Owl build through the end-to-end harness, on its own throwaway profile. It covers [ADR-0156](../adr/0156-a-press-sends-waves-of-0s-and-1s-through-the-room.md): Zach's pick N, **Both, ragged**, from round four of `docs/prototypes/click-binary-prototype.html`.
 
 ## How it was run
 
@@ -36,7 +36,7 @@ In one Owl run, turning `clickEffect` off through the settings bridge takes the 
 
 ## Contrast
 
-The glyphs go no stronger than leaves every word over them at 4.5:1 (ADR-0154, decision 2). In one Owl run each built-in theme, dark and light (t3-code, hush, citrine, graphite, clay and fern), was saved in turn and a press read the ceiling the canvas took: 0.35 in all twelve, against the prototype's 0.65. The spec checks the ceiling is above nothing and no more than 0.65. The frames above are at that ceiling.
+The glyphs go no stronger than leaves every word over them at 4.5:1 (ADR-0156, decision 2). In one Owl run each built-in theme, dark and light (t3-code, hush, citrine, graphite, clay and fern), was saved in turn and a press read the ceiling the canvas took: 0.35 in all twelve, against the prototype's 0.65. The spec checks the ceiling is above nothing and no more than 0.65. The frames above are at that ceiling.
 
 ## Cost
 

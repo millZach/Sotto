@@ -3,7 +3,7 @@ import { msg } from '@lingui/core/macro'
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import { parseHostEntityKey } from '../../../shared/clientIdentity'
 import type { WatcherThreadTarget } from '../../../shared/watcher'
-import { isWatchedRow, newerWatcherRoom, type WatcherBridge, type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherMachinesRead, type WatcherMergeTurnsRead, type WatcherRoomResult, type WatcherRoomState } from '../../../shared/watcherRoom'
+import { isWatchedRow, newerWatcherRoom, type WatcherBridge, type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherMachinesRead, type WatcherRoomResult, type WatcherRoomState } from '../../../shared/watcherRoom'
 import { useOptionalAgents } from '../agents/AgentContext'
 import type { LaterWords } from '../features/settings/laterWords'
 import { useWatcherEnabled } from '../state/watcherFeature'
@@ -39,8 +39,6 @@ export interface WatcherRoom {
   readonly settle: (result: WatcherRoomResult) => string | null
   /** Stop all: main's preview of what it would stop, then the stop that preview confirms. Null without a bridge. */
   readonly stopAll: { readonly prepare: WatcherBridge['prepareStopAll']; readonly stop: WatcherBridge['stopAll'] } | null
-  /** The merge queue and merge turns for Watcher's picture (#1339), read only while it shows. Null where the bridge offers none. */
-  readonly readMergeTurns: (() => Promise<WatcherMergeTurnsRead>) | null
   /** Each machine's facts and load, for the machines line and Settings (#1032). Null unless Work across machines is on. */
   readonly readMachines: (() => Promise<WatcherMachinesRead>) | null
 }
@@ -120,13 +118,6 @@ export function targetForThread(state: AgentState, thread: AgentThread): Watcher
 export function watchedRows(room: WatcherRoomState): WatcherRoomState['watchedThreads'] {
   return room.watchedThreads.filter(entry => isWatchedRow(entry, room.requests))
 }
-/**
- * Whether a thread is under a standing watch, which lasts until the user stops it. A thread watched only because it takes
- * part in a Watcher request is not: the user's own send there takes it over and it stops being watched.
- */
-export function hasStandingWatch(room: WatcherRoomState, target: WatcherThreadTarget): boolean {
-  return room.standingWatches?.some(watch => watch.target.hostId === target.hostId && watch.target.threadId === target.threadId) === true
-}
 export function watchedTargets(room: WatcherRoomState): WatcherThreadTarget[] {
   return watchedRows(room).map(entry => entry.target)
 }
@@ -177,11 +168,10 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
   // The contract keeps these three optional for stand-ins written before them, so the room asks before offering them.
   // Main's own preload supplies all three.
   const manage = useMemo(() => {
-    const { setPermission, watchThread, unwatchThread, readHandover, continueWithHandover, dismissHandover, startNew, readMergeTurns, readMachines } = live && bridge !== undefined ? bridge : {} as Partial<WatcherBridge>
+    const { setPermission, watchThread, unwatchThread, readHandover, continueWithHandover, dismissHandover, startNew, readMachines } = live && bridge !== undefined ? bridge : {} as Partial<WatcherBridge>
     return {
       readMachines: readMachines === undefined ? null : () => readMachines.call(bridge),
       startNew: startNew === undefined ? null : () => startNew.call(bridge),
-      readMergeTurns: readMergeTurns === undefined ? null : () => readMergeTurns.call(bridge),
       setPermission: setPermission === undefined ? null : (request: Parameters<typeof setPermission>[0]) => setPermission.call(bridge, request),
       handover: readHandover === undefined || continueWithHandover === undefined || dismissHandover === undefined ? null : {
         read: () => readHandover.call(bridge),
@@ -227,7 +217,6 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
     unwatchThread: manage.watch?.unwatchThread ?? null,
     handover: manage.handover,
     startNew: manage.startNew,
-    readMergeTurns: manage.readMergeTurns,
     readMachines: manage.readMachines,
     stopAll: live ? { prepare: () => bridge.prepareStopAll(), stop: request => bridge.stopAll(request) } : null,
   }, [enabled, live, answered, state, error, currentThreadId, watchedThreadIds, settle, bridge, manage])

@@ -5,7 +5,7 @@ import { useReducedMotion } from './reducedMotion'
 /**
  * Whether the click effect is chosen: Settings → Appearance → Click effect, on until turned off and before settings are
  * read. It is an Owl feature (ADR-0072), so where it is held it is never chosen. Chosen, it replaces every click ripple
- * Sotto had, Watcher's margin's included, even while reduced motion keeps its own waves still (ADR-0154).
+ * Sotto had, Watcher's margin's included, even while reduced motion keeps its own waves still (ADR-0156).
  */
 export function useClickEffectChosen(): boolean {
   const owl = useOwlFeature('click-effect')

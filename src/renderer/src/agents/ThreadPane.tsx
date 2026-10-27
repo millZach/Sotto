@@ -203,8 +203,6 @@ export interface ThreadPaneProps {
    * changes, with no skills, branch toolbar, Git action or thread menu, since Watcher coordinates rather than works.
    */
   readonly watcherHeader?: ReactNode
-  /** In Watcher's own pane, what stands in its conversation's place (the Watched view); its own requests stay under it. */
-  readonly watcherBody?: ReactNode
   /** In Watcher's own pane, what its conversation says while empty, in place of the plain empty line (a new Watcher's note). */
   readonly watcherEmpty?: ReactNode
 }
@@ -213,7 +211,7 @@ export interface ThreadPaneProps {
  * One thread's view: header and controls, its own transcript position and its own composer.
  * Everything here acts on `row.thread.id`; a split workspace mounts one per open thread.
  */
-export function ThreadPane({ row, state, command, store, focused, promptId, error, onClose, onOpenBeside, workingCopy, actions, notice, drawer, now, watcherHeader, watcherBody, watcherEmpty }: ThreadPaneProps): ReactNode {
+export function ThreadPane({ row, state, command, store, focused, promptId, error, onClose, onOpenBeside, workingCopy, actions, notice, drawer, now, watcherHeader, watcherEmpty }: ThreadPaneProps): ReactNode {
   const { t } = useLingui()
   const [followSignal, setFollowSignal] = useState(0)
   const [renaming, setRenaming] = useState(false)
@@ -390,10 +388,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     {thread.historySaveNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.historySaveNotice}</p> : null}
     {thread.requestNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.requestNotice}</p> : null}
     {error && error !== thread.requestNotice && !deliveryExplains && !answerExplains && !settingsExplains && !turnExplains && error !== toolbarExplained && error !== gitExplained ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
-    {ownPane && watcherBody != null ? <div className="thread-transcript">
-      {watcherBody}
-      <ThreadRequests kind="permission" row={row} state={state} command={command} onAnswer={focusAnswerComposer} />
-    </div> : <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}>{/* A reply's commands run only in a pane with its own Terminal drawer, never a paired host's thread (ADR-0139; Owl only). */}<RunCommands threadId={thread.id} offered={drawer != null && !thread.remoteHost}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} greetingSlot={greetingSlot} emptyNote={ownPane ? watcherEmpty : undefined}
+    <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}>{/* A reply's commands run only in a pane with its own Terminal drawer, never a paired host's thread (ADR-0139; Owl only). */}<RunCommands threadId={thread.id} offered={drawer != null && !thread.remoteHost}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} greetingSlot={greetingSlot} emptyNote={ownPane ? watcherEmpty : undefined}
       onReadingBack={slimOn ? setReadingBack : undefined} onTypeAhead={typeAhead} onQuoted={focusAnswerComposer}>
       <ThreadRequests kind="permission" row={row} state={state} command={command} onAnswer={focusAnswerComposer} />
       {/* A turn stopped at its limit offers the other providers to continue on (ADR-0089; Owl only). */}
@@ -404,7 +399,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         live={closed ? [] : thread.requests} provider={row.provider}
         observation={state.connection === 'connecting' ? 'loading' : !rowConnected ? 'disconnected' : thread.historyStatus === 'loading' ? 'loading' : thread.historyStatus === 'error' ? 'unavailable' : 'ready'}
         observed={JSON.stringify([rowConnected, state.connection, thread.historyStatus, thread.status, closed, thread.requests.map(request => [request.id, request.delivery, request.questions])])} />
-    </ThreadTranscript></RunCommands></ThreadWebLinks>}
+    </ThreadTranscript></RunCommands></ThreadWebLinks>
     <div className="thread-greeting-slot" ref={setGreetingSlot} />
     <div className="thread-workspace__compose" ref={compose} data-slim={slim || undefined} onMouseDown={slim ? pressSlim : undefined}
       onFocus={() => setComposeFocused(true)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setComposeFocused(false) }}>

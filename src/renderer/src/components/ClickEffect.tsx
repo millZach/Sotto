@@ -22,7 +22,7 @@ interface Ink {
 }
 
 /**
- * The click effect (ADR-0154): a press anywhere in the main window sends waves of 0s and 1s in the theme's accent through
+ * The click effect (ADR-0156): a press anywhere in the main window sends waves of 0s and 1s in the theme's accent through
  * the room behind it; a press in a composer sends none. The canvas lies under the window's content, over only the room's own background, so a card, a
  * bubble or the composer sits over the waves and nothing pressed is ever covered; it never takes the pointer either. Its
  * glyphs are never stronger than leaves every word written over them at 4.5:1 against the room. It exists only while the

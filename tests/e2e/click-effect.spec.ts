@@ -10,7 +10,7 @@ import { captureWindow } from './support/sottoCapture'
 import { openThreads } from './support/sottoLaunch'
 import { resizeContentWindow } from './support/sottoWindow'
 
-// The click effect (ADR-0154): a press sends waves of 0s and 1s in the accent through the room, under the page.
+// The click effect (ADR-0156): a press sends waves of 0s and 1s in the accent through the room, under the page.
 const evidence = evidenceDirectory('artifacts/click-effect')
 
 function launchOptions(appearance: 'dark' | 'light', options: { readonly clickEffect?: boolean; readonly motion?: 'normal' | 'reduced' } = {}) {

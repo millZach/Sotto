@@ -50,7 +50,7 @@ async function createProfile(
     readonly lightTheme?: string
     readonly darkTheme?: string
     readonly memory?: boolean
-    /** The click effect (ADR-0154); off unless asked, so a press in a capture or a pixel check sends no waves under it. */
+    /** The click effect (ADR-0156); off unless asked, so a press in a capture or a pixel check sends no waves under it. */
     readonly clickEffect?: boolean
   },
 ): Promise<string> {
@@ -89,7 +89,7 @@ export async function withSotto(
     readonly lightTheme?: string
     readonly darkTheme?: string
     readonly memory?: boolean
-    /** The click effect (ADR-0154); off unless asked, so a press in a capture or a pixel check sends no waves under it. */
+    /** The click effect (ADR-0156); off unless asked, so a press in a capture or a pixel check sends no waves under it. */
     readonly clickEffect?: boolean
   },
   run: (launched: LaunchedSotto) => Promise<void>,

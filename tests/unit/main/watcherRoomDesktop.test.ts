@@ -6,7 +6,7 @@ import type { PublishScheduler } from '../../../src/main/agents/control'
 import { registerIpc } from '../../../src/main/ipc/registerIpc'
 import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL,
   WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD, WATCHER_START_NEW, WATCHER_READ_MACHINES, applyWatcherRoomUpdate, newerWatcherRoom,
-  type WatcherHandoverRead, type WatcherMergeTurnsRead, type WatcherRoomHeld, type WatcherRoomState, type WatcherRoomResult, type WatcherRoomUpdate,
+  type WatcherHandoverRead, type WatcherRoomHeld, type WatcherRoomState, type WatcherRoomResult, type WatcherRoomUpdate,
   type WatcherStopAllResult } from '../../../src/shared/watcherRoom'
 import { createIpcHarness } from '../../fixtures/ipcHarness'
 import { deferred } from '../../fixtures/deferred'
@@ -42,7 +42,6 @@ function fixture(watcherEnabled = true, streamingPublishCost = true) {
     continueWithHandover: vi.fn((): WatcherRoomResult => ({ status: 'ok', state: current })),
     dismissHandover: vi.fn((): WatcherRoomResult => ({ status: 'ok', state: current })),
     startNew: vi.fn(async (): Promise<WatcherRoomResult> => ({ status: 'ok', state: current })),
-    readMergeTurns: vi.fn((): WatcherMergeTurnsRead => ({ status: 'ok', queue: [], turns: [] })),
   }
   // The window's room: an update put back together as the preload does, or the room itself without the publish window.
   const send = vi.fn((payload: WatcherRoomState | WatcherRoomUpdate) => {
