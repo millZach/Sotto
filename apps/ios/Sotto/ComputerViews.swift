@@ -34,7 +34,7 @@ struct ComputersView: View {
         .refreshable { await model.refresh() }
         .navigationTitle("Computers")
         .toolbar(.hidden, for: .navigationBar)
-        .navigationDestination(for: ComputerRoute.self) { ComputerDetailView(hostID: $0.hostID) }
+        .navigationDestination(for: ComputerRoute.self) { ComputerDetailView(hostID: $0.hostID).toolbar(.hidden, for: .tabBar) }
     }
 }
 

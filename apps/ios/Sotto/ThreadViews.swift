@@ -47,6 +47,7 @@ struct ThreadView: View {
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbarBackground(stuck ? .visible : .hidden, for: .navigationBar)
         .toolbar(.hidden, for: .tabBar)
+        .coversTabs()
         // While a request sheet is up its keyboard never squeezes the page behind it, so the conversation keeps its
         // size and its place.
         .ignoresSafeArea(open != nil ? SafeAreaRegions.keyboard : [], edges: .bottom)

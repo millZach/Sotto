@@ -10,39 +10,38 @@ struct RootView: View {
     }
 }
 
-/// The tabs: Threads, Watcher when a paired computer runs it, Computers and Settings. The system tab bar keeps its own
-/// glass; the theme's accent tints it.
+/// The tabs: Threads, Watcher when a paired computer runs it, Computers and Settings. The system's tab bar is hidden
+/// for `TabsBar`, which sits on the page with no glass behind it (ADR-0051, amended).
 struct MainTabs: View {
     @EnvironmentObject var model: AppModel
     @State private var tab = Tab.threads
     @State private var threadPath = NavigationPath()
     @State private var watcherPath = NavigationPath()
+    @State private var covered = Set<UUID>()
+    @State private var keyboard = false
     enum Tab: Hashable { case threads, watcher, computers, settings }
     var body: some View {
-        let watcher = model.watcherTab
         TabView(selection: $tab) {
-            NavigationStack(path: $threadPath) {
+            tabbed(NavigationStack(path: $threadPath) {
                 ThreadsView(openCreated: { ref in threadPath.append(ThreadRoute(ref: ref)) }).threadDestination()
-                    .background(TabItemAccessibility(title: "Watcher", value: watcher.spoken))
-            }
-                .tabItem { Label("Threads", systemImage: "bubble.left") }
-                .badge(model.threadsBadge)
+            })
                 .tag(Tab.threads)
-            // Watcher's tab (1B), only for a computer that runs Watcher and shows it to this iPhone. Its owl carries a dot
-            // while Watcher works, and its badge counts what needs the user that only Watcher's page shows.
+            // Watcher's tab (1B), only for a computer that runs Watcher and shows it to this iPhone.
             if let hostID = model.watcherHostID {
-                NavigationStack(path: $watcherPath) { WatcherView(hostID: hostID).threadDestination() }
-                    .tabItem { Label("Watcher", image: watcher.working ? "WatcherTabWorking" : "WatcherTab") }
-                    .badge(watcher.needs)
+                tabbed(NavigationStack(path: $watcherPath) { WatcherView(hostID: hostID).threadDestination() })
                     .tag(Tab.watcher)
             }
-            NavigationStack { ComputersView() }
-                .tabItem { Label("Computers", systemImage: "desktopcomputer") }
+            tabbed(NavigationStack { ComputersView() })
                 .tag(Tab.computers)
-            NavigationStack { SettingsView() }
-                .tabItem { Label("Settings", systemImage: "slider.horizontal.3") }
+            tabbed(NavigationStack { SettingsView() })
                 .tag(Tab.settings)
         }
+        .environment(\.tabsCovered, $covered)
+        // The bar goes under the keyboard, as the system's did; a hardware keyboard's slim bar leaves it.
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { note in
+            keyboard = ((note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect)?.height ?? 0) > 120
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboard = false }
         .sheet(isPresented: $model.adding, onDismiss: { model.closeAdding() }) { AddComputerSheet() }
         // A tapped alert opens its thread on Threads (ADR-0051), and Watcher's own opens the Watcher tab.
         .onChange(of: model.alertOpened) { _, ref in openAlerted(ref) }
@@ -52,6 +51,16 @@ struct MainTabs: View {
         .onChange(of: model.watcherHostID) { _, hostID in
             if hostID == nil, tab == .watcher { tab = .threads; watcherPath = NavigationPath() }
         }
+    }
+    /// A tab's stack with the bar under it, until a thread or the keyboard covers it.
+    private func tabbed(_ stack: some View) -> some View {
+        stack
+            .toolbar(.hidden, for: .tabBar)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if covered.isEmpty && !keyboard {
+                    TabsBar(tab: $tab, threadsBadge: model.threadsBadge, watcher: model.watcherHostID == nil ? nil : model.watcherTab)
+                }
+            }
     }
     private func openAlerted(_ ref: ThreadRef?) {
         guard let ref else { return }
@@ -68,38 +77,85 @@ struct MainTabs: View {
     }
 }
 
-/// SwiftUI's tab items take a title, an image and a badge, and nothing VoiceOver can read for the Watcher tab's working
-/// dot. This finds the tab bar's item by its title, once SwiftUI has set it up for this update, and gives it the words:
-/// "Working, 1 needs you". It sits in a tab's own page, where the tab bar's controller is above it.
-struct TabItemAccessibility: UIViewControllerRepresentable {
-    let title: String
-    let value: String
-    func makeUIViewController(context: Context) -> Probe { Probe() }
-    func updateUIViewController(_ probe: Probe, context: Context) {
-        probe.wanted = (title, value)
-        probe.apply()
-    }
-    final class Probe: UIViewController {
-        var wanted: (title: String, value: String)?
-        override func loadView() {
-            let view = UIView()
-            view.isUserInteractionEnabled = false
-            view.isAccessibilityElement = false
-            self.view = view
-        }
-        override func viewDidAppear(_ animated: Bool) {
-            super.viewDidAppear(animated)
-            apply()
-        }
-        func apply() {
-            DispatchQueue.main.async { [weak self] in
-                guard let self, let wanted = self.wanted, let items = self.tabBarController?.tabBar.items else { return }
-                for item in items where item.title == wanted.title {
-                    item.accessibilityValue = wanted.value.isEmpty ? nil : wanted.value
-                }
+/// The tabs' bar: icons and names straight on the page, the chosen tab in the accent, and a fade to the canvas behind
+/// them so what scrolls under stays readable. Watcher's owl carries a dot while Watcher works, and its badge counts what
+/// needs the user that only Watcher's page shows; VoiceOver reads both after its name ("Working, 1 needs you").
+struct TabsBar: View {
+    @Binding var tab: MainTabs.Tab
+    let threadsBadge: Int
+    let watcher: WatcherTabState?
+    @Environment(\.sottoTheme) private var theme
+    var body: some View {
+        HStack(spacing: 0) {
+            item(.threads, Image(systemName: "bubble.left"), Text("Threads"), badge: threadsBadge, spoken: threadsBadge > 0 ? "\(threadsBadge)" : "")
+            if let watcher {
+                item(.watcher, Image(watcher.working ? "WatcherTabWorking" : "WatcherTab"), Text("Watcher"), badge: watcher.needs, spoken: watcher.spoken)
             }
+            item(.computers, Image(systemName: "desktopcomputer"), Text("Computers"), badge: 0, spoken: "")
+            item(.settings, Image(systemName: "slider.horizontal.3"), Text("Settings"), badge: 0, spoken: "")
         }
+        .padding(.horizontal, Space.s2)
+        .padding(.top, Space.s3)
+        .background {
+            LinearGradient(colors: [theme.color(.canvas).opacity(0), theme.color(.canvas).opacity(0.92), theme.color(.canvas)],
+                           startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea(edges: .bottom)
+                .allowsHitTesting(false)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isTabBar)
+        .accessibilityIdentifier("tabs")
     }
+    private func item(_ id: MainTabs.Tab, _ icon: Image, _ title: Text, badge: Int, spoken: String) -> some View {
+        let chosen = tab == id
+        return Button { tab = id } label: {
+            VStack(spacing: 3) {
+                icon.renderingMode(.template).resizable().scaledToFit()
+                    .frame(width: 24, height: 24)
+                    .overlay(alignment: .topTrailing) {
+                        if badge > 0 {
+                            Text(verbatim: "\(badge)").font(.sotto(.caption, .semibold)).monospacedDigit()
+                                .foregroundStyle(Palette.canvas).environment(\.colorScheme, .dark)
+                                .padding(.horizontal, 5).frame(minWidth: 18, minHeight: 18)
+                                .background(Palette.warning, in: Capsule())
+                                .offset(x: 12, y: -6)
+                        }
+                    }
+                title.font(.sotto(.caption, .medium)).lineLimit(1).minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(chosen ? Palette.accentText : Palette.muted)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityValue(Text(verbatim: spoken))
+        .accessibilityAddTraits(chosen ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+/// The open threads covering the tabs' bar. A thread joins while it is on screen and leaves when it goes, a press
+/// on another tab included, so the bar shows wherever no thread is open.
+private struct TabsCoveredKey: EnvironmentKey { static let defaultValue: Binding<Set<UUID>> = .constant([]) }
+extension EnvironmentValues {
+    var tabsCovered: Binding<Set<UUID>> {
+        get { self[TabsCoveredKey.self] }
+        set { self[TabsCoveredKey.self] = newValue }
+    }
+}
+private struct CoversTabs: ViewModifier {
+    @Environment(\.tabsCovered) private var covered
+    @State private var id = UUID()
+    func body(content: Content) -> some View {
+        content
+            .onAppear { covered.wrappedValue.insert(id) }
+            .onDisappear { covered.wrappedValue.remove(id) }
+    }
+}
+extension View {
+    /// Hides the tabs' bar while this view is on screen, as a thread does.
+    func coversTabs() -> some View { modifier(CoversTabs()) }
 }
 
 /// A thread, named with its computer: two computers can hold the same thread ID.
