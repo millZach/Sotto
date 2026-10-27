@@ -132,6 +132,24 @@ export function threadStartsUnsupportedWords(): string {
   return t`This host can’t start a thread from another yet, and nothing was made. Update Sotto on the host, then try again.`
 }
 
+/**
+ * Bringing changes back's refusals the desktop says before any host runs Git (#1030), as `bringChangesBack.ts` writes
+ * them in English for the host.
+ */
+export const BRING_BACK_INTERFACE_WORDS = {
+  /** `BRING_BACK_UNSUPPORTED`: a host too old to bring changes back, or one whose Owl answer leaves it off. */
+  unsupported: (): string => t`This host can’t bring changes back yet, and nothing changed. Update Sotto on the host, then try again.`,
+  /** `BRING_BACK_OFF`: Work across machines is off on this desktop. */
+  off: (): string => t`Bringing changes back is available in Sotto Owl, and nothing changed.`,
+  /** `BRING_BACK_NO_TARGET`: nothing to bring back to. */
+  noTarget: (): string => t`This thread’s worktree wasn’t made from the branch of the thread it began from, or that thread is on another branch now, so there is nothing to bring back. Nothing changed.`,
+  /** `BRING_BACK_OTHER_DESKTOP`: another desktop started the worker. */
+  otherDesktop: (): string => t`Sotto on another desktop started this thread, and only that desktop can bring its changes back. Bring them back from there. Nothing changed.`,
+  /** `bringBackNotConnected`: the parent's machine is not connected. */
+  notConnected: (machine: string): string => t({ message: `${machine} isn’t connected, so nothing was brought back. Connect it, then try again. Nothing changed.`,
+    comment: '{machine} is a machine’s name, such as forge, or “The machine it began on”.' }),
+} as const
+
 /** A host that cannot keep screenshots (`HOST_CANNOT_STAGE_SCREENSHOTS`). */
 export function hostCannotStageScreenshotsWords(): string {
   return t`This host cannot keep screenshots. Update Sotto there, then attach them again. Nothing was attached.`

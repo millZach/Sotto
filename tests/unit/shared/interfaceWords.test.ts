@@ -7,11 +7,12 @@ import {
   SCREENSHOTS_TOO_LARGE_IN_TOTAL, type ProviderId,
 } from '../../../src/shared/agents'
 import { BOOT_UNSUPPORTED_REASONS, bootUnsupportedSentence } from '../../../src/shared/bootStart'
+import { BRING_BACK_NO_TARGET, BRING_BACK_OFF, BRING_BACK_OTHER_DESKTOP, BRING_BACK_UNSUPPORTED, bringBackNotConnected } from '../../../src/shared/bringChangesBack'
 import { MICROPHONE_NOT_SET_UP_DETAIL, SPEECH_MODEL_NOT_READY_DETAIL, TRANSCRIPTION_ERROR_DETAIL, TRANSCRIPTION_KEPT_DETAIL, type TranscriptionErrorCode } from '../../../src/shared/dictation'
 import { HOST_BUSY, LEGACY_MANAGEMENT_UPDATE, MANAGEMENT_REMOVED } from '../../../src/shared/hostProtocol'
 import { HOST_PROVIDER_JOB_WORDS, hostProviderJobTitle, type HostProviderJobCase } from '../../../src/shared/hostProviders'
 import {
-  bootUnsupportedWords, effortColorLabel, gitMergeMethodLabel, HOST_ANSWER_LOST_WORDS, hostBusyWords, hostCannotStageScreenshotsWords, hostProviderJobHeading,
+  bootUnsupportedWords, BRING_BACK_INTERFACE_WORDS, effortColorLabel, gitMergeMethodLabel, HOST_ANSWER_LOST_WORDS, hostBusyWords, hostCannotStageScreenshotsWords, hostProviderJobHeading,
   hostProviderJobWords, inInterfaceLanguage, interactiveVisualLabel, microphoneNotSetUpDetail, opencodeHostNeedsUpdateWords,
   opencodeNotOnHostWords, shownSignInAnswer, SIGN_IN_INTERFACE_WORDS, signInWordsInInterfaceLanguage, speechModelNotReadyDetail, threadStartsUnsupportedWords, transcriptionErrorDetail, transcriptionKeptDetail,
   watcherDisabledWords, workerRoleWords,
@@ -93,6 +94,11 @@ describe('interface words', () => {
     expect(threadStartsUnsupportedWords()).toBe(THREAD_STARTS_UNSUPPORTED)
     expect(hostCannotStageScreenshotsWords()).toBe(HOST_CANNOT_STAGE_SCREENSHOTS)
     expect(watcherDisabledWords()).toBe(WATCHER_DISABLED)
+    expect(BRING_BACK_INTERFACE_WORDS.unsupported()).toBe(BRING_BACK_UNSUPPORTED)
+    expect(BRING_BACK_INTERFACE_WORDS.off()).toBe(BRING_BACK_OFF)
+    expect(BRING_BACK_INTERFACE_WORDS.noTarget()).toBe(BRING_BACK_NO_TARGET)
+    expect(BRING_BACK_INTERFACE_WORDS.otherDesktop()).toBe(BRING_BACK_OTHER_DESKTOP)
+    expect(BRING_BACK_INTERFACE_WORDS.notConnected('forge')).toBe(bringBackNotConnected('forge'))
   })
 
   it('shows a fixed sentence a host sends in the interface language, and any other text as it came', () => {

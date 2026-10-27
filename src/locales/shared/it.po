@@ -43,6 +43,11 @@ msgstr ""
 msgid "{host} did not answer, so the sign-in page did not open. Nothing was saved. Press Open the page again."
 msgstr ""
 
+#. {machine} is a machine’s name, such as forge, or “The machine it began on”.
+#: src/shared/interfaceWords.ts
+msgid "{machine} isn’t connected, so nothing was brought back. Connect it, then try again. Nothing changed."
+msgstr ""
+
 #: src/shared/interfaceWords.ts
 msgid "{models, plural, =0 {Signed in to {source}. OpenCode lists none of its models yet, so none are in the model menu.} one {Signed in to {source}. Its model is in the model menu, under OpenCode.} other {Signed in to {source}. Its {count} models are in the model menu, under OpenCode.}}"
 msgstr ""
@@ -71,6 +76,10 @@ msgstr ""
 #. The name of an effort colourway.
 #: src/shared/interfaceWords.ts
 msgid "Aurora"
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Bringing changes back is available in Sotto Owl, and nothing changed."
 msgstr ""
 
 #. A worker role: the kind of work a thread is started for.
@@ -259,6 +268,10 @@ msgid "Sotto could not tell whether OpenCode saved the {source} key, so it read 
 msgstr ""
 
 #: src/shared/interfaceWords.ts
+msgid "Sotto on another desktop started this thread, and only that desktop can bring its changes back. Bring them back from there. Nothing changed."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
 msgid "Sotto’s OpenCode is not running, so nothing was signed in. Connect OpenCode, then try again."
 msgstr ""
 
@@ -321,6 +334,10 @@ msgid "Theme accent"
 msgstr ""
 
 #: src/shared/interfaceWords.ts
+msgid "This host can’t bring changes back yet, and nothing changed. Update Sotto on the host, then try again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
 msgid "This host can’t start a thread from another yet, and nothing was made. Update Sotto on the host, then try again."
 msgstr ""
 
@@ -342,6 +359,10 @@ msgstr ""
 
 #: src/shared/interfaceWords.ts
 msgid "This screenshot’s content does not match its file type. Nothing was attached. Save it again as PNG, JPEG, GIF, or WebP, then attach it."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "This thread’s worktree wasn’t made from the branch of the thread it began from, or that thread is on another branch now, so there is nothing to bring back. Nothing changed."
 msgstr ""
 
 #: src/shared/interfaceWords.ts
