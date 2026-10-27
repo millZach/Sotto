@@ -248,6 +248,20 @@ enum Space {
     static func dense(_ value: CGFloat, _ density: PhoneDensity) -> CGFloat { value * density.factor }
 }
 
+/// At regular width, the iPhone Duo unfolded, a conversation keeps a reading width in the middle of the screen
+/// instead of running the width of it. At compact width it changes nothing.
+private struct ReadingWidth: ViewModifier {
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    static let width: CGFloat = 680
+    func body(content: Content) -> some View {
+        let regular = sizeClass == .regular
+        content.frame(maxWidth: regular ? Self.width : nil).frame(maxWidth: regular ? .infinity : nil)
+    }
+}
+extension View {
+    func readingWidth() -> some View { modifier(ReadingWidth()) }
+}
+
 enum Radius {
     static let sm: CGFloat = 10
     static let md: CGFloat = 14

@@ -49,14 +49,29 @@ struct ThreadsView: View {
     @FocusState private var searching: Bool
     @Environment(\.sottoTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// At regular width, the iPhone Duo unfolded, the sections stand side by side, a column each. At the accessibility
+    /// text sizes a third of the width can't hold a title, so the page keeps one column.
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.dynamicTypeSize) private var typeSize
+    private var inColumns: Bool { sizeClass == .regular && !typeSize.isAccessibilitySize }
 
     var body: some View {
         let groups = model.focusThreads(show: model.show, query: query, opened: model.selected)
         let unsearched = query.isEmpty ? groups : model.focusThreads(show: model.show, opened: model.selected)
         SheetPage(warm: unsearched.requestCount > 0) {
             heading
-            controls(unsearched)
-            searchPill
+            if inColumns {
+                HStack(spacing: Space.s3) {
+                    ComputerMenu()
+                    searchPill.frame(maxWidth: 420)
+                    Spacer(minLength: Space.s2)
+                    ThreadCounts(working: unsearched.working.count, needs: unsearched.questions.count)
+                }
+                .padding(.top, Space.s3)
+            } else {
+                controls(unsearched)
+                searchPill.padding(.top, Space.s3)
+            }
             notices
             sections(groups)
         }
@@ -141,7 +156,6 @@ struct ThreadsView: View {
                     .onChange(of: proxy.frame(in: .global)) { _, frame in searchBox.frame = frame }
             }
         }
-        .padding(.top, Space.s3)
     }
 
     /// What just went wrong, creations waiting on a computer, and computers that can't be reached.
@@ -211,7 +225,7 @@ struct ThreadsView: View {
                 .padding(.vertical, Space.s7)
                 .paragraphDirection()
         }
-        if !needs.isEmpty {
+        let needsColumn = VStack(alignment: .leading, spacing: 0) {
             SectionHeading(String(localized: "Needs you", comment: "The heading over threads waiting on the user's answer."), count: needs.count, light: .warning)
             VStack(spacing: Space.s3) {
                 ForEach(Array(needs.enumerated()), id: \.element.row.id) { index, item in
@@ -222,25 +236,39 @@ struct ThreadsView: View {
                 }
             }
         }
-        if !working.isEmpty {
+        let workingColumn = VStack(alignment: .leading, spacing: 0) {
             SectionHeading(String(localized: "Working now"), count: working.count, light: .accent)
             VStack(spacing: Space.s3) {
                 ForEach(working) { row in WorkingCard(row: row) }
             }
         }
-        if !recent.isEmpty {
-            SectionHeading(String(localized: "Recent", comment: "The heading over threads that finished lately."), count: recent.count)
-            ThreadRowList(rows: recent, unread: unread, watched: watched)
+        let recentColumn = VStack(alignment: .leading, spacing: 0) {
+            if !recent.isEmpty {
+                SectionHeading(String(localized: "Recent", comment: "The heading over threads that finished lately."), count: recent.count)
+                ThreadRowList(rows: recent, unread: unread, watched: watched)
+            }
+            if !settled.isEmpty {
+                if groups.searching {
+                    SectionHeading(String(localized: "Settled", comment: "The heading over threads the user has put aside."), count: settled.count)
+                } else {
+                    settledToggle(settled.count)
+                }
+                if settledExpanded || groups.searching {
+                    ThreadRowList(rows: settled, unread: unread, watched: watched)
+                }
+            }
         }
-        if !settled.isEmpty {
-            if groups.searching {
-                SectionHeading(String(localized: "Settled", comment: "The heading over threads the user has put aside."), count: settled.count)
-            } else {
-                settledToggle(settled.count)
+        if inColumns {
+            // Only the sections that hold threads become columns, as the phone shows only those, and share the width.
+            HStack(alignment: .top, spacing: Space.s4) {
+                if !needs.isEmpty { needsColumn.frame(maxWidth: .infinity, alignment: .leading) }
+                if !working.isEmpty { workingColumn.frame(maxWidth: .infinity, alignment: .leading) }
+                if !recent.isEmpty || !settled.isEmpty { recentColumn.frame(maxWidth: .infinity, alignment: .leading) }
             }
-            if settledExpanded || groups.searching {
-                ThreadRowList(rows: settled, unread: unread, watched: watched)
-            }
+        } else {
+            if !needs.isEmpty { needsColumn }
+            if !working.isEmpty { workingColumn }
+            recentColumn
         }
     }
 
