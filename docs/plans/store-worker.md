@@ -70,6 +70,48 @@ One pull request per step. Each step keeps the behaviour of the one before it, a
    - **Gates:** `workspaceStoredActivity.test.ts`'s cases with the read on the worker, including a provider record arriving before the list, and the time main is held handing a 2,000-record list back.
    - **Docs:** the guide and `CONTEXT.md` say that activity can arrive a moment after a stored thread's messages.
 
+### Step 1: what reads what was just written
+
+Built on October 26, 2026. Every write the workspace makes goes through `ThreadStoreWriter` (`threadStoreWriter.ts`). The first writer, `ThreadStoreWriterOnMain`, commits inside `post` and confirms before it returns, so nothing observable changes. The tests also run the workspace over `DeferredStoreWriter` (`tests/fixtures/deferredStoreWriter.ts`), which holds every confirmation until the test releases it, as the worker will.
+
+- **The seam.** `post(write, confirm)` takes a write as data: event batches, one thread's events, activity lists, a release, redacted identities, a visual, visuals removed, wake-ups, a forget, the sub-agent words mark, and history off or on. Each is applied in the transactions the store uses now, and `confirm` hears once what committed and what failed. Writes commit in the order posted. `posted(threadId)` lists the events posted for a thread and not yet confirmed, `unconfirmed(threadId?)` says whether anything is, and `confirmed(threadId?)` settles once it all is. `drain()` commits everything at once, for shutdown, and `close()` drains, then closes the store.
+- **One batch per thread in flight.** A thread's posted batch stays at the front of its waiting events until it is confirmed, and its next batch is posted only then, so nothing commits ahead of a batch that failed. A failed batch stays there whole and is retried as now. An answer waits behind whatever its thread still holds, a batch in flight or a failed batch waiting for its retry, so it commits after the words it answered.
+- **Clearing a thread.** Once its forget is posted, nothing more of the thread is posted (`admitted`): what was posted before commits ahead of the forget and is taken out with the rest. What it still holds is dropped once the forget is confirmed, and kept if the forget fails, so a failed clear keeps the thread whole, as it says.
+- **The overlay.** The publish reads the store, then lays over it every event posted and not yet confirmed, then what waits behind a batch in flight (`heldEvents`, `windowWithHeld`, `applyEventsToWindow` in `storeOverlay.ts`). With nothing in flight it lays the waiting appends, as before. A thread whose batch failed lays nothing.
+
+| Read | How it sees a write posted just before it |
+| --- | --- |
+| The pane's window (`loadWindow` → `readWindow`), Watcher's replies, the comparison's first read, `threadMessages` | Overlay. A window asked for in turns keeps every message the events add until it is read again. |
+| The sidebar's summary (`threadSummary`) | Overlay. An alias, or a replacement that changes a role, shows once confirmed. |
+| `messageIdentities` | Overlay: the whole history read while a write is in flight. Eight adapters seed from it synchronously. |
+| `hasRecordedUserMessage`, `recordedUserMessages` | Overlay: the waiting and the posted events are evidence. |
+| `threadMessage` (a delegation's reply, a fork's check) | Overlay, as above. |
+| The handover (`threadHandover`, `watcherHandover`, the fork's handover) | Overlay: the whole history, with the wake-ups this run's record names. Its callers are synchronous. |
+| `message` | Not yet: undefined while anything is held for the thread, as when a batch waits now. Its caller asks again. |
+| `flushEvents`, the cursor gate | True only once nothing for the thread is held or unconfirmed, whatever the `streaming-publish-cost` answer. |
+| `eventsAfter` | What has committed. It runs on every shell a socket is pushed, so it never waits. A posted event takes its sequence when it commits, after every one read, and the publish its confirmation makes carries it in the next page. |
+| `threadPrompts` | Wait. Now asynchronous, with `AgentHost.threadPrompts` and the host service's prompt reader. |
+| `loadEarlierMessages`'s turns (`turnsFrom`) | Wait. |
+| `addVisual` | Wait for the words, then for the visual's own write before it is shown. |
+| `watcherRead` | Wait. |
+| `visitRecordedUserMessages` (Usage's import) | Wait. Now asynchronous, with `AgentHost` and the importer. |
+| The activity save's epoch read (`planActivitySync`) | Order: the writer runs it after every write posted before it, and a flush waits for what is posted, and what waited behind it, before it saves activity. |
+| Letting idle records go (`storesWhole`) | Wait: no release while an activity save is in flight; the next save asks again. |
+| The start's moves (`adoptSavedActivities`, `adoptSavedMessages`) | Wait. Both are now asynchronous. |
+| The privacy switch, clearing threads, a rewind's visuals | Wait. A removal is reported done once confirmed. |
+| `close` | Waits for everything posted, then `dispose` drains and closes. |
+| Wake-up marks in a window and the prompts' skip list | The record in memory names a posted wake-up until the store does. |
+| Anchors above the window (`storesAny`) | Updated at confirmation. A message in flight is in the overlaid window. |
+
+- **For step 2.**
+  - The worker's commit is visible to main's connection before its confirmation arrives. The overlay would lay that write twice for that moment, a streamed append doubled, so step 2 must keep main's reads at the commits its confirmations have reached.
+  - A summary's record count is read again when its thread's messages are, which a later confirmation does sooner; the equivalence test compares the records instead.
+  - `threadMessage`, `messageIdentities` and the handover read a thread's whole history while a write for it is unconfirmed. That never happens with the store confirming on main, but step 2 makes it live, so step 2 adds an owner-scale case run with a writer that confirms later.
+  - The `record` path, for a host that publishes whole histories rather than events, has no one-batch-in-flight gate, and it updates what it knows the store holds (`known`) before the confirmation. A failure heard later compares that thread afresh at its next publish.
+  - Codex's `addRolloutMessage` (`codex.ts`) asks `message` and adds the message rather than aliasing it when the answer is not yet, leaning on reconcile to repair it. With a writer that confirms later that happens whenever the thread is busy.
+  - Where a writer confirms later, words held behind a batch in flight when Keep local history turns off move to this run's memory store, where the writer on main had committed them and taken them out; and words held when a thread is cleared go with it unwritten. Neither reaches the file, and the log keeps no record that they happened.
+- **Gates, as run.** `workspaceStoreWriter.test.ts` runs each read above over the holding writer; checks order, a failed batch retried at 1 s doubling to 30 s with the notice shown, removals committed at FULL and reported once confirmed, and closing with writes posted; checks that a thread being cleared takes nothing more into the store, an answer behind a failed batch and the cursor gate with the Owl switch off; and runs six seeded runs (mulberry32) of every operation family, clearing threads, the privacy switch and wake-ups among them, through both writers. Those compare what the publish shows while writes are held, on a good share of steps, what each thread shows once everything is confirmed, and the store's rows at the end, leaving out only what the test names a reason for. The owner-scale counts are unchanged.
+
 ## Risks
 
 - **A read that skips the overlay or the wait** sees the store behind main. Step 1 lists every reader and tests each one with a write posted just before it.

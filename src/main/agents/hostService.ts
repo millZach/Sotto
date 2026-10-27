@@ -324,7 +324,7 @@ export class LocalHostService implements HostService {
     /** Continuing agents and forking at a reply (#1028), present only when the host's Owl answer turns them on. */
     threadStarts?: { startHandover(threadId: string): { readonly text: string } | undefined }
     /** The prompts the thread store holds above a pane's window, for the message scrubber (ADR-0109). */
-    prompts?: { threadPrompts(threadId: string, beforeMessageId: string): AgentThreadPrompts | null }
+    prompts?: { threadPrompts(threadId: string, beforeMessageId: string): AgentThreadPrompts | null | Promise<AgentThreadPrompts | null> }
     /** The iPhone's pull request sheet (#1281), true only when the host's Owl answer turns it on. */
     pullRequestView?: boolean
     /** Deleting settled threads (ADR-0140), true only when the host's Owl answer turns clearing on. */
@@ -397,7 +397,7 @@ export class LocalHostService implements HostService {
     return built ? { text: startHandoverPrefix(built.text).trimEnd() } : null
   }
   async threadPrompts(threadId: string, beforeMessageId: string): Promise<AgentThreadPrompts | null> {
-    return this.options.prompts?.threadPrompts(threadId, beforeMessageId) ?? null
+    return (await this.options.prompts?.threadPrompts(threadId, beforeMessageId)) ?? null
   }
   hostFacts(): Promise<HostMachineReport> {
     if (!this.options.facts) return Promise.reject(new Error('This host does not report its machine facts.'))
