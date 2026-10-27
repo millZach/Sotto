@@ -20,8 +20,8 @@ import { seedWatcherRoom } from './support/watcherRoom'
  * the composer floats over the conversation as a thread's does, as frosted glass with the night scene under it; the
  * scene runs under the column at 85% and never moves for the words; reading back slims the composer to one line without
  * moving the scene. Every word in the conversation keeps 4.5:1 against every pixel the scene draws in the column, the
- * glow left out, in every built-in theme, dark and light, and the composer's words keep it against the glass over the
- * brightest of the scene. Run after `npm run build`. Captures go to disposable run evidence;
+ * glow left out, in every built-in theme, dark and light, and in every place the scene can be set in (ADR-0149), and
+ * the composer's words keep it against the glass over the brightest of the scene. Run after `npm run build`. Captures go to disposable run evidence;
  * `SOTTO_E2E_EVIDENCE=publish` writes artifacts/watcher-column.
  */
 const evidence = evidenceDirectory('artifacts/watcher-column')
@@ -325,6 +325,36 @@ test.describe("Watcher's conversation column on the built app", () => {
             expect(reading.worstBackdrop, context).toBeGreaterThanOrEqual(4.5)
             expect(Object.keys(reading.words).some(key => key.endsWith('(pointed at)')), context).toBe(true)
           }
+        }
+      }))
+    })
+  }
+
+  for (const appearance of ['dark', 'light'] as const) {
+    test(`every word keeps 4.5:1 over the scene in every place, its moving glyphs included, ${appearance}`, async () => {
+      await onReleaseTrack('owl', () => withSotto(launchOptions(appearance, { live: true }), async (launched) => {
+        const { page } = launched
+        await openThreads(page)
+        await seedRoom(page)
+        await openRoom(page)
+        await resizeContentWindow(launched, 1280, 800)
+        await readBack(page, 0)
+        for (const place of ['harbour', 'snowfield', 'desert', 'night-wood'] as const) {
+          await page.evaluate(async scene => { await window.sotto!.updateSettings({ watcherScene: scene }) }, place)
+          await expect(page.locator('#watcher-pane')).toHaveAttribute('data-night-scene-place', place)
+          await settle(page)
+          // The last place's copy has faded; the snow, the sand and the beam move between readings.
+          await page.waitForTimeout(700)
+          let worst = Number.POSITIVE_INFINITY, worstGlass = Number.POSITIVE_INFINITY, pixels = 0
+          for (let sample = 0; sample < 3; sample++) {
+            const reading = await columnContrast(page)
+            worst = Math.min(worst, reading.worstWord); worstGlass = Math.min(worstGlass, reading.worstGlass); pixels = Math.max(pixels, reading.pixels)
+            await page.waitForTimeout(400)
+          }
+          recorded[`place-${place}-${appearance}`] = { worst, worstGlass, pixels }
+          expect(pixels, `${place} ${appearance}`).toBeGreaterThan(0)
+          expect(worst, `every word over ${place}, ${appearance}`).toBeGreaterThanOrEqual(4.5)
+          expect(worstGlass, `every word on the glass over ${place}, ${appearance}`).toBeGreaterThanOrEqual(4.5)
         }
       }))
     })

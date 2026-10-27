@@ -673,7 +673,7 @@ export function WatcherView({ now: fixedNow, update = null }: {
             <Marked>{paneMarks => <section id={WATCHER_PANE_ID} className="thread-pane watcher-pane" {...paneMarks} data-thread-id={watcherId ?? undefined} data-view={tab} data-focused={focusedPane === 'watcher' || !beside || undefined}
               data-under-controls={!beside || undefined} role="region" aria-label="Watcher"
               onFocusCapture={() => setFocusedPane('watcher')} onPointerDownCapture={() => setFocusedPane('watcher')}>
-              <WatcherNightScene shown={sceneShown} held={fixedNow !== undefined} owls={owls} onOpen={openThread} onShowWatched={showWatched} />
+              <WatcherNightScene shown={sceneShown} held={fixedNow !== undefined} place={app?.settings?.watcherScene} owls={owls} onOpen={openThread} onShowWatched={showWatched} />
               <OwlRoomSky />
               {watcherContent}
             </section>}</Marked>
