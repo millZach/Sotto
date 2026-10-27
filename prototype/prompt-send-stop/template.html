@@ -1,0 +1,393 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: the Threads composer's send and stop controls. Drake's crops show a white 28px square whose send glyph reads
+  as a pale pink dot, the words "Steer now" doing a button's job, two unrelated squares (an outlined Stop and a filled
+  send) side by side while a turn runs, and a send button that looks the same whether Enter will send, queue or steer.
+  Which of ten directions should be built?
+
+  Why the glyph fades today: the fill is --tt-activity, which is --tt-accent-text (the theme's update foreground, a
+  text colour), while the glyph is --tt-on-accent (the accent foreground, made for --tt-accent). The two roles were never
+  paired. In a theme where both are pale (T3 Chat's dark half, which also fills any role an imported dark theme leaves
+  out) the glyph all but vanishes. Sotto's own palettes happen to keep them apart.
+
+  Each direction is drawn at the composer's real width (760px) in four states (at rest with text, at rest empty, a turn
+  running with nothing typed, a turn running with text typed and one follow-up queued), in Sotto's own dark (Ink) and
+  light (paper) halves with the --tt-* formulas from tokens.css. "Today" reproduces the crops in T3 Chat dark.
+  Directions 2-10 all use direction 1's glyph fix. The ratios under each are measured from the painted colours.
+
+  Kept at prototype/prompt-send-stop/ on branch prototype/prompt-send-stop; docs/prototypes/prompt-send-stop-prototype.html
+  is the same page. Both are built from template.html by build.py (inlines Figtree). Open with #3 to show one direction.
+
+  Picked: (waiting for Drake)
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Composer send and stop - 10 directions - prototype</title>
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; src: url(data:font/woff2;base64,__FIGTREE__) format('woff2'); }
+
+/* Theme roles, copied from src/shared/themes/palettes.ts. */
+.t-dark {
+  color-scheme: dark; --theme-contrast-target: white;
+  --theme-canvas: oklch(0.115 0.008 265); --theme-surface-raised: oklch(0.185 0.008 265); --theme-text: oklch(0.985 0.005 280);
+  --theme-muted-foreground: oklch(0.72 0.014 265); --theme-placeholder: oklch(0.675 0.012 270); --theme-border: oklch(0.305 0.02 265);
+  --theme-input: oklch(0.375 0.024 265); --theme-accent: oklch(0.714403 0.104089 183.092); --theme-accent-foreground: oklch(0.16 0.012 190);
+  --theme-update-foreground: oklch(0.83 0.08 183); --theme-accent-surface: oklch(0.32 0.05 185); --theme-error-foreground: oklch(0.702184 0.189226 22.228);
+  --theme-surface-overlay: oklch(0.215 0.008 265);
+  --tt-card: var(--theme-surface-raised);
+}
+.t-light {
+  color-scheme: light; --theme-contrast-target: black;
+  --theme-canvas: oklch(0.978 0.004 85); --theme-surface-raised: oklch(0.955 0.006 85); --theme-text: oklch(0.235 0.014 75);
+  --theme-muted-foreground: oklch(0.5 0.014 75); --theme-placeholder: oklch(0.525 0.015 78); --theme-border: oklch(0.86 0.012 80);
+  --theme-input: oklch(0.8 0.016 80); --theme-accent: oklch(0.53 0.095 186); --theme-accent-foreground: oklch(0.99 0.003 85);
+  --theme-update-foreground: oklch(0.43 0.08 186); --theme-accent-surface: oklch(0.92 0.03 186); --theme-error-foreground: oklch(0.509494 0.208583 28.513);
+  --theme-surface-overlay: oklch(0.945 0.007 85);
+  --tt-card: color-mix(in oklab, var(--theme-text) 4%, var(--theme-canvas));
+}
+.t-t3 {
+  color-scheme: dark; --theme-contrast-target: white;
+  --theme-canvas: oklch(0.22813 0.020366 307.469); --theme-surface-raised: oklch(0.279864 0.021572 309.532); --theme-text: oklch(0.980735 0.004092 301.426);
+  --theme-muted-foreground: oklch(0.880303 0.03077 342.696); --theme-placeholder: oklch(0.657087 0.028226 307.985); --theme-border: oklch(0.266943 0.015262 302.425);
+  --theme-input: oklch(0.266817 0.02897 344.461); --theme-accent: oklch(0.460685 0.185347 4.099); --theme-accent-foreground: oklch(0.901233 0.057189 343.694);
+  --theme-update-foreground: oklch(0.901233 0.057189 343.694); --theme-accent-surface: oklch(0.364912 0.050794 308.491); --theme-error-foreground: oklch(0.458704 0.169677 3.815);
+  --theme-surface-overlay: oklch(0.3 0.02 309);
+  --tt-card: var(--theme-surface-raised);
+}
+/* The --tt-* formulas, from src/renderer/src/styles/tokens.css (contrast base 100%, boost 0%). */
+.t-dark, .t-light, .t-t3 {
+  --tt-canvas: var(--theme-canvas);
+  --tt-text: var(--theme-text);
+  --tt-text-2: color-mix(in oklab, var(--theme-text) 55%, var(--theme-muted-foreground));
+  --tt-text-muted: color-mix(in oklab, var(--theme-muted-foreground) 85%, var(--theme-text));
+  --tt-text-faint: var(--theme-placeholder);
+  --tt-hairline: var(--theme-border);
+  --tt-field-border: var(--theme-input);
+  --tt-hover: color-mix(in srgb, var(--theme-accent-surface) 70%, transparent);
+  --tt-accent: var(--theme-accent);
+  --tt-accent-text: var(--theme-update-foreground);
+  --tt-on-accent: var(--theme-accent-foreground);
+  --tt-activity: var(--tt-accent-text);
+  --tt-pill: var(--tt-text);
+  --tt-pill-ink: var(--theme-canvas);
+  --tt-error: var(--theme-error-foreground);
+  --tt-segment-on: var(--theme-surface-overlay);
+  --followups-surface: color-mix(in oklab, var(--tt-card) 70%, var(--tt-canvas));
+  background: var(--tt-canvas); color: var(--tt-text);
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; padding: 28px 32px 40px; background: #0b0b0c; color: #ecebe6; font: 13px/1.4 Figtree, system-ui, sans-serif; }
+h1 { margin: 0 0 6px; font-size: 19px; font-weight: 600; }
+.intro { max-width: 1100px; margin: 0 0 18px; color: #a7a6a0; font-size: 13.5px; }
+.intro p { margin: 0 0 6px; }
+.intro b { color: #ecebe6; font-weight: 600; }
+.bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 24px; font-size: 12.5px; color: #a7a6a0; }
+.bar a { color: #ecebe6; text-decoration: none; padding: 3px 8px; border-radius: 5px; background: #1d1d1f; }
+.bar a:hover { background: #2a2a2d; }
+.bar label { margin-left: 10px; display: inline-flex; gap: 6px; align-items: center; }
+
+section.dir { margin: 0 0 44px; padding: 18px 20px 20px; border-radius: 14px; background: #131315; width: max-content; max-width: 100%; }
+section.dir h2 { margin: 0 0 4px; font-size: 16px; font-weight: 600; display: flex; gap: 10px; align-items: baseline; }
+section.dir h2 b { display: inline-grid; place-items: center; min-width: 24px; height: 22px; padding: 0 5px; border-radius: 6px; background: #ecebe6; color: #121211; font-size: 12.5px; }
+section.dir[data-id='0'] h2 b { background: #3a3a3d; color: #ecebe6; }
+.idea { margin: 0 0 4px; color: #c9c8c2; font-size: 13.5px; max-width: 1540px; }
+.keys { margin: 0 0 4px; font-size: 13px; color: #ecebe6; }
+.keys kbd, .note kbd { font: 600 11.5px Figtree, sans-serif; padding: 1px 5px; border-radius: 4px; background: #2a2a2d; color: #ecebe6; }
+.note { margin: 0 0 4px; color: #8f8e88; font-size: 12.5px; max-width: 1540px; }
+.ratio { margin: 0 0 14px; color: #8f8e88; font-size: 12px; font-variant-numeric: tabular-nums; }
+.ratio i { font-style: normal; color: #ecebe6; }
+.ratio i.low { color: #f08a7a; }
+
+.grid { display: grid; grid-template-columns: 112px repeat(var(--cols, 2), 784px); gap: 10px 14px; align-items: stretch; }
+.grid .th { font-size: 12px; color: #8f8e88; padding: 0 0 2px 2px; }
+.grid .rl { font-size: 12px; color: #a7a6a0; padding-top: 12px; line-height: 1.35; }
+.grid .rl small { display: block; color: #6f6e69; font-size: 11.5px; }
+.cell { padding: 14px 12px 14px; border-radius: 10px; display: flex; flex-direction: column; justify-content: flex-end; min-height: 128px; }
+body:not(.today-beside) .grid .today-col { display: none; }
+body:not(.today-beside) .grid { --cols: 2; }
+body.today-beside .grid { --cols: 3; }
+@media (max-width: 2560px) { body.today-beside .grid { grid-template-columns: 112px 784px; } body.today-beside .grid .th { display: none; } body.today-beside .cell[data-col]::before { content: attr(data-col); font-size: 11px; color: var(--tt-text-muted); margin: 0 0 6px 4px; } }
+@media (max-width: 1000px) { .cell[data-col]::before { content: attr(data-col); font-size: 11px; color: var(--tt-text-muted); margin: 0 0 6px 4px; } .grid, body.today-beside .grid { grid-template-columns: 1fr; } .grid .th { display: none; } .grid .rl { padding: 8px 0 0; } .cell { overflow-x: auto; } }
+
+/* ---------- the compose area, at real size ---------- */
+.compose { width: 760px; position: relative; }
+.tray { position: relative; margin: 0 14px -12px; padding: 4px 10px 16px 12px; border-radius: 12px 12px 0 0; background: var(--followups-surface); }
+.tray-head { display: flex; gap: 6px; align-items: center; min-height: 26px; color: var(--tt-text-muted); font-size: 12.5px; }
+.tray-head b { font-weight: 500; color: var(--tt-text-muted); }
+.tray-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 32px; }
+.tray-row p { margin: 0; color: var(--tt-text-2); font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tools { display: inline-flex; align-items: center; gap: 0; }
+.card { position: relative; z-index: 1; padding: 14px 16px 10px; border-radius: 16px; background: var(--tt-card); }
+.field { min-height: 36px; font-size: 15px; line-height: 1.5; color: var(--tt-text); position: relative; }
+.field.ph { color: var(--tt-text-faint); }
+.field .caret { display: inline-block; width: 1.5px; height: 18px; margin-left: 1px; vertical-align: -3px; background: var(--tt-text); }
+.grip { position: absolute; right: -6px; bottom: -2px; width: 9px; height: 9px; opacity: .55; color: var(--tt-text-muted); }
+.foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; min-height: 28px; }
+.meta { display: flex; align-items: center; gap: 8px; color: var(--tt-text-muted); font-size: 13px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border-radius: 5px; background: color-mix(in oklab, var(--tt-text) 6%, transparent); color: var(--tt-text-muted); font-size: 12.5px; }
+.chip .mk { width: 12px; height: 12px; border-radius: 3px; background: #e2ad80; }
+.acts { display: flex; align-items: center; gap: 6px; flex: none; }
+svg.i { width: 15px; height: 15px; fill: none; stroke: currentcolor; stroke-width: 2.25; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+svg.i.sm { width: 14px; height: 14px; stroke-width: 2; }
+svg.sq { width: 11px; height: 11px; fill: currentcolor; stroke: none; }
+
+/* Buttons. */
+.b { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font: inherit; position: relative; flex: none; }
+.b.fill { background: var(--tt-pill); color: var(--tt-pill-ink); }
+.b.today { background: var(--tt-activity); color: var(--tt-on-accent); }
+.b.line { border-color: var(--tt-field-border); color: var(--tt-text-muted); }
+.b.ghost:hover, .b.line:hover { background: var(--tt-hover); color: var(--tt-text); }
+.b.off { opacity: .45; }
+.b.accent { color: var(--tt-accent-text); }
+.words { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 7px; border-radius: 6px; color: var(--tt-accent-text); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.words.muted { color: var(--tt-text-muted); font-weight: 500; }
+.words.off { opacity: .45; }
+.tip { position: absolute; bottom: calc(100% + 8px); right: -4px; z-index: 5; padding: 5px 8px; border-radius: 6px; background: var(--tt-segment-on); color: var(--tt-text); font-size: 12px; font-weight: 500; white-space: nowrap; box-shadow: 0 6px 18px rgb(0 0 0 / 35%); }
+.tip kbd { font: inherit; color: var(--tt-text-muted); margin-left: 6px; }
+
+/* 3: one split control for the turn. */
+.split { display: inline-flex; height: 28px; border: 1px solid var(--tt-field-border); border-radius: 6px; overflow: hidden; }
+.split > span { display: grid; place-items: center; width: 30px; color: var(--tt-text-muted); }
+.split > span + span { border-left: 1px solid var(--tt-field-border); }
+.split > span.go { color: var(--tt-accent-text); }
+.split > span.off { opacity: .45; }
+
+/* 4: a chevron on the send button. */
+.chev { display: inline-flex; height: 28px; border-radius: 6px; overflow: hidden; background: var(--tt-pill); color: var(--tt-pill-ink); position: relative; }
+.chev > span { display: grid; place-items: center; width: 28px; }
+.chev > span.c { width: 18px; border-left: 1px solid color-mix(in oklab, var(--tt-pill-ink) 30%, var(--tt-pill)); }
+.chev > span.c svg { width: 12px; height: 12px; }
+.menu { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 6; width: 210px; padding: 4px; border-radius: 8px; background: var(--tt-segment-on); box-shadow: 0 10px 28px rgb(0 0 0 / 35%); }
+.menu div { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: 5px; color: var(--tt-text); font-size: 13px; }
+.menu div.on { background: var(--tt-hover); }
+.menu div svg { color: var(--tt-text-muted); }
+.menu kbd { margin-left: auto; font: inherit; font-size: 12px; color: var(--tt-text-muted); }
+
+/* 5: a bare stop, no plate. */
+.bare { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; color: var(--tt-text); }
+.bare svg.sq { width: 12px; height: 12px; }
+.bare.dim { color: var(--tt-text-muted); }
+
+/* 6: the round family. */
+.round .b { border-radius: 50%; }
+
+/* 7: the send button is the card's own corner. */
+.card.corner { padding-right: 16px; }
+.card.corner .acts { margin-right: 36px; }
+.cornerbtn { position: absolute; right: 0; bottom: 0; width: 44px; height: 40px; display: grid; place-items: center; border-radius: 6px 0 16px 0; background: var(--tt-pill); color: var(--tt-pill-ink); }
+.cornerbtn.off { background: color-mix(in oklab, var(--tt-pill) 45%, var(--tt-card)); }
+.cornerbtn.stop svg.sq { width: 12px; height: 12px; }
+
+/* 8: the stop carries the turn's trace. */
+.traced { position: relative; }
+.traced::before { content: ''; position: absolute; inset: -1px; border-radius: 6px; padding: 1.5px;
+  background: conic-gradient(from var(--a, 0deg), var(--tt-activity) 0 26%, color-mix(in srgb, var(--tt-activity) 18%, transparent) 26% 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+@property --a { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+@media (prefers-reduced-motion: no-preference) { body:not(.still) .traced::before { animation: trace 1.6s linear infinite; } }
+@keyframes trace { to { --a: 360deg; } }
+
+/* 9: keys first. */
+.key { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border-radius: 6px; color: var(--tt-text-muted); font-size: 12.5px; white-space: nowrap; }
+.key kbd { font: 600 11.5px Figtree, sans-serif; min-width: 20px; height: 20px; padding: 0 5px; display: inline-grid; place-items: center; border-radius: 4px; background: color-mix(in oklab, var(--tt-text) 9%, transparent); color: var(--tt-text); }
+.key.main { background: var(--tt-pill); color: var(--tt-pill-ink); font-weight: 600; }
+.key.main kbd { background: color-mix(in oklab, var(--tt-pill-ink) 16%, transparent); color: var(--tt-pill-ink); }
+.key.off { opacity: .45; }
+.key.go { color: var(--tt-accent-text); font-weight: 600; }
+
+/* 2: a cross-fade when the one button changes role. */
+@media (prefers-reduced-motion: no-preference) { body:not(.still) .morph svg { animation: swap .22s ease-out both; } }
+@keyframes swap { from { opacity: 0; transform: scale(.7); } }
+</style>
+</head>
+<body class="today-beside">
+<h1>Composer send and stop: ten directions</h1>
+<div class="intro">
+  <p>Every frame is the Threads composer at its real 760px width. Columns are Sotto's own dark (Ink) and light (paper) halves; <b>Today</b> beside them is the composer as it is now, in T3 Chat's dark half, which reproduces the crops.</p>
+  <p><b>Why the glyph fades:</b> the button is filled with the theme's accent <i>text</i> colour, but its glyph uses the colour made to sit on the accent <i>fill</i>. Nothing pairs the two. Where both are pale (T3 Chat dark, and any imported dark theme that leaves them out, which falls back to T3 Chat) the arrow all but disappears. Direction 1 fixes that alone; 2 to 10 keep its fix and change the idea.</p>
+  <p><b>Where else:</b> Watcher's composer is the same composer and takes whichever direction ships. The follow-up editor keeps Cancel and Save. A provider that cannot steer shows no steer control in any direction; each note says what is left. The paired phone's composer is native SwiftUI and keeps its own look until asked.</p>
+  <p>All ten drop the textarea's resize grip that today sits on top of the button; the field already grows with its text.</p>
+</div>
+<div class="bar" id="bar"></div>
+<main id="main"></main>
+
+<script>
+const I = {
+  up: '<svg class="i" viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>',
+  queue: '<svg class="i" viewBox="0 0 24 24"><path d="M11 12H3"/><path d="M16 6H3"/><path d="M16 18H3"/><path d="M18 9v6"/><path d="M21 12h-6"/></svg>',
+  sq: '<svg class="sq" viewBox="0 0 12 12"><rect x="0.5" y="0.5" width="11" height="11" rx="2"/></svg>',
+  right: '<svg class="i sm" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>',
+  steer: '<svg class="i" viewBox="0 0 24 24"><path d="m15 10 5 5-5 5"/><path d="M4 4v7a4 4 0 0 0 4 4h12"/></svg>',
+  chev: '<svg class="i" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg>',
+  edit: '<svg class="i sm" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
+  x: '<svg class="i sm" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
+  grip: '<svg class="grip" viewBox="0 0 10 10"><path d="M9 3 3 9M9 6 6 9" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>',
+}
+const STATES = [
+  { id: 'A', label: 'At rest, text typed', sub: 'Enter sends', text: true },
+  { id: 'B', label: 'At rest, empty', sub: 'nothing to send', text: false },
+  { id: 'C', label: 'Turn running, empty', sub: 'Stop is the action', text: false, run: true },
+  { id: 'D', label: 'Turn running, text typed', sub: 'Enter queues; one already queued', text: true, run: true, queued: true },
+]
+const typed = 'Also update the release notes for the Windows path'
+const placeholder = s => s.run ? 'Claude is working. Write a follow-up to queue it.' : 'What should Claude do next?'
+
+const words = (label, cls = '') => `<span class="words ${cls}">${label}</span>`
+const b = (cls, glyph, title) => `<span class="b ${cls}" title="${title}">${glyph}</span>`
+const trayWords = () => words(I.right + 'Steer now')
+
+/* Each direction: what the footer's right end holds in each state, and how a queued row steers. */
+const DIRS = [
+  { id: 0, name: 'Today', today: true,
+    idea: 'Steer now in words, an outlined Stop, then the send disc filled with the accent text colour and its glyph in the on-accent colour.',
+    keys: '<kbd>Enter</kbd> sends, or queues while a turn runs. <kbd>⌘Enter</kbd> does the same as Enter. Stop is <kbd>⌘⇧S</kbd>.',
+    pair: ['--tt-activity', '--tt-on-accent', 'Send glyph on its fill'],
+    acts: s => !s.run ? b(`today ${s.text ? '' : 'off'}`, I.up, 'Send prompt')
+      : !s.text ? words('Steer now', 'off') + b('today', I.sq, 'Stop')
+      : words('Steer now') + b('line', I.sq, 'Stop') + b('today', I.queue, 'Queue prompt'),
+    grip: true },
+  { id: 1, name: 'Ink plate',
+    idea: 'Keep today\'s layout and fix the glyph: the send button takes the primary plate ADR-0110 already names, the text colour with the canvas as its ink, a pair every theme keeps far apart.',
+    keys: '<kbd>Enter</kbd> sends, or queues while a turn runs. <kbd>⌘Enter</kbd> does the same as Enter. Stop is <kbd>⌘⇧S</kbd>.',
+    note: 'Smallest change: two colour tokens in threads.css. Leaves the other three complaints as they are.',
+    pair: ['--tt-pill', '--tt-pill-ink', 'Send glyph on its plate'],
+    acts: s => !s.run ? b(`fill ${s.text ? '' : 'off'}`, I.up, 'Send prompt')
+      : !s.text ? words('Steer now', 'off') + b('fill', I.sq, 'Stop')
+      : words('Steer now') + b('line', I.sq, 'Stop') + b('fill', I.queue, 'Queue prompt') },
+  { id: 2, name: 'One button, three roles',
+    idea: 'One plate in one place that changes role with the state: an arrow sends, a square stops, a list-plus queues. Never two squares; the glyph cross-fades as it changes.',
+    keys: '<kbd>Enter</kbd> does what the plate shows: send, or queue. <kbd>⌘Enter</kbd> steers when the provider can. <kbd>⌘⇧S</kbd> stops at any time.',
+    note: 'With text typed during a turn, the plate is Queue, so Stop has no button: emptying the field brings it back, and <kbd>⌘⇧S</kbd> always works. Without steering, ⌘Enter queues too.',
+    pair: ['--tt-pill', '--tt-pill-ink', 'Glyph on its plate'],
+    acts: s => !s.run ? b(`fill morph ${s.text ? '' : 'off'}`, I.up, 'Send prompt')
+      : !s.text ? b('fill morph', I.sq, 'Stop')
+      : b('fill morph', I.queue, 'Queue prompt (⌘Enter steers it into the turn)') },
+  { id: 3, name: 'Stop and steer as one control',
+    idea: 'While a turn runs, one split control speaks to the turn: its left half stops it, its right half steers what you typed into it. The filled plate is only ever what Enter does.',
+    keys: '<kbd>Enter</kbd> sends, or queues while a turn runs. <kbd>⌘Enter</kbd> steers. <kbd>⌘⇧S</kbd> stops.',
+    note: 'The steer half is dim until there is text. Without steering, the control is Stop alone, a single outlined square. A queued row steers with the same arrow.',
+    pair: ['--tt-pill', '--tt-pill-ink', 'Send glyph on its plate'],
+    acts: s => !s.run ? b(`fill ${s.text ? '' : 'off'}`, I.up, 'Send prompt')
+      : `<span class="split"><span title="Stop">${I.sq}</span><span class="${s.text ? 'go' : 'off'}" title="Steer now">${I.right}</span></span>` + (s.text ? b('fill', I.queue, 'Queue prompt') : ''),
+    tray: () => b('ghost accent', I.right, 'Steer now') },
+  { id: 4, name: 'Steer behind a chevron',
+    idea: 'While a turn runs the plate grows a chevron (and answers a long press) with the other ways to send: Queue, Steer now and Stop, each with its key. The footer holds one control.',
+    keys: '<kbd>Enter</kbd> queues while a turn runs; the menu says so. <kbd>⌘Enter</kbd> steers. <kbd>⌘⇧S</kbd> stops.',
+    note: 'At rest there is nothing else to choose, so no chevron. Without steering, the menu holds Queue and Stop. Drawn with the menu open in the last state.',
+    pair: ['--tt-pill', '--tt-pill-ink', 'Glyph on its plate'],
+    acts: s => !s.run ? b(`fill ${s.text ? '' : 'off'}`, I.up, 'Send prompt')
+      : `<span style="position:relative;display:inline-flex"><span class="chev"><span title="${s.text ? 'Queue prompt' : 'Stop'}">${s.text ? I.queue : I.sq}</span><span class="c" title="More ways to send">${I.chev}</span></span>${s.text ? `<div class="menu"><div class="on">${I.queue}Queue<kbd>Enter</kbd></div><div>${I.right}Steer now<kbd>⌘Enter</kbd></div><div>${I.sq}Stop the turn<kbd>⌘⇧S</kbd></div></div>` : ''}</span>` },
+  { id: 5, name: 'A bare stop',
+    idea: 'Stop loses its box: a solid square glyph alone in the text colour, the way a player draws stop, with a plate only on hover. Only one boxed control is ever on screen, so stop and send cannot read as a pair of squares.',
+    keys: '<kbd>Enter</kbd> sends, or queues while a turn runs. <kbd>⌘Enter</kbd> does the same as Enter. <kbd>⌘⇧S</kbd> stops.',
+    note: 'With nothing typed, the bare stop stands alone at the end of the row; the placeholder already says the agent is working. Steer now stays in words.',
+    pair: ['--tt-text', '--tt-card', 'Stop glyph on the card', true],
+    acts: s => !s.run ? b(`fill ${s.text ? '' : 'off'}`, I.up, 'Send prompt')
+      : !s.text ? words('Steer now', 'off') + `<span class="bare" title="Stop">${I.sq}</span>`
+      : words('Steer now') + `<span class="bare dim" title="Stop">${I.sq}</span>` + b('fill', I.queue, 'Queue prompt') },
+  { id: 6, name: 'The round family',
+    idea: 'Send, Stop and Queue as discs, against the soft squares of 1. Same plate, same pair, same layout; only the shape changes, so the two can be compared directly.',
+    keys: '<kbd>Enter</kbd> sends, or queues while a turn runs. <kbd>⌘Enter</kbd> does the same as Enter. <kbd>⌘⇧S</kbd> stops.',
+    note: 'Not inside ADR-0110 as written: its decision 2 keeps round for status only. The radius check would pass (a circle is a square box), but shipping this amends the ADR for these three buttons.',
+    pair: ['--tt-pill', '--tt-pill-ink', 'Send glyph on its disc'], round: true,
+    acts: s => !s.run ? b(`fill ${s.text ? '' : 'off'}`, I.up, 'Send prompt')
+      : !s.text ? words('Steer now', 'off') + b('fill', I.sq, 'Stop')
+      : words('Steer now') + b('line', I.sq, 'Stop') + b('fill', I.queue, 'Queue prompt') },
+  { id: 7, name: 'The card\'s own corner',
+    idea: 'The send button is the composer card\'s bottom-right corner, cut from the same radius, so it reads as where the words go rather than a button set beside them. Its glyph says send, stop or queue.',
+    keys: '<kbd>Enter</kbd> does what the corner shows. <kbd>⌘Enter</kbd> does the same as Enter. <kbd>⌘⇧S</kbd> stops.',
+    note: 'With text typed during a turn, the corner is Queue and Stop steps out beside it as a bare square. A bigger target (44×40) than today\'s 28px.',
+    pair: ['--tt-pill', '--tt-pill-ink', 'Glyph on the corner'], corner: true,
+    acts: s => !s.run ? '' : !s.text ? words('Steer now', 'off') : words('Steer now') + `<span class="bare dim" title="Stop">${I.sq}</span>`,
+    cornerBtn: s => `<span class="cornerbtn ${!s.run && !s.text ? 'off' : ''} ${s.run && !s.text ? 'stop' : ''}" title="${!s.run ? 'Send prompt' : s.text ? 'Queue prompt' : 'Stop'}">${!s.run ? I.up : s.text ? I.queue : I.sq}</span>` },
+  { id: 8, name: 'Stop carries the turn',
+    idea: 'While a turn runs, a trace runs round the Stop button\'s edge in the activity colour, so the control that ends the turn is also the sign that it is running. Stop stays a soft square; the trace is the status.',
+    keys: '<kbd>Enter</kbd> sends, or queues while a turn runs. <kbd>⌘Enter</kbd> does the same as Enter. <kbd>⌘⇧S</kbd> stops.',
+    note: 'The trace turns once every 1.6s; with reduced motion it rests at a quarter. Screenshots catch it still. Inside ADR-0110: the button is square, the moving part is status.',
+    pair: ['--tt-activity', '--tt-card', 'Trace on the card'],
+    acts: s => !s.run ? b(`fill ${s.text ? '' : 'off'}`, I.up, 'Send prompt')
+      : !s.text ? words('Steer now', 'off') + b('line traced', I.sq, 'Stop')
+      : words('Steer now') + b('line traced', I.sq, 'Stop') + b('fill', I.queue, 'Queue prompt') },
+  { id: 9, name: 'Keys first',
+    idea: 'The buttons are the keys. Each says what it does and which key does it, and the filled one is always Enter, so the button only confirms what the keyboard already does.',
+    keys: '<kbd>Enter</kbd> sends, or queues while a turn runs. <kbd>⌘Enter</kbd> steers. <kbd>⌘⇧S</kbd> stops.',
+    note: 'The one direction with more words, not fewer; at the 820px window it drops to the keys alone. Without steering the ⌘Enter button goes. On Windows the keys read Ctrl.',
+    pair: ['--tt-pill', '--tt-pill-ink', 'Label on its plate'],
+    acts: s => !s.run ? `<span class="key main ${s.text ? '' : 'off'}">Send<kbd>↵</kbd></span>`
+      : !s.text ? `<span class="key">Steer<kbd>⌘↵</kbd></span><span class="key main">Stop<kbd>⌘⇧S</kbd></span>`.replace('class="key"', 'class="key off"')
+      : `<span class="key">Stop<kbd>⌘⇧S</kbd></span><span class="key go">Steer<kbd>⌘↵</kbd></span><span class="key main">Queue<kbd>↵</kbd></span>` },
+  { id: 10, name: 'Steer as an icon',
+    idea: 'The words Steer now go, in the composer and on every queued row. An arrow turning in carries it; its name stays in the label and the tooltip with its key, drawn here on hover.',
+    keys: '<kbd>Enter</kbd> sends, or queues while a turn runs. <kbd>⌘Enter</kbd> steers. <kbd>⌘⇧S</kbd> stops.',
+    note: 'Without steering, the arrow is not there. A new icon to learn: the tooltip and the ⌘Enter key are how it is learned.',
+    pair: ['--tt-pill', '--tt-pill-ink', 'Send glyph on its plate'],
+    acts: s => !s.run ? b(`fill ${s.text ? '' : 'off'}`, I.up, 'Send prompt')
+      : !s.text ? b('ghost accent off', I.steer, 'Steer now') + b('fill', I.sq, 'Stop')
+      : `<span class="b ghost accent" title="Steer now" style="background:var(--tt-hover)">${I.steer}<span class="tip">Steer now: send this into the running turn<kbd>⌘Enter</kbd></span></span>` + b('line', I.sq, 'Stop') + b('fill', I.queue, 'Queue prompt'),
+    tray: () => b('ghost accent', I.steer, 'Steer now') },
+]
+
+function compose(d, s) {
+  const tray = s.queued ? `<div class="tray"><div class="tray-head"><b>Queued 1</b>· sends when this turn ends</div>
+    <div class="tray-row"><p>Run the linter on the changed files too</p><span class="tools">${(d.tray ?? trayWords)()}${b('ghost', I.edit, 'Edit')}${b('ghost', I.x, 'Remove')}</span></div></div>` : ''
+  const field = s.text ? `<div class="field">${typed}<span class="caret"></span>${d.grip ? I.grip : ''}</div>`
+    : `<div class="field ph">${placeholder(s)}${d.grip ? I.grip : ''}</div>`
+  return `<div class="compose ${d.round ? 'round' : ''}">${tray}<div class="card ${d.corner ? 'corner' : ''}">${field}
+    <div class="foot"><div class="meta"><span class="chip"><i class="mk"></i>Opus 5.5</span><span class="chip">High</span></div>
+    <div class="acts">${d.acts(s)}</div></div>${d.cornerBtn ? d.cornerBtn(s) : ''}</div></div>`
+}
+
+const today = DIRS[0]
+const main = document.getElementById('main')
+const bar = document.getElementById('bar')
+bar.innerHTML = DIRS.map(d => `<a href="#d${d.id}">${d.id === 0 ? 'Today' : d.id + ' ' + d.name}</a>`).join('') +
+  '<label><input type="checkbox" id="beside" checked> Today beside each</label>'
+document.getElementById('beside').addEventListener('change', e => document.body.classList.toggle('today-beside', e.target.checked))
+
+for (const d of DIRS) {
+  const sec = document.createElement('section')
+  sec.className = 'dir'; sec.id = 'd' + d.id; sec.dataset.id = d.id
+  const cols = d.today ? [['t-t3', 'T3 Chat dark (your crops)'], ['t-dark', 'Sotto dark'], ['t-light', 'Sotto light']]
+    : [['t-dark', 'Dark'], ['t-light', 'Light'], ['t-t3 today-col', 'Today, T3 Chat dark']]
+  let grid = `<div class="grid" ${d.today ? 'style="--cols:3"' : ''}><div></div>` + cols.map(c => `<div class="th ${c[0].includes('today-col') ? 'today-col' : ''}">${c[1]}</div>`).join('')
+  for (const s of STATES) {
+    grid += `<div class="rl">${s.label}<small>${s.sub}</small></div>`
+    for (const [cls, name] of cols) grid += `<div class="cell ${cls}" data-col="${name}">${compose(cls.includes('today-col') ? today : d, s)}</div>`
+  }
+  grid += '</div>'
+  sec.innerHTML = `<h2><b>${d.id === 0 ? 'Now' : d.id}</b>${d.name}</h2><p class="idea">${d.idea}</p><p class="keys">${d.keys}</p>
+    ${d.note ? `<p class="note">${d.note}</p>` : ''}<p class="ratio" data-pair="${d.pair.join('|')}"></p>${grid}`
+  main.appendChild(sec)
+}
+
+/* Measure each direction's key pair as painted, in each theme, by drawing both colours to a canvas. */
+const ctx = Object.assign(document.createElement('canvas'), { width: 1, height: 1 }).getContext('2d', { willReadFrequently: true })
+function rgb(color) { ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = '#000'; ctx.fillStyle = color; ctx.fillRect(0, 0, 1, 1); return [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3) }
+function lum([r, g, b]) { const f = c => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4 }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b) }
+function ratio(a, b) { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05) }
+const probe = document.createElement('div'); document.body.appendChild(probe)
+function resolve(scope, v) { probe.className = scope; probe.style.color = `var(${v})`; return getComputedStyle(probe).color }
+for (const p of document.querySelectorAll('.ratio')) {
+  const [fg, bg, label] = p.dataset.pair.split('|')
+  const parts = [['t-dark', 'dark'], ['t-light', 'light'], ['t-t3', 'T3 Chat dark']].map(([scope, name]) => {
+    const r = ratio(rgb(resolve(scope, fg)), rgb(resolve(scope, bg)))
+    return `${name} <i class="${r < 3 ? 'low' : ''}">${r.toFixed(1)}:1</i>`
+  })
+  p.innerHTML = `${label}: ${parts.join(' · ')} <span style="color:#6f6e69">(3:1 needed)</span>`
+}
+probe.remove()
+
+const only = location.hash.match(/^#(\d+)$/)
+if (only) for (const s of document.querySelectorAll('section.dir')) s.hidden = s.dataset.id !== only[1]
+if (only) document.querySelector('.intro').hidden = document.getElementById('bar').hidden = document.querySelector('h1').hidden = true
+if (/still/.test(location.search)) document.body.classList.add('still')
+if (/solo/.test(location.search)) { document.body.classList.remove('today-beside'); document.getElementById('beside').checked = false }
+</script>
+</body>
+</html>
