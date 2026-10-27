@@ -43,7 +43,7 @@ import { resolveModel } from '../../shared/modelCatalog'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
 import { isThreadArchived, isThreadSettled, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { delegatedThreadsBelow } from '../../shared/delegation'
-import { checkoutIdentity, existingWorkingDirectory, runWorktreeGit, ThreadWorktrees } from './threadWorktrees'
+import { checkoutIdentity, existingWorkingDirectory, movedBranchRef, runWorktreeGit, ThreadWorktrees } from './threadWorktrees'
 import { claudeSkillFolder, claudeSkillPath } from './claudeSkills'
 import { providerTakesNoSkills } from './providerSwitch'
 import { gitStatusFingerprint, type GitStatus } from '../../shared/gitStatus'
@@ -1852,9 +1852,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (!project) throw new Error('Choose an available project.')
     return this.worktrees.options(project.path)
   }
-  private async selectedWorkingCopy(projectId: string, selection: AgentWorkingCopySelection): Promise<AgentWorktree> {
+  private async selectedWorkingCopy(projectId: string, selection: AgentWorkingCopySelection & { readonly startFromMove?: string | undefined }): Promise<AgentWorktree> {
     const project = this.state.snapshot.projects.find(item => item.id === projectId)
     if (!project) throw new Error('Choose an available project.')
+    if (selection.startFromMove) return { mode: 'independent', status: 'pending', incomingRef: await movedBranchRef(project.path, selection.startFromMove) }
     if (selection.workingCopy === 'shared') return this.worktrees.inspect(await this.worktrees.allocate(project.path, 'shared'))
     // A draft pointed at a worktree that exists carries that worktree's branch, so the toolbar can name it.
     const existing = selection.existingWorktreePath
@@ -4262,7 +4263,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         const project = this.state.snapshot.projects.find(project => project.id === thread.projectId)
         if (!project) throw new Error('The original project is unavailable.')
         metadata = await this.worktrees.allocate(project.path, metadata.mode, { baseBranch: metadata.baseBranch, startFromOrigin: metadata.startFromOrigin, existingWorktreePath: metadata.existingWorktreePath,
-          ...(metadata.checkoutBranch && metadata.branch ? { checkoutBranch: metadata.branch } : {}) })
+          ...(metadata.checkoutBranch && metadata.branch ? { checkoutBranch: metadata.branch } : {}), ...(metadata.incomingRef ? { incomingRef: metadata.incomingRef } : {}) })
         this.touched(current()).worktree = metadata
         this.dirty = true
         await this.flush() // Allocation owns its exact path/branch before Git mutates anything.
@@ -4581,6 +4582,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (command.reasoningEffort !== undefined) thread.reasoningEffort = command.reasoningEffort
       if (command.runtimeMode !== undefined) thread.runtimeMode = command.runtimeMode
       if (command.providerMode !== undefined) thread.providerMode = command.providerMode
+      // The choice stays through a change of model (ADR-0143); only the toggle itself sets it.
+      if (command.fastMode === true) thread.fastMode = true
+      else if (command.fastMode === false) delete thread.fastMode
       this.dirty = true
       try { await this.flush() }
       catch (error) { Object.keys(thread).forEach(key => { delete (thread as unknown as Record<string, unknown>)[key] }); Object.assign(this.touched(thread), previous); throw error }
@@ -4633,7 +4637,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
             workingDirectory,
             ...(thread.reasoningEffort ? { reasoningEffort: thread.reasoningEffort } : {}),
             ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}),
-            ...(thread.providerMode ? { providerMode: thread.providerMode } : {}) }
+            ...(thread.providerMode ? { providerMode: thread.providerMode } : {}),
+            ...(thread.fastMode ? { fastMode: true } : {}) }
           result = await (watcherGuard && this.inner.executeFromWatcher ? this.inner.executeFromWatcher(createCommand, watcherGuard) : this.inner.execute(createCommand))
         } catch (error) { await rejected(); throw error }
         if (!result.accepted && !result.uncertain) { await rejected(); throw new Error('The provider rejected thread creation. Check its connection and settings, then retry your prompt.') }
@@ -4778,7 +4783,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       const workingDirectory = shared ? await existingWorkingDirectory(resolveThreadWorkingDirectory(thread, project)) : undefined
       return start.call(this.inner, threadId, { modelId: thread.modelId, ...(workingDirectory ? { workingDirectory } : {}),
         ...(thread.reasoningEffort ? { reasoningEffort: thread.reasoningEffort } : {}),
-        ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}) })
+        ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}), ...(thread.fastMode ? { fastMode: true } : {}) })
     }))
   }
   /**

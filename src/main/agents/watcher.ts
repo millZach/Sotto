@@ -10,6 +10,8 @@ import { isThreadClosed, isThreadTurnRunning, isWorkspaceThreadSettled } from '.
 import { countMachineWorkingThreads, countWorkingThreads, machineWorkingThreadsWarning, workingThreadsWarning } from '../../shared/workingThreads'
 import { workerMachineHostId, type NewWorkersStart, type ProjectOrigins, type WorkerMachineSetting, type WorkerPlacementReceipt } from '../../shared/workerMachine'
 import { PlacementRefusal, placeWorker, type PlacementAsk, type PlacementSources, type WorkerPlacement } from './workerPlacement'
+import { branchStartWords, type BranchStartReceipt } from '../../shared/branchMoves'
+import type { DesktopBranchMoves } from './branchMoves'
 import { rebuildReservations } from './watcherRecords'
 import { isWatcherWorkActive, watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
 import { DELEGATION_LEVELS_MAX, delegatedThreadsBelow } from '../../shared/delegation'
@@ -66,6 +68,8 @@ type Participant = WatcherRecord['requests'][number]['participants'][number]
  * and never edited, so this holds for as long as the record does. Watcher's observe pass runs on every update and asks
  * this of every thread; walking the whole record for each was most of main's work with a few hundred threads (#1231).
  */
+/** A branch a start moved (#1033): where it landed, so it can be let go when the start makes no thread. */
+interface LandedMove { readonly hostId: string; readonly projectId: string; readonly moveId: string }
 interface RecordIndex {
   readonly record: Readonly<WatcherRecord>
   readonly hostId: string | undefined
@@ -484,6 +488,19 @@ export class WatcherService implements WatcherControlHooks {
    * still be unconfirmed. In memory only, as `placements` is; read by the working threads warning alone.
    */
   private readonly createdRemotely = new Set<string>()
+  /**
+   * Moved branches of starts sent to another machine whose answer never came (#1033), by operation: reconciling lets one go
+   * once the host's receipt is a definite failure and its snapshot holds no such thread, as an answer would have. In
+   * memory only, as the move's own record is; bounded like the other in-memory start records.
+   */
+  private readonly lostStartMoves = new Map<string, LandedMove>()
+  /**
+   * Starts from a thread's branch placed but not yet run (#1033), by the move each will make: the thread whose branch it
+   * carries, whether it is a test run, and the machine it goes to. Taken when the start runs, which is at once.
+   */
+  private readonly branchStartsPlaced = new Map<string, { readonly from: WatcherThreadTarget; readonly testRun: boolean; readonly name: string }>()
+  /** Where each recent start from a branch began, or why its branch could not go, for its receipt. In memory only. */
+  private readonly branchStarts = new Map<string, BranchStartReceipt | { readonly refused: string }>()
   private readonly steerFallbacks = new Map<string, string>()
   /**
    * Settle finished threads: the turn each watched thread was last settled or tried at, so one that is refused is not
@@ -515,8 +532,14 @@ export class WatcherService implements WatcherControlHooks {
     /** This computer's projects' GitHub origins, read when a start is placed on another machine than its project's (#1032). */
     projectOrigins?: () => Promise<ProjectOrigins>
     /**
+     * Carries a thread's branch to where a worker starts from it (#1033), on the desktop only and only while Work across
+     * machines is on. Without it a start names no thread to start from.
+     */
+    branchMoves?: Pick<DesktopBranchMoves, 'forStart' | 'forget'>
+    /**
      * The Owl answer for Work across machines (ADR-0082), read once at start. With it on, list_machines shows each machine's
      * live load and work placed but not started (#1311); with it off, or absent, it shows neither, whatever a host sends.
+     * Only with it on does a start from a moved branch (`fromMove`, #1033) run, from this Watcher or a desktop's packet.
      */
     crossMachine?: boolean
     /** The ordinary news batch's timing (WatcherWakeOptions), for tests on the real clock; the default is #1190's. */
@@ -658,6 +681,10 @@ export class WatcherService implements WatcherControlHooks {
   private hostId(): string { const id = this.options.control.hostId(); if (!id) refuse('HOST_DISCONNECTED', 'This computer is not ready. Reconnect its provider.', true); return id }
   private target(threadId: string): WatcherThreadTarget { return { hostId: this.hostId(), threadId } }
   phoneSnapshot(): AgentHostSnapshot { return this.snapshot() }
+  /** Whether the thread is in its owning host's last snapshot, so a start that failed may still have made it. */
+  private madeThread(target: WatcherThreadTarget): boolean {
+    return this.owningSnapshot(target.hostId)?.threads.some(item => item.id === target.threadId) === true
+  }
   private owningSnapshot(hostId: string): AgentHostSnapshot | undefined {
     return hostId === this.hostId() ? this.options.control.watcherSnapshot() : this.remote?.snapshot(hostId)
   }
@@ -1183,12 +1210,14 @@ export class WatcherService implements WatcherControlHooks {
    * its project is, as before. A retry of a recorded start is placed nowhere again: it reads the first call's receipt.
    */
   private async placeStart(input: WatcherToolInput<'start_thread'>): Promise<PlacedStart | undefined> {
-    const { machine, os, ...start } = input
-    if (!this.options.workerMachine) {
-      if (machine !== undefined || os !== undefined) refuse('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema.')
-      return undefined
+    const { machine, os, fromThread, testRun, fromMove, ...start } = input
+    // A move is Sotto's to name, from the thread a start names, never Watcher's.
+    if (fromMove !== undefined || !this.options.workerMachine && (machine !== undefined || os !== undefined || fromThread !== undefined || testRun !== undefined)) {
+      refuse('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema.')
     }
+    if (!this.options.workerMachine) return undefined
     if (this.recorded(this.view(), input.requestId, input.retryKey)) return undefined
+    if (fromThread) this.checkBranchSource(fromThread, input)
     // A working copy or base branch was read for the project where it was named, and means nothing on another machine: a
     // start that names neither machine nor system stays there, and one that names another is refused.
     const pinnedBy = input.workingCopy.kind === 'existing-worktree' ? 'existing-worktree' as const : input.baseRefChoiceId ? 'base-branch' as const : undefined
@@ -1197,7 +1226,55 @@ export class WatcherService implements WatcherControlHooks {
     if (placed.hostId !== input.project.hostId && (input.workingCopy.kind === 'existing-worktree' || input.baseRefChoiceId)) {
       refuse('WORKING_COPY_CHANGED', `Those working-copy choices are for the project where it was named, not its copy on ${placed.receipt.name}. Start on the shared checkout or a new worktree there, or read that project's choices. Nothing was started.`)
     }
-    return { original: input, input: { ...start, project: { hostId: placed.hostId, projectId: placed.projectId } }, placement: placed.receipt }
+    // The move is made when the start runs, just after admission, so a start refused at admission moves nothing. Its ID
+    // goes in the start now, so the start a paired host is sent is the one admitted. A test run with no branch to start
+    // from starts as any start does until test runs queue (#1312).
+    const moveId = fromThread ? randomUUID() : undefined
+    if (moveId && fromThread) this.branchStartsPlaced.set(moveId, { from: fromThread, testRun: testRun === true, name: placed.receipt.name })
+    return { original: input, input: { ...start, project: { hostId: placed.hostId, projectId: placed.projectId }, ...moveId ? { fromMove: moveId } : {} }, placement: placed.receipt }
+  }
+  /**
+   * A start from a thread's branch names a thread Sotto knows, other than Watcher's own, and asks for a new worktree with
+   * no base branch of its own, since the worker's worktree is made on that thread's branch (ADR-0082 decision 4).
+   */
+  private checkBranchSource(from: WatcherThreadTarget, input: WatcherToolInput<'start_thread'>): void {
+    if (!this.options.branchMoves) refuse('HOST_FEATURE_UNAVAILABLE', 'Only Sotto on the desktop starts a worker from a thread\'s branch. Nothing was started.')
+    if (input.workingCopy.kind !== 'new-worktree' || input.baseRefChoiceId) {
+      refuse('INVALID_INPUT', 'A worker started from a thread\'s branch gets a new worktree on that branch. Set workingCopy to new-worktree and leave out the base branch. Nothing was started.')
+    }
+    const thread = this.thread(from)
+    if (thread.kind === 'watcher' || thread.kind === 'watcher-history') refuse('RESERVED_THREAD', 'Watcher\'s own thread has no branch to start a worker from. Name a worker thread. Nothing was started.')
+  }
+  /**
+   * Carries the branch a start from a thread's branch begins from to the machine it starts on (#1033), just before the
+   * start runs: committed work, or for a test run a snapshot of uncommitted work too. A start Sotto did not place, as a
+   * paired host's copy of the desktop's start is, finds its branch already there. Refused, nothing is started, and the
+   * receipt says why in the move's own words. Answers the move it landed, which `releaseMove` lets go of when the start
+   * then never makes its thread.
+   */
+  private async moveForStart(operation: WatcherOperation, create: WatcherToolInput<'start_thread'>): Promise<LandedMove | undefined> {
+    const moveId = create.fromMove, placed = moveId ? this.branchStartsPlaced.get(moveId) : undefined
+    if (!moveId || !placed || !this.options.branchMoves) return undefined
+    this.branchStartsPlaced.delete(moveId)
+    const local = this.hostId()
+    const moved = await this.options.branchMoves.forStart({ from: placed.from, to: { hostId: operation.target.hostId, projectId: create.project.projectId },
+      here: local, moveId, snapshot: placed.testRun })
+    if (moved.type === 'refused') {
+      this.rememberBranchStart(operation.id, { refused: moved.message })
+      throw new Refusal(watcherRefusal('WORKING_COPY_UNAVAILABLE', moved.message))
+    }
+    const name = operation.target.hostId === local ? 'This computer' : placed.name
+    this.rememberBranchStart(operation.id, { hostId: operation.target.hostId, name, branch: moved.branch, ...moved.snapshot ? { snapshot: moved.snapshot } : {},
+      note: branchStartWords(name, moved.branch, moved.snapshot) })
+    return { hostId: operation.target.hostId, projectId: create.project.projectId, moveId }
+  }
+  /**
+   * Lets go of the incoming ref a start's move landed, once it is known the start made no thread to own it: a stop or a
+   * refusal after the branch arrived, or a host that refused the start outright. Best effort; a start whose outcome is
+   * uncertain keeps its ref, since its thread may yet be there.
+   */
+  private async releaseMove(landed: LandedMove | undefined): Promise<void> {
+    if (landed) await this.options.branchMoves?.forget({ ...landed, here: this.hostId() }).catch(() => undefined)
   }
   /** list_machines, with where a start that names no machine goes while Work across machines is on (#1032). */
   private withNewWorkersStart<T extends { readonly machines: readonly { readonly hostId: string; readonly name: string }[] }>(listed: T): T & { newWorkersStart?: NewWorkersStart } {
@@ -1210,6 +1287,8 @@ export class WatcherService implements WatcherControlHooks {
   }
   /** A machine's name as this computer saved it, for a sentence that names it (#1032). */
   machineName(hostId: string): string | undefined { return this.remote?.hosts().find(host => host.hostId === hostId)?.name?.trim() || undefined }
+  /** A connected machine's socket for moving a branch to or from it (#1033), through the hosts this desktop joins. */
+  branchMoveHost(hostId: string): ReturnType<NonNullable<WatcherRemoteHosts['branchMoves']>> { return this.remote?.branchMoves?.(hostId) }
   /**
    * The machines as they were last read, by Watcher's list_machines or anyone's read, with where new workers start now;
    * null before any read (#1032). An iPhone's page shows these between reads, which happen only when Watcher places work
@@ -3103,7 +3182,9 @@ export class WatcherService implements WatcherControlHooks {
       }
       if (name === 'start_thread') {
         const asked = parsed.data as WatcherToolInput<'start_thread'>, placed = await this.placeStart(asked)
-        return await this.mutate(threadId, name, placed?.input ?? asked, undefined, undefined, progress, placed)
+        // A start refused at admission never ran, so the move it would have made is forgotten with it.
+        try { return await this.mutate(threadId, name, placed?.input ?? asked, undefined, undefined, progress, placed) }
+        finally { if (placed?.input.fromMove) this.branchStartsPlaced.delete(placed.input.fromMove) }
       }
       return await this.mutate(threadId, name, parsed.data as WatcherToolInput<'stop_thread'>, undefined, undefined, progress)
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('PROVIDER_UNAVAILABLE', 'This Watcher call could not be completed. Check the operation receipt before trying again.', true) }
@@ -3343,20 +3424,35 @@ export class WatcherService implements WatcherControlHooks {
         // Admission named the model of every start it let through, by role or by name.
         const modelId = create.modelId
         if (!modelId) throw new Error('model-missing')
-        const choices = await this.resolveCopies(create)
-        const limits = this.permissionLimits(this.record().requests.find(item => item.id === operation.requestId), this.hostId())
-        const permission = this.permission(resolveModel(this.options.control.watcherSnapshot().models, modelId), create.permission, limits)
-        const createOrigin: WatcherCommandOrigin = { operationId: operation.id, guard: () => {
-          origin.guard()
-          this.permission(resolveModel(this.options.control.watcherSnapshot().models, modelId), permission,
-            this.permissionLimits(this.record().requests.find(item => item.id === operation.requestId), this.hostId()))
-          this.checkRemoteCeiling(operation.requestId, permission.kind === 'runtime' ? permission.mode : undefined)
-        } }
-        const created = await this.options.control.commandFromWatcher({ type: 'create-thread', threadId: operation.target.threadId,
-          projectId: create.project.projectId, title: create.title, titleSource: 'user', modelId,
-          ...(create.reasoningEffort ? { reasoningEffort: create.reasoningEffort } : {}),
-          ...(permission.kind === 'runtime' ? { runtimeMode: permission.mode } : { providerMode: permission.choiceId }), ...choices }, createOrigin)
-        if (created.error) throw new Error('creation-failed')
+        // Only with Work across machines on: a move named while it is off, by any path, starts nothing.
+        if (create.fromMove && this.options.crossMachine !== true) refuse('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema.')
+        const landed = await this.moveForStart(operation, create)
+        let created: Awaited<ReturnType<AgentControl['commandFromWatcher']>>
+        try {
+          // Read inside the try: a permission that no longer fits once the branch has landed lets go of its ref too.
+          // A start from a moved branch gets a new worktree made from it, on this machine as on a paired host (#1033).
+          const choices = create.fromMove ? { workingCopy: 'independent' as const, startFromMove: create.fromMove } : await this.resolveCopies(create)
+          const limits = this.permissionLimits(this.record().requests.find(item => item.id === operation.requestId), this.hostId())
+          const permission = this.permission(resolveModel(this.options.control.watcherSnapshot().models, modelId), create.permission, limits)
+          const createOrigin: WatcherCommandOrigin = { operationId: operation.id, guard: () => {
+            origin.guard()
+            this.permission(resolveModel(this.options.control.watcherSnapshot().models, modelId), permission,
+              this.permissionLimits(this.record().requests.find(item => item.id === operation.requestId), this.hostId()))
+            this.checkRemoteCeiling(operation.requestId, permission.kind === 'runtime' ? permission.mode : undefined)
+          } }
+          created = await this.options.control.commandFromWatcher({ type: 'create-thread', threadId: operation.target.threadId,
+            projectId: create.project.projectId, title: create.title, titleSource: 'user', modelId,
+            ...(create.reasoningEffort ? { reasoningEffort: create.reasoningEffort } : {}),
+            ...(permission.kind === 'runtime' ? { runtimeMode: permission.mode } : { providerMode: permission.choiceId }), ...choices }, createOrigin)
+        } catch (error) {
+          // Stopped or refused once the branch had arrived: with no thread made, nothing owns its incoming ref.
+          if (!this.madeThread(operation.target)) await this.releaseMove(landed)
+          throw error
+        }
+        if (created.error) {
+          if (!this.madeThread(operation.target)) await this.releaseMove(landed)
+          throw new Error('creation-failed')
+        }
         origin.guard()
         command = { type: 'manual-send', threadId: operation.target.threadId, draftId: operation.draftId!, text: create.firstPrompt }
       } else if (name === 'send_to_thread') {
@@ -3540,6 +3636,14 @@ ${operation.draftId}`)
     const placement = this.placements.get(operationId)
     return placement ? { placement } : {}
   }
+  private rememberBranchStart(operationId: string, started: BranchStartReceipt | { readonly refused: string }): void {
+    this.branchStarts.set(operationId, started)
+    for (const kept of this.branchStarts.keys()) { if (this.branchStarts.size <= ROLE_STARTS_KEPT) break; this.branchStarts.delete(kept) }
+  }
+  private branchStartBlock(operationId: string): { startedFrom: BranchStartReceipt } | Record<string, never> {
+    const started = this.branchStarts.get(operationId)
+    return started && !('refused' in started) ? { startedFrom: started } : {}
+  }
   /** `firstRun`: the answer to the call that ran the operation, not to a retry reading its receipt again. */
   private operationResult(name: WatcherToolName, operation: WatcherOperation, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, firstRun = false): unknown {
     const base = { receipt: this.receipt(operation), limits: this.limits(operation) }
@@ -3547,6 +3651,9 @@ ${operation.draftId}`)
     // and the user's own turn, which Watcher may only steer.
     if (operation.refusalCode) {
       const watched = this.record().watches?.find(watch => key(watch.target) === key(operation.target))
+      // A branch that could not go to where its worker starts says why in the move's own words (#1033).
+      const unmoved = this.branchStarts.get(operation.id)
+      if (unmoved && 'refused' in unmoved && operation.refusalCode === 'WORKING_COPY_UNAVAILABLE') return { ...watcherRefusal(operation.refusalCode, unmoved.refused), receipt: base.receipt }
       return { ...watcherRefusal(operation.refusalCode, operation.refusalCode === 'THREAD_TAKEN_OVER'
         ? watched ? 'The user sent this thread an instruction first, so this was not sent. The thread is still watched. Read it before sending again.'
           : this.takenOverRefusal(this.record(), operation.target, this.record().requests.find(item => item.id === operation.requestId), 'send')
@@ -3561,6 +3668,7 @@ ${operation.draftId}`)
         effectiveChoices: { modelId: thread.modelId, reasoningEffort: thread.reasoningEffort ?? null,
           permission: thread.providerMode ? { kind: 'provider', choiceId: thread.providerMode } : { kind: 'runtime', mode: thread.runtimeMode ?? 'approval-required' },
           workingCopy: create.workingCopy, ...(create.baseRefChoiceId ? { baseRefChoiceId: create.baseRefChoiceId } : {}) }, ...this.roleBlock(operation.id), ...this.placementBlock(operation.id),
+        ...this.branchStartBlock(operation.id),
         // Nothing is held back at any count; past ten working threads the start's own answer says so, for Watcher to tell
         // the user. A retry's does not: its thread may have finished long since, and it would count it again.
         ...firstRun && operation.target.hostId === this.hostId() ? this.workingWarning(operation.target.threadId) : {} }
@@ -3606,14 +3714,20 @@ ${operation.draftId}`)
       if (confirmedStop) confirmedStop()
       else if (this.record().requests.find(item => item.id === operation.requestId)?.state !== 'active') refuse('REQUEST_NOT_ACTIVE', 'This Watcher request has stopped. Nothing was sent.')
     }
+    // The move a start landed on the host, and whether the start was sent: until it is, a stop or refusal leaves its
+    // incoming ref with no thread to own it, so it is let go.
+    let landed: LandedMove | undefined, sent = false
     try {
       if (operation.action === 'send' && operation.standingWatchId) await this.reconcileRemote(operation.target.hostId)
       guard()
+      // The branch goes before the start does, so the host makes the worker's worktree from it (#1033).
+      if (name === 'start_thread') { landed = await this.moveForStart(operation, input as WatcherToolInput<'start_thread'>); guard() }
       await this.options.control.updateWatcher(record => { record.operations.find(item => item.id === operation.id)!.deliveryState = 'dispatching' })
       guard()
       const capable = this.remote!.hosts().find(host => host.hostId === operation.target.hostId)?.standingWatch
       const { promptTurnId: _turn, promptRefunded: _refunded, standingWatchId: _watch, ...legacyOperation } = operation
       void _turn; void _refunded; void _watch
+      sent = true
       const result = await this.remote!.control(operation.target.hostId, { master: this.record().current!,
         request: { id: request.id, watcher: request.watcher, rootUserMessageId: request.rootUserMessageId, createdAt: request.createdAt,
           ...(request.standingWatchId ? { standingWatchId: request.standingWatchId } : {}) },
@@ -3621,9 +3735,13 @@ ${operation.draftId}`)
         call: { name, input } } as WatcherHostControl)
       const parsed = watcherToolSchemas[name].output.parse(result)
       const receipt = 'receipt' in parsed ? parsed.receipt : undefined
-      if (parsed.status === 'refused' && !receipt) await this.options.control.updateWatcher(record => {
-        this.recordRemoteRefusal(record, operation.id, parsed.code)
-      })
+      if (parsed.status === 'refused' && !receipt) {
+        // The host refused the start before acting on it, so it made no thread to own the branch.
+        await this.releaseMove(landed)
+        await this.options.control.updateWatcher(record => {
+          this.recordRemoteRefusal(record, operation.id, parsed.code)
+        })
+      }
       else {
         // Control may already have reached the host; an unverified reply cannot prove that it failed.
         if (!receipt || receipt.operationId !== operation.id || receipt.requestId !== operation.requestId
@@ -3635,10 +3753,16 @@ ${operation.draftId}`)
         await this.reconcileRemote(operation.target.hostId).catch(() => {
           this.recoveryNotice = 'The host confirmed the operation, but its latest state could not be read. Reconnect to refresh it.'
         })
+        // A definite failure for this start, with no thread there to own the branch, lets the branch go. An uncertain
+        // receipt keeps it: the host may have made the thread. The host's own copy of the start landed nothing to release.
+        if (name === 'start_thread' && parsed.status === 'refused' && receipt.deliveryState === 'failed' && !this.madeThread(operation.target)) await this.releaseMove(landed)
       }
       return parsed.status === 'ok' ? { ...parsed, limits: this.limits(this.record().operations.find(item => item.id === operation.id)!),
-        ...(name === 'start_thread' ? { ...this.roleBlock(operation.id), ...this.placementBlock(operation.id), ...this.machineWorkingWarning(operation.target) } : {}), ...(name === 'send_to_thread' ? this.fallbackBlock(operation.id) : {}) } : parsed
+        ...(name === 'start_thread' ? { ...this.roleBlock(operation.id), ...this.placementBlock(operation.id), ...this.branchStartBlock(operation.id), ...this.machineWorkingWarning(operation.target) } : {}), ...(name === 'send_to_thread' ? this.fallbackBlock(operation.id) : {}) } : parsed
     } catch (error) {
+      if (!sent) await this.releaseMove(landed)
+      // Sent, but the answer was lost: the host may have failed the start, and reconciling finds out.
+      else if (landed) this.rememberLostStartMove(operation.id, landed)
       if (error instanceof Refusal) {
         await this.options.control.updateWatcher(record => this.recordRemoteRefusal(record, operation.id, error.result.code))
         return { ...error.result, receipt: this.receipt(this.record().operations.find(item => item.id === operation.id)!) }
@@ -3650,6 +3774,27 @@ ${operation.draftId}`)
           if (saved.action === 'start' && requestTimedOut(error)) this.timedOutStarts.add(saved.id)
         } })
       return { ...watcherRefusal('DELIVERY_UNCERTAIN', 'The host did not confirm this operation, so it stays unconfirmed. Reconnect and read the original receipt.', true), receipt: this.receipt(this.record().operations.find(item => item.id === operation.id)!) }
+    }
+  }
+  private rememberLostStartMove(operationId: string, landed: LandedMove): void {
+    this.lostStartMoves.set(operationId, landed)
+    while (this.lostStartMoves.size > 1_000) this.lostStartMoves.delete(this.lostStartMoves.keys().next().value!)
+  }
+  /**
+   * After a reconcile of `hostId`: a start whose answer was lost lets its branch go once its receipt is a definite failure
+   * and the host's snapshot holds no thread for it, the rule an answer follows. An accepted start's thread owns the ref;
+   * an uncertain one keeps it. An entry is forgotten only once it has been handled: while this computer has no host ID, as
+   * while Sotto starts, the check cannot be made, so the entry waits for the next reconcile and this one goes on.
+   */
+  private async releaseLostStartMoves(hostId: string): Promise<void> {
+    for (const [operationId, landed] of [...this.lostStartMoves]) {
+      if (landed.hostId !== hostId) continue
+      const operation = this.record().operations.find(item => item.id === operationId)
+      if (operation?.deliveryState === 'uncertain' || operation?.deliveryState === 'dispatching') continue
+      try {
+        if (operation?.deliveryState === 'failed' && !this.madeThread(operation.target)) await this.releaseMove(landed)
+      } catch { continue }
+      this.lostStartMoves.delete(operationId)
     }
   }
   private recordRemoteRefusal(record: WatcherRecord, operationId: string, code: WatcherRefusal['code']): void {
@@ -3828,6 +3973,7 @@ ${operation.draftId}`)
         }
         while (this.remoteProgress.size > 1_000) this.remoteProgress.delete(this.remoteProgress.keys().next().value!)
         this.wakes.pairedEvidence(host.hostId, projection.evidence)
+        await this.releaseLostStartMoves(host.hostId)
         if (receiptFailed) this.retryRemote(host.hostId)
         else this.remoteFailures.delete(host.hostId)
       } catch {
@@ -3870,7 +4016,9 @@ ${operation.draftId}`)
         || ('project' in call.input && call.input.project.hostId !== this.hostId())
         || operation.delivery !== (call.name === 'start_thread' ? 'now' : call.name === 'send_to_thread' ? call.input.delivery : undefined)
         || operation.expectedTurnId !== ('expectedTurnId' in call.input ? call.input.expectedTurnId : undefined)
-        || operation.expectedLastUserMessageId !== ('expectedLastUserMessageId' in call.input ? call.input.expectedLastUserMessageId : undefined)) refuse('INVALID_INPUT', 'The machine operation does not match its request and target. Nothing was sent.')
+        || operation.expectedLastUserMessageId !== ('expectedLastUserMessageId' in call.input ? call.input.expectedLastUserMessageId : undefined)
+        // A start from a moved branch is Work across machines' (#1033): a host with it off takes none, from any desktop.
+        || (call.name === 'start_thread' && call.input.fromMove !== undefined && this.options.crossMachine !== true)) refuse('INVALID_INPUT', 'The machine operation does not match its request and target. Nothing was sent.')
       await this.transaction(async () => {
         guard()
         this.checkRemoteMaster(master, clientId)

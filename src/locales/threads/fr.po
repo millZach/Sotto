@@ -856,6 +856,31 @@ msgstr ""
 
 #. {error} is the provider's or Sotto's own reason, shown as it came.
 #: src/renderer/src/agents/ThreadOptions.tsx
+msgid "{provider} did not switch fast mode off. {error}"
+msgstr ""
+
+#. {provider} is a provider's name or "The provider".
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "{provider} did not switch fast mode off. The thread stays in fast mode; nothing else changed."
+msgstr ""
+
+#. {error} is the provider's or Sotto's own reason, shown as it came.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "{provider} did not switch fast mode on. {error}"
+msgstr ""
+
+#. {provider} is a provider's name or "The provider"; {model} is the model the thread is now on.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "{provider} did not switch fast mode on. The thread is on {model} at normal speed."
+msgstr ""
+
+#. {provider} is a provider's name or "The provider".
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "{provider} did not switch fast mode on. The thread stays at normal speed; nothing else changed."
+msgstr ""
+
+#. {error} is the provider's or Sotto's own reason, shown as it came.
+#: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{provider} did not switch to {wanted}. {error}"
 msgstr ""
 
@@ -891,6 +916,16 @@ msgstr ""
 #. {provider} is a provider's name or "The provider"; {wanted} and {inForce} are a model, effort or permission mode.
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{provider} has not confirmed {wanted}. Until it does, a turn can still run on {inForce}."
+msgstr ""
+
+#. {provider} is a provider's name or "The provider".
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "{provider} has not confirmed fast mode. Until it does, a turn can still run at normal speed."
+msgstr ""
+
+#. {provider} is a provider's name or "The provider".
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "{provider} has not confirmed turning fast mode off. Until it does, a turn can still run in fast mode."
 msgstr ""
 
 #. {provider} is a provider's name or "The provider".
@@ -3466,6 +3501,30 @@ msgstr ""
 msgid "Failed when last read"
 msgstr ""
 
+#: src/renderer/src/agents/optionChipNames.ts
+msgid "Fast mode"
+msgstr ""
+
+#. {cost} is a sentence about what fast mode costs.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Fast mode is off. {cost}"
+msgstr ""
+
+#. {cost} is a sentence about what fast mode costs.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Fast mode is off. {cost} Press to turn it on for this thread."
+msgstr ""
+
+#. {cost} is a sentence about what fast mode costs.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Fast mode is on for this thread. {cost}"
+msgstr ""
+
+#. {cost} is a sentence about what fast mode costs.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Fast mode is on for this thread. {cost} Press to turn it off."
+msgstr ""
+
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Fast. For small, clear tasks."
 msgstr ""
@@ -3473,6 +3532,10 @@ msgstr ""
 #. The low end of the reasoning effort slider.
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Faster"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Faster output, at a higher price."
 msgstr ""
 
 #: src/renderer/src/agents/EffortPicker.tsx
@@ -3897,6 +3960,10 @@ msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "It asked for more permission than this thread has, or than your new-thread default allows. A delegated thread gets no more than either. {nothing} To give it more, raise the lower of the two first."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It asked to start from this thread's branch, and the branch could not go: this thread had uncommitted changes and it was not a check, it was not on a branch, or Git could not copy it. {nothing} Commit first, then ask again."
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
@@ -6740,6 +6807,11 @@ msgstr ""
 msgid "Sotto did not get {provider}'s answer about {wanted}, so the chip shows what the thread last reported. Try again to send it once more."
 msgstr ""
 
+#. {provider} is a provider's name or "The provider".
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Sotto did not get {provider}'s answer about fast mode, so the toggle shows what the thread last reported. Try again to send it once more."
+msgstr ""
+
 #. {name} is the name of a saved host.
 #: src/renderer/src/agents/HostUpdates.tsx
 msgid "Sotto did not start this host, so it cannot restart it. Update it on {name} with these commands."
@@ -7113,6 +7185,10 @@ msgstr ""
 msgid "Takes longer and catches more."
 msgstr ""
 
+#: src/renderer/src/agents/movedWorktreeWords.ts
+msgid "That is not a branch Sotto moved here. Nothing was made."
+msgstr ""
+
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "That is not an address Sotto can reach. Type it like http://localhost:11434 or http://spark-head:8888."
 msgstr ""
@@ -7191,6 +7267,14 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "The branch could not be switched. Nothing was changed."
+msgstr ""
+
+#: src/renderer/src/agents/movedWorktreeWords.ts
+msgid "The branch this worker starts from is no longer here. Start the worker again. Nothing was made."
+msgstr ""
+
+#: src/renderer/src/agents/movedWorktreeWords.ts
+msgid "The branch this worker starts from is not in this project. Start the worker again. Nothing was made."
 msgstr ""
 
 #: src/renderer/src/agents/GitActionButton.tsx
@@ -7359,6 +7443,10 @@ msgstr ""
 
 #: src/renderer/src/agents/InteractiveVisual.tsx
 msgid "The page stopped."
+msgstr ""
+
+#: src/renderer/src/agents/movedWorktreeWords.ts
+msgid "The project subdirectory is not on the branch this worker starts from. Nothing was made."
 msgstr ""
 
 #. Stands for a provider whose name is not known, inside a sentence.
@@ -7991,6 +8079,10 @@ msgstr ""
 
 #: src/renderer/src/agents/threadGreeting.logic.ts
 msgid "Up late. What are we making?"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Up to 2.5x faster output, at twice the price per token."
 msgstr ""
 
 #. A button that installs the published version of a provider's client.

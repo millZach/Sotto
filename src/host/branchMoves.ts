@@ -82,16 +82,42 @@ export class HostBranchMoves {
         const holding: Transfer = { owner }
         this.transfers.set(request.moveId, holding)
         try {
-          const source = await this.bundles.branchOf(folder)
+          const source = await this.bundles.sourceOf(folder, request.snapshot === true)
           if ('type' in source) { this.release(request.moveId, holding); return source }
           const prepared = await this.bundles.prepare({ repository: folder, moveId: request.moveId, commit: source.commit, bases: request.bases })
-          if (prepared.type === 'present') { this.release(request.moveId, holding); return { type: 'present', branch: source.branch, commit: source.commit } }
+          if (prepared.type === 'present') { this.release(request.moveId, holding); return { type: 'present', branch: source.branch, commit: source.commit, ...source.snapshot ? { snapshot: source.snapshot } : {} } }
           if (prepared.type !== 'sending') { this.release(request.moveId, holding); return prepared }
           // Ended while it was written: this attempt removes its own bundle and hold, never a later attempt's.
           if (gone.aborted || this.transfers.get(request.moveId) !== holding) { this.release(request.moveId, holding); await this.bundles.discard(prepared); return branchMoveRefusal('cut-off', branchMoveWords.cutOff) }
           this.transfers.set(request.moveId, { owner, outgoing: prepared })
-          return { type: 'sending', branch: source.branch, commit: source.commit, size: prepared.size, sha256: prepared.sha256 }
+          return { type: 'sending', branch: source.branch, commit: source.commit, size: prepared.size, sha256: prepared.sha256, ...source.snapshot ? { snapshot: source.snapshot } : {} }
         } catch (error) { this.release(request.moveId, holding); throw error }
+      }
+      case 'copy': {
+        // A thread's branch into a project on this same machine, for a worker the desktop starts here from it: nothing
+        // crosses the socket but the answer.
+        const from = this.folders.threadFolder(request.threadId)
+        if (!from) return branchMoveRefusal('unknown-thread', branchMoveWords.unknownThread)
+        const repository = this.folders.projectFolder(request.projectId)
+        if (!repository) return branchMoveRefusal('unknown-project', branchMoveWords.unknownProject)
+        if (this.transfers.has(request.moveId) || this.transfers.size >= BRANCH_TRANSFERS_MAX) return branchMoveRefusal('busy', branchMoveWords.busy)
+        // Fenced like a `receive-ref`: once `end` answers or the connection's discard has run, no ref of it is created,
+        // however far the copy had got.
+        const fence = new MoveFence()
+        const holding: Transfer = { owner, fence }
+        this.transfers.set(request.moveId, holding)
+        try {
+          const source = await this.bundles.sourceOf(from, request.snapshot === true)
+          if ('type' in source) return source
+          if (gone.aborted || fence.cancelled) return branchMoveRefusal('cut-off', branchMoveWords.cutOff)
+          return await this.bundles.copy({ from, source, repository, moveId: request.moveId, fence })
+        } finally { this.release(request.moveId, holding) }
+      }
+      case 'forget': {
+        // A move under way keeps its ref; the desktop forgets only a move that has finished.
+        const folder = this.folders.projectFolder(request.projectId)
+        if (folder && !this.transfers.has(request.moveId)) await this.bundles.forget(folder, request.moveId)
+        return null
       }
       case 'send-chunk': {
         const outgoing = this.own(request.moveId, owner)?.outgoing

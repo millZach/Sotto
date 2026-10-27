@@ -501,8 +501,8 @@ type BabysitCommand = Extract<AgentCommand, { type: 'babysit-pull-request' | 'st
 const readBeforeSend = (sendMessageId: string | undefined): ThreadReadPurpose => ({ beforeSend: true, ...(sendMessageId ? { sendMessageId } : {}) })
 
 /**
- * A settings change that sets only a model or an effort holds nothing back while its result is unknown: at worst a turn
- * runs on the model before, which the thread's chip shows, and the adapter asks for the wanted one again before its next
+ * A settings change that sets only a model, an effort or fast mode holds nothing back while its result is unknown: at worst a
+ * turn runs on the model before, which the thread's chip shows, and the adapter asks for the wanted one again before its next
  * turn (#1192; Zach's rule that nothing blocks sending another message or changing the model). A change that sets a
  * permission mode or a provider mode still holds the thread, since a turn under a wider mode than the user chose could
  * act without asking (ADR-0004).
@@ -510,7 +510,7 @@ const readBeforeSend = (sendMessageId: string | undefined): ThreadReadPurpose =>
 function holdsNothingBack(item: { readonly type: string; readonly options?: Readonly<Record<string, unknown>> | undefined }): boolean {
   if (item.type !== 'configure-thread' || !item.options) return false
   const keys = Object.keys(item.options).filter(key => item.options![key] !== undefined)
-  return keys.length > 0 && keys.every(key => key === 'modelId' || key === 'reasoningEffort')
+  return keys.length > 0 && keys.every(key => key === 'modelId' || key === 'reasoningEffort' || key === 'fastMode')
 }
 
 export class AgentControl {
@@ -4835,10 +4835,15 @@ export class AgentControl {
         if (command.threadId !== undefined && this.state.host.threads.some(thread => thread.id === command.threadId)) {
           throw new Error('This thread already exists. Select it instead of creating it again.')
         }
+        // Only Watcher's and delegation's own starts begin from a moved branch (#1033): they moved it themselves, just now.
+        if (command.startFromMove !== undefined && (!origin || command.workingCopy === 'shared' || command.existingWorktreePath !== undefined || command.baseBranch !== undefined)) {
+          throw new Error('A thread starts from a moved branch only in a new worktree that Watcher or a delegation makes. Nothing was made.')
+        }
         const threadId = command.threadId ?? randomUUID()
         if (turn) { turn.threadId = threadId; turn.projectId = command.projectId }
         await this.dispatch({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: command.projectId, title: command.title, modelId: command.modelId,
           ...(command.titleSource ? { titleSource: command.titleSource } : {}),
+          ...(command.startFromMove ? { workingCopy: 'independent' as const, startFromMove: command.startFromMove } : {}),
           ...(command.workingCopy ? { workingCopy: command.workingCopy } : {}),
           ...(command.baseBranch ? { baseBranch: command.baseBranch } : {}),
           ...(command.startFromOrigin !== undefined ? { startFromOrigin: command.startFromOrigin } : {}),
@@ -4889,7 +4894,8 @@ export class AgentControl {
       }
       case 'configure-thread': {
         this.canAct(undefined, false)
-        if (command.modelId === undefined && command.reasoningEffort === undefined && command.runtimeMode === undefined && command.providerMode === undefined) throw new Error('Choose a thread setting to change.')
+        if (command.modelId === undefined && command.reasoningEffort === undefined && command.runtimeMode === undefined && command.providerMode === undefined
+          && command.fastMode === undefined) throw new Error('Choose a thread setting to change.')
         if (this.thread(command.threadId).nativeSessionStarted !== false && !capabilitiesForThread(this.state.host, this.thread(command.threadId)).configureThread) throw new Error('This provider does not support changing thread settings.')
         // Checked against the thread as Sotto holds it, without opening it: watching or reading a reaped Claude
         // thread starts its CLI only for the adapter to restart it with the new settings. Each adapter checks
@@ -4905,10 +4911,11 @@ export class AgentControl {
         validate()
         // The thread interface exposes two distinct commands. Each has its own durable identity;
         // a partial or uncertain save cannot be mistaken for an atomic update.
-        if (command.modelId !== undefined || command.reasoningEffort !== undefined) {
+        if (command.modelId !== undefined || command.reasoningEffort !== undefined || command.fastMode !== undefined) {
           await this.dispatch({ type: 'configure-thread', commandId: randomUUID(), threadId: command.threadId,
             ...(command.modelId !== undefined ? { modelId: command.modelId } : {}),
-            ...(command.reasoningEffort !== undefined ? { reasoningEffort: command.reasoningEffort } : {}) }, turn, validate, undefined, client, undefined, origin)
+            ...(command.reasoningEffort !== undefined ? { reasoningEffort: command.reasoningEffort } : {}),
+            ...(command.fastMode !== undefined ? { fastMode: command.fastMode } : {}) }, turn, validate, undefined, client, undefined, origin)
         }
         if (command.runtimeMode !== undefined) await this.dispatch({ type: 'configure-thread', commandId: randomUUID(), threadId: command.threadId, runtimeMode: command.runtimeMode }, turn, validate, undefined, client, undefined, origin)
         // A provider that names its own permission modes takes them on their own command, as runtimeMode does.
@@ -6002,7 +6009,8 @@ export class AgentControl {
         ? snapshot.projects.some(p => p.id === (this.dependencies.host.resolveProjectId?.(item.entityId ?? '') ?? item.entityId)) : item.type === 'create-thread'
           ? item.entityId !== undefined && shownThread(item.entityId) !== undefined : item.type === 'compact-thread'
             ? thread?.compaction?.commandId === item.id && ['completed', 'failed'].includes(thread.compaction.status) : item.type === 'configure-thread'
-            ? thread !== undefined && item.options !== undefined && Object.entries(item.options).every(([key, value]) => thread[key as keyof AgentThread] === (key === 'modelId' && typeof value === 'string' ? this.dependencies.host.resolveModelId?.(value) ?? value : value)) : item.type === 'answer'
+            ? thread !== undefined && item.options !== undefined && Object.entries(item.options).every(([key, value]) => key === 'fastMode' ? (thread.fastMode === true) === value
+              : thread[key as keyof AgentThread] === (key === 'modelId' && typeof value === 'string' ? this.dependencies.host.resolveModelId?.(value) ?? value : value)) : item.type === 'answer'
             ? thread !== undefined && isThreadProviderConnected(snapshot, thread) && thread.historyStatus !== 'loading' && thread.historyStatus !== 'error'
               && !thread.requests.some(r => r.id === item.requestId) : thread?.status === 'idle'
       if (!confirmed) continue

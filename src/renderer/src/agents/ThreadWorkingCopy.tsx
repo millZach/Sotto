@@ -10,6 +10,7 @@ import type { AgentConnection } from './AgentContext'
 import { Button } from '../components/Button'
 import { ConfirmationDialog } from '../components/ConfirmationDialog'
 import { folderKey } from './NewThreadDialog'
+import { worktreeErrorWords } from './movedWorktreeWords'
 import { leftToRight, shownWords, type LaterWords } from './interfaceWords'
 import { shownCount, shownLocalCount } from '../state/interfaceNumbers'
 import './workingCopy.css'
@@ -53,7 +54,7 @@ export function describeWorkingCopy(thread: WorkingCopyThread, project: Pick<Age
   }
   const common = { mode: worktree.mode, branch: worktree.branch, repositoryRoot: worktree.repositoryRoot, dirty: worktree.dirty, reclaimed: Boolean(worktree.reclaimedAt) }
   if (worktree.status === 'pending') return { ...common, status: 'pending', directory: undefined, label: worktree.mode === 'shared' ? i18n._(msg`Project folder`) : i18n._(msg`New worktree`) }
-  if (worktree.status === 'error') return { ...common, status: 'error', directory: undefined, label: i18n._(msg`Worktree not ready`), error: worktree.error }
+  if (worktree.status === 'error') return { ...common, status: 'error', directory: undefined, label: i18n._(msg`Worktree not ready`), error: worktreeErrorWords(worktree.error) }
   const directory = resolve()
   const label = worktree.branch ?? (worktree.repositoryRoot ? i18n._(msg({ message: 'Detached HEAD', comment: 'Git\'s name for a checkout on no branch.' })) : directory ? folderLabel(directory, project) : i18n._(msg`Working folder`))
   return { ...common, status: 'ready', directory, label }

@@ -4,6 +4,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { describeWorkingCopy, ThreadWorkingCopy, ThreadWorkingCopyNotice, type WorkingCopyThread } from '../../../src/renderer/src/agents/ThreadWorkingCopy'
 import { defaultAgentConfiguration, type AgentCommand, type AgentState } from '../../../src/shared/agents'
+import { movedWorktreeWords } from '../../../src/shared/branchMoves'
+import { readFileSync } from 'node:fs'
 
 const project = { path: 'C:\\Users\\zache\\Projects\\sotto-app' }
 const worktreePath = 'C:\\Users\\zache\\AppData\\Roaming\\Sotto\\agents\\thread-worktrees\\7f1c'
@@ -21,6 +23,15 @@ function snapshot(error: string | null = null): AgentState {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('describeWorkingCopy', () => {
+  it('shows why a worktree could not be made from a moved branch as a message of the threads catalog (#1033, ADR-0123)', () => {
+    const catalog = readFileSync('src/locales/threads/en.po', 'utf8')
+    for (const sentence of Object.values(movedWorktreeWords)) {
+      const thread = { ...failed, worktree: { ...failed.worktree!, error: sentence } }
+      expect(describeWorkingCopy(thread, project)).toMatchObject({ status: 'error', error: sentence })
+      expect(catalog).toContain(`msgid "${sentence}"`)
+    }
+  })
+
   it('names the actual branch or folder a ready thread works in', () => {
     expect(describeWorkingCopy(ready, project)).toMatchObject({ status: 'ready', mode: 'independent', directory: worktreePath, label: branch })
     // Realpath spelling differences still name the project's own folder.

@@ -10,12 +10,16 @@ import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { firstMessageTitleWriter } from '../../src/main/llm/threadTitle'
 import { workspaceFixture } from './workspaceFixture'
 import { agentControlFixture } from './agentControlFixture'
+import { join } from 'node:path'
+import { BranchBundles } from '../../src/main/agents/branchBundles'
+import { DesktopBranchMoves, foldersOfSnapshot } from '../../src/main/agents/branchMoves'
 
 export type DelegationResult = { status: 'ok'; delegation: { id: string; thread: string; outcome: string; note: string; reply?: { from: string; text: string }; replyUnavailable?: string; refusal?: string; userSentSince?: boolean }; limits: { prompts?: number }; warning?: string }
 export type DelegationRefused = { status: 'refused'; code: string; message: string }
 
 /** Delegation over a workspace of fake providers. Each cleanup it needs is pushed onto `cleanups`, to run in reverse. */
-export async function delegationFixture(cleanups: (() => Promise<void>)[], options: { history?: boolean; titles?: boolean; delegation?: Pick<DelegationServiceOptions, 'now' | 'schedule' | 'machines'> } = {}) {
+/** `branchStarts` gives delegation the desktop's mover over this computer's own threads and projects (#1033). */
+export async function delegationFixture(cleanups: (() => Promise<void>)[], options: { history?: boolean; titles?: boolean; delegation?: Pick<DelegationServiceOptions, 'now' | 'schedule' | 'machines'>; branchStarts?: boolean } = {}) {
   const history = options.history ?? true
   let workspace = await workspaceFixture(undefined, { history, watcherEnabled: false })
   cleanups.push(workspace.remove)
@@ -27,7 +31,9 @@ export async function delegationFixture(cleanups: (() => Promise<void>)[], optio
       // Sotto's own naming, as the app runs it: the first message's opening words, then a generated name after the first reply.
       ...options.titles ? { writeFirstMessageTitle: firstMessageTitleWriter(() => DEFAULT_SETTINGS), writeThreadTitle: async () => 'Synthetic generated name' } : {} } })).control
   let control = await controlFor()
-  const make = () => new DelegationService({ directory: root, control, host: workspace.host, historyEnabled: () => history, ...options.delegation })
+  const branchMoves = options.branchStarts ? new DesktopBranchMoves({ bundles: new BranchBundles({ stagingDirectory: join(root, 'branch-moves'), recordsPath: join(root, 'branch-moves.json') }),
+    folders: foldersOfSnapshot(() => control.watcherSnapshot()), host: () => undefined, hostName: () => 'That machine' }) : undefined
+  const make = () => new DelegationService({ directory: root, control, host: workspace.host, historyEnabled: () => history, ...options.delegation, ...branchMoves ? { branchMoves } : {} })
   let service = make()
   let tools = new DelegationToolServer(service)
   workspace.host.useThreadTools([tools])

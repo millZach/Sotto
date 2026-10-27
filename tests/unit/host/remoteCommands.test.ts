@@ -17,7 +17,9 @@ const WINDOW_ONLY: Partial<Record<AgentCommand['type'], string[]>> = { configure
  * Fields only the host's own socket server sets, on what it tells its host service: which observed threads its paired
  * desktops show (ADR-0092). A paired client never sends them; one that tries is refused.
  */
-const HOST_INTERNAL: Partial<Record<AgentCommand['type'], string[]>> = { 'observe-threads': ['shownThreadIds'] }
+const HOST_INTERNAL: Partial<Record<AgentCommand['type'], string[]>> = { 'observe-threads': ['shownThreadIds'],
+  // A worker started from a moved branch (#1033): only the host's own Watcher or delegation names the move it starts from.
+  'create-thread': ['startFromMove'] }
 type Option = { shape: { type: { value?: string; options?: string[] } } & Record<string, unknown> }
 const schemaFields = new Map((agentCommandSchema.options as unknown as Option[]).flatMap(option => {
   const types = option.shape.type.options ?? [option.shape.type.value!]
@@ -297,6 +299,8 @@ describe('remote command allow-list', () => {
   it('lets a device without the policy pick a mode that allows nothing and leave clean folders', () => {
     // Asking first is the runtime mode that grants nothing, so a paired device can always lower a thread back to it.
     expect(refuse({ type: 'configure-thread', threadId: 'thread', runtimeMode: 'approval-required' })).toBeNull()
+    // Fast mode changes speed and price, as a model does, and answers no permission (ADR-0143).
+    expect(refuse({ type: 'configure-thread', threadId: 'thread', fastMode: true })).toBeNull()
     expect(refuse({ type: 'create-thread', projectId: 'project', title: 'Asks', modelId: 'codex', runtimeMode: 'approval-required' })).toBeNull()
     expect(refuse({ type: 'create-thread', projectId: 'project', title: 'Asks', modelId: 'devin', providerMode: 'ask' }, false, ['ask-first', 'ask'])).toBeNull()
     expect(refuse({ type: 'configure-thread', threadId: 'thread', providerMode: 'ask' }, false, ['ask-first', 'ask'])).toBeNull()

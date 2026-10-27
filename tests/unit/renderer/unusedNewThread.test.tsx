@@ -23,6 +23,10 @@ describe('an unused new thread', () => {
     expect(unusedNewThread(state([thread({})]), project)?.id).toBe('thread')
   })
 
+  it('does not reuse an empty thread the user turned fast mode on for, since a new thread starts with it off', () => {
+    expect(unusedNewThread(state([thread({ fastMode: true })]), project)).toBeUndefined()
+  })
+
   it('does not reopen an empty thread from workspace-settled work', () => {
     expect(unusedNewThread(state([thread({ workspaceSettledAt: '2026-09-26T00:00:00.000Z' })]), project)).toBeUndefined()
     expect(unusedNewThread(state([thread({})]), { ...project, workspaceSettledAt: '2026-09-26T00:00:00.000Z' })).toBeUndefined()
