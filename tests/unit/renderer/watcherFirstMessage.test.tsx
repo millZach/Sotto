@@ -54,7 +54,7 @@ function renderRoom(current: boolean) {
   return { ...view, command, connection, publish: (next: WatcherRoomState) => { for (const listener of listeners) listener(next) } }
 }
 
-beforeEach(() => { vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset(); sessionStorage.clear(); roomView.set({ besideId: null, share: 0.5, tab: 'conversation' }); firstMessage.clear() })
+beforeEach(() => { vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset(); sessionStorage.clear(); roomView.set({ besideId: null, share: 0.5 }); firstMessage.clear() })
 afterEach(() => { cleanup(); sessionStorage.clear() })
 
 describe('Watcher’s first message', () => {

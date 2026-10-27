@@ -232,11 +232,11 @@ async function box(locator: Locator): Promise<{ x: number; y: number; width: num
 const overlaps = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }): boolean =>
   a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
 
-/** The header's room switch and More stay inside the window, every composer reaches no lower than the window's floor,
+/** The header's way off the page stays inside the window, every composer reaches no lower than the window's floor,
     and the window controls never cover a pane header's controls. */
 async function roomEdges(page: Page, width: number, height: number): Promise<void> {
-  const more = await box(page.locator('.watcher-head__more > button'))
-  expect(more.x + more.width, `More at ${width}x${height}`).toBeLessThanOrEqual(width)
+  const way = await box(page.locator('.watcher-head__way'))
+  expect(way.x + way.width, `the way off the page at ${width}x${height}`).toBeLessThanOrEqual(width)
   const controls = await box(page.locator('.threads-view__winctl'))
   for (const composer of await page.locator('.thread-workspace__compose .thread-prompt').all()) {
     const card = await box(composer)
@@ -267,15 +267,22 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
       probe.remove()
       return hex(value)
     }
+    /** How much a fill covers what is under it, 0 to 255, as the canvas paints it. */
+    const cover = (value: string): number => {
+      context.clearRect(0, 0, 1, 1); context.fillStyle = 'rgba(0, 0, 0, 0)'; context.fillStyle = value; context.fillRect(0, 0, 1, 1)
+      return context.getImageData(0, 0, 1, 1).data[3]!
+    }
+    // A faint tint, such as the lit room tile's 12% of the text colour, is read through to the surface under it: painted
+    // alone it is the text's own colour, and the ink would measure against itself.
     const background = (element: Element): string => {
       for (let node: Element | null = element; node !== null; node = node.parentElement) {
         const color = getComputedStyle(node).backgroundColor
-        if (color !== 'rgba(0, 0, 0, 0)' && color !== 'transparent') return hex(color)
+        if (color !== 'rgba(0, 0, 0, 0)' && color !== 'transparent' && cover(color) >= 128) return hex(color)
       }
       return hex(getComputedStyle(document.body).backgroundColor)
     }
     // The night in the room's corner sits between the canvas and the header: text over it is measured against both,
-    // unless the text sits on an opaque fill of its own, such as Watched's badge, which hides the night under it.
+    // unless the text sits on an opaque fill of its own, which hides the night under it.
     const sky = document.querySelector('.watcher-room__sky')?.getBoundingClientRect()
     const surfaces = (element: Element): string[] => {
       const under = background(element)
@@ -285,12 +292,11 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
       const onSky = !ownFill && sky !== undefined && element.closest('.watcher-pane') !== null && bounds.top < sky.bottom && bounds.left < sky.right
       return onSky ? [under, token(element.closest('.watcher-room')!, '--tt-owl-room-night')] : [under]
     }
-    const selectors = ['.watcher-head h1', '.watcher-head__list', '.watcher-head__count', '.watcher-tabs__tab', '.watcher-tabs__count', '.watcher-glance__lead', '.watcher-glance__name', '.watcher-glance__why',
+    const selectors = ['.watcher-head h1', '.watcher-head__list', '.watcher-head__count', '.watcher-glance__lead', '.watcher-glance__name', '.watcher-glance__why',
       '.watcher-pane .thread-chip', '.thread-options__caption', '.thread-chip-menu__options small', '.thread-chip-menu__foot', '.watched-note', '.watch-toggle', '.watch-toast > span',
       '.watcher-head__rooms button', '.watcher-group__label', '.watcher-group__count', '.watcher-row__title', '.watcher-row__status',
       '.watcher-row__where', '.watcher-row__asks > span', '.watcher-answer', '.watcher-list__foot', '.watcher-list .thread-nav__time', '.watcher-first__intro h2', '.watcher-first__intro p',
       '.watcher-beside .thread-workspace__head h2', '.watcher-own__words > strong', '.watcher-own__said', '.watcher-own__none', '.watcher-own__toggle', '.watcher-own__files code',
-      '.watcher-watched__lead > p', '.watcher-watched__label', '.watched-card__title', '.watched-card__meta', '.watched-card__doing', '.watched-card__stop',
       '.watcher-handover__lead > p', '.watcher-handover__ledger', '.watcher-handover__read', '.watcher-handover__text', '.thread-prompt__send[data-wide]',
       '.watcher-handover-message__lead', '.watcher-handover-message__ledger', '.watcher-handover__disclose',
       '.thread-message__work', '.receipt-card__lead', '.receipt-card__name', '.receipt-link', '.receipt-outcome', '.receipt-card__meta', '.sotto-line p', '.sotto-line time',
@@ -425,8 +431,8 @@ test.describe("Watcher's room on the built app", () => {
       await resizeContentWindow(launched, 1280, 800)
       await openRoom(page)
       await expect(page.getByRole('heading', { level: 2, name: 'Start Watcher' })).toBeVisible()
-      // No tabs or actions before Watcher runs; the needs-you line and All threads already work.
-      await expect(page.getByRole('tablist', { name: 'Watcher’s view' })).toHaveCount(0)
+      // No actions before Watcher runs; the needs-you line and All threads already work.
+      await expect(page.locator('.watcher-head .watcher-stop-all')).toHaveCount(0)
       await expect(page.locator('.watcher-glance')).toContainText('2 need you')
       const choice = page.getByRole('group', { name: 'Watcher’s model' })
       await expect(choice.getByRole('combobox', { name: 'Thread model' })).toHaveText(/Sonnet 4\.5/)
@@ -451,8 +457,9 @@ test.describe("Watcher's room on the built app", () => {
       await page.keyboard.type('Keep an eye on the footer links until they ship.')
       await expect(send).toBeEnabled()
       await page.keyboard.press('Enter')
+      // Watcher's own pane takes the first entry's place: its conversation, with the message, over its composer.
       const pane = watcherPane(page)
-      await expect(pane.getByRole('tab', { name: /^Watched, / })).toBeVisible()
+      await expect(page.getByRole('heading', { level: 2, name: 'Start Watcher' })).toHaveCount(0)
       await expect(pane.getByText('Keep an eye on the footer links until they ship.')).toBeVisible()
       await expect(pane.getByRole('textbox', { name: 'Watcher message' })).toBeVisible()
       await expect(pane.getByRole('combobox', { name: 'Watcher’s permissions' })).toHaveText('Ask for approval')
@@ -681,15 +688,15 @@ test.describe("Watcher's room on the built app", () => {
       const named = (node: Element) => node.getAttribute('aria-label') ?? node.textContent?.trim() ?? node.className
       // Shown, and not only to assistive technology (the name, below 450 pixels off macOS).
       const shown = (node: Element) => node.getBoundingClientRect().width > 1 && getComputedStyle(node).display !== 'none' && getComputedStyle(node).clipPath === 'none'
-      const parts = [head.querySelector('.watcher-head__tile'), head.querySelector('h1'), head.querySelector('.watcher-head__list'), head.querySelector('.watcher-tabs'),
-        ...head.querySelectorAll('.thread-workspace__actions > * > button')].filter((node): node is Element => node !== null && shown(node))
+      const parts = [head.querySelector('.watcher-head__tile'), head.querySelector('h1'), head.querySelector('.watcher-head__list'),
+        ...head.querySelectorAll('.watcher-head__way :is([role="tab"], a, button)'), ...head.querySelectorAll('.thread-workspace__actions > * > button')].filter((node): node is Element => node !== null && shown(node))
       const style = getComputedStyle(head)
       return {
         pane: head.closest('.thread-pane')!.getBoundingClientRect().width,
         head: { ...rect(head), right: head.getBoundingClientRect().right - parseFloat(style.paddingRight), height: head.getBoundingClientRect().height },
         parts: parts.map(node => ({ name: named(node), ...rect(node) })),
         // A label or count cut off by its own control.
-        clipped: [...head.querySelectorAll('.watcher-tabs__tab, .watcher-head__list, .thread-workspace__actions button, h1')].filter(shown)
+        clipped: [...head.querySelectorAll('.watcher-head__list, .thread-workspace__actions button, h1')].filter(shown)
           .filter(node => node.scrollWidth > node.clientWidth + 0.5).map(named),
       }
     })
@@ -773,19 +780,22 @@ test.describe("Watcher's room on the built app", () => {
       }
       await switchTab(page, 'Threads').focus()
       await press('ArrowLeft', 'Watcher')
-      // In Watcher's room the switch sits at the header's right end, and focus is on its lit owl.
+      // In Watcher's room the switch sits right after All threads, where the tabs were (Zach, October 27, 2026), and
+      // focus is on its lit owl.
       await expect(page.locator('.watcher-head').getByRole('tab', { name: 'Watcher' })).toBeFocused()
       const rooms = await box(page.locator('.watcher-head__rooms'))
+      const list = await box(allThreads(page))
       expect(rooms.y + rooms.height).toBeLessThanOrEqual(44)
-      expect(rooms.x).toBeGreaterThan(640)
+      expect(rooms.x).toBeGreaterThanOrEqual(list.x + list.width)
+      expect(rooms.x).toBeLessThan(list.x + list.width + 16)
       await press('ArrowLeft', 'Dictate')
       await press('End', 'Threads')
       await press('Home', 'Dictate')
       await press('ArrowRight', 'Watcher')
       await press('ArrowRight', 'Threads')
       await press('ArrowLeft', 'Watcher')
-      // Tab from All threads: the header (its tabs, one stop on the one shown, then Stop all while threads Watcher started run,
-      // the room switch's one stop on the lit owl, and More), the needs-you line, the conversation, then the composer.
+      // Tab from All threads: the header (the room switch's one stop on the lit owl, the pages, the update control, then
+      // Stop all while threads Watcher started run), the needs-you line, the conversation, then the composer.
       await allThreads(page).focus()
       const order: string[] = []
       for (let step = 0; step < 50 && !order.includes('Watcher message'); step++) {
@@ -794,22 +804,14 @@ test.describe("Watcher's room on the built app", () => {
       }
       recorded.set('tab-order', order)
       const indexOf = (name: string | RegExp): number => order.findIndex(entry => typeof name === 'string' ? entry === name : name.test(entry))
-      expect(order.slice(0, 3)).toEqual(['Conversation', 'Stop all threads Watcher started, 2 threads', 'Watcher'])
-      expect(order[3]).toMatch(/^More: Usage, Settings, Help/)
-      expect(order).not.toContain('More Watcher actions')
-      expect(indexOf(/^Open Visual gate flake to answer/)).toBeGreaterThan(indexOf(/^More: /))
+      expect(order.slice(0, 4)).toEqual(['Watcher', 'Usage', 'Settings', 'Help'])
+      const stopAll = indexOf('Stop all threads Watcher started, 2 threads')
+      // The update control, where the app updates itself, sits between Help and Stop all.
+      expect(stopAll).toBeGreaterThanOrEqual(4)
+      expect(stopAll).toBeLessThanOrEqual(5)
+      expect(order.some(entry => /^More/.test(entry))).toBe(false)
+      expect(indexOf(/^Open Visual gate flake to answer/)).toBeGreaterThan(stopAll)
       expect(indexOf('Watcher message')).toBeGreaterThan(indexOf(/^Open Streaming WAV stall/))
-      // More opens on its first page, lists the pages and then the update, and Escape gives focus back to it.
-      const more = page.locator('.watcher-head__more > button')
-      await more.focus()
-      await page.keyboard.press('Enter')
-      const items = page.getByRole('menu').getByRole('menuitem')
-      expect((await items.allTextContents()).slice(0, 3)).toEqual(['Usage', 'Settings', 'Help'])
-      await expect(items).toHaveCount(4)
-      await expect(items.first()).toBeFocused()
-      await page.keyboard.press('Escape')
-      await expect(page.getByRole('menu')).toHaveCount(0)
-      await expect(more).toBeFocused()
       for (const name of ['Settings', 'Help'] as const) {
         await openPage(page, name)
         await expect(switchTab(page, 'Dictate')).toHaveAttribute('tabindex', '0')
@@ -846,12 +848,12 @@ test.describe("Watcher's room on the built app", () => {
 
       await openRoom(page)
       const pane = watcherPane(page)
-      // How many it watches is on Watched; the limit no longer counts watching.
-      await expect(pane.getByRole('tab', { name: 'Watched, 2 threads' })).toBeVisible()
+      // The limit no longer counts watching, so the room has no meter for it.
       await expect(pane.getByRole('meter')).toHaveCount(0)
       await expect(pane.getByText('Only you can allow that, in its own pane.')).toBeVisible()
       await allThreads(page).click()
-      // In the list the owl is drawn, and the row's description says it, so it is not read twice.
+      // In the list the owl is drawn on each thread Watcher watches, and the row's description says it, so it is not read twice.
+      await expect(threadsList(page).locator('.watcher-row .watched-badge')).toHaveCount(WATCHED.length)
       const watchedRow = threadsList(page).locator('.watcher-row').filter({ hasText: 'Visual gate flake' })
       await expect(watchedRow.locator('.watched-badge')).toBeVisible()
       await expect(watchedRow.getByRole('button', { name: 'Open Visual gate flake beside Watcher' })).toHaveAccessibleDescription(/Watched by Watcher/)
@@ -1617,16 +1619,16 @@ test.describe("Watcher's room on the built app", () => {
   })
 
   test('Watcher’s header keeps every control apart and whole at every pane width beside a thread, with and without Stop all', async () => {
-    // The header off macOS: the tile, the name, All threads, the three tabs, then Stop all while it shows, on one row. On macOS the header starts past the traffic lights and takes two rows in a narrow pane, which
-    // its own journey checks.
+    // The header off macOS: the tile, the name, All threads, the way off the page (the room switch, the pages and the
+    // update control), then Stop all while it shows, on one row. On macOS the header starts past the traffic lights, which its own journey checks.
     test.skip(process.platform === 'darwin', 'The macOS header has its own journey')
     const read = (page: Page) => page.locator('.watcher-pane .watcher-head').evaluate(head => {
       const rect = (node: Element) => { const box = node.getBoundingClientRect(); return { left: box.left, right: box.right, top: box.top, bottom: box.bottom } }
       const named = (node: Element) => node.getAttribute('aria-label') ?? node.textContent?.trim() ?? node.className
-      // Shown, and not only to assistive technology (the name, below 450 pixels).
+      // Shown, and not only to assistive technology (the name, in a narrow pane).
       const shown = (node: Element) => node.getBoundingClientRect().width > 1 && getComputedStyle(node).display !== 'none' && getComputedStyle(node).clipPath === 'none'
-      const parts = [head.querySelector('.watcher-head__tile'), head.querySelector('h1'), head.querySelector('.watcher-head__list'), ...head.querySelectorAll('.watcher-tabs__tab'),
-        ...head.querySelectorAll('.thread-workspace__actions > * > button')].filter((node): node is Element => node !== null && shown(node))
+      const parts = [head.querySelector('.watcher-head__tile'), head.querySelector('h1'), head.querySelector('.watcher-head__list'),
+        ...head.querySelectorAll('.watcher-head__way :is([role="tab"], a, button)'), ...head.querySelectorAll('.thread-workspace__actions > * > button')].filter((node): node is Element => node !== null && shown(node))
       const style = getComputedStyle(head)
       const box = head.getBoundingClientRect()
       const present = (selector: string) => { const node = head.querySelector(selector); return node !== null && shown(node) }
@@ -1636,10 +1638,9 @@ test.describe("Watcher's room on the built app", () => {
         head: { left: box.left + parseFloat(style.paddingLeft), right: box.right - parseFloat(style.paddingRight), top: box.top, bottom: box.bottom, height: box.height },
         parts: parts.map(node => ({ name: named(node), ...rect(node) })),
         labels: labels.map(node => node.textContent ?? ''),
-        present: { tile: present('.watcher-head__tile'), name: present('h1'), list: present('.watcher-head__list'), conversation: present('[data-tab="conversation"]'),
-          watched: present('[data-tab="watched"]'), visualize: present('[data-tab="visualize"]'), stopAll: present('.watcher-stop-all__button') },
+        present: { tile: present('.watcher-head__tile'), name: present('h1'), list: present('.watcher-head__list'), stopAll: present('.watcher-stop-all__button') },
         // A label or count cut off by its own control, or the name cut to an ellipsis.
-        clipped: [...head.querySelectorAll('.watcher-tabs__tab, .watcher-head__list, .thread-workspace__actions button, h1')].filter(shown)
+        clipped: [...head.querySelectorAll('.watcher-head__list, .thread-workspace__actions button, h1')].filter(shown)
           .filter(node => node.scrollWidth > node.clientWidth + 0.5).map(named),
       }
     })
@@ -1670,10 +1671,9 @@ test.describe("Watcher's room on the built app", () => {
           await expect(beside(page)).toBeVisible()
           await expect(page.locator('.watcher-head .watcher-stop-all')).toHaveCount(stopAll ? 1 : 0)
           for (const counts of ['seeded', 'three-digit'] as const) {
-            // All threads' count is uncapped and Watched's badge stops at 99+. The second pass draws both as 100, wider than
-            // either can be drawn, at the window sizes whose panes span the sweep.
+            // All threads' count is uncapped. The second pass draws it as 100, at the window sizes whose panes span the sweep.
             if (counts === 'three-digit') await page.locator('.watcher-head').evaluate(head => {
-              for (const count of head.querySelectorAll('.watcher-head__count, .watcher-tabs__count')) count.textContent = '100'
+              for (const count of head.querySelectorAll('.watcher-head__count')) count.textContent = '100'
             })
             for (const [width, height] of counts === 'seeded' ? SIZES : [SIZES[1], SIZES[2]]) {
               await resizeContentWindow(launched, width, height)
@@ -1701,8 +1701,9 @@ test.describe("Watcher's room on the built app", () => {
                 // Nothing is measured by leaving it out: every control is there at every width, and the name wherever the
                 // styles keep it (from NAME_FROM pixels with Stop all, 450 without).
                 const { name, ...always } = reading.present
-                // More Watcher actions went with the Threads in flight limit (#1183); Visualize came with Watcher's picture (#1339).
-                expect.soft(always, where).toEqual({ tile: true, list: true, conversation: true, watched: true, visualize: true, stopAll })
+                // More Watcher actions went with the Threads in flight limit (#1183), and the tabs with Watched and Watcher's
+                // picture (October 27, 2026).
+                expect.soft(always, where).toEqual({ tile: true, list: true, stopAll })
                 if (reading.pane >= (stopAll ? NAME_FROM : 450) + 1) expect.soft(name, `the name shown, ${where}`).toBe(true)
                 for (const [index, part] of reading.parts.entries()) {
                   for (const other of reading.parts.slice(index + 1)) expect.soft(apart(part, other), `${part.name} over ${other.name}, ${where}`).toBe(true)
@@ -1749,7 +1750,7 @@ test.describe("Watcher's room on the built app", () => {
     }))
   })
 
-  test('Watch from a pane header and a row, and the Watched view, from the keyboard', async () => {
+  test('Watch from a pane header, a row and All threads, from the keyboard', async () => {
     await onReleaseTrack('owl', async () => {
       for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance), async (launched) => {
         const { page } = launched
@@ -1806,48 +1807,13 @@ test.describe("Watcher's room on the built app", () => {
         expect(await pageBoundProblems(page)).toEqual([])
         await captureNote(launched, `threads-watch-${appearance}-820x560.png`)
 
-        // In the room: Watched, from the keyboard, beside Conversation.
+        // In the room: All threads, from the keyboard, where the owl is each row's last stop. Weekly note is watched from
+        // the pane header above; Space in the list stops watching it and watches it again.
         await resizeContentWindow(launched, 1280, 800)
         await openRoom(page)
         const pane = watcherPane(page)
-        const conversation = pane.getByRole('tab', { name: 'Conversation' })
-        await expect(conversation).toHaveAttribute('aria-selected', 'true')
-        await conversation.focus()
-        await page.keyboard.press('ArrowRight')
-        const watched = pane.getByRole('tab', { name: 'Watched, 3 threads' })
-        await expect(watched).toBeFocused()
-        await expect(watched).toHaveAttribute('aria-selected', 'true')
-        // The panel is named by its tab, whose name follows the count.
-        const panel = pane.getByRole('tabpanel')
-        await expect(panel).toHaveAccessibleName('Watched, 3 threads')
-        await expect(panel.getByRole('region')).toHaveText([/^Needs you1/, /^Working2/])
-        await expect(panel.getByRole('button', { name: /^Stop watching / })).toHaveCount(3)
-        await expect(panel.getByRole('button', { name: 'Open Visual gate flake to answer its permission' })).toBeVisible()
-        for (const [width, height] of SIZES) {
-          await resizeContentWindow(launched, width, height)
-          await settle(page)
-          expect(await pageBoundProblems(page), `Watched at ${width}x${height}`).toEqual([])
-          await roomEdges(page, width, height)
-          await captureNote(launched, `room-watched-${appearance}-${width}x${height}.png`)
-          await contrastHolds(page, `room-watched-${appearance}-${width}x${height}`)
-        }
-        // A thread opened beside Watcher keeps both headers whole at the minimum.
-        await panel.getByRole('button', { name: 'Open Footer links beside Watcher' }).click()
-        await expect(beside(page)).toHaveAttribute('aria-label', 'Footer links')
-        await settle(page)
-        expect(await pageBoundProblems(page), 'Watched with a thread beside at 820x560').toEqual([])
-        await roomEdges(page, 820, 560)
-        await captureNote(launched, `room-watched-beside-${appearance}-820x560.png`)
-        await page.keyboard.press('Escape')
-        await expect(beside(page)).toHaveCount(0)
-        await resizeContentWindow(launched, 1280, 800)
-        await settle(page)
-        // Stop watching on a card stops it, and the count follows.
-        await panel.getByRole('button', { name: 'Stop watching Weekly note', exact: true }).click()
-        await expect(pane.getByRole('tab', { name: 'Watched, 2 threads' })).toBeVisible()
-        await expect(panel.getByText('Weekly note', { exact: true })).toHaveCount(0)
-        // Watch a thread opens All threads, where the owl is each row's last stop.
-        await panel.getByRole('button', { name: 'Watch a thread' }).click()
+        await allThreads(page).focus()
+        await page.keyboard.press('Enter')
         const list = threadsList(page)
         await expect(list).toBeVisible()
         await expect(list.getByText(/The owl watches a thread until you press it again/)).toBeVisible()
@@ -1856,20 +1822,22 @@ test.describe("Watcher's room on the built app", () => {
         expect(await focusedName(page)).toBe('Open Weekly note beside Watcher')
         await page.keyboard.press('Tab')
         expect(await focusedName(page)).toBe('Watch Weekly note')
-        await expect(list.getByRole('button', { name: 'Watch Weekly note', exact: true })).toHaveAttribute('aria-pressed', 'false')
+        const listOwl = list.getByRole('button', { name: 'Watch Weekly note', exact: true })
+        await expect(listOwl).toHaveAttribute('aria-pressed', 'true')
         await page.keyboard.press('Space')
-        await expect(list.getByRole('button', { name: 'Watch Weekly note', exact: true })).toHaveAttribute('aria-pressed', 'true')
+        await expect(listOwl).toHaveAttribute('aria-pressed', 'false')
+        await expect(listOwl).toBeFocused()
+        await page.keyboard.press('Space')
+        await expect(listOwl).toHaveAttribute('aria-pressed', 'true')
         await list.getByRole('searchbox', { name: 'Filter threads' }).fill('')
         await settle(page)
         expect(await pageBoundProblems(page)).toEqual([])
         await captureNote(launched, `list-watch-${appearance}-1280x800.png`)
         await contrastHolds(page, `list-watch-${appearance}-1280x800`)
+        // Escape closes the list and gives focus back to All threads, over the conversation as it was.
         await page.keyboard.press('Escape')
-        await expect(pane.getByRole('tab', { name: 'Watched, 3 threads' })).toBeVisible()
-        // Back to the conversation, which comes back as it was.
-        await pane.getByRole('tab', { name: 'Watched, 3 threads' }).focus()
-        await page.keyboard.press('Home')
-        await expect(pane.getByRole('tab', { name: 'Conversation' })).toHaveAttribute('aria-selected', 'true')
+        await expect(list).toHaveCount(0)
+        await expect(allThreads(page)).toBeFocused()
         await expect(pane.getByText('Only you can allow that, in its own pane.')).toBeVisible()
       })
     })
@@ -1913,9 +1881,9 @@ test.describe("Watcher's room on the built app", () => {
       await page.getByRole('textbox', { name: 'Watcher message' }).click()
       await page.keyboard.type('Check the release notes and tell me what is missing.')
       await page.getByRole('button', { name: 'Start Watcher and send' }).click()
-      // Main created Watcher on Codex: its own pane, its tabs, the message and the provider's reply.
+      // Main created Watcher on Codex: its own pane and composer, the message and the provider's reply.
       const pane = watcherPane(page)
-      await expect(pane.getByRole('tab', { name: 'Watched, 0 threads' })).toBeVisible()
+      await expect(pane.getByRole('textbox', { name: 'Watcher message' })).toBeVisible()
       // Main takes the choice, so Watcher's permissions is the chip, on Ask for approval the first time.
       await expect(pane.getByRole('combobox', { name: 'Watcher’s permissions' })).toHaveText('Ask for approval')
       const original = 'Check the release notes and tell me what is missing.'
@@ -2013,21 +1981,20 @@ test.describe("Watcher's room on the built app", () => {
       expect((await mainRoom(page)).standingWatches).toEqual([expect.objectContaining({ target: worker.target })])
       expect((await mainRoom(page)).watchedThreads.find(row => row.target.threadId === worker.target.threadId)).toMatchObject({ watched: true, paused: false })
       expect((await page.evaluate(async threadId => window.sotto!.agents!.threadDetail!(threadId), worker.id))?.messages).toHaveLength(0)
+      // In the room, All threads draws the owl on its row, pressed; pressing it is main's unwatchThread.
       await switchTab(page, 'Watcher').click()
-      const watchedTab = pane.getByRole('tab', { name: 'Watched, 1 thread' })
-      await expect(watchedTab).toBeVisible()
-      await watchedTab.click()
-      const panel = pane.getByRole('tabpanel')
-      await expect(panel.getByRole('button', { name: 'Open Weekly worker beside Watcher' })).toBeVisible()
-      await expect(panel.getByText(/^Watching since .+\. Nothing sent yet\.$/)).toBeVisible()
+      await allThreads(page).click()
+      const everyThread = threadsList(page)
+      const listOwl = everyThread.getByRole('button', { name: 'Watch Weekly worker', exact: true })
+      await expect(listOwl).toHaveAttribute('aria-pressed', 'true')
       await settle(page)
       expect(await pageBoundProblems(page)).toEqual([])
       await captureNote(launched, 'room-main-watched-dark-1280x800.png')
-      // Stop watching on its card is main's unwatchThread, and the count follows.
-      await panel.getByRole('button', { name: 'Stop watching Weekly worker', exact: true }).click()
-      await expect(pane.getByRole('tab', { name: 'Watched, 0 threads' })).toBeVisible()
+      await listOwl.click()
+      await expect(listOwl).toHaveAttribute('aria-pressed', 'false')
       await expect.poll(async () => (await mainRoom(page)).standingWatches).toEqual([])
-      await pane.getByRole('tab', { name: 'Conversation' }).click()
+      await page.keyboard.press('Escape')
+      await expect(everyThread).toHaveCount(0)
 
       // A reply in which Watcher changed a file itself: main's own projection draws the line, with the reason line's words.
       const reason = 'A one-word typo is smaller than briefing a thread.'

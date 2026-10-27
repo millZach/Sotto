@@ -16,7 +16,7 @@ import { watchResolution } from './watchResolution'
 import type { OpenThread } from './WatcherOverview'
 import './nightScene.css'
 
-/** How long the scene takes to fade when it steps away, as for Visualize (nightScene.css). */
+/** How long the scene takes to fade when it steps away (nightScene.css). */
 export const SCENE_FADE_MS = 700
 /** How long the last place's landscape takes to fade over the new one's when the place changes (nightScene.css). */
 export const PLACE_FADE_MS = 600
@@ -146,7 +146,7 @@ interface Target {
  * margin of 160 pixels the trees give way to a rail of owl eyes, and without even that room nothing is drawn.
  *
  * The canvases are decoration, hidden from assistive technology and never pressed. The thread owls' buttons answer the
- * pointer only: they show the thread's name and open it, as the Watched view does from the keyboard. The scene draws
+ * pointer only: they show the thread's name and open it, as All threads does from the keyboard. The scene draws
  * about 30 frames a second while something flies or fades, checks 8 times a second while it only blinks and twinkles and
  * paints only when that changed the picture, and draws nothing when nothing moves, the window is hidden or the scene
  * has gone. With motion reduced, or `held` for a capture, nothing flies: owls appear and fade, and the scene holds still.
@@ -155,8 +155,8 @@ interface Target {
  * frame it is picked, under a copy of the last place's landscape that fades away over it, so the scene never shows a
  * blank frame; with motion reduced the new place simply replaces the last in that one frame.
  */
-export function WatcherNightScene({ shown, held, place = 'night-wood', owls, onOpen, onShowWatched }: {
-  /** Whether the scene shows: the room is open on Conversation or Watched. When it turns false the scene fades and stops. */
+export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glowing = false, onOpen, onShowAll }: {
+  /** Whether the scene shows: the room and Watcher's conversation can be read. When it turns false the scene fades and stops. */
   readonly shown: boolean
   /** A capture's fixed clock: the scene draws its settled picture and holds it. */
   readonly held: boolean
@@ -164,9 +164,15 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, onO
   readonly place?: WatcherScene | undefined
   /** The threads Watcher watches, one owl each. */
   readonly owls: readonly WatchedOwl[]
+  /**
+   * Whether something waits on the user, so Watcher's own owl glows as a waiting thread owl does: its glyphs in the
+   * accent, pulsing in the same steps (Zach's pick on October 27, 2026, glyphs only, no wash, in
+   * `docs/prototypes/watcher-without-tabs-prototype.html`).
+   */
+  readonly glowing?: boolean
   readonly onOpen: OpenThread
-  /** The "+N" pile's press: the Watched view, where every watched thread is. */
-  readonly onShowWatched: () => void
+  /** The "+N" pile's press: All threads, where every thread is. */
+  readonly onShowAll: () => void
 }): ReactNode {
   // Named `say` here, since `t` is the scene's clock.
   const { t: say } = useLingui()
@@ -176,11 +182,11 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, onO
   const [targets, setTargets] = useState<readonly Target[]>([])
   const [tip, setTip] = useState<Target | null>(null)
   const origin = useRef<number | null>(null)
-  // The owls and where Watcher's owl sits outlive the scene stepping away, as for Visualize: it comes back with every
-  // owl where it was.
+  // The owls and where Watcher's owl sits outlive the scene stepping away: it comes back with every owl where it was.
   const kept = useRef<{ family: OwlFamily | null; watcher: WatcherOwlState }>({ family: null, watcher: { at: 'home', side: 'left', flight: null, next: 0 } })
   const stillRef = useRef(still)
   const owlsRef = useRef(owls)
+  const glowingRef = useRef(glowing)
   const placeRef = useRef(place)
   const movePlaceRef = useRef<() => void>(() => undefined)
   const leaving = useRef(phase === 'leaving')
@@ -200,6 +206,7 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, onO
   useEffect(() => { leaving.current = phase === 'leaving' }, [phase])
   useEffect(() => { stillRef.current = still; settleRef.current(); wakeRef.current() }, [still])
   useEffect(() => { owlsRef.current = owls; takeOwlsRef.current() }, [owls])
+  useEffect(() => { glowingRef.current = glowing; wakeRef.current() }, [glowing])
   useEffect(() => { placeRef.current = place; movePlaceRef.current() }, [place])
   // A tip goes with its owl when the owl leaves, and takes the owl's new words and place while it stays.
   useEffect(() => { setTip(current => current === null ? null : targets.find(target => target.key === current.key) ?? null) }, [targets])
@@ -294,7 +301,7 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, onO
         const w = pileLabel(pile.count, layout?.mode === 'rail').length * 7 + 10
         const x = Math.max(0, Math.min((layout?.width ?? w) - w, pile.spot.x - w / 2))
         const more = pile.count
-        next.push({ key: 'pile', box: { x, y: pile.spot.y - 16, w, h: 18 }, title: i18n._(msg`${more} more`), words: i18n._(msg`Press to see every watched thread on Watched.`), open: null, below: tipBelow(pile.spot.y - 16) })
+        next.push({ key: 'pile', box: { x, y: pile.spot.y - 16, w, h: 18 }, title: i18n._(msg`${more} more`), words: i18n._(msg`Press to see all threads.`), open: null, below: tipBelow(pile.spot.y - 16) })
       }
       const key = next.map(item => `${item.key}:${item.box.x}:${item.box.y}:${item.title}:${item.words}`).join('|')
       if (key !== targetKey) { targetKey = key; setTargets(next) }
@@ -313,7 +320,7 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, onO
       const owlNow = trees ? owlAt(t, layout, watcher, { still: isStill, look, watch: family.newcomer(t) }) : null
       const marker = family.marker, count = family.pileCount, poses = family.poses(t)
       const pile = marker !== null && count > 0 ? { spot: marker, count } : null
-      const painted = painter.draw({ t, still: isStill, ripples, watcher: owlNow, owls: poses, whirl: family.whirl(t), pile })
+      const painted = painter.draw({ t, still: isStill, ripples, watcher: owlNow, watcherGlows: glowingRef.current, owls: poses, whirl: family.whirl(t), pile })
       if (painted && counted) pane.dataset.nightSceneFrames = String(++frames)
       // And what it drew behind the words over the column, so a test can see a ripple or an owl crossing under them.
       if (painted && counted) pane.dataset.nightSceneBehind = `${painter.behind.ripple},${painter.behind.owl}`
@@ -538,15 +545,15 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, onO
   return <>
     <canvas ref={back} className="watcher-scene watcher-scene--land" data-leaving={fading} aria-hidden="true" />
     <canvas ref={front} className="watcher-scene watcher-scene--owl" data-leaving={fading} aria-hidden="true" />
-    {/* The owls' buttons answer the pointer only; Watched is the keyboard's way to the same threads. */}
+    {/* The owls' buttons answer the pointer only; All threads is the keyboard's way to the same threads. */}
     <div className="watcher-scene watcher-scene--owls" data-leaving={fading} aria-hidden="true">
       {targets.map(target => { const title = target.title; return <button key={target.key} type="button" tabIndex={-1} className="watcher-scene__owl" data-pile={target.open === null || undefined}
-        aria-label={target.open === null ? say`Show every watched thread` : say`Open ${title} beside Watcher`}
+        aria-label={target.open === null ? say`Show all threads` : say`Open ${title} beside Watcher`}
         style={{ left: target.box.x, top: target.box.y, width: target.box.w, height: target.box.h }}
         onPointerEnter={() => setTip(target)} onPointerLeave={() => setTip(current => current?.key === target.key ? null : current)}
         onClick={event => {
           setTip(null)
-          if (target.open === null) { onShowWatched(); return }
+          if (target.open === null) { onShowAll(); return }
           onOpen(target.open.threadId, { atRequest: target.open.atRequest, inThreads: event.shiftKey, from: event.currentTarget })
         }} /> })}
     </div>

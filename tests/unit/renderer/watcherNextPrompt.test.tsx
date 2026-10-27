@@ -72,7 +72,7 @@ const ghost = (): HTMLElement | null => document.querySelector('.prompt-editor__
 
 beforeEach(() => {
   vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset()
-  localStorage.clear(); roomView.set({ besideId: null, share: 0.5, tab: 'conversation' })
+  localStorage.clear(); roomView.set({ besideId: null, share: 0.5 })
 })
 afterEach(() => { cleanup(); localStorage.clear(); nextPromptStore.sent(WATCHER, '\u0000') })
 
