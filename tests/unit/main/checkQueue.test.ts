@@ -1,7 +1,7 @@
 // @vitest-environment node
 // #1312: a machine runs one check at a time, and the rest wait their turn in the order they were asked for.
 import { describe, expect, it, vi } from 'vitest'
-import { checkWaitingWords, CheckQueue } from '../../../src/main/agents/checkQueue'
+import { CHECK_TURN_CEILING_MS, checkWaitingWords, CheckQueue } from '../../../src/main/agents/checkQueue'
 
 const settle = () => new Promise<void>(resolve => queueMicrotask(resolve))
 
@@ -50,9 +50,40 @@ describe('CheckQueue', () => {
     expect(queue.ids()).toEqual([])
   })
 
+  it('gives the machine to the next check once the running one has held it past the ceiling, whatever its outcome reads', async () => {
+    vi.useFakeTimers()
+    try {
+      const queue = new CheckQueue('forge')
+      const b = vi.fn(), c = vi.fn()
+      queue.join('a', vi.fn()); queue.join('b', b); queue.join('c', c)
+      await vi.advanceTimersByTimeAsync(CHECK_TURN_CEILING_MS - 1)
+      expect(b).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(b).toHaveBeenCalledTimes(1)
+      expect(queue.ids()).toEqual(['b', 'c'])
+      // The ceiling counts from each check's own turn, and the owner leaving later changes nothing.
+      queue.leave('a')
+      await vi.advanceTimersByTimeAsync(CHECK_TURN_CEILING_MS - 1)
+      expect(c).not.toHaveBeenCalled()
+      queue.leave('b')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(c).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(CHECK_TURN_CEILING_MS)
+      expect(queue.ids()).toEqual([])
+    } finally { vi.useRealTimers() }
+  })
+
   it('says how many checks are ahead, for the model that asked', () => {
     expect(checkWaitingWords('forge', 1)).toMatch(/^Waiting for forge's check to finish\. 1 ahead\. /u)
     expect(checkWaitingWords('This computer', 2)).toMatch(/^Waiting for This computer's checks to finish\. 2 ahead\. /u)
     expect(checkWaitingWords('forge', 1)).toContain('cancel_delegation takes it out of the queue.')
+  })
+
+  it('reads a machine named by a function each time its words are written, as a host the desktop names later is (#1312, #1316)', () => {
+    let name = 'forge-box'
+    const queue = new CheckQueue(() => name)
+    expect(checkWaitingWords(queue.machine, 1)).toMatch(/^Waiting for forge-box's check to finish\. 1 ahead\./u)
+    name = 'forge'
+    expect(checkWaitingWords(queue.machine, 1)).toMatch(/^Waiting for forge's check to finish\. 1 ahead\./u)
   })
 })

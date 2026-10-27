@@ -91,6 +91,11 @@ export interface HostService {
   readonly supportsWatcherWorkSettled?: boolean
   /** The host's exact operation reads carry a delegation's outcome and reply; without it a desktop reads them as unknown. */
   readonly supportsWatcherOutcomes?: boolean
+  /**
+   * The host keeps its own check queue (`watcher-check-queue`, #1312): a Watcher start marked `check` waits in it behind the
+   * check running there, its own delegations' checks included. Only where its Owl answer turns on Work across machines.
+   */
+  readonly supportsWatcherCheckQueue?: boolean
   /** The host takes requests from a Watcher on Muse; without it a desktop whose Watcher is on Muse leaves the host alone. */
   readonly supportsWatcherMuse?: boolean
   /** The host lists `watcher-cursor`: it takes Watcher requests whose identity names Cursor (ADR-0128). */
@@ -310,6 +315,7 @@ export class LocalHostService implements HostService {
   get supportsWatcherControl(): boolean { return this.options.watcher !== undefined }
   get supportsWatcherReads(): boolean { return this.options.watcher !== undefined }
   get supportsWatcherStandingWatch(): boolean { return this.options.watcher !== undefined }
+  get supportsWatcherCheckQueue(): boolean { return this.options.watcher?.takesChecks === true }
   // Answered as host protocol version 1 has them, so a desktop from before #1183 still reads them.
   async watcherControl(request: WatcherHostControl, client: ClientIdentity, guard: () => void, mayAnswer?: () => boolean): Promise<unknown> { return watcherResultForHostV1(await this.options.watcher!.admitRemote(request, client.clientId, guard, mayAnswer)) }
   async watcherRead(request: WatcherHostRead, client: ClientIdentity, guard?: () => void, mayAnswer?: () => boolean): Promise<unknown> { return watcherResultForHostV1(await this.options.watcher!.readRemote(request, client.clientId, guard, mayAnswer)) }

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { hostname, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
@@ -32,6 +32,8 @@ const delegationMachines = (host: Awaited<ReturnType<typeof runtime>>) => (host.
 const movers = (host: Awaited<ReturnType<typeof runtime>>) => [host.watcher, host.delegation].map(service => (service as unknown as { options: { branchMoves?: unknown } } | undefined)?.options.branchMoves)
 /** This machine's checks (#1312), one at a time: delegation's queue. */
 const checks = (host: Awaited<ReturnType<typeof runtime>>) => (host.delegation as unknown as { options: { checks?: { machine: string } } } | undefined)?.options.checks
+/** Watcher's queue for its starts marked as checks (#1312), which must be delegation's own: one queue per machine. */
+const watcherChecks = (host: Awaited<ReturnType<typeof runtime>>) => (host.watcher as unknown as { options: { checks?: { machine: string } } } | undefined)?.options.checks
 
 it('is off on stable and on in Owl', () => {
   expect(owlFeaturesForTrack('stable')['cross-machine-work']).toBe(false)
@@ -46,6 +48,8 @@ it.each([[undefined], [false]] as const)('offers no machine choice and reports n
     expect(delegationMachines(host)).toBeUndefined()
     expect(movers(host)).toEqual([undefined, undefined])
     expect(checks(host)).toBeUndefined()
+    expect(watcherChecks(host)).toBeUndefined()
+    expect(host.hostService.supportsWatcherCheckQueue).toBe(false)
     expect(startOffers(host)).not.toContain('fromThread')
     expect(host.hostService.supportsProjectOrigins).toBe(false)
   } finally { await host.close() }
@@ -61,6 +65,8 @@ it('offers the choice on the desktop when the Owl answer is on, and a headless h
     expect(watcherMover).toBeDefined()
     expect(delegationMover).toBe(watcherMover)
     expect(checks(desktop)?.machine).toBe('This computer')
+    // Watcher's checks and delegated ones wait in the same queue, in the order asked (#1312).
+    expect(watcherChecks(desktop)).toBe(checks(desktop))
     expect(startOffers(desktop)).toEqual(expect.arrayContaining(['fromThread', 'testRun']))
     expect(desktop.hostService.supportsProjectOrigins).toBe(true)
     expect(await desktop.hostService.projectOrigins()).toEqual({ projects: expect.any(Array) })
@@ -71,5 +77,9 @@ it('offers the choice on the desktop when the Owl answer is on, and a headless h
     // A headless host moves branches only when the desktop asks over its socket; it places and moves nothing itself.
     expect(movers(headless)[0]).toBeUndefined()
     expect(headless.hostService.supportsProjectOrigins).toBe(true)
+    // A host keeps its own queue, shared by its own threads' checks and the desktop's Watcher starts on it (#1312).
+    // Named as the relay's away words name the host: its own machine name until a desktop sends the name it saved (#1316).
+    expect(watcherChecks(headless)?.machine).toBe(hostname().trim().slice(0, 64) || 'this machine')
+    expect(headless.hostService.supportsWatcherCheckQueue).toBe(true)
   } finally { await headless.close() }
 })

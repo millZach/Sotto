@@ -32,6 +32,11 @@ describe('Watcher with Work across machines', () => {
       expect(output(roles, true, 'start_thread')).toContain('"placement"')
       expect(output(roles, true, 'start_thread')).toContain('"startedFrom"')
       expect(output(roles, true, 'start_thread')).toContain('"untrackedCount"')
+      // A check waiting its turn says how many are ahead (#1312), only while it is on; Watcher never names a check itself.
+      expect(output(roles, true, 'start_thread')).toContain('"ahead"')
+      expect(output(roles, false, 'start_thread')).not.toContain('"ahead"')
+      for (const machines of [false, true]) expect(tool(watcherToolDefinitions(roles, machines), 'start_thread')!.schema.properties).not.toHaveProperty('check')
+      expect(tool(watcherToolDefinitions(roles, true), 'start_thread')!.description).toContain('One check runs at a time on a machine')
       expect(output(roles, true, 'list_machines')).toContain('"newWorkersStart"')
       // The rest of each result, and the refusal, are the same either way.
       expect(output(roles, false, 'start_thread')).toContain('"firstPromptReceiptId"')
@@ -107,7 +112,14 @@ describe('starting from a branch with Work across machines', () => {
       expect(delegate.description.includes('One check runs at a time on a machine')).toBe(machines)
       expect(delegate.description.includes('the verdict, the counts and the failing lines, inside 32 KiB')).toBe(machines)
     }
-    // A thread on a headless host is offered no test_run, so it is told nothing of checks.
-    expect(tool(delegationToolDefinitions(false, true, 'this-machine'), 'delegate')!.description).not.toContain('check')
+    // A thread on a headless host is offered test_run with its own machine's queue, shared with Watcher's checks there, but
+    // no branch to start from (#1312). With Work across machines off it is offered neither.
+    for (const machines of [false, true]) {
+      const hosted = tool(delegationToolDefinitions(false, machines, 'this-machine'), 'delegate')!
+      expect(Object.hasOwn(hosted.schema.properties, 'test_run')).toBe(machines)
+      expect(Object.hasOwn(hosted.schema.properties, 'from_my_branch')).toBe(false)
+      expect(hosted.description.includes('One check runs at a time on this machine, yours and Watcher\'s alike')).toBe(machines)
+      expect(hosted.description).not.toContain('snapshot')
+    }
   })
 })

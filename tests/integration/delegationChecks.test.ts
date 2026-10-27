@@ -203,3 +203,20 @@ it('lets go of a waiting check’s branch when Sotto stops, since it will never 
   await f.service.drained()
   expect(f.refs()).toEqual([])
 })
+
+it('queues a check on a machine with no branch mover, as a headless host is, and refuses a start from the branch there (#1312)', async () => {
+  // A host's delegation keeps its own machine's queue, shared with the desktop Watcher's checks there, and moves no branch.
+  const f = await delegationFixture(cleanups, { checks: true })
+  const parent = await f.userThread('claude'), other = await f.userThread('grok')
+  const check = async (threadId: string, input: Record<string, unknown> = {}) =>
+    await f.delegate(threadId, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0, test_run: true, ...input })
+  const first = f.ok(await check(parent)) as CheckResult
+  expect(first.delegation.check).toBeUndefined()
+  await vi.waitFor(() => expect(f.native(first.delegation.thread).status).toBe('running'))
+  const second = f.ok(await check(other)) as CheckResult
+  expect(second.delegation).toMatchObject({ outcome: 'working', check: { ahead: 1 } })
+  expect(second.startedFrom).toBeUndefined()
+  expect(await check(parent, { from_my_branch: true })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+  await f.endTurn(first.delegation.thread, 'Synthetic verdict: passed')
+  await vi.waitFor(() => expect(f.native(second.delegation.thread).status).toBe('running'))
+})
