@@ -1,0 +1,1394 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: what does Watcher's room look like with its header tabs gone, and how does Watcher's own big owl glow
+  when something needs Zach? (Zach, October 27, 2026.)
+
+  Carried over from docs/prototypes/watcher-owl-family-prototype.html, with these changes:
+    1  Conversation, Watched and Visualize are gone from the header. In their place, right after All threads, go the
+       room switch (Dictate, Watcher, Threads) and the More menu, which sat at the header's right end (Zach's ask,
+       October 27, 2026). Stop all stays at the right end, before the window controls.
+    2  The Watched view and the Visualize view are gone; so is Watcher's visualize tool. The room is the conversation.
+    3  A press on a thread owl opens that thread beside Watcher's conversation, as it does today. The "+N" pile, which
+       opened Watched, opens All threads instead.
+    4  While the needs-you line names a question, a permission or a prototype to review, Watcher's big owl glows the
+       way a thread owl does when its thread needs Zach: its glyphs in the accent and the same slow four-step pulse
+       (held on its middle step with motion reduced). A failed turn alone does not make it glow.
+
+  Zach's picks (October 27, 2026): the glyphs only, with no wash behind the owl (this page first showed the thread
+  owls' wash too, which on an owl this size read as a panel); no glow for a failed turn alone; the "+N" pile opens
+  All threads; the room switch and More moved to where the tabs were. Built, Zach then drew the row he wanted there:
+  More gives way to Usage, Settings, Help and the update control as presses of their own after a hairline, the row
+  the sidebar's foot draws (ADR-0152). This page still shows More.
+
+  The bar at the bottom (or the left and right arrow keys) steps through the cases. Keys: T theme, M motion, S window
+  size, F fly Watcher's owl, H show or hide the controls.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto — Watcher without tabs, and its owl's glow, prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Spline Sans Mono'; font-weight: 300 700; font-display: swap; src: url('../../src/renderer/src/assets/fonts/spline-sans-mono-latin.woff2') format('woff2'); }
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265); --tt-field: oklch(0.145 0.008 265); --tt-surface-elevated: oklch(0.185 0.008 265);
+  --tt-text: oklch(0.985 0.005 280); --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-hairline: oklch(0.305 0.02 265); --tt-field-border: oklch(0.375 0.024 265);
+  --tt-accent: oklch(0.714 0.104 183); --tt-on-accent: oklch(0.16 0.012 190);
+  --tt-hover: color-mix(in srgb, oklch(0.32 0.05 185) 70%, transparent); --tt-shadow-color: rgb(0 0 0 / 73%);
+  --tt-font: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --tt-mono: 'Spline Sans Mono', ui-monospace, Consolas, monospace;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85); --tt-field: oklch(0.99 0.003 85); --tt-surface-elevated: oklch(0.955 0.006 85);
+  --tt-text: oklch(0.2 0.01 265); --tt-text-2: oklch(0.36 0.012 265); --tt-text-muted: oklch(0.45 0.012 265);
+  --tt-hairline: oklch(0.88 0.006 85); --tt-field-border: oklch(0.78 0.01 85);
+  --tt-accent: oklch(0.52 0.1 183); --tt-on-accent: oklch(0.99 0.003 85);
+  --tt-hover: oklch(0.93 0.02 185); --tt-shadow-color: rgb(0 0 0 / 22%);
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: #2a2b30; color: var(--tt-text); font: 14px/1.45 var(--tt-font); overflow: hidden; }
+:root[data-theme='light'] body { background: #c9c9cc; }
+
+/* The window. With a size picked it is drawn at that size and scaled to fit what the controls leave. */
+.stage { position: fixed; inset: 0 312px 0 0; display: grid; place-items: center; }
+body[data-panel='off'] .stage { right: 0; }
+.win { position: relative; width: 100%; height: 100%; background: var(--tt-canvas); overflow: hidden; transform-origin: center center; flex: none; }
+.win[data-sized] { position: absolute; left: 50%; top: 50%; translate: -50% -50%; border-radius: 10px; box-shadow: 0 20px 60px rgb(0 0 0 / 50%); }
+
+/* The room's column is the new thread's: 760 px, and whatever is left over is two equal margins. */
+.room { position: absolute; inset: 0; display: grid; grid-template-rows: 48px auto minmax(0, 1fr) auto 54px; --gut: max(24px, calc((100% - 760px) / 2)); }
+.ascii { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.ascii--bg { z-index: 0; }
+.ascii--fg { z-index: 3; }
+.hits { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+.hits button { position: absolute; padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: pointer; pointer-events: auto; }
+.hits button:hover { background: color-mix(in oklab, var(--tt-text) 6%, transparent); }
+
+.head { position: relative; z-index: 5; display: flex; align-items: center; gap: 12px; padding: 0 0 0 12px; -webkit-app-region: drag; }
+.head .tile { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; background: color-mix(in oklab, var(--tt-accent) 22%, var(--tt-surface-elevated)); color: var(--tt-text); }
+.head h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.1px; }
+.head .list { -webkit-app-region: no-drag; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border-radius: 8px; border: 1px solid var(--tt-hairline); background: transparent; color: var(--tt-text-2); font: 500 12.5px var(--tt-font); cursor: pointer; }
+.head .count { color: var(--tt-text-muted); }
+.head .tabs { display: inline-flex; gap: 2px; -webkit-app-region: no-drag; }
+.head .tabs button { position: relative; width: 32px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: 500 12.5px var(--tt-font); cursor: pointer; }
+.head .tabs button[aria-selected='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.head .tabs .n { position: absolute; top: 0; right: -2px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 7px; background: var(--tt-accent); color: var(--tt-on-accent); font-size: 9.5px; line-height: 14px; }
+.head .tabs[hidden] { display: none; }
+.head .rooms { display: inline-flex; align-items: center; gap: 2px; -webkit-app-region: no-drag; }
+.head .rooms[hidden] { display: none; }
+.head .rooms .seg { display: inline-flex; gap: 2px; }
+.head .rooms button { display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); cursor: pointer; }
+.head .rooms button:hover { background: color-mix(in srgb, var(--tt-text) 6%, transparent); color: var(--tt-text); }
+.head .rooms [aria-selected='true'] { background: color-mix(in srgb, var(--tt-text) 12%, transparent); color: var(--tt-text); }
+.head .rooms .more { margin-left: 2px; }
+/* The room's way off the page is in its header now (Drake's pick on October 26, 2026), so the old floating dock is not drawn. */
+.dock .pill { visibility: hidden; }
+.head .stop { -webkit-app-region: no-drag; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--tt-hairline); background: transparent; color: var(--tt-text-2); font: 500 12.5px var(--tt-font); }
+.glance { position: relative; z-index: 5; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; padding: 2px var(--gut) 6px; font-size: 12.5px; }
+.glance:empty { padding: 0; }
+.glance b { color: var(--tt-text); font-weight: 600; }
+.glance .nm { display: inline-flex; align-items: baseline; gap: 6px; color: var(--tt-text-2); }
+.glance .nm i { width: 7px; height: 7px; border-radius: 50%; background: var(--tt-accent); align-self: center; }
+.glance .nm[data-kind='failed'] i { background: oklch(0.68 0.15 30); }
+.glance .nm u { text-decoration: none; color: var(--tt-text); font-weight: 500; }
+.glance .nm span { color: var(--tt-text-muted); }
+.head .grow { flex: 1; }
+.head .wc { display: flex; -webkit-app-region: no-drag; }
+.head .wc span { width: 46px; height: 48px; display: grid; place-items: center; color: var(--tt-text-muted); font-size: 13px; }
+
+.main { position: relative; z-index: 2; min-height: 0; overflow-y: auto; padding: 22px var(--gut) 10px; scrollbar-width: thin; }
+.panelview { display: flex; flex-direction: column; gap: 14px; min-height: 100%; }
+.panelview[hidden] { display: none; }
+.msg-user { align-self: flex-end; max-width: 70%; padding: 9px 13px; border-radius: 14px; background: var(--tt-surface-elevated); }
+.msg-watcher { color: var(--tt-text); line-height: 1.6; }
+.msg-watcher p { margin: 0 0 8px; }
+.msg-watcher .who { color: var(--tt-text-muted); font-size: 12.5px; margin-bottom: 4px; }
+.spacer { flex: 1; }
+.wcard { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; padding: 11px 12px 11px 14px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-field); }
+.wcard .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tt-text-muted); }
+.wcard[data-state='idle'] .dot { background: transparent; box-shadow: inset 0 0 0 1.5px var(--tt-text-muted); }
+.wcard[data-state='needs'] .dot { background: var(--tt-accent); }
+.wcard .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.wcard .st { grid-column: 2; color: var(--tt-text-muted); font-size: 12.5px; }
+.wcard[data-state='needs'] .st { color: var(--tt-text-2); }
+.wcard button { grid-row: 1 / span 2; grid-column: 3; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--tt-hairline); background: transparent; color: var(--tt-text-2); font: 500 12.5px var(--tt-font); cursor: pointer; }
+.panelview[data-view='visualize'] { height: 100%; }
+/* Full width, as #1349 merged it: the picture breaks out of the column to the pane's edges. */
+.room[data-viz='full'] .panelview[data-view='visualize'] { margin-inline: calc(-1 * var(--gut-px)); }
+/* Behind its edges: the owls and their buttons go under the picture, which covers them where its clusters reach. */
+.room[data-viz='full'][data-tab='visualize'] :is(.ascii--fg, .hits) { z-index: 1; }
+.viz { position: relative; height: 100%; min-height: 360px; }
+.viz svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.viz .hull { fill: color-mix(in srgb, var(--tt-surface-elevated) 35%, transparent); stroke: var(--tt-hairline); }
+.viz .edge { fill: none; stroke: color-mix(in srgb, var(--tt-text-muted) 45%, transparent); stroke-width: 1.1; }
+.viz .edge[data-lit] { stroke: var(--tt-accent); stroke-width: 1.6; }
+.viz .vowl { position: absolute; z-index: 3; display: grid; place-items: center; width: 50px; height: 50px; border: 1px solid var(--tt-hairline); border-radius: 50%;
+  background: var(--tt-surface-elevated); color: var(--tt-accent); transform: translate(-50%, -50%); }
+.viz .cname { position: absolute; z-index: 1; margin: 0; overflow: hidden; color: var(--tt-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.viz .cname b { color: var(--tt-text); font-weight: 600; }
+.viz .vnode { position: absolute; z-index: 2; display: flex; align-items: center; gap: 7px; height: 22px; max-width: var(--w); padding: 0 6px 0 4px; overflow: hidden; border-radius: 7px;
+  background: color-mix(in srgb, var(--tt-surface-elevated) 45%, var(--tt-canvas)); color: var(--tt-text); font-size: 12.5px; white-space: nowrap; transform: translate(-9px, -11px); }
+.viz .vnode[data-mirror] { flex-direction: row-reverse; padding: 0 4px 0 6px; transform: translate(calc(-100% + 9px), -11px); }
+.viz .vnode span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.viz .vnode i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--tt-text-muted); }
+.viz .vnode[data-state='needs'] i { background: var(--tt-accent); }
+.viz .vnode[data-state='idle'] i { background: transparent; box-shadow: inset 0 0 0 1.5px var(--tt-text-muted); }
+.viz .cap { position: absolute; left: 0; right: 0; bottom: 8px; margin: 0; color: var(--tt-text-muted); font-size: 12px; text-align: center; }
+.empty-note { color: var(--tt-text-muted); text-align: center; margin: auto; }
+
+.compose { position: relative; z-index: 2; padding: 10px var(--gut) 8px; }
+.prompt { border: 0; border-radius: 14px; background: var(--tt-field); padding: 10px 10px 8px 14px; box-shadow: 0 10px 30px -18px var(--tt-shadow-color); }
+.prompt textarea { width: 100%; min-height: 44px; resize: none; border: 0; outline: 0; background: transparent; color: var(--tt-text); font: 14px/1.5 var(--tt-font); }
+.prompt textarea::placeholder { color: var(--tt-text-muted); }
+.prompt .foot { display: flex; align-items: center; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border-radius: 13px; border: 1px solid var(--tt-hairline); background: transparent; color: var(--tt-text-2); font: 500 12px var(--tt-font); cursor: pointer; }
+.send { margin-left: auto; width: 30px; height: 30px; border-radius: 50%; border: 0; display: grid; place-items: center; background: var(--tt-hover); color: var(--tt-text-muted); }
+:is(button, .chip):focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; }
+
+.dock { position: relative; z-index: 2; display: flex; justify-content: center; align-items: flex-start; padding-top: 2px; }
+.pill { display: flex; align-items: center; gap: 2px; height: 42px; padding: 0 5px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: var(--tt-surface-elevated); box-shadow: 0 8px 22px -10px var(--tt-shadow-color); }
+.pill .ico { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; color: var(--tt-text-2); }
+.pill .sep { width: 1px; height: 18px; margin: 0 5px; background: var(--tt-hairline); }
+.pill .seg { display: grid; grid-template-columns: 1fr 46px 1fr; width: 236px; border-radius: 999px; background: var(--tt-field); padding: 2px; }
+.pill .seg span { height: 30px; display: grid; place-items: center; border-radius: 999px; color: var(--tt-text-2); font-size: 12.5px; font-weight: 500; }
+.pill .seg span.on { background: var(--tt-hover); color: var(--tt-text); }
+
+.owl-tip { position: absolute; z-index: 6; max-width: 240px; padding: 6px 10px 7px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-surface-elevated); box-shadow: 0 10px 30px -12px var(--tt-shadow-color); pointer-events: none; font-size: 12.5px; line-height: 1.35; }
+.owl-tip[hidden] { display: none; }
+.owl-tip b { display: block; font-weight: 600; color: var(--tt-text); }
+.owl-tip span { color: var(--tt-text-muted); }
+.toast { position: absolute; left: 50%; bottom: 62px; z-index: 7; transform: translateX(-50%); padding: 8px 14px; border-radius: 10px; border: 1px solid var(--tt-hairline); background: var(--tt-surface-elevated); box-shadow: 0 10px 30px -12px var(--tt-shadow-color); font-size: 13px; transition: opacity .25s; }
+.toast[hidden] { display: block; opacity: 0; pointer-events: none; }
+
+/* The prototype's own controls: not part of the design. */
+/* The case switcher: not part of the design. */
+.switch { position: fixed; left: calc(50% - 156px); bottom: 12px; z-index: 30; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 999px; background: #0d0d0f; color: #fff; box-shadow: 0 8px 24px rgb(0 0 0 / 45%); font: 600 13px system-ui, sans-serif; }
+body[data-panel='off'] .switch { left: 50%; }
+.switch button { width: 36px; height: 36px; border-radius: 50%; border: 0; background: #1f1f24; color: #fff; font-size: 18px; cursor: pointer; }
+.switch span { min-width: 260px; padding: 0 8px; text-align: center; white-space: nowrap; }
+@media (max-width: 760px) {
+  .stage { inset: 0 0 64px 0 !important; }
+  .panel { top: auto; height: 55vh; width: 100%; box-shadow: 0 -10px 30px rgb(0 0 0 / 50%); }
+  .switch { left: 50% !important; bottom: 10px; }
+  .switch span { min-width: 0; max-width: 64vw; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+  .panel-show { top: auto; bottom: 74px; }
+}
+.panel { position: fixed; top: 0; right: 0; bottom: 0; width: 312px; z-index: 20; overflow-y: auto; padding: 14px 14px 20px; background: #0d0d0f; color: #e8e8ec; font: 12.5px/1.4 system-ui, sans-serif; }
+body[data-panel='off'] .panel { display: none; }
+.panel h2 { margin: 0 0 4px; font-size: 14px; }
+.panel h3 { margin: 16px 0 6px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: #8d8d96; }
+.panel .hint { margin: 0; color: #9a9aa3; }
+.panel button { height: 26px; padding: 0 9px; border-radius: 7px; border: 1px solid #34343a; background: #1b1b1f; color: #fff; font: 600 12px system-ui, sans-serif; cursor: pointer; }
+.panel button:hover { background: #26262b; }
+.panel button[aria-pressed='true'] { background: #2d5a55; border-color: #3f7a73; }
+.panel .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0; }
+.panel .row label { color: #b9b9c2; }
+.panel input[type=range] { flex: 1; accent-color: #56c4b6; }
+.panel .val { min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+.tlist { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.trow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 6px; padding: 6px 7px; border-radius: 7px; background: #17171b; }
+.trow .tt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trow .acts { display: flex; gap: 3px; grid-column: 1 / -1; }
+.trow .acts button { height: 22px; padding: 0 6px; font-size: 11px; }
+.trow[data-leaving] { opacity: .45; }
+.readout { margin: 0; padding: 8px; border-radius: 7px; background: #17171b; color: #b9b9c2; font: 11.5px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; }
+.panel-show { position: fixed; top: 8px; right: 8px; z-index: 21; display: none; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid #333; background: #0d0d0f; color: #fff; font: 600 12px system-ui; cursor: pointer; }
+body[data-panel='off'] .panel-show { display: block; }
+</style>
+</head>
+<body>
+<div class="stage" id="stage"><div class="win" id="win">
+  <div class="room" id="room">
+    <canvas class="ascii ascii--bg" id="bg" aria-hidden="true"></canvas>
+
+    <header class="head">
+      <span class="tile" role="img" aria-label="Sotto Owl"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="8" cy="8" r="5"/></svg></span>
+      <h1>Watcher</h1>
+      <button type="button" class="list">All threads <span class="count" id="allCount">9</span></button>
+      <div class="tabs" id="oldTabs" role="tablist" aria-label="Watcher’s view" hidden>
+        <button type="button" role="tab" data-tab="conversation" aria-selected="true" title="Conversation">▭</button>
+        <button type="button" role="tab" data-tab="watched" aria-selected="false" id="watchedTab" title="Watched">◉<span class="n" id="watchedN">0</span></button>
+        <button type="button" role="tab" data-tab="visualize" aria-selected="false" title="Visualize">⋔</button>
+      </div>
+      <div class="rooms" id="roomsLeft"><div class="seg" role="tablist" aria-label="Page"><button type="button" role="tab" aria-selected="false" title="Dictate" aria-label="Dictate"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></button><button type="button" role="tab" aria-selected="true" title="Watcher" aria-label="Watcher"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4l3 3h8l3-3v9a7 7 0 0 1-14 0Z"/><circle cx="9.5" cy="11" r="1.6"/><circle cx="14.5" cy="11" r="1.6"/><path d="M11 15h2l-1 1.5Z"/></svg></button><button type="button" role="tab" aria-selected="false" title="Threads" aria-label="Threads"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2Z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg></button></div><button type="button" class="more" title="More: Usage, Settings, Help" aria-label="More: Usage, Settings, Help"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button></div>
+      <span class="grow"></span>
+      <button type="button" class="stop">Stop all</button>
+      <div class="rooms" id="roomsRight"><div class="seg" role="tablist" aria-label="Page"><button type="button" role="tab" aria-selected="false" title="Dictate" aria-label="Dictate"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></button><button type="button" role="tab" aria-selected="true" title="Watcher" aria-label="Watcher"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4l3 3h8l3-3v9a7 7 0 0 1-14 0Z"/><circle cx="9.5" cy="11" r="1.6"/><circle cx="14.5" cy="11" r="1.6"/><path d="M11 15h2l-1 1.5Z"/></svg></button><button type="button" role="tab" aria-selected="false" title="Threads" aria-label="Threads"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2Z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg></button></div><button type="button" class="more" title="More: Usage, Settings, Help" aria-label="More: Usage, Settings, Help"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button></div>
+      <div class="wc" aria-hidden="true"><span>—</span><span>☐</span><span>✕</span></div>
+    </header>
+
+    <section class="glance" id="glance" aria-label="Needs you"></section>
+
+    <div class="main" id="main">
+      <section class="panelview" data-view="conversation">
+        <div class="spacer"></div>
+        <div class="msg-user">Watch the host update fix and the Settings copy pass. Tell me when either needs me.</div>
+        <div class="msg-watcher"><div class="who">Watcher</div>
+          <p>Both are running. The host update fix is on its second test run; the Settings pass has rewritten four labels and is checking contrast in light mode.</p>
+          <p>I’ll say when one of them asks you something. I won’t answer for you.</p></div>
+        <div class="msg-user">Start one more to profile main’s update path with 300 threads.</div>
+        <div class="msg-watcher"><div class="who">Watcher</div>
+          <p>Started “Profile main’s update path” on Opus 5.5 in its own worktree, and I’m watching it.</p></div>
+      </section>
+      <section class="panelview" data-view="watched" hidden><div id="watchedList" class="panelview"></div></section>
+      <section class="panelview" data-view="visualize" hidden>
+        <div class="viz" id="viz"></div>
+      </section>
+    </div>
+
+    <div class="compose" id="compose">
+      <form class="prompt" id="form" onsubmit="return false">
+        <textarea id="msg" rows="2" placeholder="Message Watcher" aria-label="Watcher message"></textarea>
+        <div class="foot">
+          <button type="button" class="chip">Opus 5.5 ▾</button>
+          <button type="button" class="chip">High ▾</button>
+          <button type="button" class="chip">Ask before edits ▾</button>
+          <button type="button" class="send" aria-label="Send" disabled>↑</button>
+        </div>
+      </form>
+    </div>
+
+    <canvas class="ascii ascii--fg" id="fg" aria-hidden="true"></canvas>
+    <div class="hits" id="hits" aria-hidden="true"></div>
+    <div class="owl-tip" id="tip" hidden></div>
+    <div class="toast" id="toast" hidden></div>
+
+    <nav class="dock" aria-label="Pages">
+      <div class="pill">
+        <span class="ico" title="History">◷</span><span class="ico" title="Usage">▥</span><span class="ico" title="Settings">⚙</span><span class="ico" title="Help">?</span>
+        <span class="sep"></span>
+        <div class="seg"><span>Dictate</span><span class="on">●</span><span>Threads</span></div>
+      </div>
+    </nav>
+  </div>
+</div></div>
+
+<button type="button" class="panel-show" id="panelShow">Controls (H)</button>
+<div class="switch" role="group" aria-label="Prototype cases"><button type="button" id="prev" aria-label="Previous case">‹</button><span id="caseName"></span><button type="button" id="next" aria-label="Next case">›</button></div>
+<aside class="panel" id="panel">
+  <h2>Watcher without tabs</h2>
+  <p class="hint">Prototype controls, not part of the design. Keys: ← → case · T theme · M motion · S size · F fly · H hide.</p>
+
+  <h3>What needs you, besides watched threads</h3>
+  <div class="row" data-group="extra"><button type="button" data-v="none">Nothing</button><button type="button" data-v="question">A question card</button><button type="button" data-v="prototype">A prototype to review</button><button type="button" data-v="failed">A failed turn</button></div>
+  <div class="row"><label>Header</label></div>
+  <div class="row" data-group="header"><button type="button" data-v="new">Without tabs</button><button type="button" data-v="old">Today’s, with tabs</button></div>
+
+  <h3>Watched threads</h3>
+  <div class="row"><label for="count">Count</label><input type="range" id="count" min="0" max="25" value="4"><span class="val" id="countVal">4</span></div>
+  <div class="row"><button type="button" id="add">Add watched thread (A)</button><button type="button" id="settle">Settle one (X)</button></div>
+  <div class="tlist" id="tlist"></div>
+
+  <h3>Watcher’s owl</h3>
+  <div class="row"><button type="button" id="fly">Fly now (F)</button><span class="hint" id="flyNote"></span></div>
+
+  <h3>Window</h3>
+  <div class="row"><button type="button" id="theme"></button><button type="button" id="motion"></button><button type="button" id="size"></button></div>
+
+  <h3>State</h3>
+  <pre class="readout" id="readout"></pre>
+</aside>
+
+<script>
+'use strict'
+// ---------- prototype controls ----------
+const SIZES = [null, [1600, 1000], [1280, 800], [1100, 720], [960, 640], [820, 560]]
+const params = new URLSearchParams(location.search)
+const ui = {
+  theme: params.get('theme') === 'light' ? 'light' : 'dark',
+  reduced: params.get('motion') === 'reduced' ? true : params.get('motion') === 'full' ? false : matchMedia('(prefers-reduced-motion: reduce)').matches,
+  size: Math.min(SIZES.length - 1, Math.max(0, Number(params.get('size') ?? (innerWidth < 900 ? 3 : 0)) || 0)),
+  cross: params.get('cross') === 'front' ? 'front' : 'behind',
+  moon: params.get('moon') === 'left' ? 'left' : 'right',
+  narrow: params.get('narrow') === 'hide' ? 'hide' : 'rail',
+  min: clampInt(Number(params.get('min')) || 160, 100, 300),
+  tab: 'conversation',
+  viz: 'column',
+  extra: 'none',
+  header: 'new',
+  case: Math.max(0, Math.min(5, Number(params.get('case') ?? 0) || 0)),
+}
+function clampInt(v, a, b) { return Math.max(a, Math.min(b, Math.round(v))) }
+const $ = id => document.getElementById(id)
+const room = $('room'), win = $('win'), bgCanvas = $('bg'), fgCanvas = $('fg')
+
+function syncUrl() {
+  const p = new URLSearchParams()
+  if (ui.theme === 'light') p.set('theme', 'light')
+  if (ui.size) p.set('size', ui.size)
+  p.set('motion', ui.reduced ? 'reduced' : 'full')
+  if (ui.cross !== 'behind') p.set('cross', ui.cross)
+  if (ui.moon !== 'right') p.set('moon', ui.moon)
+  if (ui.narrow !== 'rail') p.set('narrow', ui.narrow)
+  if (ui.min !== 160) p.set('min', ui.min)
+  p.set('case', ui.case)
+  history.replaceState(null, '', `?${p}`)
+}
+function syncBar() {
+  $('theme').textContent = ui.theme === 'dark' ? 'Light (T)' : 'Dark (T)'
+  $('motion').textContent = ui.reduced ? 'Full motion (M)' : 'Reduced motion (M)'
+  const s = SIZES[ui.size]
+  $('size').textContent = s ? `${s[0]}×${s[1]} (S)` : 'Fit window (S)'
+  for (const group of document.querySelectorAll('[data-group]')) for (const b of group.querySelectorAll('button')) b.setAttribute('aria-pressed', String(ui[group.dataset.group] === b.dataset.v))
+  $('flyNote').textContent = ui.reduced ? 'No flights with reduced motion.' : ''
+  document.documentElement.dataset.theme = ui.theme
+  room.dataset.viz = ui.viz === 'column' ? 'column' : 'full'
+  room.dataset.tab = ui.tab
+  for (const b of document.querySelectorAll('[role=tab]')) b.setAttribute('aria-selected', String(b.dataset.tab === ui.tab))
+  $('oldTabs').hidden = ui.header !== 'old'
+  $('roomsLeft').hidden = ui.header === 'old'
+  $('roomsRight').hidden = ui.header !== 'old'
+  $('caseName').textContent = `${ui.case + 1} of ${CASES.length}: ${CASES[ui.case].name}`
+  syncGlance()
+  for (const v of document.querySelectorAll('[data-view]')) v.hidden = v.dataset.view !== ui.tab
+  syncUrl()
+}
+for (const group of document.querySelectorAll('[data-group]')) group.addEventListener('click', event => {
+  const b = event.target.closest('button'); if (!b) return
+  ui[group.dataset.group] = b.dataset.v; syncBar(); lastSig = ''; wake()
+})
+$('theme').onclick = () => { ui.theme = ui.theme === 'dark' ? 'light' : 'dark'; syncBar(); buildPalette(); relayout() }
+$('motion').onclick = () => { ui.reduced = !ui.reduced; syncBar(); relayout() }
+$('size').onclick = () => { ui.size = (ui.size + 1) % SIZES.length; syncBar(); relayout() }
+$('add').onclick = () => addThread()
+$('settle').onclick = () => { const th = liveThreads()[0]; if (th) leave(th) }
+$('fly').onclick = () => flyNow()
+$('panelShow').onclick = () => togglePanel()
+function togglePanel() { document.body.dataset.panel = document.body.dataset.panel === 'off' ? 'on' : 'off'; relayout() }
+$('count').addEventListener('input', () => {
+  const n = Number($('count').value)
+  let live = liveThreads()
+  while (live.length < n) { addThread(); live = liveThreads() }
+  while (live.length > n) { leave(live[live.length - 1]); live = liveThreads() }
+})
+for (const b of document.querySelectorAll('[role=tab]')) b.onclick = () => toast('Today’s tabs, shown for comparison. They go away.')
+// The cases the bar steps through.
+const CASES = [
+  { name: 'At rest: nothing needs you', states: ['working', 'working', 'idle', 'working'], extra: 'none', header: 'new' },
+  { name: 'A watched thread asks a permission', states: ['working', 'needs', 'idle', 'working'], extra: 'none', header: 'new' },
+  { name: 'A question card in the conversation', states: ['working', 'working', 'idle', 'working'], extra: 'question', header: 'new' },
+  { name: 'A prototype waits for your review', states: ['working', 'working', 'idle', 'working'], extra: 'prototype', header: 'new' },
+  { name: 'Only a failed turn: no glow', states: ['working', 'working', 'idle', 'working'], extra: 'failed', header: 'new' },
+  { name: 'Before: today’s header, tabs left, buttons right', states: ['working', 'working', 'idle', 'working'], extra: 'none', header: 'old' },
+]
+function applyCase(k) {
+  ui.case = (k + CASES.length) % CASES.length
+  const c = CASES[ui.case]
+  ui.extra = c.extra; ui.header = c.header
+  liveThreads().forEach((th, i) => { th.state = c.states[i] ?? 'working' })
+  syncBar(); changed(); lastSig = ''; wake()
+}
+$('prev').onclick = () => applyCase(ui.case - 1)
+$('next').onclick = () => applyCase(ui.case + 1)
+const EXTRA = { question: ['Fix the tray icon in light mode', 'question'], prototype: ['Watcher without tabs', 'prototype to review'], failed: ['Bump node-pty', 'last turn failed'] }
+function needsList() {
+  const out = liveThreads().filter(th => th.state === 'needs').map(th => ({ title: th.title, why: 'permission', kind: 'permission' }))
+  if (ui.extra !== 'none') out.push({ title: EXTRA[ui.extra][0], why: EXTRA[ui.extra][1], kind: ui.extra })
+  return out
+}
+// Watcher's owl glows while the needs-you line names a question, a permission or a prototype to review.
+const watcherGlows = () => needsList().some(n => n.kind !== 'failed')
+function syncGlance() {
+  const list = needsList(), el = $('glance')
+  if (list.length === 0) { el.replaceChildren(); return }
+  el.replaceChildren(Object.assign(document.createElement('b'), { textContent: `${list.length} ${list.length === 1 ? 'needs' : 'need'} you` }),
+    ...list.map(n => { const s = document.createElement('span'); s.className = 'nm'; s.dataset.kind = n.kind; s.innerHTML = '<i></i><u></u><span></span>'; s.querySelector('u').textContent = n.title; s.querySelector('span').textContent = n.why; return s }))
+}
+addEventListener('keydown', event => {
+  const typing = event.target.closest?.('input[type=text], textarea, [contenteditable]')
+  if (typing || event.ctrlKey || event.metaKey || event.altKey) return
+  const k = event.key.toLowerCase()
+  if (k === 'f') flyNow()
+  else if (k === 't') $('theme').click()
+  else if (k === 'm') $('motion').click()
+  else if (k === 's') $('size').click()
+  else if (k === 'h') togglePanel()
+  else if (event.key === 'ArrowLeft') applyCase(ui.case - 1)
+  else if (event.key === 'ArrowRight') applyCase(ui.case + 1)
+})
+
+// ---------- small maths ----------
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
+const lerp = (a, b, t) => a + (b - a) * t
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t) }
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6d2b79f5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296 } }
+const rand = (a, b) => a + Math.random() * (b - a)
+function catmull(p0, p1, p2, p3, t) {
+  const t2 = t * t, t3 = t2 * t
+  return {
+    x: 0.5 * (2 * p1.x + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+    y: 0.5 * (2 * p1.y + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3),
+  }
+}
+function makePath(pts) {
+  const ext = [pts[0], ...pts, pts[pts.length - 1]]
+  const samples = [{ ...pts[0], d: 0 }]
+  for (let k = 1; k < ext.length - 2; k++) for (let j = 1; j <= 16; j++) {
+    const p = catmull(ext[k - 1], ext[k], ext[k + 1], ext[k + 2], j / 16), last = samples[samples.length - 1]
+    samples.push({ ...p, d: last.d + Math.hypot(p.x - last.x, p.y - last.y) })
+  }
+  return { samples, length: samples[samples.length - 1].d }
+}
+function along(path, u) {
+  const target = clamp(u, 0, 1) * path.length, S = path.samples
+  let lo = 0, hi = S.length - 1
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (S[mid].d < target) lo = mid; else hi = mid }
+  const a = S[lo], b = S[hi], t = b.d === a.d ? 0 : (target - a.d) / (b.d - a.d)
+  return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) }
+}
+const ease = k => clamp(k - Math.sin(2 * Math.PI * k) / (2 * Math.PI) * 0.55, 0, 1)
+let t0 = performance.now()
+const now = () => (performance.now() - t0) / 1000
+
+// ---------- watched threads ----------
+const TITLES = ['Fix the flaky host update test', 'Tidy the Settings copy', 'Profile main’s update path', 'Port pairing to Android',
+  'Review pull request 1090', 'Write the Owl features ADR', 'Draft notes for the next release', 'Chase the notarize failure on the Mac',
+  'Add the Grok Build effort picker', 'Trim the artifacts folder', 'Check the Omarchy widget chrome', 'Read memory once at start in main',
+  'Rename the composer’s skill chip', 'Measure the speech model’s load time', 'Fix the tray icon in light mode', 'Move the pairing QR into Settings',
+  'Cut the Linux typecheck time', 'Answer the stale branch notice', 'Find why the dock flickers', 'Shorten first-run setup',
+  'Test the 820 by 560 window', 'Write the delegation verification note', 'Re-run design captures on the Mac', 'Bump node-pty',
+  'Clean up old worktrees', 'Draft the cloud iPhone guide page', 'Check every theme’s contrast']
+const STATE_TEXT = { working: 'Working', idle: 'Idle, nothing to do', needs: 'Needs you: a permission is waiting' }
+const NEXT_STATE = { working: 'idle', idle: 'needs', needs: 'working' }
+let nextId = 1, titleCursor = 0
+const threads = [] // { id, title, state, slot (index, -1 in the pile, null before it has one), anim, added }
+const whirls = []  // { t0, t1 }: the moon's whirlpool is open between them
+const liveThreads = () => threads.filter(th => !isLeaving(th))
+const isLeaving = th => th.anim && (th.anim.kind === 'leave' || th.anim.kind === 'fadeout')
+let lastArrival = -10
+
+function addThread(instant = false, state) {
+  if (liveThreads().length >= 25) return
+  const used = new Set(threads.map(th => th.title))
+  let title = TITLES[titleCursor++ % TITLES.length]
+  for (let k = 0; used.has(title) && k < TITLES.length; k++) title = TITLES[titleCursor++ % TITLES.length]
+  const th = { id: nextId++, title, state: state ?? 'working', slot: null, anim: null, added: nextId }
+  threads.push(th)
+  reconcile(false)
+  if (!instant) {
+    const t = Math.max(now(), lastArrival + (ui.reduced ? 0.1 : 0.45))
+    lastArrival = t
+    th.anim = animFor('arrive', th, t)
+  }
+  changed(); wake()
+}
+function leave(th) {
+  if (isLeaving(th)) return
+  th.anim = animFor('leave', th, now())
+  reconcile(true)
+  changed(); wake()
+}
+function setState(th, state) { th.state = state; changed(); wake() }
+
+// Flights where the scene can show them; a fade where it cannot, or where motion is reduced.
+function animFor(kind, th, t) {
+  const flying = !ui.reduced && geo.mode === 'scene'
+  if (!flying || (th.slot === -1 && kind !== 'leave' && !geo.marker)) {
+    return { kind: kind === 'leave' ? 'fadeout' : 'fadein', t0: t, dur: geo.mode === 'none' ? 0 : 0.6 }
+  }
+  const target = posOf(th) ?? geo.moon
+  if (kind === 'arrive') {
+    const dur = clamp(Math.hypot(target.x - geo.moon.x, target.y - geo.moon.y) / 190, 1.3, 3.4)
+    whirls.push({ t0: t, t1: t + 0.55 + 0.5 }); moonRipple(t)
+    return { kind, t0: t, emerge: t + 0.55, dur }
+  }
+  if (kind === 'hop') return { kind, t0: t, from: { ...geo.marker }, dur: 1.2 }
+  const from = posOf(th) ?? geo.moon
+  const dur = clamp(Math.hypot(from.x - geo.moon.x, from.y - geo.moon.y) / 190, 1.3, 3.4)
+  whirls.push({ t0: t + dur - 0.55, t1: t + dur + 0.15 }); moonRipple(t + dur - 0.55)
+  return { kind: 'leave', t0: t, from, dur }
+}
+
+// Every live thread gets the lowest free spot. When there are more threads than spots, the last spot shows "+N" and the
+// rest wait in that pile; a spot that frees up takes the oldest one from the pile.
+function reconcile(animate) {
+  const cap = geo.slots.length
+  const held = new Set(threads.filter(th => isLeaving(th) && th.slot >= 0).map(th => th.slot))
+  const live = liveThreads()
+  const free = []
+  for (let k = 0; k < cap; k++) if (!held.has(k)) free.push(k)
+  const needMarker = live.length > free.length
+  const usable = new Set(needMarker ? free.filter(k => k !== cap - 1) : free)
+  geo.marker = needMarker && cap ? geo.slots[cap - 1] : null
+  const taken = new Set(), waiting = []
+  for (const th of live) {
+    if (th.slot !== null && th.slot >= 0 && usable.has(th.slot) && !taken.has(th.slot)) taken.add(th.slot)
+    else waiting.push(th)
+  }
+  waiting.sort((a, b) => a.added - b.added)
+  const open = [...usable].filter(k => !taken.has(k)).sort((a, b) => a - b)
+  for (const th of waiting) {
+    const was = th.slot
+    th.slot = open.length ? open.shift() : -1
+    if (animate && was === -1 && th.slot >= 0 && !th.anim) th.anim = animFor('hop', th, now())
+  }
+}
+function posOf(th) {
+  if (th.slot >= 0 && geo.slots[th.slot]) return geo.slots[th.slot]
+  return geo.marker
+}
+
+// ---------- the room's panel lists ----------
+let listKey = ''
+function changed() {
+  const live = liveThreads()
+  $('watchedN').textContent = live.length
+  $('watchedTab').setAttribute('aria-label', `Watched, ${live.length} ${live.length === 1 ? 'thread' : 'threads'}`)
+  $('allCount').textContent = live.length + 5
+  syncGlance()
+  $('count').value = live.length; $('countVal').textContent = live.length
+  const key = threads.map(th => `${th.id}${th.state}${isLeaving(th) ? 'l' : ''}`).join()
+  if (key === listKey) return
+  listKey = key
+  $('tlist').replaceChildren(...threads.map(th => {
+    const row = document.createElement('div'); row.className = 'trow'
+    if (isLeaving(th)) row.dataset.leaving = ''
+    const t = document.createElement('span'); t.className = 'tt'; t.textContent = th.title; t.title = th.title
+    const acts = document.createElement('div'); acts.className = 'acts'
+    for (const s of ['working', 'idle', 'needs']) {
+      const b = document.createElement('button'); b.type = 'button'; b.textContent = s === 'needs' ? 'Needs you' : s[0].toUpperCase() + s.slice(1)
+      b.setAttribute('aria-pressed', String(th.state === s)); b.onclick = () => setState(th, s); acts.append(b)
+    }
+    const st = document.createElement('button'); st.type = 'button'; st.textContent = 'Settle'; st.onclick = () => leave(th)
+    const uw = document.createElement('button'); uw.type = 'button'; uw.textContent = 'Unwatch'; uw.onclick = () => leave(th)
+    acts.append(st, uw)
+    row.append(t, acts)
+    return row
+  }))
+  const list = $('watchedList')
+  list.replaceChildren(...(live.length ? live.map(th => {
+    const card = document.createElement('div'); card.className = 'wcard'; card.dataset.state = th.state
+    card.innerHTML = '<i class="dot"></i><span class="t"></span><button type="button">Open</button><span class="st"></span>'
+    card.querySelector('.t').textContent = th.title; card.querySelector('.st').textContent = STATE_TEXT[th.state]
+    card.querySelector('button').onclick = () => openThread(th)
+    return card
+  }) : [Object.assign(document.createElement('p'), { className: 'empty-note', textContent: 'Watcher isn’t watching any threads.' })]))
+  renderViz()
+}
+// A stand-in for Watcher's picture as #1349 merged it: Watcher in the middle, the watched threads in clusters by
+// project on both sides, a line from Watcher to each. Only its width matters here.
+let vizKey = ''
+function renderViz() {
+  const viz = $('viz')
+  if (ui.tab !== 'visualize' || !viz.clientWidth) return
+  const live = liveThreads()
+  const W = viz.clientWidth, key = `${W}|${ui.viz}|${live.map(th => th.id + th.state).join()}`
+  if (key === vizKey) return
+  vizKey = key
+  const projects = [['Sotto', 'this computer'], ['Sotto-releases', 'this computer'], ['forge scripts', 'forge']]
+  const clusters = projects.map(([name, host], k) => ({ name, host, nodes: live.filter((_, i) => i % 3 === k) })).filter(c => c.nodes.length)
+  const centre = W / 2, owl = { x: centre, y: 44 }
+  const gap = Math.min(96, Math.max(64, W * 0.07)), side = Math.max(150, centre - gap - 14)
+  const ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg'), parts = []
+  const add = (tag, attrs) => { const el = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v); svg.append(el); return el }
+  let yL = 104, yR = 104
+  clusters.forEach((c, k) => {
+    const mirror = k % 2 === 0, x = mirror ? 14 : centre + gap, y = mirror ? yL : yR, h = 30 + c.nodes.length * 26 + 6
+    add('rect', { class: 'hull', x: x - 4, y, width: side + 8, height: h, rx: 12 })
+    const name = document.createElement('p'); name.className = 'cname'
+    Object.assign(name.style, { left: `${x + 8}px`, top: `${y + 7}px`, maxWidth: `${side - 16}px`, textAlign: mirror ? 'right' : 'left', width: `${side - 16}px` })
+    name.innerHTML = '<b></b> · '; name.firstChild.textContent = c.name; name.append(c.host); parts.push(name)
+    c.nodes.forEach((th, i) => {
+      const dx = mirror ? x + side - 12 : x + 12, dy = y + 30 + i * 26 + 13
+      add('path', { class: 'edge', d: `M${owl.x} ${owl.y} Q ${(owl.x + dx) / 2} ${dy} ${dx} ${dy}`, ...(th.state === 'needs' ? { 'data-lit': '' } : {}) })
+      const n = document.createElement('span'); n.className = 'vnode'; n.dataset.state = th.state
+      if (mirror) n.dataset.mirror = ''
+      Object.assign(n.style, { left: `${dx}px`, top: `${dy}px`, '--w': `${side - 22}px` })
+      n.style.setProperty('--w', `${side - 22}px`)
+      n.innerHTML = '<i></i><span></span>'; n.lastChild.textContent = th.title; parts.push(n)
+    })
+    if (mirror) yL += h + 18; else yR += h + 18
+  })
+  const o = document.createElement('span'); o.className = 'vowl'; Object.assign(o.style, { left: `${owl.x}px`, top: `${owl.y}px` }); o.textContent = '◉'
+  const cap = document.createElement('p'); cap.className = 'cap'
+  cap.textContent = ui.viz === 'column' ? 'The constellation drawn inside the 760 px column; the owls keep the margins.'
+    : ui.viz === 'hide' ? 'The constellation at full width, as merged; the owl scene steps away while Visualize shows.'
+    : 'The constellation at full width, as merged; the owls draw in the margins behind its outer clusters.'
+  viz.replaceChildren(svg, ...parts, o, cap)
+}
+
+let toastTimer = null
+function toast(text) {
+  const el = $('toast'); el.textContent = text; el.hidden = false
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true }, 2200)
+}
+function openThread(th) { toast(`Opens “${th.title}” beside Watcher’s conversation`) }
+
+// ---------- grid and fields ----------
+const SS = 2
+const cw = 7, ch = 12
+let W = 0, H = 0, cols = 0, rows = 0, scale = 1, dpr = 1, headRows = 4
+let bgD, bgA, quiet, owlD, owlA, maskCol, marginCols = []
+let stars = []
+let geo = { slots: [], mode: 'none', marker: null }
+let canvasColor = '#000'
+const fieldCanvas = document.createElement('canvas'), accentCanvas = document.createElement('canvas')
+const owlCanvas = document.createElement('canvas'), owlAccentCanvas = document.createElement('canvas')
+const fx = fieldCanvas.getContext('2d', { willReadFrequently: true }), ax = accentCanvas.getContext('2d', { willReadFrequently: true })
+const ox = owlCanvas.getContext('2d', { willReadFrequently: true }), oax = owlAccentCanvas.getContext('2d', { willReadFrequently: true })
+const bgx = bgCanvas.getContext('2d'), fgx = fgCanvas.getContext('2d')
+
+function readField(ctx, out, c0, r0, cn, rn) {
+  if (cn <= 0 || rn <= 0) return
+  const data = ctx.getImageData(c0 * SS, r0 * SS, cn * SS, rn * SS).data
+  const stride = cn * SS
+  for (let r = 0; r < rn; r++) for (let c = 0; c < cn; c++) {
+    let sum = 0
+    for (let y = 0; y < SS; y++) for (let x = 0; x < SS; x++) sum += data[((r * SS + y) * stride + c * SS + x) * 4 + 3]
+    out[(r0 + r) * cols + c0 + c] = sum / (SS * SS * 255)
+  }
+}
+function roomRect(el) {
+  const r = el.getBoundingClientRect(), base = room.getBoundingClientRect()
+  return { x: (r.left - base.left) / scale, y: (r.top - base.top) / scale, w: r.width / scale, h: r.height / scale }
+}
+function sizeWindow() {
+  const s = SIZES[ui.size]
+  const stage = $('stage').getBoundingClientRect()
+  if (s) {
+    win.style.width = `${s[0]}px`; win.style.height = `${s[1]}px`; win.dataset.sized = ''
+    scale = Math.min(1, (stage.width - 24) / s[0], (stage.height - 16) / s[1])
+    win.style.transform = `scale(${scale})`
+  } else {
+    win.style.width = '100%'; win.style.height = '100%'; delete win.dataset.sized
+    win.style.transform = ''; scale = 1
+  }
+}
+
+// ---------- the scene's layout ----------
+const SPOT = 44 // pixels between small owls
+function limb(x0, y0, x1, y1, sag = 5) { return { x0, y0, x1, y1, sag } }
+function limbY(l, x) { const t = clamp((x - l.x0) / (l.x1 - l.x0), 0, 1); return lerp(l.y0, l.y1, t) + 2 * t * (1 - t) * l.sag }
+function limbSpots(l, group, avoid) {
+  const out = [], dir = Math.sign(l.x1 - l.x0)
+  for (let x = l.x1 - dir * 20; dir * (x - l.x0) > 24; x -= dir * SPOT) {
+    if (avoid.some(a => Math.abs(x - a.x) < a.w)) continue
+    out.push({ x, y: limbY(l, x), group })
+  }
+  return out
+}
+const groundAt = (g, x) => g.groundY + Math.sin(x * 0.013) * 3 + Math.sin(x * 0.051) * 1.5
+
+function layoutScene() {
+  const comp = roomRect(document.querySelector('.prompt'))
+  const headH = 48, dockH = 54
+  const gut = Math.max(24, (W - 760) / 2)
+  const colL = gut, colR = W - gut
+  const away = ui.viz === 'hide' && ui.tab === 'visualize'
+  const mode = away ? 'none' : gut >= ui.min ? 'scene' : ui.narrow === 'rail' ? 'rail' : 'none'
+  const groundY = comp.y + comp.h * 0.55
+  const sky = groundY - headH
+  const L = { x0: 6, x1: colL - 14 }, R = { x0: colR + 14, x1: W - 6 }
+  const Mw = L.x1 - L.x0
+  const s = clamp(Math.min(gut / 225, sky / 330), 0.8, 1.9)
+  room.style.setProperty('--gut-px', `${gut}px`)
+  const g = { comp, headH, dockH, colL, colR, gut, mode, away, groundY, sky, L, R, Mw, s, slots: [], marker: null, horizon: groundY - sky * 0.3, groups: {} }
+  if (mode === 'rail') {
+    // Each margin keeps a column of owl eyes, the right one first.
+    for (const x of [colR + gut / 2, gut / 2]) for (let y = headH + 26; y < H - 14; y += 26) g.slots.push({ x, y, group: 'rail' })
+    g.groups = { rail: g.slots.length }
+    return g
+  }
+  if (mode === 'none') return g
+  const lh = sky * 0.8, rh = sky * 0.64
+  const lt = { x: L.x0 + Mw * 0.3, y: groundY + 4, h: lh, dir: 1 }
+  const rt = { x: R.x1 - Mw * 0.3, y: groundY + 4, h: rh, dir: -1 }
+  lt.limbs = [
+    limb(lt.x, groundY - lh * 0.42, L.x1 - 2, groundY - lh * 0.47),                          // Watcher's, toward the room
+    limb(lt.x, groundY - lh * 0.56, lt.x + (L.x1 - lt.x) * 0.62, groundY - lh * 0.63, 3),     // higher, toward the room
+    limb(lt.x, groundY - lh * 0.27, Math.max(L.x0 + 4, lt.x - Mw * 0.29), groundY - lh * 0.32), // outward
+  ]
+  rt.limbs = [limb(rt.x, groundY - rh * 0.48, R.x0 + 2, groundY - rh * 0.53)]
+  const homeX = L.x1 - 2 - 26 * s, visitX = rt.x - 30 * s
+  g.home = { x: homeX, y: limbY(lt.limbs[0], homeX) }
+  g.visit = { x: visitX, y: limbY(rt.limbs[0], visitX) }
+  g.lt = lt; g.rt = rt
+  // The composer's branches: one grows out of each side, just under its top edge, and rises a little into the margin.
+  // Watcher's owl perches on the one nearest the tree it came from, its whole body in the margin.
+  const by = comp.y + 12, reach = 64 * s + 44
+  g.branches = {
+    left: limb(colL - 8, by, Math.max(L.x0 + 8, colL - 8 - reach), by - 12 * s, -4),
+    right: limb(colR + 8, by, Math.min(R.x1 - 8, colR + 8 + reach), by - 12 * s, -4),
+  }
+  g.perchAt = {}
+  for (const side of ['left', 'right']) { const b = g.branches[side], x = b.x0 + Math.sign(b.x1 - b.x0) * (22 * s + 10); g.perchAt[side] = { x, y: limbY(b, x) } }
+  // Ground owls stand under a branch's outer part; only its root, where it leaves the composer, is too low for them.
+  const underBranch = x => [g.branches.left, g.branches.right].some(b => Math.abs(x - b.x0) < 40)
+  const owlW = 20 * s + 22
+  // The spots, in the order they fill: the limb across from Watcher, then Watcher's own tree, then the ground.
+  const limbSpotsR = limbSpots(rt.limbs[0], 'limb', [{ x: g.visit.x, w: owlW }])
+  const treeSpots = [...limbSpots(lt.limbs[0], 'tree', [{ x: g.home.x, w: owlW }]), ...limbSpots(lt.limbs[1], 'tree', [{ x: g.home.x, w: owlW }]), ...limbSpots(lt.limbs[2], 'tree', [])]
+  const ground = []
+  for (let x = R.x0 + 20; x < R.x1 - 16; x += SPOT) if (Math.abs(x - rt.x) > 30 && !underBranch(x)) ground.push({ x, y: groundAt(g, x), group: 'ground' })
+  for (let x = L.x1 - 20; x > L.x0 + 16; x -= SPOT) if (Math.abs(x - lt.x) > 30 && !underBranch(x)) ground.push({ x, y: groundAt(g, x), group: 'ground' })
+  g.slots = [...limbSpotsR, ...treeSpots, ...ground]
+  g.groups = { limb: limbSpotsR.length, tree: treeSpots.length, ground: ground.length }
+  const M = ui.moon === 'right' ? R : L
+  const moonR = clamp(Mw * 0.1, 15, 44)
+  g.moon = { x: ui.moon === 'right' ? M.x0 + Mw * 0.34 : M.x0 + Mw * 0.7, y: headH + Math.max(moonR + 12, sky * 0.15 + moonR * 0.5), r: moonR }
+  return g
+}
+
+function buildBackground() {
+  const g = geo
+  fieldCanvas.width = accentCanvas.width = owlCanvas.width = owlAccentCanvas.width = cols * SS
+  fieldCanvas.height = accentCanvas.height = owlCanvas.height = owlAccentCanvas.height = rows * SS
+  for (const ctx of [fx, ax, ox, oax]) { ctx.setTransform(SS / cw, 0, 0, SS / ch, 0, 0); ctx.fillStyle = ctx.strokeStyle = '#fff' }
+  fx.clearRect(0, 0, W, H); ax.clearRect(0, 0, W, H)
+  bgD = new Float32Array(cols * rows); bgA = new Float32Array(cols * rows)
+  owlD = new Float32Array(cols * rows); owlA = new Float32Array(cols * rows)
+  quiet = new Float32Array(cols * rows)
+  // Which cells are margin: never the column, never the strip.
+  maskCol = new Uint8Array(cols)
+  for (let c = 0; c < cols; c++) { const px = (c + 0.5) * cw; maskCol[c] = px < g.colL - 8 ? 1 : px > g.colR + 8 ? 2 : 0 }
+  marginCols = [...maskCol.keys()].filter(c => maskCol[c])
+  stars = []
+  bgx.setTransform(dpr, 0, 0, dpr, 0, 0); bgx.clearRect(0, 0, W, H)
+  if (g.mode !== 'scene') return
+  const R = rng(7), sky = g.sky, L = g.L
+
+  // Far, middle and near hills, open on the left and lower toward the right.
+  const hill = (base, amp, seed, alpha, fade, ridge) => {
+    const r = rng(seed); const ph = [r() * 6, r() * 6, r() * 6]
+    fx.globalAlpha = alpha; fx.beginPath(); fx.moveTo(0, g.groundY + 2)
+    for (let x = 0; x <= W; x += 6) {
+      const k = x / W, lift = (1 - smooth(0.25, fade, k) * 0.75) * amp
+      fx.lineTo(x, base - lift * (0.55 + 0.25 * Math.sin(k * 7 + ph[0]) + 0.15 * Math.sin(k * 17 + ph[1]) + 0.05 * Math.sin(k * 41 + ph[2])))
+    }
+    fx.lineTo(W, g.groundY + 2); fx.closePath(); fx.fill()
+    fx.globalAlpha = ridge; fx.lineWidth = 5; fx.stroke()
+  }
+  hill(g.horizon, sky * 0.22, 11, 0.03, 0.6, 0.45)
+  hill(g.horizon + sky * 0.1, sky * 0.16, 23, 0.04, 0.5, 0.55)
+  hill(g.groundY - sky * 0.04, sky * 0.12, 37, 0.05, 0.42, 0.65)
+
+  // Furrows and a river in the left margin's near fields, pines on its far hills.
+  fx.globalAlpha = 0.3; fx.lineWidth = 3.5
+  for (let i = 0; i < 6; i++) { const y = g.groundY - sky * 0.05 + i * 11 - 30; fx.beginPath(); fx.moveTo(0, y + 26); fx.quadraticCurveTo(L.x1 * 0.45, y, L.x1 * 0.9, y + 16); fx.stroke() }
+  const river = new Path2D()
+  river.moveTo(L.x1 * 0.8, g.horizon + 6)
+  river.bezierCurveTo(L.x1 * 0.55, g.horizon + sky * 0.14, L.x1 * 0.7, g.groundY - sky * 0.03, L.x1 * 0.35, g.groundY + 20)
+  river.quadraticCurveTo(L.x1 * 0.12, g.groundY + 45, -10, H - g.dockH)
+  fx.globalCompositeOperation = 'destination-out'
+  for (const [w, a] of [[5, 1], [12, 0.6]]) { fx.lineWidth = w; fx.globalAlpha = a; fx.stroke(river) }
+  fx.globalCompositeOperation = 'source-over'
+  ax.globalAlpha = 0.7; ax.lineWidth = 5; ax.stroke(river); fx.globalAlpha = 0.22; fx.lineWidth = 4; fx.stroke(river)
+  for (let i = 0; i < 9; i++) {
+    const x = L.x1 * (0.15 + R() * 0.8), y = g.horizon + sky * (0.03 + R() * 0.12), h = 10 + R() * 14
+    fx.globalAlpha = 0.4; fx.beginPath(); fx.moveTo(x, y - h); fx.lineTo(x + h * 0.35, y); fx.lineTo(x - h * 0.35, y); fx.fill()
+  }
+
+  // The ground, with grass along its edge.
+  const grad = fx.createLinearGradient(0, g.groundY, 0, H)
+  grad.addColorStop(0, 'rgba(255,255,255,.07)'); grad.addColorStop(0.4, 'rgba(255,255,255,.03)'); grad.addColorStop(1, 'rgba(255,255,255,0)')
+  fx.globalAlpha = 1; fx.fillStyle = grad
+  fx.beginPath(); fx.moveTo(0, g.groundY); for (let x = 0; x <= W; x += 10) fx.lineTo(x, groundAt(g, x)); fx.lineTo(W, H); fx.lineTo(0, H); fx.closePath(); fx.fill()
+  fx.fillStyle = '#fff'; fx.globalAlpha = 0.6; fx.lineWidth = 5
+  fx.beginPath(); fx.moveTo(0, g.groundY); for (let x = 0; x <= W; x += 10) fx.lineTo(x, groundAt(g, x)); fx.stroke()
+  fx.lineWidth = 3; fx.globalAlpha = 0.45
+  for (let x = 4; x < W; x += 5 + R() * 9) { const h = 4 + R() * 9, y = g.groundY + Math.sin(x * 0.013) * 3; fx.beginPath(); fx.moveTo(x, y + 2); fx.lineTo(x + (R() - 0.5) * 5, y - h); fx.stroke() }
+
+  // The moon and its glow.
+  const m = g.moon
+  fx.globalAlpha = 0.05; for (let k = 2.4; k > 1.2; k -= 0.4) { fx.beginPath(); fx.arc(m.x, m.y, m.r * k, 0, 7); fx.fill() }
+  fx.globalAlpha = 0.3; fx.beginPath(); fx.arc(m.x, m.y, m.r, 0, 7); fx.fill()
+  fx.globalAlpha = 1; fx.lineWidth = 6; fx.beginPath(); fx.arc(m.x, m.y, m.r - 1.5, 0, 7); fx.stroke()
+  fx.globalCompositeOperation = 'destination-out'; fx.globalAlpha = 0.35
+  for (const [dx, dy, r] of [[-0.3, -0.25, 0.22], [0.25, 0.1, 0.16], [-0.05, 0.4, 0.12], [0.35, -0.38, 0.09]]) { fx.beginPath(); fx.arc(m.x + dx * m.r, m.y + dy * m.r, r * m.r, 0, 7); fx.fill() }
+  fx.globalCompositeOperation = 'source-over'
+  const glow = ax.createRadialGradient(m.x, m.y, m.r * 0.9, m.x, m.y, m.r * 2.8)
+  glow.addColorStop(0, 'rgba(255,255,255,.55)'); glow.addColorStop(1, 'rgba(255,255,255,0)')
+  ax.globalAlpha = 1; ax.fillStyle = glow; ax.beginPath(); ax.arc(m.x, m.y, m.r * 2.8, 0, 7); ax.fill(); ax.fillStyle = '#fff'
+  ax.globalCompositeOperation = 'destination-out'; ax.beginPath(); ax.arc(m.x, m.y, m.r * 0.98, 0, 7); ax.fill(); ax.globalCompositeOperation = 'source-over'
+
+  tree(g.lt, 101, true)
+  tree(g.rt, 202, false)
+  for (const b of [g.branches.left, g.branches.right]) {
+    const d = Math.sign(b.x1 - b.x0), w = Math.max(5, 7 * g.s)
+    fx.globalAlpha = 0.8; fx.lineCap = 'round'; fx.lineWidth = w
+    fx.beginPath(); fx.moveTo(b.x0, b.y0); fx.quadraticCurveTo((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2 + b.sag, b.x1, b.y1); fx.stroke()
+    // A twig off its end and a few leaves, so it reads as a branch and not a shelf.
+    fx.lineWidth = Math.max(2.5, w * 0.4)
+    fx.beginPath(); fx.moveTo(b.x1 - d * 10, limbY(b, b.x1 - d * 10)); fx.lineTo(b.x1 + d * 6, b.y1 - 16 * g.s); fx.stroke()
+    fx.globalAlpha = 0.18
+    for (const [dx, dy, r] of [[6, -18, 9], [-2, -10, 7], [14, -8, 6]]) { fx.beginPath(); fx.arc(b.x1 + d * dx * g.s, b.y1 + dy * g.s, r * g.s, 0, 7); fx.fill() }
+  }
+
+  readField(fx, bgD, 0, 0, cols, rows); readField(ax, bgA, 0, 0, cols, rows)
+  // Quiet under the strip and fading out toward the column, so the margins never butt against the content.
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const px = (c + 0.5) * cw, py = (r + 0.5) * ch
+    const toCol = Math.min(Math.abs(px - g.colL), Math.abs(px - g.colR))
+    const onBranch = Math.abs(py - g.branches.left.y0) < 16 + 12 * g.s && toCol < 64 * g.s + 52
+    quiet[r * cols + c] = maskCol[c] ? smooth(g.headH - 2, g.headH + 14, py) * (onBranch ? 1 : lerp(0.35, 1, smooth(8, 40, toCol))) : 0
+  }
+  const S = rng(5), count = Math.round(W * H / 6000)
+  for (let k = 0; k < count; k++) {
+    const c = Math.floor(S() * cols), r = Math.floor(S() * rows), py = r * ch
+    if (!maskCol[c] || py < g.headH + 6 || py > g.horizon - sky * 0.08) continue
+    const i = r * cols + c
+    if (bgD[i] > 0.05) continue
+    const tier = S()
+    stars.push({ i, c, r, base: tier > 0.93 ? 0.9 : tier > 0.7 ? 0.55 : 0.3, phase: S() * 6.28, speed: 0.5 + S() * 1.2, accent: S() > 0.86 })
+  }
+
+  // The static layer: drawn once per layout.
+  bgx.font = `10.5px 'Spline Sans Mono', ui-monospace, Consolas, monospace`; bgx.textAlign = 'center'; bgx.textBaseline = 'middle'
+  const N = rng(99)
+  for (let r = headRows; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const jitter = (N() - 0.5) * 0.1
+    if (!maskCol[c]) continue
+    const i = r * cols + c, d = bgD[i] * quiet[i]
+    if (d < 0.1) continue
+    const accent = bgA[i] > 0.3, dd = clamp(d + jitter, 0, 1)
+    bgx.fillStyle = col(accent ? ACC : INK, (0.1 + 0.5 * dd) * (accent ? 1.25 : 1))
+    bgx.fillText(RAMP[Math.max(1, Math.round(dd * (RAMP.length - 1)))], (c + 0.5) * cw, (r + 0.5) * ch)
+  }
+}
+
+function tree(t, seed, leaves) {
+  const r = rng(seed), dir = t.dir
+  const w0 = t.h * 0.05
+  const topX = t.x - dir * t.h * 0.03, topY = t.y - t.h * 0.6
+  fx.globalAlpha = 0.72
+  fx.beginPath()
+  fx.moveTo(t.x - w0 * 2.2, t.y); fx.quadraticCurveTo(t.x - w0 * 0.9, t.y - w0 * 0.6, t.x - w0 * 0.8, t.y - t.h * 0.12)
+  fx.quadraticCurveTo(t.x - w0 * 0.7, topY + t.h * 0.15, topX - w0 * 0.4, topY)
+  fx.lineTo(topX + w0 * 0.4, topY); fx.quadraticCurveTo(t.x + w0 * 0.7, topY + t.h * 0.15, t.x + w0 * 0.8, t.y - t.h * 0.12)
+  fx.quadraticCurveTo(t.x + w0 * 0.9, t.y - w0 * 0.6, t.x + w0 * 2.2, t.y); fx.closePath(); fx.fill()
+  fx.lineCap = 'round'
+  const tips = []
+  const branch = (x, y, len, ang, w, depth, max) => {
+    const x1 = x + Math.cos(ang) * len, y1 = y + Math.sin(ang) * len, bend = (r() - 0.5) * len * 0.35
+    fx.globalAlpha = 0.7; fx.lineWidth = Math.max(2.6, w)
+    fx.beginPath(); fx.moveTo(x, y); fx.quadraticCurveTo((x + x1) / 2 - Math.sin(ang) * bend, (y + y1) / 2 + Math.cos(ang) * bend, x1, y1); fx.stroke()
+    if (depth >= max) { tips.push([x1, y1, len]); return }
+    const n = r() > 0.6 ? 3 : 2
+    for (let k = 0; k < n; k++) branch(x1, y1, len * (0.68 + r() * 0.12), ang + (k - (n - 1) / 2) * (0.55 + r() * 0.25) + (r() - 0.5) * 0.2, w * 0.64, depth + 1, max)
+  }
+  const max = leaves ? 4 : 5
+  branch(topX, topY, t.h * 0.17, -Math.PI / 2 - dir * 0.18, w0 * 0.8, 0, max)
+  branch(topX, topY + t.h * 0.03, t.h * 0.13, -Math.PI / 2 + dir * 0.7, w0 * 0.55, 1, max)
+  branch(topX, topY + t.h * 0.06, t.h * 0.14, -Math.PI / 2 - dir * 1.0, w0 * 0.55, 1, max)
+  // The limbs owls sit on: long and nearly level.
+  for (const l of t.limbs) {
+    fx.globalAlpha = 0.75; fx.lineWidth = w0 * 0.42
+    fx.beginPath(); fx.moveTo(l.x0, l.y0); fx.quadraticCurveTo((l.x0 + l.x1) / 2, (l.y0 + l.y1) / 2 + l.sag, l.x1, l.y1); fx.stroke()
+    const d = Math.sign(l.x1 - l.x0)
+    fx.lineWidth = Math.max(1, w0 * 0.16)
+    fx.beginPath(); fx.moveTo(l.x1 - d * 14, limbY(l, l.x1 - d * 14)); fx.lineTo(l.x1 - d * 2, limbY(l, l.x1) - 16); fx.stroke()
+  }
+  if (leaves) {
+    const spots = geo.slots.filter(s => s.group === 'tree').concat([geo.home])
+    for (const [x, y, len] of tips) {
+      if (spots.some(s => Math.hypot(x - s.x, y - s.y) < 46) || r() < 0.45) continue
+      for (let k = 0; k < 2; k++) { fx.globalAlpha = 0.1; fx.beginPath(); fx.arc(x + (r() - 0.5) * len, y + (r() - 0.5) * len * 0.7, len * (0.45 + r() * 0.4), 0, 7); fx.fill() }
+    }
+  }
+}
+
+// ---------- Watcher's owl (drawn as in the October 21 scene) ----------
+function ellipse(ctx, x, y, rx, ry, rot = 0) { ctx.beginPath(); ctx.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2); ctx.fill() }
+function poly(ctx, pts) { ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (const p of pts.slice(1)) ctx.lineTo(p[0], p[1]); ctx.closePath(); ctx.fill() }
+function wing(d, side, o) {
+  const span = 12 + 52 * o.spread, lift = Math.sin(o.flap) * span * 0.55, persp = 0.8 + 0.2 * Math.cos(o.flap)
+  const sx = side * 9, sy = -3, tx = side * (9 + span * persp), ty = sy - lift, rx = side * 7, ry = sy + 17 - lift * 0.15
+  d.globalAlpha = 0.72
+  d.beginPath(); d.moveTo(sx, sy - 5)
+  d.quadraticCurveTo(side * (9 + span * 0.5 * persp), sy - lift * 0.8 - 10, tx, ty)
+  let px = tx, py = ty
+  for (let k = 1; k <= 5; k++) { const t = k / 5, nx = lerp(tx, rx, t), ny = lerp(ty, ry, t) + Math.sin(t * Math.PI) * 7; d.quadraticCurveTo((px + nx) / 2, (py + ny) / 2 + 5, nx, ny); px = nx; py = ny }
+  d.closePath(); d.fill()
+  d.globalCompositeOperation = 'destination-out'; d.globalAlpha = 0.32; d.lineWidth = 1.6
+  for (let k = 1; k <= 3; k++) { const t = k / 4; d.beginPath(); d.moveTo(lerp(sx, tx, t), lerp(sy - 3, ty, t)); d.lineTo(lerp(sx, tx, t * 0.85), lerp(sy + 12, ty + 6, t)); d.stroke() }
+  d.globalCompositeOperation = 'source-over'
+}
+function drawOwl(d, a, o) {
+  for (const ctx of [d, a]) { ctx.save(); ctx.translate(o.x, o.y - 30 * o.s); ctx.rotate(o.bank); ctx.scale(o.s, o.s * o.squash); ctx.translate(0, 30 * (1 - o.squash)) }
+  const fly = o.spread > 0.05
+  d.globalAlpha = 0.9
+  poly(d, [[-5, 22], [5, 22], [fly ? 8 : 4, fly ? 33 : 31], [fly ? -8 : -4, fly ? 33 : 31]])
+  if (fly) { wing(d, -1, o); wing(d, 1, o) }
+  d.globalAlpha = 0.5; ellipse(d, 0, 6, fly ? 14 : 17, fly ? 19 : 22)
+  if (!fly) { d.globalAlpha = 0.85; ellipse(d, -13.5, 7, 6.5, 18, 0.12); ellipse(d, 13.5, 7, 6.5, 18, -0.12) }
+  d.globalCompositeOperation = 'destination-out'; d.globalAlpha = 0.55; d.lineWidth = 1.5
+  for (let row = 0; row < 4; row++) for (let k = -1; k <= 1; k++) {
+    const x = k * 6 + (row % 2) * 3 - 1.5, y = 1 + row * 5.5
+    if (Math.abs(x) > 9 - row) continue
+    d.beginPath(); d.moveTo(x - 2.2, y); d.lineTo(x, y + 2); d.lineTo(x + 2.2, y); d.stroke()
+  }
+  d.globalCompositeOperation = 'source-over'
+  const hx = o.turn * 4
+  d.globalAlpha = 0.62; ellipse(d, hx * 0.5, -17, 16, 13)
+  d.globalAlpha = 0.85
+  const tuft = fly ? -31 : -37
+  poly(d, [[-12 + hx, -25], [-18 + hx * 1.2, tuft], [-5 + hx, -28]])
+  poly(d, [[12 + hx, -25], [18 + hx * 1.2, tuft], [5 + hx, -28]])
+  const sp = 6.6 * (1 - 0.22 * Math.abs(o.turn))
+  d.globalCompositeOperation = 'destination-out'; d.globalAlpha = 0.6
+  ellipse(d, hx - sp, -17, 6.8, 6.8); ellipse(d, hx + sp, -17, 6.8, 6.8)
+  d.globalCompositeOperation = 'source-over'
+  for (const side of [-1, 1]) {
+    const ex = hx + side * sp, ey = -17
+    if (o.blink) { d.globalAlpha = 0.9; ellipse(d, ex, ey + 0.5, 4.8, 1.5) }
+    else { d.globalAlpha = 1; ellipse(d, ex + o.gx, ey + o.gy, 3.2, 3.2); a.globalAlpha = 1; ellipse(a, ex + o.gx, ey + o.gy, 3.8, 3.8) }
+  }
+  d.globalAlpha = 1; poly(d, [[hx - 1.9, -13], [hx + 1.9, -13], [hx, -8.3]])
+  d.lineCap = 'round'; d.lineWidth = 1.7
+  if (!fly) {
+    for (const side of [-1, 1]) for (const t of [-2, 0, 2]) { d.beginPath(); d.moveTo(side * 5, 27); d.lineTo(side * 5 + t, 30.5); d.stroke() }
+  } else if (o.legs > 0) {
+    for (const side of [-1, 1]) {
+      const fy = 24 + 9 * o.legs
+      d.beginPath(); d.moveTo(side * 4, 22); d.lineTo(side * 5, fy); d.stroke()
+      for (const t of [-2.2, 0, 2.2]) { d.beginPath(); d.moveTo(side * 5, fy); d.lineTo(side * 5 + t, fy + 3); d.stroke() }
+    }
+  }
+  d.restore(); a.restore()
+}
+
+// Where Watcher's owl is: at home in the left tree, visiting the right tree, or on the composer's top edge, at the
+// corner on the side it came from. Flights are random and rare; they never answer anything that happens.
+const wo = { at: 'home', side: 'left', fl: null, next: 0, turn: 0, gx: 0, gy: 0, look: null }
+function placePos(at, side) {
+  const g = geo
+  if (at === 'home') return g.home
+  if (at === 'tree') return g.visit
+  return g.perchAt[side]
+}
+function startFlight(to, t) {
+  const g = geo, s = g.s
+  const from = wo.at
+  const side = to === 'composer' ? (from === 'tree' ? 'right' : 'left') : wo.side
+  const a = placePos(from, wo.side), b = placePos(to, side)
+  const dir = Math.sign(b.x - a.x) || 1
+  const pts = [a, { x: a.x + dir * 30 * s, y: a.y - 55 * s }]
+  if (to === 'composer') pts.push({ x: b.x - dir * 50 * s, y: b.y - 75 * s })
+  else if (from === 'composer') pts.push({ x: b.x - dir * 50 * s, y: b.y - 60 * s })
+  else {
+    // From tree to tree: up, across the moon, and down.
+    const high = Math.max(g.headH + 40, Math.min(a.y, b.y) - 110 * s)
+    const moonPt = { x: g.moon.x, y: g.moon.y + g.moon.r * 0.3 }
+    const mid = { x: W / 2, y: Math.max(g.headH + 30, Math.min(high, g.moon.y + g.moon.r + 30)) }
+    const moonFirst = Math.sign(g.moon.x - W / 2) !== dir
+    if (moonFirst) pts.push(moonPt, mid); else pts.push(mid, moonPt)
+    pts.push({ x: b.x - dir * 40 * s, y: b.y - 60 * s })
+  }
+  pts.push(b)
+  const path = makePath(pts)
+  wo.fl = { from, to, side, t0: t, dur: clamp(path.length / 230, 1.6, 6), path }
+}
+function flyNow() {
+  if (ui.reduced || geo.mode !== 'scene' || wo.fl) return
+  startFlight(wo.at === 'home' ? (Math.random() < 0.5 ? 'tree' : 'composer') : 'home', now())
+  wake()
+}
+const IDLE_TURNS = [0, -0.7, 0, 0.55, 0.15, -0.35]
+function watcherPose(t, dt) {
+  const g = geo, s = g.s
+  const o = { x: 0, y: 0, s, bank: 0, squash: 1, spread: 0, flap: 0, turn: 0, gx: 0, gy: 0, blink: false, legs: 0 }
+  let free = ui.cross === 'front', moving = false, phase
+  if (wo.fl) {
+    const f = wo.fl, k = clamp((t - f.t0) / f.dur, 0, 1), u = ease(k)
+    const p = along(f.path, u), q = along(f.path, Math.min(1, u + 0.01))
+    o.x = p.x; o.y = p.y
+    o.bank = clamp((q.x - p.x) * 0.012, -0.3, 0.3)
+    o.spread = smooth(0, 0.06, k) * (1 - smooth(0.96, 1, k))
+    const rising = q.y - p.y < -0.4 ? 1 : q.y - p.y < 0.6 ? 0.55 : 0.12, landing = smooth(0.86, 1, k)
+    o.flap = 0.3 + Math.sin(t * 2 * Math.PI * (2.4 + landing * 1.6)) * lerp(rising, 1.1, landing)
+    o.legs = landing
+    o.squash = k < 0.06 ? 1 - 0.1 * Math.sin(k / 0.06 * Math.PI) : 1
+    o.gy = 0.6
+    moving = true
+    phase = `flying to ${f.to === 'home' ? 'its tree' : f.to === 'tree' ? 'the other tree' : 'the composer'}`
+    if (k >= 1) {
+      wo.at = f.to; wo.side = f.side; wo.fl = null
+      wo.next = t + (wo.at === 'home' ? rand(45, 110) : rand(10, 22))
+    }
+  } else {
+    const p = placePos(wo.at, wo.side); o.x = p.x; o.y = p.y
+    phase = wo.at === 'home' ? 'in its tree' : wo.at === 'tree' ? 'visiting the other tree' : 'on the composer'
+    let turn = 0, gx = 0, gy = 0
+    if (!ui.reduced) {
+      const seg = Math.floor(t / 5.2)
+      turn = lerp(IDLE_TURNS[(seg + 5) % 6], IDLE_TURNS[seg % 6], smooth(0, 0.25, t - seg * 5.2))
+      o.blink = (t + 1.3) % 4.7 < 0.14
+      // A newcomer: watch the moon while the whirlpool opens, then follow the owl down.
+      const newest = threads.filter(th => th.anim && th.anim.kind === 'arrive').sort((a, b) => b.anim.t0 - a.anim.t0)[0]
+      let target = null
+      if (newest && t >= newest.anim.t0) target = t < newest.anim.emerge ? g.moon : threadPose(newest, t)
+      else if (wo.look && t - wo.look.t < 1.8) target = wo.look
+      if (target) {
+        turn = clamp((target.x - o.x) / 240, -1, 1)
+        gx = clamp((target.x - o.x) / 200, -1.2, 1.2); gy = clamp((target.y - (o.y - 47 * s)) / 200, -1, 1.2)
+        o.blink = false
+      }
+    }
+    const k = Math.min(1, dt * 7)
+    wo.turn += (turn - wo.turn) * k; wo.gx += (gx - wo.gx) * k; wo.gy += (gy - wo.gy) * k
+    if (Math.abs(turn - wo.turn) > 0.01 || Math.abs(gx - wo.gx) > 0.02 || Math.abs(gy - wo.gy) > 0.02) moving = true
+    o.turn = wo.turn; o.gx = wo.gx; o.gy = wo.gy
+  }
+  return { o, free, moving, phase }
+}
+
+// ---------- small owls ----------
+// Three rows of glyphs: face, body, feet. Flying, the wings take the face's row.
+const PERCH = ['{o,o}', '/)__)', ' " " ']
+const FLAP = [['\\{o,o}/', ' (__) '], ['-{o,o}-', ' (__) '], ['/{o,o}\\', ' (__) ']]
+function threadPose(th, t) {
+  const a = th.anim, target = posOf(th)
+  if (!a) return th.slot >= 0 && target ? { x: target.x, y: target.y, fly: false, alpha: 1 } : null
+  const k = clamp((t - a.t0) / Math.max(0.001, a.dur), 0, 1)
+  if (a.kind === 'fadein') return target && th.slot >= 0 ? { x: target.x, y: target.y, fly: false, alpha: smooth(0, 1, k) } : null
+  if (a.kind === 'fadeout') return target && th.slot >= 0 ? { x: target.x, y: target.y, fly: false, alpha: 1 - smooth(0, 1, k) } : null
+  const m = geo.moon
+  if (a.kind === 'arrive') {
+    if (t < a.emerge || !target) return null
+    const u = clamp((t - a.emerge) / a.dur, 0, 1)
+    const p = along(makePath([{ x: m.x, y: m.y }, { x: lerp(m.x, target.x, 0.25), y: m.y + 34 }, { x: target.x, y: target.y - 46 }, target]), ease(u))
+    const toPile = th.slot === -1
+    return { x: p.x, y: p.y, fly: u < 0.97, alpha: smooth(0, 0.2, u) * (toPile ? 1 - smooth(0.85, 1, u) : 1), u }
+  }
+  if (a.kind === 'hop') {
+    if (!target) return null
+    const p = along(makePath([a.from, { x: lerp(a.from.x, target.x, 0.5), y: Math.min(a.from.y, target.y) - 50 }, target]), ease(k))
+    return { x: p.x, y: p.y, fly: k < 0.97, alpha: 1 }
+  }
+  const p = along(makePath([a.from, { x: a.from.x, y: a.from.y - 46 }, { x: lerp(a.from.x, m.x, 0.75), y: m.y + 36 }, { x: m.x, y: m.y }]), ease(k))
+  return { x: p.x, y: p.y, fly: k > 0.03, alpha: 1 - smooth(0.82, 1, k) }
+}
+function finishAnims(t) {
+  let removed = false
+  for (let k = threads.length - 1; k >= 0; k--) {
+    const th = threads[k], a = th.anim
+    if (!a) continue
+    const end = a.kind === 'arrive' ? a.emerge + a.dur : a.t0 + a.dur
+    if (t < end) continue
+    if (a.kind === 'leave' || a.kind === 'fadeout') { threads.splice(k, 1); removed = true }
+    else th.anim = null
+  }
+  for (let k = whirls.length - 1; k >= 0; k--) if (t > whirls[k].t1 + 0.7) whirls.splice(k, 1)
+  if (removed) { reconcile(true); changed() }
+}
+
+// ---------- ripples ----------
+// A press in the open margin sends one out, and so does the moon each time its whirlpool opens. A ripple can start in
+// the future: a staggered spawn's ripple waits for its own whirlpool.
+const ripples = []
+function moonRipple(t) { ripples.push({ x: geo.moon.x, y: geo.moon.y, t }); if (ripples.length > 24) ripples.shift() }
+room.addEventListener('pointerdown', event => {
+  if (event.target.closest('form, button, .dock, .head, a, input, textarea, .wcard, .vnode, .vowl')) return
+  const base = room.getBoundingClientRect()
+  const x = (event.clientX - base.left) / scale, y = (event.clientY - base.top) / scale
+  if (geo.mode !== 'scene' || y < geo.headH || (x > geo.colL - 8 && x < geo.colR + 8)) return
+  ripples.push({ x, y, t: now() }); if (ripples.length > 6) ripples.shift()
+  wo.look = { x, y, t: now() }
+  wake()
+})
+
+// ---------- palettes ----------
+let INK, ACC
+function buildPalette() {
+  const ink = ui.theme === 'dark' ? [242, 242, 248] : [28, 30, 38]
+  const acc = ui.theme === 'dark' ? [86, 196, 182] : [14, 104, 96]
+  const boost = ui.theme === 'dark' ? 1 : 1.9, accBoost = ui.theme === 'dark' ? 1 : 1.5
+  INK = Array.from({ length: 21 }, (_, k) => `rgba(${ink},${Math.min(1, k / 20 * boost).toFixed(2)})`)
+  ACC = Array.from({ length: 21 }, (_, k) => `rgba(${acc},${Math.min(1, k / 20 * accBoost).toFixed(2)})`)
+}
+const col = (pal, alpha) => pal[Math.round(clamp(alpha, 0, 1) * 20)]
+const RAMP = ' .·:-=+*#%@'
+const RIP = '·∘oO'
+const WHIRL = '·:+*%@'
+
+// ---------- drawing the moving layer ----------
+const okCell = (c, r, free) => c >= 0 && c < cols && r >= headRows && r < rows && (free || maskCol[c] !== 0)
+function cell(c, r, glyph, color) {
+  fgx.fillStyle = canvasColor; fgx.fillRect(c * cw, r * ch, cw, ch)
+  fgx.fillStyle = color; fgx.fillText(glyph, (c + 0.5) * cw, (r + 0.5) * ch)
+}
+function drawSprite(lines, x, y, colorOf, free, fill = true) {
+  const w = lines[0].length, n = lines.length
+  const c0 = Math.round(x / cw - w / 2), rB = Math.floor((y - 1) / ch)
+  for (let k = 0; k < n; k++) for (let j = 0; j < lines[k].length; j++) {
+    const g = lines[k][j]; if (g === ' ') continue
+    const c = c0 + j, r = rB - (n - 1 - k)
+    if (!okCell(c, r, free)) continue
+    if (fill) { fgx.fillStyle = canvasColor; fgx.fillRect(c * cw, r * ch, cw, ch) }
+    fgx.fillStyle = colorOf(g, k); fgx.fillText(g, (c + 0.5) * cw, (r + 0.5) * ch)
+  }
+}
+const spriteBox = (lines, x, y) => {
+  const w = lines[0].length, n = lines.length
+  return { c0: Math.round(x / cw - w / 2), r0: Math.floor((y - 1) / ch) - n + 1, w, n }
+}
+
+// One frame in two steps. First work out where everything is and sum it up in a signature; then paint, but only when
+// the signature differs from the last painted frame. An idle scene's signature changes only on a blink, a star's
+// half-second step or a glow's step, so most idle checks paint nothing.
+let hitKey = ''
+function render(t, dt) {
+  const g = geo
+  let moving = false
+  const sig = [g.mode, ui.theme]
+  const hits = []
+  const f = { stars: false, step: 0, whirl: 0, owls: [], pile: null, watcher: null }
+
+  if (g.mode === 'scene') {
+    f.stars = true
+    f.step = ui.reduced ? 0 : Math.floor(t * 2)
+    sig.push(f.step)
+    for (const e of whirls) f.whirl = Math.max(f.whirl, smooth(e.t0, e.t0 + 0.45, t) * (1 - smooth(e.t1, e.t1 + 0.6, t)))
+    if (f.whirl > 0.01) { moving = true; sig.push('w', Math.round(t * 30)) }
+    for (let k = ripples.length - 1; k >= 0; k--) if (t - ripples[k].t > (ui.reduced ? 0.7 : 2.4)) ripples.splice(k, 1)
+    if (ripples.length) { moving = true; sig.push('r', Math.round(t * 30)) }
+  }
+
+  if (g.mode !== 'none') {
+    const rail = g.mode === 'rail'
+    for (const th of threads) {
+      if (th.anim) moving = true
+      const p = threadPose(th, t)
+      if (!p || p.alpha <= 0.02) continue
+      const asleep = th.state === 'idle', needs = th.state === 'needs'
+      const blink = !ui.reduced && !asleep && !p.fly && (t + th.id * 1.37) % 6.1 < 0.15
+      const pulse = needs && !ui.reduced ? Math.round((0.5 + 0.5 * Math.sin(t * Math.PI * 2 / 1.8)) * 3) / 3 : 0.5
+      const eyes = asleep || blink ? '-' : needs ? 'O' : 'o'
+      let lines
+      if (rail) lines = [`${eyes},${eyes}`]
+      else if (p.fly) { const fl = FLAP[Math.floor(t * 8 + th.id) % 3]; lines = [fl[0].replace(/o/g, eyes), fl[1]] }
+      else lines = [PERCH[0].replace(/o/g, eyes), PERCH[1], PERCH[2]]
+      const free = ui.cross === 'front' && p.fly
+      sig.push(th.id, Math.round(p.x / cw), Math.round(p.y / ch), Math.round(p.alpha * 10), lines[0], th.state, pulse, free ? 1 : 0)
+      const box = spriteBox(lines, p.x, p.y)
+      f.owls.push({ th, p, lines, eyes, asleep, needs, pulse, free, box })
+      if (!th.anim && th.slot >= 0) hits.push({ th, x: box.c0 * cw - 3, y: box.r0 * ch - 3, w: box.w * cw + 6, h: box.n * ch + 6 })
+    }
+    const n = g.marker ? liveThreads().filter(th => th.slot === -1).length : 0
+    if (n > 0) {
+      const label = `+${n}`, box = spriteBox([label], g.marker.x, g.marker.y)
+      f.pile = { label, box }
+      hits.push({ pile: n, x: box.c0 * cw - 4, y: box.r0 * ch - 4, w: label.length * cw + 8, h: ch + 8 })
+      sig.push('p', n)
+    }
+  }
+
+  let phase = g.mode === 'scene' ? '' : g.away ? 'away while Visualize shows' : 'hidden (margin too narrow)'
+  if (g.mode === 'scene') {
+    const w = watcherPose(t, dt)
+    phase = w.phase
+    if (w.moving || wo.fl) moving = true
+    const o = w.o
+    sig.push(Math.round(o.x), Math.round(o.y), Math.round(o.turn * 20), Math.round(o.gx * 4), Math.round(o.gy * 4), o.blink ? 1 : 0, Math.round(o.flap * 4), w.free ? 1 : 0)
+    // The glow's step, the thread owls' own: four steps of a slow pulse, or the middle one held still.
+    const glow = watcherGlows() ? (ui.reduced ? 0.5 : Math.round((0.5 + 0.5 * Math.sin(t * Math.PI * 2 / 1.8)) * 3) / 3) : null
+    sig.push('g', glow ?? '-')
+    f.watcher = { ...w, glow }
+    if (!ui.reduced && !wo.fl && t > wo.next) startFlight(wo.at === 'home' ? (Math.random() < 0.5 ? 'tree' : 'composer') : 'home', t)
+  }
+  syncHits(hits)
+
+  const key = sig.join(',')
+  const painted = key !== lastSig
+  if (painted) { lastSig = key; paint(t, f) }
+  return { moving, painted, phase }
+}
+
+function paint(t, f) {
+  const g = geo
+  fgx.setTransform(dpr, 0, 0, dpr, 0, 0); fgx.clearRect(0, 0, W, H)
+  fgx.font = `10.5px 'Spline Sans Mono', ui-monospace, Consolas, monospace`; fgx.textAlign = 'center'; fgx.textBaseline = 'middle'
+
+  if (f.stars) for (const st of stars) {
+    const sd = st.base * (ui.reduced ? 1 : 0.65 + 0.35 * Math.sin(f.step / 2 * st.speed + st.phase)) * quiet[st.i]
+    fgx.fillStyle = col(st.accent ? ACC : INK, 0.15 + 0.6 * sd)
+    fgx.fillText(sd > 0.7 ? '*' : sd > 0.45 ? '+' : '·', (st.c + 0.5) * cw, (st.r + 0.5) * ch)
+  }
+  // The moon's whirlpool: three arms turning inward, in the accent.
+  if (f.whirl > 0.01) {
+    const w = f.whirl, m = g.moon, R = m.r * (0.9 + 0.9 * w)
+    const c0 = Math.floor((m.x - R) / cw), c1 = Math.ceil((m.x + R) / cw), r0 = Math.floor((m.y - R) / ch), r1 = Math.ceil((m.y + R) / ch)
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+      const dx = (c + 0.5) * cw - m.x, dy = (r + 0.5) * ch - m.y, d = Math.hypot(dx, dy)
+      if (d > R || !okCell(c, r, false)) continue
+      const v = 0.5 + 0.5 * Math.sin(3 * Math.atan2(dy, dx) + d * 0.22 - t * 7)
+      const a = w * (1 - d / R * 0.7) * (0.4 + 0.6 * v)
+      fgx.fillStyle = canvasColor; fgx.globalAlpha = Math.min(1, w * 1.2) * (1 - d / R * 0.6); fgx.fillRect(c * cw, r * ch, cw, ch); fgx.globalAlpha = 1
+      if (a > 0.12) { fgx.fillStyle = col(ACC, 0.25 + a); fgx.fillText(WHIRL[Math.min(WHIRL.length - 1, Math.floor(a * WHIRL.length))], (c + 0.5) * cw, (r + 0.5) * ch) }
+    }
+  }
+  for (const rp of ripples) {
+    const age = t - rp.t
+    if (age < 0) continue
+    const R = ui.reduced ? 40 : age * 330, amp = ui.reduced ? 1 - age / 0.7 : (1 - age / 2.4) ** 1.6, reach = R + 30
+    const c0 = Math.max(0, Math.floor((rp.x - reach) / cw)), c1 = Math.min(cols - 1, Math.ceil((rp.x + reach) / cw))
+    const r0 = Math.max(headRows, Math.floor((rp.y - reach) / ch)), r1 = Math.min(rows - 1, Math.ceil((rp.y + reach) / ch))
+    for (let r = r0; r <= r1; r++) for (const c of marginCols) {
+      if (c < c0 || c > c1) continue
+      const x = Math.hypot((c + 0.5) * cw - rp.x, (r + 0.5) * ch - rp.y) - R, band = Math.exp(-(x * x) / 300) * amp
+      if (band < 0.12) continue
+      fgx.fillStyle = col(ACC, 0.18 + 0.6 * band); fgx.fillText(RIP[Math.min(3, Math.floor(band * 4))], (c + 0.5) * cw, (r + 0.5) * ch)
+    }
+  }
+
+  for (const s of f.owls) {
+    const { p, lines, eyes, asleep, needs, pulse, free, box } = s
+    const base = asleep ? 0.5 : 0.85
+    const colorOf = (gl, row) => needs ? col(ACC, (0.8 + 0.2 * pulse) * p.alpha) : col(INK, (gl === eyes && row === 0 ? base + 0.15 : base) * p.alpha)
+    if (needs && okCell(box.c0 + (box.w >> 1), box.r0, free)) {
+      // A thread that needs Zach glows: its owl sits in a soft wash of the accent.
+      const x = box.c0 * cw - 5, y = box.r0 * ch - 4, w = box.w * cw + 10, h = box.n * ch + 4
+      fgx.fillStyle = canvasColor; fgx.beginPath(); fgx.roundRect(x, y, w, h, 7); fgx.fill()
+      fgx.fillStyle = col(ACC, (0.12 + 0.12 * pulse) * p.alpha); fgx.beginPath(); fgx.roundRect(x, y, w, h, 7); fgx.fill()
+      drawSprite(lines, p.x, p.y, colorOf, free, false)
+    } else drawSprite(lines, p.x, p.y, colorOf, free)
+  }
+  if (f.pile) {
+    // The pile reads as a small label, not as more grass.
+    const b = f.pile.box, x = b.c0 * cw - 4, y = b.r0 * ch - 2, w = b.w * cw + 8, h = ch + 4
+    fgx.fillStyle = canvasColor; fgx.beginPath(); fgx.roundRect(x, y, w, h, 5); fgx.fill()
+    fgx.strokeStyle = col(INK, 0.4); fgx.lineWidth = 1; fgx.beginPath(); fgx.roundRect(x + 0.5, y + 0.5, w - 1, h - 1, 5); fgx.stroke()
+    drawSprite([f.pile.label], g.marker.x, g.marker.y, () => col(INK, 0.95), false, false)
+  }
+
+  if (f.watcher) {
+    const { o, free } = f.watcher
+    ox.clearRect(-W, -H, 3 * W, 3 * H); oax.clearRect(-W, -H, 3 * W, 3 * H)
+    drawOwl(ox, oax, o)
+    const pad = 84 * o.s
+    const c0 = clamp(Math.floor((o.x - pad) / cw), 0, cols), c1 = clamp(Math.ceil((o.x + pad) / cw), 0, cols)
+    const r0 = clamp(Math.floor((o.y - 30 * o.s - pad) / ch), 0, rows), r1 = clamp(Math.ceil((o.y + 14 * o.s) / ch), 0, rows)
+    for (let r = r0; r < r1; r++) for (let c = c0; c < c1; c++) { owlD[r * cols + c] = 0; owlA[r * cols + c] = 0 }
+    readField(ox, owlD, c0, r0, c1 - c0, r1 - r0); readField(oax, owlA, c0, r0, c1 - c0, r1 - r0)
+    // Clear a one-cell halo in the margin first, so the static layer never shows through the owl. A perched owl keeps
+    // the row its feet stand on, so its branch still runs under it.
+    fgx.fillStyle = canvasColor
+    const feetRow = o.spread < 0.05 ? Math.floor((o.y - 1) / ch) : rows
+    for (let r = r0; r < r1; r++) for (let c = c0; c < c1; c++) {
+      if (owlD[r * cols + c] < 0.1) continue
+      for (let y = r - 1; y <= Math.min(r + 1, feetRow - 1); y++) for (let x = c - 1; x <= c + 1; x++) if (okCell(x, y, false)) fgx.fillRect(x * cw, y * ch, cw, ch)
+    }
+    // Watcher's owl, when something needs Zach, glows as a thread owl does: its glyphs in the accent, pulsing.
+    const glow = f.watcher.glow
+    const N = rng(3)
+    for (let r = r0; r < r1; r++) for (let c = c0; c < c1; c++) {
+      const i = r * cols + c, d = owlD[i], jitter = N()
+      if (d < 0.1 || !okCell(c, r, free)) continue
+      const eye = owlA[i] > 0.35
+      fgx.fillStyle = eye ? col(ACC, 1) : glow !== null ? col(ACC, (0.8 + 0.2 * glow) * (0.5 + 0.5 * d)) : col(INK, 0.5 + 0.5 * d)
+      fgx.fillText(eye ? '@' : RAMP[Math.max(1, Math.round(clamp(d + (jitter - 0.5) * 0.08, 0, 1) * (RAMP.length - 1)))], (c + 0.5) * cw, (r + 0.5) * ch)
+    }
+  }
+}
+
+// Invisible buttons over each perched owl: hover shows the thread, a press opens it. The Watched tab is the keyboard
+// path to the same threads, so these stay out of the tab order.
+function syncHits(hits) {
+  const key = hits.map(h => `${h.th?.id ?? 'p' + h.pile}:${h.x | 0}:${h.y | 0}`).join()
+  if (key === hitKey) return
+  hitKey = key
+  $('hits').replaceChildren(...hits.map(h => {
+    const b = document.createElement('button'); b.type = 'button'; b.tabIndex = -1
+    Object.assign(b.style, { left: `${h.x}px`, top: `${h.y}px`, width: `${h.w}px`, height: `${h.h}px` })
+    if (h.pile) {
+      b.onclick = () => toast('Opens All threads')
+      b.onpointerenter = () => tip(h, `${h.pile} more`, 'Press to see all threads')
+    } else {
+      b.onclick = () => openThread(h.th)
+      b.onpointerenter = () => tip(h, h.th.title, STATE_TEXT[h.th.state])
+    }
+    b.onpointerleave = () => { $('tip').hidden = true }
+    return b
+  }))
+}
+function tip(h, title, sub) {
+  const el = $('tip')
+  el.replaceChildren(Object.assign(document.createElement('b'), { textContent: title }), Object.assign(document.createElement('span'), { textContent: sub }))
+  el.hidden = false
+  const r = el.getBoundingClientRect(), w = r.width / scale, hh = r.height / scale
+  el.style.left = `${clamp(h.x + h.w / 2 - w / 2, 6, W - w - 6)}px`
+  el.style.top = `${h.y - hh - 6 < geo.headH ? h.y + h.h + 6 : h.y - hh - 6}px`
+}
+
+// ---------- loop ----------
+// 30 frames a second while anything flies; otherwise a check 8 times a second that draws only when the frame would
+// differ (a blink, a star's step, a glow's step); with reduced motion, nothing at all until something changes.
+let timer = null, lastT = 0, lastSig = '', draws = [], ticks = []
+function frame() {
+  timer = null
+  const t = now(), dt = Math.min(0.1, t - lastT); lastT = t
+  finishAnims(t)
+  const { moving, painted, phase } = render(t, dt)
+  ticks.push(t)
+  if (painted) draws.push(t)
+  while (draws.length && t - draws[0] > 1) draws.shift()
+  while (ticks.length && t - ticks[0] > 1) ticks.shift()
+  const idleLife = !ui.reduced && geo.mode !== 'none' && (geo.mode === 'scene' || threads.some(th => th.state !== 'idle'))
+  const loop = moving ? '30 fps' : idleLife ? 'idle check 8/s' : 'stopped'
+  readout(phase, loop)
+  if (loop === 'stopped') return
+  timer = setTimeout(() => requestAnimationFrame(frame), moving ? 33 : 125)
+}
+// One loop only: a wake while a frame is already asked for does nothing.
+function wake() { if (timer === null) timer = requestAnimationFrame(frame) }
+function readout(phase, loop) {
+  const g = geo, live = liveThreads()
+  const placed = live.filter(th => th.slot >= 0).length, pile = live.filter(th => th.slot === -1).length
+  const gr = g.groups
+  const fits = g.slots.length
+  $('readout').textContent = [
+    `window      ${Math.round(W)}×${Math.round(H)}`,
+    `margins     ${Math.round(g.gut)} px each`,
+    `scene       ${g.mode === 'scene' ? 'trees' : g.mode === 'rail' ? 'rail of eyes' : 'nothing'}`,
+    g.mode === 'scene' ? `spots       limb ${gr.limb} · tree ${gr.tree} · ground ${gr.ground} = ${fits}` : `spots       ${fits}`,
+    `threads     ${live.length} (${placed} placed, ${pile} in “+N”)`,
+    `owl         ${phase}`,
+    `next flight ${ui.reduced || g.mode !== 'scene' ? 'never' : wo.fl ? 'now' : `in ${Math.max(0, Math.round(wo.next - now()))} s`}`,
+    `loop        ${loop}`,
+    `painted     ${draws.length} of ${ticks.length} frames in the last second`,
+  ].join('\n')
+}
+
+function relayout() {
+  sizeWindow()
+  W = room.clientWidth; H = room.clientHeight
+  dpr = window.devicePixelRatio || 1
+  for (const cv of [bgCanvas, fgCanvas]) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr) }
+  cols = Math.ceil(W / cw); rows = Math.ceil(H / ch); headRows = Math.ceil(48 / ch)
+  canvasColor = getComputedStyle(win).backgroundColor
+  // A new layout ends every flight where it was going.
+  const t = now()
+  for (let k = threads.length - 1; k >= 0; k--) { const th = threads[k]; if (isLeaving(th)) threads.splice(k, 1); else th.anim = null }
+  whirls.length = 0; ripples.length = 0
+  if (wo.fl) { wo.at = wo.fl.to; wo.side = wo.fl.side; wo.fl = null }
+  geo = layoutScene()
+  if (geo.mode !== 'scene') wo.at = 'home'
+  if (!wo.next || wo.next < t) wo.next = t + rand(20, 45)
+  reconcile(false)
+  buildBackground()
+  changed()
+  vizKey = ''
+  renderViz()
+  lastSig = ''
+  wake()
+}
+addEventListener('resize', relayout)
+buildPalette()
+syncBar()
+geo = layoutScene()
+for (const st of ['working', 'working', 'idle', 'working']) addThread(true, st)
+if (innerWidth < 900) document.body.dataset.panel = 'off'
+applyCase(ui.case)
+document.fonts.ready.then(relayout)
+relayout()
+</script>
+</body>
+</html>

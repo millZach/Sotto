@@ -114,30 +114,24 @@
 /* The header's far end: the room switch drawn as the sidebar foot draws it (threadsChrome.css), then More. The dot on
    More says an update is in hand, as the update control's own dot does. */
 .watcher-head { --foot-hover: color-mix(in srgb, var(--tt-text) 6%, transparent); --foot-lit: color-mix(in srgb, var(--tt-text) 12%, transparent); }
-.watcher-head .watcher-head__rooms { --room-tile: 30px; gap: 2px; margin-left: 4px; }
+/* The way off the page, after All threads: the sidebar foot's row, its controls 30px squares with an 8px radius on a 2px
+   gap, the lit room in a neutral tint of the text colour and a hover in a fainter one. */
+.watcher-head__way { display: inline-flex; flex: none; align-items: center; gap: 2px; margin-left: 4px; -webkit-app-region: no-drag; }
+.watcher-head .watcher-head__rooms { --room-tile: 30px; gap: 2px; }
 .watcher-head .watcher-head__rooms [role='tab'] { width: 30px; padding: 0; border-radius: 8px; background: transparent; }
 .watcher-head .watcher-head__rooms [role='tab']:hover:not([aria-selected='true']) { background: var(--foot-hover); }
 .watcher-head .watcher-head__rooms [role='tab'][aria-selected='true'] { gap: 0; padding: 0; background: var(--foot-lit); color: var(--tt-text); }
-.watcher-head__more > .pane-action { position: relative; }
-.watcher-head__news { position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--tt-accent); box-shadow: 0 0 0 1.5px var(--tt-canvas); }
+.watcher-head__way .thread-nav__pages { gap: 2px; }
+.watcher-head__way .thread-nav__page { border-radius: 8px; }
+.watcher-head__way .thread-nav__page:hover { background: var(--foot-hover); }
+.watcher-head__way .update-control { border-radius: 8px; }
+.watcher-head__way .update-control:hover:not([aria-disabled='true']) { background: var(--foot-hover); }
 
-/* Conversation, Watched and Visualize, beside All threads: three icons with no track (Drake's pick on October 24, 2026).
-   The one shown takes All threads' hover look; the others stay quieter until hovered. Watched's count is a badge in its
-   corner, in the pill colours so it reads apart from the eye, and the icons need no word's room at any width. */
-.watcher-tabs { display: inline-flex; flex: none; gap: 2px; margin-left: 4px; }
-.watcher-tabs__tab { position: relative; display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; cursor: pointer; }
-.watcher-tabs__tab:hover { color: var(--tt-text); }
-.watcher-tabs__tab[aria-selected='true'] { border-color: var(--tt-hairline); background: var(--tt-hover); color: var(--tt-text); }
-.watcher-tabs__icon { display: block; }
-.watcher-tabs__count { position: absolute; top: 1px; right: 1px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 4px; background: var(--tt-pill);
-  box-shadow: 0 0 0 1.5px var(--tt-canvas); color: var(--tt-pill-ink); font-size: 9.5px; font-weight: 600; line-height: 14px; text-align: center; font-variant-numeric: tabular-nums; pointer-events: none; }
-@container thread-pane (width < 600px) { .watcher-tabs { margin-left: 0; } }
 /* Off macOS a label comes back only where the whole row holds it with a three-digit count on All threads, which is
-   uncapped. These widths were set for the tabs' old words and hold the 94-pixel icon tabs with room to spare, plus the
-   130 pixels the room switch and More take at the header's end. All threads' needs 655 pixels of pane, so it returns
-   at 670. While Stop all shows, Stop all's needs 741 and returns at 760, All threads' then needs 686 and returns at
-   700, below 630 the name gives the tabs its room, and below 550 All threads tightens again. macOS keeps its own widths, since its header starts
-   past the traffic lights. */
+   uncapped. These widths were set when the header also held three 30-pixel tabs, so they leave room to spare, with the
+   130 pixels the room switch and More take at the header's end. All threads' label returns at 670 pixels of pane.
+   While Stop all shows, Stop all's returns at 760 and All threads' at 700, below 630 the name gives way, and below 550
+   All threads tightens again. macOS keeps its own widths, since its header starts past the traffic lights. */
 @container thread-pane (width < 670px) { .watcher-room:not(.threads-view--mac) .watcher-head__list-text { display: none; } }
 @container thread-pane (width < 760px) {
   .watcher-room:not(.threads-view--mac) .watcher-stop-all__text { display: none; }
@@ -150,32 +144,53 @@
 @container thread-pane (width < 550px) {
   .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) .watcher-head__list { gap: 4px; padding: 0 6px 0 7px; }
 }
-/* Beside a thread at the smallest window the tabs need the name's room: the tile still says whose room it is, and the
-   heading stays for assistive technology. */
+/* In the narrowest panes off macOS the row keeps to one line with a three-digit count on All threads beside Stop all by
+   drawing its gaps closer: after the tile, between All threads and the way off the page, and round its hairline. */
+@container thread-pane (width < 450px) {
+  .watcher-room:not(.threads-view--mac) .watcher-head > .thread-workspace__title { gap: 4px; }
+  .watcher-room:not(.threads-view--mac) .watcher-head :is(.watcher-head__tile, .watcher-context) { margin-right: 2px; }
+  .watcher-room:not(.threads-view--mac) .watcher-head__way { margin-left: 0; }
+  .watcher-room:not(.threads-view--mac) .watcher-head__way .thread-nav__foot-rule { margin: 0 2px; }
+}
+/* Off macOS one row holds the way off the page beside Stop all in the narrowest pane, with Usage, Settings, Help and the
+   update control; Memory's link, while memory is on, makes it 32 pixels wider, so below 440 pixels the way off the
+   page and Stop all then take a second row, as they do on macOS below 650. */
+@container thread-pane (width < 440px) {
+  .watcher-room:not(.threads-view--mac) .thread-pane .watcher-head:has(.watcher-head__pages > :nth-child(4)) {
+    display: grid; grid-template-columns: auto minmax(0, max-content) auto minmax(0, 1fr) auto; grid-template-rows: 44px auto; align-items: center;
+    column-gap: 10px; height: auto; padding-bottom: 6px;
+  }
+  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-head__pages > :nth-child(4)) > .thread-workspace__title { display: contents; }
+  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-head__pages > :nth-child(4)) .watcher-head__way { grid-row: 2; grid-column: 1 / 5; justify-self: start; margin-left: 0; }
+  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-head__pages > :nth-child(4)) > .thread-workspace__actions { grid-row: 2; grid-column: 5; }
+}
+/* Beside a thread at the smallest window the header's controls need the name's room: the tile still says whose room it
+   is, and the heading stays for assistive technology. */
 @container thread-pane (width < 580px) {
   .watcher-head h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
 /* macOS: Watcher's pane is always the room's left pane, so its header starts past the traffic lights' room, 88 pixels
    in rather than 14, and gives way 74 pixels sooner (a container query cannot read --mac-lights-room, so these widths
    follow its 88 pixels, with a few to spare for longer counts). Below 794 pixels All threads and Stop all keep their
-   icons and counts. Below 650 pixels one row no longer holds the name, the tabs and the actions
-   beside the lights, so the tabs and the actions take a second row under them, starting at the pane's edge, and the
-   name stays. Focus still runs as the eye reads: the tile's row, then the tabs and the actions. */
+   icons and counts. Below 650 pixels one row no longer holds the name, the way off the page and Stop all beside the
+   lights, so the way off the page and Stop all take a second row under them, starting at the pane's edge, and the
+   name stays. Focus still runs as the eye reads: the tile's row, then the way off the page and Stop all. */
 @container thread-pane (width < 794px) {
   .threads-view--mac .watcher-head__list-text, .threads-view--mac .watcher-stop-all__text { display: none; }
-  .threads-view--mac .watcher-tabs { margin-left: 0; }
   .threads-view--mac .watcher-stop-all__button { padding: 0 7px; }
 }
 @container thread-pane (width < 650px) {
-  .threads-view.threads-view--mac .thread-pane .watcher-head:has(.watcher-tabs) {
+  .threads-view.threads-view--mac .thread-pane .watcher-head {
     display: grid; grid-template-columns: auto minmax(0, max-content) auto minmax(0, 1fr) auto; grid-template-rows: 44px auto; align-items: center;
     column-gap: 10px; height: auto; padding-bottom: 6px; padding-left: 14px;
   }
-  .threads-view--mac .watcher-head:has(.watcher-tabs) > .thread-workspace__title { display: contents; }
-  .threads-view--mac .watcher-head:has(.watcher-tabs) .watcher-head__tile { margin: 0 0 0 var(--owl-sky-inset); }
-  .threads-view--mac .watcher-head:has(.watcher-tabs) h1 { position: static; width: auto; height: auto; clip-path: none; }
-  .threads-view--mac .watcher-head:has(.watcher-tabs) .watcher-tabs { grid-row: 2; grid-column: 1 / 5; justify-self: start; }
-  .threads-view--mac .watcher-head:has(.watcher-tabs) > .thread-workspace__actions { grid-row: 2; grid-column: 5; }
+  .threads-view--mac .watcher-head > .thread-workspace__title { display: contents; }
+  .threads-view--mac .watcher-head .watcher-head__tile { margin: 0 0 0 var(--owl-sky-inset); }
+  .threads-view--mac .watcher-head h1 { position: static; width: auto; height: auto; clip-path: none; }
+  /* Before Watcher starts there is no tile to keep the first row clear of the lights, so the name keeps their room. */
+  .threads-view--mac .watcher-head:not(:has(.watcher-head__tile)) h1 { margin-left: calc(var(--mac-lights-room) - 14px); }
+  .threads-view--mac .watcher-head .watcher-head__way { grid-row: 2; grid-column: 1 / 5; justify-self: start; margin-left: 0; }
+  .threads-view--mac .watcher-head > .thread-workspace__actions { grid-row: 2; grid-column: 5; }
 }
 
 /* The Sotto Owl tile once Watcher runs (#1189, pick C): a button, with a thin bar under it filling toward the point
@@ -381,45 +396,6 @@
 @media (max-height: 760px) {
   .watcher-first__intro h2 { margin: 6px 0 6px; }
   .watcher-first__intro p { font-size: 13.5px; line-height: 1.5; }
-}
-
-/* ---------- Watched ---------- */
-/* The threads Watcher watches, in its conversation's place: a lead line with Watch a thread, then a card for each,
-   grouped as the Overview groups them. A card's title button covers it, as a row's does in All threads. */
-.watcher-watched { display: flex; flex-direction: column; }
-.watcher-watched__lead { display: flex; align-items: center; gap: 8px 18px; margin: 0 0 8px; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.5; }
-.watcher-watched__lead > p { flex: 1 1 auto; min-width: 0; margin: 0; }
-.watcher-watched__add { display: inline-flex; flex: none; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; cursor: pointer; }
-.watcher-watched__add:hover { border-color: var(--tt-border-faint); background: var(--tt-hover); }
-.watcher-watched__label { display: flex; align-items: center; gap: 8px; margin: 12px 0 7px; color: var(--tt-text-2); font-size: 13px; font-weight: 600; }
-.watcher-watched__label > .watcher-group__count { margin-left: 0; }
-.watcher-watched__group[data-tone='needs'] .watcher-watched__label { color: var(--watcher-needs-ink); }
-.watcher-watched__cards { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.watched-card { position: relative; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; row-gap: 4px; padding: 11px 12px 11px 14px;
-  border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-lg); background: var(--tt-surface); }
-.watched-card[data-tone='needs'] { border-left: 2px solid var(--tt-attention); padding-left: 13px; }
-.watched-card:hover { border-color: var(--tt-border); }
-.watched-card__title { grid-column: 2; min-width: 0; overflow: hidden; color: var(--tt-text); font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-.watched-card__open { display: flex; padding: 0; border: 0; background: transparent; font: inherit; font-size: 14px; font-weight: 500; text-align: left; cursor: pointer; }
-.watched-card__open > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.watched-card__open::after { position: absolute; inset: 0; border-radius: var(--tt-radius-lg); content: ''; }
-.watched-card__open:focus-visible { outline: 0; box-shadow: none; }
-.watched-card__open:focus-visible::after { outline: 3px solid var(--tt-focus-ring); outline-offset: -1px; }
-.watched-card__actions { position: relative; z-index: 1; grid-column: 3; grid-row: 1 / span 2; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
-.watched-card__stop { display: inline-flex; flex: none; align-items: center; min-height: 26px; padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 12.5px; white-space: nowrap; cursor: pointer; }
-.watched-card__stop:hover { border-color: var(--tt-border); background: var(--tt-hover); }
-.watched-card__meta { grid-column: 2; display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; }
-.watched-card__meta .watcher-row__marks .thread-nav__mark { width: 13px; height: 13px; }
-.watched-card__provider, .watched-card__where { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.watched-card__meta > .watcher-row__status { max-width: none; margin-left: 0; }
-/* The meta's parts read as one line, a dot between each, as the mock-up writes them. */
-.watched-card__meta > :not(:first-child)::before { margin-right: 8px; color: var(--tt-text-muted); content: '·'; }
-.watched-card__doing { grid-column: 2 / -1; margin: 2px 0 0; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.45; }
-.watched-card[data-unlisted] .watched-card__title { color: var(--tt-text-2); }
-@container thread-pane (width < 560px) {
-  .watcher-watched__lead { flex-wrap: wrap; }
-  .watched-card { grid-template-columns: 10px minmax(0, 1fr); }
-  .watched-card__actions { grid-column: 2; grid-row: auto; justify-content: flex-start; }
 }
 
 /* ---------- Watcher's own changes ---------- */

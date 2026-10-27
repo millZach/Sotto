@@ -19,7 +19,7 @@
 @keyframes watcher-scene-in { from { opacity: 0; } to { opacity: 1; } }
 .watcher-scene--outgoing { animation: watcher-scene-out 600ms linear forwards; }
 .watcher-scene--land[data-arriving] { animation: watcher-scene-in 600ms linear; }
-/* When the scene steps away, as for Visualize, it fades out, and then it is gone. */
+/* When the scene steps away, it fades out, and then it is gone. */
 .watcher-scene[data-leaving] { opacity: 0; }
 .watcher-scene[data-leaving] .watcher-scene__owl { pointer-events: none; }
 .watcher-scene__owl { position: absolute; padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: pointer; pointer-events: auto; }
