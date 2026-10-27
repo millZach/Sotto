@@ -606,7 +606,7 @@ const NO_SUBSCRIPTION = (): (() => void) => () => undefined
 /** One turn's browser lines, drawn again only when that turn's own view changes. Null outside a transcript or with no turn. */
 function useTurnBrowserLines(turnId: string | null): TurnLinesView | null {
   const store = useContext(BrowserLinesContext)
-  return useSyncExternalStore(store?.subscribe ?? NO_SUBSCRIPTION, () => store === null || turnId === null ? null : store.view(turnId))
+  return useSyncExternalStore(store === null || turnId === null ? NO_SUBSCRIPTION : store.subscriberFor(turnId), () => store === null || turnId === null ? null : store.view(turnId))
 }
 
 /**

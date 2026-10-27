@@ -249,7 +249,7 @@ describe('the transcript\'s store of lines', () => {
     ])
     const store = new BrowserLinesStore()
     let told = 0
-    store.subscribe(() => { told++ })
+    store.subscriberFor('turn-1')(() => { told++ })
     store.update(records.list, 'turn-1', [message('said', 'assistant')])
     const read = records.reads()
     const older = store.view('turn-0')
@@ -272,5 +272,20 @@ describe('the transcript\'s store of lines', () => {
     store.update([old, { ...open, status: 'completed' }], 'turn-1', [])
     expect(store.view('turn-0')).toBe(older)
     expect(store.view('turn-1')).not.toBe(newer)
+  })
+
+  it('tells only who draws the turn that changed, however many finished turns are drawn', () => {
+    const finished = Array.from({ length: 100 }, (_, index) => claude(`old-${index}`, 'browser_open', { url: 'http://localhost:5173' }, { turnId: `turn-old-${index}` }))
+    const open = claude('open', 'browser_open', { url: 'http://localhost:5173' }, { status: 'running' })
+    const store = new BrowserLinesStore()
+    store.update([...finished, open], 'turn-1', [])
+    let historical = 0, running = 0
+    for (let index = 0; index < 100; index++) store.subscriberFor(`turn-old-${index}`)(() => { historical++ })
+    store.subscriberFor('turn-1')(() => { running++ })
+    store.update([...finished, { ...open, status: 'completed' }], 'turn-1', [])
+    expect(running).toBe(1)
+    expect(historical).toBe(0)
+    // The same turn's subscriber is one function, so a view subscribing again does not churn.
+    expect(store.subscriberFor('turn-1')).toBe(store.subscriberFor('turn-1'))
   })
 })

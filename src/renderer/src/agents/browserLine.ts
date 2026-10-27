@@ -200,28 +200,43 @@ export class BrowserLinesStore {
   private byTurn: ReadonlyMap<string, TurnBrowserLines> = new Map()
   private readonly views = new Map<string, TurnLinesView>()
   private live: string | null = null
-  private readonly listeners = new Set<() => void>()
+  /** Who draws each turn: told only when that turn's view changes, so telling does not grow with the history on screen. */
+  private readonly listeners = new Map<string, Set<() => void>>()
+  private readonly subscribers = new Map<string, (listener: () => void) => () => void>()
 
-  readonly subscribe = (listener: () => void): (() => void) => {
-    this.listeners.add(listener)
-    return () => { this.listeners.delete(listener) }
+  /** How to hear of one turn's view, the same function each time for a turn, as `useSyncExternalStore` wants. */
+  subscriberFor(turnId: string): (listener: () => void) => () => void {
+    let subscribe = this.subscribers.get(turnId)
+    if (subscribe === undefined) {
+      subscribe = listener => {
+        let turn = this.listeners.get(turnId)
+        if (turn === undefined) this.listeners.set(turnId, turn = new Set())
+        turn.add(listener)
+        return () => {
+          turn.delete(listener)
+          if (turn.size === 0 && this.listeners.get(turnId) === turn) { this.listeners.delete(turnId); this.subscribers.delete(turnId) }
+        }
+      }
+      this.subscribers.set(turnId, subscribe)
+    }
+    return subscribe
   }
 
   readonly view = (turnId: string): TurnLinesView => this.views.get(turnId) ?? NO_VIEW
 
-  /** Takes the transcript's records, its running turn and its messages, and tells only if any turn's view changed. */
+  /** Takes the transcript's records, its running turn and its messages, and tells only the turns whose view changed. */
   update(activities: readonly AgentActivity[] | undefined, liveTurn: string | null, messages: readonly AgentMessage[]): void {
-    let changed = false
+    const changed: string[] = []
     const put = (turnId: string, lines: TurnBrowserLines, goingKey: string | null): void => {
       const before = this.views.get(turnId)
       if (before !== undefined && before.lines === lines && before.goingKey === goingKey) return
       this.views.set(turnId, { lines, goingKey })
-      changed = true
+      changed.push(turnId)
     }
     if (activities !== this.activities) {
       this.activities = activities
       this.byTurn = browserLinesByTurn(activities, this.byTurn)
-      for (const turnId of [...this.views.keys()]) if (!this.byTurn.has(turnId)) { this.views.delete(turnId); changed = true }
+      for (const turnId of [...this.views.keys()]) if (!this.byTurn.has(turnId)) { this.views.delete(turnId); changed.push(turnId) }
       for (const [turnId, lines] of this.byTurn) put(turnId, lines, turnId === liveTurn ? goingRunKey(lines, messages) : null)
     } else {
       // Only the running turn's going line can have moved: the turn that was running, and the one that is.
@@ -229,7 +244,10 @@ export class BrowserLinesStore {
       if (liveTurn !== null) { const lines = this.byTurn.get(liveTurn); if (lines) put(liveTurn, lines, goingRunKey(lines, messages)) }
     }
     this.live = liveTurn
-    if (changed) for (const listener of [...this.listeners]) listener()
+    for (const turnId of changed) {
+      const turn = this.listeners.get(turnId)
+      if (turn !== undefined) for (const listener of [...turn]) listener()
+    }
   }
 }
 
