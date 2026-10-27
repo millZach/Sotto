@@ -14,6 +14,7 @@ import { PullRequestToolServer } from './agents/pullRequestTools'
 import { DelegationToolServer } from './agents/delegationTools'
 import { DesktopDefaultsPush, followDesktopDefaults, type DesktopDefaultsEvent } from './hosts/desktopDefaults'
 import { registerDelegationIpc } from './agents/delegationIpc'
+import { registerCheckQueueIpc } from './agents/checkQueueIpc'
 import { registerContinueIpc } from './agents/continueThreadIpc'
 import { registerNextPromptIpc, windowNextPrompt } from './agents/nextPromptIpc'
 import { NEXT_PROMPT_CHANGED, NEXT_PROMPT_RENDERER_ARGUMENT } from '../shared/nextPrompt'
@@ -2038,6 +2039,10 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       // A thread on another machine is read on that machine where Work across machines is on (#1310); stable reads none.
       const cleanupDelegations = registerDelegationIpc(ipcMain, delegationService, () => windows.getTrustedRenderers(), () => agentControl.hostId(),
         (channel, payload) => { windows.sendToMain(channel, payload) }, crossMachineEnabled ? hostRouter : undefined)
+      // Every machine's check queue for its panel and Tools › Agents (#1312), only where Watcher and Work across machines are
+      // both on, as the machines line is: This computer keeps no queue otherwise, and stable registers nothing.
+      const cleanupCheckQueues = registerCheckQueueIpc(ipcMain, watcherEnabled && crossMachineEnabled && 'checks' in localRuntime ? localRuntime.checks : undefined,
+        () => windows.getTrustedRenderers(), () => agentControl.hostId(), (channel, payload) => { windows.sendToMain(channel, payload) }, hostRouter)
       const cleanupContinue = registerContinueIpc(ipcMain, continueService, () => windows.getTrustedRenderers())
       const cleanupNextPrompts = registerNextPromptIpc(ipcMain, localRuntime.nextPrompts, () => agentControl.hostId(), () => windows.getTrustedRenderers())
       const cleanupNotifications = registerNotificationIpc(ipcMain, desktopNotifier, () => windows.getTrustedRenderers())
@@ -2286,6 +2291,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         cleanupSubagents()
         cleanupUsage()
         cleanupDelegations()
+        cleanupCheckQueues()
         cleanupContinue()
         cleanupNextPrompts()
         cleanupMainActivity()
