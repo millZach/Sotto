@@ -2704,6 +2704,10 @@ msgid "In the composer"
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "In the composer while a turn runs, where the agent can take it. Otherwise it does what Enter does."
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "In the focused thread’s project, or the chooser when none is focused."
 msgstr ""
 
@@ -5099,6 +5103,10 @@ msgstr ""
 #. A group of theme colors in the theme editor
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Status"
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Steer now"
 msgstr ""
 
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts

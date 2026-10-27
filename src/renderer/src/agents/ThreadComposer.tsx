@@ -1,11 +1,11 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
-import { ArrowUp, Laptop, ListPlus, MessageSquare, Quote, Server, Sparkles, Square, X } from 'lucide-react'
+import { Laptop, MessageSquare, Quote, Server, Sparkles, X } from 'lucide-react'
 import { msg, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { NextPrompt } from '../../../shared/nextPrompt'
 import { useOptionalApp } from '../state/AppContext'
-import { chordClaimed } from './branchToolbar.logic'
-import { claimedThreadChord, threadChordLabel, threadChordPressed } from './threadShortcuts'
+import { chordClaimed, chordMatches } from './branchToolbar.logic'
+import { claimedThreadChord, threadChordCap, threadChordLabel, threadChordPressed } from './threadShortcuts'
 import { NextList, nextOptionId, nextRows, type NextRow } from './NextList'
 import { DICTATING, ghostRest, nextPromptStore, useNextPrompt, withNextText } from './nextPrompts'
 import { capabilitiesForThread, hostForThread, isThreadBusy, lastUserMessageIdOf, PROVIDER_LABELS, type AgentState } from '../../../shared/agents'
@@ -156,8 +156,9 @@ function blockedReason(row: ThreadRow, state: AgentState, answering: boolean, in
  * The manual prompt (or answer) composer for one thread. Content is the thread's durable draft:
  * every edit is a new revision, Enter sends, Shift+Enter adds a line. The press empties the composer
  * and starts the next revision; what was sent is shown in the transcript, which says how it went and
- * offers it back if the provider refused it. While a turn runs, Enter queues; Steer now is the separate,
- * explicit way into the running turn, and Stop takes the send button's place until there is something to queue.
+ * offers it back if the provider refused it. While a turn runs, Enter queues; Steer now (Cmd/Ctrl+Enter) is the
+ * separate, explicit way into the running turn, and Stop takes the send button's place until there is something to queue.
+ * Each button says what it does and the key that does it (ADR-0153).
  */
 export function ThreadComposer({ row, state, command, store, onSend, composerId = THREAD_PROMPT_ID, ornament, focused = true, onExplainedError, reviewComments = reviewCommentStore, replyQuotes = replyQuoteStore, watcher = false }: {
   readonly row: ThreadRow
@@ -421,6 +422,11 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [watcher, focused, canStop, stopChord, platform, command, threadId])
+  // Steer now's chord: Cmd+Enter on a Mac, Ctrl+Enter elsewhere, unless one of dictation's shortcuts already means those keys.
+  const steerChord = [hotkey, ...(app?.settings?.pressShortcuts ?? []), ...(app?.settings?.holdShortcuts ?? [])]
+    .every(accelerator => chordClaimed('mod+enter', accelerator, platform)) ? 'mod+enter' : null
+  const enterCap = threadChordCap('enter', platform)
+  const stopKeys = !watcher && stopChord ? stopChord : null
   // Kept with the thread it was opened on, so moving to another thread finds it closed and at its first row.
   const [nextListState, setNextListState] = useState<{ readonly threadId: string; readonly index: number; readonly from: 'prompt' | 'button' } | null>(null)
   const nextList = next !== null && nextListState?.threadId === threadId ? nextListState : null
@@ -498,7 +504,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         field={field} caretAfterInsert={caretAfterInsert} leavePickers={leavePickers} onMenuChange={setMenuOpen}
         next={next} nextOpen={nextOpen} nextListId={nextListId} nextActiveId={nextOpen ? nextOptionId(nextListId, nextList.index) : undefined}
         dictating={dictating || ghostAway} nextKey={nextKey}
-        fieldLabel={fieldLabel} edit={edit} onSend={() => send(performance.now())}>
+        fieldLabel={fieldLabel} edit={edit}
+        onSend={event => send(performance.now(), canSteer && steerChord !== null && event !== undefined && chordMatches(event, steerChord, platform) ? 'steer' : undefined)}>
         {comments.length > 0 ? <ul className="review-chips" aria-label={t`Review comments`}>
           {comments.map(comment => {
             const label = reviewLabel(comment)
@@ -547,20 +554,24 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         </div>
         <div className="thread-prompt__actions">
           {running && capabilities.steer === true
-            ? <Button variant="ghost" className="thread-prompt__steer" disabled={!canSteer} title={canSteer ? t`Send this now, without waiting for the turn to end` : reason ?? undefined} onClick={() => send(performance.now(), 'steer')}><Trans>Steer now</Trans></Button>
+            ? <Button variant="ghost" className="thread-prompt__steer" aria-label={t`Steer now`} aria-keyshortcuts={steerChord ? threadChordLabel(steerChord, platform).keys : undefined}
+              disabled={!canSteer} title={canSteer ? t`Send this now, without waiting for the turn to end` + (steerChord ? ` ${threadChordLabel(steerChord, platform).suffix}` : '') : reason ?? undefined}
+              onClick={() => send(performance.now(), 'steer')}><KeyedLabel word={t({ message: 'Steer', comment: 'Button: sends the typed prompt into the running turn now. Its full name is Steer now.' })} keyCap={steerChord ? threadChordCap(steerChord, platform) : null} /></Button>
             : null}
-          {working ? <Button iconOnly className="thread-prompt__stop" data-beside={content || undefined} aria-label={stopName} aria-keyshortcuts={!watcher && stopChord ? threadChordLabel(stopChord, platform).keys : undefined} title={!watcher && stopChord ? `${stopName} ${threadChordLabel(stopChord, platform).suffix}` : stopName} disabled={!canStop} onClick={() => void command({ type: 'interrupt', threadId })}><Square size={11} fill="currentColor" aria-hidden="true" /></Button> : null}
+          {/* While a turn runs, Stop carries its trace: the control that ends the turn is the sign that it is running. */}
+          {working ? <Button variant="ghost" className="thread-prompt__stop" data-beside={content || undefined} aria-label={stopName} aria-keyshortcuts={stopKeys ? threadChordLabel(stopKeys, platform).keys : undefined} title={stopKeys ? `${stopName} ${threadChordLabel(stopKeys, platform).suffix}` : stopName} disabled={!canStop} onClick={() => void command({ type: 'interrupt', threadId })}>
+            <KeyedLabel word={t({ message: 'Stop', comment: 'Button: stops the running turn.' })} keyCap={stopKeys ? threadChordCap(stopKeys, platform) : null} /><span className="thread-prompt__trace" aria-hidden="true"><i /></span></Button> : null}
           {/* With nothing to send, Stop holds the send button's place; typed text brings the send back to the end, so Enter's button is never Stop. */}
-          {/* One disc: an arrow sends, a list-plus queues. The full name stays in the label and title, so Queue prompt is never called Send. */}
+          {/* The filled button is always what Enter does. Its full name stays in the label and title, so Queue prompt is never called Send. */}
           {continuing !== undefined
             // A narrow pane shows Continue alone; the name keeps the provider, and the strip above says it too.
-            ? <Button className="thread-prompt__send" data-wide aria-label={t`Continue on ${continueTarget}`} title={reason ?? t`Start a new ${continueTarget} thread with a handover of this one and your message`} disabled={!canSend} type="submit">
-              <Trans>Continue<span className="thread-prompt__send-target"> on {continueTarget}</span></Trans><ArrowUp size={15} strokeWidth={2.25} aria-hidden="true" /></Button>
+            ? <Button className="thread-prompt__send" data-wide aria-label={t`Continue on ${continueTarget}`} aria-keyshortcuts="Enter" title={reason ?? t`Start a new ${continueTarget} thread with a handover of this one and your message`} disabled={!canSend} type="submit">
+              <Trans>Continue<span className="thread-prompt__send-target"> on {continueTarget}</span></Trans><kbd className="thread-prompt__key" aria-hidden="true">{enterCap}</kbd></Button>
             : handover !== null && !working
-            ? <Button className="thread-prompt__send" data-wide aria-label={handover.label} title={reason ?? handover.label} disabled={!canSend} type="submit">
-              <Trans>Continue</Trans><ArrowUp size={15} strokeWidth={2.25} aria-hidden="true" /></Button>
-            : !working || content ? <Button iconOnly className="thread-prompt__send" aria-label={primaryLabel} title={reason ?? primaryLabel} disabled={!canSend} type="submit">
-              {queueing ? <ListPlus size={15} aria-hidden="true" /> : <ArrowUp size={15} strokeWidth={2.25} aria-hidden="true" />}</Button> : null}
+            ? <Button className="thread-prompt__send" data-wide aria-label={handover.label} aria-keyshortcuts="Enter" title={reason ?? handover.label} disabled={!canSend} type="submit">
+              <KeyedLabel word={t`Continue`} keyCap={enterCap} /></Button>
+            : !working || content ? <Button className="thread-prompt__send" aria-label={primaryLabel} aria-keyshortcuts="Enter" title={reason ?? primaryLabel} disabled={!canSend} type="submit">
+              <KeyedLabel word={queueing ? t({ message: 'Queue', comment: 'Button: puts the typed prompt in the queue to send when the turn ends.' }) : t({ message: 'Send', comment: 'Button: sends the typed prompt or answer.' })} keyCap={enterCap} /></Button> : null}
         </div>
       </div>
       <div ref={setSettingsNotices} className="thread-options-notices" />
@@ -569,6 +580,11 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         Its own row of buttons under the card, not a strip inside it (#325). */}
     {watcher ? null : <BranchToolbar row={row} state={state} command={command} focused={focused} onExplainedError={onExplainedError} />}
   </>
+}
+
+/** A button's word and the key that does the same, the key cap drawn as a key. A narrow pane shows the key alone (ADR-0153). */
+function KeyedLabel({ word, keyCap }: { readonly word: string; readonly keyCap: string | null }): ReactNode {
+  return <><span className="thread-prompt__word">{word}</span>{keyCap ? <kbd className="thread-prompt__key" aria-hidden="true">{keyCap}</kbd> : null}</>
 }
 
 interface ComposerControls {
@@ -629,7 +645,8 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
   readonly dictating?: boolean
   readonly nextKey?: (event: KeyboardEvent<HTMLElement>, ghostShown: boolean) => boolean
   readonly edit: (patch: Parameters<ThreadDraftStore['edit']>[1]) => void
-  readonly onSend: () => void
+  /** The keydown that sent, when a key did, so the composer can tell Enter from Steer now's chord. */
+  readonly onSend: (event?: KeyboardEvent<HTMLElement>) => void
   readonly children: ReactNode
 }): ReactNode {
   const { t } = useLingui()
@@ -734,7 +751,7 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
           if (composerEnterIntent(key) !== 'send') return
           // Enter never inserts a stray newline, even when sending is blocked.
           event.preventDefault()
-          onSend()
+          onSend(event)
         }} />
     </ScreenshotInput>
   </>
