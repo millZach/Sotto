@@ -52,7 +52,7 @@
 .effort-card[data-unknown='true'] .effort-card__fill { opacity: .35; }
 .effort-card__dot { position: absolute; top: 50%; left: calc(13px + var(--effort-stop) * (100% - 26px)); width: 4px; height: 4px; border-radius: 50%; background: var(--tt-effort-dot); transform: translate(-50%, -50%); }
 .effort-card__dot[data-under='true'] { background: color-mix(in srgb, var(--tt-surface-elevated) 55%, var(--tt-effort-b)); }
-.effort-card__thumb { position: absolute; top: 0; left: calc(13px + var(--effort-x) * (100% - 26px)); display: grid; place-items: center; width: 26px; height: 26px; border-radius: 3px; background: var(--tt-effort-thumb); color: light-dark(var(--tt-text), var(--tt-surface-elevated)); box-shadow: var(--tt-shadow-sm), 0 0 0 1px var(--tt-effort-thumb-edge); transform: translateX(-50%); pointer-events: none; }
+.effort-card__thumb { position: absolute; top: 0; left: calc(13px + var(--effort-x) * (100% - 26px)); display: grid; place-items: center; width: 26px; height: 26px; border-radius: 3px; background: var(--tt-effort-thumb); color: light-dark(var(--tt-text), var(--tt-surface)); box-shadow: var(--tt-shadow-sm), 0 0 0 1px var(--tt-effort-thumb-edge); transform: translateX(-50%); pointer-events: none; }
 .effort-card[data-unknown='true'] .effort-card__thumb { opacity: .45; }
 .effort-card__track input {
   position: absolute;
