@@ -873,7 +873,9 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
       anchor.current = null
       return
     }
-    if (followed.current !== followSignal) { followed.current = followSignal; toEnd(); return }
+    // A send from the end follows it there; a send from above the end leaves the reader where they are, and what it adds
+    // lights Jump to latest like any other arrival.
+    if (followed.current !== followSignal) { followed.current = followSignal; if (following.current) { toEnd(); return } }
     const arrived = seen.current !== lastMessageId
     seen.current = lastMessageId
     if (following.current) { element.scrollTop = element.scrollHeight; lastTop.current = element.scrollTop }

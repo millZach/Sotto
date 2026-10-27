@@ -4,6 +4,8 @@
 
 Accepted October 23, 2026, as an Owl feature (`composer-shrink`). The user picked B, "slim line only", of `docs/prototypes/composer-shrink-prototype.html`, and that a draft keeps the composer full; for Watcher's room, the same slim line (`docs/prototypes/watcher-floating-composer-prototype.html`). Builds on the floating composer (#1391) and [ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md) (Owl features). **Number provisional until merge** (docs/agents/domain.md).
 
+Amended October 26, 2026, at the user's ask ("when I send a prompt it should not jump to the latest message from where I was at in the chat history"): a send, a queued follow-up or a steer from a user reading back leaves the transcript where it is. What it adds lands at the end unseen and lights **New messages**, as anything else arriving does; a send from the end still follows it. This holds on stable as well as Owl.
+
 ## Context
 
 The thread composer floats over the transcript's foot, so the thread runs on under it. A full composer is a card about 130 pixels tall with its options row and the line under it. While the user reads back through a long thread, that card covers the words they are reading for no reason: nothing is being written. T3 Code shrinks its composer to a slim line in the same situation.
