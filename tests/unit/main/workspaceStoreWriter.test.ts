@@ -121,6 +121,8 @@ async function releaseUntilPosted(writer: DeferredStoreWriter, kind: string): Pr
 async function pumped<T>(f: Fixture, work: Promise<T>): Promise<T> {
   let done = false
   const result = work.finally(() => { done = true })
+  // Handled at once, so a rejection while the writer is pumped reaches the caller rather than reading as unhandled.
+  result.catch(() => undefined)
   while (!done) {
     f.writer?.release()
     await new Promise(resolve => setImmediate(resolve))
@@ -416,6 +418,28 @@ describe('order, failure and durability through the seam', () => {
     try {
       expect(db.prepare("SELECT COUNT(*) AS found FROM events WHERE payload LIKE '%Late words%' OR payload LIKE '%Before clearing%' OR payload LIKE '%held for the write window%'").get()?.found).toBe(0)
       expect(db.prepare('SELECT COUNT(*) AS found FROM messages WHERE thread_id = ?').get(WORKSHOP)?.found).toBe(0)
+    } finally { db.close() }
+  })
+
+  it('saves the other threads’ records, and fails nothing, when a flush meets a thread whose forget is held', async () => {
+    const f = await fixture({ deferred: true })
+    for (const [threadId, id] of [[WORKSHOP, 'cleared-record'], [DOCS, 'kept-record']] as const) {
+      f.adapter.state.threads.find(item => item.id === threadId)!.activities = [record(id, 0)]
+    }
+    f.adapter.emit()
+    settle(f)
+    const cleared = f.host.deleteThreads([WORKSHOP], { automatic: false, hold: () => null })
+    await releaseUntilPosted(f.writer!, 'forget')
+    // The cleared thread's records are still in the snapshot; the save leaves them to the forget instead of failing.
+    f.adapter.state.threads.find(item => item.id === DOCS)!.activities = [record('kept-record', 0), record('kept-later', 1)]
+    f.adapter.emit()
+    await expect(pumped(f, f.host.flush())).resolves.toBeUndefined()
+    expect(await pumped(f, cleared)).toMatchObject({ deleted: [WORKSHOP] })
+    settle(f)
+    const db = new DatabaseSync(join(f.directory, 'threads.sqlite'), { readOnly: true })
+    try {
+      expect(db.prepare('SELECT thread_id, activity_id FROM activities ORDER BY thread_id, position').all()).toEqual([
+        { thread_id: DOCS, activity_id: 'kept-record' }, { thread_id: DOCS, activity_id: 'kept-later' }])
     } finally { db.close() }
   })
 

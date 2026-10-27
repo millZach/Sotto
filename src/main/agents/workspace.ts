@@ -2471,7 +2471,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (!this.historyWritable() || this.activityStoreUnavailable) return
     const whole = all || keepTaskWords || this.unsavedAll || this.savedWithWords
     const threads = whole ? this.state.snapshot.threads : [...this.unsaved].flatMap(id => { const thread = this.threadById(id); return thread ? [thread] : [] })
-    const saved = threads.filter(thread => this.visible(thread) && thread.activities !== undefined)
+    // A thread being cleared, or cleared, is left to its forget: the store takes no more of its records (`admitted`), and
+    // counting it would fail the save for every other thread in it.
+    const saved = threads.filter(thread => this.visible(thread) && thread.activities !== undefined && !this.forgetting.has(thread.id) && !this.clearedIds.has(thread.id))
     // Every thread's records in one transaction: a save with several busy threads pays one disk flush, not one each.
     // A writer on main throws its failure here, before anything below, exactly as the store did.
     const done = this.commit({ kind: 'activities', entries: saved.map(thread => ({ threadId: thread.id, activities: keepTaskWords ? thread.activities! : retainedActivities(thread.activities!), epoch: thread.historyEpoch })) })
