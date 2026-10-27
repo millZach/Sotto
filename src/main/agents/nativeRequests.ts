@@ -23,6 +23,8 @@ export function unreadableRequest(provider: string): string {
 }
 
 /** Validate against the original native request, never against renderer-provided choices. */
+/** What a provider that takes words with a declined question is told when the user skips it (ADR-0135, October 27, 2026). */
+export const QUESTION_SKIPPED = 'The user skipped this question. Proceed using your own judgement.'
 export function questionValues(request: AgentRequest, supplied: AgentQuestionAnswers): Record<string, string[]> {
   const questions = request.questions ?? []
   if (!questions.length || Object.keys(supplied).some(id => !questions.some(question => question.id === id))) throw new Error('The question changed. Review its original request.')

@@ -12,7 +12,7 @@ import { unseenFailures, type NeedsYouEntry, type NeedsYouQueue as NeedsYouFact 
 import { openBesidePressed } from './threadShortcuts'
 import {
   answerProgress, hasNoSendableChoice, isRequired, legacyPermissionAnswer, permissionAnswer, permissionSummary,
-  requestAnswerOwnerKey, requestAnswerStore, structuredAnswer, useRequestEntry, type QuestionSelection,
+  requestAnswerOwnerKey, requestAnswerStore, SKIP_ANSWER, structuredAnswer, useRequestEntry, type QuestionSelection,
 } from './requests/requestAnswers'
 import { threadRequestBlocked, threadRequestCheck, threadRequestOwner, threadRequestSubmit } from './requests/threadRequests'
 import { shownCount } from '../state/interfaceNumbers'
@@ -251,7 +251,8 @@ function RequestActions({ entry, state, command, watcherOn, onOpen }: {
           if (answer) submit(null, answer)
         }}>{option.label}</Button>)}
       {!isRequired(questions[0]) ? <Button variant="ghost" aria-label={t`Skip question in ${title}`}
-        onClick={() => { const answer = structuredAnswer(questions, {}); if (answer) submit(null, answer) }}>{t`Skip question`}</Button> : null}
+        onClick={() => { const answer = structuredAnswer(questions, {}); if (answer) submit(null, answer) }}>{t`Skip question`}</Button>
+        : request.skippable ? <Button variant="ghost" aria-label={t`Skip question in ${title}`} onClick={() => submit('skip', SKIP_ANSWER)}>{t`Skip question`}</Button> : null}
     </div> : null}
     {!inline && !locked ? <div className="needs-you__actions">{openButton}</div> : null}
     {hasNoSendableChoice(request) ? <p className="needs-you__note tt-paragraph">{t`Sotto has no choice it can send for this request. Answer it in the provider’s app.`}</p> : null}

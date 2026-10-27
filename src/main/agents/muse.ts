@@ -18,7 +18,7 @@ import { preserveLegacyAliases } from './legacyAliases'
 import { museItemActivity, museItemDeltaSchema, museItemEventSchema, museItemSchema, musePlanActivity, museTerminal, museTurnCompletedSchema, museTurnEventSchema, type MuseItem } from './museActivity'
 import { museApprovalChoice, museApprovalDecidedSchema, museApprovalPending, museApprovalRefreshed, museApprovalSchema, museApprovalUpdatedSchema, museServerSuffix, museSessionServerName, museToolAdmission, museToolName, museUserInputAnswers, museUserInputPending, museUserInputSchema, type MuseApproval, type MusePending } from './museRequests'
 import { MUSE_CLI_VERSION, MUSE_MSP_VERSION, MuseRejected, MuseRpc, MuseTooOld, MuseUncertain, MuseUnreadable, MuseUnsupported, findMuseExecutable, museCommandId, museEnvironment, type MuseFrame } from './museRpc'
-import { needsPerson, unreadableRequest } from './nativeRequests'
+import { needsPerson, QUESTION_SKIPPED, unreadableRequest } from './nativeRequests'
 import { tokenCount } from './nativeUsage'
 import { ObservedUsage } from './observedUsage'
 import { exhaustedQuotaReset, parseMuseQuota, unavailableProviderQuota } from './providerQuota'
@@ -1998,7 +1998,7 @@ export class MuseMspHost implements AgentHost {
           // Validate the user's answer before recording a delivery attempt. A local validation failure
           // sends nothing and leaves the request immediately answerable.
           const decision = pending.kind === 'approval' ? museApprovalChoice(pending, command.approved, command.permissionChoice) : undefined
-          const answers = pending.kind === 'userInput' && command.approved !== false
+          const answers = pending.kind === 'userInput' && command.approved !== false && !command.skipped
             ? museUserInputAnswers(pending, command.answer, command.questionAnswers) : undefined
           pending.answerCommandId ??= museCommandId()
           const remembered = alias.answeredRequestIds.includes(pending.request.id)
@@ -2024,8 +2024,10 @@ export class MuseMspHost implements AgentHost {
                 await this.resync(command.threadId)
                 return { accepted: true }
               }
-            } else if (command.approved === false) {
-              await entry.rpc.request('userInput/cancel', { commandId: pending.answerCommandId, sessionId: alias.museSessionId, userInputId: pending.input.userInputId, ...(command.answer.trim() ? { reason: command.answer.trim() } : {}) })
+            } else if (command.approved === false || command.skipped) {
+              // Muse tells its model the user declined to answer, and the model decides again.
+              const reason = command.skipped ? QUESTION_SKIPPED : command.answer.trim()
+              await entry.rpc.request('userInput/cancel', { commandId: pending.answerCommandId, sessionId: alias.museSessionId, userInputId: pending.input.userInputId, ...(reason ? { reason } : {}) })
             } else {
               await entry.rpc.request('userInput/answer', {
                 commandId: pending.answerCommandId, sessionId: alias.museSessionId, userInputId: pending.input.userInputId,

@@ -327,7 +327,7 @@ private struct Conversation: View {
                         failed: model.failedReplies[ref.id] != nil)
         ScrollViewReader { proxy in
             ScrollView {
-                page(detail: detail, rows: rows, pending: pending, scroll: proxy)
+                page(detail: detail, rows: rows, pending: pending, scroll: proxy).readingWidth()
             }
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
@@ -344,6 +344,7 @@ private struct Conversation: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 ReplyDock(ref: ref, openRequest: openRequest)
                     .equatable()
+                    .readingWidth()
                     .background(dockReader(proxy))
             }
             .onChange(of: tail) { _, _ in

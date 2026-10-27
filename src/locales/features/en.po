@@ -6233,6 +6233,10 @@ msgstr "You sent here yourself. Until that turn ends, Watcher can only steer it.
 msgid "You set this policy"
 msgstr "You set this policy"
 
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "You skipped {title}’s question."
+msgstr "You skipped {title}’s question."
+
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "You told Sotto"
 msgstr "You told Sotto"
