@@ -103,6 +103,11 @@ describe('starting from a branch with Work across machines', () => {
       const delegate = tool(delegationToolDefinitions(roles, machines), 'delegate')!
       for (const name of ['from_my_branch', 'test_run']) expect(Object.hasOwn(delegate.schema.properties, name)).toBe(machines)
       expect(delegate.description.includes('from_my_branch')).toBe(machines)
+      // One check at a time per machine, and the reply a check's brief asks for (#1312): only while it is on.
+      expect(delegate.description.includes('One check runs at a time on a machine')).toBe(machines)
+      expect(delegate.description.includes('the verdict, the counts and the failing lines, inside 32 KiB')).toBe(machines)
     }
+    // A thread on a headless host is offered no test_run, so it is told nothing of checks.
+    expect(tool(delegationToolDefinitions(false, true, 'this-machine'), 'delegate')!.description).not.toContain('check')
   })
 })

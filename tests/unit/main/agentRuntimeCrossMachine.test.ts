@@ -30,6 +30,8 @@ const startOffers = (host: Awaited<ReturnType<typeof runtime>>) =>
 const delegationMachines = (host: Awaited<ReturnType<typeof runtime>>) => (host.delegation as unknown as { options: { machines?: unknown } }).options.machines
 /** Who moves a branch for a start from a thread's branch (#1033): Watcher's and delegation's mover, the same one. */
 const movers = (host: Awaited<ReturnType<typeof runtime>>) => [host.watcher, host.delegation].map(service => (service as unknown as { options: { branchMoves?: unknown } } | undefined)?.options.branchMoves)
+/** This machine's checks (#1312), one at a time: delegation's queue. */
+const checks = (host: Awaited<ReturnType<typeof runtime>>) => (host.delegation as unknown as { options: { checks?: { machine: string } } } | undefined)?.options.checks
 
 it('is off on stable and on in Owl', () => {
   expect(owlFeaturesForTrack('stable')['cross-machine-work']).toBe(false)
@@ -43,6 +45,7 @@ it.each([[undefined], [false]] as const)('offers no machine choice and reports n
     expect(host.watcherTools!.instructions ?? '').not.toContain('newWorkersStart')
     expect(delegationMachines(host)).toBeUndefined()
     expect(movers(host)).toEqual([undefined, undefined])
+    expect(checks(host)).toBeUndefined()
     expect(startOffers(host)).not.toContain('fromThread')
     expect(host.hostService.supportsProjectOrigins).toBe(false)
   } finally { await host.close() }
@@ -57,6 +60,7 @@ it('offers the choice on the desktop when the Owl answer is on, and a headless h
     const [watcherMover, delegationMover] = movers(desktop)
     expect(watcherMover).toBeDefined()
     expect(delegationMover).toBe(watcherMover)
+    expect(checks(desktop)?.machine).toBe('This computer')
     expect(startOffers(desktop)).toEqual(expect.arrayContaining(['fromThread', 'testRun']))
     expect(desktop.hostService.supportsProjectOrigins).toBe(true)
     expect(await desktop.hostService.projectOrigins()).toEqual({ projects: expect.any(Array) })
