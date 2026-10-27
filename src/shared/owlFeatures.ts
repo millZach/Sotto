@@ -49,6 +49,7 @@ export const OWL_FEATURES = [
   { id: 'needs-you-queue', name: 'Needs you in the Threads sidebar', owlSince: '2026-10-24', owner: 'docs/adr/0135-the-threads-sidebar-opens-on-needs-you.md', sentToStable: false },
   { id: 'folder-peek', name: 'Peek inside a closed folder', owlSince: '2026-10-24', owner: 'docs/plans/collapsed-folder-peek.md', sentToStable: false },
   { id: 'run-command', name: 'Run a command from a reply', owlSince: '2026-10-25', owner: 'docs/adr/0139-a-command-in-a-reply-runs-in-the-terminal-drawer.md', sentToStable: false },
+  { id: 'model-favorites', name: 'Favorite models in the model menu', owlSince: '2026-10-26', owner: 'docs/adr/0147-favorite-models-lead-the-model-menu.md', sentToStable: false },
   { id: 'keep-main-current', name: 'Keep main up to date', owlSince: '2026-10-23', owner: 'docs/adr/0142-sotto-keeps-each-projects-main-up-to-date.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 

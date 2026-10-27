@@ -1468,6 +1468,10 @@ msgstr "Add project"
 msgid "Add server"
 msgstr "Add server"
 
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Add to favorites"
+msgstr "Add to favorites"
+
 #: src/renderer/src/agents/ReplyQuoteButton.tsx
 msgid "Add to prompt"
 msgstr "Add to prompt"
@@ -3542,6 +3546,10 @@ msgstr "Faster output, at a higher price."
 msgid "Fastest. For the smallest tasks."
 msgstr "Fastest. For the smallest tasks."
 
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Favorites"
+msgstr "Favorites"
+
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "Fetches the branch before first send."
 msgstr "Fetches the branch before first send."
@@ -4399,6 +4407,7 @@ msgstr "Model the new thread starts on"
 msgid "Model, reasoning effort and permissions."
 msgstr "Model, reasoning effort and permissions."
 
+#: src/renderer/src/agents/ModelPicker.tsx
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Models"
 msgstr "Models"
@@ -5798,6 +5807,10 @@ msgstr "Remove comment"
 msgid "Remove comment on {label}"
 msgstr "Remove comment on {label}"
 
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Remove from favorites"
+msgstr "Remove from favorites"
+
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Remove its worktree too?"
 msgstr "Remove its worktree too?"
@@ -6905,6 +6918,10 @@ msgstr "Sotto’s OpenCode holds the key for {name} and is not running, so nothi
 #: src/renderer/src/agents/ProjectChooser.tsx
 msgid "Sources"
 msgstr "Sources"
+
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Star a model to keep it here."
+msgstr "Star a model to keep it here."
 
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Start a new {continueTarget} thread with a handover of this one and your message"
