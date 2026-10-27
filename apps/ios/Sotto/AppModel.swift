@@ -1169,9 +1169,9 @@ struct HeldDetail {
     @Published private var receiptFollowers: [String: ReceiptFollower] = [:]
     private struct ReceiptFollower { let token: UUID; let generation: UUID? }
     /// The kinds that read as sending. A thread or project creation keeps its own sheet and its own wait.
-    private static let sendingKinds: Set<String> = ["reply", "queue", "answer", "watcher-answer", "interrupt", "steer", "remove", "compact", "babysit", "stop-babysitting"]
+    private static let sendingKinds: Set<String> = ["reply", "queue", "answer", "watcher-answer", "interrupt", "steer", "remove", "compact", "settle", "restore", "babysit", "stop-babysitting"]
     /// The kinds whose refusal the computer says only in its shell's error, said here as feedback.
-    private static let queueActionKinds: Set<String> = ["steer", "remove", "compact", "babysit", "stop-babysitting"]
+    private static let queueActionKinds: Set<String> = ["steer", "remove", "compact", "settle", "restore", "babysit", "stop-babysitting"]
     /// A receipt the computer says is still being carried out is read again this often, this many times: about ten minutes.
     private static let receiptInterval: UInt64 = 2_000_000_000
     private static let receiptReads = 300
@@ -1992,16 +1992,32 @@ struct HeldDetail {
     /// Why Compact context can't go now, in a few words, or nil when it can.
     func compactionHeld(_ ref: ThreadRef) -> String? {
         guard let thread = self.thread(ref) else { return String(localized: "This thread is no longer open", comment: "Why Compact context can't be pressed now") }
-        if !online(ref.hostID) {
-            return String(localized: "Available when \(name(ref.hostID)) is connected", comment: "Why Compact context can't be pressed now. %@ is the computer's name")
-        }
-        if !pending(for: ref).isEmpty || live[ref.hostID]?.shell?.busyThreadIds?.contains(ref.threadID) == true {
-            return String(localized: "Available once \(name(ref.hostID)) confirms your last action", comment: "Why Compact context can't be pressed now. %@ is the computer's name")
-        }
+        if let held = actionHeld(ref) { return held }
         let detail = shown(for: ref)
         return ContextCompaction.held(thread, messages: detail?.messages,
                                       earlierAvailable: detail?.earlierAvailable == true || thread.earlierAvailable == true)
     }
+    /// Why none of the thread's ••• actions can go now, or nil when they can: its computer is away, or hasn't confirmed the
+    /// last one.
+    func actionHeld(_ ref: ThreadRef) -> String? {
+        if !online(ref.hostID) {
+            return String(localized: "Available when \(name(ref.hostID)) is connected", comment: "Why a thread action can't be pressed now. %@ is the computer's name")
+        }
+        if !pending(for: ref).isEmpty || live[ref.hostID]?.shell?.busyThreadIds?.contains(ref.threadID) == true {
+            return String(localized: "Available once \(name(ref.hostID)) confirms your last action", comment: "Why a thread action can't be pressed now. %@ is the computer's name")
+        }
+        return nil
+    }
+    /// What the thread offers for the Settled shelf, as the desktop's ••• does: Settle while it is open, Restore once it is
+    /// settled on its own. One settled with its project, or one its provider closed, offers neither.
+    func shelfAction(_ ref: ThreadRef) -> ShelfAction? {
+        guard let thread = self.thread(ref) else { return nil }
+        let project = live[ref.hostID]?.shell?.host.projects.first { $0.id == thread.projectId }
+        if project?.workspaceSettledAt?.isEmpty == false { return nil }
+        if thread.workspaceSettledAt?.isEmpty == false { return .restore }
+        return ThreadGroups.isSettled(thread, project: project) ? nil : .settle
+    }
+    enum ShelfAction { case settle, restore }
     func canAnswer(_ request: AgentRequest, in ref: ThreadRef) -> Bool {
         guard canAct(on: ref), mayAnswer(ref.hostID), request.supported else { return false }
         let allowed = capabilities(for: ref)
@@ -2935,6 +2951,12 @@ struct HeldDetail {
         guard canAct(on: ref), compactionOffered(ref), compactionHeld(ref) == nil else { return }
         await act(on: ref, kind: "compact") { try Commands.compact(threadID: ref.threadID) }
     }
+    /// Moves the thread on or off the Settled shelf. The thread, its history and its working copy all stay, and a running
+    /// thread settles as it does on the desktop: settling stops nothing.
+    func shelve(_ ref: ThreadRef) async {
+        guard canAct(on: ref), let action = shelfAction(ref), actionHeld(ref) == nil else { return }
+        await act(on: ref, kind: action == .settle ? "settle" : "restore") { try Commands.settle(threadID: ref.threadID, settled: action == .settle) }
+    }
     /// One of the thread's own commands, marked by its kind and thread alone before it goes.
     private func act(on ref: ThreadRef, kind: String, _ build: () throws -> JSONValue) async {
         guard let computer = self.computer(ref.hostID) else { return }
@@ -3075,6 +3097,16 @@ struct HeldDetail {
         // A phone-minted Sotto ID identifies this exact creation even after its receipt expired.
         if item.kind == "create-thread", shell?.host.threads.contains(where: { $0.id == item.threadID }) == true {
             try forgetMarker(item.id)
+            return
+        }
+        // Settle and Restore are confirmed by the thread standing where they put it, even once the receipt has expired.
+        if item.kind == "settle" || item.kind == "restore", let thread = shell?.host.threads.first(where: { $0.id == item.threadID }),
+           (thread.workspaceSettledAt?.isEmpty == false) == (item.kind == "settle") {
+            try forgetMarker(item.id)
+            if feedback == nil || feedbackOperations.contains(item.id) {
+                feedback = item.kind == "settle" ? String(localized: "Moved to Settled.", comment: "Said once the computer confirms the user settled a thread")
+                    : String(localized: "Restored.", comment: "Said once the computer confirms the user took a thread off the Settled shelf")
+            }
             return
         }
         let delivery = shell?.deliveries?.first { $0.threadId == item.threadID && $0.draftId == item.draftID }
