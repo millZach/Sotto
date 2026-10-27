@@ -17,6 +17,7 @@ import { ChoiceChip, effortChoices, modeChoices, PERMISSIONS_ICON, RUNTIME_LABEL
 import { leftToRight, shownWords, type LaterWords } from './interfaceWords'
 import { continueChoiceFor, continuedSince, continueModels, continueStore, lastLimitStop, providerDefaults, unavailableProviders,
   sameFolderOffered, useContinueChoice, useContinueEnabled, useContinueLinks, type ContinueChoice } from './continuations'
+import { ultracodeLevel } from './ultracodeLevel'
 import './continueThread.css'
 
 /**
@@ -194,7 +195,7 @@ export function ContinueOptions({ thread, state, choice }: { readonly thread: Ag
   const unavailable = unavailableProviders(state, thread)
   const model = resolveModel(models, choice.modelId)
   const effort = choice.reasoningEffort ?? model?.defaultReasoningEffort ?? ''
-  const efforts = effortChoices(model, effort)
+  const efforts = effortChoices(model, effort, { ultracode: true })
   const modes = modeChoices(model, choice.runtimeMode, choice.providerMode)
   const own = usesProviderModes(model)
   // The menu opened from the error's More once; it is not asked to open again.
@@ -205,7 +206,8 @@ export function ContinueOptions({ thread, state, choice }: { readonly thread: Ag
         openOnMount={choice.pick === true} note={t`Your first message starts a new thread on the model you pick, with a handover of this one.`}
         onChange={id => continueStore.set(thread.id, continueChoiceFor(state, thread, id, choice))} />
       {efforts.length > 0 ? <EffortPicker key={choice.modelId} value={effort} options={efforts} disabled={choice.sending}
-        defaultValue={model?.defaultReasoningEffort} modelName={model?.name} onChange={reasoningEffort => continueStore.update(thread.id, { reasoningEffort })} /> : null}
+        defaultValue={model?.defaultReasoningEffort} modelName={model?.name} ultracodeEffort={ultracodeLevel(state, thread, model)}
+        onChange={reasoningEffort => continueStore.update(thread.id, { reasoningEffort })} /> : null}
       {modes.length > 0 ? <ChoiceChip label={t`Permissions the new thread starts on`} placeholder={t`Provider default`} value={(own ? startingProviderMode(model, choice.providerMode) : choice.runtimeMode) ?? ''}
         options={modes} disabled={choice.sending} pending={false} icon={PERMISSIONS_ICON}
         onChange={mode => continueStore.update(thread.id, own ? { providerMode: mode, narrowed: undefined } : { runtimeMode: mode as AgentRuntimeMode, narrowed: undefined })} /> : null}

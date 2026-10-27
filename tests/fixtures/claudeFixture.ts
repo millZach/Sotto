@@ -17,7 +17,7 @@ async function oneShots(root: string): Promise<Record<string, unknown>[]> {
 
 // The acknowledgement deadline also covers the fake CLI's process start, which a loaded two-core runner
 // stretches past a second. Tests that need a lost acknowledgement script one instead of shortening this.
-export async function claudeFixture(root?: string, requestTimeoutMs = 2000, environment?: NodeJS.ProcessEnv, session: AdapterSessionOptions & Pick<ClaudeStreamJsonHostOptions, 'logEvent' | 'pollIntervalMs'> = {}): Promise<AdapterFixture & { adapter: ClaudeStreamJsonHost; liveSettings: NonNullable<AdapterFixture['liveSettings']>; action(id: string, value: Record<string, unknown>): Promise<void>; realId(id: string): Promise<string> }> {
+export async function claudeFixture(root?: string, requestTimeoutMs = 2000, environment?: NodeJS.ProcessEnv, session: AdapterSessionOptions & Pick<ClaudeStreamJsonHostOptions, 'logEvent' | 'pollIntervalMs' | 'ultracodeEffort'> = {}): Promise<AdapterFixture & { adapter: ClaudeStreamJsonHost; liveSettings: NonNullable<AdapterFixture['liveSettings']>; action(id: string, value: Record<string, unknown>): Promise<void>; realId(id: string): Promise<string> }> {
   root ??= await mkdtemp(join(tmpdir(), 'sotto-claude-'))
   const adapter = new ClaudeStreamJsonHost({ userDataPath: root, executable: process.execPath, args: [resolve('tests/fixtures/fakeClaudeThread.mjs'), root], claudeHome: join(root, 'home'), requestTimeoutMs, pollIntervalMs: 15, ...(environment ? { environment } : {}), ...session })
   const realId = async (id: string): Promise<string> => JSON.parse(await readFile(join(root, 'claude-threads.json'), 'utf8'))[id].sessionId
@@ -37,10 +37,10 @@ export async function claudeFixture(root?: string, requestTimeoutMs = 2000, envi
     silence: () => writeFile(join(root, 'settings-script.json'), JSON.stringify({ silent: true })),
     answer: () => rm(join(root, 'settings-script.json'), { force: true }),
     effective: async id => {
-      const current = JSON.parse(await readFile(join(root, `settings-${await realId(id)}.json`), 'utf8')) as { model: string; effort: string | null; mode: string; fast?: boolean; pid: number }
+      const current = JSON.parse(await readFile(join(root, `settings-${await realId(id)}.json`), 'utf8')) as { model: string; effort: string | null; mode: string; fast?: boolean; ultracode?: boolean; pid: number }
       const modes: Record<string, string> = { default: 'approval-required', acceptEdits: 'auto-accept-edits', auto: 'auto', bypassPermissions: 'full-access' }
       return { process: current.pid, modelId: current.model, ...(current.effort ? { reasoningEffort: current.effort } : {}), runtimeMode: modes[current.mode] ?? current.mode,
-        fastMode: current.fast === true }
+        fastMode: current.fast === true, ultracode: current.ultracode === true }
     },
   }
   return { root, adapter, host: adapter, providerId: 'claude' as const, projectId: 'project', modelId: 'fixture-model', realId, action, skips: claudeFixtureSkips, nativePdf: true,

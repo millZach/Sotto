@@ -28,6 +28,8 @@ export const OMARCHY_CSS_TEXT_PAIRS: ReadonlyArray<readonly [string, readonly st
   ['update-text', ['update-surface']],
   ['terminal-foreground', ['terminal-background', 'terminal-selection']],
   ['effort-text-fill', ['surface-elevated', 'field', 'sidebar', 'sidebar-control']],
+  // Ultracode's workflow mark (ADR-0148): the colourway's opaque ink, where the word's fill may be a clipped gradient's transparent one.
+  ['effort-text', ['surface-elevated', 'field', 'sidebar', 'sidebar-control']],
   ['provider-ink', ['provider-codex', 'provider-claude', 'provider-grok', 'provider-devin', 'provider-muse', 'provider-opencode-badge', 'provider-cursor-badge']],
 ]
 /** These color: declarations paint SVG/provider marks only; their children override inherited text. */

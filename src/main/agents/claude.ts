@@ -27,6 +27,8 @@ import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHos
 import { claudeSubagents, narrowerMode } from './subagentRoles'
 import { subagentRoleInstructions } from '../../shared/workerRoles'
 import { DELEGATE_MCP_SERVER } from '../../shared/delegation'
+import { resolveModel } from '../../shared/modelCatalog'
+import { DEFAULT_ULTRACODE_EFFORT, ULTRACODE, ultracodeRunsAt, type UltracodeEffort } from '../../shared/ultracode'
 import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
 import { questionInstructions } from './questionInstructions'
@@ -114,14 +116,18 @@ const SETTINGS_PART_TAKEN = 'Claude Code took only part of the settings change a
  * model without it runs at normal speed (ADR-0143), and the choice stays on the alias.
  */
 type ClaudeSettings = { modelId: string; reasoningEffort: string | undefined; runtimeMode: AgentRuntimeMode; fastMode: boolean }
-/** One control request and the setting it changes once the CLI answers success. */
-type ClaudeSettingsStep = { field: keyof ClaudeSettings; request: ClaudeFrame }
+/**
+ * One control request and the setting it changes once the CLI answers success. An effort step also says the level the
+ * CLI then runs Ultracode at, or null for a level that turns Ultracode off.
+ */
+type ClaudeSettingsStep = { field: keyof ClaudeSettings; request: ClaudeFrame; ultracodeEffort?: UltracodeEffort | null }
 /**
  * How a settings change reached the CLI, for the operational log: applied over the control channel, applied
  * by starting the CLI again, refused by the CLI (a restart or a refusal follows), or left unconfirmed. Event
  * names only; a model, a level or a mode never reaches the log.
  */
 export type ClaudeAdapterEvent = 'claude-mcp-config-cleanup-failed' | 'claude-origin-journal-clear-failed' | 'claude-origin-journal-fold-failed' | 'claude-settings-applied-live' | 'claude-settings-applied-restart' | 'claude-settings-live-rejected' | 'claude-settings-unconfirmed'
+  | 'claude-ultracode-effort-unconfirmed'
 /**
  * What an alias, or the thread that shows it, says the settings are; one saved without a mode runs approval-required.
  * Fast mode runs only where the user chose it and `models`, the catalog, says the model offers it.
@@ -131,11 +137,19 @@ const settingsOf = (value: Pick<Alias, 'modelId' | 'reasoningEffort' | 'runtimeM
 const sameSettings = (first: ClaudeSettings, second: ClaudeSettings): boolean =>
   first.modelId === second.modelId && first.reasoningEffort === second.reasoningEffort && first.runtimeMode === second.runtimeMode && first.fastMode === second.fastMode
 /**
- * Fast mode's launch flag: `--settings` as a flag layer, which leaves the user's own saved settings alone. It is sent on
- * every launch, off as well as on: a `fastMode` the user saved with `/fast` would otherwise run a thread fast, and bill
- * it so, while its bolt shows off, and would carry over when a live model change moves the thread onto a model with it.
+ * Fast mode's and Ultracode's launch flag: `--settings` as a flag layer, which leaves the user's own saved settings alone.
+ * Both are sent on every launch, off as well as on: a `fastMode` the user saved with `/fast` would otherwise run a thread
+ * fast, and bill it so, while its bolt shows off, and would carry over when a live model change moves the thread onto a
+ * model with it; an `ultracode` saved in the user's Claude Code settings would run every thread as a workflow (ADR-0148).
  */
-const fastModeArguments = (on: boolean): readonly string[] => ['--settings', JSON.stringify({ fastMode: on })]
+export const flagSettingsArguments = (fastMode: boolean, ultracode: boolean): readonly string[] => ['--settings', JSON.stringify({ fastMode, ultracode })]
+/**
+ * The effort the CLI is told for a thread's level (ADR-0148): Ultracode is no effort of Claude Code's, so it is sent as
+ * the level it runs at, `at`, with `ultracode` on; every other level is sent as itself with `ultracode` off.
+ */
+export function nativeEffort(level: string | undefined, at: UltracodeEffort | undefined): { effortLevel: string | undefined; ultracode: boolean } {
+  return level === ULTRACODE ? { effortLevel: at, ultracode: true } : { effortLevel: level, ultracode: false }
+}
 /** Whether a spare that is still running was started in this folder with these settings. */
 const spareFits = (spare: Spare, cwd: string, settings: ClaudeSettings): boolean =>
   !spare.exited && spare.cwd === cwd && sameSettings(spare.settings, settings)
@@ -148,7 +162,7 @@ const spareFits = (spare: Spare, cwd: string, settings: ClaudeSettings): boolean
  * is entered and left by starting the CLI again: its launch arguments stay the ones a fresh start in that
  * mode would have.
  */
-function settingsSteps(from: ClaudeSettings, to: ClaudeSettings): ClaudeSettingsStep[] | undefined {
+export function settingsSteps(from: ClaudeSettings, to: ClaudeSettings, ultracodeAt?: UltracodeEffort): ClaudeSettingsStep[] | undefined {
   if ((from.runtimeMode === 'full-access') !== (to.runtimeMode === 'full-access')) return undefined
   const steps: ClaudeSettingsStep[] = []
   const model = from.modelId !== to.modelId
@@ -158,7 +172,12 @@ function settingsSteps(from: ClaudeSettings, to: ClaudeSettings): ClaudeSettings
   if (from.fastMode && !to.fastMode) steps.push(fast(false))
   if (model) steps.push({ field: 'modelId', request: { subtype: 'set_model', model: to.modelId } })
   if (from.reasoningEffort !== to.reasoningEffort || model && to.reasoningEffort !== undefined) {
-    steps.push({ field: 'reasoningEffort', request: { subtype: 'apply_flag_settings', settings: { effortLevel: to.reasoningEffort ?? null } } })
+    // Ultracode goes with the effort in one request, so the CLI never runs a workflow at a level the thread does not show.
+    // It is named only on a change to or from it: between other levels the launch's flag layer already holds it off.
+    const { effortLevel, ultracode } = nativeEffort(to.reasoningEffort, ultracodeAt)
+    const switching = ultracode || from.reasoningEffort === ULTRACODE
+    steps.push({ field: 'reasoningEffort', request: { subtype: 'apply_flag_settings', settings: { effortLevel: effortLevel ?? null, ...(switching ? { ultracode } : {}) } },
+      ...(switching ? { ultracodeEffort: ultracode ? effortLevel as UltracodeEffort : null } : {}) })
   }
   if (!from.fastMode && to.fastMode) steps.push(fast(true))
   if (from.runtimeMode !== to.runtimeMode) steps.push({ field: 'runtimeMode', request: { subtype: 'set_permission_mode', mode: nativePermissionModes[to.runtimeMode] } })
@@ -204,6 +223,8 @@ export interface ClaudeStreamJsonHostOptions {
   connectStarts?: number
   /** Stable event names only; never a model, a level, a mode or anything a thread said. */
   logEvent?: (event: ClaudeAdapterEvent) => void
+  /** The effort Ultracode runs at on this machine (ADR-0148), read at every launch and send; Extra high when absent. */
+  ultracodeEffort?: () => UltracodeEffort
 }
 /**
  * How many CLIs a connect starts at once for the watched set. Each is a process of its own that takes about a second
@@ -233,7 +254,9 @@ type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>;
    * The widest permission this CLI's role agents were given at launch (#1042). The thread's permission narrowing below it
    * starts the CLI again, so no agent keeps more than its thread.
    */
-  subagentMode?: AgentRuntimeMode | undefined }
+  subagentMode?: AgentRuntimeMode | undefined
+  /** The level this CLI runs Ultracode at, from its launch or its last confirmed change; undefined while Ultracode is off (ADR-0148). */
+  ultracodeEffort?: UltracodeEffort | undefined }
 /**
  * The one hook a Watcher's CLI is started with (ADR-0073): UserPromptSubmit, answered on this process's own control
  * channel with the request note as the prompt's additional context, so the note never joins the user's words.
@@ -1012,6 +1035,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
           this.nativeTakeovers.delete(id)
         }
         const runtime = await this.start(id)
+        await this.applyUltracodeEffort(runtime, alias)
         const { content, nativeText, origin } = await this.nativePrompt(id, command)
         await this.addOrigin(id, alias, origin)
         // Resume and durable origin writes can yield while the user takes over.
@@ -1153,7 +1177,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       const runtime = this.starting.has(id) ? await this.starting.get(id)!.catch(() => undefined) : this.runtimes.get(id)
       // Role agents keep the permission they launched with, so a thread narrowing below it starts its CLI again (#1042).
       const steps = runtime && this.runtimes.get(id) === runtime && !(runtime.subagentMode && narrowerMode(after.runtimeMode, runtime.subagentMode))
-        ? settingsSteps(before, after) : undefined
+        ? settingsSteps(before, after, this.ultracodeAt(after.modelId)) : undefined
       if (runtime && steps) {
         const live = await this.applySteps(runtime, before, after, steps, watcherGuard)
         if (live.outcome === 'applied') return await this.settleSettings(id, command, after)
@@ -1171,7 +1195,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         // is put back first, because the refusal says nothing was changed. When the CLI will not take it back
         // either, that is no longer true, and the CLI is stopped as it is for a lost answer.
         if ((fastRefused || thread.backgroundWork?.length) && !sameSettings(live.reached, before)) {
-          const back = await this.applySteps(runtime, live.reached, before, settingsSteps(live.reached, before)!)
+          const back = await this.applySteps(runtime, live.reached, before, settingsSteps(live.reached, before, this.ultracodeAt(before.modelId))!)
           if (back.outcome !== 'applied') {
             return await this.unconfirmedSettings(id, runtime, command, after, back.outcome === 'rejected' ? SETTINGS_PART_TAKEN : SETTINGS_UNCONFIRMED)
           }
@@ -1192,8 +1216,28 @@ export class ClaudeStreamJsonHost implements AgentHost {
       try { await runtime.protocol.control(step.request) }
       catch (error) { return { outcome: error instanceof ClaudeRejected ? 'rejected' : 'uncertain', reached, stopped: step.field } }
       reached = { ...reached, [step.field]: to[step.field] }
+      if (step.ultracodeEffort !== undefined) runtime.ultracodeEffort = step.ultracodeEffort ?? undefined
     }
     return { outcome: 'applied', reached }
+  }
+  /** The level Ultracode runs at on this model, as this machine's setting asks and the model offers (ADR-0148). */
+  private ultracodeAt(modelId: string): UltracodeEffort | undefined {
+    return ultracodeRunsAt(resolveModel(this.state.models, modelId)?.reasoningEfforts ?? [], this.options.ultracodeEffort?.() ?? DEFAULT_ULTRACODE_EFFORT)
+  }
+  /**
+   * Before each prompt on a thread at Ultracode, a steer included, the CLI is brought to the level this machine's setting now asks for
+   * (ADR-0148): the setting may have changed since the CLI started or last changed level, and Claude Code keeps its
+   * session's level until told. Ultracode itself stays on, so a CLI that does not confirm the change still runs the
+   * thread's workflow at the level it had, and the prompt goes ahead; the log says so by name.
+   */
+  private async applyUltracodeEffort(runtime: Runtime, alias: Alias): Promise<void> {
+    if (alias.reasoningEffort !== ULTRACODE) return
+    const at = this.ultracodeAt(alias.modelId)
+    if (!at || runtime.ultracodeEffort === at) return
+    try {
+      await runtime.protocol.control({ subtype: 'apply_flag_settings', settings: { effortLevel: at, ultracode: true } })
+      runtime.ultracodeEffort = at
+    } catch { this.options.logEvent?.('claude-ultracode-effort-unconfirmed') }
   }
   /** Make these the settings the alias records; a thread saved without a mode keeps none until one is chosen. */
   private recordSettings(alias: Alias, command: ConfigureCommand, settings: ClaudeSettings): void {
@@ -1425,15 +1469,17 @@ export class ClaudeStreamJsonHost implements AgentHost {
     // The worker roles (#1042), read once for this launch: one agent per role on Claude, each held to the thread's own
     // permission, and the table in the instructions. Watcher starts its workers through its own tools instead.
     const roles = profile ? undefined : this.subagentRoles(alias.runtimeMode ?? 'approval-required', scoped.some(({ tools }) => tools.name === DELEGATE_MCP_SERVER))
+    const effort = nativeEffort(alias.reasoningEffort, this.ultracodeAt(alias.modelId))
     const args = [...(this.options.args ?? []), ...toolArguments, '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
       '--include-partial-messages', '--replay-user-messages', ...permissionArguments(alias.runtimeMode),
       '--append-system-prompt', profile ? `${CLAUDE_QUESTIONS}\n\n${profile.instructions ?? WATCHER_SYSTEM_PROMPT}` : roles?.instructions ? `${CLAUDE_QUESTIONS}\n\n${roles.instructions}` : CLAUDE_QUESTIONS,
-      resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(alias.reasoningEffort ? ['--effort', alias.reasoningEffort] : []),
-      ...fastModeArguments(fastModeRuns(this.state, alias.modelId, alias.fastMode))]
+      resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(effort.effortLevel ? ['--effort', effort.effortLevel] : []),
+      ...flagSettingsArguments(fastModeRuns(this.state, alias.modelId, alias.fastMode), effort.ultracode)]
     let runtime: Runtime
     try {
       this.configurationGuards.get(id)?.()
-      runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, watcher: !!profile, subagentMode: roles?.subagents?.widest, protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
+      runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, watcher: !!profile, subagentMode: roles?.subagents?.widest,
+        ...(effort.ultracode && effort.effortLevel ? { ultracodeEffort: effort.effortLevel as UltracodeEffort } : {}), protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
       frame => {
         if (this.runtimes.get(id) === runtime) this.frame(id, frame)
         // A spare keeps a bounded handful of frames for the send that adopts it; one that says more is let go.
@@ -2094,6 +2140,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (this.dispatching.has(id)) throw new Error('A Claude prompt is already being submitted.')
     this.dispatching.add(id)
     try {
+      await this.applyUltracodeEffort(runtime!, alias)
       const { content, nativeText, origin } = await this.nativePrompt(id, command)
       await this.addOrigin(id, alias, origin)
       try { await this.sync(id); validate(); watcherGuard?.() }
