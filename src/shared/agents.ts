@@ -14,6 +14,7 @@ import { compactionSchema } from './compaction'
 import { clearThreadsAgeSchema, THREAD_CLEAR_MAX, threadClearKeptReasonSchema, threadClearPreviewSchema, threadClearResultSchema } from './threadClear'
 import { agentBackgroundWorkSchema, agentMonitoringSchema } from './agentMonitoring'
 import { gitStatusSchema } from './gitStatus'
+import { DEFAULT_ULTRACODE_EFFORT, ULTRACODE_EFFORTS } from './ultracode'
 import { agentBabysitEndedSchema, agentBabysittingSchema, BABYSITTING_PER_THREAD_MAX } from './babysitting'
 import { gitActionProgressSchema, gitStackedActionSchema } from './gitActions'
 import { bringBackAwaySchema, bringBackSchema, worktreeMadeFromSchema } from './bringChangesBack'
@@ -782,10 +783,10 @@ export const agentClientHostSchema = z.object({ hostId: z.uuid(), connected: z.b
   /**
    * This computer's own entry only, for Settings > Providers: the providers it has turned on, whether it checks for client
    * updates, whether its Muse starts without the shell sandbox, and the model its agent setting starts new threads on, its
-   * open row's "Agent setting" in Settings > Providers.
+   * open row's "Agent setting" in Settings > Providers, and the effort its Claude Code runs Ultracode at (ADR-0148).
    */
   enabledProviders: z.array(providerIdSchema).max(PROVIDER_COUNT).optional(), checkClientUpdates: z.boolean().optional(), museDisableSandbox: z.boolean().optional(),
-  agentModelId: z.string().max(512).optional() })
+  agentModelId: z.string().max(512).optional(), claudeUltracodeEffort: z.enum(ULTRACODE_EFFORTS).optional() })
 export type AgentClientHost = z.infer<typeof agentClientHostSchema>
 
 export const agentHostSnapshotSchema = z.object({
@@ -898,6 +899,11 @@ export const agentConfigurationSchema = z.object({
    */
   museDisableSandbox: z.boolean().default(false),
   /**
+   * The effort a Claude thread on Ultracode runs at on this machine (ADR-0148), Extra high unless changed in Settings →
+   * Providers → Claude Code. Read at every launch and every send, so a change reaches a thread with its next message.
+   */
+  claudeUltracodeEffort: z.enum(ULTRACODE_EFFORTS).default(DEFAULT_ULTRACODE_EFFORT),
+  /**
    * What a new thread in a project starts on, apart from the coordinator's reasoning model and effort
    * (issue #347): the model a create-thread that leaves one unset takes, empty until chosen so an existing
    * install keeps following the reasoning-based default (`defaultThreadModelId`). `newThreadReasoningEffort`
@@ -914,7 +920,7 @@ export type AgentConfiguration = z.infer<typeof agentConfigurationSchema>
 export const defaultAgentConfiguration = (): AgentConfiguration => ({
   provider: 'codex',
   enabled: false, projectsDirectory: '', defaultModelId: '',
-  reasoning: 'none', reasoningModel: '', reasoningEffort: '', checkClientUpdates: true, museDisableSandbox: false,
+  reasoning: 'none', reasoningModel: '', reasoningEffort: '', checkClientUpdates: true, museDisableSandbox: false, claudeUltracodeEffort: DEFAULT_ULTRACODE_EFFORT,
   newThreadModelId: '', newThreadReasoningEffort: '',
 })
 
@@ -1246,7 +1252,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   // `hostId` is the desktop window's alone: the connected host whose own settings the patch changes, which the router
   // reads and never sends on (ADR-0074). Without it a patch goes to the selected host, and new-thread defaults to this computer.
   z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), reasoningEffort: z.string().max(64).optional(), checkClientUpdates: z.boolean().optional(), museDisableSandbox: z.boolean().optional(), newThreadReasoningEffort: z.string().max(64).optional(),
-    newThreadRuntimeMode: agentRuntimeModeSchema.nullable().optional() }), hostId: z.uuid().optional() }).strict(),
+    claudeUltracodeEffort: z.enum(ULTRACODE_EFFORTS).optional(), newThreadRuntimeMode: agentRuntimeModeSchema.nullable().optional() }), hostId: z.uuid().optional() }).strict(),
   z.object({ type: z.literal('credential'), slot: z.enum(['reasoning']), value: z.string().max(16_384) }).strict(),
   // Setup and Settings show connection status themselves; this can only suppress the Threads notice.
   // `hostId` on a provider command is the desktop window's alone, like Update all's: Settings > Providers names this

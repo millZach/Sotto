@@ -198,6 +198,7 @@ artifacts/working-creature/
 artifacts/claude-bot-creature/
 artifacts/background-command/
 artifacts/queued-steering/
+artifacts/ultracode-effort/
 
 # Question panel verification captures
 artifacts/question-choices/

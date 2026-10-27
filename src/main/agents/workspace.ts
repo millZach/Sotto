@@ -177,8 +177,10 @@ export type VisualAddition =
 interface MessageMark { readonly id: string; readonly length: number; readonly attachments: number; readonly tail: string; readonly watcherChanges: string; readonly turnMessageId: string | undefined }
 /** The characters of a message kept for comparison; a rewrite of the same length still differs here. */
 const TAIL = 24
+/** A slice of a long string keeps the whole message alive. Joining the slice onto a space first leaves the mark pointing at a short string of its own (#1618). */
+const ownCopy = (text: string): string => (' ' + text).slice(1)
 const markOf = (message: AgentMessage): MessageMark =>
-  ({ id: message.id, length: message.text.length, attachments: message.attachments?.length ?? 0, tail: message.text.slice(-TAIL), watcherChanges: JSON.stringify([message.watcherOwnChange ?? null, message.watcherObservedChanges ?? null]), turnMessageId: message.turnMessageId })
+  ({ id: message.id, length: message.text.length, attachments: message.attachments?.length ?? 0, tail: ownCopy(message.text.slice(-TAIL)), watcherChanges: JSON.stringify([message.watcherOwnChange ?? null, message.watcherObservedChanges ?? null]), turnMessageId: message.turnMessageId })
 
 /** A record read back from disk: one still running there was an unfinished observation, not a live process. */
 function savedRecord(activity: AgentActivity): AgentActivity {

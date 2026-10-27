@@ -4,6 +4,7 @@ import { mkdir } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import { z } from 'zod'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
+import { withUltracode } from '../../shared/ultracode'
 import type { SubscriptionAccount, SubscriptionClient } from './subscriptionTypes'
 import { executableFile, findCli, withCliPath, type CliLookupOptions } from './cliLookup'
 
@@ -171,9 +172,10 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
       try { message = JSON.parse(line) } catch { continue }
       const parsed = INITIALIZED.safeParse(message)
       if (!parsed.success || parsed.data.response.request_id !== requestId) continue
+      // Ultracode follows Max on every model that offers Extra high, the models Claude Code runs it on (ADR-0148).
       return parsed.data.response.response.models.map(model => ({
         id: model.value, name: versionedName(model),
-        reasoningEfforts: model.supportsEffort === false ? [] : orderReasoningEfforts(model.supportedEffortLevels ?? []),
+        reasoningEfforts: model.supportsEffort === false ? [] : withUltracode(orderReasoningEfforts(model.supportedEffortLevels ?? [])),
         ...(model.supportsFastMode === true ? { fastMode: {} } : {}),
       }))
     }

@@ -110,6 +110,7 @@ export default tseslint.config(
       'artifacts/settled-folder-new-thread/**',
       'artifacts/agents-view/**',
       'artifacts/queued-steering/**',
+      'artifacts/ultracode-effort/**',
       'artifacts/screenshot-resize-run/**',
       '.worktrees/**',
       // The launch video's own package: its dependencies, captures and renders.

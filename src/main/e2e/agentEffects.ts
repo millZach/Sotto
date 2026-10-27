@@ -7,6 +7,7 @@ import { resolveModel } from '../../shared/modelCatalog'
 import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, ThreadForkRequest } from '../agents/host'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import type { AgentReasoner } from '../agents/reasoning'
+import { withUltracode } from '../../shared/ultracode'
 
 /** External provider effects only. The real controller, persistence, IPC and both renderers remain in the test. */
 export class E2EAgentHost implements AgentHost {
@@ -35,6 +36,7 @@ export class E2EAgentHost implements AgentHost {
   constructor(scenario: E2EScenario = 'success') {
     this.checkpointFixture = scenario === 'phase3-workspace' || scenario === 'queued-steering'
     if (scenario === 'queued-steering') this.state.capabilities.steer = true
+    if (scenario === 'ultracode') this.state.models = this.state.models.map(model => ({ ...model, providerId: 'claude', reasoningEfforts: withUltracode(model.reasoningEfforts ?? []) }))
     if (scenario === 'design-threads' || scenario === 'design-threads-empty' || scenario === 'phase3-workspace') {
       const fixture = designThreadsFixture()
       this.state.models = structuredClone([...fixture.models])
