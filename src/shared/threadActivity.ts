@@ -34,6 +34,17 @@ export function threadOrnamentAllowed(thread: ThreadLifecycle & Pick<AgentThread
   return connected && !isThreadClosed(thread) && thread.status !== 'error' && thread.requests.length === 0
 }
 
+/**
+ * A thread opened and never sent to: on its default title, at rest, with nothing in its transcript, open, and not a
+ * delegated thread, which lives under the thread that delegated to it. The desktop's sidebar and the iPhone list it only
+ * while their composer holds something for it, and the host removes one no client holds (ADR-0152).
+ */
+export function isUnsentThread(thread: AgentThread, project?: Pick<AgentProject, 'workspaceSettledAt'>): boolean {
+  return thread.titleSource === 'default' && thread.status === 'idle' && thread.delegatedBy === undefined
+    && !isThreadClosed(thread) && !isWorkspaceThreadSettled(thread, project)
+    && (thread.summary?.messageCount ?? thread.messages.length) === 0
+}
+
 /** A turn under way. Native idle can come before the turn's completion, so a last turn still reported running counts. */
 export function isThreadTurnRunning(thread: Pick<AgentThread, 'status' | 'lastTurn'>): boolean {
   return thread.status === 'running' || thread.lastTurn?.status === 'running'

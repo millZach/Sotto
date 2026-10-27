@@ -41,7 +41,7 @@ import { addTurnContext, type ActiveTurn, type TurnRecorder } from './turns'
 import { FirstOutputWatches, lendSendStages, SendStageClock } from './sendStages'
 import { noteThreadsReplaced } from '../../shared/threadListPatches'
 import { ThreadChangesDrift, ThreadMap, verifyingThreadChanges, type ActivityChangesSubscription, type AgentHostChanges } from './threadChanges'
-import { isThreadArchived, isThreadClosed, isThreadTurnRunning, isWatcherWakeUpTurn, isWorkspaceThreadSettled } from '../../shared/threadActivity'
+import { isThreadArchived, isThreadClosed, isThreadTurnRunning, isUnsentThread, isWatcherWakeUpTurn, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { maintainProviderRecovery, retireLegacyProvider, stripRetiredEndpoint } from './providerRetirement'
 import { clientVersionOf, compareClientVersions, isComparableVersion } from './clientVersions'
 import { compareMuseVersions } from './museClientInstall'
@@ -76,7 +76,7 @@ import { withoutLegacyManagement, type HostAnswerTarget, type HostAttachmentFile
 import { agentCommandSchema } from '../../shared/agents'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
 import type { DelegationCommand, DelegationControlHooks } from './delegation'
-import { threadClearHold, threadDelegators, type ThreadClearFacts } from './threadClearing'
+import { threadClearHold, threadDelegators, unsentThreadRemovable, type ThreadClearFacts, type UnsentThreadFacts } from './threadClearing'
 import { quietLongerThan, THREAD_CLEAR_MAX, threadClearKeptWords, threadQuietSince, type ThreadClearKept, type ThreadClearKeptReason, type ThreadClearPreview } from '../../shared/threadClear'
 import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord, type WatcherThreadTarget } from '../../shared/watcher'
 import { isImageAttachment, parsePublicProviderEntityId, threadProviderOf } from '../../shared/agents'
@@ -363,6 +363,8 @@ function freezeSaved(value: unknown): void {
 }
 /** How long a delegation's hidden news waits after a send that surely did not go before it is tried again (ADR-0081). */
 const DELEGATION_NEWS_RETRY_MS = 10_000
+/** How long a thread made in this run stays unsent before the unsent sweep may remove it (ADR-0152). */
+const UNSENT_THREAD_GRACE_MS = 3_600_000
 /** How long closing waits for a thread title still being written, so it is saved (#980). Quit never waits longer for one. */
 export const TITLE_WRITE_CLOSING_WAIT_MS = 2_000
 /**
@@ -868,6 +870,8 @@ export class AgentControl {
   private answeredRequests: Saved['answeredRequests'] = []
   /** Ephemeral view interest; never persisted, selected or granted assignment authority. */
   private viewedThreadIds: readonly string[] = []
+  /** When each thread made in this run was made, until it is sent to or goes, for the unsent sweep's hour (ADR-0152). */
+  private readonly madeThisRun = new Map<string, number>()
   /** Threads that finished while no client showed them; what a client shows is what it observes (ADR-0046). */
   private readonly finishedUnread: FinishedUnread
   /** Failed threads a client has shown since they failed, or the user dismissed; their rows read Done (ADR-0092). */
@@ -1032,7 +1036,7 @@ export class AgentControl {
      */
     babysittingRetired?: boolean
     /** What clearing did, as stable event names with a count or a reason's code; never a title, path or branch. */
-    logClear?: (event: 'threads-cleared' | 'thread-clear-kept', detail: string) => void
+    logClear?: (event: 'threads-cleared' | 'thread-clear-kept' | 'unsent-threads-removed', detail: string) => void
     /** Times a held prototype question and the minute after a send-back (ADR-0108); injectable so tests own the clock. */
     prototypeQuestionTimer?: (run: () => void, ms: number) => () => void
     /** The next prompt (ADR-0132): told when a thread starts or finishes, and when the user sends it something. Absent while its Owl feature is off. */
@@ -1482,7 +1486,40 @@ export class AgentControl {
       if (ids.length) await this.clearThreads(ids, days, true)
     }).catch(() => { this.logClear('threads-cleared', 'failed') })
   }
-  private logClear(event: 'threads-cleared' | 'thread-clear-kept', detail: string): void {
+  /**
+   * Removes unsent threads no client holds (ADR-0152), through the deletion Clear settled threads uses (ADR-0140), so
+   * opening New thread anywhere and walking away leaves nothing behind. It rides the worktree sweep, at start and every
+   * hour, on every host, Owl or stable, and says nothing on screen. An unsent thread from before this run goes at its
+   * first sweep; one made in this run goes once it has stayed unsent for an hour.
+   */
+  removeUnsentThreads(): Promise<void> {
+    const host = this.dependencies.host
+    if (this.disposed || !host.deleteThreads) return Promise.resolve()
+    return this.clearSerially(async () => {
+      const projects = new Map(this.state.host.projects.map(project => [project.id, project]))
+      const unsent = new Set(this.state.host.threads.filter(thread => isUnsentThread(thread, projects.get(thread.projectId))).map(thread => thread.id))
+      // One sent to is no longer the sweep's; one still being made, not yet in the list, keeps its hour.
+      for (const [id, madeAt] of [...this.madeThisRun]) if (!unsent.has(id) && (this.threadById(id) || Date.now() - madeAt >= UNSENT_THREAD_GRACE_MS)) this.madeThisRun.delete(id)
+      const facts = this.unsentFacts()
+      const ids = [...unsent].filter(id => unsentThreadRemovable(this.threadById(id), facts))
+      if (!ids.length) return
+      // Asked again of each in its own lane, as it goes: a client that opened it or typed in it meanwhile keeps it.
+      const result = await host.deleteThreads!(ids, { automatic: true, hold: id => unsentThreadRemovable(this.threadById(id), this.unsentFacts()) ? null : 'working' })
+      if (!result.deleted.length) return
+      await this.forgetDeletedThreads(result.deleted)
+      this.logClear('unsent-threads-removed', String(result.deleted.length))
+      this.publish()
+    }).catch(() => { this.logClear('unsent-threads-removed', 'failed') })
+  }
+  private unsentFacts(): UnsentThreadFacts {
+    const now = Date.now()
+    const drafted = new Set((this.state.threadDrafts ?? []).filter(draft => draft.text.trim() !== '' || draft.attachments.length > 0 || (draft.files?.length ?? 0) > 0).map(draft => draft.threadId))
+    const delivered = new Set((this.state.deliveries ?? []).map(delivery => delivery.threadId))
+    return { ...this.clearFacts(),
+      held: id => this.viewedThreadIds.includes(id) || id === this.state.draftThreadId && this.hasDraft() || id === this.state.activeThreadId || drafted.has(id) || delivered.has(id),
+      old: id => now - (this.madeThisRun.get(id) ?? Number.NEGATIVE_INFINITY) >= UNSENT_THREAD_GRACE_MS }
+  }
+  private logClear(event: 'threads-cleared' | 'thread-clear-kept' | 'unsent-threads-removed', detail: string): void {
     try { this.dependencies.logClear?.(event, detail) } catch { /* Logging never stops a clear. */ }
   }
   /**
@@ -4859,6 +4896,7 @@ export class AgentControl {
           throw new Error('A thread starts from a moved branch only in a new worktree that Watcher or a delegation makes. Nothing was made.')
         }
         const threadId = command.threadId ?? randomUUID()
+        this.madeThisRun.set(threadId, Date.now())
         if (turn) { turn.threadId = threadId; turn.projectId = command.projectId }
         await this.dispatch({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: command.projectId, title: command.title, modelId: command.modelId,
           ...(command.titleSource ? { titleSource: command.titleSource } : {}),
