@@ -41,11 +41,15 @@ class CheckQueuesStore {
 }
 export const checkQueuesStore = new CheckQueuesStore()
 
+/** An end-to-end run's queues, in place of main's (`createE2ECheckQueuesBridge`). */
+let standIn: CheckQueuesBridge | undefined
+export function setCheckQueuesStandIn(bridge: CheckQueuesBridge | undefined): void { standIn = bridge }
+
 /**
  * Every machine's check queue, or null where Work across machines is off or main offers no queues (stable, or Watcher off),
  * and until the first read answers.
  */
-export function useCheckQueues(bridge: CheckQueuesBridge | undefined = window.sotto?.checks): CheckQueuesView | null {
+export function useCheckQueues(bridge: CheckQueuesBridge | undefined = standIn ?? window.sotto?.checks): CheckQueuesView | null {
   const enabled = useOwlFeature('cross-machine-work')
   const active = enabled ? bridge : undefined
   useEffect(() => active ? checkQueuesStore.use(active) : undefined, [active])

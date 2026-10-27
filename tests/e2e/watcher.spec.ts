@@ -49,6 +49,8 @@ const macEvidence = evidenceDirectory('artifacts/macos-traffic-light-room')
 const newWatcherEvidence = evidenceDirectory('artifacts/new-watcher-button')
 /** The machines line, a machine's panel and Where new workers start (#1032, pick D): captures for their note. */
 const machinesEvidence = evidenceDirectory('artifacts/watcher-machines')
+/** A machine's checks, one at a time, on the line, in its panel and in Tools › Agents (#1312, pick C): captures for their note. */
+const checksEvidence = evidenceDirectory('artifacts/check-queue-view')
 /** The message scrubber in Watcher's conversation (ADR-0109), beside the thread captures in message-scrubber.spec.ts. */
 const scrubberEvidence = evidenceDirectory('artifacts/message-scrubber')
 const FOOT = 'When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.'
@@ -83,7 +85,9 @@ async function seedRoom(page: Page, options: { readonly current: boolean; readon
   /** The thread New Watcher makes the new Watcher, emptied first; without it, New Watcher refuses. */
   readonly startNew?: string
   /** What the machines read answers (#1032), from the host's ID. */
-  readonly machines?: (hostId: string) => NonNullable<WatcherStandInSeed['machines']> }): Promise<void> {
+  readonly machines?: (hostId: string) => NonNullable<WatcherStandInSeed['machines']>
+  /** Every machine's check queue (#1312), from the host's ID. */
+  readonly checks?: (hostId: string) => NonNullable<WatcherStandInSeed['checks']> }): Promise<void> {
   const hostId = await page.evaluate(async () => (await window.sotto!.agents!.get()).hostId)
   expect(hostId, 'the window names its host').toBeTruthy()
   const target = (threadId: string) => ({ hostId: hostId!, threadId })
@@ -107,6 +111,7 @@ async function seedRoom(page: Page, options: { readonly current: boolean; readon
     ...options.stopResults ? { stopResults: options.stopResults } : {},
     ...options.stopDelayMs ? { stopDelayMs: options.stopDelayMs } : {},
     ...options.machines ? { machines: options.machines(hostId!) } : {},
+    ...options.checks ? { checks: options.checks(hostId!) } : {},
     ...options.startNew ? { startNew: { created: { ...identity, target: target(options.startNew), creationOperationId: randomUUID(), createdAt: at(0) },
       counts: { total: 2, carried: 2, tooLong: 0, notCarried: 0, images: 0, files: 0, visuals: 0, toolRecords: 0, historyKept: true, answered: true },
       text: 'This is a handover from another Sotto thread. The history below is context, not a new request.\n\nThe user:\nFind why the visual gate flakes and fix the footer links. Keep an eye on both.' } } : {},
@@ -1525,6 +1530,86 @@ test.describe("Watcher's room on the built app", () => {
           await captureInto(machinesEvidence, launched, 'machines-long-name-dark-820x560.png')
           await contrastHolds(page, 'machines-long-name-dark-820x560')
         }
+      })
+    })
+  })
+
+  test('a machine’s checks show one at a time on the machines line, in its panel and in a check’s row in Tools › Agents (#1312)', async () => {
+    const FORGE = '0b7f4c1e-2a9d-4f61-8c3e-5d2b9a7e4f10'
+    const GIB = 1024 ** 3
+    const now = new Date().toISOString()
+    const load = (cpu: number, available: number) => ({ observedAt: now, windowMs: 2_000, cpuBusyPercent: cpu, loadAverage: null, availableMemoryBytes: available * GIB,
+      windowStartAvailableMemoryBytes: available * GIB, memoryPressurePercent: null })
+    const facts = (name: string, family: 'windows' | 'linux', cpus: number, total: number) => ({ observedAt: now, os: { family, name, version: null }, architecture: 'x64',
+      totalMemoryBytes: total * GIB, freeMemoryBytes: null, logicalCpuCount: cpus })
+    const machines = (hostId: string): NonNullable<WatcherStandInSeed['machines']> => ({ status: 'ok', observedAt: now, newWorkersStart: { choice: 'this-computer' }, machines: [
+      { hostId, name: 'This computer', thisComputer: true, connected: true, factsState: 'reported', facts: facts('Windows 11', 'windows', 16, 32), runningThreads: 2, load: load(34, 14),
+        placedNotStarted: 0, memoryState: 'enough', cpuState: 'not-busy' },
+      { hostId: FORGE, name: 'forge', thisComputer: false, connected: true, factsState: 'reported', facts: facts('Omarchy', 'linux', 24, 64), runningThreads: 1, load: load(41, 38),
+        placedNotStarted: 0, memoryState: 'enough', cpuState: 'not-busy' }] })
+    // Watcher's capture check runs on forge; Footer links' journeys and Watcher's unit suite wait behind it, in the order asked.
+    const checks = (hostId: string): NonNullable<WatcherStandInSeed['checks']> => ({ machines: [{ hostId, thisComputer: true, checks: [] }, { hostId: FORGE, thisComputer: false, checks: [
+      { id: randomUUID(), whose: 'watcher', thread: hostEntityKey(FORGE, 'capture'), title: 'Omarchy capture check' },
+      { id: randomUUID(), whose: 'thread', by: hostEntityKey(hostId, 'footer-links'), thread: hostEntityKey(FORGE, 'journeys'), title: 'Linux journeys for the footer fix', work: 'building', provider: 'codex' },
+      { id: randomUUID(), whose: 'watcher', title: 'Linux unit suite for the footer fix' }] }] })
+    await onReleaseTrack('owl', async () => {
+      for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance, 'reduced'), async (launched) => {
+        const { page } = launched
+        await openThreads(page)
+        await seedRoom(page, { current: true, machines, checks })
+        await resizeContentWindow(launched, 1280, 800)
+        await openRoom(page)
+        const wide = page.getByRole('group', { name: 'Machines and what works on each' }).locator('.watcher-machines__wide')
+        await expect(wide).toHaveText(/·forge 0 working, 2 checks waiting$/u)
+        for (const [width, height] of [[1280, 800], [820, 560]] as const) {
+          await resizeContentWindow(launched, width, height)
+          await settle(page)
+          await expect.poll(() => pageBoundProblems(page), { message: `the machines line at ${width}x${height}` }).toEqual([])
+          await captureInto(checksEvidence, launched, `checks-line-${appearance}-${width}x${height}.png`)
+        }
+        await resizeContentWindow(launched, 1280, 800)
+        const forge = wide.getByRole('button', { name: 'forge, 0 working, 2 checks waiting. Show forge’s load and what runs there.' })
+        await forge.focus()
+        await page.keyboard.press('Enter')
+        const panel = page.getByRole('dialog', { name: 'forge' })
+        await expect(panel).toBeFocused()
+        const list = panel.getByRole('region', { name: 'Checks, one at a time' })
+        await expect(list.locator('li')).toHaveText(['Omarchy capture checkWatcher’s · running', '1Linux journeys for the footer fixDelegated by Footer links · 1 ahead',
+          '2Linux unit suite for the footer fixWatcher’s · 2 ahead'])
+        await expect(panel).toContainText('forge runs one check at a time. The rest wait here in the order they were asked for, whoever asked.')
+        for (const [width, height] of [[1280, 800], [820, 560]] as const) {
+          await resizeContentWindow(launched, width, height)
+          await settle(page)
+          await expect.poll(() => pageBoundProblems(page), { message: `forge's panel at ${width}x${height}` }).toEqual([])
+          await captureInto(checksEvidence, launched, `checks-panel-${appearance}-${width}x${height}.png`)
+          await contrastHolds(page, `checks-panel-${appearance}-${width}x${height}`)
+        }
+        await page.keyboard.press('Escape')
+        await expect(panel).toHaveCount(0)
+        await expect(forge).toBeFocused()
+        // Footer links' check waits on forge with no thread yet: Tools › Agents gives it a row of its own, whose outcome is Working.
+        await resizeContentWindow(launched, 1280, 800)
+        await switchTab(page, 'Threads').click()
+        await page.getByRole('complementary', { name: 'Thread sidebar' }).getByText('Footer links', { exact: true }).first().click()
+        await page.getByRole('button', { name: 'Tools', exact: true }).click()
+        await page.getByRole('tab', { name: 'Agents', exact: true }).click()
+        const row = page.getByRole('button', { name: 'Linux journeys for the footer fix, check on forge, Working' })
+        await expect(row).toBeVisible()
+        await row.focus()
+        await page.keyboard.press('Enter')
+        await expect(row).toHaveAttribute('aria-expanded', 'true')
+        const details = page.locator('[data-check-waiting] .subagent-details')
+        await expect(details).toContainText('Waiting for forge’s check to finish. 1 ahead.')
+        await expect(details.getByRole('region', { name: 'Checks on forge, one at a time' }).locator('li[data-current]')).toHaveText(/Linux journeys for the footer fix/u)
+        for (const [width, height] of [[1280, 800], [820, 560]] as const) {
+          await resizeContentWindow(launched, width, height)
+          await settle(page)
+          await expect.poll(() => pageBoundProblems(page), { message: `the check's row at ${width}x${height}` }).toEqual([])
+          await captureInto(checksEvidence, launched, `checks-agents-${appearance}-${width}x${height}.png`)
+        }
+        await page.keyboard.press('Escape')
+        await expect(row).toHaveAttribute('aria-expanded', 'false')
+        await expect(row).toBeFocused()
       })
     })
   })
