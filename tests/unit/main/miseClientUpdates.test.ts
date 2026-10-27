@@ -281,8 +281,13 @@ describe('running an update of a mise install', () => {
  * `mise install claude@2.1.310` installed it. These stand-ins keep both caches stale until the tool's is cleared.
  */
 describe('a mise version list that lags what is published', () => {
-  /** A mise whose lists are cached: `upgrade` sees only what it knew, `ls-remote` sees the release once its cache is cleared. */
-  function staleMise(known: string, published: string, options: { readonly listsAfterClear?: boolean; readonly listFails?: boolean } = {}) {
+  /**
+   * A mise whose lists are cached: `upgrade` sees only what it knew, `ls-remote` sees the release once its cache is cleared.
+   * `install` fetches the one release it is named, as aqua does by its tag, unless the release is `missing` or the
+   * download drops.
+   */
+  function staleMise(known: string, published: string, options: { readonly listsAfterClear?: boolean; readonly listFails?: boolean
+    readonly missing?: boolean; readonly downloadDrops?: boolean } = {}) {
     const ran: string[][] = []
     let cleared = false, installed = known
     const run: RunLike = async (_executable, args, _asNode, runOptions) => {
@@ -297,6 +302,8 @@ describe('a mise version list that lags what is published', () => {
       if (args[0] === 'upgrade') return { ok: true, stdout: 'mise All tools are up to date' }
       if (args[0] === 'install') {
         expect(runOptions?.cwd).toBe(homedir())
+        if (options.downloadDrops) return { ok: false, detail: 'mise ERROR error sending request for url', printed: 'mise ERROR error sending request for url' }
+        if (options.missing) return { ok: false, detail: 'mise ERROR HTTP status client error (404 Not Found)', printed: 'mise ERROR HTTP status client error (404 Not Found)' }
         if (runOptions?.env?.MISE_MINIMUM_RELEASE_AGE === '0s') installed = args[1]!.slice(args[1]!.lastIndexOf('@') + 1)
         return { ok: true }
       }
@@ -350,15 +357,54 @@ describe('a mise version list that lags what is published', () => {
     expect(result).toMatchObject({ ok: false, step: 2, failure: 'install-step' })
   })
 
-  it('says mise does not list the version, and installs nothing, when its list lacks it even with the cache cleared', async () => {
+  /**
+   * October 27, 2026 on forge: GitHub's list of Codex releases timed out and mise's versions host stopped at
+   * 0.164.0-alpha.12, so `mise ls-remote codex` ended at 0.163.0 with every cache cleared. `mise install codex@0.165.0`
+   * fetched that one release by its tag and installed it.
+   */
+  it.each([
+    ['claude', 'claude', '2.1.309', '2.1.310', ['claude', 'latest', 'claude']],
+    ['codex', 'codex', '0.164.0', '0.165.0', ['codex', 'latest', 'bin', 'codex']],
+    ['opencode', 'opencode', '1.19.3', '1.19.4', ['opencode', 'latest', 'opencode']],
+    ['muse', 'http:muse', '1.4.11-R6667.1', '1.4.12-R6909.1', ['http-muse', 'latest', 'muse']],
+  ] as const)('installs %s’s published version by name even when mise’s list never has it', async (provider, tool, known, published, path) => {
+    const { data, installs } = await forgeMise()
+    const { run, ran, installed } = staleMise(known, published, { listsAfterClear: false })
+    const result = await new ProviderClients({ run, misePath: async () => '/usr/bin/mise', miseReleaseAgeFlag: async () => true })
+      .install(provider, join(installs, ...path), { MISE_DATA_DIR: data }, undefined, published)
+    expect(result.ok).toBe(true)
+    expect(installed()).toBe(published)
+    expect(ran.map(args => args.slice(0, 2))).toEqual([['cache', 'clear'], ['ls-remote', tool], ['install', `${tool}@${published}`]])
+  })
+
+  it('says mise does not list the version when its list lacks it and installing it anyway fails', async () => {
     const { data, installs } = await forgeMise()
     // mise lists 2.1.3100, which starts with the version asked for but is not it.
-    const { run, ran, installed } = staleMise('2.1.309', '2.1.3100')
+    const { run, ran, installed } = staleMise('2.1.309', '2.1.3100', { missing: true })
     const result = await new ProviderClients({ run, misePath: async () => '/usr/bin/mise', miseReleaseAgeFlag: async () => false })
       .install('claude', join(installs, 'claude', 'latest', 'claude'), { MISE_DATA_DIR: data }, undefined, '2.1.310')
-    expect(result).toEqual({ ok: false, step: 1, failure: 'not-listed', detail: 'mise does not list Claude Code 2.1.310 yet, so Sotto did not install it. Nothing was changed. Try again later.' })
+    expect(result).toEqual({ ok: false, step: 1, failure: 'not-listed', printed: 'mise ERROR HTTP status client error (404 Not Found)',
+      detail: 'mise does not list Claude Code 2.1.310 yet, and installing it anyway did not work. Nothing was changed. Try again later.' })
     expect(installed()).toBe('2.1.309')
-    expect(ran.map(args => args[0])).toEqual(['cache', 'ls-remote'])
+    expect(ran.map(args => args[0])).toEqual(['cache', 'ls-remote', 'install'])
+  })
+
+  it('reads a dropped download as the download’s failure, whether or not mise lists the version', async () => {
+    const { data, installs } = await forgeMise()
+    for (const listsAfterClear of [true, false]) {
+      const { run } = staleMise('2.1.309', '2.1.310', { listsAfterClear, downloadDrops: true })
+      const result = await new ProviderClients({ run, misePath: async () => '/usr/bin/mise', miseReleaseAgeFlag: async () => false })
+        .install('claude', join(installs, 'claude', 'latest', 'claude'), { MISE_DATA_DIR: data }, undefined, '2.1.310')
+      expect(result, String(listsAfterClear)).toMatchObject({ ok: false, step: 1, failure: 'download' })
+    }
+  })
+
+  it('reads a failed install of a version mise lists as the installer’s failure', async () => {
+    const { data, installs } = await forgeMise()
+    const { run } = staleMise('2.1.309', '2.1.310', { missing: true })
+    const result = await new ProviderClients({ run, misePath: async () => '/usr/bin/mise', miseReleaseAgeFlag: async () => false })
+      .install('claude', join(installs, 'claude', 'latest', 'claude'), { MISE_DATA_DIR: data }, undefined, '2.1.310')
+    expect(result).toMatchObject({ ok: false, step: 1, failure: 'installer', detail: 'mise ERROR HTTP status client error (404 Not Found)' })
   })
 
   it('still installs when mise cannot read its list, and lets the install say how it went', async () => {

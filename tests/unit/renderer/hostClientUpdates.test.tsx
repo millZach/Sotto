@@ -70,7 +70,7 @@ describe('the words', () => {
   })
 
   it('says under Details that mise’s list did not have the version, that nothing changed, and to try again later', () => {
-    expect(failedLong(reading('claude', { state: 'failed', failure: 'not-listed', step: 1 }), 'forge')).toBe('mise on forge does not list Claude Code 2.1.284 yet, even with its cache cleared, so Sotto did not install it. Nothing was changed: 2.1.281 is still installed, and your threads kept working. Try again later.')
+    expect(failedLong(reading('claude', { state: 'failed', failure: 'not-listed', step: 1 }), 'forge')).toBe('mise on forge does not list Claude Code 2.1.284 yet, and installing it anyway did not work. Nothing was changed: 2.1.281 is still installed, and your threads kept working. Try again later.')
   })
 })
 

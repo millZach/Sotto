@@ -464,7 +464,7 @@ msgid "{installed} is installed. Devin updates with the Devin app."
 msgstr ""
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "{installed} is installed. mise does not list {to} yet, even with its cache cleared, so Sotto did not install it. Try again later."
+msgid "{installed} is installed. mise does not list {to} yet, and installing it anyway did not work. Try again later."
 msgstr ""
 
 #. {installed} is a version number.
@@ -4526,7 +4526,7 @@ msgid "Minimal"
 msgstr ""
 
 #: src/renderer/src/agents/ClientUpdateCard.tsx
-msgid "mise does not list {name} {to} yet, even with its cache cleared, so Sotto did not install it. {installed} is still installed. Try again later."
+msgid "mise does not list {name} {to} yet, and installing it anyway did not work. {installed} is still installed. Try again later."
 msgstr ""
 
 #: src/renderer/src/agents/ClientUpdateCard.tsx

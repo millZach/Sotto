@@ -457,7 +457,7 @@ export interface UpdateAction {
   readonly installStep?: { readonly mise: string; readonly tool: string; readonly packageName: string }
   /**
    * A mise install of one published version: before it runs, mise's cache of the tool is cleared and its version list
-   * is asked whether it has `version`. `releaseAge` says this mise takes the release-age flag.
+   * is asked whether it has `version`, which words a failed install. `releaseAge` says this mise takes the release-age flag.
    */
   readonly miseList?: { readonly tool: string; readonly version: string; readonly releaseAge: boolean }
 }
@@ -726,7 +726,7 @@ export class ProviderClients {
   /**
    * Install the published version through the channel that owns this install. `onStep` hears each step as it starts,
    * counted from 1: Grok Build under mise has two, the upgrade and then its package's install step. `version` is the
-   * published version the check found, which mise installs by name once its version list has it.
+   * published version the check found, which mise installs by name whether or not its version list has it yet.
    */
   async install(provider: ProviderId, executable: string | undefined,
     environment: NodeJS.ProcessEnv = process.env, onStep?: (step: number) => void, version?: string): Promise<InstallResult> {
@@ -748,9 +748,11 @@ export class ProviderClients {
         : `Sotto does not know how ${PROVIDER_LABELS[provider]} was installed, so it will not replace it.` }
     }
     onStep?.(1)
-    if (action.miseList && await this.miseLists(action.executable, action.miseList, action.env) === false) {
-      return { ok: false, step: 1, failure: 'not-listed', detail: `mise does not list ${PROVIDER_LABELS[provider]} ${action.miseList.version} yet, so Sotto did not install it. Nothing was changed. Try again later.` }
-    }
+    // A list without the version does not stop the install: mise fetches one release by its tag even when the list it
+    // reads is behind. On October 27, 2026 GitHub's list of Codex releases timed out, mise's versions host stopped at
+    // 0.164.0-alpha.12 and `mise ls-remote codex` ended at 0.163.0 with any cache cleared, yet `mise install codex@0.165.0`
+    // installed it. The list only decides how a failed install is worded.
+    const listed = action.miseList ? await this.miseLists(action.executable, action.miseList, action.env) : undefined
     // Elsewhere npm deletes a running program's folder like any other, so nothing is left to clear.
     const packageName = CLIENT_PACKAGES[provider]
     if (process.platform === 'win32' && install.channel === 'npm' && executable && packageName) {
@@ -765,7 +767,12 @@ export class ProviderClients {
       : provider === 'cursor' && this.cursorConfigDirectory ? { environment: cursorEnvironment(this.cursorConfigDirectory, withCliPath(environment, action.executable)) } : {}
     const upgrade = await this.run(action.executable, action.args, action.asNode, action.cwd || action.env || opencodeOwn.environment
       ? { ...(action.cwd ? { cwd: action.cwd } : {}), ...(action.env ? { env: action.env } : {}), ...opencodeOwn } : undefined)
-    if (!upgrade.ok) return { ...upgrade, step: 1, failure: DOWNLOAD_FAILED.test(upgrade.printed ?? upgrade.detail ?? '') ? 'download' : 'installer' }
+    if (!upgrade.ok) {
+      if (DOWNLOAD_FAILED.test(upgrade.printed ?? upgrade.detail ?? '')) return { ...upgrade, step: 1, failure: 'download' }
+      return listed === false && action.miseList
+        ? { ...upgrade, step: 1, failure: 'not-listed', detail: `mise does not list ${PROVIDER_LABELS[provider]} ${action.miseList.version} yet, and installing it anyway did not work. Nothing was changed. Try again later.` }
+        : { ...upgrade, step: 1, failure: 'installer' }
+    }
     if (!action.installStep) return upgrade
     onStep?.(2)
     return this.installStep(action.installStep)
@@ -774,7 +781,8 @@ export class ProviderClients {
   /**
    * Whether mise's version list has the version about to be installed, read afresh: the tool's cache is cleared first,
    * which costs nothing but the next read of the list, and `mise ls-remote <tool> <version>` lists what starts with it.
-   * Undefined when mise could not say, as when its list could not be fetched; the install then speaks for itself.
+   * Undefined when mise could not say, as when its list could not be fetched. The install runs either way; a list
+   * without the version only makes a failed install read as `not-listed`.
    */
   private async miseLists(mise: string, list: NonNullable<UpdateAction['miseList']>, env: Readonly<NodeJS.ProcessEnv> | undefined): Promise<boolean | undefined> {
     const options = { cwd: homedir(), ...(env ? { env } : {}) }

@@ -59,7 +59,7 @@ function clientState(update: ProviderClientUpdate | undefined, checking: boolean
   if (update.state === 'queued') return published ? t({ message: `Waiting to update to ${published}. Your threads keep working.`, comment: '{published} is a version number.' }) : t`Waiting to update to the published version. Your threads keep working.`
   if (update.state === 'failed' && update.failure === 'not-listed') {
     const to = published ?? t`the published version`
-    return t`${installed} is installed. mise does not list ${to} yet, even with its cache cleared, so Sotto did not install it. Try again later.`
+    return t`${installed} is installed. mise does not list ${to} yet, and installing it anyway did not work. Try again later.`
   }
   if (update.state === 'failed') return error
     ? t({ message: `${installed} is installed. The last update did not finish: ${error}`, comment: '{installed} is a version number; {error} is the reason the update gave.' })
