@@ -27,6 +27,8 @@ describe('the effort trace', () => {
     expect(traceMark('max', levels('low', 'medium', 'high', 'xhigh', 'max'))).toBe('true')
     expect(traceMark('high', levels('low', 'medium', 'high', 'xhigh', 'max'))).toBe('false')
     expect(traceMark('xhigh', levels('low', 'medium', 'high', 'xhigh', 'max'))).toBe('false')
+    // A model that reports one level has no highest level.
+    expect(traceMark('max', levels('max'))).toBe('false')
   })
 
   it('keeps Max lit when a level sits past it, and lights that level too', () => {
@@ -54,21 +56,30 @@ describe('the effort trace', () => {
     expect(css).toMatch(/:root\[data-window-hidden\] \.effort-trace__light \{ animation-play-state: paused; \}/u)
   })
 
-  it('marks the window root while the window is hidden', () => {
+  it('marks the window root while the page or main says the window is hidden', () => {
     let state: DocumentVisibilityState = 'visible'
+    let tell: (visible: boolean) => void = () => {}
+    let listening = false
     const descriptor = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState')
     Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state })
-    const stop = startWindowVisibility()
+    const stop = startWindowVisibility(document.documentElement, listener => { tell = listener; listening = true; return () => { listening = false } })
+    const hidden = (): boolean => document.documentElement.hasAttribute('data-window-hidden')
     try {
-      expect(document.documentElement.hasAttribute('data-window-hidden')).toBe(false)
+      expect(hidden()).toBe(false)
       state = 'hidden'
       document.dispatchEvent(new Event('visibilitychange'))
-      expect(document.documentElement.hasAttribute('data-window-hidden')).toBe(true)
+      expect(hidden()).toBe(true)
       state = 'visible'
       document.dispatchEvent(new Event('visibilitychange'))
-      expect(document.documentElement.hasAttribute('data-window-hidden')).toBe(false)
+      expect(hidden()).toBe(false)
+      // Started minimized: the page says visible, main says nobody can see it, until the window is shown.
+      tell(false)
+      expect(hidden()).toBe(true)
+      tell(true)
+      expect(hidden()).toBe(false)
     } finally {
       stop()
+      expect(listening).toBe(false)
       delete (document as { visibilityState?: unknown }).visibilityState
       if (descriptor) Object.defineProperty(Document.prototype, 'visibilityState', descriptor)
     }

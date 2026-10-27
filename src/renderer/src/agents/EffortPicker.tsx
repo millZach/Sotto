@@ -268,7 +268,8 @@ export function EffortPicker({ value, options, disabled, onChange, onUltrathink,
   const level = value
   const top = choices.length > 1 && choices[choices.length - 1]?.id === level
   // The composer's trace lights at the top, and at Max where a level such as Ultracode sits past it (Zach, October 26).
-  const trace = top || (level === 'max' && choices.some(option => option.id === 'max'))
+  // A model that reports one level has no highest level, so a lone Max is not lit either.
+  const trace = top || (choices.length > 1 && level === 'max' && choices.some(option => option.id === 'max'))
   const still = useReducedMotion()
   const arriving = useArrival(top, still)
   useLayoutEffect(() => {

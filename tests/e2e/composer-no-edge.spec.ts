@@ -141,6 +141,8 @@ test.describe('The composer has no edge', () => {
         await expect.poll(() => composerEdges(page, pane), { message: `thread ${appearance} at the highest effort` }).toEqual([])
         // The trace is light outside the card, not an edge on it: shown and turning at the top, the card still edgeless.
         await expect.poll(() => trace(page, pane), { message: `thread ${appearance} trace at the highest effort` }).toEqual({ shown: true, turning: ['effort-trace-turn', 'effort-trace-turn'] })
+        // Main said the shown window can be seen, so a visible page carries no hidden mark to pause the lap.
+        expect(await page.evaluate(() => document.visibilityState !== 'visible' || !document.documentElement.hasAttribute('data-window-hidden'))).toBe(true)
         await captureCard(page, pane, `thread-highest-${appearance}`)
         await page.evaluate(async () => { await window.sottoE2E!.agentEvent!({ type: 'stream', threadId: 'workshop', messageId: 'edge-running', text: 'Running the suite.', status: 'running' }) })
         await expect(card).toHaveAttribute('data-running', /.*/)
