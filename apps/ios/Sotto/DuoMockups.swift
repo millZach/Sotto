@@ -120,13 +120,14 @@ private struct Seam: View {
 private struct Tabs<Threads: View>: View {
     @EnvironmentObject var model: AppModel
     var watcherTab = true
+    var watcherWidth: CGFloat? = nil
     @ViewBuilder let threads: Threads
     @State private var tab = DuoLaunch.openWatcher ? 1 : 0
     var body: some View {
         TabView(selection: $tab) {
             threads.tabItem { Label("Threads", systemImage: "bubble.left") }.badge(model.threadsBadge).tag(0)
             if watcherTab, model.watcherHostID != nil {
-                WatcherPane().tabItem { Label("Watcher", image: "WatcherTab") }.badge(model.watcherTab.needs).tag(1)
+                Group { if let watcherWidth { WatcherPane().capped(watcherWidth) } else { WatcherPane() } }.tabItem { Label("Watcher", image: "WatcherTab") }.badge(model.watcherTab.needs).tag(1)
             }
             NavigationStack { ComputersView() }.tabItem { Label("Computers", systemImage: "desktopcomputer") }.tag(2)
             NavigationStack { SettingsView() }.tabItem { Label("Settings", systemImage: "slider.horizontal.3") }.tag(3)
@@ -237,7 +238,7 @@ private struct WatcherBesideMock: View {
 private struct MeasureMock: View {
     @State private var path: [ThreadRoute] = DuoLaunch.openThread.map { [ThreadRoute(ref: ThreadRef(hostID: DuoLaunch.laptop, threadID: $0))] } ?? []
     var body: some View {
-        Tabs {
+        Tabs(watcherWidth: 620) {
             NavigationStack(path: $path) {
                 ThreadsView(openCreated: { path.append(ThreadRoute(ref: $0)) })
                     .navigationDestination(for: ThreadRoute.self) { ThreadView(ref: $0.ref).capped() }
@@ -247,8 +248,8 @@ private struct MeasureMock: View {
     }
 }
 
-private extension View {
-    func capped(_ width: CGFloat = 620) -> some View {
+extension View {
+    fileprivate func capped(_ width: CGFloat = 620) -> some View {
         frame(maxWidth: width).frame(maxWidth: .infinity).background(Palette.canvas)
     }
 }
