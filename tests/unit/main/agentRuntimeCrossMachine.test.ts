@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { hostname, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
@@ -78,7 +78,8 @@ it('offers the choice on the desktop when the Owl answer is on, and a headless h
     expect(movers(headless)[0]).toBeUndefined()
     expect(headless.hostService.supportsProjectOrigins).toBe(true)
     // A host keeps its own queue, shared by its own threads' checks and the desktop's Watcher starts on it (#1312).
-    expect(watcherChecks(headless)?.machine).toBe('This machine')
+    // Named as the relay's away words name the host: its own machine name until a desktop sends the name it saved (#1316).
+    expect(watcherChecks(headless)?.machine).toBe(hostname().trim().slice(0, 64) || 'this machine')
     expect(headless.hostService.supportsWatcherCheckQueue).toBe(true)
   } finally { await headless.close() }
 })

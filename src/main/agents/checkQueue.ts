@@ -10,8 +10,13 @@
 export class CheckQueue {
   private readonly entries: { readonly id: string; readonly start: () => void }[] = []
 
-  /** `machine` is the machine's name as the words for the model give it, such as "This computer". */
-  constructor(readonly machine: string) {}
+  /**
+   * `machine` is the machine's name as the words for the model give it, such as "This computer", or how to read it when
+   * the words are written, as a host's name its desktop sends it may change (#1316).
+   */
+  constructor(private readonly name: string | (() => string)) {}
+  /** The machine's name in the words for the model, read now. */
+  get machine(): string { return typeof this.name === 'string' ? this.name : this.name() }
 
   /**
    * Adds a check at the end of the queue. Answers `running` when nothing is ahead of it, so its owner starts it now;

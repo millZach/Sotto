@@ -33,6 +33,7 @@ import { WatcherService, type WatcherAutoSettleEvent } from './watcher'
 import { WatcherPhoneService } from './watcherPhone'
 import { WatcherToolServer } from './watcherTools'
 import { DelegationService } from './delegation'
+import { hostname } from 'node:os'
 import { CheckQueue } from './checkQueue'
 import { ContinueService } from './continueThread'
 import { AgentControl } from './control'
@@ -65,7 +66,7 @@ import { readProjectOrigins } from './projectOrigins'
 import { threadDelegations } from './agentsView'
 import { BranchBundles } from './branchBundles'
 import { desktopBranchMoves, foldersOfSnapshot } from './branchMoves'
-import { DesktopDefaultsStore, hostDelegationMachines, THIS_MACHINE } from './hostDelegation'
+import { DesktopDefaultsStore, hostDelegationMachines } from './hostDelegation'
 import type { HostDelegationRelay } from './delegationRelayHost'
 import { DesktopDelegationRelay } from './delegationRelayDesktop'
 import type { DelegationNews } from '../../shared/delegation'
@@ -397,9 +398,11 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     hostName: hostId => moving.watcher?.machineName(hostId) ?? 'That machine' })
   // One check queue per machine (#1312): this machine's delegations and Watcher's starts marked as checks wait in the same
   // one, in the order asked. On the desktop it is This computer's; on a headless host, the host's own, which the desktop's
-  // Watcher starts there share with the host's own delegations. Only while Work across machines is on. A host knows no name
-  // of its own, only the one the desktop saved for it, so it names itself as its other words for its threads do.
-  const checks = crossMachine ? new CheckQueue(options.runsAs === 'headless-host' ? THIS_MACHINE : 'This computer') : undefined
+  // Watcher starts there share with the host's own delegations. Only while Work across machines is on. A host names itself
+  // as its relay's away words do (#1316): by the name the desktop saved for it, and its own machine name until one is sent.
+  const relayed = options.runsAs === 'headless-host' ? options.hostDelegation?.relay : undefined
+  const checks = crossMachine ? new CheckQueue(options.runsAs !== 'headless-host' ? 'This computer'
+    : () => relayed?.hereName() ?? (hostname().trim().slice(0, 64) || 'this machine')) : undefined
   const placing = crossMachine && options.runsAs !== 'headless-host'
     ? { workerMachine: () => options.settings().newWorkerMachine, projectOrigins: () => readProjectOrigins(agentControl.watcherSnapshot().projects),
       ...branchMoves ? { branchMoves } : {} } : {}

@@ -55,4 +55,12 @@ describe('CheckQueue', () => {
     expect(checkWaitingWords('This computer', 2)).toMatch(/^Waiting for This computer's checks to finish\. 2 ahead\. /u)
     expect(checkWaitingWords('forge', 1)).toContain('cancel_delegation takes it out of the queue.')
   })
+
+  it('reads a machine named by a function each time its words are written, as a host the desktop names later is (#1312, #1316)', () => {
+    let name = 'forge-box'
+    const queue = new CheckQueue(() => name)
+    expect(checkWaitingWords(queue.machine, 1)).toMatch(/^Waiting for forge-box's check to finish\. 1 ahead\./u)
+    name = 'forge'
+    expect(checkWaitingWords(queue.machine, 1)).toMatch(/^Waiting for forge's check to finish\. 1 ahead\./u)
+  })
 })
