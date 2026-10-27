@@ -14,6 +14,7 @@ import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { WATCHER_WAKE_UP_PROMPT } from '../../src/main/agents/watcherNews'
 import { watcherRequestLine, watcherRequestNote } from '../../src/main/agents/watcherRequestNote'
 import { isWatcherWakeUpTurn } from '../../src/shared/threadActivity'
+import { SLASH_COMMAND_REFUSAL, UNCONFIRMED_SEND_HOLD, USER_TURN_RUNNING } from '../../src/main/agents/watcherSendHolds'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
@@ -775,6 +776,8 @@ it('resumes a standing watch after a confirmed fresh desktop turn while the set-
   const oldDelivery = () => f.control.shell().deliveries?.find(item => item.threadId === target.threadId && item.draftId === original.draftId)
   expect(oldDelivery()).toMatchObject({ status: 'uncertain' })
   expect((await f.control.commandShell({ type: 'set-aside-send', threadId: target.threadId, draftId: original.draftId })).error).toBeNull()
+  // Setting aside the user's own prompt frees the thread to Watcher too, before any fresh prompt (#1222).
+  await expect.poll(() => f.service.state().watchedThreads.find(row => row.target.threadId === target.threadId)?.paused).toBe(false)
   const fresh = { ...original, draftId: randomUUID(), text: 'Synthetic confirmed replacement prompt' }
   expect((await f.control.commandShell(fresh)).error).toBeNull()
   const delivery = f.control.shell().deliveries?.find(item => item.draftId === fresh.draftId)
@@ -1178,4 +1181,79 @@ it('gives a paired thread back to Watcher when its watch reaches the owning host
   expect(sent, JSON.stringify(sent)).toMatchObject({ status: 'ok' })
   expect(master.service.state().requests.find(request => request.id === requestId)!.participants
     .find(item => item.target.threadId === target.threadId)).toMatchObject({ state: 'participating' })
+})
+
+it('refuses a slash command up front, sending and recording nothing, while a prompt that names a path goes (#1222)', async () => {
+  const f = await fixture(), target = await f.create()
+  await f.service.watchThread({ target })
+  const watch = f.service.state().standingWatches![0]!
+  // The thread has no provider session until its first prompt starts one.
+  const session = () => f.workspace.registry.byThread(target.threadId)?.sessionId
+  const sent = () => f.workspace.adapters.codex.commands.flatMap(command => command.type === 'send' && command.threadId === session() ? [command.text] : [])
+  const send = (text: string, delivery = 'now') => f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text, delivery })
+  const operations = f.control.watcherRecord().operations.length
+  for (const [text, delivery] of [['/compact', 'now'], ['/compact now', 'queue'], ['  /review-pr_2 please', 'now']] as const) {
+    expect(await send(text, delivery)).toEqual({ status: 'refused', code: 'SLASH_COMMAND', message: SLASH_COMMAND_REFUSAL, retryable: false })
+  }
+  expect(sent()).toEqual([])
+  expect(f.control.watcherRecord().operations).toHaveLength(operations)
+  // Nothing left Watcher, so the thread has no unconfirmed send and nothing holds it.
+  expect(f.control.shell().deliveries?.some(item => item.threadId === target.threadId) ?? false).toBe(false)
+  expect(f.control.hasPendingThreadWork(target.threadId)).toBe(false)
+  expect(f.service.state().watchedThreads.find(row => row.target.threadId === target.threadId)).toMatchObject({ watched: true, paused: false })
+  expect(await send('/home/x is the path')).toMatchObject({ status: 'ok' })
+  await f.finish(target.threadId)
+  expect(await send('see /tmp/foo')).toMatchObject({ status: 'ok' })
+  expect(sent()).toEqual(['/home/x is the path', 'see /tmp/foo'])
+})
+
+it('lifts a watch an unconfirmed Watcher send paused once the user sets it aside, and says which hold refused a send (#1222)', async () => {
+  const f = await fixture(), target = await f.create()
+  // The user's own turn comes first, so the thread's newest user message is the user's.
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: target.threadId, draftId: randomUUID(), text: 'Synthetic user turn' })).error).toBeNull()
+  await f.finish(target.threadId)
+  await f.service.watchThread({ target })
+  const watch = f.service.state().standingWatches![0]!
+  const row = () => f.service.state().watchedThreads.find(item => item.target.threadId === target.threadId)
+  const send = (text: string) => f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text, delivery: 'now' })
+  const adapter = f.workspace.adapters.codex, execute = adapter.execute.bind(adapter)
+  const lost = 'Synthetic send the provider takes as its own command'
+  // The provider takes it as a command of its own, as Claude takes /compact: no echo, so Sotto cannot confirm it.
+  const spy = vi.spyOn(adapter, 'execute').mockImplementation(async command => {
+    if (command.type !== 'send' || command.text !== lost) return execute(command)
+    adapter.commands.push(structuredClone(command))
+    return { accepted: false, uncertain: true, error: 'Synthetic lost send acknowledgement' }
+  })
+  let operationId: string
+  try {
+    const sent = await send(lost)
+    expect(sent).toMatchObject({ receipt: { deliveryState: 'uncertain' } })
+    operationId = (sent as { receipt: { operationId: string } }).receipt.operationId
+  } finally { spy.mockRestore() }
+  // Its work runs as a turn whose newest user message is still the user's, so the watch pauses as for the user's turn.
+  const native = f.native(target.threadId)
+  native.status = 'running'; native.lastTurn = { id: randomUUID(), status: 'running' }
+  adapter.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(row()).toMatchObject({ watched: true, paused: true })
+  expect(await send('Synthetic send while the turn runs')).toMatchObject({ status: 'refused', code: 'THREAD_BUSY', message: USER_TURN_RUNNING })
+  // A steer may go into the user's turn, but the unconfirmed send holds it, and the refusal says so.
+  expect(await f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic steer while it is unconfirmed', delivery: 'steer' }))
+    .toEqual({ status: 'refused', code: 'DELIVERY_UNCERTAIN', message: UNCONFIRMED_SEND_HOLD, retryable: false })
+  await f.finish(target.threadId)
+  // The turn is over, but the unconfirmed send holds the watch, and the refusal names it rather than a turn.
+  expect(row()).toMatchObject({ paused: true })
+  expect(await send('Synthetic send while it is unconfirmed')).toEqual({ status: 'refused', code: 'DELIVERY_UNCERTAIN', message: UNCONFIRMED_SEND_HOLD, retryable: false })
+  // Continue with a new message, in the thread's own Unconfirmed banner.
+  const draftId = f.control.watcherRecord().operations.find(item => item.id === operationId)!.draftId!
+  expect((await f.control.commandShell({ type: 'set-aside-send', threadId: target.threadId, draftId })).error).toBeNull()
+  // The pause lifts with no provider update and no new watch, and Watcher sends there again.
+  await expect.poll(() => row()?.paused).toBe(false)
+  expect(f.service.state().standingWatches).toEqual([expect.objectContaining({ id: watch.id })])
+  const next = 'Synthetic send after the set-aside'
+  expect(await send(next)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
+  expect(adapter.commands.filter(command => command.type === 'send' && command.text === next)).toHaveLength(1)
+  // The set-aside send is never sent again, and nothing claims it arrived.
+  expect(adapter.commands.filter(command => command.type === 'send' && command.text === lost)).toHaveLength(1)
+  expect(f.control.watcherRecord().operations.find(item => item.id === operationId)!.deliveryState).toBe('uncertain')
+  expect(f.control.shell().deliveries?.find(item => item.draftId === draftId)).toMatchObject({ status: 'uncertain', setAside: true })
 })

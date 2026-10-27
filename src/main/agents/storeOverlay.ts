@@ -1,6 +1,6 @@
 import { AGENT_THREAD_EXCERPT_MAX, type AgentMessage } from '../../shared/agents'
 import { sameMessageContent, type ThreadEvent } from '../../shared/threadEvents'
-import type { ThreadMessageWindow, ThreadSummaryMessages } from './threadStore'
+import { EMPTY_WINDOW, type ThreadMessageWindow, type ThreadSummaryMessages } from './threadStore'
 
 /**
  * What main shows of a write it posted and the thread store has not confirmed (#1457): the events laid over what the
@@ -126,4 +126,129 @@ export function applyEventsToSummary(summary: ThreadSummaryMessages, events: rea
     }
   }
   return { count, user, assistant }
+}
+
+/**
+ * One message as the store will hold it once these events commit: read from the store by its ID, with the events that
+ * name it laid over it, so a read of one message while a write is in flight reads one message rather than the history.
+ * An alias reads its canonical message the same way.
+ */
+export function applyEventsToMessage(messageId: string, events: readonly ThreadEvent[], stored: (id: string) => AgentMessage | undefined): AgentMessage | undefined {
+  if (events.length === 0) return stored(messageId)
+  const needed = new Set([messageId])
+  for (const event of events) if (event.kind === 'message-aliased' && event.messageId === messageId) needed.add(event.canonicalId)
+  const states = new Map<string, AgentMessage | undefined>()
+  /** After a reset, a message the events have not named is no longer held. */
+  let cleared = false
+  const held = (id: string): AgentMessage | undefined => {
+    if (!states.has(id)) states.set(id, cleared ? undefined : stored(id))
+    return states.get(id)
+  }
+  for (const event of events) {
+    switch (event.kind) {
+      case 'messages-reset':
+        states.clear()
+        cleared = true
+        break
+      case 'message-added':
+        // A second row under the same identity is never the one read back.
+        if (needed.has(event.message.id) && !held(event.message.id)) states.set(event.message.id, projectedMessage(event.message))
+        break
+      case 'message-text-appended': {
+        const message = needed.has(event.messageId) ? held(event.messageId) : undefined
+        if (message) states.set(event.messageId, { ...message, text: message.text + event.appendText })
+        break
+      }
+      case 'message-replaced': {
+        const message = needed.has(event.message.id) ? held(event.message.id) : undefined
+        if (message) states.set(event.message.id, replacedMessage(message, event.message))
+        break
+      }
+      case 'message-aliased': {
+        if (event.messageId !== messageId || event.messageId === event.canonicalId) break
+        const duplicate = held(event.messageId), canonical = held(event.canonicalId)
+        if (duplicate && canonical && sameMessageContent(duplicate, canonical)) states.set(messageId, undefined)
+        break
+      }
+      case 'answer-given':
+        break
+    }
+  }
+  return held(messageId)
+}
+
+/** A message's identity as the store lists it: what an adapter recognises a stored message by. */
+export interface MessageIdentity { readonly id: string; readonly role: AgentMessage['role']; readonly turnMessageId?: string }
+
+const identityOf = (message: AgentMessage): MessageIdentity =>
+  ({ id: message.id, role: message.role, ...(message.turnMessageId === undefined ? {} : { turnMessageId: message.turnMessageId }) })
+
+/**
+ * Every message's identity, oldest first, as the store will list them once these events commit. It reads identities, not
+ * words: only an alias reads the two messages it names, to decide as the projection does.
+ */
+export function applyEventsToIdentities(identities: readonly MessageIdentity[], events: readonly ThreadEvent[], stored: (id: string) => AgentMessage | undefined): readonly MessageIdentity[] {
+  if (events.length === 0) return identities
+  let list: MessageIdentity[] = [...identities]
+  for (const [index, event] of events.entries()) {
+    switch (event.kind) {
+      case 'messages-reset':
+        list = []
+        break
+      case 'message-added':
+        list.push(identityOf(projectedMessage(event.message)))
+        break
+      case 'message-replaced': {
+        const at = list.findIndex(identity => identity.id === event.message.id)
+        // The projection keeps a turn anchor it already holds.
+        if (at >= 0) list[at] = { ...identityOf(event.message), ...(list[at]!.turnMessageId === undefined ? {} : { turnMessageId: list[at]!.turnMessageId! }) }
+        break
+      }
+      case 'message-aliased': {
+        if (event.messageId === event.canonicalId || !list.some(identity => identity.id === event.messageId) || !list.some(identity => identity.id === event.canonicalId)) break
+        const before = events.slice(0, index)
+        const duplicate = applyEventsToMessage(event.messageId, before, stored), canonical = applyEventsToMessage(event.canonicalId, before, stored)
+        if (duplicate && canonical && sameMessageContent(duplicate, canonical)) list = list.filter(identity => identity.id !== event.messageId)
+        break
+      }
+      case 'message-text-appended':
+      case 'answer-given':
+        break
+    }
+  }
+  return list
+}
+
+/** Whether these events only add to messages and change them in place, so every stored message keeps its position. */
+export function keepsPositions(events: readonly ThreadEvent[]): boolean {
+  return events.every(event => event.kind !== 'messages-reset' && event.kind !== 'message-aliased')
+}
+
+/**
+ * A page of a thread's history read by count (`readMessages` with `limit` and `beforePosition`) with events laid over it
+ * that keep every stored message's position (`keepsPositions`): stored messages keep theirs, and each added message takes
+ * the next after the store's last. `lastStored` is the store's last position, or -1. Only the page is read.
+ */
+export function pageWithEvents(read: (options: { limit?: number; beforePosition?: number }) => ThreadMessageWindow, lastStored: number,
+  events: readonly ThreadEvent[], options: { limit?: number; beforePosition?: number }): ThreadMessageWindow {
+  const added = events.filter((event): event is Extract<ThreadEvent, { kind: 'message-added' }> => event.kind === 'message-added').map(event => projectedMessage(event.message))
+  const last = lastStored + added.length
+  const end = Math.min(options.beforePosition ?? last + 1, last + 1)
+  const first = options.limit === undefined ? 0 : Math.max(0, end - options.limit)
+  if (end <= first) return EMPTY_WINDOW
+  const storedEnd = Math.min(end, lastStored + 1)
+  const fromStore = storedEnd > first ? read({ limit: storedEnd - first, beforePosition: storedEnd }).messages : []
+  const fromEvents = added.slice(Math.max(0, first - lastStored - 1), Math.max(0, end - lastStored - 1))
+  const messages = [...fromStore, ...fromEvents]
+  const at = new Map(messages.map((message, index) => [message.id, index]))
+  for (const event of events) {
+    if (event.kind === 'message-text-appended') {
+      const index = at.get(event.messageId)
+      if (index !== undefined) messages[index] = { ...messages[index]!, text: messages[index]!.text + event.appendText }
+    } else if (event.kind === 'message-replaced') {
+      const index = at.get(event.message.id)
+      if (index !== undefined) messages[index] = replacedMessage(messages[index]!, event.message)
+    }
+  }
+  return { messages, earlierAvailable: first > 0, firstPosition: first, lastPosition: end - 1 }
 }

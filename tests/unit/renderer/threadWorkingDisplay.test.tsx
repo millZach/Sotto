@@ -47,8 +47,8 @@ describe('a turn that has reported nothing yet', () => {
     const word = liveRow.querySelector('.thread-activity-live__word')!
     expect(word.textContent).toBe('Combing the desert')
     expect(word).toHaveAttribute('aria-hidden', 'true')
-    // Beside the words, how long the turn has been working.
-    expect(liveRow).toHaveTextContent(/^Combing the desertWorking12s$/)
+    // The words alone: no clock beside them.
+    expect(liveRow).toHaveTextContent(/^Combing the desertWorking$/)
 
     const seen = new Set<string>([word.textContent!])
     for (let step = 0; step < 6; step++) {
