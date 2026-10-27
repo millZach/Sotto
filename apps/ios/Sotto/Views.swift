@@ -21,20 +21,31 @@ struct MainTabs: View {
     @State private var keyboard = false
     enum Tab: Hashable { case threads, watcher, computers, settings }
     var body: some View {
-        TabView(selection: $tab) {
-            tabbed(.threads, NavigationStack(path: $threadPath) {
-                ThreadsView(openCreated: { ref in threadPath.append(ThreadRoute(ref: ref)) }).threadDestination()
-            })
-                .tag(Tab.threads)
-            // Watcher's tab (1B), only for a computer that runs Watcher and shows it to this iPhone.
-            if let hostID = model.watcherHostID {
-                tabbed(.watcher, NavigationStack(path: $watcherPath) { WatcherView(hostID: hostID).threadDestination() })
-                    .tag(Tab.watcher)
+        // The bar sits under the pages rather than in their safe area, which a NavigationStack doesn't pass on to its
+        // pages: they end above it, as they did above the system's.
+        VStack(spacing: 0) {
+            TabView(selection: $tab) {
+                NavigationStack(path: $threadPath) {
+                    ThreadsView(openCreated: { ref in threadPath.append(ThreadRoute(ref: ref)) }).threadDestination()
+                }
+                    .toolbar(.hidden, for: .tabBar)
+                    .tag(Tab.threads)
+                // Watcher's tab (1B), only for a computer that runs Watcher and shows it to this iPhone.
+                if let hostID = model.watcherHostID {
+                    NavigationStack(path: $watcherPath) { WatcherView(hostID: hostID).threadDestination() }
+                        .toolbar(.hidden, for: .tabBar)
+                        .tag(Tab.watcher)
+                }
+                NavigationStack { ComputersView() }
+                    .toolbar(.hidden, for: .tabBar)
+                    .tag(Tab.computers)
+                NavigationStack { SettingsView() }
+                    .toolbar(.hidden, for: .tabBar)
+                    .tag(Tab.settings)
             }
-            tabbed(.computers, NavigationStack { ComputersView() })
-                .tag(Tab.computers)
-            tabbed(.settings, NavigationStack { SettingsView() })
-                .tag(Tab.settings)
+            if covered.isEmpty && !keyboard {
+                TabsBar(tab: $tab, threadsBadge: model.threadsBadge, watcher: model.watcherHostID == nil ? nil : model.watcherTab)
+            }
         }
         .environment(\.tabsCovered, $covered)
         // The bar goes under the keyboard, as the system's did; a hardware keyboard's slim bar leaves it.
@@ -56,17 +67,6 @@ struct MainTabs: View {
         .onChange(of: model.watcherHostID) { _, hostID in
             if hostID == nil, tab == .watcher { tab = .threads; watcherPath = NavigationPath() }
         }
-    }
-    /// A tab's stack with the bar under it, until a thread or the keyboard covers it. Only the chosen tab draws the
-    /// bar: the system keeps the others' pages in the accessibility tree, and one bar is what VoiceOver should find.
-    private func tabbed(_ id: Tab, _ stack: some View) -> some View {
-        stack
-            .toolbar(.hidden, for: .tabBar)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if tab == id && covered.isEmpty && !keyboard {
-                    TabsBar(tab: $tab, threadsBadge: model.threadsBadge, watcher: model.watcherHostID == nil ? nil : model.watcherTab)
-                }
-            }
     }
     #if DEBUG
     /// Captures of the UI fixture open a page at launch: `--ui-open-thread <id>` opens one of the laptop's threads, and
@@ -94,14 +94,12 @@ struct MainTabs: View {
     }
 }
 
-/// The tabs' bar: icons and names straight on the page, the chosen tab in the accent, and a fade to the canvas behind
-/// them so what scrolls under stays readable. Watcher's owl carries a dot while Watcher works, and its badge counts what
+/// The tabs' bar: icons and names straight on the canvas, the chosen tab in the accent, with no shape behind them. Watcher's owl carries a dot while Watcher works, and its badge counts what
 /// needs the user that only Watcher's page shows; VoiceOver reads both after its name ("Working, 1 needs you").
 struct TabsBar: View {
     @Binding var tab: MainTabs.Tab
     let threadsBadge: Int
     let watcher: WatcherTabState?
-    @Environment(\.sottoTheme) private var theme
     var body: some View {
         HStack(spacing: 0) {
             item(.threads, Image(systemName: "bubble.left"), Text("Threads"), badge: threadsBadge, spoken: threadsBadge > 0 ? "\(threadsBadge)" : "")
@@ -112,15 +110,8 @@ struct TabsBar: View {
             item(.settings, Image(systemName: "slider.horizontal.3"), Text("Settings"), badge: 0, spoken: "")
         }
         .padding(.horizontal, Space.s2)
-        .padding(.top, Space.s5)
-        .background {
-            LinearGradient(stops: [Gradient.Stop(color: theme.color(.canvas).opacity(0), location: 0),
-                                   Gradient.Stop(color: theme.color(.canvas).opacity(0.94), location: 0.45),
-                                   Gradient.Stop(color: theme.color(.canvas), location: 1)],
-                           startPoint: .top, endPoint: .bottom)
-                .ignoresSafeArea(edges: .bottom)
-                .allowsHitTesting(false)
-        }
+        .padding(.top, Space.s1)
+        .background(Palette.canvas)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isTabBar)
         .accessibilityIdentifier("tabs")
