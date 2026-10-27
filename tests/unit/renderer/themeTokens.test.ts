@@ -288,6 +288,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/features/settings/dictationShortcuts.css',
       'src/renderer/src/features/settings/threadShortcuts.css',
       'src/renderer/src/features/settings/menuBarOwl.css',
+      'src/renderer/src/features/settings/themes/watcherSceneChoice.css',
       'src/renderer/src/features/settings/languagePicker.css',
       'src/renderer/src/agents/hostBadge.css',
       'src/renderer/src/agents/activityBodies.css',

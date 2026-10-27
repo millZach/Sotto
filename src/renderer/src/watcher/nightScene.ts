@@ -707,10 +707,11 @@ export function gridFor(width: number, height: number): Grid {
 
 /**
  * Stars scattered over the open sky, where the landscape leaves a cell empty: the margins' and the column's, where the
- * quiet and the gaps around words decide how much of each shows.
+ * quiet and the gaps around words decide how much of each shows. `density` is the place's share of the night wood's
+ * (ADR-0148).
  */
-export function placeStars(layout: SceneLayout, grid: Grid, ink: Float32Array): Star[] {
-  const S = seeded(5), count = Math.round(layout.width * layout.height / 6000), stars: Star[] = [], taken = new Set<number>()
+export function placeStars(layout: SceneLayout, grid: Grid, ink: Float32Array, density = 1): Star[] {
+  const S = seeded(5), count = Math.round(layout.width * layout.height / 6000 * density), stars: Star[] = [], taken = new Set<number>()
   for (let k = 0; k < count; k++) {
     const c = Math.floor(S() * grid.cols), r = Math.floor(S() * grid.rows), y = r * grid.ch
     if (y < layout.header + 6 || y > layout.horizon - layout.sky * 0.08) continue

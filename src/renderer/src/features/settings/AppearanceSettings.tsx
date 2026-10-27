@@ -21,6 +21,7 @@ import { EffortColorChoice } from './themes/EffortColor'
 import { ThemeImportDialog } from './themes/ThemeImportDialog'
 import { ThemeGallery, themeExportFile } from './themes/ThemeGallery'
 import { ThemeLivePreview } from './themes/ThemeLivePreview'
+import { WatcherSceneChoice } from './themes/WatcherSceneChoice'
 import { removeThemesPatch, ThemeLibraryWriter, type LibraryPatch, type ThemeMode } from './themes/themeLibrary'
 import './themes/themes.css'
 
@@ -126,6 +127,7 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, ch
 
           <EffortColorChoice value={shown.effortColor} onChoose={effortColor => void choose({ effortColor }, msg`Effort color saved.`)} />
           <CreatureChoice value={settings.creature} shown={!creatureToggle || settings.showCreature} onShow={creatureToggle ? showCreature => void onSave({ showCreature }, showCreature ? msg`Creature shown.` : msg`Creature hidden.`).catch(() => false) : undefined} onChoose={creature => void onSave({ creature }, msg`Creature saved.`).catch(() => false)} />
+          <WatcherSceneChoice value={settings.watcherScene} onChoose={watcherScene => void onSave({ watcherScene }, msg`Watcher scene saved.`).catch(() => false)} />
           {menuBarOwl ? <MenuBarOwlSettings body={settings.menuBarOwlBody} eyes={settings.menuBarOwlEyes} onChoose={(patch, text) => void onSave(patch, text).catch(() => false)} /> : null}
 
           <div className="settings-rows">

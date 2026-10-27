@@ -11,6 +11,10 @@
 .watcher-scene--owl { z-index: 3; }
 /* The thread owls' buttons, over their glyphs: the pointer's way to a thread's name and to the thread. */
 .watcher-scene--owls { z-index: 4; }
+/* When the place changes (ADR-0148), a copy of the last place's landscape lies over the new one, already drawn under
+   it, and fades away; with motion reduced there is no copy and the new place replaces the last in one frame. */
+.watcher-scene--outgoing { transition: opacity 600ms ease; }
+.watcher-scene--outgoing[data-fading] { opacity: 0; }
 /* When the scene steps away, as for Visualize, it fades out, and then it is gone. */
 .watcher-scene[data-leaving] { opacity: 0; }
 .watcher-scene[data-leaving] .watcher-scene__owl { pointer-events: none; }
