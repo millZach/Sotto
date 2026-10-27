@@ -44,7 +44,7 @@ import { observedSubagentStatus, EMPTY_SUBAGENT_SUMMARY, type SubagentChange, ty
 import { validateThreadOptions } from './threadOptions'
 import { resolveModel } from '../../shared/modelCatalog'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
-import { isThreadArchived, isThreadSettled, isThreadTurnRunning, isWorkspaceThreadSettled } from '../../shared/threadActivity'
+import { isThreadArchived, isThreadSettled, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { delegatedThreadsBelow } from '../../shared/delegation'
 import { installNeeded, npmCi, recordInstalled, type PackageInstaller } from './checkWorktree'
 import { checkoutIdentity, existingWorkingDirectory, movedBranchRef, runWorktreeGit, ThreadWorktrees } from './threadWorktrees'
@@ -2149,32 +2149,50 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /**
    * A check's working copy (#1312): the repository's check worktree on this machine, moved to the check's commit, then
    * `npm ci` there first when its `package-lock.json` differs from the one its `node_modules` was installed from. The
-   * thread's first message waits for both, as it waits for any setup. Undefined when the check worktree is not taken, so
-   * the check gets a worktree of its own as before. A thread working in the folder holds it (CHECK_WORKTREE_PREVIOUS_THREAD).
+   * thread's first message waits for both, as it waits for any setup, and the folder's checkout reservation is held from
+   * before it is read until the install is over, so no send or Git action starts there meanwhile. Undefined when the check
+   * worktree is not taken, and the check gets a worktree of its own as before (CHECK_WORKTREE_PREVIOUS_THREAD).
    */
   private async takeCheckWorktree(threadId: string, metadata: AgentWorktree): Promise<AgentWorktree | undefined> {
     const install = this.checkInstaller
     if (!install || !metadata.check || metadata.reused || metadata.status !== 'pending') return undefined
-    let taken: AgentWorktree | undefined
-    try { taken = await this.worktrees.takeCheckWorktree(metadata, path => this.checkWorktreeBusy(threadId, path)) }
+    let taken: { readonly worktree: AgentWorktree; readonly release: () => void } | undefined
+    try { taken = await this.worktrees.takeCheckWorktree(metadata, path => this.reserveCheckWorktree(threadId, path)) }
     catch { console.warn('check-worktree-not-taken'); return undefined }
     if (!taken) { console.info('check-worktree-held'); return undefined }
-    let folder: string, needed: Awaited<ReturnType<typeof installNeeded>>
-    try { folder = await this.worktrees.workingDirectory(taken); needed = await installNeeded(folder) }
-    catch { return taken }
-    if (!needed) return taken
-    const running = this.touched(this.threadById(threadId) ?? this.thread(threadId))
-    running.worktree = { ...taken, status: 'pending', check: { install: 'running' } }
-    this.publish()
-    const outcome = await install(folder).catch(() => 'failed' as const)
-    if (outcome === 'installed') await recordInstalled(folder, needed.hash).catch(() => undefined)
-    else console.warn('check-install-failed')
-    return { ...taken, check: outcome === 'installed' ? {} : { install: 'failed' } }
+    try {
+      let folder: string, needed: Awaited<ReturnType<typeof installNeeded>>
+      try { folder = await this.worktrees.workingDirectory(taken.worktree); needed = await installNeeded(folder) }
+      catch { return taken.worktree }
+      if (!needed) return taken.worktree
+      const running = this.touched(this.threadById(threadId) ?? this.thread(threadId))
+      running.worktree = { ...taken.worktree, status: 'pending', check: { install: 'running' } }
+      this.publish()
+      const outcome = await install(folder).catch(() => 'failed' as const)
+      if (outcome === 'installed') await recordInstalled(folder, needed.hash).catch(() => undefined)
+      else console.warn('check-install-failed')
+      return { ...taken.worktree, check: outcome === 'installed' ? {} : { install: 'failed' } }
+    } finally { taken.release() }
   }
-  /** Whether a thread other than this check's works in the check worktree and could be cut off by moving it. */
-  private checkWorktreeBusy(threadId: string, path: string): boolean {
-    return this.state.snapshot.threads.some(thread => thread.id !== threadId && thread.worktree?.path !== undefined && sameFolder(thread.worktree.path, path)
-      && (isThreadTurnRunning(thread) || thread.requests.length > 0 || this.preparations.has(thread.id)))
+  /**
+   * The check worktree's checkout reservation (ADR-0027's checkout guard), taken as a Git action takes it: the mutation
+   * reservation first, so no send or Git action starts there from now on, then every other thread whose checkout it is
+   * must hold no work, active or pending. Undefined, holding nothing, when one does.
+   */
+  private async reserveCheckWorktree(threadId: string, path: string): Promise<(() => void) | undefined> {
+    let key: string
+    try { key = await checkoutIdentity(path) } catch { return undefined }
+    let release: () => void
+    try { release = this.checkoutMutations.acquireIdentity(key, 'mutation', this.checkoutThreadHolder(threadId, 'preparation')) } catch { return undefined }
+    try {
+      for (const thread of this.state.snapshot.threads) {
+        if (thread.id === threadId || !this.checkoutWorkHolder(thread) && thread.gitAction?.status !== 'running') continue
+        let identity: string
+        try { identity = await checkoutIdentity(this.threadCheckoutFolder(thread.id)) } catch { continue }
+        if (identity === key) { release(); return undefined }
+      }
+      return release
+    } catch (error) { release(); throw error }
   }
   /** Keep a destination checkout present from its first inspection through publication of the new reference. */
   private async reserveWorkingCopySelection(projectId: string, selection: AgentWorkingCopySelection, holder: CheckoutHolder): Promise<(() => void) | undefined> {

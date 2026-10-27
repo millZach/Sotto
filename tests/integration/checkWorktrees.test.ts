@@ -3,15 +3,17 @@
 // keeps the packages it installed, and `npm ci` runs first, before the check's brief, only when package-lock.json changed.
 import { randomUUID } from 'node:crypto'
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { PackageInstaller } from '../../src/main/agents/checkWorktree'
+import type { RunGit } from '../../src/main/agents/threadWorktrees'
 import { commitFile, git } from '../fixtures/branchRepositories'
 import { delegationFixture, type DelegationResult } from '../fixtures/delegationFixture'
 
 type CheckResult = DelegationResult & { delegation: { check?: { ahead: number; note: string } } }
 const lf = (text: string): string => text.replace(/\r\n/gu, '\n')
 const exists = (path: string): Promise<boolean> => access(path).then(() => true, () => false)
+const sameFolder = (a: string, b: string): boolean => resolve(a).toLowerCase() === resolve(b).toLowerCase()
 // Three checks over real Git and fake providers each: generous deadlines, which cost nothing when met (AGENTS.md).
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
@@ -129,3 +131,39 @@ it('makes a check’s new worktree as before while the check worktree is off (#1
   expect(worktree.check).toBeUndefined()
   expect(worktree.reused).toBeUndefined()
 })
+
+it('holds the check worktree’s checkout from before it reads the folder, so a send there that starts meanwhile is refused (#1312)', async () => {
+  const f = await fixture(installer(false).install, false)
+  const first = await f.check()
+  await f.running(first.delegation.thread)
+  const path = f.worktree(first.delegation.thread)!.path!
+  await f.endTurn(first.delegation.thread, 'Synthetic verdict: passed')
+  // The next check reads whether the folder holds work; the earlier check's thread is sent a follow-up just then.
+  const worktrees = (f.workspace.host as unknown as { worktrees: { git: RunGit } }).worktrees
+  const run = worktrees.git
+  // The send is held at the folder's checkout reservation, whichever way it goes, before the read goes on.
+  const mutations = (f.workspace.host as unknown as { checkoutMutations: { acquire: (folder: string, kind: string, ...rest: unknown[]) => Promise<() => void> } }).checkoutMutations
+  const acquire = mutations.acquire.bind(mutations)
+  let reached!: () => void
+  const reaching = new Promise<void>(resolve => { reached = resolve })
+  const asks = vi.spyOn(mutations, 'acquire').mockImplementation(async (folder, kind, ...rest) => {
+    if (kind === 'send' && sameFolder(folder, path)) { try { return await acquire(folder, kind, ...rest) } finally { reached() } }
+    return acquire(folder, kind, ...rest)
+  })
+  let sibling: Promise<{ error: unknown }> | undefined
+  const reads = vi.spyOn(worktrees, 'git').mockImplementation(async (cwd, args, options) => {
+    if (!sibling && args[0] === 'status' && args.includes('--untracked-files=all') && sameFolder(cwd, path)) {
+      sibling = f.control.commandShell({ type: 'manual-send', threadId: first.delegation.thread, draftId: randomUUID(), text: 'Synthetic follow-up' })
+      await reaching
+    }
+    return run(cwd, args, options)
+  })
+  try {
+    const second = await f.check()
+    await f.running(second.delegation.thread)
+    expect(sibling).toBeDefined()
+    expect(JSON.stringify((await sibling!).error)).toMatch(/setting up the working copy/u)
+    expect(f.worktree(second.delegation.thread)!.path).toBe(path)
+    expect(f.native(first.delegation.thread).status).toBe('idle')
+  } finally { reads.mockRestore(); asks.mockRestore() }
+}, 60_000)
