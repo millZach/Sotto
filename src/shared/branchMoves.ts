@@ -141,13 +141,24 @@ export type BranchStartReceipt = z.infer<typeof branchStartReceiptSchema>
 
 /**
  * A worker started from a thread's branch says where it started and from what (Zach, October 23, 2026): "Started on forge
- * from feat/x", and for a test run that carried uncommitted work, "with your uncommitted changes", counting the untracked
- * files it took.
+ * from feat/x", and for a check that carried uncommitted work, "with your uncommitted changes", counting the untracked
+ * files it took. A check's snapshot is taken when it is asked for, so the words say when, as the user's computer writes
+ * a time (#1312, Zach, October 27): "… as they were at 2:02 PM" in US English. `takenAt` is that time, already written. A
+ * check still waiting in its machine's queue "Starts" there.
  */
-export function branchStartWords(machine: string, branch: string, snapshot?: SnapshotCarried): string {
-  if (!snapshot) return `Started on ${machine} from ${branch}.`
+export function branchStartWords(machine: string, branch: string, snapshot?: SnapshotCarried, check: { readonly takenAt?: string; readonly waiting?: boolean } = {}): string {
+  const verb = check.waiting ? 'Starts' : 'Started'
+  if (!snapshot) return `${verb} on ${machine} from ${branch}.`
   const count = snapshot.untrackedCount
-  return `Started on ${machine} from ${branch} with your uncommitted changes${count ? ` (${count} untracked file${count === 1 ? '' : 's'})` : ''}.`
+  const at = check.takenAt ? ` as they were at ${check.takenAt}` : ''
+  return `${verb} on ${machine} from ${branch} with your uncommitted changes${at}${count ? ` (${count} untracked file${count === 1 ? '' : 's'})` : ''}.`
+}
+/**
+ * A time of day, hours and minutes, as this machine's own default language and region write it. Main on the desktop
+ * passes its interface language's (`interfaceClockTime`); this is for a process without one, such as a headless host.
+ */
+export function systemClockTime(at: Date): string {
+  return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(at)
 }
 /**
  * Why a worker's worktree could not be made from a moved branch (#1033). Main sets one as the worktree's error, and the

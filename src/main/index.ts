@@ -238,6 +238,7 @@ import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_RENDERER_ARGUMENT } from '../share
 import { DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT, NOTIFICATION_OPENED } from '../shared/desktopNotifications'
 import { INTERFACE_LANGUAGE_CHANGED, interfaceLanguageArgument } from '../shared/interfaceLanguageBridge'
 import { MainInterfaceLanguage, preferredSystemLanguages } from './interfaceLanguage'
+import { interfaceClockTime } from './interfaceClock'
 import { USAGE_RENDERER_ARGUMENT } from '../shared/usageDashboard'
 import { OPENCODE_HOSTS_RENDERER_ARGUMENT, OPENCODE_RENDERER_ARGUMENT } from '../shared/opencodeSignIn'
 import { registerOpenCodeSignInIpc } from './agents/opencodeSignInIpc'
@@ -940,6 +941,8 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
     delegationEnabled, workerRolesEnabled, continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
+    // A check's snapshot time, as this computer writes a time in the interface language (#1312, Zach, October 27).
+    clockTime: interfaceClockTime,
     attachAnyFile: owlFeatures['attach-any-file'],
     // Clearing settled threads (ADR-0140): Owl's answer, read once here. The log names the event and a count or a reason's code.
     clearThreadsEnabled: owlFeatures['clear-threads'], clearLog: (event, detail) => { console.error(`[Sotto] ${event} ${detail}`) },
