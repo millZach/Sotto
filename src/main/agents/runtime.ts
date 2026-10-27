@@ -119,6 +119,11 @@ export interface AgentRuntimeOptions {
    */
   crossMachineEnabled?: boolean
   /**
+   * A time of day as the user's computer writes it in the interface language main shows, for the words that say when a
+   * check's snapshot was taken (#1312). Absent, as on a headless host, this machine's own default.
+   */
+  clockTime?: (at: Date) => string
+  /**
    * A headless host runs delegation for its own threads (#1310) only where its own Owl answer turns on Work across
    * machines. It holds them to the desktop defaults the last desktop that still counts sent it, and to Ask for approval
    * when none counts. `counts` says whether a desktop is still paired here with an answers grant, read from the host's
@@ -388,7 +393,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       ...branchMoves ? { branchMoves } : {} } : {}
   const watcher = moving.watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
-      workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts, crossMachine,
+      workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts, crossMachine, ...options.clockTime ? { clockTime: options.clockTime } : {},
       settleFinished: () => options.settings().watcherSettlesFinishedThreads, ...babysittingRetired ? { babysittingRetired: true } : {}, compactAt: () => options.settings().watcherCompactAtTokens, ...options.watcherLog ? { log: options.watcherLog } : {},
       ...roles, ...placing }) : undefined
   if (options.delegationEnabled === true && options.runsAs !== 'headless-host') {
@@ -401,7 +406,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
         name: hostId => placingWatcher.machineName(hostId), setting: () => options.settings().newWorkerMachine } } : {},
       // Offered with the machines, as the tool server offers from_my_branch and test_run only with them (#1033). This
       // computer's checks run one at a time, in the order asked (#1312).
-      ...placingWatcher && branchMoves ? { branchMoves, checks: new CheckQueue('This computer') } : {},
+      ...placingWatcher && branchMoves ? { branchMoves, checks: new CheckQueue('This computer'), ...options.clockTime ? { clockTime: options.clockTime } : {} } : {},
       // A delegated thread's own worktree is made from the delegating thread's branch, so it can bring changes back (#1030).
       ...crossMachine ? { bringBack: true } : {} })
   } else if (hostDelegation && desktopDefaults) {
@@ -570,6 +575,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       // A sweep in progress finishes its current worktree, and takes no other, before the host it asks is closed.
       // A babysitting pass finishes the pull request it is on, and records what it told, the same way.
       stopWatcher()
+      // Checks that were waiting let go of the branches they would have started from (#1312).
+      await delegation?.drained()
       await worktreeCleanup.close()
       if (mainCheckout) await mainCheckout.close()
       if (babysitter) await babysitter.close()

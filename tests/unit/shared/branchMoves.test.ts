@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BRANCH_BUNDLE_CHUNK_BYTES, BRANCH_BUNDLE_MAX_BYTES, branchMoveWords, branchNameSchema, branchStartWords, clockTime, hostBranchMoveRequestSchema, incomingRef } from '../../../src/shared/branchMoves'
+import { BRANCH_BUNDLE_CHUNK_BYTES, BRANCH_BUNDLE_MAX_BYTES, branchMoveWords, branchNameSchema, branchStartWords, hostBranchMoveRequestSchema, systemClockTime, incomingRef } from '../../../src/shared/branchMoves'
 import { hostRequestSchema } from '../../../src/shared/hostProtocol'
 
 describe('branch move requests (ADR-0105 decision 8)', () => {
@@ -33,15 +33,16 @@ describe('a worker started from a thread’s branch (#1033)', () => {
     expect(branchStartWords('forge', 'feat/x', { untracked: [], untrackedCount: 0 })).toBe('Started on forge from feat/x with your uncommitted changes.')
   })
 
-  it('says when a check’s snapshot was taken, and that a check still waiting starts later (#1312)', () => {
-    const takenAt = new Date(2026, 9, 23, 14, 2, 30)
-    expect(branchStartWords('forge', 'feat/x', { untracked: ['a', 'b', 'c'], untrackedCount: 3 }, { takenAt }))
-      .toBe('Started on forge from feat/x with your uncommitted changes as they were at 14:02 (3 untracked files).')
-    expect(branchStartWords('forge', 'feat/x', { untracked: [], untrackedCount: 0 }, { takenAt: new Date(2026, 9, 23, 9, 5), waiting: true }))
-      .toBe('Starts on forge from feat/x with your uncommitted changes as they were at 09:05.')
+  it('says when a check’s snapshot was taken, as the computer writes a time, and that a check still waiting starts later (#1312)', () => {
+    expect(branchStartWords('forge', 'feat/x', { untracked: ['a', 'b', 'c'], untrackedCount: 3 }, { takenAt: '2:02 PM' }))
+      .toBe('Started on forge from feat/x with your uncommitted changes as they were at 2:02 PM (3 untracked files).')
+    expect(branchStartWords('forge', 'feat/x', { untracked: [], untrackedCount: 0 }, { takenAt: '14:02', waiting: true }))
+      .toBe('Starts on forge from feat/x with your uncommitted changes as they were at 14:02.')
     // A start with no snapshot has no time to say.
-    expect(branchStartWords('forge', 'feat/x', undefined, { takenAt, waiting: true })).toBe('Starts on forge from feat/x.')
-    expect(clockTime(new Date(2026, 0, 1, 0, 0))).toBe('00:00')
+    expect(branchStartWords('forge', 'feat/x', undefined, { takenAt: '2:02 PM', waiting: true })).toBe('Starts on forge from feat/x.')
+    // Without an interface language, the machine's own default writes it.
+    const at = new Date(2026, 9, 23, 14, 2)
+    expect(systemClockTime(at)).toBe(new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(at))
   })
 
   it('refuses a check whose submodule has changes of its own in Zach’s words', () => {

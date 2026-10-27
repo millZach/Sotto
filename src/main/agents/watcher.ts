@@ -10,7 +10,7 @@ import { isThreadClosed, isThreadTurnRunning, isWorkspaceThreadSettled } from '.
 import { countMachineWorkingThreads, countWorkingThreads, machineWorkingThreadsWarning, workingThreadsWarning } from '../../shared/workingThreads'
 import { workerMachineHostId, type NewWorkersStart, type ProjectOrigins, type WorkerMachineSetting, type WorkerPlacementReceipt } from '../../shared/workerMachine'
 import { PlacementRefusal, placeWorker, type PlacementAsk, type PlacementSources, type WorkerPlacement } from './workerPlacement'
-import { branchStartWords, type BranchStartReceipt } from '../../shared/branchMoves'
+import { branchStartWords, systemClockTime, type BranchStartReceipt } from '../../shared/branchMoves'
 import type { DesktopBranchMoves } from './branchMoves'
 import { rebuildReservations } from './watcherRecords'
 import { isWatcherWorkActive, watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
@@ -542,6 +542,8 @@ export class WatcherService implements WatcherControlHooks {
      * Only with it on does a start from a moved branch (`fromMove`, #1033) run, from this Watcher or a desktop's packet.
      */
     crossMachine?: boolean
+    /** A time of day as the user's computer writes it in the interface language, for when a check's snapshot was taken (#1312). */
+    clockTime?: (at: Date) => string
     /** The ordinary news batch's timing (WatcherWakeOptions), for tests on the real clock; the default is #1190's. */
     ordinaryBatch?: WatcherWakeOptions['ordinaryBatch']
     /**
@@ -1260,7 +1262,7 @@ export class WatcherService implements WatcherControlHooks {
     if (!moveId || !placed || !this.options.branchMoves) return undefined
     this.branchStartsPlaced.delete(moveId)
     // A check's snapshot is taken as the move begins, and its receipt says when (#1312).
-    const local = this.hostId(), takenAt = new Date()
+    const local = this.hostId(), takenAt = (this.options.clockTime ?? systemClockTime)(new Date())
     const moved = await this.options.branchMoves.forStart({ from: placed.from, to: { hostId: operation.target.hostId, projectId: create.project.projectId },
       here: local, moveId, snapshot: placed.testRun })
     if (moved.type === 'refused') {

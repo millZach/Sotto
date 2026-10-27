@@ -45,7 +45,7 @@ export class CheckQueue {
 
 /**
  * Whether a check still holds its machine's place while its outcome is `background`: its turn ended with work, such as a
- * test suite, still running (Zach has not said; the research note's one-suite-at-a-time reading). It holds until that work
+ * test suite, still running (Zach, October 27, 2026). It holds until that work
  * is seen to end or the outcome is released after its thread sits idle (#1263).
  */
 export const CHECK_HOLDS_THROUGH_BACKGROUND = true

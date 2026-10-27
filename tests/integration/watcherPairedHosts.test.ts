@@ -1803,7 +1803,7 @@ it('refuses a start from a thread with uncommitted work in the move’s words, a
   const tested = await f.startHere({ ...f.staysHere(), title: 'Synthetic test run', workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread, testRun: true })
   if (tested.status !== 'ok' || !('target' in tested)) throw new Error(`start-refused: ${tested.status === 'refused' ? tested.message : ''}`)
   expect(tested.startedFrom).toEqual({ hostId: f.control.hostId(), name: 'This computer', branch: 'feat/x', snapshot: { untracked: ['new.txt'], untrackedCount: 1 },
-    note: expect.stringMatching(/^Started on This computer from feat\/x with your uncommitted changes as they were at \d\d:\d\d \(1 untracked file\)\.$/u) })
+    note: expect.stringMatching(/^Started on This computer from feat\/x with your uncommitted changes as they were at \d{1,2}\D\d\d\D*? \(1 untracked file\)\.$/u) })
   await expect.poll(() => f.control.shell().host.threads.find(thread => thread.id === tested.target.threadId)?.worktree?.status, { timeout: 20_000 }).toBe('ready')
   const worktree = f.control.shell().host.threads.find(thread => thread.id === tested.target.threadId)!.worktree!
   // The source thread holds feat/x, so the worker's branch takes the next name; its folder has the uncommitted work.

@@ -4,6 +4,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
+import type { AgentState } from '../../src/shared/agents'
 import { commitFile, git } from '../fixtures/branchRepositories'
 import { delegationFixture, type DelegationRefused, type DelegationResult } from '../fixtures/delegationFixture'
 
@@ -15,7 +16,8 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) awai
 
 /** A delegating thread in its project's checkout, a repository on `feat/p`, with This computer's check queue. */
 async function fixture() {
-  const f = await delegationFixture(cleanups, { branchStarts: true, checks: true })
+  // The interface language's time, as main passes it, so the words are known whatever this computer's region.
+  const f = await delegationFixture(cleanups, { branchStarts: true, checks: true, delegation: { clockTime: () => '2:02 PM' } })
   const parent = await f.userThread('claude')
   const folder = f.control.shell().host.threads.find(thread => thread.id === parent)!.workingDirectory!
   git(folder, 'init', '-q'); await commitFile(folder, 'README.md', '# Project\n', 'Start the project')
@@ -24,7 +26,8 @@ async function fixture() {
   const check = async (threadId: string, input: Record<string, unknown> = {}) =>
     f.ok(await f.delegate(threadId, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0, test_run: true, ...input })) as CheckResult
   const made = (threadId: string) => f.control.shell().host.threads.some(thread => thread.id === threadId)
-  return { ...f, parent, folder, check, made }
+  const refs = () => git(folder, 'for-each-ref', '--format=%(refname)', 'refs/sotto').split('\n').filter(Boolean)
+  return { ...f, parent, folder, check, made, refs }
 }
 
 it('runs one check at a time on This computer and starts the next, in the order asked, once the one ahead ends (#1312)', async () => {
@@ -68,7 +71,7 @@ it('takes a waiting check out of the queue when it is cancelled or its thread is
   const last = await f.check(f.parent, { work: 'ui' })
   expect(last.delegation.check?.ahead).toBe(3)
   // Each start from the branch landed its own incoming ref; the waiting one lets go of its own when it leaves.
-  const refs = () => git(f.folder, 'for-each-ref', '--format=%(refname)', 'refs/sotto').split('\n').filter(Boolean)
+  const refs = f.refs
   expect(refs()).toHaveLength(2)
   const answer = await f.service.cancel(f.parent, { delegation: cancelled.delegation.id }) as CheckResult
   expect(answer.delegation.outcome).toBe('stopped')
@@ -100,7 +103,7 @@ it('takes a waiting check’s snapshot when it is asked for, and says when, so l
   await writeFile(join(f.folder, 'p.txt'), 'asked\n'); await writeFile(join(f.folder, 'scratch.txt'), 'scratch\n')
   const waiting = await f.check(f.parent, { from_my_branch: true })
   expect(waiting.delegation.check?.ahead).toBe(1)
-  expect(waiting.startedFrom?.note).toMatch(/^Starts on This computer from feat\/p with your uncommitted changes as they were at \d\d:\d\d \(1 untracked file\)\.$/u)
+  expect(waiting.startedFrom?.note).toBe('Starts on This computer from feat/p with your uncommitted changes as they were at 2:02 PM (1 untracked file).')
   // Edits made while it waits stay out of it.
   await writeFile(join(f.folder, 'p.txt'), 'later\n')
   await f.endTurn(first.delegation.thread, 'Synthetic verdict: passed')
@@ -116,4 +119,87 @@ it('refuses a check while Work across machines is off, so nothing queues (#1312)
   const parent = await f.userThread('claude')
   const refused = await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0, test_run: true }) as DelegationRefused
   expect(refused).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+})
+
+it('keeps a check’s place in the order it was asked for, however long its snapshot takes (#1312)', async () => {
+  const f = await fixture()
+  const running = await f.check(f.parent)
+  await vi.waitFor(() => expect(f.native(running.delegation.thread).status).toBe('running'))
+  // The first check's snapshot is slow; the second, asked after it, has none to take.
+  const moves = (f.service as unknown as { options: { branchMoves: { forStart: (...args: unknown[]) => Promise<unknown> } } }).options.branchMoves
+  const forStart = moves.forStart.bind(moves)
+  let release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  let reached!: () => void
+  const reaching = new Promise<void>(resolve => { reached = resolve })
+  const slow = vi.spyOn(moves, 'forStart').mockImplementation(async (...args: unknown[]) => { reached(); await held; return forStart(...args) })
+  try {
+    const first = f.check(f.parent, { from_my_branch: true })
+    await reaching
+    const second = await f.check(f.parent, { work: 'research' })
+    release()
+    const asked = await first
+    expect(asked.delegation.check?.ahead).toBe(1)
+    expect((f.ok(await f.read(f.parent, second.delegation.id)) as CheckResult).delegation.check?.ahead).toBe(2)
+  } finally { slow.mockRestore() }
+})
+
+it('keeps a check’s place while its brief’s delivery is unconfirmed, so the next does not run beside it (#1312)', async () => {
+  const f = await fixture()
+  // The provider takes the brief, but Sotto cannot confirm it: it reads unknown, and may yet be running.
+  const command = f.control.commandFromDelegation.bind(f.control)
+  let once = true
+  const unconfirmed = vi.spyOn(f.control, 'commandFromDelegation').mockImplementation(async (request, ...rest) => {
+    const answer = await command(request, ...rest)
+    if (request.type !== 'manual-send' || !once) return answer
+    once = false
+    return { ...answer, deliveries: [{ draftId: request.draftId, threadId: request.threadId, status: 'uncertain' }] } as unknown as AgentState
+  })
+  try {
+    const first = await f.check(f.parent)
+    // It read unknown as it was sent; seeing its message arrive may already have made it working again.
+    expect(['unknown', 'working']).toContain(first.delegation.outcome)
+    const second = await f.check(f.parent, { work: 'research' })
+    expect(second.delegation.check?.ahead).toBe(1)
+    await vi.waitFor(() => expect(f.native(first.delegation.thread).status).toBe('running'))
+    expect(f.made(second.delegation.thread)).toBe(false)
+    // Its own message shows in its thread, so it arrived; once its turn ends, the next check starts.
+    await f.endTurn(first.delegation.thread, 'Synthetic verdict: passed')
+    await vi.waitFor(() => expect(f.made(second.delegation.thread)).toBe(true))
+  } finally { unconfirmed.mockRestore() }
+})
+
+it('holds no place for a check stopped while it was being admitted (#1312)', async () => {
+  const f = await fixture()
+  const running = await f.check(f.parent)
+  await vi.waitFor(() => expect(f.native(running.delegation.thread).status).toBe('running'))
+  const other = await f.userThread('grok')
+  // The user stops the asking thread while its check's admission is being saved.
+  const service = f.service as unknown as { saveAdmission: (record: unknown) => Promise<void> }
+  const save = service.saveAdmission.bind(f.service)
+  let stopOnce = true
+  service.saveAdmission = async record => {
+    if (stopOnce) { stopOnce = false; await f.control.commandShell({ type: 'interrupt', threadId: other }) }
+    return save(record)
+  }
+  const stopped = await f.check(other)
+  expect(stopped.delegation.outcome).toBe('stopped')
+  expect(stopped.delegation.check).toBeUndefined()
+  const after = await f.check(f.parent, { work: 'research' })
+  expect(after.delegation.check?.ahead).toBe(1)
+  await f.endTurn(running.delegation.thread, 'Synthetic verdict: passed')
+  await vi.waitFor(() => expect(f.made(after.delegation.thread)).toBe(true))
+  expect(f.made(stopped.delegation.thread)).toBe(false)
+})
+
+it('lets go of a waiting check’s branch when Sotto stops, since it will never start (#1312)', async () => {
+  const f = await fixture()
+  const running = await f.check(f.parent)
+  await vi.waitFor(() => expect(f.native(running.delegation.thread).status).toBe('running'))
+  const waiting = await f.check(f.parent, { from_my_branch: true })
+  expect(waiting.delegation.check?.ahead).toBe(1)
+  expect(f.refs()).toHaveLength(1)
+  f.service.close()
+  await f.service.drained()
+  expect(f.refs()).toEqual([])
 })
