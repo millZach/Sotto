@@ -47,12 +47,32 @@ struct MainTabs: View {
         // A tapped alert opens its thread on Threads (ADR-0051), and Watcher's own opens the Watcher tab.
         .onChange(of: model.alertOpened) { _, ref in openAlerted(ref) }
         .onChange(of: model.watcherAlertOpened) { _, hostID in openWatcher(hostID) }
-        .onAppear { openAlerted(model.alertOpened); openWatcher(model.watcherAlertOpened) }
+        .onAppear {
+            openAlerted(model.alertOpened); openWatcher(model.watcherAlertOpened)
+            #if DEBUG
+            openForCapture()
+            #endif
+        }
+        // A confirmation belongs to the page that showed it (ADR-0051): another tab or page clears it.
+        .onChange(of: tab) { model.pageLeft() }
+        .onChange(of: threadPath) { model.pageLeft() }
+        .onChange(of: watcherPath) { model.pageLeft() }
         // A computer that stops offering Watcher takes its tab with it.
         .onChange(of: model.watcherHostID) { _, hostID in
             if hostID == nil, tab == .watcher { tab = .threads; watcherPath = NavigationPath() }
         }
     }
+    #if DEBUG
+    /// Captures of the UI fixture open a page at launch: `--ui-open-thread <id>` opens one of the laptop's threads, and
+    /// `--ui-open-watcher` the Watcher tab.
+    private func openForCapture() {
+        let arguments = ProcessInfo.processInfo.arguments
+        if let index = arguments.firstIndex(of: "--ui-open-thread"), index + 1 < arguments.count {
+            threadPath = NavigationPath([ThreadRoute(ref: ThreadRef(hostID: "11111111-1111-4111-8111-111111111111", threadID: arguments[index + 1]))])
+        }
+        if arguments.contains("--ui-open-watcher"), model.watcherHostID != nil { tab = .watcher }
+    }
+    #endif
     private func openAlerted(_ ref: ThreadRef?) {
         guard let ref else { return }
         model.alertOpened = nil
@@ -131,7 +151,7 @@ enum Words {
     }
 }
 
-/// Says what just went wrong, above whatever page is open.
+/// Says what just happened, above whatever page is open: a problem until dismissed, a confirmation for a few seconds.
 struct FeedbackBanner: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
@@ -152,6 +172,10 @@ struct FeedbackBanner: View {
             .padding(.leading, Space.s4)
             .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .accessibilityAddTraits(.updatesFrequently)
+            .transition(.opacity)
+            .task(id: model.passing) {
+                if let id = model.passing, model.confirmationShown(id) { UIAccessibility.post(notification: .announcement, argument: feedback) }
+            }
         }
     }
 }

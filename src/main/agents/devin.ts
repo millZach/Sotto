@@ -1040,7 +1040,7 @@ export class DevinAcpHost implements AgentHost {
           }
           checkScope()
           if (decision.answering) return { accepted: false, uncertain: true }
-          const answer = devinAnswer(decision, command.answer, command.approved, command.questionAnswers, command.permissionChoice)
+          const answer = devinAnswer(decision, command.answer, command.approved, command.questionAnswers, command.permissionChoice, command.skipped)
           decision.answering = true; alias.answeredRequestIds.push(command.requestId)
           try { await this.persist() } catch (error) {
             alias.answeredRequestIds = alias.answeredRequestIds.filter(id => id !== command.requestId); decision.answering = false; throw error

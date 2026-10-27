@@ -20,6 +20,7 @@ import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHos
 import { opencodeReasoningActivity, opencodeStepFilesActivity, opencodeTextMessageId, opencodeToolActivity, opencodeToolOutput, opencodeToolStatus, type OpenCodeTool } from './opencodeActivity'
 import { locationQuery, OpenCodeClient, OpenCodeRejected, type OpenCodeEvent } from './opencodeClient'
 import { OPENCODE_DECLINED, OPENCODE_FORM_UNSHOWN, opencodeFormAnswer, opencodeFormPending, opencodeFormSchema, opencodePermissionDecision, opencodePermissionPending, opencodePermissionSchema, type OpenCodePending } from './opencodeRequests'
+import { QUESTION_SKIPPED } from './nativeRequests'
 import { chooseOpenCode, endServersLeftBehind, rememberOpenCodeChoice, type OpenCodeChoice, ensureOpenCodeFolders, OPENCODE_CLI_VERSION, parseOpenCodeVersion, opencodeEnvironment, opencodeFolders, opencodePassword, OpenCodeServer, OpenCodeTooOld, OpenCodeUncertain, OpenCodeUnsupported, opencodeVersionRefusal, readOpenCodeVersion, withFirstServerLock, type OpenCodeFolders, type OpenCodeServerEvent } from './opencodeServer'
 import { acceptOpenCode } from './opencodeLookup'
 import { opencodeToolServers, toolServerStatuses, type OpenCodeToolServer } from './opencodeTools'
@@ -1814,13 +1815,13 @@ export class OpenCodeHost implements AgentHost {
           if (!entry?.client) return { accepted: false, uncertain: true }
           // Checked before anything is sent: a bad answer sends nothing and leaves the request answerable.
           const decision = pending.kind === 'permission' ? opencodePermissionDecision(pending, command.approved, command.permissionChoice) : undefined
-          const answer = pending.kind === 'form' && command.approved !== false ? opencodeFormAnswer(pending, command.answer, command.questionAnswers) : undefined
+          const answer = pending.kind === 'form' && command.approved !== false && !command.skipped ? opencodeFormAnswer(pending, command.answer, command.questionAnswers) : undefined
           pending.answering = true; delete pending.request.answerRetryReady; this.changed(command.threadId)
           try {
             if (pending.kind === 'permission') {
               await entry.client.request('POST', `/api/session/${this.sid(alias)}/permission/${pending.permission.id}/reply`, { body: decision === 'once' ? { decision } : { decision, message: OPENCODE_DECLINED } })
             } else if (answer === undefined) {
-              await entry.client.request('DELETE', `/api/session/${this.sid(alias)}/form/${pending.form.id}`, { query: { message: 'The user chose not to answer.' } })
+              await entry.client.request('DELETE', `/api/session/${this.sid(alias)}/form/${pending.form.id}`, { query: { message: command.skipped ? QUESTION_SKIPPED : 'The user chose not to answer.' } })
             } else await entry.client.request('POST', `/api/session/${this.sid(alias)}/form/${pending.form.id}/reply`, { body: { answer } })
             this.removeRequest(pending)
           } catch (error) {

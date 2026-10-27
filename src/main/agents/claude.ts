@@ -1089,7 +1089,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       if (!pending) throw new Error('That request is no longer pending.')
       if (runtime.answerWrites.get(pending.id) === 'pending' || runtime.answered.has(pending.id) && runtime.answerWrites.get(pending.id) !== 'failed') return { accepted: false, uncertain: true }
       if (runtime.watcher) assertWatcherPermissionChoice(pending.request, command.permissionChoice)
-      const answer = claudeAnswer(pending, command.answer, command.approved, command.questionAnswers, command.permissionChoice)
+      const answer = claudeAnswer(pending, command.answer, command.approved, command.questionAnswers, command.permissionChoice, command.skipped)
       // Only another explicit user answer retries uncertain delivery. Clearing the marker while
       // it is in flight keeps a concurrent answer from sending a second response.
       const retry = pending.request.delivery === 'uncertain' || pending.request.answerRetryReady === true

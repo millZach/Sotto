@@ -4,6 +4,8 @@
 
 Accepted October 23, 2026. Zach picked direction A, the quiet line, from `docs/prototypes/quiet-composer-prototype.html`, the mock-up made from his feedback on the composer after #1368: "look at how many pills we have there... same issue in Watcher... so they aren't just pills or what we changed too slapped everywhere". The research behind the three directions is `docs/research/2026-10-23-composer-controls.md`.
 
+Decision 3 amended October 27, 2026, by ADR-0153: Cmd+Enter (Ctrl+Enter) now steers from the composer, and Steer shows that key.
+
 Amends ADR-0110 (containers are filled cards, and no control is a pill) for the composer only: its rule that composer chips are filled with 5px corners no longer holds inside a composer. Everywhere else, Settings and the continue strip included, an option chip stays a filled soft square. Amends ADR-0027 (the branch toolbar) on how its row looks and where its parts sit, not on what they do.
 
 ## Context

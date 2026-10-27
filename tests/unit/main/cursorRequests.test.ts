@@ -59,6 +59,7 @@ describe('Cursor’s questions', () => {
       .toEqual({ outcome: { outcome: 'answered', answers: [{ questionId: 'q1', selectedOptionIds: ['r'] }, { questionId: 'q2', selectedOptionIds: ['s', 'l'] }] } })
     expect(cursorAnswer(pending, '', undefined, { q1: { optionIds: ['b'] } })).toEqual({ outcome: { outcome: 'answered', answers: [{ questionId: 'q1', selectedOptionIds: ['b'] }] } })
     expect(cursorAnswer(pending, '', undefined, { q1: { optionIds: [] }, q2: { optionIds: [] } })).toEqual({ outcome: { outcome: 'skipped' } })
+    expect(cursorAnswer(pending, '', undefined, { q1: { optionIds: ['a'] } }, undefined, true)).toEqual({ outcome: { outcome: 'skipped' } })
     expect(() => cursorAnswer(pending, '', undefined, { q1: { optionIds: ['green'] } })).toThrow()
   })
   it('reads a typed answer to one question as the option it names', () => {

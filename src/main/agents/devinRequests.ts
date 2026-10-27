@@ -109,7 +109,7 @@ export function devinPending(wireId: string | number, method: string, value: unk
       options: field.oneOf?.map(option => ({ id: option.const, label: option.title })) ?? field.enum?.map((value, index) => ({ id: value, label: field.enumNames?.[index] ?? value })) ?? [],
       multiSelect: false, allowFreeText: !field.enum && !field.oneOf, required: question.requestedSchema.required?.includes(id) ?? false,
     }))
-    return { wireId, threadId, question, request: { id, kind: 'question', text: question.message ?? 'Devin needs your input.', questions, options: questions.length === 1 ? questions[0]!.options : [] } }
+    return { wireId, threadId, question, request: { id, kind: 'question', text: question.message ?? 'Devin needs your input.', questions, options: questions.length === 1 ? questions[0]!.options : [], skippable: true } }
   }
   return undefined
 }
@@ -117,7 +117,7 @@ export function devinDecline(pending: DevinPending): unknown {
   return pending.permission ? { outcome: { outcome: 'cancelled' } } : { action: 'decline' }
 }
 /** Invoked only after an explicit user answer, never on a timer, disconnect or skipped request. */
-export function devinAnswer(pending: DevinPending, answer: string, approved?: boolean, questionAnswers?: AgentQuestionAnswers, permissionChoice?: string): unknown {
+export function devinAnswer(pending: DevinPending, answer: string, approved?: boolean, questionAnswers?: AgentQuestionAnswers, permissionChoice?: string, skipped?: boolean): unknown {
   if (pending.permission) {
     if (typeof approved !== 'boolean') throw new Error('Explicitly allow or deny this permission request.')
     const choice = permissionChoice
@@ -126,7 +126,7 @@ export function devinAnswer(pending: DevinPending, answer: string, approved?: bo
     if (!choice) throw new Error('Devin did not offer this one-time decision.')
     return { outcome: { outcome: 'selected', optionId: choice } }
   }
-  if (approved === false) return devinDecline(pending)
+  if (approved === false || skipped) return devinDecline(pending)
   const form = pending.question!.requestedSchema
   let content: Record<string, unknown>
   if (questionAnswers) {

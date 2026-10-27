@@ -757,3 +757,23 @@ describe('composer question choices', () => {
     expect(onSubmit).toHaveBeenCalledExactlyOnceWith({ answer: 'sqlite' })
   })
 })
+
+describe('skipping a question', () => {
+  it('offers Skip beside Send answer for a required question its provider lets the user skip, and sends the skip', async () => {
+    const { user, onSubmit } = setup({ ...structured([single]), skippable: true })
+    expect(screen.getByRole('button', { name: 'Send answer' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Skip question' }))
+    expect(onSubmit).toHaveBeenCalledWith({ answer: '', skipped: true })
+    expect(await screen.findByText('Question skipped.')).toBeInTheDocument()
+  })
+
+  it('offers no Skip when the provider cannot take one', () => {
+    setup(structured([single]))
+    expect(screen.queryByRole('button', { name: 'Skip question' })).toBeNull()
+  })
+
+  it('shows one Skip when the send button already skips optional questions', () => {
+    setup({ ...structured([{ ...single, required: false }]), skippable: true })
+    expect(screen.getAllByRole('button', { name: 'Skip question' })).toHaveLength(1)
+  })
+})
