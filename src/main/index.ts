@@ -1037,6 +1037,9 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   app.on('browser-window-blur', windowFocusChanged)
   windowFocusChanged()
   localRuntime.watcher?.useRemoteHosts(hostRouter.watcherHosts())
+  // The desktop relay (#1316): each host whose threads delegate to This computer through this desktop is heard from here.
+  const delegationRelay = 'delegationRelay' in localRuntime ? localRuntime.delegationRelay : undefined
+  delegationRelay?.useHosts(hostRouter)
   // A child on another machine brings its changes back by moving its branch first (#1030), only while Work across machines is on.
   if (localRuntime.branchMoves) hostRouter.useBranchMoves(localRuntime.branchMoves)
   // Desktop defaults (#1310): this computer's new-thread default and, while worker roles are on, its worker roles, sent to
@@ -1071,7 +1074,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   const retainedDrafts = new RetainedDraftStore({ directory: userDataPath, watcherEnabled, heldProviders, historyEnabled: () => agentHistoryEnabled,
     onRecovery: () => recoveryNotices.publish({ code: 'REMOTE_DRAFTS_UNREADABLE' }),
     onWriteFailure: () => recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' }) })
-  const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, crossMachineEnabled, heldProviders, streamingPublishCost: owlFeatures['streaming-publish-cost'], clientVersion: hostVersion,
+  const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, crossMachineEnabled, relaysDelegation: delegationRelay !== undefined, heldProviders, streamingPublishCost: owlFeatures['streaming-publish-cost'], clientVersion: hostVersion,
     waitingClientVersion: () => waitingHostVersion,
     localHostRunning: startupSettings.localHostEnabled, localHostEnabled: () => workingCopySettings.localHostEnabled,
     restart: () => { app.relaunch(); app.quit() },

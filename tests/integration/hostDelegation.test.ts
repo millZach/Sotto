@@ -158,9 +158,10 @@ it('lets a thread on a host start a child on its own machine under the desktop d
   expect(f.thread(child)).toMatchObject({ runtimeMode: 'auto', projectId: f.project.id })
   // The desktop already joins every host's threads, so the link reaches it with the child (the roster's data).
   await expect.poll(() => socket.shell().host.threads.find(item => item.id === child)?.delegatedBy).toBe(parent.threadId)
-  // The child is asked on its own; another machine is refused in plain words and recorded.
+  // The child is asked on its own; another machine goes through a desktop that relays (#1316), and with none connected,
+  // as this test's desktop does not accept the relay, it is refused by name, recorded, and nothing is queued.
   expect(await f.start(parent.threadId, 'auto', { machine: randomUUID() })).toMatchObject({ status: 'refused', code: 'MACHINE_UNAVAILABLE',
-    message: expect.stringContaining('delegates only to threads on this machine') })
+    message: expect.stringMatching(/^This computer isn't connected to .+, so nothing was started there\. Start it on .+ instead, or try again when this computer is back\.$/u) })
 
   // The parent's turn ends, then the child answers: the outcome and the reply come back to the parent on this machine,
   // as its hidden wake-up, with the child's words.

@@ -30,6 +30,7 @@ import { heldOnHost } from '../shared/hostProviders'
 import { startedBySotto, type HostStartedBy } from '../shared/hostConnection'
 import { createHostSelfUpdate } from './selfUpdate'
 import { HostBranchMoves } from './branchMoves'
+import { HostDelegationRelay } from '../main/agents/delegationRelayHost'
 import { BranchBundles } from '../main/agents/branchBundles'
 import { foldersOf } from '../main/agents/branchMoves'
 import { DelegationToolServer } from '../main/agents/delegationTools'
@@ -152,6 +153,10 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // A paired client with an open socket is the host's window in front: while none is connected, no remote is fetched.
     let peersConnected = (): boolean => false
     const pairing = new PairedClients(directory)
+    // The desktop relay (#1316): a thread here delegates to other machines through a desktop that relays, only where the
+    // Owl answer turns on Work across machines. Its record of relayed delegations is read before the threads start.
+    const delegationRelay = crossMachineEnabled ? new HostDelegationRelay(directory, { ...(options.log ? { log: event => options.log?.(event) } : {}) }) : undefined
+    await delegationRelay?.load()
     const runtime = await createAgentRuntime({
       observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, attachAnyFile, clearThreadsEnabled,
       clearLog: (event, detail) => options.log?.(`${event} ${detail}`), settings: () => startup, writingSettings: () => settings.get(),
@@ -162,7 +167,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         counts: clientId => pairing.isPaired(clientId) && (policy?.mayGrant({ clientId, user: 'Paired desktop', transport: 'socket' }).allowed ?? false),
         // A grant taken away, as `--deny-answers` does, is said as such, since setting the desktop up again does not restore it.
         // An expired grant or one held behind an always-confirm boundary is not revoked: it says the answers grant is missing.
-        revoked: clientId => policy?.remoteAnswersRevoked(clientId) ?? false },
+        revoked: clientId => policy?.remoteAnswersRevoked(clientId) ?? false,
+        ...delegationRelay ? { relay: delegationRelay } : {} },
       historyEnabled: () => startup.historyEnabled,
       gitStatus: { fetchIntervalMs: () => startup.gitFetchIntervalSeconds * 1000, foreground: () => peersConnected(), log: event => options.log?.(event) },
       // Restart stopped threads retires babysitting here too (ADR-0144): the host lists no `pull-request-babysit`, so the
@@ -188,7 +194,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // `sotto_delegate` so far; `sotto_visual` and `sotto_pull_requests` join this list, each as its own change. The browser
     // stays the desktop's.
     const threadTools: (ScopedThreadTools & { close(): Promise<void> })[] = runtime.delegation && crossMachineEnabled
-      ? [new DelegationToolServer(runtime.delegation, { roles: owlFeatures['worker-roles'], machines: true, place: 'this-machine' })] : []
+      ? [new DelegationToolServer(runtime.delegation, { roles: owlFeatures['worker-roles'], machines: true, place: 'this-machine', relay: delegationRelay !== undefined })] : []
     if (threadTools.length) runtime.agentHost.useThreadTools(threadTools)
     // A provider signed in from a paired client's browser is connected here for that client (ADR-0037).
     const signIns = new ProviderSignIns({ ...(options.signInCommand ? { command: options.signInCommand } : {}), cursorConfigDirectory: join(directory, 'cursor', 'config'),
@@ -242,7 +248,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         const branchMoves = crossMachineEnabled ? new HostBranchMoves(new BranchBundles({ stagingDirectory: join(directory, 'branch-moves'),
           recordsPath: join(directory, 'branch-moves.json') }), foldersOf(() => runtime.hostService.view())) : undefined
         await branchMoves?.start().catch(() => options.log?.('branch-moves-staging-clear-failed'))
-        const moves = branchMoves ? { branchMoves } : {}
+        const moves = { ...branchMoves ? { branchMoves } : {}, ...delegationRelay && runtime.delegation ? { delegationRelay } : {} }
         // The host's own OpenCode signed in to model sources from a desktop (#1107), only where its OpenCode runs.
         const opencodeSignIn = runtime.opencodeSignIn ? { opencodeSignIn: runtime.opencodeSignIn } : {}
         phones = startHostPhoneAccess({ directory, service: runtime.hostService, pairing, policy, settings, startup,

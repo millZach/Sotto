@@ -7827,6 +7827,10 @@ msgstr ""
 msgid "This computer already had as many new threads working as Threads in flight allowed, a limit Sotto no longer has. {nothing}"
 msgstr ""
 
+#: src/renderer/src/agents/delegationWords.ts
+msgid "This computer isn't connected to {machine}, so nothing was started there. Start it on {machine} instead, or try again when this computer is back."
+msgstr ""
+
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "This computer’s local host is off, so Sotto can’t run agents here. Turn on Run the local host in Settings › Hosts & phones, then restart Sotto. A host’s own providers are on its tiles there."
 msgstr ""

@@ -43,6 +43,8 @@ import { HOST_UPDATE_ANSWER_DEADLINES_MS, hostUpdateAnswerSchema, type HostUpdat
 import type { HostUpdateStep } from '../../shared/hostUpdates'
 import { projectOriginsSchema, type ProjectOrigins } from '../../shared/workerMachine'
 import { desktopDefaultsReceiptSchema, type DesktopDefaultsInput, type DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
+import type { DelegationRelayAsk } from '../../shared/delegationRelay'
+import type { DelegationNews } from '../../shared/delegation'
 import { delegationBriefSchema, delegationsReadSchema, type DelegationBrief, type DelegationsRead } from '../../shared/delegation'
 import { usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, usageProvidersBeforeMuse, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
 
@@ -101,6 +103,11 @@ export interface SocketHostServiceOptions {
    * `delegation-views` and read a host's own threads' delegations. Stable reads none and is pushed none.
    */
   crossMachineEnabled?: boolean
+  /**
+   * This desktop relays a host's delegations to other machines (#1316): only then, and only with Work across machines on,
+   * does its hello accept `delegation-relay`. Stable relays nothing and is asked nothing.
+   */
+  relaysDelegation?: boolean
   streamingPublishCost?: boolean
   /** The providers held to Owl on this run (ADR-0072); absent holds every one. */
   heldProviders?: HeldProviders
@@ -193,6 +200,7 @@ export class SocketHostService implements HostService {
   private readonly held: HeldProviders
   private readonly watcherListeners = new Set<(projection: WatcherHostProjection) => void>()
   private readonly delegationListeners = new Set<(change: DelegationViewsChange) => void>()
+  private readonly relayListeners = new Set<(askId: string, ask: DelegationRelayAsk) => void>()
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
   private readonly pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; command: boolean }>()
@@ -347,7 +355,7 @@ export class SocketHostService implements HostService {
     try {
       // This desktop knows every provider Sotto has, OpenCode among them, so it accepts each one's feature (#1107); a provider
       // held on this run is hidden here as on this computer, by the held gate.
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views'] : [], ...this.relays ? ['delegation-relay'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
@@ -422,6 +430,9 @@ export class SocketHostService implements HostService {
         // Sent only to a client whose hello accepts `host-update` (ADR-0088), for the update step it asked for.
         else if (message.event === 'host-update-step') { for (const listener of this.updateSteps) listener(message.step) }
         else if (message.event === 'delegations-changed') { if (this.supportsDelegationViews) this.delegationsChanged({ threadIds: message.threadIds }) }
+        else if (message.event === 'delegation-relay-ask') {
+          if (this.supportsDelegationRelay) for (const listener of [...this.relayListeners]) { try { listener(message.askId, message.ask) } catch { /* A listener's failure is its own. */ } }
+        }
         else { this.pushErrorThread = message.threadId ?? null; if (message.threadId) this.tooLarge.add(message.threadId); this.options.onPushError?.(message.error.message) }
       } else {
         const pending = this.pending.get(message.id)
@@ -1305,6 +1316,24 @@ export class SocketHostService implements HostService {
     if (this.options.crossMachineEnabled !== true) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
     this.offers('delegation-views')
     return this.read(delegationBriefSchema, await this.call({ op: 'delegation-brief', threadId }, undefined, undefined, 10000))
+  }
+  /** This desktop relays for hosts: Work across machines is on and it was built with the relay (#1316). */
+  private get relays(): boolean { return this.options.crossMachineEnabled === true && this.options.relaysDelegation === true }
+  /** The host lists `delegation-relay` and this desktop accepted it (#1316): its threads delegate to other machines through this desktop. */
+  get supportsDelegationRelay(): boolean { return this.relays && this.features.includes('delegation-relay') }
+  subscribeDelegationRelay(listener: (askId: string, ask: DelegationRelayAsk) => void): () => void {
+    this.relayListeners.add(listener)
+    return () => { this.relayListeners.delete(listener) }
+  }
+  async answerDelegationRelay(askId: string, answer: unknown): Promise<void> {
+    if (!this.relays) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    this.offers('delegation-relay')
+    await this.call({ op: 'delegation-relay-answer', askId, result: answer }, undefined, undefined, 10000)
+  }
+  async delegationRelayNews(threadId: string, news: DelegationNews): Promise<void> {
+    if (!this.relays) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    this.offers('delegation-relay')
+    await this.call({ op: 'delegation-relay-news', threadId, news }, undefined, undefined, 30000)
   }
   /** Hears the host name threads whose delegations changed, and this connection closing. Returns the way to stop. */
   subscribeDelegationViews(listener: (change: DelegationViewsChange) => void): () => void {

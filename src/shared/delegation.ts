@@ -210,6 +210,11 @@ export const refusedViewSchema = z.object({
   refusal: delegationRefusalCodeSchema,
   /** For a start refused as `MACHINE_UNAVAILABLE`: the machine, by host ID, or the system it asked for (#1310). */
   asked: delegationAskedSchema.optional(),
+  /**
+   * For a start refused as `MACHINE_UNAVAILABLE` on a host because no desktop that relays was connected (#1316): its card
+   * says this computer was not connected, and nothing was queued.
+   */
+  away: z.literal(true).optional(),
   /** The user's message the call answered, and the turn it was made in, when Sotto could find them. */
   rootUserMessageId: id.optional(),
   anchorMessageId: id.optional(),
