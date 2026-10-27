@@ -222,24 +222,23 @@ test.describe("Watcher's conversation column on the built app", () => {
           await settle(page)
           expect(await pageBoundProblems(page), `room at ${width}x${height}`).toEqual([])
           // The composer floats: the conversation runs on under it, keeps room to bring its last line clear, and the strip
-          // beside the card lets presses through. The floating switch's band stays clear of it.
+          // beside the card lets presses through.
           const float = await page.evaluate(() => {
             const pane = document.getElementById('watcher-pane')!
             const box = pane.querySelector<HTMLElement>(':scope > .thread-workspace__compose')!
             const log = pane.querySelector<HTMLElement>('.thread-workspace__transcript')!
             const card = box.querySelector(':scope > .thread-prompt')!.getBoundingClientRect()
             const last = [...log.querySelectorAll('.thread-transcript__content > *')].at(-1)!.getBoundingClientRect()
-            const dock = document.querySelector('.watcher-dock')?.getBoundingClientRect()
             const glass = getComputedStyle(box.querySelector(':scope > .thread-prompt')!)
             return { height: box.offsetHeight, marginTop: parseFloat(getComputedStyle(box).marginTop), padding: parseFloat(getComputedStyle(log).paddingBottom),
-              lastClear: last.bottom <= box.getBoundingClientRect().top + 1, dockClear: dock === undefined || card.bottom <= dock.top,
+              lastClear: last.bottom <= box.getBoundingClientRect().top + 1, floorClear: card.bottom <= innerHeight,
               glass: { background: glass.backgroundColor, filter: glass.backdropFilter } }
           })
           const context = `${width}x${height} ${JSON.stringify(float)}`
           expect(float.marginTop, context).toBeCloseTo(-float.height, 0)
           expect(float.padding, context).toBeGreaterThanOrEqual(float.height)
           expect(float.lastClear, context).toBe(true)
-          expect(float.dockClear, context).toBe(true)
+          expect(float.floorClear, context).toBe(true)
           expect(float.glass.filter, context).toContain('blur(14px)')
           // At least the picked 72%, and thicker where the card's words need it over pure white or black.
           const glassAlpha = await page.evaluate(css => { const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!; ctx.fillStyle = css; ctx.fillRect(0, 0, 1, 1); return ctx.getImageData(0, 0, 1, 1).data[3]! / 255 }, float.glass.background)

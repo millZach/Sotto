@@ -31,6 +31,8 @@ export async function twoMachines() {
   await commitFile(laptop, 'README.md', '# Project\n', 'Start the project')
   await commitFile(laptop, 'app.txt', 'one\n', 'Add the app')
   git(root, 'clone', '-q', laptop, forge)
+  // Each clone has an identity of its own, so a commit Sotto's Git makes never rests on this machine's global user.name.
+  for (const repository of [laptop, forge]) { git(repository, 'config', 'user.name', 'Sotto test'); git(repository, 'config', 'user.email', 'test@example.invalid') }
   return {
     root, laptop, forge,
     data: (machine: 'laptop' | 'forge') => ({ stagingDirectory: join(root, machine + '-data', 'branch-moves'), recordsPath: join(root, machine + '-data', 'branch-moves.json') }),

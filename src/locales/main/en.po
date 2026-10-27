@@ -792,6 +792,11 @@ msgstr "Nothing on {name} was lost: its threads are saved there."
 msgid "Nothing on {name} was lost."
 msgstr "Nothing on {name} was lost."
 
+#. {target} and {branch} are Git branch names.
+#: src/main/hosts/desktopHostRouter.ts
+msgid "Nothing was brought to {target}. {branch} has uncommitted changes, and Sotto won’t bring back uncommitted work. Commit them first, then try again."
+msgstr "Nothing was brought to {target}. {branch} has uncommitted changes, and Sotto won’t bring back uncommitted work. Commit them first, then try again."
+
 #: src/main/notifications/desktopNotifier.ts
 msgid "Notifications are on."
 msgstr "Notifications are on."
@@ -1866,6 +1871,10 @@ msgstr "The line Sotto added to bindings.lua changed. Sotto leaves your file alo
 msgid "The local host is off. Turn it on in Settings > Hosts & phones and restart Sotto."
 msgstr "The local host is off. Turn it on in Settings > Hosts & phones and restart Sotto."
 
+#: src/main/hosts/desktopHostRouter.ts
+msgid "The machine it began on"
+msgstr "The machine it began on"
+
 #: src/main/tools/browser.ts
 #: src/main/tools/cloudIphone/service.ts
 msgid "The main window is unavailable."
@@ -2155,6 +2164,11 @@ msgstr "This address belongs to a different host. Check the connection before co
 #: src/main/hosts/hostFailureWords.ts
 msgid "This address belongs to a different host. Nothing was saved. Check the connection before continuing."
 msgstr "This address belongs to a different host. Nothing was saved. Check the connection before continuing."
+
+#. Stands in for a branch name at the start of a sentence, when the branch is unknown.
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This branch"
+msgstr "This branch"
 
 #: src/main/tools/browser.ts
 msgid "This browser request changed or expired. Ask the agent to try again."
@@ -2590,6 +2604,11 @@ msgstr "This working copy exceeds the {limit}-file checkpoint limit."
 msgid "This working copy exceeds the checkpoint size limit ({total} MiB total, {file} MiB per file)."
 msgstr "This working copy exceeds the checkpoint size limit ({total} MiB total, {file} MiB per file)."
 
+#. {target} is a Git branch name.
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This worktree isn’t on a branch, so nothing was brought to {target}. Switch it back to its branch, then try again."
+msgstr "This worktree isn’t on a branch, so nothing was brought to {target}. Switch it back to its branch, then try again."
+
 #: src/main/tools/checkpoints.ts
 msgid "Thread work changed while checking the checkpoint. Review it again before reverting."
 msgstr "Thread work changed while checking the checkpoint. Review it again before reverting."
@@ -2726,6 +2745,10 @@ msgstr "Wait for the pending host request to finish."
 #: src/main/hosts/hostFailureWords.ts
 msgid "Wait for the pending host request to finish. Nothing was saved."
 msgstr "Wait for the pending host request to finish. Nothing was saved."
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "Wait for this thread to finish its turn, then bring its changes back. Nothing changed."
+msgstr "Wait for this thread to finish its turn, then bring its changes back. Nothing changed."
 
 #: src/main/app/applicationMenu.ts
 msgid "Window"

@@ -43,10 +43,10 @@ const ACROSS_MACHINES = { machine: true, os: true, fromThread: true, testRun: tr
 /** The start's schema as offered: no machine, system or branch to start from while Work across machines is off, and never a move. */
 const offeredStart = (roles: boolean, machines: boolean): z.ZodType => {
   if (roles) {
-    const start = watcherToolSchemas.start_thread.input.omit({ fromMove: true })
+    const start = watcherToolSchemas.start_thread.input.omit({ fromMove: true, madeFrom: true })
     return machines ? start : start.omit(ACROSS_MACHINES)
   }
-  const start = startByModel.omit({ fromMove: true })
+  const start = startByModel.omit({ fromMove: true, madeFrom: true })
   return machines ? start : start.omit(ACROSS_MACHINES)
 }
 

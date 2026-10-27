@@ -2124,9 +2124,11 @@ msgstr ""
 msgid "Handover of the last Watcher"
 msgstr ""
 
+#. The Help page.
 #. The page link: the Help page
 #: src/renderer/src/components/AppShell.tsx
 #: src/renderer/src/features/help/HelpView.tsx
+#: src/renderer/src/watcher/WatcherView.tsx
 msgid "Help"
 msgstr ""
 
@@ -2658,9 +2660,11 @@ msgstr ""
 msgid "Measuring {chosenName}. Sotto cleans up a built-in sample on the server, never your dictation."
 msgstr ""
 
+#. The Memory page.
 #. The page link: the Memory page
 #: src/renderer/src/components/AppShell.tsx
 #: src/renderer/src/watcher/WatcherMachines.tsx
+#: src/renderer/src/watcher/WatcherView.tsx
 msgid "Memory"
 msgstr ""
 
@@ -2825,6 +2829,14 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "More usage actions"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "More: {names}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "More: {names}. {ready}"
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
@@ -4305,10 +4317,12 @@ msgstr ""
 msgid "Setting up"
 msgstr ""
 
+#. The Settings page.
 #. The page link: the Settings page
 #. The page link: the Settings page
 #: src/renderer/src/components/AppShell.tsx
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
+#: src/renderer/src/watcher/WatcherView.tsx
 msgid "Settings"
 msgstr ""
 
@@ -5749,9 +5763,11 @@ msgstr ""
 msgid "Updating…"
 msgstr ""
 
+#. The Usage page.
 #. The page link: the Usage page
 #: src/renderer/src/components/AppShell.tsx
 #: src/renderer/src/features/usage/UsageView.tsx
+#: src/renderer/src/watcher/WatcherView.tsx
 msgid "Usage"
 msgstr ""
 

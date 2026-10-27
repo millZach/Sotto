@@ -17,8 +17,8 @@ import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftSt
 import { withoutRoomWatcher } from '../../../src/renderer/src/agents/watcherVisibility'
 import { WatcherRoomProvider, threadForTarget } from '../../../src/renderer/src/watcher/watcherRoom'
 import { roomView } from '../../../src/renderer/src/watcher/WatcherBeside'
-import { WatcherDock } from '../../../src/renderer/src/watcher/WatcherDock'
 import { WatcherView } from '../../../src/renderer/src/watcher/WatcherView'
+import type { UpdateControlProps } from '../../../src/renderer/src/features/updates/UpdateControl'
 import { firstMessage } from '../../../src/renderer/src/watcher/watcherFirstMessage'
 import { toolsPanelStore } from '../../../src/renderer/src/tools/toolsPanelStore'
 import { agentContextFixture } from '../../fixtures/agentContext'
@@ -247,7 +247,7 @@ describe("Watcher's room", () => {
     // Once Watcher runs, the tile is the button for its context and state (#1189).
     expect(within(pane).getByRole('button', { name: 'Watcher’s context and state' })).toBeInTheDocument()
     // The tile is the owl in the corner; the small owl that sat before Watcher's name is gone, and so is the sidebar.
-    expect(pane.querySelector('.watcher-head .watcher-owl')).toBeNull()
+    expect(pane.querySelector('.watcher-head .thread-workspace__title .watcher-owl')).toBeNull()
     expect(screen.queryByRole('complementary')).toBeNull()
     expect(within(pane).getByRole('tab', { name: 'Conversation' })).toHaveAttribute('aria-selected', 'true')
     expect(within(pane).getByRole('tab', { name: 'Watched, 1 thread' })).toHaveAttribute('aria-selected', 'false')
@@ -686,7 +686,7 @@ describe("Watcher's room", () => {
     }
     renderRoom(stateWithWatcher(), roomState())
     const pane = await screen.findByRole('region', { name: 'Watcher' })
-    const tabs = within(pane).getAllByRole('tab')
+    const tabs = within(within(pane).getByRole('tablist', { name: 'Watcher’s view' })).getAllByRole('tab')
     expect(tabs.map(tab => [tab.getAttribute('aria-label'), tab.getAttribute('title'), tab.textContent])).toEqual([
       ['Conversation', 'Conversation', ''], ['Watched, 1 thread', 'Watched, 1 thread', '1'], ['Visualize', 'Visualize', '']])
     for (const tab of tabs) expect(tab.querySelector('svg.watcher-tabs__icon[aria-hidden="true"]'), tab.getAttribute('aria-label')!).not.toBeNull()
@@ -797,13 +797,42 @@ describe('the room switch', () => {
     expect(tabs()[1]).toHaveFocus()
   })
 
-  it('floats in Watcher’s room with the page links before it and the update control after, in the order the eye reads them', () => {
+  it('ends Watcher’s header with the room switch, then one More menu holding the pages and the update', async () => {
     mockApp('watcher')
-    render(<WatcherDock updateControl={<button type="button" aria-label="Check for updates" />} />)
-    const dock = document.querySelector('.watcher-dock__pill')!
-    const stops = [...dock.querySelectorAll('a, [role="tab"][tabindex="0"], button[aria-label="Check for updates"]')].map(node => node.getAttribute('aria-label') ?? node.textContent)
-    expect(stops).toEqual(['Settings', 'Help', 'Watcher', 'Check for updates'])
-    expect(screen.getByRole('tab', { name: 'Watcher' })).toHaveAttribute('aria-selected', 'true')
+    mockAgents(stateWithWatcher())
+    const { bridge } = fakeBridge(roomState())
+    const onActivate = vi.fn()
+    const update = { status: { phase: { phase: 'available', version: '9.9.9', problem: null } }, busy: false, onActivate } as unknown as UpdateControlProps
+    render(<WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} update={update} /></SidebarChromeProvider></WatcherRoomProvider>)
+    await paneReady()
+    const head = document.querySelector<HTMLElement>('.watcher-head')!
+    // The room switch, its owl lit, then More, in the order the eye reads them; an update in hand puts a dot on More.
+    const rooms = within(head).getByRole('tablist', { name: 'Page' })
+    expect(within(rooms).getByRole('tab', { name: 'Watcher' })).toHaveAttribute('aria-selected', 'true')
+    const more = within(head).getByRole('button', { name: 'More: Settings, Help. Update 9.9.9 ready to download' })
+    expect(rooms.compareDocumentPosition(more) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(more.querySelector('.watcher-head__news')).not.toBeNull()
+    await userEvent.click(more)
+    const menu = screen.getByRole('menu')
+    expect(within(menu).getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Settings', 'Help', 'Update 9.9.9 ready to download'])
+    expect(within(menu).getByRole('menuitem', { name: 'Settings' })).toHaveFocus()
+    // Escape puts the menu away and gives focus back to More.
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(more).toHaveFocus()
+    // The update row presses as the update control would.
+    await userEvent.click(more)
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Update 9.9.9 ready to download' }))
+    expect(onActivate).toHaveBeenCalledWith('download')
+  })
+
+  it('names More for its pages alone, with no dot and no update row, where the app does not update itself', async () => {
+    renderRoom(stateWithWatcher(), roomState())
+    await paneReady()
+    const more = screen.getByRole('button', { name: 'More: Settings, Help' })
+    expect(more.querySelector('.watcher-head__news')).toBeNull()
+    await userEvent.click(more)
+    expect(within(screen.getByRole('menu')).getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Settings', 'Help'])
   })
 
   it('is Dictate | Threads alone with the gate off', () => {

@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { realpathSync } from 'node:fs'
 import { cp, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
@@ -87,11 +88,31 @@ export async function ownedGitRepository(options: GitRepositoryOptions = {}) {
 }
 
 /**
+ * Refuses a repository copy Git would not see as the seed: a copy cut short (a full disk) without an error can leave a
+ * folder whose Git looks above it for a repository, or one whose HEAD or objects are gone. Git must find the copy's
+ * own `.git`, read the seed's tree at HEAD there, and have an index to stage against.
+ */
+export async function assertWholeRepositoryCopy(repo: string, tree: string): Promise<void> {
+  const refuse = (what: string): never => { throw new Error(`The repository copy at ${repo} is incomplete: ${what}. Nothing ran in it; free some disk space, then run the test again.`) }
+  if (!(await lstat(join(repo, '.git', 'index')).then(() => true, () => false))) refuse('.git/index is missing')
+  let found: string[]
+  try { found = runFixtureGit(repo, 'rev-parse', '--absolute-git-dir', 'HEAD^{tree}').trim().split(/\r?\n/u) } catch { return refuse('Git cannot read its HEAD') }
+  if (comparablePath(found[0] ?? '') !== comparablePath(join(repo, '.git'))) refuse(`Git found the repository at ${found[0]} instead of its own`)
+  if (found[1] !== tree) refuse('its HEAD is not the seed\'s')
+}
+const comparablePath = (path: string): string => {
+  let real = path
+  try { real = realpathSync.native(path) } catch { /* Compared as written. */ }
+  return process.platform === 'win32' ? resolve(real).toLowerCase() : resolve(real)
+}
+
+/**
  * Make once in beforeAll, dispose in afterAll. Only copies are exposed: linked worktrees and remotes are refused.
  * Calls never share mutable repository state. Intended only for repeated, identical initial commits.
  */
 export async function gitRepositorySeed(options: Omit<GitRepositoryOptions, 'remote' | 'secondClone'> = {}) {
   const seed = await ownedGitRepository(options)
+  const tree = seed.git('rev-parse', 'HEAD^{tree}').trim()
   return { dispose: seed.dispose, copy: async (remotes: Pick<GitRepositoryOptions, 'remote' | 'secondClone'> = {}) => {
     const owner = await ownedRoot()
     const repo = join(owner.root, 'repo')
@@ -102,6 +123,7 @@ export async function gitRepositorySeed(options: Omit<GitRepositoryOptions, 'rem
         if (await lstat(join(seed.repo, '.git', path)).then(() => true, error => { if (error.code === 'ENOENT') return false; throw error })) throw new Error('Cannot copy linked repository metadata')
       }
       await cp(seed.repo, repo, { recursive: true, dereference: false })
+      await assertWholeRepositoryCopy(repo, tree)
       const linked = await addRemote(owner.root, repo, { ...options, ...remotes })
       return { ...owner, repo, ...linked, git: (...args: string[]) => runFixtureGit(repo, ...args) }
     } catch (error) { await owner.dispose(); throw error }
