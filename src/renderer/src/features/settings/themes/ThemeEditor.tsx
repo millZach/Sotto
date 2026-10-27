@@ -216,7 +216,7 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
     const source = editingTheme ?? (session.seedThemeId === null ? null : (
       session.seedThemeId === OMARCHY_THEME_ID && library.omarchyTheme !== undefined
         ? resolveThemeFor(library, session.initialAppearance).theme
-        : findTheme(session.seedThemeId, library.customThemes)
+        : findTheme(session.seedThemeId, library.customThemes, library.glass === true)
     ))
     const colors: ColorsByAppearance = { light: editorDefaults('light'), dark: editorDefaults('dark') }
     if (source) {

@@ -16,7 +16,7 @@ import {
   customThemesSchema,
   isThemeId,
   parseSavedThemeLibrary,
-  resolveThemeHalfId,
+  savedThemeHalfId,
   type ThemeDefinition,
 } from './themes/library'
 
@@ -693,7 +693,8 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
   const half = (key: 'lightTheme' | 'darkTheme'): string => {
     const saved = parseField(persisted, key, defaults)
     const id = library.moved.get(saved) ?? saved
-    return allowOmarchy && id === OMARCHY_THEME_ID ? id : resolveThemeHalfId(id, key === 'lightTheme' ? 'light' : 'dark', customThemes)
+    // Glass is kept whatever this build offers, so a stable run never rewrites an Owl install's choice (ADR-0150).
+    return allowOmarchy && id === OMARCHY_THEME_ID ? id : savedThemeHalfId(id, key === 'lightTheme' ? 'light' : 'dark', customThemes)
   }
 
   // Only the keys named here are read. One a version of Sotto no longer has, such as `watcherInFlightLimit`, the Threads

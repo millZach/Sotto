@@ -13,7 +13,7 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import { shownCount } from '../../../state/interfaceNumbers'
 
 import {
-  BUILT_IN_THEMES,
+  builtInThemesFor,
   T3_CODE_THEME,
   getThemeModes,
   serializeThemeFile,
@@ -26,6 +26,7 @@ import { ConfirmationDialog } from '../../../components/ConfirmationDialog'
 import { SegmentedControl } from '../../../components/SegmentedControl'
 import { Toggle } from '../../../components/Toggle'
 import type { AppearanceChoice } from '../../../state/appearance'
+import { useOwlFeature } from '../../../state/owlFeature'
 import { openThemeEditor } from './themeEditorSession'
 import { assignHalfPatch, halfColors, useThemePatch as bothHalvesPatch, type LibraryPatch, type ThemeMode } from './themeLibrary'
 
@@ -60,7 +61,8 @@ export function ThemeGallery({ shown, resolved, system, onChooseMode, onSelect, 
   const ownButton = useRef<HTMLButtonElement>(null)
   const ownListId = useId()
   const omarchy = system === 'Linux' ? shown.omarchyTheme ?? { ...T3_CODE_THEME, id: OMARCHY_THEME_ID, label: 'Omarchy' } : null
-  const all = [...(omarchy ? [omarchy] : []), ...BUILT_IN_THEMES, ...shown.customThemes]
+  // Glass is offered only where its Owl feature is on (ADR-0150).
+  const all = [...(omarchy ? [omarchy] : []), ...builtInThemesFor(useOwlFeature('glass-theme')), ...shown.customThemes]
   const omarchyMode = shown.omarchyTheme?.appearance
   const omarchyName = shown.omarchyTheme?.sourceName
 

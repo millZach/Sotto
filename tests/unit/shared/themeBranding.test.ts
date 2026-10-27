@@ -69,7 +69,7 @@ describe('widget palette projection', () => {
 
   it('projects presentation from settings without leaking unrelated fields', () => {
     const settings: AppSettings = { ...DEFAULT_SETTINGS, theme: 'light', reducedMotion: 'on', lightTheme: 'fern', llmApiKey: 'secret' }
-    const presentation = widgetPresentationFor(settings)
+    const presentation = widgetPresentationFor(settings, false)
     expect(Object.keys(presentation).sort()).toEqual(['palette', 'reducedMotion', 'theme'])
     expect(presentation.theme).toBe('light')
     expect(presentation.reducedMotion).toBe('on')

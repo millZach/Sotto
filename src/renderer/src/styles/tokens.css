@@ -176,6 +176,8 @@
      and fields, samples and tracks inside it take the inset too. The selected card or item wears the accent
      surface mixed into the card. */
   --tt-card: var(--theme-surface-raised);
+  /* The card's own solid colour, which Glass's translucent card leaves in place for what must stay solid. */
+  --tt-card-solid: var(--theme-surface-raised);
   --tt-card-inset: var(--theme-canvas);
   --tt-card-selected: color-mix(in oklab, var(--theme-accent-surface) 65%, var(--tt-card));
   /* A segmented control is a sunken track with the chosen segment raised out of it: the overlay by night, the
@@ -381,6 +383,7 @@
   --theme-contrast-target: black;
   /* By day the raised surface is barely off the canvas, so a card is the canvas with a little of the text in it. */
   --tt-card: color-mix(in oklab, var(--theme-text) 4%, var(--theme-canvas));
+  --tt-card-solid: color-mix(in oklab, var(--theme-text) 4%, var(--theme-canvas));
   --tt-segment-on: var(--theme-surface);
   --tt-glass-blur: 12px;
   --tt-glass-saturation: 1.14;
@@ -507,6 +510,27 @@
 }
 :root[data-theme='light'][data-effort-color='rainbow'], [data-theme-scope='light'][data-effort-color='rainbow'] {
   --tt-effort-text-image: linear-gradient(90deg, oklch(0.55 0.22 20), oklch(0.6 0.16 70), oklch(0.58 0.18 140), oklch(0.55 0.13 210), oklch(0.5 0.22 280), oklch(0.55 0.25 340));
+}
+
+/* Glass, the see-through theme (ADR-0150). appearance.ts marks the root data-glass only while Glass paints and writes
+   its tints as --theme-glass-*: the room once over whatever is behind the window, and the sidebar, its rows, the cards
+   and the user's messages translucent over the room. Menus, dialogs, fields, code and the terminal keep their solid
+   roles. Where nothing is drawn behind the window the room sits on the backdrop, a quiet gradient in the theme's own
+   hues (in-app glass). Last in the file, so it outranks the light block's card. */
+:root[data-glass] {
+  --tt-glass-room: var(--theme-glass-room);
+  --tt-glass-backdrop: linear-gradient(135deg, var(--theme-glass-backdrop-1), var(--theme-glass-backdrop-2) 55%, var(--theme-glass-backdrop-3));
+  --tt-sidebar: var(--theme-glass-sidebar);
+  --tt-card: var(--theme-glass-raised);
+  --tt-bubble: var(--theme-glass-message);
+  --tt-sidebar-row-hover: var(--theme-glass-row-hover);
+  --tt-sidebar-row-active: var(--theme-glass-row-active);
+  --tt-sidebar-row-selected: var(--theme-glass-row-selected);
+  --tt-selected: var(--theme-glass-row-selected);
+}
+/* By day the room can go as dark as its tint over black, so the status green deepens to keep 4.5:1 there. */
+:root[data-glass][data-theme='light'] {
+  --tt-success: oklch(0.4 0.1 158);
 }
 
 /* A mode or theme switch repaints at once: no colour transition runs mid-switch. */

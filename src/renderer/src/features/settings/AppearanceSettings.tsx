@@ -13,7 +13,7 @@ import { Card } from '../../components/Card'
 import { Field } from '../../components/Field'
 import { Select } from '../../components/Select'
 import { platformCopy } from '../../platformCopy'
-import { appearancePreview, resolveAppearance, useAppearancePreviewVersion, useSystemPrefersDark, type AppearanceChoice } from '../../state/appearance'
+import { appearancePreview, glassPaints, resolveAppearance, useAppearancePreviewVersion, useSystemPrefersDark, type AppearanceChoice } from '../../state/appearance'
 import { messageIn, useInterfaceLanguageState } from '../../state/interfaceLanguage'
 import { useOwlFeature } from '../../state/owlFeature'
 import { LanguagePicker } from './LanguagePicker'
@@ -172,7 +172,7 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, on
           <AppearanceSlider
             label={t`Contrast`}
             resetLabel={amount => t`Reset contrast to ${amount}`}
-            description={t`Color and border intensity.`}
+            description={glassPaints(shown, resolved) ? t`Color and border intensity. Glass keeps text at 100% or stronger, so it stays readable over any desktop.` : t`Color and border intensity.`}
             bounds={APPEARANCE_CONTRAST}
             value={shown.appearanceContrast}
             onPreview={value => appearancePreview.choose({ appearanceContrast: value })}

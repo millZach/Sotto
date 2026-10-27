@@ -1642,6 +1642,10 @@ msgstr ""
 msgid "Color and border intensity."
 msgstr "రంగులు, అంచుల తీవ్రత."
 
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Color and border intensity. Glass keeps text at 100% or stronger, so it stays readable over any desktop."
+msgstr ""
+
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Color scheme"

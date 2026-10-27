@@ -292,7 +292,7 @@ function GroveScene({ layout, model }: { readonly layout: GroveLayout; readonly 
     wake.current = () => { if (timer !== null) window.clearTimeout(timer); frame() }
     const readInk = (): void => {
       const style = getComputedStyle(ink)
-      const text = toRgb(style.color, pixel), accent = toRgb(style.backgroundColor, pixel), surface = surfaceOf(holder, pixel)
+      const text = toRgb(style.color, pixel), accent = toRgb(style.backgroundColor, pixel), surface = surfaceOf(holder, pixel, text)
       if (text === null || accent === null || surface === null) return
       const key = JSON.stringify([text, accent, surface, style.fontFamily])
       if (key === inked) return

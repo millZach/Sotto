@@ -25,6 +25,7 @@ import type {
 import { defaultHotkey, type SottoPlatform } from '../../../../shared/platform'
 import { defaultSettings, type AppSettings } from '../../../../shared/settings'
 import { widgetPresentationFor } from '../../../../shared/themeBranding'
+import { glassThemeOffered } from '../../state/appearance'
 import { formatTranscript } from '../../../../shared/transcript'
 import { collapseRepeatedPhrases, countWords } from '../../../../shared/textRepair'
 import {
@@ -194,7 +195,7 @@ const widgetPresentations = new WeakMap<object, WidgetPresentation>()
 function cachedWidgetPresentation(settings: Readonly<AppSettings>): WidgetPresentation {
   let presentation = widgetPresentations.get(settings)
   if (presentation === undefined) {
-    presentation = widgetPresentationFor(settings)
+    presentation = widgetPresentationFor(settings, glassThemeOffered())
     widgetPresentations.set(settings, presentation)
   }
   return presentation

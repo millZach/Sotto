@@ -10,7 +10,7 @@ import { OMARCHY_THEME_ID } from '../../../../../shared/themes/omarchy'
 import { CreatureWalk } from '../../../agents/CreatureWalk'
 import { SegmentedControl } from '../../../components/SegmentedControl'
 import { SottoMark } from '../../../components/SottoMark'
-import { resolveAppearance, themeColorVariable, type AppearanceChoice } from '../../../state/appearance'
+import { glassThemeOffered, resolveAppearance, themeColorVariable, type AppearanceChoice } from '../../../state/appearance'
 import { useEffortArrival, type EffortArrival } from './EffortColor'
 import { PreviewNightScene } from './PreviewNightScene'
 
@@ -62,7 +62,8 @@ export function AppearancePreview({ shown, systemDark, system, still = false, cr
 
   const windowHalf = resolveAppearance(shown.appearance, systemDark, shown)
   const painted = half === 'set' ? windowHalf : half
-  const { theme, colors } = resolveThemeFor(shown, painted)
+  // Glass resolves only where this run has it, as the window's own paint does (ADR-0150).
+  const { theme, colors } = resolveThemeFor({ ...shown, glass: shown.glass ?? glassThemeOffered() }, painted)
   const scope = half === 'set' ? undefined : half
   const scoped = scope === undefined ? undefined : Object.fromEntries(THEME_COLOR_ROLES.map(role => [themeColorVariable(role), colors[role]])) as CSSProperties
   const motionless = still || systemStill
