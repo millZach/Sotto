@@ -72,6 +72,8 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   // Babysitting is the user's own request too, and grants nothing: a wake-up approves, merges and answers nothing
   // (ADR-0061 decisions 4 and 11), so neither needs a remote-answer policy record.
   'babysit-pull-request': ['threadId', 'url'], 'stop-babysitting': ['threadId', 'url'],
+  // Don't restart takes back a restart Sotto scheduled (ADR-0144): it sends and grants nothing, so pairing is enough.
+  'cancel-restart': ['threadId'],
   // Fast mode changes a thread's speed and price, as a model does, and answers no permission (ADR-0143).
   'configure-thread': ['threadId', 'modelId', 'reasoningEffort', 'runtimeMode', 'providerMode', 'fastMode'],
   'select-thread': ['threadId'], 'observe-threads': ['threadIds'], 'load-earlier-messages': ['threadId', 'throughMessageId'],

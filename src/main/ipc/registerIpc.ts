@@ -185,6 +185,7 @@ const settingKeys = [
   'visualsInThreads',
   'babysitPullRequests',
   'resumeThreadsAfterRestart',
+  'restartStoppedThreads',
   'workerRoles',
   'watcherSettlesFinishedThreads',
   'newWorkerMachine',

@@ -280,6 +280,7 @@ import { TERMINAL_EVENT } from '../shared/terminal'
 import { githubOpenPullRequestBranches, githubPullRequestMerged } from './agents/worktreeCleanup'
 import type { GitHubRateLimitEvent } from './agents/github'
 import type { BabysitEvent } from './agents/babysitting'
+import type { WatchedPullRequestEvent } from './agents/watchedPullRequests'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './agents/claude'
 import type { WatcherAutoSettleEvent } from './agents/watcher'
 import { CodexAppServerHost, type CodexAdapterEvent } from './agents/codex'
@@ -347,6 +348,7 @@ type NativeDiagnostic =
   | WatcherAutoSettleEvent
   | GitHubRateLimitEvent
   | BabysitEvent
+  | WatchedPullRequestEvent
   | ClaudeAdapterEvent
   | CodexAdapterEvent
   | PhoneAccessEvent
@@ -767,6 +769,8 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   const startupSettings = await settings.get()
   // Keep main up to date (ADR-0142): this computer's projects only, so only where the local host runs, and never in a
   // design capture, whose fixture folders must look the same on every run.
+  // Restart stopped threads retires babysitting (ADR-0144): no tool, no Babysit control, no wake-ups, and the switch is not read.
+  const babysittingRetired = owlFeatures['restart-stopped-threads']
   const keepMainCurrentEnabled = owlFeatures['keep-main-current'] && startupSettings.localHostEnabled && process.env['SOTTO_DESIGN_CAPTURE'] !== '1'
   // The interface language (ADR-0123), read before the tray, the menu or a window shows a word. An end-to-end run reads
   // English as the computer's language, so every test and design capture reads English on any machine; the setting still
@@ -934,7 +938,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     && (window.isFocused() || (windowBlurredAt !== 0 && Date.now() - windowBlurredAt < 45_000)))
   const windowShowing = (): boolean => BrowserWindow.getAllWindows().some(showing)
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
-    directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart: owlFeatures['resume-after-restart'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
+    directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
     delegationEnabled, workerRolesEnabled, continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
     attachAnyFile: owlFeatures['attach-any-file'],
     // Clearing settled threads (ADR-0140): Owl's answer, read once here. The log names the event and a count or a reason's code.
@@ -945,7 +949,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     settings: () => workingCopySettings, writingSettings: () => settings.get(),
     historyEnabled: () => agentHistoryEnabled,
     gitStatus: { fetchIntervalMs: () => workingCopySettings.gitFetchIntervalSeconds * 1000, foreground: windowInFront, visible: windowShowing, ...(ghStandIn ? { ghStandIn } : {}), log: event => { logOperational(event) } },
-    babysitting: { agentTool: () => workingCopySettings.babysitPullRequests },
+    babysitting: babysittingRetired ? { retired: true } : { agentTool: () => workingCopySettings.babysitPullRequests },
     // A journey's Cursor sign-in page is written down for the spec to read, never opened in a browser.
     openExternal: url => cursorFixtureRoot ? appendFile(join(cursorFixtureRoot, 'opened-pages.txt'), `${url}
 `, 'utf8') : shell.openExternal(url),
@@ -990,9 +994,9 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     } } : {}),
     ...(nativeFixtureRoot ? { providers: {
       claude: new ClaudeStreamJsonHost({ userDataPath, executable: nativeFixtureExecutable!,
-        args: [join(__dirname, '../../tests/fixtures/fakeClaudeThread.mjs'), join(nativeFixtureRoot, 'claude')], claudeHome: join(nativeFixtureRoot, 'claude', 'home') }),
+        args: [join(__dirname, '../../tests/fixtures/fakeClaudeThread.mjs'), join(nativeFixtureRoot, 'claude')], claudeHome: join(nativeFixtureRoot, 'claude', 'home'), limitStops: owlFeatures['restart-stopped-threads'] }),
       codex: new CodexAppServerHost({ userDataPath, executable: nativeFixtureExecutable!,
-        args: [join(__dirname, '../../tests/fixtures/fakeCodexAppServer.mjs'), join(nativeFixtureRoot, 'codex')], codexHome: join(nativeFixtureRoot, 'codex', 'home') }),
+        args: [join(__dirname, '../../tests/fixtures/fakeCodexAppServer.mjs'), join(nativeFixtureRoot, 'codex')], codexHome: join(nativeFixtureRoot, 'codex', 'home'), limitStops: owlFeatures['restart-stopped-threads'] }),
       grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(),
     } } : {}),
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
@@ -1014,6 +1018,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   // computer; with it off the inactive host's cleanup does nothing, and no terminal check is wired.
   const worktreeCleanup = startupSettings.localHostEnabled ? localRuntime.worktreeCleanup : null
   const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), { watcherEnabled, heldProviders, streamingPublishCost: owlFeatures['streaming-publish-cost'],
+    ...babysittingRetired ? { babysittingRetired: true } : {},
     attachAnyFile: owlFeatures['attach-any-file'],
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
     // A paired host's deleted thread takes the answer drafts this computer kept for it (ADR-0140).
@@ -1106,16 +1111,17 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   // the tool while the switch is on, read live; turned off, what agents started ends at once. Only the local host reads
   // GitHub for this computer's threads, so with it off no thread is offered the tool. Off at start, the runtime has
   // already ended what agents started, before its first pass.
-  const pullRequestTools = new PullRequestToolServer({ enabled: () => workingCopySettings.babysitPullRequests, host: agentHost,
+  // With Restart stopped threads on there is no such server at all (ADR-0144).
+  const pullRequestTools = babysittingRetired ? undefined : new PullRequestToolServer({ enabled: () => workingCopySettings.babysitPullRequests, host: agentHost,
     babysitter: 'babysitter' in localRuntime ? localRuntime.babysitter : undefined, watcherEnabled })
-  quitHandles.pullRequestTools = pullRequestTools
+  if (pullRequestTools) quitHandles.pullRequestTools = pullRequestTools
   // Let a thread delegate work to threads it starts (ADR-0081): an Owl feature, so stable offers no server and keeps its records.
   const delegationService = 'delegation' in localRuntime ? localRuntime.delegation : undefined
   // Continue a thread on another provider (ADR-0089): an Owl feature, so stable builds no service and registers no bridge.
   const continueService = 'continuation' in localRuntime ? localRuntime.continuation : undefined
   const delegationTools = delegationService ? new DelegationToolServer(delegationService, { roles: workerRolesEnabled, machines: crossMachineEnabled && watcherEnabled }) : undefined
   if (delegationTools) quitHandles.delegationTools = delegationTools
-  agentHost.useThreadTools([hostSetupTools, visualTools, pullRequestTools, ...(delegationTools ? [delegationTools] : [])])
+  agentHost.useThreadTools([hostSetupTools, visualTools, ...(pullRequestTools ? [pullRequestTools] : []), ...(delegationTools ? [delegationTools] : [])])
   // An interactive visual runs in a sealed page (ADR-0060): main serves it from this store, once per address. The session
   // and its proxy are set up the first time a page is asked for.
   const disposeVisualSandbox = installVisualSandbox({
@@ -1711,7 +1717,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     },
     async onSettingsChanged(settings): Promise<void> {
       const grantDefaultChanged = settings.browserWithoutAsking !== workingCopySettings.browserWithoutAsking
-      const babysittingChanged = settings.babysitPullRequests !== workingCopySettings.babysitPullRequests
+      const babysittingChanged = !babysittingRetired && settings.babysitPullRequests !== workingCopySettings.babysitPullRequests
       const workerRolesChanged = JSON.stringify(settings.workerRoles) !== JSON.stringify(workingCopySettings.workerRoles)
       const previous = workingCopySettings
       workingCopySettings = settings
@@ -1737,7 +1743,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       localRuntime.watcher?.settingsChanged()
       phoneAccess.settingsChanged()
       if (grantDefaultChanged) browserService?.settingChanged()
-      if (babysittingChanged) void pullRequestTools.settingChanged().catch(() => undefined)
+      if (babysittingChanged) void pullRequestTools?.settingChanged().catch(() => undefined)
       agentHistoryEnabled = settings.historyEnabled
       const dictationNow = dictationOn(settings, owlFeatures['dictation-off'])
       if (dictationNow !== dictationActive) applyDictation(dictationNow)
@@ -1787,6 +1793,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         const key = parseHostEntityKey(threadId)
         return key !== null && localRuntime.watcher?.watches({ hostId: key.hostId, threadId: key.id }) === true
       } } : {}),
+      ...babysittingRetired ? { babysittingRetired: true } : {},
       emit: alert => { void desktopNotifier.notify(alert) },
     })
     const stopAlerts = hostRouter.subscribe(state => alerts.track(state))

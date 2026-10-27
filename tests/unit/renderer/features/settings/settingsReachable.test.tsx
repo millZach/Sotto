@@ -42,6 +42,9 @@ function withAgents(): void {
   vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(state, vi.fn(async () => state)))
 }
 
+/** The gates that are shut while every Owl feature is on. */
+const OFF_WITH_EVERY_OWL = new Set<string>(['resume-after-restart', 'babysitting'])
+
 const pageLabel = (id: string): string => SETTINGS_PAGES.find(page => page.id === id)!.label
 const panelOf = (page: string): HTMLElement => document.getElementById(page === 'settings-appearance' ? 'settings-appearance-panel' : page)!
 
@@ -67,6 +70,9 @@ describe.each<SottoPlatform>(['win32', 'darwin', 'linux'])('Every setting is rea
     const resolved = new Map<SettingEntry, HTMLElement>()
     const missing: string[] = []
     for (const entry of index) {
+      // What an Owl feature puts away while it is on: Restart stopped threads (ADR-0144) stands in Resume threads after a
+      // restart's place and takes babysitting away. Stable reaches both (below).
+      if (entry.gate !== undefined && OFF_WITH_EVERY_OWL.has(entry.gate)) continue
       const page = settingsSectionHome(entry.section).page
       // A setting that shows only in some states lands on its fallback until then.
       const control = findSettingControl(panelOf(page), entry.id) ?? (entry.fallback ? findSettingControl(panelOf(page), entry.fallback) : null)
@@ -186,6 +192,10 @@ describe('Find a setting', () => {
     const stable = render(<SettingsView {...baseProps()} />)
     await user.type(screen.getByRole('searchbox', { name: 'Find a setting' }), 'resume')
     expect(screen.getByText('No setting matches “resume”.')).toBeVisible()
+    // Babysitting stays on stable, where nothing has taken it away.
+    await user.clear(screen.getByRole('searchbox', { name: 'Find a setting' }))
+    await user.type(screen.getByRole('searchbox', { name: 'Find a setting' }), 'babysit')
+    expect(within(screen.getByRole('list', { name: 'Settings found' })).getByRole('button', { name: /Let agents babysit pull requests/u })).toBeVisible()
     stable.unmount()
     owl.on = true
     render(<SettingsView {...baseProps({ settings: { ...baseProps().settings, dictationEnabled: false } })} />)

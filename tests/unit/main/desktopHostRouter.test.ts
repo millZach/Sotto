@@ -10,6 +10,7 @@ import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import type { RequestAnswerRecovery } from '../../../src/main/agents/hostService'
 import { requestQuestionsDigest } from '../../../src/main/agents/requestDrafts'
 import { desktopWindowClient } from '../../../src/main/agents/hostService'
+import { BABYSITTING_RETIRED } from '../../../src/main/agents/babysitting'
 import { HostConnectionError, SocketHostService } from '../../../src/main/agents/socketHostService'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
 import { agentStateSchema, MAX_DELIVERED_DRAFTS, hostForThread, capabilitiesForThread, noProviderRefusal, SCREENSHOT_WRONG_TYPE, type AgentCommand, type AgentState, type AgentThreadDetailUpdate } from '../../../src/shared/agents'
@@ -806,6 +807,17 @@ describe('a host restarting for an update (ADR-0040)', () => {
     const url = 'https://github.com/o/r/pull/42'
     await router.command({ type: 'stop-babysitting', threadId: hostEntityKey(REMOTE, 'thread'), url }, desktopWindowClient())
     expect(newer.command).toHaveBeenCalledWith({ type: 'stop-babysitting', threadId: 'thread', url }, desktopWindowClient())
+  })
+  it('offers babysitting on no host once Restart stopped threads retired it here, and refuses a press that arrives anyway (ADR-0144)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState, { babysittingRetired: true }), host = fixture(REMOTE, 'remote')
+    router.add({ ...host.connection, offersBabysitting: () => true })
+    expect(router.shell().host.clientHosts![0]).not.toHaveProperty('pullRequestBabysit')
+    const url = 'https://github.com/o/r/pull/42'
+    for (const type of ['babysit-pull-request', 'stop-babysitting'] as const) {
+      const state = await router.command({ type, threadId: hostEntityKey(REMOTE, 'thread'), url }, desktopWindowClient())
+      expect(state.error).toBe(BABYSITTING_RETIRED)
+    }
+    expect(host.command).not.toHaveBeenCalled()
   })
 })
 

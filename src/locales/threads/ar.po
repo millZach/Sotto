@@ -207,6 +207,30 @@ msgstr ""
 msgid "{count, plural, one {Dismiss Needs attention on {threads} thread} other {Dismiss Needs attention on {threads} threads}}"
 msgstr ""
 
+#: src/renderer/src/agents/restartWords.ts
+msgid "{count, plural, one {Don’t restart {name}’s {threads} thread} other {Don’t restart {name}’s {threads} threads}}"
+msgstr ""
+
+#: src/renderer/src/agents/restartWords.ts
+msgid "{count, plural, one {so Sotto can’t restart its thread on its own. Send again once it resets.} other {so Sotto can’t restart its {threads} threads on its own. Send again once it resets.}}"
+msgstr ""
+
+#: src/renderer/src/agents/restartWords.ts
+msgid "{count, plural, one {Sotto restarts {threads} thread once it can, Watcher first.} other {Sotto restarts {threads} threads once it can, Watcher first.}}"
+msgstr ""
+
+#: src/renderer/src/agents/restartWords.ts
+msgid "{count, plural, one {Sotto restarts {threads} thread once it can.} other {Sotto restarts {threads} threads once it can.}}"
+msgstr ""
+
+#: src/renderer/src/agents/restartWords.ts
+msgid "{count, plural, one {Sotto restarts {threads} thread then, Watcher first.} other {Sotto restarts {threads} threads then, Watcher first.}}"
+msgstr ""
+
+#: src/renderer/src/agents/restartWords.ts
+msgid "{count, plural, one {Sotto restarts {threads} thread then.} other {Sotto restarts {threads} threads then.}}"
+msgstr ""
+
 #: src/renderer/src/agents/HostUpdates.tsx
 msgid "{count, plural, one {Update for # host} other {Updates for # hosts}}"
 msgstr ""
@@ -223,6 +247,11 @@ msgstr ""
 #. {creationError} is the sentence that says why the thread could not be made.
 #: src/renderer/src/agents/ThreadsView.tsx
 msgid "{creationError} Your prompt and screenshots are kept. Open New thread in the same project to get them back."
+msgstr ""
+
+#. {day} is a day of the week, as in "Restarts Thursday at 3:00 pm".
+#: src/renderer/src/agents/restartWords.ts
+msgid "{day} at {clock}"
 msgstr ""
 
 #. {delivery} says whether the answer was sent; {provider} is a provider name.
@@ -655,6 +684,16 @@ msgstr ""
 msgid "{name} didn’t answer."
 msgstr ""
 
+#. The start of a sentence that goes on "so Sotto can’t restart its 2 threads on its own." {name} is a provider, such as Devin.
+#: src/renderer/src/agents/restartWords.ts
+msgid "{name} didn’t say when its limit resets,"
+msgstr ""
+
+#. {name} is a provider, such as Devin.
+#: src/renderer/src/agents/restartWords.ts
+msgid "{name} didn’t say when its limit resets. Send again once it has."
+msgstr ""
+
 #. {five} is the number 5.
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "{name} didn’t start answering within {five} minutes."
@@ -762,6 +801,21 @@ msgstr ""
 #. {name} is a thread's title.
 #: src/renderer/src/agents/ThreadPanes.tsx
 msgid "{name} zoomed"
+msgstr ""
+
+#. {name} is a provider, such as Claude Code.
+#: src/renderer/src/agents/restartWords.ts
+msgid "{name}’s limit has reset."
+msgstr ""
+
+#. {name} is a provider, such as Claude Code.
+#: src/renderer/src/agents/restartWords.ts
+msgid "{name}’s limit has reset. Sotto restarts this thread once it can."
+msgstr ""
+
+#. {when} is "at 3:00 pm", "tomorrow at 3:00 pm" or "Thursday at 3:00 pm"; {name} is a provider, such as Claude Code.
+#: src/renderer/src/agents/restartWords.ts
+msgid "{name}’s limit resets {when}."
 msgstr ""
 
 #. {name} is the name of a saved host.
@@ -1775,8 +1829,10 @@ msgstr ""
 msgid "Asks the npm registry for each client’s latest version when it connects and every five minutes. Only the package name is sent."
 msgstr ""
 
+#. When a stopped thread restarts today, as in "Restarts at 3:00 pm".
 #. When babysitting ended today, as in "Ended at 4:05 pm".
 #: src/renderer/src/agents/babysitting.ts
+#: src/renderer/src/agents/restartWords.ts
 msgid "at {clock}"
 msgstr ""
 
@@ -3244,6 +3300,18 @@ msgstr ""
 
 #: src/renderer/src/agents/ContinueThread.tsx
 msgid "Don’t continue: keep writing to this thread"
+msgstr ""
+
+#: src/renderer/src/agents/RestartStopped.tsx
+msgid "Don’t restart"
+msgstr ""
+
+#: src/renderer/src/agents/RestartStopped.tsx
+msgid "Don’t restart them"
+msgstr ""
+
+#: src/renderer/src/agents/RestartStopped.tsx
+msgid "Don’t restart this thread"
 msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
@@ -5071,7 +5139,9 @@ msgid "oldest {oldest}"
 msgstr ""
 
 #. When babysitting ended before today, as in "Ended on Oct 7 at 4:05 pm".
+#. {date} is a month and day, as in "Restarts on Oct 30 at 3:00 pm".
 #: src/renderer/src/agents/babysitting.ts
+#: src/renderer/src/agents/restartWords.ts
 msgid "on {date} at {clock}"
 msgstr ""
 
@@ -5292,6 +5362,10 @@ msgstr ""
 
 #: src/renderer/src/agents/NeedsYouQueue.tsx
 msgid "Open to answer"
+msgstr ""
+
+#: src/renderer/src/agents/RestartStopped.tsx
+msgid "Open Watcher’s room"
 msgstr ""
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
@@ -5925,7 +5999,19 @@ msgid "Remove the link to another folder ({outsideLink}) before removing this fo
 msgstr ""
 
 #: src/renderer/src/agents/ThreadFollowups.tsx
+msgid "Remove the restart note from the queue"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadFollowups.tsx
+msgid "Remove the restart note. The thread waits for your next message."
+msgstr ""
+
+#: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Remove the wake-up from the queue"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadFollowups.tsx
+msgid "Remove the wake-up."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadFollowups.tsx
@@ -6043,6 +6129,30 @@ msgstr ""
 #. {name} is the name of a saved host.
 #: src/renderer/src/agents/HostUpdates.tsx
 msgid "Restart {name}’s host"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadFollowups.tsx
+msgid "Restart note from Sotto"
+msgstr ""
+
+#. The tag on a message Sotto sent to restart a thread a usage limit or Sotto closing had stopped.
+#: src/renderer/src/agents/ThreadTranscript.tsx
+msgid "Restarted"
+msgstr ""
+
+#. A thread row's state. {when} is "at 3:00 pm", "tomorrow at 3:00 pm" or "Thursday at 3:00 pm".
+#: src/renderer/src/agents/restartWords.ts
+msgid "Restarts {when}"
+msgstr ""
+
+#. {when} is "at 3:00 pm", "tomorrow at 3:00 pm" or "Thursday at 3:00 pm"; {name} is a provider, such as Claude Code.
+#: src/renderer/src/agents/restartWords.ts
+msgid "Restarts {when}, when {name}’s limit resets."
+msgstr ""
+
+#. A thread row's state: its usage limit has reset and Sotto restarts it once it can.
+#: src/renderer/src/agents/restartWords.ts
+msgid "Restarts soon"
 msgstr ""
 
 #. Restore a settled thread to open work.
@@ -6686,6 +6796,10 @@ msgid "Something to build, fix or figure out?"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadFollowups.tsx
+msgid "Sotto · Restart"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Sotto · Wake-up"
 msgstr ""
 
@@ -6732,6 +6846,14 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Sotto could not confirm the queue resumed."
+msgstr ""
+
+#: src/renderer/src/agents/RestartStopped.tsx
+msgid "Sotto could not confirm the restart was called off. Press Don’t restart again."
+msgstr ""
+
+#: src/renderer/src/agents/RestartStopped.tsx
+msgid "Sotto could not confirm the restarts were called off. Press Don’t restart them again."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadComposer.tsx
@@ -7952,6 +8074,10 @@ msgstr ""
 msgid "Threads on this server send your code and messages to it, so whoever runs it can read them."
 msgstr ""
 
+#: src/renderer/src/agents/RestartStopped.tsx
+msgid "Threads to restart"
+msgstr ""
+
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Threads with Cursor"
 msgstr ""
@@ -7984,6 +8110,11 @@ msgstr ""
 #. A plan step's state.
 #: src/renderer/src/agents/ThreadActivity.tsx
 msgid "To do"
+msgstr ""
+
+#. When a stopped thread restarts, as in "Restarts tomorrow at 3:00 pm".
+#: src/renderer/src/agents/restartWords.ts
+msgid "tomorrow at {clock}"
 msgstr ""
 
 #: src/renderer/src/agents/diagrams/diagramSafety.ts

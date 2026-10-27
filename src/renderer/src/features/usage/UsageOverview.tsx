@@ -9,6 +9,8 @@ import { roomKeyTarget } from '../../components/AppShell'
 import { Dash, HourGrid, Ring, Spark, TokenBar, dismissDisclosure, type DayValue } from './UsageCharts'
 import { PerDay, useChartChoice } from './UsagePerDay'
 import type { UsagePage } from './usagePage'
+import { useOwlFeature } from '../../state/owlFeature'
+import { RESTART_STOPPED_FEATURE } from '../../../../shared/limitRestart'
 import {
   PROVIDER_ORDER, LOW_LEFT, NO_TOKENS, cacheShare, PROVIDER_NAMES, clientName, fieldShare, fieldTokens, fieldValue, fmtInt, fmtTok, hourLabel, joinNames, longDay, midSentence, pct, readAge, readAgePhrase, resetLong, resetShort, sentFrom, share,
   shortDay, usagePlaces, WEEKDAYS_PLURAL, WEEKDAYS_SHORT, type UsageProviderLimits,
@@ -31,6 +33,8 @@ function ProviderMarks({ providers }: { readonly providers: readonly UsageProvid
 
 export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
   const { t, i18n } = useLingui()
+  // Restarting stopped threads (ADR-0144; Owl only) ends babysitting's wake-ups, so the page no longer names them.
+  const wakeUpsNamed = !useOwlFeature(RESTART_STOPPED_FEATURE)
   const [focus, setFocus] = useState<Focus>('prompts')
   const [hover, setHover] = useState<string | null>(null)
   const [pin, setPin] = useState<string | null>(null)
@@ -163,7 +167,7 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
           // The prompts, then each fact that applies, joined as the English list joins them.
           const placePromptCount = place.prompts
           let line = plural(placePromptCount, { one: `${placePrompts} prompt`, other: `${placePrompts} prompts` })
-          if (place.wakeUps > 0) line = t({ message: `${line}, ${wakeUps} of them wake-ups`, comment: '{line} is "12 prompts" on the Usage page\'s Where you work' })
+          if (wakeUpsNamed && place.wakeUps > 0) line = t({ message: `${line}, ${wakeUps} of them wake-ups`, comment: '{line} is "12 prompts" on the Usage page\'s Where you work' })
           if (place.subAgentTokens > 0) line = t({ message: `${line} · ${fromSubagents} of the tokens from subagents`, comment: '{line} is "12 prompts" or "12 prompts, 3 of them wake-ups"' })
           if (place.subAgent) line = t`No prompts of their own. Your Sotto threads started them.`
           const placeTokens = fieldTokens(place.tokenField)
@@ -301,7 +305,8 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
           {clients.length > 0 ? <div className="usage-split usage-split--small">{clients.map(row => <div key={row.clientId} className="usage-split__item"><span>{clientName(row.clientId)}</span><b>{fmtInt(row.prompts)}</b></div>)}</div> : null}
           {placesNote}
         </div> : null}
-        <p className="usage-origin tt-paragraph"><Trans>You sent <b>{sent}</b>, Watcher <b>{watcher}</b> and wake-ups <b>{wakeUps}</b>.</Trans></p>
+        <p className="usage-origin tt-paragraph">{wakeUpsNamed ? <Trans>You sent <b>{sent}</b>, Watcher <b>{watcher}</b> and wake-ups <b>{wakeUps}</b>.</Trans>
+          : <Trans>You sent <b>{sent}</b> and Watcher <b>{watcher}</b>.</Trans>}</p>
       </>
     }
   }
@@ -414,12 +419,14 @@ export function NoHistory({ names }: { readonly names: readonly string[] }): Rea
 
 export function About({ page }: { readonly page: UsagePage }): ReactNode {
   const zone = page.timeZone.replace(/_/gu, ' ')
+  const wakeUpsNamed = !useOwlFeature(RESTART_STOPPED_FEATURE)
   return <details className="usage-about" onKeyDown={dismissDisclosure}>
     <summary className="tt-focusable"><ChevronRight size={14} aria-hidden="true" /><Trans>About these numbers</Trans></summary>
     <ul>
       <li><Trans>Limits come from each provider and count all use of the account, in Sotto or anywhere else. Two computers' readings are shown side by side, never added. OpenCode doesn't report account limits, so it isn't on Subscriptions.</Trans></li>
       <li><Trans>Activity counts the work on each computer: Sotto threads, the subagents they start, and Claude Code and Codex used outside Sotto. Grok Build, Devin, Muse and OpenCode are counted in Sotto only.</Trans></li>
-      <li><Trans>Prompts are what you, Watcher and wake-ups sent. Subagents add tokens but no prompts. A prompt counts under the model that served it.</Trans></li>
+      <li>{wakeUpsNamed ? <Trans>Prompts are what you, Watcher and wake-ups sent. Subagents add tokens but no prompts. A prompt counts under the model that served it.</Trans>
+        : <Trans>Prompts are what you and Watcher sent, and Sotto’s notes when it restarts a thread. Subagents add tokens but no prompts. A prompt counts under the model that served it.</Trans>}</li>
       <li><Trans>Total tokens are input plus output. Cache reads and writes are part of input, not extra.</Trans></li>
       <li><Trans>A dash means the provider didn't report that number. It isn't zero. A ≥ means some records left a number out, so the figure is at least that.</Trans></li>
       <li><Trans>Usage keeps only numbers, dates, model names and app names. Deleting a thread or turning History off leaves it as it is; Clear usage removes it.</Trans></li>

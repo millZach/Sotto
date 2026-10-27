@@ -8,6 +8,7 @@ import type { DesktopBranchMoves } from '../agents/branchMoves'
 import { catalogWithoutHeld, modelsWithoutHeld, heldProviderOfCommand, heldProviderOfWatcherRequest, heldProviderRefusedBy, heldWatcherRefusal, rememberDormantProviderThreads, type DormantProviderThread } from '../agents/heldProviderGate'
 import { heldProviderRefusal, heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import { watcherRoomInputs } from '../agents/watcherRoomInput'
+import { BABYSITTING_RETIRED } from '../agents/babysitting'
 import { visibleWatcherState, watcherThreadVisible, withoutThreads } from '../../shared/watcherVisibility'
 import { parsePublicProviderEntityId, providerIdSchema } from '../../shared/agents'
 import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts, WatcherRoomThreadInput } from '../../shared/watcherHost'
@@ -362,7 +363,12 @@ export class DesktopHostRouter {
     /** Told the window's keys of threads a paired host deleted, so what this computer kept of them goes too (ADR-0140). */
     threadsDeleted?: (threadIds: readonly string[]) => void
     /** This desktop's Owl answer for attaching any file (ADR-0131), read once at start: with it off, no host is asked to keep a file. */
-    attachAnyFile?: boolean } = {}) {
+    attachAnyFile?: boolean
+    /**
+     * This desktop's Owl answer for Restart stopped threads (ADR-0144), read once at start: with it, the window offers
+     * Babysit pull request on no host's threads, and refuses a press that reaches it anyway.
+     */
+    babysittingRetired?: boolean } = {}) {
     this.held = heldProvidersOption(options)
   }
 
@@ -758,7 +764,7 @@ export class DesktopHostRouter {
           ...(original.host.providers ? { providers: this.namedProviders(connection, original.host.providers) } : {}),
           ...((connection.kind === 'local' || connection.offersClientUpdates?.()) && original.clientUpdates ? { clientUpdates: original.clientUpdates } : {}),
           ...((connection.kind === 'local' || connection.offersClientUpdates?.()) && original.clientUpdateRun ? { clientUpdateRun: original.clientUpdateRun } : {}),
-          ...(connection.offersBabysitting?.() ? { pullRequestBabysit: true as const } : {}),
+          ...(this.options.babysittingRetired !== true && connection.offersBabysitting?.() ? { pullRequestBabysit: true as const } : {}),
           // Delete thread… is on only for a host that deletes its threads (ADR-0140 decision 7).
           ...(connection.service.supportsThreadDelete === true ? { threadDelete: true as const } : {}),
           projectsDirectory: original.configuration.projectsDirectory,
@@ -1249,8 +1255,11 @@ export class DesktopHostRouter {
       if (across && 'error' in across) return { ...this.shell(), error: across.error }
       if (across) ({ connection, command } = across)
     }
-    if (this.requiresManagementUpdate(connection.hostId) && !LEGACY_MANAGEMENT_ALLOWED_COMMANDS.has(command.type)) {
-      return { ...this.shell(), error: LEGACY_MANAGEMENT_UPDATE }
+    // Restart stopped threads retired babysitting on this desktop (ADR-0144), whatever the thread's host still offers.
+    const refusedNow = this.requiresManagementUpdate(connection.hostId) && !LEGACY_MANAGEMENT_ALLOWED_COMMANDS.has(command.type) ? LEGACY_MANAGEMENT_UPDATE
+      : this.options.babysittingRetired === true && (command.type === 'babysit-pull-request' || command.type === 'stop-babysitting') ? BABYSITTING_RETIRED : undefined
+    if (refusedNow !== undefined) {
+      return { ...this.shell(), error: refusedNow }
     }
     // Retained local edits publish before the refusal reply. Keep its visible banner stable while typing.
     if (command.type === 'compose' && command.threadId !== undefined && (connection.service.supportsAtomicSend === false || connection.service.supportsDraftRevisions === false)
