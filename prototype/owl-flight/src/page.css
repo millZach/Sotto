@@ -1,0 +1,28 @@
+/* PROTOTYPE page chrome. The scene's own look comes from tokens.css and nightScene.css. */
+html, body { margin: 0; background: var(--tt-canvas); color: var(--tt-text); font-family: var(--tt-font-ui); }
+body { padding: 20px 24px 40px; }
+h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+.lede { margin: 0 0 14px; max-width: 70ch; color: var(--tt-text-2); font-size: 13px; line-height: 1.45; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 18px; color: var(--tt-text-2); font-size: 12.5px; }
+.controls select { margin-left: 4px; border: 1px solid var(--tt-border); border-radius: 6px; background: var(--tt-surface); color: var(--tt-text); font: inherit; padding: 2px 4px; }
+.panels { display: flex; flex-direction: column; gap: 22px; }
+.panel header { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 6px; }
+.panel h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.panel .idea { margin: 2px 0 0; color: var(--tt-text-2); font-size: 12.5px; }
+.panel .stats { margin: 0; color: var(--tt-text-muted); font: 11.5px var(--tt-font-mono); white-space: nowrap; }
+.pane { position: relative; overflow: hidden; border: 1px solid var(--tt-border-faint); border-radius: 10px; background: var(--tt-canvas); }
+.pane .head { position: absolute; top: 0; left: 0; right: 0; height: 46px; box-sizing: border-box; padding: 14px 18px; border-bottom: 1px solid var(--tt-border-faint); font-size: 13px; font-weight: 600; }
+.pane .column { position: absolute; top: 70px; display: flex; flex-direction: column; gap: 14px; font-size: 13.5px; line-height: 1.5; text-shadow: 0 0 3px var(--tt-canvas), 0 0 7px var(--tt-canvas), 0 0 12px var(--tt-canvas); }
+.pane .column p { margin: 0; }
+.pane .column b { display: block; color: var(--tt-text-2); font-size: 12px; font-weight: 600; }
+.pane .column .you { align-self: flex-end; max-width: 70%; }
+.pane .composer { position: absolute; box-sizing: border-box; padding: 16px 18px; border: 1px solid var(--tt-border); border-radius: 14px;
+  background: color-mix(in srgb, var(--tt-card) var(--watcher-glass, 72%), transparent); color: var(--tt-text-muted); font-size: 13.5px; }
+.pane .phase { position: absolute; right: 10px; bottom: 6px; color: var(--tt-text-muted); font: 11px var(--tt-font-mono); }
+.card { max-width: 860px; margin: 0 0 18px; padding: 12px 16px; border: 1px solid var(--tt-border); border-radius: 10px; background: var(--tt-surface); font-size: 13px; line-height: 1.45; }
+.card h2 { margin: 0 0 6px; font-size: 14px; }
+.card table { border-collapse: collapse; font: 12px var(--tt-font-mono); }
+.card th, .card td { padding: 3px 12px 3px 0; text-align: left; border-bottom: 1px solid var(--tt-border-faint); }
+.card th { color: var(--tt-text-2); font-weight: 500; font-family: var(--tt-font-ui); }
+.card p { margin: 8px 0 0; color: var(--tt-text-2); }
+.card b { color: var(--tt-text); }
