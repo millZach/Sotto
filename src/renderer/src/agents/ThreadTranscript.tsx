@@ -20,7 +20,8 @@ import { foldedTurns, setStepsOpen, useStepsOpen } from './stepsOpen'
 import { MessageContent, AttachmentPreviews } from './MessageContent'
 import { renderedPlainText, useTransientFlag, writeClipboard } from './richActions'
 import { LinkMenu, type LinkMenuItem } from '../tools/webLinks'
-import { ActivityGroupView, CompactionLine, foldOnEscape, LiveActivity, TurnChangedFiles } from './ThreadActivity'
+import { ActivityGroupView, CompactionLine, foldOnEscape, LiveActivity, LiveBrowserLines, TurnChangedFiles } from './ThreadActivity'
+import { newestStepId } from './browserLine'
 import { OwnServerTurnContext, TurnFailureReason, useOwnServerTurns } from './OwnServerTurn'
 import { ActivityBodyContext, type ActivityBodyHost } from './activityBodies'
 import { threadHostName } from './HostBadge'
@@ -75,6 +76,11 @@ const STATUS_LABELS: Record<SubmissionStatus, MessageDescriptor> = {
 
 export interface ActivityContext {
   readonly liveTurn: string | null
+  /**
+   * The running turn's newest step, when its calls to Sotto's browser show as lines in the transcript (ADR-0154; Owl
+   * only). Undefined leaves the running turn's work all under its working line, as on stable.
+   */
+  readonly liveStep?: string | null | undefined
   readonly running: boolean
   readonly connected: boolean
   readonly provider: string
@@ -88,10 +94,12 @@ function ActivityGroups({ groups, context, outcome }: {
 }): ReactNode {
   return groups?.map(group => {
     const compaction = compactionOf(group)
-    // The running turn's steps fold under its working line at the end of the transcript; only its boundaries stay here.
+    // The running turn's steps fold under its working line at the end of the transcript; only its boundaries stay here,
+    // and on Owl its calls to Sotto's browser, each run one line where it happened.
     return compaction
       ? <CompactionLine key={group.key} record={compaction} />
-      : group.turnId === context.liveTurn ? null
+      : group.turnId === context.liveTurn ? context.liveStep === undefined ? null
+        : <LiveBrowserLines key={group.key} group={group} latest={context.liveStep} connected={context.connected} onDisclosure={context.onDisclosure} />
       : <ActivityGroupView key={group.key} group={group} live={false} threadRunning={context.running}
         connected={context.connected} provider={context.provider} onDisclosure={context.onDisclosure} outcome={outcome} />
   }) ?? null
@@ -1001,8 +1009,11 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     if (thread.messages.some(message => message.id === target.messageId)) jumpTo(target.messageId, target.focus)
   }, [thread.messages, thread.id, jumpTo])
   const ownServerTurns = useOwnServerTurns(row, state, command, store)
-  const activity = useMemo<ActivityContext>(() => ({ liveTurn, running: thread.status === 'running', connected: row.connected, provider: row.provider, onDisclosure, onSeek }),
-    [liveTurn, thread.status, row.connected, row.provider, onDisclosure, onSeek])
+  // The browser line (ADR-0154; Owl only) needs the running turn's newest step, to say whether its run is still going.
+  const quietBrowser = useOwlFeature('quiet-browser')
+  const liveStep = quietBrowser ? newestStepId(thread.activities, liveTurn) : undefined
+  const activity = useMemo<ActivityContext>(() => ({ liveTurn, liveStep, running: thread.status === 'running', connected: row.connected, provider: row.provider, onDisclosure, onSeek }),
+    [liveTurn, liveStep, thread.status, row.connected, row.provider, onDisclosure, onSeek])
   // A remote thread's rows read a body its host kept back from that host, by the name the window shows (ADR-0025, October
   // 18 amendment). This computer's threads have no such body, and their rows are given nothing.
   const bodyHostName = thread.remoteHost === true ? threadHostName(state, thread) : undefined
