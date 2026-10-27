@@ -437,6 +437,20 @@ test, so no test paints the cached agent shell a previous test left behind, and 
 retries by default, so tidying a fixture's temporary folder does not fail with ENOTEMPTY while Windows
 is still releasing a just-exited child's handles.
 
+A test may change only Git repositories it made under the temporary folder (`tests/fixtures/gitGuard.ts`, #1448).
+Before any test, `tests/globalSetup.ts` stops the run when the temporary folder is inside a Git repository: tests make
+plain folders there and expect Git to find none, and on October 23, 2026 a TEMP inside the main checkout let the Git
+actions test commit the user's untracked files there. Playwright runs the same check before its journeys.
+`tests/setup.ts` then drops the variables that point Git at another repository (`GIT_DIR`, `GIT_WORK_TREE`,
+`GIT_INDEX_FILE` and their kin) and refuses, by throwing, any Git command started through `node:child_process`,
+directly or in a shell line, that would commit, reset, check out or otherwise change a repository outside the
+temporary folder. A command it does not know as a read counts as a change. Links out of the temporary folder, a `.git`
+that links out, a linked worktree's Git folder, `-c core.worktree`, worktrees made, moved or removed, a push to a
+folder, separate Git folders, written configuration files and variables set on a shell line are all checked. Git that
+a test's own child Node process starts, and a push to a named remote, are covered only by the first check. To move the temporary folder off
+a full drive, point TEMP and TMP at a folder outside every checkout, such as `D:\sotto-test-tmp`, never one under
+`.worktrees/`.
+
 ## Reading a failure
 
 1. Open the pull request, find the failed **Gates (Windows)** check, and click **Details**.

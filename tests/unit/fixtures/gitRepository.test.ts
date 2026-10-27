@@ -1,10 +1,10 @@
 // @vitest-environment node
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { gitRepositorySeed } from '../../fixtures/gitRepository'
+import { assertWholeRepositoryCopy, gitRepositorySeed } from '../../fixtures/gitRepository'
 
 const owned: Array<{ dispose: () => Promise<void> }> = []
 
@@ -73,5 +73,19 @@ describe('independent Git repository fixtures', () => {
     expect((await readdir(packDirectory)).filter(name => name.endsWith('.pack')).sort()).toEqual(before)
     expect(git(copy.repo, 'show', 'HEAD:another.txt')).toBe('another object')
     git(copy.repo, 'fsck', '--no-reflogs')
+  })
+
+  it('refuses a copy Git would not see as the seed: another HEAD, an unreadable HEAD, or no index', async () => {
+    const seed = await gitRepositorySeed()
+    owned.push(seed)
+    const copy = await seed.copy()
+    owned.push(copy)
+    const tree = git(copy.repo, 'rev-parse', 'HEAD^{tree}')
+    await expect(assertWholeRepositoryCopy(copy.repo, tree)).resolves.toBeUndefined()
+    await expect(assertWholeRepositoryCopy(copy.repo, '0'.repeat(40))).rejects.toThrow(`The repository copy at ${copy.repo} is incomplete: its HEAD is not the seed's.`)
+    await writeFile(join(copy.repo, '.git', 'HEAD'), '')
+    await expect(assertWholeRepositoryCopy(copy.repo, tree)).rejects.toThrow('is incomplete: Git cannot read its HEAD. Nothing ran in it; free some disk space, then run the test again.')
+    await unlink(join(copy.repo, '.git', 'index'))
+    await expect(assertWholeRepositoryCopy(copy.repo, tree)).rejects.toThrow('is incomplete: .git/index is missing.')
   })
 })
