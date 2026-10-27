@@ -56,3 +56,7 @@ Drake found the column looked a bit off next to the chat: square bars of one wid
 - **At rest a tick is the night scene's ink.** The same 10-pixel bar, with rounded ends, in the text colour thinned as the scene's stars are, so it reads as part of the sky. The lane rests at 35% instead of 55%.
 - **The column's ends fade.** The three ticks at each end of the column fade out at rest, unless their message is on screen. The fade counts ticks rather than masking the lane, whose edges lie well past a centred column.
 - **Reached, nothing changes.** Once the pointer or the keyboard reaches the lane, every tick takes the muted tier again, which Watcher draws in the secondary tier, at 80% or more, so the far ones keep 3:1 (decision 7). The messages on screen and the tick under the pointer keep their brighter tiers.
+
+## October 27, 2026 amendment: the lane runs to the composer's foot
+
+Drake saw the column collapse when Watcher asked him a question: every tick packed into a short block near the top of the room. A waiting question stacks the composer under the transcript instead of floating it over, so the transcript ends where the question starts, and decision 3 centred the ticks on the transcript's height. This amends decision 3: the lane runs from the transcript's top to the composer's foot, and the ticks are centred on that. Beside a floating composer that is the transcript's own height, as before; under a waiting question the ticks keep their places. Whether the scrubber shows still reads the transcript's own height (decision 2). Threads had the same fault.
