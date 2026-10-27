@@ -420,8 +420,8 @@ function StepsButton({ steps }: { readonly steps: StepsDisclosure }): ReactNode 
 }
 
 /**
- * One line at the end of a running turn: the working words, with a slow light crossing them while the agent works, how
- * long the turn has run, and the turn's steps folded under them. A press opens the steps, newest last, and Escape folds them again (Zach's pick,
+ * One line at the end of a running turn: the working words, with a slow light crossing them while the agent works, and
+ * the turn's steps folded under them. A press opens the steps, newest last, and Escape folds them again (Zach's pick,
  * variant A of docs/prototypes/turn-steps-glow-prototype.html). The words carry the wait; what the turn is doing is one
  * press away, and assistive tech hears how many steps it has taken instead of the words.
  */
@@ -432,8 +432,8 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   /** Called before the steps open or fold so the transcript can keep the line in place. */
   readonly onDisclosure?: ((element: HTMLElement) => void) | undefined
   /**
-   * When the user pressed Send, while that prompt is still on its way. The wait starts being shown
-   * there rather than at the provider's first word; its own running turn takes the line over as soon as it arrives.
+   * When the user pressed Send, while that prompt is still on its way. The line shows from there rather than from the
+   * provider's first word; its own running turn takes the line over as soon as it arrives.
    */
   readonly sendingSince?: string | undefined
 }): ReactNode {
@@ -482,13 +482,10 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   if (server !== undefined && own !== null && waiting && turn?.startedAt) {
     return <OwnServerLine actions={own} server={server} startedAt={turn.startedAt} steps={disclosure} />
   }
-  // The clock beside the words counts from when the turn began, or from Send while the prompt is on its way. It ticks
-  // only while the provider is connected, as every clock in the transcript does.
-  const startedAt = turn?.startedAt ?? sendingSince
+  // The words alone carry the wait: no clock sits beside them (ADR-0134, October 26 amendment).
   const words = <>
     <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" />
     <span className="thread-activity-live__state">{connected ? <WorkingWord /> : t`Last seen working`}</span>
-    {connected && startedAt ? <span className="thread-activity-live__clock"><Elapsed startedAt={startedAt} /></span> : null}
   </>
   // Until the turn has a step there is nothing to open, so the line is only its words.
   if (!disclosure) return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined}>

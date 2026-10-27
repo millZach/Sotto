@@ -112,8 +112,6 @@ button.thread-activity-live__line:hover { background: var(--tt-hover); }
 .thread-activity-live__state { flex: none; font-variant-numeric: tabular-nums; }
 /* Words change in place, so the line's own width must not shift with them. */
 .thread-activity-live__word { position: relative; display: inline-block; }
-/* How long the turn has run, quieter than the words it sits beside. */
-.thread-activity-live__clock { flex: none; color: var(--tt-text-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .thread-activity-live__steps { flex-basis: 100%; min-width: 0; }
 .thread-activity-live__steps > .thread-activity { margin: 0; }
 

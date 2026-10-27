@@ -31,3 +31,9 @@ What stays boxed: content the user put in the composer (a skill in the text, a r
 - The window's contrast checks now include muted, secondary and accent text on the card and the room under the hover wash, and the effort word on the composer's card.
 - The design capture baselines change wherever a composer, its queue or its branch line shows, and are regenerated on the machines that hold them.
 - The option chips' accessible names stay "Thread model", "Thread reasoning" and "Thread permissions". Each is a combobox, so assistive technology reads its value from its content after its name; the alert under the chips still finds a chip by that name.
+
+## October 26 amendment: the queue is a tray with no edge
+
+On October 25 the queue stopped hanging off the accent rule and became a tray tucked under the composer card: rounded top corners, inset from the card's sides, on a surface between the card and the pane, with a hairline round its top and sides. On October 26 Zach took the hairline off: the composer has no border or outline, and the tray follows it in every state, hover, focus, open and folded, light and dark. It stands apart from the pane through its surface alone. Its buttons keep their keyboard focus rings.
+
+This replaces "hangs off a 2px rule in the accent at 60% above the composer" in decision 5. The rest of decision 5 holds: the muted line that names the count and when it sends, and each row's words, Steer now and ghost icons.
