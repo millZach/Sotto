@@ -166,7 +166,7 @@ async function capture(launched: LaunchedSotto, name: string): Promise<void> {
 test.describe("Watcher's picture on the built app", () => {
   test.beforeAll(async () => { await mkdir(evidence, { recursive: true }) })
 
-  for (const [appearance, theme] of [['dark', 't3-code'], ['light', 't3-code'], ['dark', 'tropic']] as const) {
+  for (const [appearance, theme] of [['dark', 't3-code'], ['light', 't3-code'], ['dark', 'fern']] as const) {
     test(`draws the owls at every window size, ${appearance} ${theme}`, async () => {
       await onReleaseTrack('owl', () => withSotto(launchOptions(appearance, theme, 'reduced'), async launched => {
         const { page } = launched

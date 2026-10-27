@@ -6,7 +6,7 @@ October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-manag
 
 Accepted September 13, 2026 for the Phase 3 theme replacement. The user rejected the accent chooser and asked for T3 Code's Themes capability instead. This supersedes the `accent` half of ADR-0009. The `appearance` mode (System, Light or Dark) stays as ADR-0009 describes, and so does the rule that the widget's `theme` setting is not the main window's look.
 
-Amended September 22, 2026 by ADR-0024: the built-ins are now six palettes of Sotto's own (Sotto, Hush, Linen, Nocturne, Tropic, Citrine), T3's five are retired and fall back to Sotto, the gallery is a Light column and a Dark column, and on the default theme the mark is the app icon. What follows about the built-ins' names and ids, the cards and the brand describes the look before that.
+Amended September 22, 2026 by ADR-0024: the built-ins are now six palettes of Sotto's own (Sotto, Hush, Linen, Nocturne, Tropic, Citrine; since October 26, 2026 Sotto, Hush, Citrine, Graphite, Clay and Fern), T3's five are retired and fall back to Sotto, the gallery is a Light column and a Dark column, and on the default theme the mark is the app icon. What follows about the built-ins' names and ids, the cards and the brand describes the look before that.
 
 Amended September 18, 2026 for the Threads page redesign: the Sotto card, still on the id `t3-code`, now carries Sotto's own palette — the approved Threads look — instead of T3 Code's zinc, and both halves start on Sotto. The other five built-ins are still exact T3 imports. Keeping the id means every saved selection and exported file resolves as before; a user who liked T3's zinc is the case this trades away, and the editor's duplicate is where that palette can be kept.
 

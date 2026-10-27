@@ -13,7 +13,7 @@ import { evidenceDirectory } from '../fixtures/evidence'
 
 // Recovery states of the tools workspace in the complete app. AppShell, renderer, preload, IPC and production browser
 // and terminal services are real. Coding providers use the unpackaged E2E fixtures; no native account runs.
-// The browser's working folder is moved away to produce its refusal. The terminal selection check writes explicit Nocturne roles to isolate color conversion
+// The browser's working folder is moved away to produce its refusal. The terminal selection check writes explicit Graphite roles to isolate color conversion
 // and contrast. tools-footer-and-terminal-themes.spec.ts separately verifies the retained terminal through real theme controls.
 
 const SHOTS = evidenceDirectory('artifacts/phase-three-ui-recovery')
@@ -127,9 +127,9 @@ test('explains a page main refused to show, and shows it again on Try again once
   }
 })
 
-/** Nocturne's terminal roles as the theme engine writes them, and its contrast properties, per mode. */
-function nocturneTerminal(mode: Mode): Record<string, string> {
-  const colors = getThemeColorsForMode(BUILT_IN_THEMES.find(theme => theme.id === 'nocturne')!, mode)!
+/** Graphite's terminal roles as the theme engine writes them, and its contrast properties, per mode. */
+function graphiteTerminal(mode: Mode): Record<string, string> {
+  const colors = getThemeColorsForMode(BUILT_IN_THEMES.find(theme => theme.id === 'graphite')!, mode)!
   return {
     '--theme-terminal-background': colors.terminalBackground, '--theme-terminal-foreground': colors.terminalForeground,
     '--theme-terminal-cursor': colors.terminalCursor, '--theme-terminal-selection': colors.terminalSelection,
@@ -137,7 +137,7 @@ function nocturneTerminal(mode: Mode): Record<string, string> {
     '--theme-contrast-target': mode === 'dark' ? 'white' : 'black',
   }
 }
-const NOCTURNE: Record<Mode, Record<string, string>> = { dark: nocturneTerminal('dark'), light: nocturneTerminal('light') }
+const GRAPHITE: Record<Mode, Record<string, string>> = { dark: graphiteTerminal('dark'), light: graphiteTerminal('light') }
 /** The semantic terminal variables exactly as tokens.css derives them. */
 const ROLES = {
   '--tt-terminal-background': 'var(--theme-terminal-background)',
@@ -223,30 +223,30 @@ test('repaints a running terminal with the DOM fallback for theme, same-mode col
     const box = (await row.locator('span').first().boundingBox())!
     const select = () => page.mouse.dblclick(box.x + 30, box.y + box.height / 2)
 
-    // Nocturne dark, as the theme engine applies it.
-    await paintTheme(page, 'dark', 'nocturne', { ...NOCTURNE.dark, '--theme-contrast-base': '100%', '--theme-contrast-boost': '0%', ...ROLES })
+    // Graphite dark, as the theme engine applies it.
+    await paintTheme(page, 'dark', 'graphite', { ...GRAPHITE.dark, '--theme-contrast-base': '100%', '--theme-contrast-boost': '0%', ...ROLES })
     await select()
     const dark = await expectSelection()
     expect(dark.contrast, JSON.stringify(dark)).toBeGreaterThanOrEqual(4.5)
-    await view.screenshot({ path: join(SHOTS, 'terminal-nocturne-selected-dark.png'), animations: 'disabled' })
+    await view.screenshot({ path: join(SHOTS, 'terminal-graphite-selected-dark.png'), animations: 'disabled' })
 
     // Same mode and theme, editor changes with the word still selected: field and selection, foreground, then contrast.
-    await paintTheme(page, 'dark', 'nocturne', { '--theme-terminal-background': 'oklch(0.2 0.03 160)', '--theme-terminal-selection': 'oklch(0.5 0.09 160)' })
+    await paintTheme(page, 'dark', 'graphite', { '--theme-terminal-background': 'oklch(0.2 0.03 160)', '--theme-terminal-selection': 'oklch(0.5 0.09 160)' })
     await expectSelection()
-    await paintTheme(page, 'dark', 'nocturne', { '--theme-terminal-foreground': 'oklch(0.72 0.02 160)' })
+    await paintTheme(page, 'dark', 'graphite', { '--theme-terminal-foreground': 'oklch(0.72 0.02 160)' })
     const dimmer = await expectSelection()
-    await paintTheme(page, 'dark', 'nocturne', { '--theme-contrast-boost': '60%' })
+    await paintTheme(page, 'dark', 'graphite', { '--theme-contrast-boost': '60%' })
     const boosted = await expectSelection()
     // Both colors can reach the same minimum-contrast floor; the boost must not reduce readability.
     expect(boosted.contrast, `${JSON.stringify(dimmer)} -> ${JSON.stringify(boosted)}`).toBeGreaterThanOrEqual(dimmer.contrast)
     await view.screenshot({ path: join(SHOTS, 'terminal-edited-selected-dark.png'), animations: 'disabled' })
 
-    // Nocturne light.
-    await paintTheme(page, 'light', 'nocturne', { ...NOCTURNE.light, '--theme-contrast-boost': '0%' })
+    // Graphite light.
+    await paintTheme(page, 'light', 'graphite', { ...GRAPHITE.light, '--theme-contrast-boost': '0%' })
     const light = await expectSelection()
     expect(light.contrast, JSON.stringify(light)).toBeGreaterThanOrEqual(4.5)
-    await view.screenshot({ path: join(SHOTS, 'terminal-nocturne-selected-light.png'), animations: 'disabled' })
-    await page.screenshot({ path: join(SHOTS, 'terminal-nocturne-panel-1280-light.png'), animations: 'disabled' })
+    await view.screenshot({ path: join(SHOTS, 'terminal-graphite-selected-light.png'), animations: 'disabled' })
+    await page.screenshot({ path: join(SHOTS, 'terminal-graphite-panel-1280-light.png'), animations: 'disabled' })
 
     // The same xterm and shell throughout: its element, its tab, its earlier output, and it still runs commands.
     await expect(panel.locator('.xterm')).toHaveAttribute('data-probe', 'same-terminal')

@@ -9,7 +9,7 @@ import {
   APPEARANCE_CONTRAST,
   DEFAULT_THEME_ID,
   THEME_COLOR_ROLES,
-  parseCustomThemes,
+  parseSavedThemeLibrary,
   resolveThemeFor,
   resolveThemeHalfId,
   type ThemeAppearance,
@@ -259,7 +259,7 @@ export function readCachedAppearance(storage: Pick<Storage, 'getItem'> | undefin
     const parsed: unknown = JSON.parse(raw)
     if (typeof parsed !== 'object' || parsed === null) return fallback
     const record = parsed as Record<string, unknown>
-    const customThemes = parseCustomThemes(record.customThemes)
+    const { themes: customThemes, moved } = parseSavedThemeLibrary(record.customThemes)
     const onLinux = typeof window !== 'undefined' && window.sotto?.platform === 'linux'
     const runtimeTheme = onLinux ? omarchyThemeSchema.nullable().safeParse(record.omarchyTheme) : null
     // This first-frame hint may have been saved by an older readability guard.
@@ -268,7 +268,10 @@ export function readCachedAppearance(storage: Pick<Storage, 'getItem'> | undefin
     const cachedTheme = runtimeTheme?.success ? runtimeTheme.data : null
     const omarchyTheme = cachedTheme ? { ...cachedTheme, colors: guardOmarchyColors(cachedTheme.colors, cachedTheme.appearance) } : null
     const glass = glassThemeOffered()
-    const half = (id: string, mode: ThemeAppearance): string => onLinux && id === OMARCHY_THEME_ID ? id : resolveThemeHalfId(id, mode, customThemes, glass)
+    const half = (saved: string, mode: ThemeAppearance): string => {
+      const id = moved.get(saved) ?? saved
+      return onLinux && id === OMARCHY_THEME_ID ? id : resolveThemeHalfId(id, mode, customThemes, glass)
+    }
     const text = (value: unknown, otherwise: string): string => (typeof value === 'string' ? value : otherwise)
     const number = (value: unknown, otherwise: number): number => (typeof value === 'number' ? value : otherwise)
     return {

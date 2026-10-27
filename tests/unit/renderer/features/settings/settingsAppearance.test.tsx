@@ -22,7 +22,7 @@ describe('SettingsView', () => {
   it('shows the persisted mode and both theme halves and saves each choice as its own patch', async () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
-    render(<SettingsView {...baseProps({ onUpdateSettings: update, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'light', lightTheme: 'citrine', darkTheme: 'tropic' } })} />)
+    render(<SettingsView {...baseProps({ onUpdateSettings: update, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'light', lightTheme: 'citrine', darkTheme: 'fern' } })} />)
     await selectCategory('Appearance')
     const section = document.querySelector('#settings-appearance') as HTMLElement
 
@@ -34,17 +34,17 @@ describe('SettingsView', () => {
     expect(within(within(section).getByRole('radiogroup', { name: 'Color scheme' })).getByRole('radio', { name: 'Light' })).toHaveAttribute('aria-checked', 'true')
     const light = within(section).getByRole('radiogroup', { name: 'Light theme' })
     const dark = within(section).getByRole('radiogroup', { name: 'Dark theme' })
-    for (const label of ['Sotto', 'Hush', 'Linen', 'Nocturne', 'Tropic', 'Citrine']) {
+    for (const label of ['Sotto', 'Hush', 'Citrine', 'Graphite', 'Clay', 'Fern']) {
       expect(within(light).getByRole('radio', { name: label })).toBeVisible()
       expect(within(dark).getByRole('radio', { name: label })).toBeVisible()
     }
     expect(within(light).getByRole('radio', { name: 'Citrine' })).toHaveAttribute('aria-checked', 'true')
-    expect(within(dark).getByRole('radio', { name: 'Tropic' })).toHaveAttribute('aria-checked', 'true')
+    expect(within(dark).getByRole('radio', { name: 'Fern' })).toHaveAttribute('aria-checked', 'true')
 
     await user.click(within(section).getByRole('radio', { name: 'Match Windows' }))
     await waitFor(() => expect(update).toHaveBeenLastCalledWith({ appearance: 'system' }))
-    await user.click(within(dark).getByRole('radio', { name: 'Linen' }))
-    await waitFor(() => expect(update).toHaveBeenLastCalledWith({ darkTheme: 'linen' }))
+    await user.click(within(dark).getByRole('radio', { name: 'Clay' }))
+    await waitFor(() => expect(update).toHaveBeenLastCalledWith({ darkTheme: 'clay' }))
     expect(update).toHaveBeenCalledTimes(2)
   })
 
@@ -69,8 +69,8 @@ describe('SettingsView', () => {
 
     // Arrows choose as they move, and wrap.
     await user.keyboard('{ArrowUp}')
-    expect(within(dark).getByRole('radio', { name: 'Citrine' })).toHaveFocus()
-    await waitFor(() => expect(update).toHaveBeenLastCalledWith({ darkTheme: 'citrine' }))
+    expect(within(dark).getByRole('radio', { name: 'Fern' })).toHaveFocus()
+    await waitFor(() => expect(update).toHaveBeenLastCalledWith({ darkTheme: 'fern' }))
 
     within(scheme).getByRole('radio', { name: 'Dark' }).focus()
     await user.keyboard('{ArrowLeft}')
