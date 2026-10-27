@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>iPhone Duo columns, as built</title>
+<style>
+  body { margin: 0; padding: 32px; background: #121211; color: #ecebe6; font: 15px/1.5 Figtree, -apple-system, sans-serif; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 36px 0 8px; }
+  p { margin: 0 0 12px; color: #a9a8a1; max-width: 70ch; }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+  figure { margin: 0; }
+  img { display: block; border-radius: 14px; border: 1px solid #2b2b28; }
+  .open img { width: 560px; } .folded img { width: 240px; } .max img { width: 760px; }
+  figcaption { font-size: 13px; color: #a9a8a1; margin-top: 6px; max-width: 560px; }
+</style>
+</head>
+<body>
+<h1>iPhone Duo columns, as built</h1>
+<p>Layout 7 of the eight mock-ups (tag prototype/iphone-duo-layout), built on feat/iphone-duo-columns and captured on the iPhone Duo simulator.</p>
+<h2>Unfolded</h2>
+<div class="row open">
+  <figure><img src="../../artifacts/iphone-duo-columns/open-threads.jpg"><figcaption>Threads: Needs you, Working now and Recent side by side</figcaption></figure>
+  <figure><img src="../../artifacts/iphone-duo-columns/open-thread.jpg"><figcaption>A thread at a 680 pt reading width</figcaption></figure>
+  <figure><img src="../../artifacts/iphone-duo-columns/open-watcher.jpg"><figcaption>Watcher at a 680 pt reading width</figcaption></figure>
+  <figure><img src="../../artifacts/iphone-duo-columns/open-question.jpg"><figcaption>A question opens in the middle</figcaption></figure>
+  <figure><img src="../../artifacts/iphone-duo-columns/open-threads-light.jpg"><figcaption>Light</figcaption></figure>
+  <figure><img src="../../artifacts/iphone-duo-columns/open-threads-large.jpg"><figcaption>Accessibility text: one column</figcaption></figure>
+</div>
+<h2>Folded: unchanged</h2>
+<div class="row folded">
+  <figure><img src="../../artifacts/iphone-duo-columns/folded-threads.jpg"></figure>
+  <figure><img src="../../artifacts/iphone-duo-columns/folded-thread.jpg"></figure>
+  <figure><img src="../../artifacts/iphone-duo-columns/folded-watcher.jpg"></figure>
+</div>
+<h2>A Max iPhone held sideways</h2>
+<p>Also regular width, so it gets the columns. The page scrolls as one.</p>
+<div class="row max"><figure><img src="../../artifacts/iphone-duo-columns/max.jpg"></figure></div>
+</body>
+</html>

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted October 27, 2026. Drake picked layout 7 of eight from `docs/prototypes/iphone-duo-layout-prototype.html` on `prototype/iphone-duo-layout`, captured on the iPhone Duo simulator. It changes only how the iPhone client lays out its pages; no computer offers anything new, so there is nothing to gate.
+Accepted October 27, 2026. Drake picked layout 7 of eight from `docs/prototypes/iphone-duo-layout-prototype.html`, kept at the tag `prototype/iphone-duo-layout`, captured on the iPhone Duo simulator. It changes only how the iPhone client lays out its pages; no computer offers anything new, so there is nothing to gate.
 
 ## Context
 
