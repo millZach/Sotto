@@ -84,7 +84,7 @@ export type AgentHostCommand =
      */
     readonly watcherAsks?: readonly WatcherAsk[] }
   | { readonly type: 'steer'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly attachments?: readonly PromptImage[]; readonly skills?: AgentSkillReference[]; readonly files?: AgentFileReference[]; readonly expectedLastUserMessageId?: string | null }
-  | { readonly type: 'answer'; readonly commandId: string; readonly threadId: string; readonly requestId: string; readonly answer: string; readonly approved?: boolean; readonly questionAnswers?: AgentQuestionAnswers; readonly permissionChoice?: string }
+  | { readonly type: 'answer'; readonly commandId: string; readonly threadId: string; readonly requestId: string; readonly answer: string; readonly approved?: boolean; readonly questionAnswers?: AgentQuestionAnswers; readonly permissionChoice?: string; readonly skipped?: true }
   | { readonly type: 'interrupt'; readonly commandId: string; readonly threadId: string }
   /** `idle` marks Sotto's own idle compaction (ADR-0127), which the transcript names as such. */
   | { readonly type: 'compact-thread'; readonly commandId: string; readonly threadId: string; readonly idle?: true }

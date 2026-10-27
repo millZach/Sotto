@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { AgentRequest, AgentQuestionAnswers } from '../../shared/agents'
-import { permissionValue, questionValues } from './nativeRequests'
+import { permissionValue, QUESTION_SKIPPED, questionValues } from './nativeRequests'
 import { object, type ClaudeFrame } from './claudeProtocol'
 import { browserRequestText } from './browserRequests'
 
@@ -29,7 +29,7 @@ export function claudePending(frame: ClaudeFrame): ClaudePending | undefined {
     return { id: frame.request_id, tool: data.tool_name, input, questions,
       request: { id: frame.request_id, kind: 'question', text: questions.map((q, i) => `${questions.length > 1 ? `${i + 1}. ` : ''}${q.question}${questions.length > 1 && q.options?.length ? `\n${q.options.map(o => o.label).join(' / ')}` : ''}`).join('\n'),
         options: questions.length === 1 ? (questions[0]!.options ?? []).map(option => ({ id: option.label, label: option.label })) : [],
-        questions: questions.map((q, index) => ({ id: String(index), question: q.question, header: q.header, multiSelect: q.multiSelect ?? false, allowFreeText: true, options: (q.options ?? []).map(option => ({ id: option.label, ...option })) })),
+        questions: questions.map((q, index) => ({ id: String(index), question: q.question, header: q.header, multiSelect: q.multiSelect ?? false, allowFreeText: true, options: (q.options ?? []).map(option => ({ id: option.label, ...option })) })), skippable: true,
         context: { toolName: data.tool_name, ...(typeof data.tool_use_id === 'string' ? { toolCallId: data.tool_use_id } : {}) } } }
   }
   const description = typeof data.description === 'string' ? data.description : typeof input.description === 'string' ? input.description : ''
@@ -39,7 +39,11 @@ export function claudePending(frame: ClaudeFrame): ClaudePending | undefined {
       context: { toolName: data.tool_name, ...(typeof data.tool_use_id === 'string' ? { toolCallId: data.tool_use_id } : {}), ...(typeof input.command === 'string' ? { command: input.command } : {}), details: JSON.stringify(input).slice(0, 100000) } } }
 }
 export function claudeDenial(): ClaudeFrame { return { behavior: 'deny', message: 'The user did not approve this request.' } }
-export function claudeAnswer(pending: ClaudePending, answer: string, approved?: boolean, questionAnswers?: AgentQuestionAnswers, permissionChoice?: string): ClaudeFrame {
+export function claudeAnswer(pending: ClaudePending, answer: string, approved?: boolean, questionAnswers?: AgentQuestionAnswers, permissionChoice?: string, skipped?: boolean): ClaudeFrame {
+  if (skipped) {
+    if (!pending.request.skippable) throw new Error('This question cannot be skipped. Answer it, or answer it in Claude.')
+    return { behavior: 'deny', message: QUESTION_SKIPPED }
+  }
   if (pending.resumeDialog) {
     const selected = questionAnswers ? questionValues(pending.request, questionAnswers)['0']?.[0] : answer
     if (!pending.request.options.some(option => option.id === selected)) throw new Error('Choose how to resume this Claude session.')
