@@ -32,7 +32,8 @@ async function service(options: Partial<DelegationServiceOptions>, configured: '
   const control: DelegationCoordinator = {
     hostId: () => HOST, watcherSnapshot: () => snapshot, configuration: () => ({ newThreadRuntimeMode: configured }),
     useDelegation: () => () => undefined,
-    commandFromDelegation: async command => { commands.push(command); return { host: snapshot } as never },
+    // The coordinator's own last guard runs before anything is created, as the real one runs it at the writer.
+    commandFromDelegation: async (command, guard) => { guard(); commands.push(command); return { host: snapshot } as never },
     hasPendingThreadWork: () => false, hasUserDraft: () => false, refreshDelegationObservation: () => undefined,
     deliverWakeUp: async () => undefined,
   }
@@ -54,6 +55,8 @@ describe('a relayed caller on the desktop', () => {
     const answer = await f.delegation.delegate(key, { ...start, permission: 'auto' }) as { status: string; delegation: { id: string } }
     expect(answer.status).toBe('ok')
     expect(f.commands.find(command => command.type === 'create-thread')).toMatchObject({ type: 'create-thread', projectId: 'project', runtimeMode: 'auto' })
+    // The final guard held the start to the relayed caller's own permission, and let it through: the thread was made.
+    expect(f.commands.filter(command => command.type === 'create-thread')).toHaveLength(1)
     const narrower = await service({ relayedCallers: { caller: id => id === key ? caller(0, 'full-access') : undefined, tell: async () => undefined } }, 'auto-accept-edits')
     expect(await narrower.delegation.delegate(key, { ...start, permission: 'auto' })).toMatchObject({ status: 'refused', code: 'PERMISSION_TOO_WIDE' })
   })

@@ -1287,7 +1287,9 @@ export class DelegationService {
    */
   private guardCeiling(record: DelegationRecord, start: DelegatedStart): void {
     const snapshot = this.snapshot()
-    const caller = snapshot.threads.find(thread => thread.id === record.delegatingThreadId), model = resolveModel(snapshot.models, start.modelId)
+    // A thread on another machine that asked through the relay (#1316) is held to its permission as its machine last said it.
+    const relayed = this.options.relayedCallers?.caller(record.delegatingThreadId)
+    const caller = snapshot.threads.find(thread => thread.id === record.delegatingThreadId) ?? (relayed ? relayedThread(relayed) : undefined), model = resolveModel(snapshot.models, start.modelId)
     if (!caller || !model) throw new Error('The thread that delegated, or the chosen model, is gone. Nothing was started.')
     const current = this.permission(model, caller, snapshot.models, start.runtimeMode)
     if (start.providerMode !== undefined && current.providerMode !== start.providerMode) throw new Error('The permission changed. Nothing was started.')
