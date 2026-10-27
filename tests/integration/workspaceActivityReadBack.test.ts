@@ -184,6 +184,19 @@ describe('a stored thread read back on the store worker', () => {
     expect(f.disk()).toEqual([])
   })
 
+  it('never tells the provider of a thread deleted while its list was on its way', async () => {
+    const f = await stored([record('a', 0)])
+    f.host.observeThreads([THREAD, DOCS])
+    expect(f.provider.observed).toEqual([DOCS])
+    const told = f.told.length
+    expect((await f.host.deleteThreads([THREAD], { automatic: false, hold: () => null })).deleted).toEqual([THREAD])
+    await readsArrived(f.host)
+    await vi.waitFor(() => expect(readsInFlight(f.host).size).toBe(0))
+    // The read let go with the delete tells the provider again, without the thread the window still named.
+    expect(f.told.slice(told).some(call => call.ids.includes(THREAD))).toBe(false)
+    expect(f.provider.observed).not.toContain(THREAD)
+  })
+
   it('reads the list before Keep local history turns off when the switch follows the read, and the file keeps no words', async () => {
     let history = true
     const f = await stored([record('a', 0)], () => history)

@@ -2867,7 +2867,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   /** The provider hears which threads the window looks at, less those whose records are still on their way. */
   private tellObservation(): void {
-    this.inner.observeThreads?.([...this.observation].filter(id => !this.activityReads.has(id) && this.threadById(id)?.nativeSessionStarted !== false))
+    // A thread cleared since the window last said what it shows is left out: a read let go with the clear tells the provider
+    // again before the window does. A thread the workspace does not hold yet still goes, as the window names it.
+    this.inner.observeThreads?.([...this.observation].filter(id => !this.activityReads.has(id) && !this.forgetting.has(id)
+      && !this.clearedIds.has(id) && this.threadById(id)?.nativeSessionStarted !== false))
   }
   /**
    * A record read back may still carry subagent task words from before the roster held them, when the start that moved
