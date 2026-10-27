@@ -15,7 +15,7 @@ import { watcherOwnChangeSchema, watcherObservedChangesSchema } from '../../shar
 import { watcherAsksSchema, type WatcherAsk } from '../../shared/watcherAsks'
 import { visitUserMessageInstants, type StoredUserMessageInstant } from './usageHistory/sottoPrompts'
 import { flushedCommits, SAVE_SYNCHRONOUS } from '../storage/sqliteDurability'
-import { AUTOMATIC_CHECKPOINT, BUILT_CHECKPOINT_WORKER, NO_AUTOMATIC_CHECKPOINT, WalCheckpointer } from '../storage/walCheckpointer'
+import { BUILT_STORE_WORKER, StoreWorker, type StoreWorkerOptions, type UnansweredWrite } from './storeWorker'
 
 /** The first window a pane is given, and what each later request adds, both counted in turns. */
 export const FIRST_WINDOW_TURNS = 10
@@ -262,27 +262,38 @@ export class ThreadStore {
   /** Each thread's Watcher wake-up asks, by wake-up message ID, as last read or written. */
   private readonly wakeUpAskCache = new Map<string, ReadonlyMap<string, readonly WatcherAsk[]>>()
   private readonly hiddenWakeUpCache = new Map<string, ReadonlySet<string>>()
-  /** Checkpoints the durable file's log off main, so no save runs one (#1451); absent, SQLite checkpoints in the save. */
-  private checkpointer: WalCheckpointer | undefined
+  /**
+   * The store worker, which makes every write to the durable file and checkpoints its log (#1457); while it runs, this
+   * connection only reads. Absent, this connection writes and SQLite checkpoints in the save.
+   */
+  private worker: StoreWorker | undefined
+  /** Whether a read transaction is open on this connection (`reading`). */
+  private inRead = false
+  /** Hears every write the worker went without answering, in order, once this connection writes again. */
+  private unansweredListener: ((unanswered: readonly UnansweredWrite[]) => void) | undefined
 
   /**
-   * The main runtime supplies a path under `app.getPath('userData')`. `checkpointWorker` is the built checkpoint worker,
-   * or null to leave checkpoints to SQLite, as where no worker file sits beside this module (the test runner).
+   * The main runtime supplies a path under `app.getPath('userData')`. `storeWorker` is the built store worker, or null to
+   * write on this connection, as where no worker file sits beside this module (the test runner).
    */
   constructor(private readonly path: string, private readonly preserveThread?: (threadId: string) => boolean,
-    private readonly checkpointWorker: string | null = BUILT_CHECKPOINT_WORKER) {}
+    private readonly storeWorker: string | StoreWorkerOptions | null = BUILT_STORE_WORKER) {}
 
-  /** Opens the database. `ephemeral` keeps this run's history in memory, for Keep local history off. */
-  open(options: { ephemeral?: boolean } = {}): void {
+  /**
+   * Opens the database. `ephemeral` keeps this run's history in memory, for Keep local history off; `redacted` says the
+   * store worker has already taken the file's words out, and carries the identities it kept. `onMain` writes on this
+   * connection whatever worker the store was given, as the worker's own store and a privacy switch retried on main do.
+   */
+  open(options: { ephemeral?: boolean; onMain?: boolean; busyTimeoutMs?: number; redacted?: readonly string[] } = {}): void {
     if (this.db !== undefined) return
     const ephemeral = options.ephemeral === true
-    let redactions: string[] = []
+    let redactions: string[] = [...options.redacted ?? []]
     // Keep local history was turned off while Sotto was not running: the words an earlier run kept come out first.
-    if (ephemeral && existsSync(this.path)) {
-      this.open(); this.redactAll(); redactions = [...this.activityRedactions]; this.close()
+    if (ephemeral && options.redacted === undefined && existsSync(this.path)) {
+      this.open({ onMain: true }); this.redactAll(); redactions = [...this.activityRedactions]; this.close()
     }
     if (!ephemeral) mkdirSync(dirname(this.path), { recursive: true })
-    const db = new DatabaseSync(ephemeral ? ':memory:' : this.path, { timeout: 5_000 })
+    const db = new DatabaseSync(ephemeral ? ':memory:' : this.path, { timeout: options.busyTimeoutMs ?? 5_000 })
     try {
       prepareThreadDatabase(db)
       if (readMeta(db, 'projectionVersion') !== String(PROJECTION_VERSION)) {
@@ -295,7 +306,7 @@ export class ThreadStore {
         this.activityRedactions.add(String(row.identity_hash))
       }
       for (const hash of redactions) this.activityRedactions.add(hash)
-      if (!ephemeral) this.startCheckpointer(db)
+      if (!ephemeral && options.onMain !== true) this.startWorker(db)
     } catch (error) {
       this.statements.clear()
       this.activityRedactions.clear()
@@ -307,25 +318,109 @@ export class ThreadStore {
   }
 
   /**
-   * Hands the log's checkpoints to a worker and turns SQLite's own off on this connection. A worker that goes without
-   * being stopped hands them back.
+   * Hands every write and the log's checkpoints to the store worker, and makes this connection read only. A worker that
+   * goes without being stopped hands both back (`writeOnMain`).
    */
-  private startCheckpointer(db: DatabaseSync): void {
-    const checkpointer = WalCheckpointer.start(this.path, this.checkpointWorker, () => {
-      if (this.checkpointer !== checkpointer) return
-      this.checkpointer = undefined
-      if (this.db === db) try { db.exec(AUTOMATIC_CHECKPOINT) } catch { /* The connection is going; nothing waits on its log. */ }
+  private startWorker(db: DatabaseSync): void {
+    const worker = StoreWorker.start(this.path, this.storeWorker, unanswered => {
+      if (this.worker !== worker) return
+      this.writeOnMain()
+      this.unansweredListener?.(unanswered)
     })
-    if (checkpointer === undefined) return
-    try { db.exec(NO_AUTOMATIC_CHECKPOINT) } catch (error) { checkpointer.stop(); throw error }
-    this.checkpointer = checkpointer
+    if (worker === undefined) return
+    try { db.exec('PRAGMA query_only=ON; PRAGMA wal_autocheckpoint=0') } catch (error) { worker.stop(); throw error }
+    this.worker = worker
   }
 
-  /** Main's own checkpoint, with no checkpoint of the worker's in flight to make it find the log busy. */
-  private scrub(db: DatabaseSync): void {
-    if (this.checkpointer) this.checkpointer.aside(() => scrub(db))
-    else scrub(db)
+  /** The store worker while it writes this store; undefined while this connection writes. */
+  get writer(): StoreWorker | undefined { return this.worker?.live ? this.worker : undefined }
+
+  /** Hears the writes the store worker went without answering, once this connection has taken over writing. */
+  onUnanswered(listener: ((unanswered: readonly UnansweredWrite[]) => void) | undefined): void { this.unansweredListener = listener }
+
+  /**
+   * The store worker went: this connection writes again, with SQLite's own checkpoints, and forgets what it held, since
+   * the worker wrote what this connection never saw. Redactions are read again, so nothing the worker redacted comes back.
+   */
+  private writeOnMain(): void {
+    this.worker = undefined
+    const db = this.db
+    if (db === undefined) return
+    db.exec('PRAGMA query_only=OFF; PRAGMA wal_autocheckpoint=1000')
+    this.forgetHeld()
+    for (const row of this.statement('SELECT identity_hash FROM activity_redactions').all()) this.activityRedactions.add(String(row.identity_hash))
   }
+
+  /** Lets go of what this connection holds of these threads, or of every thread, as when another connection wrote. */
+  private forgetHeld(threadIds?: readonly string[]): void {
+    if (threadIds === undefined) {
+      this.activityStates.clear(); this.activityMetas.clear(); this.visualCache.clear()
+      this.wakeUpCache.clear(); this.wakeUpAskCache.clear(); this.hiddenWakeUpCache.clear()
+    } else for (const threadId of threadIds) {
+      this.activityStates.delete(threadId); this.activityMetas.delete(threadId); this.visualCache.delete(threadId)
+      this.wakeUpCache.delete(threadId); this.wakeUpAskCache.delete(threadId); this.hiddenWakeUpCache.delete(threadId)
+    }
+    this.redactionChecks.clear()
+  }
+
+  /**
+   * The store worker committed a write naming these threads, or every thread: what this connection held of them is read
+   * again when next asked, so nothing here outlives what the file now holds.
+   */
+  committedElsewhere(threadIds: readonly string[] | undefined): void { this.forgetHeld(threadIds) }
+
+  /**
+   * Runs `read` in one read transaction, so every statement in it sees the file at one moment whatever the store worker
+   * commits meanwhile: a window, and the check of which posted writes it already holds, agree. Without a worker nothing
+   * else writes, and it simply runs.
+   */
+  reading<T>(read: () => T): T {
+    const db = this.db
+    if (db === undefined || this.worker === undefined || this.inRead) return read()
+    db.exec('BEGIN')
+    this.inRead = true
+    try { return read() } finally {
+      this.inRead = false
+      try { db.exec('COMMIT') } catch { /* A read transaction has nothing to keep. */ }
+    }
+  }
+
+  /** The newest event sequence this thread holds, or 0: the events of the next write posted for it come after it. */
+  eventFrontier(threadId: string): number {
+    const row = this.statement('SELECT MAX(seq) AS seq FROM events WHERE thread_id = ?').get(threadId)
+    return row?.seq === null || row?.seq === undefined ? 0 : Number(row.seq)
+  }
+
+  /** How many events this thread holds after `seq`: only those posted since, so it reads no more than they are. */
+  eventsAfterFrontier(threadId: string, seq: number): number {
+    return Number(this.statement('SELECT COUNT(*) AS count FROM events WHERE thread_id = ? AND seq > ?').get(threadId, seq)!.count)
+  }
+
+  /** Whether the thread holds this visual. */
+  hasVisual(threadId: string, visualId: string): boolean {
+    return this.statement('SELECT 1 AS found FROM visuals WHERE thread_id = ? AND visual_id = ? LIMIT 1').get(threadId, visualId) !== undefined
+  }
+
+  /** The threads Keep local history turning off leaves as they are: those the store holds that this runtime does not own. */
+  preservedThreadIds(): string[] {
+    if (!this.preserveThread) return []
+    return this.statement('SELECT thread_id FROM events UNION SELECT thread_id FROM messages UNION SELECT thread_id FROM activities UNION SELECT thread_id FROM activity_epochs UNION SELECT thread_id FROM visuals')
+      .all().map(row => String(row.thread_id)).filter(id => this.preserveThread!(id))
+  }
+
+  /**
+   * Keep local history turned off, and the store worker took the file's words out and closed it: this run goes on in
+   * memory without a second pass over the file. The identities the file keeps are read before it closes.
+   */
+  enterMemory(): void {
+    if (this.memory) return
+    const redactions = this.db === undefined ? [] : this.statement('SELECT identity_hash FROM activity_redactions').all().map(row => String(row.identity_hash))
+    this.close()
+    this.open({ ephemeral: true, redacted: redactions })
+  }
+
+  /** This store's own connection, for the store worker's checkpoints. */
+  connection(): DatabaseSync { return this.requireOpen() }
 
   /** True while this run's history is being kept in memory rather than on disk. */
   get ephemeral(): boolean { return this.memory }
@@ -339,7 +434,7 @@ export class ThreadStore {
     if (this.db !== undefined) { this.redactAll(); this.close() }
     else {
       // Nothing is open, but a file from an earlier run may still hold text.
-      this.open()
+      this.open({ onMain: true })
       this.redactAll()
       this.close()
     }
@@ -365,9 +460,14 @@ export class ThreadStore {
     this.wakeUpCache.clear()
     this.wakeUpAskCache.clear()
     this.hiddenWakeUpCache.clear()
-    // The worker's connection closes first, so main's close is the file's last and checkpoints the log as it always did.
-    this.checkpointer?.stop()
-    this.checkpointer = undefined
+    // The worker's connection closes first, so main's close is the file's last and checkpoints the log as it always did; it
+    // may write again for that, since a connection that only reads leaves the log behind.
+    if (this.worker) {
+      this.worker.stop()
+      try { this.db?.exec('PRAGMA query_only=OFF') } catch { /* The connection is going either way. */ }
+    }
+    this.worker = undefined
+    this.inRead = false
     this.db?.close()
     this.db = undefined
     this.memory = false
@@ -965,7 +1065,7 @@ export class ThreadStore {
     for (const hash of hashes) this.activityRedactions.add(hash)
     this.redactionRevision++
     this.redactionChecks.clear()
-    this.scrub(db)
+    scrub(db)
   }
 
   /** The same for every thread: what Keep local history turning off asks of the file. */
@@ -1002,7 +1102,7 @@ export class ThreadStore {
     for (const hash of hashes) this.activityRedactions.add(hash)
     this.redactionRevision++
     this.redactionChecks.clear()
-    this.scrub(db)
+    scrub(db)
   }
 
   /** The newest message the projection holds, and the newest user message: where a visual arriving now is drawn. */

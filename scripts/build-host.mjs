@@ -49,13 +49,25 @@ export async function buildHost(outDir = resolve(root, process.env.SOTTO_HOST_OU
       },
     }],
     build: {
-      // The host launches Git off its own thread too, from the worker file beside its index.js (`gitLauncher.ts`), and
-      // checkpoints its thread store on another (`walCheckpointer.ts`).
+      // The host launches Git off its own thread too, from the worker file beside its index.js (`gitLauncher.ts`).
       ssr: true, target: 'node24', outDir, emptyOutDir: true, minify: false,
       rollupOptions: {
-        input: { index: resolve(root, 'src/host/index.ts'), gitLauncherWorker: resolve(root, 'src/main/agents/gitLauncherWorker.ts'),
-          walCheckpointWorker: resolve(root, 'src/main/storage/walCheckpointWorker.ts') },
+        input: { index: resolve(root, 'src/host/index.ts'), gitLauncherWorker: resolve(root, 'src/main/agents/gitLauncherWorker.ts') },
         external: id => isBuiltin(id) || id === 'zod' || id === 'node-pty',
+        output: { format: 'cjs', entryFileNames: '[name].js' },
+      },
+    },
+  })
+  // The thread store's writes and its log's checkpoints run on the store worker (`storeWorker.ts`): one file with what it
+  // imports inside it, beside index.js, built on its own as electron.vite.config.ts builds it.
+  await build({
+    root, configFile: false, logLevel: 'warn',
+    ssr: { noExternal: true },
+    build: {
+      ssr: true, target: 'node24', outDir, emptyOutDir: false, minify: false, copyPublicDir: false,
+      rollupOptions: {
+        input: { threadStoreWorker: resolve(root, 'src/main/agents/threadStoreWorker.ts') },
+        external: id => isBuiltin(id),
         output: { format: 'cjs', entryFileNames: '[name].js' },
       },
     },

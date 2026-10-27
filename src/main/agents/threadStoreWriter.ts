@@ -1,6 +1,7 @@
 import type { AgentActivity } from '../../shared/agentActivity'
 import type { ThreadEvent } from '../../shared/threadEvents'
 import type { WatcherAsk } from '../../shared/watcherAsks'
+import type { StoreWorker, StoreWorkerResult, UnansweredWrite } from './storeWorker'
 import type { StoredVisual, ThreadStore } from './threadStore'
 
 /**
@@ -17,7 +18,7 @@ export type ThreadStoreWrite =
   /** Several threads' activity lists in one transaction (`syncActivitiesMany`). */
   | { readonly kind: 'activities'; readonly entries: readonly ActivityListEntry[] }
   /** One thread's activity list (`syncActivities`), as the start moves it; `flushed` waits for the disk. */
-  | ({ readonly kind: 'activity-list'; readonly flushed?: boolean } & ActivityListEntry)
+  | ({ readonly kind: 'activity-list'; readonly flushed?: boolean | undefined } & ActivityListEntry)
   /** The store may let a thread's records go, keeping its marker and count. */
   | { readonly kind: 'activities-released'; readonly threadId: string }
   | { readonly kind: 'activity-identities-redacted'; readonly threadId: string; readonly activityIds: readonly string[] }
@@ -120,7 +121,8 @@ export function applyWrite(store: ThreadStore, write: ThreadStoreWrite): ThreadS
       case 'forget': store.forgetMany(write.threadIds); break
       case 'subagent-words-moved': store.markSubagentWordsMoved(); break
       case 'history-off':
-        if (write.reopen) store.open()
+        // Reopened to take the words out here, on this connection.
+        if (write.reopen) store.open({ onMain: true })
         // Identity suppression needs no output validation. Even if it fails, the durable text is erased.
         try {
           for (const thread of write.threads) store.redactActivityIdentities(thread.threadId, thread.activityIds ?? store.activityIds(thread.threadId))
@@ -155,4 +157,233 @@ export function writeFailed(outcome: ThreadStoreWriteOutcome): boolean { return 
 export function throwIfFailed(outcome: ThreadStoreWriteOutcome): void {
   if (!writeFailed(outcome)) return
   throw outcome.error ?? new Error('Thread history could not be saved')
+}
+
+interface PostedWrite {
+  readonly write: ThreadStoreWrite
+  readonly confirm: ((outcome: ThreadStoreWriteOutcome) => void) | undefined
+  readonly threads: ReadonlySet<string>
+  readonly whole: boolean
+  /** The worker it went to and its identity there, once sent; a write held behind a switch waits unsent. */
+  sent?: { readonly worker: StoreWorker; readonly id: number }
+}
+
+/** Where a thread's unconfirmed events start: its newest sequence before them, and the events confirmed since. */
+interface EventBase { readonly seq: number; settled: number }
+
+/**
+ * The writer the workspace runs over (#1457, step 2): every write goes to the store worker, which commits it off main and
+ * answers later, and main holds it until then. Where the store has no worker, as under the test runner, or once the worker
+ * has gone, it commits on main and confirms inside `post`, as `ThreadStoreWriterOnMain` does, after the worker's
+ * unanswered writes have been finished on main in the order posted.
+ *
+ * A write the worker commits shows to main's reads before its confirmation arrives. `posted` therefore leaves out the
+ * events main's connection already holds: each thread's unconfirmed events start after a sequence noted when the first
+ * of them was sent, so counting what the thread holds past it, inside the same read transaction as the window
+ * (`ThreadStore.reading`), says which posted writes have already committed.
+ */
+export class ThreadStoreWriterOnWorker implements ThreadStoreWriter {
+  /** Every write posted and not yet confirmed, in the order posted. */
+  private readonly queue: PostedWrite[] = []
+  private readonly byThread = new Map<string, PostedWrite[]>()
+  private readonly bases = new Map<string, EventBase>()
+  private readonly waiters: { readonly threadId: string | undefined; readonly resolve: () => void }[] = []
+  private wholeCount = 0
+  /** Writes posted and not sent: behind a privacy switch the worker has not answered, or behind writes finished on main. */
+  private held = 0
+  private switching = false
+  private recovering = false
+  private flushing = false
+
+  constructor(private readonly store: ThreadStore) {
+    store.onUnanswered(unanswered => { this.recover(unanswered) })
+  }
+
+  post(write: ThreadStoreWrite, confirm?: (outcome: ThreadStoreWriteOutcome) => void): void {
+    if (this.queue.length === 0 && !this.store.writer) {
+      // Applied before the confirmation is called, which an optional call would skip with nobody to confirm to.
+      const outcome = applyWrite(this.store, write)
+      confirm?.(outcome)
+      return
+    }
+    const posted: PostedWrite = { write, confirm, threads: new Set(writeThreads(write)), whole: writesWholeStore(write) }
+    this.queue.push(posted)
+    for (const threadId of posted.threads) {
+      const list = this.byThread.get(threadId)
+      if (list) list.push(posted)
+      else this.byThread.set(threadId, [posted])
+    }
+    if (posted.whole) this.wholeCount++
+    if (this.held === 0 && !this.switching && !this.recovering && this.store.writer) this.send(posted)
+    else { this.held++; if (!this.store.writer) this.flushHeld() }
+  }
+
+  posted(threadId: string): readonly ThreadEvent[] {
+    const list = this.byThread.get(threadId)
+    if (!list) return NO_EVENTS
+    let events: ThreadEvent[] | undefined
+    let committed: number | undefined
+    for (const posted of list) {
+      const own = eventsOfWrite(posted.write, threadId)
+      if (own.length === 0) continue
+      // A write the worker has begun may have committed already, and then main's connection shows it: it is not laid twice.
+      if (posted.sent && posted.sent.worker.started(posted.sent.id)) {
+        const base = this.bases.get(threadId)
+        if (base) committed ??= this.store.eventsAfterFrontier(threadId, base.seq) - base.settled
+        if (committed !== undefined && committed >= own.length) { committed -= own.length; continue }
+      }
+      (events ??= []).push(...own)
+    }
+    return events ?? NO_EVENTS
+  }
+
+  unconfirmed(threadId?: string): boolean {
+    return threadId === undefined ? this.queue.length > 0 : this.wholeCount > 0 || this.byThread.has(threadId)
+  }
+
+  confirmed(threadId?: string): Promise<void> {
+    if (!this.unconfirmed(threadId)) return Promise.resolve()
+    return new Promise(resolve => { this.waiters.push({ threadId, resolve }) })
+  }
+
+  drain(): void {
+    for (let rounds = 0; this.queue.length && rounds < 1_000; rounds++) {
+      const worker = this.store.writer
+      if (worker && this.queue.some(posted => posted.sent)) {
+        if (!worker.drain()) { this.abandon(); return }
+        continue
+      }
+      this.flushHeld()
+      if (this.queue.length && !this.store.writer && this.queue.every(posted => posted.sent)) { this.abandon(); return }
+    }
+  }
+
+  close(): void {
+    try { this.drain() } finally {
+      this.store.onUnanswered(undefined)
+      this.store.close()
+    }
+  }
+
+  private send(posted: PostedWrite): void {
+    const worker = this.store.writer!
+    for (const threadId of posted.threads) {
+      if (eventsOfWrite(posted.write, threadId).length && !this.bases.has(threadId)) this.bases.set(threadId, { seq: this.store.eventFrontier(threadId), settled: 0 })
+    }
+    if (posted.write.kind === 'history-off') this.switching = true
+    const sent = { worker, id: 0 }
+    posted.sent = sent
+    sent.id = worker.post(posted.write, result => { this.answered(posted, result) }, () => this.store.preservedThreadIds())
+  }
+
+  private answered(posted: PostedWrite, result: StoreWorkerResult): void {
+    if (!this.queue.includes(posted)) return
+    let outcome: ThreadStoreWriteOutcome & { memory?: true | undefined }
+    if ('lost' in result) outcome = this.finishOnMain(posted, result.started)
+    else {
+      outcome = result.outcome
+      // What main's connection held of the threads it names is read again; events leave nothing held there.
+      if (posted.write.kind !== 'event-batches' && posted.write.kind !== 'events') this.store.committedElsewhere(posted.whole ? undefined : [...posted.threads])
+    }
+    this.settleEvents(posted, outcome)
+    this.remove(posted)
+    if (posted.write.kind === 'history-off') {
+      this.switching = false
+      // The worker took the file's words out and closed it: this run goes on in memory, and so do the writes held behind it.
+      if (outcome.memory) this.store.enterMemory()
+    }
+    posted.confirm?.(outcome)
+    this.flushHeld()
+    this.wake()
+  }
+
+  /** The worker went without answering this write: what it had begun is checked in the file, and the rest is done here. */
+  private finishOnMain(posted: PostedWrite, started: boolean): ThreadStoreWriteOutcome {
+    const { write } = posted
+    if (started && (write.kind === 'event-batches' || write.kind === 'events')) {
+      const carried = [...posted.threads].filter(threadId => eventsOfWrite(write, threadId).length)
+      const landed = carried.filter(threadId => {
+        const base = this.bases.get(threadId)
+        return base !== undefined && this.store.eventsAfterFrontier(threadId, base.seq) - base.settled > 0
+      })
+      // Its transaction committed: a thread whose events are not there failed inside it, and is retried as such.
+      if (landed.length) return { failed: new Set(carried.filter(threadId => !landed.includes(threadId))) }
+    }
+    if (started && write.kind === 'visual' && this.store.hasVisual(write.threadId, write.stored.visual.id)) return { failed: NO_THREADS }
+    // Not begun, or a write that may be applied again: it is applied here.
+    return applyWrite(this.store, write)
+  }
+
+  /** Counts the events a thread now holds from this write, so later checks of what has committed start after them. */
+  private settleEvents(posted: PostedWrite, outcome: ThreadStoreWriteOutcome): void {
+    if (posted.write.kind !== 'event-batches' && posted.write.kind !== 'events') return
+    const whole = outcome.error !== undefined && outcome.failed.size === 0
+    for (const threadId of posted.threads) {
+      const base = this.bases.get(threadId)
+      if (base && !whole && !outcome.failed.has(threadId)) base.settled += eventsOfWrite(posted.write, threadId).length
+    }
+  }
+
+  private remove(posted: PostedWrite): void {
+    const index = this.queue.indexOf(posted)
+    if (index < 0) return
+    this.queue.splice(index, 1)
+    if (posted.whole) this.wholeCount--
+    if (!posted.sent) this.held--
+    for (const threadId of posted.threads) {
+      const list = this.byThread.get(threadId)
+      if (!list) continue
+      const at = list.indexOf(posted)
+      if (at >= 0) list.splice(at, 1)
+      if (list.length === 0) this.byThread.delete(threadId)
+      if (!list.some(other => eventsOfWrite(other.write, threadId).length)) this.bases.delete(threadId)
+    }
+  }
+
+  /** Sends what waited behind a switch or a recovery, or, with no worker, commits it here, in the order posted. */
+  private flushHeld(): void {
+    if (this.flushing) return
+    this.flushing = true
+    try {
+      while (this.held > 0 && !this.switching && !this.recovering) {
+        const next = this.queue.find(posted => !posted.sent)
+        if (!next) { this.held = 0; break }
+        if (this.store.writer) { this.held--; this.send(next); continue }
+        // Without a worker it commits here, once nothing posted ahead of it is still unanswered.
+        if (this.queue[0] !== next) break
+        const outcome = applyWrite(this.store, next.write)
+        this.remove(next)
+        next.confirm?.(outcome)
+        this.wake()
+      }
+    } finally { this.flushing = false }
+  }
+
+  /** The worker went: this connection writes again, and finishes what the worker had not answered, in order. */
+  private recover(unanswered: readonly UnansweredWrite[]): void {
+    this.recovering = true
+    try { for (const write of unanswered) write.settle({ lost: true, started: write.started }) } finally { this.recovering = false }
+    this.flushHeld()
+    this.wake()
+  }
+
+  /** The worker never answered: shutdown cannot wait longer, so what is left is confirmed as not saved. */
+  private abandon(): void {
+    for (const posted of [...this.queue]) {
+      this.remove(posted)
+      posted.confirm?.({ failed: new Set(posted.threads), error: new Error('Thread history could not be saved') })
+    }
+    this.held = 0
+    this.switching = false
+    this.wake()
+  }
+
+  private wake(): void {
+    for (let index = this.waiters.length - 1; index >= 0; index--) {
+      const waiter = this.waiters[index]!
+      if (this.unconfirmed(waiter.threadId)) continue
+      this.waiters.splice(index, 1)
+      waiter.resolve()
+    }
+  }
 }
