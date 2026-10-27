@@ -388,3 +388,26 @@ describe('main-window theme tokens', () => {
     expect(capsules).toEqual([])
   })
 })
+
+describe('Vellum (ADR-0154)', () => {
+  // The bars Vellum is chosen for, on the window's surfaces. Changes' tinted lines are held only to the 4.5:1 above.
+  const surfaces = ['canvas', 'surface', 'surface-elevated', 'surface-overlay', 'field', 'card', 'card-selected', 'sidebar', 'selected', 'hover-strong'] as const
+  const bars = [
+    [7, 'text', surfaces], [7, 'sidebar-text', ['sidebar', 'sidebar-row-hover', 'sidebar-row-selected']], [7, 'bubble-text', ['bubble']],
+    [7, 'code-text', ['code-bg']], [7, 'pill-ink', ['pill']], [7, 'primary-contrast', ['primary']], [7, 'on-accent', ['accent']],
+    [5.75, 'text-2', ['canvas', 'surface', 'card', 'card-selected', 'selected', 'bubble']],
+    [5.75, 'text-muted', ['canvas', 'surface', 'surface-overlay', 'field', 'card', 'card-selected', 'selected', 'bubble']],
+    [5.75, 'sidebar-text-muted', ['sidebar']], [5.75, 'text-faint', ['canvas', 'surface', 'field', 'surface-elevated', 'card']],
+    [5.75, 'link', ['canvas', 'surface', 'card', 'card-selected', 'selected']], [5.75, 'warning', ['canvas', 'sidebar', 'card', 'card-selected']],
+    [5.75, 'error', ['canvas', 'surface', 'card']],
+    [4.5, 'border', ['canvas', 'surface', 'card']], [4.5, 'focus-ring', ['canvas', 'surface', 'card', 'sidebar', 'field']],
+    [4.5, 'activity', ['canvas', 'surface', 'card', 'sidebar']], [4.5, 'success', ['canvas', 'sidebar']],
+  ] as const
+
+  it.each(MODES)('%s half holds words at 7:1, secondary words at 5.75:1 and marks at 4.5:1', (mode) => {
+    const color = palette(mode, 'vellum')
+    for (const [bar, ink, on] of bars) {
+      for (const surface of on) expect(contrast(color(ink), color(surface)), `${ink} on ${surface}`).toBeGreaterThanOrEqual(bar)
+    }
+  })
+})
