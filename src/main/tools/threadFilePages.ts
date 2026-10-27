@@ -6,7 +6,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { HttpBudgets } from '../../host/httpBudgets'
 import { PAGE_REQUESTS_PER_MINUTE, refuseBusyPage, serveQuestionPage } from '../../host/questionPageRoute'
-import { admitPageFile, inside, onShareOrDevice, type QuestionPageTarget } from '../agents/questionPages'
+import { admitPageFile, folderIdentity, inside, onShareOrDevice, type QuestionPageTarget } from '../agents/questionPages'
 
 /** What opening a thread's file in Sotto's browser comes to: the address it is served at, or why it is not. */
 export type ThreadFileOpening = { readonly ok: true; readonly url: string } | { readonly ok: false; readonly message: string }
@@ -61,7 +61,8 @@ export class ThreadFilePages {
     // A share or device path is refused before anything is looked at, the thread's own folder included.
     if (onShareOrDevice(named.file)) return outside
     const root = await realpath(folder).catch(() => undefined)
-    if (!root) return { ok: false, message: 'This thread\'s folder is not on this computer right now, so none of its files can open. Nothing was opened. Check that the thread\'s folder is still there, then open the file again, or serve the page and open its http address.' }
+    const anchor = root ? await folderIdentity(root) : undefined
+    if (!root || !anchor) return { ok: false, message: 'This thread\'s folder is not on this computer right now, so none of its files can open. Nothing was opened. Check that the thread\'s folder is still there, then open the file again, or serve the page and open its http address.' }
     // A path written under the folder as the thread names it is the same place under its real path.
     const resolved = path.isAbsolute(named.file) ? path.resolve(named.file) : path.resolve(root, named.file)
     const absolute = !inside(root, resolved) && inside(path.resolve(folder), resolved) ? path.join(root, path.relative(path.resolve(folder), resolved)) : resolved
@@ -80,7 +81,7 @@ export class ThreadFilePages {
     if (!token || !this.targets.has(token)) {
       token = (this.options.token ?? (() => randomBytes(24).toString('base64url')))()
       this.tokens.set(key, token)
-      this.targets.set(token, { kind: 'file', root: path.dirname(file), file, folder: root, hidden: 'refused', threadId })
+      this.targets.set(token, { kind: 'file', root: path.dirname(file), file, folder: root, folderIdentity: anchor, hidden: 'refused', threadId })
       this.trim()
     }
     return { ok: true, url: `http://127.0.0.1:${port}/page/${token}/${encodeURIComponent(path.basename(file))}${named.after}` }

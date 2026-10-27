@@ -57,7 +57,7 @@ describe('foundPages', () => {
     for (const text of ['docs/prototypes/greeting-prototype.html', pathToFileURL(file).href, 'greeting-prototype.html', 'Application\\docs\\prototypes\\greeting-prototype.html']) {
       const pages = await foundPages(pageMentions([text]), folder)
       expect(pages.map(item => item.page), text).toEqual([{ kind: 'file', name: 'greeting-prototype.html', start: 'greeting-prototype.html' }])
-      expect(pages[0]!.target).toEqual({ kind: 'file', root: expect.stringContaining('prototypes'), file: expect.stringContaining('greeting-prototype.html'), folder: expect.any(String), hidden: 'git-only' })
+      expect(pages[0]!.target).toEqual({ kind: 'file', root: expect.stringContaining('prototypes'), file: expect.stringContaining('greeting-prototype.html'), folder: expect.any(String), folderIdentity: { dev: expect.any(BigInt), ino: expect.any(BigInt) }, hidden: 'git-only' })
     }
   })
 

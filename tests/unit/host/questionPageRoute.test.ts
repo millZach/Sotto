@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it } from 'vitest'
-import { foundPages, type QuestionPageTarget } from '../../../src/main/agents/questionPages'
+import { folderIdentity, foundPages, type QuestionPageTarget } from '../../../src/main/agents/questionPages'
 import { serveQuestionPage } from '../../../src/host/questionPageRoute'
 
 // A question page's route (ADR-0085): its token opens one HTML file's folder read-only, or passes reads on to the
@@ -48,7 +48,7 @@ beforeEach(async () => {
   await writeFile(join(folder, '.private', 'page', 'index.html'), 'SECRET private page')
   await writeFile(join(folder, '.private', 'page', 'look.css'), 'SECRET private style')
   // A thread file page names its thread's folder, and nothing on the way from it may be hidden.
-  targets.set(HIDDEN, { kind: 'file', root: join(folder, '.private', 'page'), file: join(folder, '.private', 'page', 'index.html'), folder, hidden: 'refused' })
+  targets.set(HIDDEN, { kind: 'file', root: join(folder, '.private', 'page'), file: join(folder, '.private', 'page', 'index.html'), folder, folderIdentity: (await folderIdentity(folder))!, hidden: 'refused' })
   targets.set(SERVER, { kind: 'server', origin: `http://localhost:${upstreamPort}` })
   targets.set(SELF, { kind: 'server', origin: `http://127.0.0.1:${port}` })
   // A port nothing listens on: taken, then let go.

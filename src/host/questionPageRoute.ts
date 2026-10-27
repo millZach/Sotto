@@ -1,7 +1,8 @@
+import { constants } from 'node:fs'
 import { open } from 'node:fs/promises'
 import { request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http'
 import path from 'node:path'
-import { canonicalInside, hiddenOnTheWay, inside, type QuestionPageTarget } from '../main/agents/questionPages'
+import { canonicalInside, folderIdentity, hiddenOnTheWay, inside, type QuestionPageTarget } from '../main/agents/questionPages'
 
 /** A page route's path: the token and whatever follows it. */
 export const QUESTION_PAGE_PATH = /^\/page\/([A-Za-z0-9_-]{32})(\/[^?#]*)?$/u
@@ -125,8 +126,13 @@ async function serveFile(request: IncomingMessage, response: ServerResponse, tar
   // each link judged before it is followed, before the folder itself is looked at: if it has since become a link to
   // somewhere else, outside or on a share, nothing there is touched, and if it now leads anywhere but where it was
   // admitted, it is not that folder any more and nothing in it is served.
-  const again = await canonicalInside(target.folder ?? path.parse(target.root).root, target.root)
-  const root = 'file' in again && again.file === target.root ? target.root : undefined
+  // The thread's folder is the walk's anchor, so it is checked first, with `lstat` alone: still a folder, not a link or
+  // junction put in its place, and the very folder admission found. A page directly in it has no other part to walk.
+  const anchor = target.folder === undefined ? undefined : await folderIdentity(target.folder)
+  const anchored = target.folder === undefined
+    || (!!anchor && !!target.folderIdentity && anchor.dev === target.folderIdentity.dev && anchor.ino === target.folderIdentity.ino)
+  const again = anchored ? await canonicalInside(target.folder ?? path.parse(target.root).root, target.root) : undefined
+  const root = again && 'file' in again && again.file === target.root ? target.root : undefined
   // A link in the folder is followed before it is judged, so `look.css` that leads to `.env` is refused as `.env` would be.
   // It is followed without leaving the folder: a link to a share or outside is refused before anything there is touched.
   // The file is judged by the file system's own spelling of it, so `WORKTR~1` is judged as `.worktrees`.
@@ -139,7 +145,9 @@ async function serveFile(request: IncomingMessage, response: ServerResponse, tar
   }
   // The file is opened, then checked to be the one the walk found: a folder on the way swapped for a link between the walk
   // and the open would open another file, and that file is not served.
-  const handle = file ? await open(file.file, 'r').catch(() => undefined) : undefined
+  // Only a plain file is opened, as the walk saw it, so a pipe or device named `look.css` is never opened; and it is opened
+  // without waiting where the system can, so one swapped in after the walk cannot hold the open, then refused below.
+  const handle = file?.identity?.regular ? await open(file.file, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0)).catch(() => undefined) : undefined
   const info = handle ? await handle.stat({ bigint: true }).catch(() => undefined) : undefined
   const same = !!info && !!file?.identity && info.dev === file.identity.dev && info.ino === file.identity.ino
   if (!handle || !info?.isFile() || !same) {

@@ -1,5 +1,7 @@
 // @vitest-environment node
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
+import { constants } from 'node:fs'
+import { mkdir, mkdtemp, open, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -10,7 +12,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 const touched = vi.hoisted(() => [] as string[])
 // `aliases` stands in for a file system that spells a path one way and keeps it another (a Windows 8.3 short name), and
 // `beforeOpen` runs just before a file is opened, to change the folder between the walk and the open.
-const stubs = vi.hoisted(() => ({ aliases: new Map<string, string>(), beforeOpen: undefined as (() => Promise<void>) | undefined }))
+const stubs = vi.hoisted(() => ({ aliases: new Map<string, string>(), beforeOpen: undefined as (() => Promise<void>) | undefined, opened: [] as string[] }))
 vi.mock('node:fs/promises', async importOriginal => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
   // What realpath answers is where the system went to find it; what readlink answers is only the link's own words.
@@ -22,6 +24,7 @@ vi.mock('node:fs/promises', async importOriginal => {
   }
   const realpath = async (target: string): Promise<string> => stubs.aliases.get(target) ?? actual.realpath(target)
   const open = async (...args: Parameters<typeof actual.open>) => {
+    if (typeof args[0] === 'string') stubs.opened.push(args[0])
     const hook = stubs.beforeOpen; stubs.beforeOpen = undefined
     await hook?.()
     return actual.open(...args)
@@ -45,6 +48,7 @@ beforeEach(async () => {
   await symlink(elsewhere, join(folder, 'docs', 'prototypes', 'out'), 'junction')
   pages = new ThreadFilePages()
   touched.length = 0
+  stubs.opened.length = 0
 })
 afterEach(async () => {
   pages.dispose()
@@ -111,4 +115,57 @@ it('serves only the file the walk found, when another takes its place before it 
   const response = await fetch(opening.url)
   expect(response.status).toBe(404)
   expect(await response.text()).not.toContain('SECRET')
+})
+
+it('checks the thread\'s folder itself before reading a page directly in it, so a junction put in its place is not followed (review finding)', async () => {
+  await writeFile(join(folder, 'top.html'), '<h1>Top</h1>')
+  const opening = await pages.open('top.html', 'thread', folder)
+  if (!opening?.ok) throw new Error(JSON.stringify(opening))
+  expect((await fetch(opening.url)).status).toBe(200)
+  // The thread's folder itself is moved away and a junction to an outside folder, with a page of the same name, stands in its place.
+  await writeFile(join(elsewhere, 'top.html'), 'SECRET outside top')
+  await rename(folder, join(base, 'moved'))
+  await symlink(elsewhere, folder, 'junction')
+  touched.length = 0
+  const response = await fetch(opening.url)
+  expect(response.status).toBe(404)
+  expect(await response.text()).not.toContain('SECRET')
+  expect(reachedElsewhere()).toEqual([])
+})
+
+it('serves nothing from a new folder made where the thread\'s folder was (review finding)', async () => {
+  await writeFile(join(folder, 'top.html'), '<h1>Top</h1>')
+  const opening = await pages.open('top.html', 'thread', folder)
+  if (!opening?.ok) throw new Error(JSON.stringify(opening))
+  await rename(folder, join(base, 'moved'))
+  await mkdir(folder)
+  await writeFile(join(folder, 'top.html'), 'SECRET new folder')
+  const response = await fetch(opening.url)
+  expect(response.status).toBe(404)
+  expect(await response.text()).not.toContain('SECRET')
+})
+
+it('never opens an entry that is not a plain file, such as a folder named look.css (review finding)', async () => {
+  await mkdir(join(folder, 'docs', 'prototypes', 'look.css'))
+  const opening = await pages.open('docs/prototypes/page.html', 'thread', folder)
+  if (!opening?.ok) throw new Error(JSON.stringify(opening))
+  const response = await fetch(opening.url.replace(/page\.html$/u, 'look.css'))
+  expect(response.status).toBe(404)
+  expect(stubs.opened.filter(opened => opened.endsWith('look.css'))).toEqual([])
+})
+
+it('answers at once for a pipe named look.css, which an open would wait on for a writer (review finding)', async ctx => {
+  // Windows has no named pipes in the file system (its pipes live under \\.\pipe\, which is refused as a device path).
+  if (process.platform === 'win32') { ctx.skip(); return }
+  const fifo = join(folder, 'docs', 'prototypes', 'look.css')
+  execFileSync('mkfifo', [fifo])
+  const opening = await pages.open('docs/prototypes/page.html', 'thread', folder)
+  if (!opening?.ok) throw new Error(JSON.stringify(opening))
+  try {
+    const response = await fetch(opening.url.replace(/page\.html$/u, 'look.css'), { signal: AbortSignal.timeout(5_000) })
+    expect(response.status).toBe(404)
+  } finally {
+    // Were an open waiting on the pipe, a writer lets it go, so a failure here does not hold a worker for the rest of the run.
+    await open(fifo, constants.O_WRONLY | constants.O_NONBLOCK).then(handle => handle.close(), () => undefined)
+  }
 })

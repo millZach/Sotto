@@ -43,6 +43,11 @@ Sol's recheck of that commit found three more, fixed in the commit after it. Eac
 - **The page's folder walked again.** A page's folder replaced by a junction to an outside folder holding a page of the same name answers 404, and nothing there is touched (`threadFilePagesProbes.test.ts`).
 - **The file opened is the file walked.** A file replaced just before it is opened answers 404, not the new contents.
 
+A third check, of that commit, found two more, fixed in the commit after it and tested the same way:
+
+- **The thread's folder itself is checked first.** A page directly in the thread's folder, with that folder then replaced by a junction to an outside folder holding a page of the same name, answers 404 without touching the outside folder. A new folder made where the thread's folder was also serves nothing (`threadFilePagesProbes.test.ts`).
+- **Only plain files are opened.** A folder named `look.css` answers 404 and is never opened. On Linux and macOS, a named pipe called `look.css` answers at once, where a plain open would wait for a writer. That case skips on Windows, which has no named pipes in its file system, so it did not run on this laptop.
+
 The question page tests (`questionPageRoute.test.ts`, `tests/unit/main/questionPages*.test.ts`) and the socket server's tests pass on the shared admission and budget code.
 
 Not checked here: macOS and Linux, and a real provider turn. The spec drives the tool dispatcher directly, as `agent-browser.spec.ts` does, so the agents' use of the new descriptions is not observed. The folder-link cases ran through a junction. File symbolic links need Developer Mode on this computer, so those cases skipped here and run where the system allows them.

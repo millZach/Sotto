@@ -16,8 +16,10 @@ export type QuestionPageTarget =
    * `folder`: the thread's folder, in the file system's own spelling, from which the page's folder is walked again on
    * every request, and `hidden`: which parts of the way from it refuse a file, as admission judged them (`refused` for a
    * thread file page, `git-only` for a question's). Without `folder`, the walk starts at the top of the page folder's drive.
+   * `folderIdentity` is the thread's folder as admission found it: a request is answered only while `folder` is still that
+   * folder, and not a link or junction put in its place.
    */
-  | { readonly kind: 'file'; readonly root: string; readonly file: string; readonly folder?: string; readonly hidden?: 'refused' | 'git-only' }
+  | { readonly kind: 'file'; readonly root: string; readonly file: string; readonly folder?: string; readonly folderIdentity?: FolderIdentity; readonly hidden?: 'refused' | 'git-only' }
   | { readonly kind: 'server'; readonly origin: string }
 
 /** A page named in a question's words or the message before it, before Sotto has checked that it is there. */
@@ -107,22 +109,25 @@ export async function resolveInside(root: string, target: string): Promise<strin
   return 'file' in walked ? walked.file : undefined
 }
 
+/** Who a file is to the file system: its device and file number, and whether it is a plain file (not a folder, pipe or device). */
+export type FileIdentity = { readonly dev: bigint; readonly ino: bigint; readonly regular: boolean }
+
 /** What a walk found: the file, and the identity the file system gave its last part, or why the walk stopped. */
 export type Walked =
-  | { readonly file: string; readonly identity?: { readonly dev: bigint; readonly ino: bigint } }
+  | { readonly file: string; readonly identity?: FileIdentity }
   | { readonly reason: 'outside' | 'missing' }
 
 /** `resolveInside`, saying why it stopped: a part of the way that is not there, or a way that leaves the folder. */
 export async function walkInside(root: string, target: string, hops = LINK_HOPS_MAX): Promise<Walked> {
   if (onShareOrDevice(target) || !path.isAbsolute(target) || !inside(root, target)) return { reason: 'outside' }
   let current = root
-  let identity: { dev: bigint; ino: bigint } | undefined
+  let identity: FileIdentity | undefined
   for (const part of path.relative(root, target).split(path.sep).filter(Boolean)) {
     // `current` is always a path inside the folder with no link on the way, so `next` names one entry of a folder inside it.
     const next = path.join(current, part)
     const info = await lstat(next, { bigint: true }).catch(() => undefined)
     if (!info) return { reason: 'missing' }
-    if (!info.isSymbolicLink()) { current = next; identity = { dev: info.dev, ino: info.ino }; continue }
+    if (!info.isSymbolicLink()) { current = next; identity = { dev: info.dev, ino: info.ino, regular: info.isFile() }; continue }
     if (hops <= 0) return { reason: 'missing' }
     // A Windows junction may read back with the `\\?\` prefix before its drive; anything else after `\\` is a share or device.
     const link = (await readlink(next).catch(() => undefined))?.replace(/^\\\\\?\\(?=[A-Za-z]:\\)/u, '')
@@ -150,6 +155,18 @@ export async function canonicalInside(root: string, target: string): Promise<Wal
   if (!canonical) return { reason: 'missing' }
   if (!inside(root, canonical)) return { reason: 'outside' }
   return walked.identity ? { file: canonical, identity: walked.identity } : { file: canonical }
+}
+
+/** A thread's folder as admission found it: its device and folder number, to know it is still the same folder. */
+export type FolderIdentity = { readonly dev: bigint; readonly ino: bigint }
+
+/**
+ * A folder's identity, read with `lstat` so nothing it might lead to is touched; undefined when it is not a folder itself,
+ * such as a link or a Windows junction standing where the folder was.
+ */
+export async function folderIdentity(folder: string): Promise<FolderIdentity | undefined> {
+  const info = await lstat(folder, { bigint: true }).catch(() => undefined)
+  return info && info.isDirectory() && !info.isSymbolicLink() ? { dev: info.dev, ino: info.ino } : undefined
 }
 
 /** Whether a path inside `folder`, in the file system's own spelling, passes on its way through `.git`, or through any hidden part when `hidden` is refused. */
@@ -223,6 +240,8 @@ export async function foundPages(mentions: readonly PageMention[], folder: strin
   const pages: FoundPage[] = []
   const files = new Set<string>(), origins = new Set<string>()
   const root = folder ? await realpath(folder).catch(() => undefined) : undefined
+  // The folder itself, as found now: each request checks it is still this folder before reading anything in it.
+  const anchor = root ? await folderIdentity(root) : undefined
   for (const mention of mentions) {
     if (pages.length >= QUESTION_PAGES_MAX) break
     if (mention.kind === 'server') {
@@ -235,7 +254,7 @@ export async function foundPages(mentions: readonly PageMention[], folder: strin
       pages.push({ page: { kind: 'server', name: mention.url.host, start }, target: { kind: 'server', origin } })
       continue
     }
-    if (!root) continue
+    if (!root || !anchor) continue
     const written = mention.path.replace(/^~(?=[\\/])/u, '')
     const named = path.isAbsolute(written) ? written : path.resolve(root, written)
     // Nothing outside the folder is looked at, so a network path in what the agent wrote never reaches the network; a
@@ -251,7 +270,7 @@ export async function foundPages(mentions: readonly PageMention[], folder: strin
     }
     if (!file || files.has(file)) continue
     files.add(file)
-    pages.push({ page: { kind: 'file', name: path.basename(file), start: encodeURIComponent(path.basename(file)) }, target: { kind: 'file', root: path.dirname(file), file, folder: root, hidden: 'git-only' } })
+    pages.push({ page: { kind: 'file', name: path.basename(file), start: encodeURIComponent(path.basename(file)) }, target: { kind: 'file', root: path.dirname(file), file, folder: root, folderIdentity: anchor, hidden: 'git-only' } })
   }
   return pages
 }
