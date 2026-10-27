@@ -268,7 +268,7 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
  * otherwise. So the whole control — the word, the line, the chip and the arrival — moves from the frame a level
  * is pressed; the provider is still authoritative, so the level it answers with is what remains, and a refusal
  * takes the press back (ADR-0019). The chip wears the colourway at the model's highest level, and the composer
- * around it reads that mark for its outline and this wrapper's arrival mark for its tide.
+ * around it reads this wrapper's trace mark for its travelling light and its arrival mark for its tide.
  */
 export function EffortPicker({ value, options, disabled, onChange, onUltrathink, hasUltrathink, defaultValue, modelName, ultracodeEffort, label = OPTION_CHIP_NAMES.effort, pending = false, describedBy }: {
   readonly value: string; readonly options: readonly EffortOption[]; readonly disabled: boolean; readonly onChange: (id: string) => void
@@ -294,6 +294,9 @@ export function EffortPicker({ value, options, disabled, onChange, onUltrathink,
   // Named apart from the card's own `shown`, which is the option under the thumb rather than the level set.
   const level = value
   const top = choices.length > 1 && choices[choices.length - 1]?.id === level
+  // The composer's trace lights at the top, and at Max where a level such as Ultracode sits past it (Zach, October 26).
+  // A model that reports one level has no highest level, so a lone Max is not lit either.
+  const trace = top || (choices.length > 1 && level === 'max' && choices.some(option => option.id === 'max'))
   const still = useReducedMotion()
   const arriving = useArrival(top, still)
   useLayoutEffect(() => {
@@ -308,7 +311,7 @@ export function EffortPicker({ value, options, disabled, onChange, onUltrathink,
     document.addEventListener('pointerdown', dismiss, true)
     return () => document.removeEventListener('pointerdown', dismiss, true)
   }, [open])
-  return <div ref={wrapper} className="thread-chip-menu effort-picker-anchor" data-effort-arriving={arriving}
+  return <div ref={wrapper} className="thread-chip-menu effort-picker-anchor" data-effort-arriving={arriving} data-effort-trace={trace}
     onBlur={event => { if (open && !event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false) }}
     onKeyDown={event => { if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() } }}>
     <button ref={trigger} type="button" role="combobox" aria-label={label} title={level === ULTRACODE ? `${label}. ${ultracodeHint()}` : label} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
