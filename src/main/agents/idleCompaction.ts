@@ -25,16 +25,23 @@ export interface IdleCompactionOptions {
   }
   /** The setting, read at every sweep, so turning it off stops the next compaction without a restart. */
   readonly enabled: () => boolean
+  /**
+   * Whether Watcher rests so that its own conversation may be compacted (WatcherService.restsForIdleCompaction), asked at
+   * each sweep and again at dispatch. Absent, as with Watcher off, Watcher's thread is left alone.
+   */
+  readonly watcherAtRest?: (threadId: string) => boolean
   readonly now?: () => number
 }
 
 /**
- * Whether a thread is due for idle compaction now: a Claude project thread that can compact, holds at least
- * {@link IDLE_COMPACTION_MIN_CONTEXT} tokens of context, and last used it between 54 and 59 minutes ago, with nothing
- * running, waiting on the user or queued. Settled, archived and Watcher's own threads are left alone.
+ * Whether a thread is due for idle compaction now: a Claude project thread, or Watcher's conversation, that can compact,
+ * holds at least {@link IDLE_COMPACTION_MIN_CONTEXT} tokens of context, and last used it between 54 and 59 minutes ago,
+ * with nothing running, waiting on the user or queued. Settled and archived threads and Watcher's old conversations are
+ * left alone; Watcher's own is compacted only while Watcher rests too, which the sweep asks.
  */
 export function idleCompactionDue(host: Readonly<AgentHostSnapshot>, thread: Readonly<AgentThread>, now: number): boolean {
-  if (thread.providerId !== 'claude' || (thread.kind ?? 'project') !== 'project') return false
+  const kind = thread.kind ?? 'project'
+  if (thread.providerId !== 'claude' || (kind !== 'project' && kind !== 'watcher')) return false
   if (!capabilitiesForThread(host as AgentHostSnapshot, thread as AgentThread).compact || thread.manualCompactionSupported === false || thread.nativeSessionStarted === false) return false
   if (isThreadClosed(thread) || isWorkspaceThreadSettled(thread, host.projects.find(project => project.id === thread.projectId))) return false
   if (isThreadTurnRunning(thread) || thread.status !== 'idle' || thread.requests.length || compactionPending(thread.compaction)) return false
@@ -138,5 +145,6 @@ export class IdleCompaction {
     const thread = host.threads.find(item => item.id === threadId)
     return thread !== undefined && idleCompactionDue(host, thread, this.now())
       && !this.options.control.hasUserDraft(threadId) && !(queue && this.options.control.hasPendingThreadWork(threadId))
+      && (thread.kind !== 'watcher' || this.options.watcherAtRest?.(threadId) === true)
   }
 }

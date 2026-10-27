@@ -43,7 +43,7 @@ describe('MenuBarOwlSettings', () => {
   it('shows both groups on a Mac with the Owl feature on, pressed state from settings', () => {
     setup({ settings: { menuBarOwlBody: 'ink', menuBarOwlEyes: 'amber' } })
     expect(owlHeading()).toBeVisible()
-    expect(screen.getByText('The owl perched on a branch in your menu bar.')).toBeVisible()
+    expect(screen.getByText("The owl's eyes in the dark side of a crescent moon, in your menu bar. Owl body colors the moon.")).toBeVisible()
     const body = screen.getByRole('group', { name: 'Body' })
     const eyes = screen.getByRole('group', { name: 'Eyes' })
     expect(within(body).getAllByRole('button')).toHaveLength(3)

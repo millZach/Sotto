@@ -1,3 +1,5 @@
+import { i18n } from '@lingui/core'
+import { msg, t } from '@lingui/core/macro'
 import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 import { startsThread } from '../../shared/threadStarts'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
@@ -22,10 +24,11 @@ import { toolsResultSchema, type ToolListRequest, type ToolsResult } from '../..
 import { hostSignInSchema, type HostSignIn } from '../../shared/hostProviders'
 import { OPENCODE_HOST_ANSWERS, type OpenCodeHostAnswer, type OpenCodeHostCall } from '../../shared/opencodeSignIn'
 import type { AgentThread, ProviderId } from '../../shared/agents'
-import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, HOST_BUSY, hostAttachmentContentSchema, hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema, hostActivityBodySchema, hostThreadPromptsSchema, PROVIDER_HOST_FEATURES, HOST_FILE_PART_BYTES } from '../../shared/hostProtocol'
+import { CONNECT_FAILURES, WordedError, type FailureWords } from '../hosts/hostFailureWords'
+import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, hostAttachmentContentSchema, hostIsNewer, hostIsOlder, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema, hostActivityBodySchema, hostThreadPromptsSchema, PROVIDER_HOST_FEATURES, HOST_FILE_PART_BYTES } from '../../shared/hostProtocol'
 import type { AgentActivity } from '../../shared/agentActivity'
 import type { HostFeature, HostAnswerTarget, HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
-import type { HostService, ClientIdentity, RequestAnswerRecovery } from './hostService'
+import type { HostService, ClientIdentity, DelegationViewsChange, RequestAnswerRecovery } from './hostService'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
 import { compareOwlHostTarget } from '../../shared/hostUpdates'
 import { getReleaseTrack } from '../../shared/releaseTrack'
@@ -35,12 +38,16 @@ import { RetainedDraftStore, type RetainedDraft } from './retainedDraftStore'
 import { heldProviderOfWatcherRequest, heldProviderRefusedBy, heldWatcherRefusal, rememberDormantProviderThreads, type DormantProviderThread } from './heldProviderGate'
 import { heldProviderRefusal, heldProvidersOption, type HeldProviderNames, type HeldProviders } from '../../shared/heldProviders'
 import { hostMachineReportSchema, type HostMachineReport } from '../../shared/hostFacts'
-import type { HostBranchMoveRequest } from '../../shared/branchMoves'
+import { branchMoveStepTimeoutMs, type HostBranchMoveRequest } from '../../shared/branchMoves'
+import { HOST_UPDATE_ANSWER_DEADLINES_MS, hostUpdateAnswerSchema, type HostUpdateAnswer, type HostUpdateRequest } from '../../shared/hostSelfUpdate'
+import type { HostUpdateStep } from '../../shared/hostUpdates'
 import { projectOriginsSchema, type ProjectOrigins } from '../../shared/workerMachine'
+import { desktopDefaultsReceiptSchema, type DesktopDefaultsInput, type DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
+import { delegationBriefSchema, delegationsReadSchema, type DelegationBrief, type DelegationsRead } from '../../shared/delegation'
 import { usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, usageProvidersBeforeMuse, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
 
 export const REMOTE_COMPOSE_UNSAVED = 'This host cannot save this draft yet. Your draft is kept on this computer and has not been saved on the host. Update the host.'
-const REMOTE_SEND_UNCERTAIN = 'This draft may already have been sent. Your copy is kept on this computer. Check the original thread before sending again.'
+const REMOTE_SEND_UNCERTAIN = msg`This draft may already have been sent. Your copy is kept on this computer. Check the original thread before sending again.`
 
 const COMPOSE_WIRE_LIMIT = 2
 type TargetedCompose = Extract<AgentCommand, { type: 'compose' }> & { threadId: string }
@@ -49,22 +56,51 @@ type ComposeBatch = { command: TargetedCompose; draftId: string; commandId?: str
 
 /** `version_mismatch` is this client's own finding, never a code on the wire: the host speaks a protocol it cannot use. */
 export class HostConnectionError extends Error {
-  constructor(message: string, readonly code: HostErrorCode | 'disconnected' | 'version_mismatch', readonly commandId?: string, readonly pairingRequired = false) { super(message) }
+  /** Sotto's words for it, when it is one of a connect's failures, so the row, Add host and an agent each say it their way. */
+  readonly words?: FailureWords
+  constructor(message: string | FailureWords, readonly code: HostErrorCode | 'disconnected' | 'version_mismatch', readonly commandId?: string, readonly pairingRequired = false) {
+    super(typeof message === 'string' ? message : i18n._(message.saved))
+    if (typeof message !== 'string') this.words = message
+  }
+}
+/**
+ * A request the host never answered, by where it stopped: never sent (no connection, or the socket would not take it),
+ * the connection closed while it waited, or its deadline passed. Its code is `disconnected`, as before, so everything that
+ * reads the code reads it as it did; only a caller that must know whether the host may have acted reads `stage`.
+ */
+export class HostRequestUnanswered extends HostConnectionError {
+  constructor(message: string | FailureWords, readonly stage: 'unsent' | 'closed' | 'timeout', commandId?: string) { super(message, 'disconnected', commandId) }
+}
+/**
+ * Why a host update step asked over the socket has no answer (ADR-0088): the host refused it, by its code; it never went;
+ * the host answered with a failure of its own (`failed`: it could not run the step, or answered something this client
+ * cannot read), so it may have acted on it; the connection closed before its answer; or its deadline passed.
+ * `hostSelfUpdateRoute.ts` decides what each leads to.
+ */
+export type HostUpdateMiss = 'forbidden' | 'invalid_request' | 'version_mismatch' | 'busy' | 'unsent' | 'failed' | 'closed' | 'timeout'
+export class HostUpdateMissed extends Error {
+  constructor(readonly miss: HostUpdateMiss) { super('The host did not answer this update step.') }
 }
 /**
  * The host did not answer a request in time. Unlike a closed connection, which ends what the host was doing for it, the
  * host may still be carrying the request out, so a caller that counts work there keeps counting it (#1311).
  */
-export class HostRequestTimeoutError extends HostConnectionError {
+export class HostRequestTimeoutError extends HostRequestUnanswered {
   readonly timedOut = true
+  constructor(message: string | FailureWords, commandId?: string) { super(message, 'timeout', commandId) }
 }
 /** The address answered as a host other than the one expected. Nothing of this computer's pairing was sent to its session. */
 export class WrongHostError extends HostConnectionError {
-  constructor(message = 'This address belongs to a different host. Check the connection before continuing.') { super(message, 'unauthenticated') }
+  constructor(message: string | FailureWords = CONNECT_FAILURES.wrongHost()) { super(message, 'unauthenticated') }
 }
 export interface SocketHostServiceOptions {
   url: string; token: string; expectedHostId?: string
   watcherEnabled?: boolean
+  /**
+   * Work across machines (#1032, #1310), as this computer's Owl list answers it at start: only then does this desktop accept
+   * `delegation-views` and read a host's own threads' delegations. Stable reads none and is pushed none.
+   */
+  crossMachineEnabled?: boolean
   streamingPublishCost?: boolean
   /** The providers held to Owl on this run (ADR-0072); absent holds every one. */
   heldProviders?: HeldProviders
@@ -111,8 +147,8 @@ const field = (value: unknown, key: string): unknown => value !== null && typeof
  * the pairing: the host knows this client but will not take it here, as a tailnet listener refuses a client it does not
  * know as a desktop while phone access is off (ADR-0053).
  */
-const refusal = (status: number, otherwise: string, code: HostErrorCode, pairingRequired = false): HostConnectionError =>
-  status === 429 ? new HostConnectionError(HOST_BUSY, 'busy') : status === 403 ? new HostConnectionError('This host refused this device here. The pairing is kept.', 'forbidden')
+const refusal = (status: number, otherwise: string | FailureWords, code: HostErrorCode, pairingRequired = false): HostConnectionError =>
+  status === 429 ? new HostConnectionError(CONNECT_FAILURES.busy(), 'busy') : status === 403 ? new HostConnectionError(CONNECT_FAILURES.refusedDevice(), 'forbidden')
     : new HostConnectionError(otherwise, code, undefined, pairingRequired)
 /** A transport cache, not a second coordinator. Losing a socket never replays a command. */
 export class SocketHostService implements HostService {
@@ -156,10 +192,15 @@ export class SocketHostService implements HostService {
   /** The providers held to Owl on this run, read once at start. */
   private readonly held: HeldProviders
   private readonly watcherListeners = new Set<(projection: WatcherHostProjection) => void>()
+  private readonly delegationListeners = new Set<(change: DelegationViewsChange) => void>()
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
   private readonly pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; command: boolean }>()
   private connecting: Promise<HostHello> | undefined
+  /** Told each `host-update-step` push while the host update step this client asked for runs (ADR-0088). */
+  private readonly updateSteps = new Set<(step: HostUpdateStep) => void>()
+  /** Told once the connection that was open when they asked, the key, has closed. */
+  private readonly dropWaiters = new Map<SocketFrames, Set<() => void>>()
   private observed: string[] = []
   /** Whether this desktop's window has the focus, so its observed threads are shown (ADR-0046, ADR-0092). */
   private shown = true
@@ -183,7 +224,7 @@ export class SocketHostService implements HostService {
   constructor(private readonly options: SocketHostServiceOptions) {
     this.held = heldProvidersOption(options)
     if (options.watcherEnabled === true && options.streamingPublishCost === true) this.watcherRoomThreads = ids => {
-      if (!this.cached) throw new Error('Connect to the host before reading its state.')
+      if (!this.cached) throw new Error(t`Connect to the host before reading its state.`)
       return watcherRoomInputs(this.cached.host, ids, this.held, this.dormantProviderThreads)
     }
     this.endpoint('/v1/health'); this.retainedDrafts = options.retainedDrafts ?? new RetainedDraftStore({ watcherEnabled: options.watcherEnabled === true, heldProviders: this.held })
@@ -201,7 +242,8 @@ export class SocketHostService implements HostService {
     const thread = this.cached?.host.threads.find(thread => thread.id === threadId)
     const provider = threadId ? this.dormantProviderThreads.get(threadId)?.provider : undefined
     const owner = provider ?? (thread ? requestDraftProvider(this.cached!.host, thread, this.cached!.configuration.provider) : undefined)
-    return `${owner && this.held.has(owner) ? PROVIDER_LABELS[owner] : 'Watcher'} is available in Sotto Owl. Nothing was sent.`
+    const name = owner && this.held.has(owner) ? PROVIDER_LABELS[owner] : 'Watcher'
+    return t`${name} is available in Sotto Owl. Nothing was sent.`
   }
   private requireCommandAvailable(command: AgentCommand): void {
     const held = heldProviderRefusedBy(command, this.held, this.cached?.host)
@@ -224,15 +266,15 @@ export class SocketHostService implements HostService {
    */
   static async pair(url: string, code: string, name: string): Promise<HostPairing> {
     const endpoint = new SocketHostService({ url, token: '' }).endpoint('/v1/pair')
-    if (endpoint.protocol !== 'http:' || !LOOPBACK.has(endpoint.hostname)) throw new Error('This computer pairs with a host only through its SSH connection. Nothing was sent. Connect again over SSH.')
+    if (endpoint.protocol !== 'http:' || !LOOPBACK.has(endpoint.hostname)) throw new WordedError(CONNECT_FAILURES.pairsOverSsh())
     const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ v: 1, code, name }), signal: AbortSignal.timeout(15000), redirect: 'error' })
-    if (!response.ok) throw refusal(response.status, 'This pairing code could not be used. Make a new code on the host and try again.', 'unauthenticated')
+    if (!response.ok) throw refusal(response.status, CONNECT_FAILURES.pairingCodeUnused(), 'unauthenticated')
     return hostPairingSchema.parse(await response.json())
   }
   private endpoint(path: string): URL {
     const url = new URL(path, this.options.url)
-    if (url.username || url.password || !['http:', 'https:'].includes(url.protocol)) throw new Error('Use a host HTTP or HTTPS address without credentials in its URL.')
-    if (url.protocol === 'http:' && !LOOPBACK.has(url.hostname)) throw new Error('A remote host address must use HTTPS.')
+    if (url.username || url.password || !['http:', 'https:'].includes(url.protocol)) throw new WordedError(CONNECT_FAILURES.addressCredentials())
+    if (url.protocol === 'http:' && !LOOPBACK.has(url.hostname)) throw new WordedError(CONNECT_FAILURES.addressHttps())
     return url
   }
   connect(): Promise<HostHello> {
@@ -253,24 +295,24 @@ export class SocketHostService implements HostService {
     // The host says what it speaks before anything is sent to it, so a host of another version is named
     // as one instead of answering a request it cannot read with a refusal or a closed socket.
     const healthResponse = await fetch(this.endpoint('/v1/health'), { signal: AbortSignal.any([opening.signal, AbortSignal.timeout(this.options.healthTimeoutMs ?? 15000)]), redirect: 'error' })
-    if (generation !== this.generation) throw new HostConnectionError('This host connection was closed.', 'disconnected')
-    if (!healthResponse.ok) throw new HostConnectionError('The host did not answer its health check. Connect again.', 'unavailable')
+    if (generation !== this.generation) throw new HostConnectionError(CONNECT_FAILURES.connectionClosed(), 'disconnected')
+    if (!healthResponse.ok) throw new HostConnectionError(CONNECT_FAILURES.healthCheck(), 'unavailable')
     const healthBody: unknown = await healthResponse.json().catch(() => null)
     const health = hostHealthFeatures(healthBody)
     if (!health) {
       // A host of another protocol version may still say which Sotto it runs, which decides the way out.
       const advertised = healthBody !== null && typeof healthBody === 'object' && 'sottoVersion' in healthBody ? healthBody.sottoVersion : undefined
       this.hostVersion = typeof advertised === 'string' ? advertised : undefined
-      throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+      throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     }
     this.hostVersion = health.sottoVersion; this.features = []
     // A host that says it is another one is not sent this device's token at all.
     if (this.options.expectedHostId && health.hostId !== this.options.expectedHostId) throw new WrongHostError()
     const response = await fetch(this.endpoint('/v1/session'), { method: 'POST', headers: { Authorization: 'Bearer ' + this.options.token }, signal: AbortSignal.any([opening.signal, AbortSignal.timeout(15000)]), redirect: 'error' })
-    if (generation !== this.generation) throw new HostConnectionError('This host connection was closed.', 'disconnected')
-    if (!response.ok) throw refusal(response.status, 'This device needs to connect again or be paired on the host.', 'unauthenticated', response.status === 401)
+    if (generation !== this.generation) throw new HostConnectionError(CONNECT_FAILURES.connectionClosed(), 'disconnected')
+    if (!response.ok) throw refusal(response.status, CONNECT_FAILURES.needsPairing(), 'unauthenticated', response.status === 401)
     const session = hostSessionSchema.parse(await response.json())
-    if (session.v !== 1 || typeof session.session !== 'string') throw new HostConnectionError('The host answered with something else. Connect again.', 'unauthenticated')
+    if (session.v !== 1 || typeof session.session !== 'string') throw new HostConnectionError(CONNECT_FAILURES.answeredElse(), 'unauthenticated')
     if (this.options.expectedHostId && session.hostId !== this.options.expectedHostId) throw new WrongHostError()
     this.session = session
     this.details.clear(); this.tooLarge.clear(); this.lateDetails.clear(); this.behind.clear(); this.catalog = undefined
@@ -279,12 +321,12 @@ export class SocketHostService implements HostService {
     const upgrade = (offer: boolean) => new Promise<SocketFrames | 'refused'>((resolve, reject) => {
       const request = (url.protocol === 'https:' ? httpsRequest : httpRequest)(url, { signal: opening.signal, headers: { Upgrade: 'websocket', Connection: 'Upgrade', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': key, ...offer ? { 'Sec-WebSocket-Extensions': DEFLATE_OFFER } : {}, Authorization: 'Bearer ' + session.session } })
       request.setTimeout(15000, () => request.destroy(new Error('Host connection timed out.')))
-      request.on('error', () => reject(new HostConnectionError('The host connection could not be opened.', 'disconnected')))
-      request.on('response', response => { response.resume(); reject(refusal(response.statusCode ?? 503, 'The host refused this connection. Connect again.', 'unavailable')) })
+      request.on('error', () => reject(new HostConnectionError(CONNECT_FAILURES.notOpened(), 'disconnected')))
+      request.on('response', response => { response.resume(); reject(refusal(response.statusCode ?? 503, CONNECT_FAILURES.refusedConnection(), 'unavailable')) })
       request.on('upgrade', (response, stream, head) => {
         // A host from before compression answers without the extension, and its messages are read as they come.
         const deflate = offer ? deflateAccepted(response.headers['sec-websocket-extensions']) : false
-        if (response.headers['sec-websocket-accept'] !== expected) { stream.destroy(); reject(new HostConnectionError('The host did not accept this protocol.', 'invalid_request')); return }
+        if (response.headers['sec-websocket-accept'] !== expected) { stream.destroy(); reject(new HostConnectionError(CONNECT_FAILURES.protocol(), 'invalid_request')); return }
         // An answer to compression this desktop never offered fails that connection (RFC 7692 section 5); the next one
         // asks for none, so a host or a proxy that gets the extension wrong still connects, as one from before it does.
         if (deflate === 'invalid') { stream.destroy(); resolve('refused'); return }
@@ -299,16 +341,16 @@ export class SocketHostService implements HostService {
     })
     const offered = await upgrade(true)
     const opened = offered === 'refused' ? await upgrade(false) : offered
-    if (opened === 'refused') throw new HostConnectionError('The host did not accept this protocol.', 'invalid_request')
+    if (opened === 'refused') throw new HostConnectionError(CONNECT_FAILURES.protocol(), 'invalid_request')
     this.frames = opened
-    if (generation !== this.generation) { this.frames.close(); throw new HostConnectionError('This host connection was closed.', 'disconnected') }
+    if (generation !== this.generation) { this.frames.close(); throw new HostConnectionError(CONNECT_FAILURES.connectionClosed(), 'disconnected') }
     try {
       // This desktop knows every provider Sotto has, OpenCode among them, so it accepts each one's feature (#1107); a provider
       // held on this run is hidden here as on this computer, by the held gate.
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'activity-bodies', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
-      if (hello.hostId !== session.hostId) throw new HostConnectionError('The host identity changed. Connect again.', 'unauthenticated')
+      if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
       this.hostVersion = hello.sottoVersion; this.features = hello.features
       this.publish(this.read(protocolAgentStateSchema, hello.shell), true)
       if (this.catchesUp) {
@@ -329,17 +371,25 @@ export class SocketHostService implements HostService {
     } catch (error) { this.frames?.close(); throw error }
   }
   private disconnected(frames: SocketFrames): void {
+    // Only the waiters on this connection: a late close of an earlier one says nothing about the one open now.
+    const waiters = this.dropWaiters.get(frames)
+    this.dropWaiters.delete(frames)
+    for (const resolve of waiters ?? []) resolve()
     this.cachedWatcher = undefined
     if (this.frames !== frames) return
     this.frames = undefined
     this.resetComposeQueue()
     for (const [id, item] of this.pending) {
       clearTimeout(item.timer)
-      item.reject(new HostConnectionError(item.command ? 'The connection closed before the host confirmed this command. Refresh before deciding what to do next.' : 'The host connection closed. Connect again to refresh.', 'disconnected', item.command ? id : undefined))
+      item.reject(new HostRequestUnanswered(item.command ? CONNECT_FAILURES.closedCommand() : CONNECT_FAILURES.closedRefresh(), 'closed', item.command ? id : undefined))
     }
     this.pending.clear(); this.lateDetails.clear(); this.behind.clear(); this.confirmedObserved = new Set()
     if (this.cached) this.publish({ ...this.cached, stale: true })
     this.options.onConnectionChange?.(false)
+    if (this.options.crossMachineEnabled === true) this.delegationsChanged({ connected: false })
+  }
+  private delegationsChanged(change: DelegationViewsChange): void {
+    for (const listener of [...this.delegationListeners]) { try { listener(change) } catch { /* A listener's failure is its own. */ } }
   }
   private receive(text: string): void {
     let raw: unknown
@@ -369,8 +419,9 @@ export class SocketHostService implements HostService {
         }
         else if (message.event === 'detail') this.cacheDetail(message.threadId, message.detail)
         else if (message.event === 'detail-delta') this.applyDelta(message.threadId, message.delta)
-        // Sent only to a client whose hello accepts `host-update` (ADR-0088), which this one does not ask for yet.
-        else if (message.event === 'host-update-step') return
+        // Sent only to a client whose hello accepts `host-update` (ADR-0088), for the update step it asked for.
+        else if (message.event === 'host-update-step') { for (const listener of this.updateSteps) listener(message.step) }
+        else if (message.event === 'delegations-changed') { if (this.supportsDelegationViews) this.delegationsChanged({ threadIds: message.threadIds }) }
         else { this.pushErrorThread = message.threadId ?? null; if (message.threadId) this.tooLarge.add(message.threadId); this.options.onPushError?.(message.error.message) }
       } else {
         const pending = this.pending.get(message.id)
@@ -378,7 +429,7 @@ export class SocketHostService implements HostService {
         this.pending.delete(message.id); clearTimeout(pending.timer)
         if (message.ok) pending.resolve(message.result)
         // A host of another version refusing a request as unreadable is version skew, not a bad request.
-        else if (message.error.code === 'invalid_request' && this.skewed()) pending.reject(new HostConnectionError(this.mismatch(), 'version_mismatch', pending.command ? message.id : undefined))
+        else if (message.error.code === 'invalid_request' && this.skewed()) pending.reject(new HostConnectionError(this.mismatchWords(), 'version_mismatch', pending.command ? message.id : undefined))
         else pending.reject(new HostConnectionError(message.error.message, message.error.code, pending.command ? message.id : undefined))
       }
     } catch { this.frames?.close() }
@@ -395,7 +446,7 @@ export class SocketHostService implements HostService {
     // The sentence names no thread and no shell, so no arrival clears it; only a new connection does.
     if (id === undefined || !pending) { this.pushErrorThread = undefined; this.options.onPushError?.(this.mismatch()); return }
     this.pending.delete(id); clearTimeout(pending.timer)
-    pending.reject(new HostConnectionError(this.mismatch(), 'version_mismatch', pending.command ? id : undefined))
+    pending.reject(new HostConnectionError(this.mismatchWords(), 'version_mismatch', pending.command ? id : undefined))
   }
   /** Keeps the answer to a thread read that timed out, as the answer in time would have been kept. */
   private lateDetail(message: HostResponse): void {
@@ -428,9 +479,16 @@ export class SocketHostService implements HostService {
    * The version sentence for this host, which says which side to bring up to date. A host already on the version this
    * computer is downloading needs nothing: this computer's restart brings the two together.
    */
-  private mismatch(): string {
-    if (this.aheadForRestart()) return `This host already runs Sotto ${this.hostVersion}, which this computer installs when Sotto restarts. Nothing on the host was lost. Restart Sotto to finish its update, then try again.`
-    return hostVersionMismatch(this.clientVersion, this.hostVersion, this.options.owned ?? false, this.hostIsNewer())
+  /** The version sentence for this host, in the interface language shown now. */
+  private mismatch(): string { return i18n._(this.mismatchWords().saved) }
+  private mismatchWords(): FailureWords {
+    const version = this.hostVersion
+    if (this.aheadForRestart() && version !== undefined) return CONNECT_FAILURES.aheadForRestart(version)
+    if (this.hostIsNewer()) return CONNECT_FAILURES.newerHost()
+    // A host that said which older Sotto it runs is offered an update on the Threads page (ADR-0040).
+    const client = this.clientVersion, owned = this.options.owned ?? false
+    if (hostIsOlder(this.hostVersion, client)) return owned ? CONNECT_FAILURES.olderOwned(client) : CONNECT_FAILURES.olderNotOwned(client)
+    return owned ? CONNECT_FAILURES.differentOwned(client) : CONNECT_FAILURES.differentNotOwned(client)
   }
   /** Whether the host runs the version this computer's waiting update brings, ahead of this computer (ADR-0077). */
   aheadForRestart(): boolean { return this.hostVersion !== undefined && this.hostVersion !== this.clientVersion && this.hostVersion === this.options.waitingVersion?.() }
@@ -449,7 +507,7 @@ export class SocketHostService implements HostService {
   private read<T>(schema: z.ZodType<T>, value: unknown): T {
     const parsed = schema.safeParse(value)
     if (parsed.success) return parsed.data
-    if (this.skewed()) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    if (this.skewed()) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     throw parsed.error
   }
   /**
@@ -459,7 +517,7 @@ export class SocketHostService implements HostService {
    * miss; a delta that what is held already covers is dropped.
    */
   private applyDelta(threadId: string, delta: AgentThreadDetailDelta): void {
-    if (delta.threadId !== threadId) throw new HostConnectionError('The host returned a different thread. Refresh before continuing.', 'invalid_request')
+    if (delta.threadId !== threadId) throw new HostConnectionError(t`The host returned a different thread. Refresh before continuing.`, 'invalid_request')
     if (!this.threadAvailable(threadId)) return
     const held = this.details.get(threadId)
     if (held && delta.revision <= held.revision) return
@@ -515,23 +573,23 @@ export class SocketHostService implements HostService {
       : 'answer' in operation && operation.answer && 'threadId' in operation.answer ? operation.answer.threadId : operation.op === 'command' ? this.commandThreadId(operation.command) : undefined
     if (!this.threadAvailable(threadId)) return Promise.reject(new Error(this.threadRefusal(threadId)))
     const frames = this.frames, session = this.session
-    if (!frames || !session) return Promise.reject(new HostConnectionError('The host is disconnected. Connect again before sending.', 'disconnected'))
-    if (this.pending.has(id) || this.pending.size >= 32) return Promise.reject(new HostConnectionError('Wait for the pending host request to finish.', 'busy'))
+    if (!frames || !session) return Promise.reject(new HostRequestUnanswered(CONNECT_FAILURES.requestDisconnected(), 'unsent'))
+    if (this.pending.has(id) || this.pending.size >= 32) return Promise.reject(new HostConnectionError(CONNECT_FAILURES.requestPending(), 'busy'))
     return new Promise((resolve, reject) => {
       const command = operation.op === 'command'
       const timer = setTimeout(() => {
         this.pending.delete(id)
         if (operation.op === 'detail') { this.lateDetails.set(id, operation.threadId); if (this.lateDetails.size > 32) this.lateDetails.delete(this.lateDetails.keys().next().value!) }
-        reject(new HostRequestTimeoutError(command ? 'The host has not confirmed this command. Refresh before deciding what to do next.' : 'The host did not answer in time. Try refreshing.', 'disconnected', command ? id : undefined))
+        reject(new HostRequestTimeoutError(command ? CONNECT_FAILURES.commandUnconfirmed() : CONNECT_FAILURES.requestTimeout(), command ? id : undefined))
       }, timeoutMs)
       this.pending.set(id, { resolve, reject, timer, command })
       onPlacement?.()
-      if (!frames.send({ v: 1, id, session: session.session, ...operation })) { clearTimeout(timer); this.pending.delete(id); reject(new HostConnectionError('The connection closed before this request could be confirmed.', 'disconnected', command ? id : undefined)) }
+      if (!frames.send({ v: 1, id, session: session.session, ...operation })) { clearTimeout(timer); this.pending.delete(id); reject(new HostRequestUnanswered(CONNECT_FAILURES.closedBeforeConfirmed(), 'unsent', command ? id : undefined)) }
     })
   }
   private validateState(state: AgentState): void {
     const hostId = this.session?.hostId
-    if (hostId && (state.hostId !== hostId || state.host.hostId !== hostId || state.host.threads.some(thread => thread.hostId && thread.hostId !== hostId) || state.host.projects.some(project => project.hostId && project.hostId !== hostId))) throw new HostConnectionError('The host returned another host identity. Reconnect before continuing.', 'unauthenticated')
+    if (hostId && (state.hostId !== hostId || state.host.hostId !== hostId || state.host.threads.some(thread => thread.hostId && thread.hostId !== hostId) || state.host.projects.some(project => project.hostId && project.hostId !== hostId))) throw new HostConnectionError(CONNECT_FAILURES.anotherIdentity(), 'unauthenticated')
   }
   private preserveConnectionFeedback(previous: string): void {
     for (const text of this.quietConnectionNotices.keys()) this.quietConnectionNotices.set(text, previous)
@@ -581,7 +639,7 @@ export class SocketHostService implements HostService {
   private notifyState(): void { for (const listener of this.listeners) listener(this.state()) }
   private clearPushError(): void { this.pushErrorThread = undefined; this.options.onPushErrorCleared?.() }
   private cacheDetail(threadId: string, detail: AgentThreadDetail | null): void {
-    if (detail && detail.threadId !== threadId) throw new HostConnectionError('The host returned a different thread. Refresh before continuing.', 'invalid_request')
+    if (detail && detail.threadId !== threadId) throw new HostConnectionError(t`The host returned a different thread. Refresh before continuing.`, 'invalid_request')
     if (!this.threadAvailable(threadId)) return
     const current = this.details.get(threadId)
     if (detail && current && detail.revision < current.revision) return
@@ -589,7 +647,7 @@ export class SocketHostService implements HostService {
     if (detail) for (const listener of this.detailListeners) listener(detail)
     if (this.pushErrorThread === threadId) this.clearPushError()
   }
-  private sameGeneration(generation: number): void { if (generation !== this.generation) throw new HostConnectionError('This result belongs to an earlier connection. Refresh the host.', 'disconnected') }
+  private sameGeneration(generation: number): void { if (generation !== this.generation) throw new HostConnectionError(CONNECT_FAILURES.earlierConnection(), 'disconnected') }
   private cacheEvents(page: HostEventPage, advance = true): void {
     for (const event of page.events) if (this.threadAvailable(event.threadId)) this.storedEvents.set(event.seq, event)
     if (advance) this.latestSeq = Math.max(this.latestSeq, page.latestSeq)
@@ -603,11 +661,11 @@ export class SocketHostService implements HostService {
   readonly watcherRoomThreads?: (threadIds: readonly string[]) => WatcherRoomThreadInput[]
   /** A thread's kind from the cached shell, without copying it; before a shell arrives it refuses as `shell()` does (#917). */
   threadKind(threadId: string): AgentThread['kind'] {
-    if (!this.cached) throw new Error('Connect to the host before reading its state.')
+    if (!this.cached) throw new Error(t`Connect to the host before reading its state.`)
     return this.cached.host.threads.find(thread => thread.id === threadId)?.kind
   }
   shell(): AgentState {
-    if (!this.cached) throw new Error('Connect to the host before reading its state.')
+    if (!this.cached) throw new Error(t`Connect to the host before reading its state.`)
     return this.withRetained(structuredClone(this.cached))
   }
   /**
@@ -617,7 +675,7 @@ export class SocketHostService implements HostService {
    * remote host's state on every change of any host (October 19, 2026).
    */
   view(): AgentState {
-    if (!this.cached) throw new Error('Connect to the host before reading its state.')
+    if (!this.cached) throw new Error(t`Connect to the host before reading its state.`)
     return this.withRetained({ ...this.cached })
   }
   /** The shell as this desktop shows it: the drafts it holds for the host laid over the host's own state. */
@@ -638,7 +696,7 @@ export class SocketHostService implements HostService {
       const edit = this.retainedDrafts.get(this.retainedHostId(), refusal.threadId)
       if (edit && !edit.saved && edit.draft.draftId === refusal.draftId) state.error = refusal.message
     }
-    if (!state.error && this.retainedDrafts.list(this.retainedHostId()).some(edit => edit.sendAttempt)) state.error = REMOTE_SEND_UNCERTAIN
+    if (!state.error && this.retainedDrafts.list(this.retainedHostId()).some(edit => edit.sendAttempt)) state.error = i18n._(REMOTE_SEND_UNCERTAIN)
     return state
   }
   threadDetail(threadId: string): AgentThreadDetail | null { if (!this.threadAvailable(threadId)) return null; return structuredClone(this.details.get(threadId) ?? null) }
@@ -663,7 +721,7 @@ export class SocketHostService implements HostService {
   async checkRequestAnswer(answer: HostAnswerTarget, _client?: ClientIdentity): Promise<void> {
     void _client // The socket's authenticated pairing supplies authority on the host.
     if (!this.threadAvailable(answer.threadId)) throw new Error(this.threadRefusal(answer.threadId))
-    if (!this.features.includes('answer-check')) throw new Error('Update the host before checking this unconfirmed answer. Your saved answer is kept.')
+    if (!this.features.includes('answer-check')) throw new Error(t`Update the host before checking this unconfirmed answer. Your saved answer is kept.`)
     this.flushCompose()
     const generation = this.generation
     const state = this.read(protocolAgentStateSchema, await this.call({ op: 'check-answer', answer }))
@@ -695,7 +753,7 @@ export class SocketHostService implements HostService {
   }
   async watcherControl(request: WatcherHostControl, _client?: ClientIdentity, guard?: () => void): Promise<unknown> {
     void _client // The socket's authenticated pairing supplies authority on the host.
-    if (!this.supportsWatcherControl || !this.supportsWatcherReads) throw new HostConnectionError('Update this host before Watcher directs its threads. Nothing was sent.', 'invalid_request')
+    if (!this.supportsWatcherControl || !this.supportsWatcherReads) throw new HostConnectionError(t`Update this host before Watcher directs its threads. Nothing was sent.`, 'invalid_request')
     const held = this.heldWatcherProvider(request)
     if (held) return heldWatcherRefusal(held)
     guard?.()
@@ -708,8 +766,8 @@ export class SocketHostService implements HostService {
       && JSON.stringify(projection.master) === JSON.stringify(master) ? projection : undefined
   }
   async watcherRead(request: WatcherHostRead): Promise<unknown> {
-    if (!this.supportsWatcherReads) throw new HostConnectionError('Update this host before Watcher reads its threads.', 'invalid_request')
-    if (request.standingWatches !== undefined && !this.supportsWatcherStandingWatch) throw new HostConnectionError('Update this host before Watcher watches its threads. Nothing was changed.', 'invalid_request')
+    if (!this.supportsWatcherReads) throw new HostConnectionError(t`Update this host before Watcher reads its threads.`, 'invalid_request')
+    if (request.standingWatches !== undefined && !this.supportsWatcherStandingWatch) throw new HostConnectionError(t`Update this host before Watcher watches its threads. Nothing was changed.`, 'invalid_request')
     const held = this.heldWatcherProvider(request)
     if (held) return heldWatcherRefusal(held)
     const result = await this.call({ op: 'watcher-read', request })
@@ -720,6 +778,8 @@ export class SocketHostService implements HostService {
   get supportsDraftRevisions(): boolean { return this.features.includes('draft-revisions') }
   /** The host lists `pull-request-babysit`: it babysits and takes the user's Babysit pull request (ADR-0061 decision 11). */
   get supportsBabysitting(): boolean { return this.features.includes('pull-request-babysit') }
+  /** The host lists `thread-delete`: it deletes one of its settled threads when asked (ADR-0140). */
+  get supportsThreadDelete(): boolean { return this.features.includes('thread-delete') }
   async command(command: AgentCommand, _client?: ClientIdentity, commandId?: string): Promise<AgentState> {
     this.requireCommandAvailable(command)
     const refusal = managementCommandRefusal(command)
@@ -730,7 +790,8 @@ export class SocketHostService implements HostService {
     this.recoveryError = undefined
     const admitted = structuredClone(command)
     // A host from before babysitting would refuse the command with no word of why; this says which side to update.
-    if ((admitted.type === 'babysit-pull-request' || admitted.type === 'stop-babysitting') && !this.supportsBabysitting) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    if ((admitted.type === 'babysit-pull-request' || admitted.type === 'stop-babysitting') && !this.supportsBabysitting) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
+    if ((admitted.type === 'delete-thread' || admitted.type === 'preview-delete-thread') && !this.supportsThreadDelete) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     // A host from before the window's own refresh (#820) would refuse the field; it reads the folder as any refresh instead.
     if (admitted.type === 'refresh-thread-worktree' && admitted.background !== undefined && !this.features.includes('background-refresh')) delete admitted.background
     if (admitted.type === 'compose' && admitted.threadId !== undefined) {
@@ -747,9 +808,9 @@ export class SocketHostService implements HostService {
     let packetPlaced = false
     let releaseAdmission: (() => void) | undefined
     if (admitted.type === 'send' && edit) {
-      if (edit.sendAttempt) return { ...this.state(), error: REMOTE_SEND_UNCERTAIN }
-      if (!this.supportsDraftRevisions || !this.supportsAtomicSend) return { ...this.state(), error: 'Update the host before sending this draft. Your draft is kept on this computer.' }
-      if (edit.draft.requestId && !edit.questionsDigest) return { ...this.state(), error: 'This question is no longer pending or has changed. Your answer is kept; review it before starting a new prompt.' }
+      if (edit.sendAttempt) return { ...this.state(), error: i18n._(REMOTE_SEND_UNCERTAIN) }
+      if (!this.supportsDraftRevisions || !this.supportsAtomicSend) return { ...this.state(), error: t`Update the host before sending this draft. Your draft is kept on this computer.` }
+      if (edit.draft.requestId && !edit.questionsDigest) return { ...this.state(), error: t`This question is no longer pending or has changed. Your answer is kept; review it before starting a new prompt.` }
       admitted.draft ??= { threadId: edit.draft.threadId, text: edit.draft.text, attachments: structuredClone(edit.draft.attachments) }
       if (admitted.draft.text !== edit.draft.text || JSON.stringify(admitted.draft.attachments ?? []) !== JSON.stringify(edit.draft.attachments)) {
         edit = { ...edit, draft: { ...edit.draft, draftId: randomUUID(), text: admitted.draft.text, attachments: admitted.draft.attachments ?? [] }, saved: false }
@@ -775,7 +836,11 @@ export class SocketHostService implements HostService {
         releaseAdmission ? () => { packetPlaced = true } : undefined)
       releaseAdmission?.()
       const result = await executing
-      if (admitted.type === 'preview-reclaim-thread-worktree') return result
+      if (admitted.type === 'preview-reclaim-thread-worktree' || admitted.type === 'preview-delete-thread') return result
+      // A deleted thread's draft, kept here for its host, goes with it (ADR-0140).
+      if (admitted.type === 'delete-thread' && result.error === null) {
+        this.retainedDrafts.remove(this.retainedHostId(), admitted.threadId)
+      }
       if (result.error === null && edit && (admitted.type === 'send' || admitted.type === 'cancel-draft')) {
         const latest = this.retainedDrafts.get(this.retainedHostId(), edit.draft.threadId)
         this.retainedDrafts.remove(this.retainedHostId(), edit.draft.threadId, edit.draft.draftId)
@@ -854,7 +919,7 @@ export class SocketHostService implements HostService {
     delete budget.queued
     if (budget.active >= COMPOSE_WIRE_LIMIT) {
       this.retainedDrafts.recover(this.retainedHostId())
-      const state = { ...this.state(), error: 'The host is still saving earlier edits. Your draft is kept on this computer until it can be saved on the host.' }
+      const state = { ...this.state(), error: t`The host is still saving earlier edits. Your draft is kept on this computer until it can be saved on the host.` }
       queued.resolve(state)
     } else this.dispatchCompose(queued, budget)
   }
@@ -866,11 +931,11 @@ export class SocketHostService implements HostService {
     this.recoveryError = undefined
     if (this.cached?.hostId) this.retainedDrafts.recover(this.cached.hostId)
     queued?.reject(new HostConnectionError(
-      'The connection closed before this draft was sent. Your draft is kept on this computer. Reconnect to save it on the host.', 'disconnected'))
+      t`The connection closed before this draft was sent. Your draft is kept on this computer. Reconnect to save it on the host.`, 'disconnected'))
   }
   private retainedHostId(): string {
     const hostId = this.session?.hostId ?? this.cached?.hostId ?? this.options.expectedHostId
-    if (!hostId) throw new HostConnectionError('Connect to the host before saving this draft.', 'disconnected')
+    if (!hostId) throw new HostConnectionError(t`Connect to the host before saving this draft.`, 'disconnected')
     return hostId
   }
   private retainCompose(command: TargetedCompose, commandId?: string): RetainedDraft {
@@ -902,7 +967,7 @@ export class SocketHostService implements HostService {
     saved: false, recovery: previous?.recovery ?? false, editing: true, baseDraftId,
     ...(previous?.sendAttempt ? { sendAttempt: previous.sendAttempt } : {}) }
     this.retainedDrafts.put(edit)
-    if (this.retainedDrafts.get(edit.hostId, command.threadId)?.draft.draftId !== edit.draft.draftId) throw new HostConnectionError('This host was forgotten. Nothing was saved.', 'disconnected')
+    if (this.retainedDrafts.get(edit.hostId, command.threadId)?.draft.draftId !== edit.draft.draftId) throw new HostConnectionError(t`This host was forgotten. Nothing was saved.`, 'disconnected')
     this.notifyState()
     return edit
   }
@@ -961,7 +1026,7 @@ export class SocketHostService implements HostService {
       expectedDraftId: edit.baseDraftId ?? edit.hostDraftId ?? null,
       ...(requestId && edit.questionsDigest ? { questionsDigest: edit.questionsDigest } : {}) }, undefined, undefined, draftId)
       .then(state => { if (state.error) refused(state.error) })
-      .catch((error: unknown) => { refused(error instanceof Error ? error.message : 'This draft could not be saved on the host. Reconnect and try again.') })
+      .catch((error: unknown) => { refused(error instanceof Error ? error.message : t`This draft could not be saved on the host. Reconnect and try again.`) })
       .finally(() => {
         budget.active--
         if (this.recovering.get(threadId) === generation) this.recovering.delete(threadId)
@@ -977,9 +1042,9 @@ export class SocketHostService implements HostService {
     this.sameGeneration(admittedGeneration)
     if (command.type === 'compose' && command.threadId !== undefined && !this.supportsDraftRevisions) return { ...this.state(), error: REMOTE_COMPOSE_UNSAVED }
     if (!this.supportsDraftRevisions && (command.type === 'send' && command.draft?.draftId !== undefined
-      || command.type === 'save-thread-draft' && command.expectedDraftId !== undefined)) return { ...this.state(), error: 'Update the host before saving or sending this draft. Your draft is kept on this computer.' }
+      || command.type === 'save-thread-draft' && command.expectedDraftId !== undefined)) return { ...this.state(), error: t`Update the host before saving or sending this draft. Your draft is kept on this computer.` }
     if (!this.supportsAtomicSend) {
-      if (command.type === 'send' && command.draft) return { ...this.state(), error: 'Update the host before sending this draft. Your draft is kept on this computer.' }
+      if (command.type === 'send' && command.draft) return { ...this.state(), error: t`Update the host before sending this draft. Your draft is kept on this computer.` }
       if (command.type === 'compose' && command.threadId !== undefined) return { ...this.state(), error: REMOTE_COMPOSE_UNSAVED }
     }
     if (command.type === 'observe-threads') { await this.observe(command.threadIds, this.shown); return this.state() }
@@ -1018,7 +1083,7 @@ export class SocketHostService implements HostService {
         this.quietConnectionNotices.delete(text)
       }
     }
-    if (command.type === 'preview-reclaim-thread-worktree') { this.validateState(state); return state }
+    if (command.type === 'preview-reclaim-thread-worktree' || command.type === 'preview-delete-thread') { this.validateState(state); return state }
     if (retainedId && 'threadId' in command && command.threadId
       && this.retainedDrafts.get(this.retainedHostId(), command.threadId)?.draft.draftId !== retainedId) {
       return { ...this.state(), error: state.error }
@@ -1034,7 +1099,7 @@ export class SocketHostService implements HostService {
     // Typing changes no history. Its own acknowledgement settles the save; observed pushes update the rest.
     if (command.type === 'compose' || command.type === 'save-thread-draft') {
       try { await this.retainedDrafts.flush() }
-      catch { return { ...acknowledged, error: 'This computer could not save your draft. Keep your text and images and try saving again.' } }
+      catch { return { ...acknowledged, error: t`This computer could not save your draft. Keep your text and images and try saving again.` } }
       return { ...acknowledged, error: state.error }
     }
     // An early start changes nothing in the thread, and a session it opens shows in the host's next push. Reading the
@@ -1059,7 +1124,7 @@ export class SocketHostService implements HostService {
         const threadId = 'threadId' in command ? command.threadId : undefined
         if (!threadId || !this.reportedTooLarge(threadId, error)) {
           this.pushErrorThread = threadId ?? null
-          this.options.onPushError?.('The host confirmed the command, but its latest details could not be read. Nothing was lost. Refresh or reconnect to see them.')
+          this.options.onPushError?.(t`The host confirmed the command, but its latest details could not be read. Nothing was lost. Refresh or reconnect to see them.`)
         }
       }
     }
@@ -1114,7 +1179,7 @@ export class SocketHostService implements HostService {
   async stageAttachment(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle> {
     const { mimeType } = image
     if (!isImageAttachment(mimeType)) return this.stageFile(image)
-    if (!this.features.includes('attachment-staging')) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    if (!this.features.includes('attachment-staging')) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     const result = this.previewTail.then(async () => {
       const data = Buffer.from(image.bytes.buffer, image.bytes.byteOffset, image.bytes.byteLength).toString('base64')
       return this.read(agentAttachmentHandleSchema, await this.call({ op: 'stage-attachment', image: { name: image.name, mimeType, data,
@@ -1156,20 +1221,20 @@ export class SocketHostService implements HostService {
   }
   /** A host that does not list `git-refs` is from before the branch picker; the version sentence says which side to bring up to date, and nothing is sent. */
   async gitRefs(request: GitRefsRequest): Promise<GitRefsPage> {
-    if (!this.features.includes('git-refs')) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    if (!this.features.includes('git-refs')) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     return this.read(gitRefsPageSchema, await this.call({ op: 'git-refs', request }))
   }
   async gitChangedFiles(request: GitChangedFilesRequest): Promise<GitChangedFiles> {
-    if (!this.features.includes('git-changed-files')) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    if (!this.features.includes('git-changed-files')) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     return this.read(gitChangedFilesSchema, await this.call({ op: 'git-changed-files', request }))
   }
   async gitPullRequest(request: GitPullRequestRequest): Promise<GitPullRequestRead> {
-    if (!this.features.includes('git-pull-request')) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    if (!this.features.includes('git-pull-request')) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     return this.read(gitPullRequestResultSchema, await this.call({ op: 'git-pull-request', request }))
   }
   /** A host that does not list `host-folders` is from before the folder browser; the version sentence says which side to bring up to date, and nothing is sent. */
   async hostFolders(request: HostFoldersRequest): Promise<HostFoldersResult> {
-    if (!this.features.includes('host-folders')) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    if (!this.features.includes('host-folders')) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     return this.read(hostFoldersResultSchema, await this.call({ op: 'host-folders', request }))
   }
   /**
@@ -1209,13 +1274,42 @@ export class SocketHostService implements HostService {
    */
   async branchMove(request: HostBranchMoveRequest): Promise<unknown> {
     this.offers('branch-moves')
-    return this.call({ op: 'branch-move', request }, undefined, undefined, 120000)
+    return this.call({ op: 'branch-move', request }, undefined, undefined, branchMoveStepTimeoutMs(request.action))
   }
   /** The host lists `project-origins`: it names each of its projects' GitHub repository (#1032). An older host's cannot be matched. */
   get supportsProjectOrigins(): boolean { return this.features.includes('project-origins') }
   async projectOrigins(): Promise<ProjectOrigins> {
     this.offers('project-origins')
     return this.read(projectOriginsSchema, await this.call({ op: 'project-origins' }, undefined, undefined, 10000))
+  }
+  /**
+   * The host lists `host-delegation`: its own threads delegate on its machine and it keeps the desktop defaults this
+   * desktop sends (#1310). An older or stable host takes none, and a desktop never sends it any.
+   */
+  get supportsHostDelegation(): boolean { return this.features.includes('host-delegation') }
+  async desktopDefaults(defaults: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> {
+    this.offers('host-delegation')
+    return this.read(desktopDefaultsReceiptSchema, await this.call({ op: 'desktop-defaults', defaults }, undefined, undefined, 10000))
+  }
+  /**
+   * The host lists `delegation-views` and this desktop accepted it (#1310): its window reads what the host's own threads
+   * delegated and were sent, and is told which changed. An older or stable host offers none, and a stable desktop asks none.
+   */
+  get supportsDelegationViews(): boolean { return this.options.crossMachineEnabled === true && this.features.includes('delegation-views') }
+  async delegationViews(threadId: string): Promise<DelegationsRead> {
+    if (this.options.crossMachineEnabled !== true) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    this.offers('delegation-views')
+    return this.read(delegationsReadSchema, await this.call({ op: 'delegation-views', threadId }, undefined, undefined, 10000))
+  }
+  async delegationBrief(threadId: string): Promise<DelegationBrief> {
+    if (this.options.crossMachineEnabled !== true) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    this.offers('delegation-views')
+    return this.read(delegationBriefSchema, await this.call({ op: 'delegation-brief', threadId }, undefined, undefined, 10000))
+  }
+  /** Hears the host name threads whose delegations changed, and this connection closing. Returns the way to stop. */
+  subscribeDelegationViews(listener: (change: DelegationViewsChange) => void): () => void {
+    this.delegationListeners.add(listener)
+    return () => { this.delegationListeners.delete(listener) }
   }
   /** The host lists `thread-starts`: it continues agents as threads and reads a started thread's handover (#1028). */
   get supportsThreadStarts(): boolean { return this.features.includes('thread-starts') }
@@ -1276,9 +1370,68 @@ export class SocketHostService implements HostService {
     this.offers('subagents')
     return this.read(subagentAssignmentsPageSchema, await this.call({ op: 'subagent-assignments', request }))
   }
+  /** Whether this connection's hello lists `host-update`: the host updates itself when this desktop asks (ADR-0088). */
+  offersHostUpdate(): boolean { return this.features.includes('host-update') }
+  /**
+   * One step of a host update, run by the host on itself (ADR-0088). The host's `host-update-step` pushes go to `onStep`
+   * while it runs. Aborting `signal` asks the host to cancel this client's download and still waits for the download's own
+   * answer, `update-cancelled`, so the host is free before anything asks it for the next step. Without an answer it throws
+   * `HostUpdateMissed`, which says whether the host refused it, it never went, or its answer was lost; never by message.
+   */
+  async hostUpdate(request: HostUpdateRequest, options: { readonly onStep?: ((step: HostUpdateStep) => void) | undefined; readonly signal?: AbortSignal | undefined;
+    /** A restart outcome read takes only the restart budget left, never longer than its usual answer deadline. */
+    readonly timeoutMs?: number | undefined } = {}): Promise<HostUpdateAnswer> {
+    if (!this.offersHostUpdate() || options.signal?.aborted) throw new HostUpdateMissed('unsent')
+    const timeoutMs = Math.min(HOST_UPDATE_ANSWER_DEADLINES_MS[request.action], options.timeoutMs ?? Number.POSITIVE_INFINITY)
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new HostUpdateMissed('timeout')
+    const { onStep, signal } = options
+    if (onStep) this.updateSteps.add(onStep)
+    const frames = this.frames
+    // A cancel that cannot reach the host must still end its download: closing this request's connection aborts its owner.
+    // So must one the host answers with nothing cancelled, since it may have overtaken the download it was for on the host.
+    // Keep this connection, so a late cancel failure can never close a replacement connection.
+    const cancel = (): void => { void this.call({ op: 'host-update', action: 'cancel' }, randomUUID(), undefined, HOST_UPDATE_ANSWER_DEADLINES_MS.cancel)
+      .then(answer => { const parsed = hostUpdateAnswerSchema.safeParse(answer); if (!parsed.success || parsed.data.type !== 'update-cancelled' || !parsed.data.cancelled) frames?.close() }, () => frames?.close()) }
+    signal?.addEventListener('abort', cancel, { once: true })
+    try {
+      const operation = { op: 'host-update', action: request.action, ...(request.version ? { version: request.version } : {}),
+        ...(request.file ? { file: request.file } : {}), ...(request.sha256 ? { sha256: request.sha256 } : {}) } as const
+      let answer: unknown
+      try { answer = await this.call(operation, randomUUID(), undefined, timeoutMs) }
+      catch (error) {
+        if (error instanceof HostRequestUnanswered) {
+          // The SSH fallback must not leave a timed-out socket download holding the host's update lock.
+          if (request.action === 'fetch' && error.stage === 'timeout') frames?.close()
+          throw new HostUpdateMissed(error.stage)
+        }
+        const code = error instanceof HostConnectionError ? error.code : undefined
+        if (code === 'forbidden' || code === 'invalid_request' || code === 'version_mismatch' || code === 'busy') throw new HostUpdateMissed(code)
+        // A revoked client is sent `unauthenticated` and its socket closes with it.
+        throw new HostUpdateMissed(code === 'unauthenticated' || code === 'disconnected' ? 'closed' : 'failed')
+      }
+      const parsed = hostUpdateAnswerSchema.safeParse(answer)
+      if (!parsed.success) throw new HostUpdateMissed('failed')
+      return parsed.data
+    } finally {
+      if (onStep) this.updateSteps.delete(onStep)
+      signal?.removeEventListener('abort', cancel)
+    }
+  }
+  /** Whether a connection is open now. */
+  connected(): boolean { return this.frames !== undefined && !this.frames.isClosed }
+  /** Resolves once the connection open now has closed; at once when none is open. */
+  whenDisconnected(): Promise<void> {
+    const frames = this.frames
+    if (!frames || frames.isClosed) return Promise.resolve()
+    return new Promise(resolve => {
+      const waiters = this.dropWaiters.get(frames) ?? new Set<() => void>()
+      waiters.add(resolve)
+      this.dropWaiters.set(frames, waiters)
+    })
+  }
   /** Refuses with the version sentence, before anything is sent, a read whose feature this host does not list. */
   private offers(feature: HostFeature): void {
-    if (!this.features.includes(feature)) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    if (!this.features.includes(feature)) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
   }
   /** A large read, queued behind previews and staged images: the host answers one of these frames at a time per client. */
   private large<T>(feature: HostFeature, read: () => Promise<T>): Promise<T> {
@@ -1301,7 +1454,7 @@ export class SocketHostService implements HostService {
    * is from before it; the version sentence says which side to bring up to date, and nothing is sent.
    */
   async signIn(operation: { op: 'sign-in-start'; provider: ProviderId } | { op: 'sign-in-read' | 'sign-in-cancel'; signInId: string } | { op: 'sign-in-code'; signInId: string; code: string }): Promise<HostSignIn | null> {
-    if (!this.offersSignIn()) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    if (!this.offersSignIn()) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     return this.read(hostSignInSchema.nullable(), await this.call(operation))
   }
   /** Whether the host signs its own OpenCode in to model sources for this client (#1107). */
@@ -1312,13 +1465,13 @@ export class SocketHostService implements HostService {
    * The caller asks `offersOpenCodeSignIn` first, and says in words that an older host needs an update.
    */
   async opencodeSignIn<A extends OpenCodeHostCall['action']>(call: Extract<OpenCodeHostCall, { action: A }>): Promise<OpenCodeHostAnswer<A>> {
-    if (!this.offersOpenCodeSignIn()) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    if (!this.offersOpenCodeSignIn()) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     const schema: z.ZodType<OpenCodeHostAnswer<A>> = OPENCODE_HOST_ANSWERS[call.action as A] as never
     return this.read(schema, await this.call({ op: 'opencode-sign-in', call }))
   }
   async revokePairing(): Promise<void> {
     const response = await fetch(this.endpoint('/v1/revoke'), { method: 'POST', headers: { Authorization: 'Bearer ' + this.options.token }, signal: AbortSignal.timeout(15000), redirect: 'error' })
-    if (!response.ok) throw refusal(response.status, 'The host could not forget this device. Connect again and retry.', 'unavailable')
+    if (!response.ok) throw refusal(response.status, t`The host could not forget this device. Connect again and retry.`, 'unavailable')
     await this.close()
   }
   async close(): Promise<void> { this.cachedWatcher = undefined; this.watcherListeners.clear(); this.resetComposeQueue(); this.generation++; this.opening?.abort(); this.frames?.close() }

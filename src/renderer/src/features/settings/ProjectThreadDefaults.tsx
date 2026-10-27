@@ -7,6 +7,7 @@ import { useOptionalAgents } from '../../agents/AgentContext'
 import { Button } from '../../components/Button'
 import { Field } from '../../components/Field'
 import { Select } from '../../components/Select'
+import { useOwlFeature } from '../../state/owlFeature'
 
 interface ProjectThreadDefaultsProps {
   readonly settings: AppSettings
@@ -25,21 +26,34 @@ export function ProjectThreadDefaults({ settings, onSave }: ProjectThreadDefault
   const contentId = useId()
   const project = projects.find(item => item.id === selectedId) ?? projects[0]
   const defaultKey = (id: string): string => projectWorkingCopyDefaultKey(agents?.state, id)
+  // Keep main up to date (ADR-0142) acts on this computer's projects alone, so a remote host's project offers no override.
+  const keepMain = useOwlFeature('keep-main-current')
+  const localProject = project !== undefined && (defaultKey(project.id) !== project.id || !agents?.state?.connections?.some(host => host.kind === 'remote'))
 
-  const saveDefault = async (value: string): Promise<void> => {
+  // One save at a time for the chosen project; the controls wait while it runs.
+  const save = async (patch: (key: string) => SettingsPatch): Promise<void> => {
     if (!project || savingRef.current) return
     savingRef.current = true
     setSaving(true)
-    const defaults = { ...settings.projectThreadWorkingCopyDefaults }
-    if (value === 'inherit') delete defaults[defaultKey(project.id)]
-    else if (value === 'shared' || value === 'independent') defaults[defaultKey(project.id)] = value
     try {
-      await onSave({ projectThreadWorkingCopyDefaults: defaults })
+      await onSave(patch(defaultKey(project.id)))
     } finally {
       savingRef.current = false
       setSaving(false)
     }
   }
+  const saveDefault = (value: string): Promise<void> => save(key => {
+    const defaults = { ...settings.projectThreadWorkingCopyDefaults }
+    if (value === 'inherit') delete defaults[key]
+    else if (value === 'shared' || value === 'independent') defaults[key] = value
+    return { projectThreadWorkingCopyDefaults: defaults }
+  })
+  const saveKeepMain = (value: string): Promise<void> => save(key => {
+    const overrides = { ...settings.projectKeepMainCurrent }
+    if (value === 'on' || value === 'off') overrides[key] = value
+    else delete overrides[key]
+    return { projectKeepMainCurrent: overrides }
+  })
 
   return <div onKeyDown={event => {
     if (event.key !== 'Escape' || !open) return
@@ -60,6 +74,11 @@ export function ProjectThreadDefaults({ settings, onSave }: ProjectThreadDefault
           <option value="shared">{t`Project folder`}</option>
           <option value="independent">{t`New worktree`}</option>
         </Select></Field>
+        {keepMain && localProject ? <Field label={t`Keep this project's main up to date`}><Select value={settings.projectKeepMainCurrent[defaultKey(project.id)] ?? 'inherit'} disabled={saving} onChange={event => void saveKeepMain(event.currentTarget.value)}>
+          <option value="inherit">{settings.keepMainCurrent ? t`Use the Git setting (On)` : t`Use the Git setting (Off)`}</option>
+          <option value="on">{t({ message: 'On', comment: "Keep this project's main up to date: on" })}</option>
+          <option value="off">{t({ message: 'Off', comment: "Keep this project's main up to date: off" })}</option>
+        </Select></Field> : null}
       </div> : <p className="tt-field__description tt-paragraph"><Trans>Add a project in Threads to set its default working copy.</Trans></p>}
     </div>
   </div>

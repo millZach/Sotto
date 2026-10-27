@@ -54,6 +54,20 @@ describe('Git status the way T3 reads it', () => {
     const plain = join(f.root, 'plain'); await mkdir(plain)
     expect(await f.reader.read(plain, { remote: true })).toMatchObject({ isRepository: false, branch: null, hasRemote: false, dirty: false, ahead: 0, behind: 0, pullRequest: null, fetchedAt: null })
   })
+  it('asks Git about a folder that is no repository once in five minutes, and again once it holds a .git', async () => {
+    const f = await fixture({ remote: false })
+    const plain = join(f.root, 'plain'); await mkdir(plain)
+    const asked = () => f.places.filter(place => place.cwd === plain).length
+    await f.reader.read(plain, { remote: false })
+    await f.reader.read(plain, { remote: false }); await f.reader.read(plain, { remote: true, fresh: true })
+    expect(asked()).toBe(1)
+    f.advance(5 * 60_000)
+    expect(await f.reader.read(plain, { remote: false })).toMatchObject({ isRepository: false })
+    expect(asked()).toBe(2)
+    // Made a repository outside Sotto, by an agent or a terminal, with nothing invalidated: the next read sees it.
+    git(plain, 'init', '-q')
+    expect(await f.reader.read(plain, { remote: false })).toMatchObject({ isRepository: true })
+  })
   it('reads the branch, its upstream, the default branch and a clean tree', async () => {
     const f = await fixture()
     const status = await f.reader.read(f.repo, { remote: false })

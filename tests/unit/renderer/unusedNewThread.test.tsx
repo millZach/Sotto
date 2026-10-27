@@ -2,6 +2,7 @@ import { deferred } from '../../fixtures/deferred'
 import { threadsStateFixture } from '../../fixtures/agentState'
 import { afterEach, describe, expect, it } from 'vitest'
 import { beginNewThread, unusedNewThread } from '../../../src/renderer/src/agents/newThread'
+import { shownWords } from '../../../src/renderer/src/agents/interfaceWords'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
 import { defaultAgentConfiguration, type AgentState, type AgentThread } from '../../../src/shared/agents'
 import { pendingSettingsStore, settingValues } from '../../../src/renderer/src/agents/pendingSettings'
@@ -20,6 +21,10 @@ afterEach(() => pendingSettingsStore.clear())
 describe('an unused new thread', () => {
   it('is found when the project already has one that was never used', () => {
     expect(unusedNewThread(state([thread({})]), project)?.id).toBe('thread')
+  })
+
+  it('does not reuse an empty thread the user turned fast mode on for, since a new thread starts with it off', () => {
+    expect(unusedNewThread(state([thread({ fastMode: true })]), project)).toBeUndefined()
   })
 
   it('does not reopen an empty thread from workspace-settled work', () => {
@@ -101,7 +106,7 @@ describe('a new thread shown before main confirms it', () => {
     { hostId: LOCAL, kind: 'local', name: 'This computer', connected: true }, { hostId: REMOTE, kind: 'remote', name: 'forge', connected: true }] })
   const draftFor = async (current: AgentState, hostId: string) => {
     const start = await beginNewThread(current, async () => current, { ...project, id: hostEntityKey(hostId, 'project'), hostId })
-    if ('error' in start) throw new Error(start.error)
+    if ('error' in start) throw new Error(shownWords(start.error))
     return start.thread
   }
   // A thread on forge is remote from its first frame, so this computer's cloud iPhone, browser and terminal leave it alone.

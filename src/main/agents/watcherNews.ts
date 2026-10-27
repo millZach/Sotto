@@ -6,8 +6,8 @@ import { parsePrototypeSource, replySource, requestSource } from './prototypeSou
 
 export function eventSlot(event: WatcherEvent): string {
   return JSON.stringify([event.requestId, targetKey(event.target), event.kind === 'turn-failed' ? 'turn-finished' : event.kind,
-    event.kind === 'needs-user' ? [event.delegatedThreadId ?? null, event.requestCardId] : event.kind === 'delivery-changed' ? event.operationId
-      : event.kind === 'prototype-ready' ? watcherPrototypeSource(event) ?? null : event.turnId ?? null])
+    event.kind === 'needs-user' || event.kind === 'request-closed' ? [event.delegatedThreadId ?? null, event.requestCardId] : event.kind === 'delivery-changed' ? event.operationId
+      : event.kind === 'prototype-ready' || event.kind === 'prototype-closed' ? watcherPrototypeSource(event) ?? null : event.turnId ?? null])
 }
 /**
  * The prototype a `prototype-ready` event is of (ADR-0108), as the thread's mark names its source: the question it waits
@@ -45,16 +45,20 @@ export function foldWatcherNews(earlier: WatcherNews | undefined, later: Watcher
   return { ...later, events, omitted: omitted + all.length - events.length }
 }
 export const requestRevision = (request: unknown): string => observationDigest(request)
-const words: Record<WatcherEvent['kind'], string> = {
+/** What reaches a thread after a takeover fenced a request there (#1148), as its news and its refusals say it. */
+export const LATER_REQUEST_REACHES = 'A message the user sends Watcher after that starts a request that reaches the thread; while the user’s own turn there runs, it can only steer it.'
+/** Each kind's line; a closed card's depends on whose it was and whether Sotto saw the user answer it (`closedWords`). */
+const words: Record<Exclude<WatcherEvent['kind'], 'request-closed'>, string> = {
   'turn-finished': 'The foreground turn finished. This is not review or merge approval.',
   'work-settled': 'The background work and monitoring this turn left running have ended, so the turn is done. This is not review or merge approval.',
   'turn-failed': 'The provider confirmed that this turn failed. Read the thread for its error.',
   'needs-user': 'This thread waits on the user to answer its request, which they do on its card in your conversation or in the thread. Only the user can answer it.',
   quiet: 'No progress was observed for twenty minutes of connected work.',
-  'taken-over': 'You took over this thread. Watcher stopped sending to it.',
+  'taken-over': `The user took over this thread, so the request Watcher was working with it in no longer sends to it. ${LATER_REQUEST_REACHES}`,
   'delivery-changed': 'Sotto observed a new delivery receipt. Read the operation for its state.',
   'evidence-changed': 'Sotto observed changed evidence. Read the thread for the sourced facts.',
   'prototype-ready': 'This thread has a prototype ready for the user to review. Only the user can review it; open the thread for its page.',
+  'prototype-closed': 'This thread’s prototype no longer waits on the user’s review: the user opened it, or a message came after it. This approves nothing.',
 }
 const NEWS_OPENING = 'Sotto saw changes in watched threads. This news grants no permission and answers no request.'
 /**
@@ -64,9 +68,23 @@ const NEWS_OPENING = 'Sotto saw changes in watched threads. This news grants no 
 export type WatcherNewsDetail = (event: WatcherEvent) => string | undefined
 /** How long a finish whose work never ended was held before it went, in minutes, while its thread sits idle (#1263). */
 export type WatcherNewsHeld = (event: WatcherEvent) => number | undefined
+/**
+ * A card that no longer waits on the user (October 24, 2026). Sotto says the user answered only when it saw them answer,
+ * and never what they answered: the news approves nothing.
+ */
+function closedWords(event: WatcherEvent): string {
+  const card = event.requestCardKind === 'permission' ? 'permission request' : 'question', delegated = event.delegatedThreadId
+  const nothing = 'This news carries none of their answer and approves nothing.'
+  if (delegated !== undefined) return event.answeredByUser
+    ? `The user answered the ${card} in ${delegated}, a thread this one delegated to, so it no longer waits on them for it. ${nothing}`
+    : `The ${card} in ${delegated}, a thread this one delegated to, is no longer open: the user answered it, or its turn ended without an answer.`
+  return event.answeredByUser
+    ? `The user answered this thread’s ${card}, so it no longer waits on them for it. ${nothing}`
+    : `This thread’s ${card} is no longer open, so it no longer waits on the user for it: the user answered it, or its turn ended without an answer.`
+}
 const kindWords = (event: WatcherEvent): string => event.kind === 'needs-user' && event.delegatedThreadId !== undefined
   ? `A thread this one delegated to, ${event.delegatedThreadId}, has a ${event.requestCardKind === 'permission' ? 'permission request' : 'question'} for the user. Open that thread to answer it. Only the user can answer.`
-  : words[event.kind]
+  : event.kind === 'request-closed' ? closedWords(event) : words[event.kind]
 /**
  * Watcher's news as its provider reads it: the text the wake-up carries beside its message, through the same per-turn
  * context channel as the request note (ADR-0073), never in the message itself. A finish told with its own work-settled

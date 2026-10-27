@@ -165,11 +165,24 @@ describe('the generation guard', () => {
     }
   })
 
-  it('asks nothing for a turn that did not end on an answer, for Watcher, or while local history is off', async () => {
+  it('asks for Watcher\'s conversation after its reply, from that conversation, as for any thread', async () => {
+    const s = service()
+    const watcher = idle({ id: 'watcher', kind: 'watcher', messages: [message('u1', 'user', 'What is waiting on me?'), message('a1', 'assistant', 'Two threads wait on you.')] })
+    s.set(watcher)
+    s.prompts.finished(watcher)
+    await vi.waitFor(() => expect(s.published).toHaveLength(1))
+    expect(s.deps.write).toHaveBeenCalledWith('watcher', [{ prompt: 'What is waiting on me?', reply: 'Two threads wait on you.' }], expect.any(AbortSignal))
+    expect(s.published[0]).toMatchObject({ threadId: 'watcher', afterUserMessageId: 'u1', prompt: { ghost: 'Open the pull request for this fix' } })
+  })
+
+  it('asks nothing for a turn that did not end on an answer, for a past Watcher or Watcher\'s reply to news, or while local history is off', async () => {
     const cases: [AgentThread, Partial<NextPromptsDependencies>][] = [
       [idle({ lastTurn: { id: 't', status: 'interrupted' } }), {}],
       [idle({ lastTurn: { id: 't', status: 'failed' } }), {}],
-      [idle({ kind: 'watcher' }), {}],
+      [idle({ kind: 'watcher-history' }), {}],
+      // Watcher answering Sotto's news: the host recorded the message as a wake-up, by ID or on the message itself.
+      [idle({ kind: 'watcher', wakeUpMessageIds: ['u1'] }), {}],
+      [idle({ kind: 'watcher', messages: [{ ...message('u1', 'user', 'News: a thread finished.'), wakeUp: true }, message('a1', 'assistant', 'Noted.')] }), {}],
       [idle({ delegatedBy: 'delegating-thread' }), {}],
       // A thread no window shows carries its summary alone: its history is not read from the store at the turn's end.
       [idle({ messages: [], earlierAvailable: true }), {}],
@@ -310,7 +323,7 @@ describe('the Owl gate', () => {
   async function built(options: Partial<AgentRuntimeOptions>) {
     const root = await mkdtemp(join(tmpdir(), 'sotto-next-prompt-gate-')); roots.push(root)
     const credentials = await testCredentials(root, { mode: 'unavailable' })
-    const providers = { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost() }
+    const providers = { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(), deepseek: new E2EAgentHost() }
     const runtime = await createAgentRuntime({ directory: root, credentials, settings: () => DEFAULT_SETTINGS, writingSettings: async () => DEFAULT_SETTINGS,
       historyEnabled: () => true, openExternal: async () => undefined, reasoner: e2eAgentReasoner, providers, ...options })
     const answer = runtime.nextPrompts

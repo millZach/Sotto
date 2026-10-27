@@ -61,6 +61,37 @@ describe("durable project/thread organization", () => {
     expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree?.sentBranch).toBe('sotto/thread-fixture')
   })
 
+  it('holds the re-read after finished work while no window shows, and reads the folder once when one shows again', async () => {
+    const f = await fixture({ worktreeRefreshDelayMs: 5 })
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    const record = { mode: 'independent' as const, status: 'ready' as const, path: project.path, repositoryRoot: project.path, branch: 'sotto/thread-fixture', baseCommit: 'fixture' }
+    let checkedOut = 'sotto/thread-fixture', showing = true
+    vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue({ ...record, status: 'pending' })
+    vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockResolvedValue(record)
+    const inspect = vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => ({ ...metadata, status: 'ready', branch: checkedOut }))
+    const status: GitStatus = { isRepository: true, branch: 'main', upstream: null, hasRemote: false, defaultBranch: 'main', isDefaultBranch: true, dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-09-23T00:00:00.000Z' }
+    const source = { read: vi.fn(async () => status), readRemote: vi.fn(async () => true), invalidate: vi.fn() }
+    f.host.setGitStatus(source, { pollIntervalMs: () => 0, tickMs: 5, visible: () => showing })
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    await f.host.execute(send())
+    showing = false
+    checkedOut = 'feat/agent-chose'
+    const inspected = inspect.mock.calls.length, read = source.read.mock.calls.length
+    const session = f.adapters.codex.state.threads.at(-1)!
+    session.activities = [{ id: 'command-1', turnId: 'turn-1', sequence: 0, kind: 'command', status: 'completed', title: 'Ran a command' }]
+    f.adapters.codex.emit()
+    // Past the re-read's delay and several ticks: nothing is read while no window shows.
+    await new Promise(resolve => setTimeout(resolve, 60))
+    expect(inspect.mock.calls.length).toBe(inspected)
+    expect(source.read.mock.calls.length).toBe(read)
+    showing = true
+    await vi.waitFor(() => expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree?.branch).toBe('feat/agent-chose'))
+    await vi.waitFor(() => expect(source.read.mock.calls.length).toBe(read + 1))
+    expect(inspect.mock.calls.length - inspected).toBe(1)
+  })
+
   it('reads the folder again and asks once more when a Git action lands between the read and the remote half of a round', async () => {
     const f = await fixture({ worktreeRefreshDelayMs: 5 })
     const snapshot = await f.host.connect()

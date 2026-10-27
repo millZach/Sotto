@@ -210,8 +210,7 @@ it('tries a refused settle once, and again only after the thread finishes anothe
 it('leaves a finished thread alone while a thread it delegated to still works, and settles it once that work ends', async () => {
   const f = await fixture(), parent = await f.watched(), child = await f.watched()
   // The workspace keeps which thread delegated to which (ADR-0081); here the second thread is marked as the first's.
-  const kept = f.workspace.host as unknown as { state: { snapshot: { threads: AgentThread[] } } }
-  kept.state.snapshot.threads.find(thread => thread.id === child.threadId)!.delegatedBy = parent.threadId
+  await f.workspace.host.setDelegatedBy(child.threadId, parent.threadId)
   expect(await f.service.unwatchThread({ target: child }, undefined, 'watcher')).toMatchObject({ status: 'ok' })
   await f.endTurn(parent.threadId)
   await vi.waitFor(() => expect(f.thread(child.threadId).delegatedBy).toBe(parent.threadId))

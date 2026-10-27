@@ -10,6 +10,7 @@ export const OMARCHY_CSS_TEXT_PAIRS: ReadonlyArray<readonly [string, readonly st
   ['accent-text', [...room, 'accent-wash']],
   ['accent-surface-text', ['hover-strong']],
   ['activity', ['canvas', 'surface', 'surface-elevated', 'sidebar', 'sidebar-row-selected']],
+  ['working-light', ['canvas', 'surface']],
   ['link', ['surface', 'sidebar', 'selected']],
   ['primary-hover', ['surface', 'sidebar', 'selected']],
   ['warning', ['canvas', 'surface', 'surface-elevated', 'sidebar']],

@@ -1,4 +1,6 @@
+import { t } from '@lingui/core/macro'
 import { z } from 'zod'
+
 
 import { MAIN_ACTIVITY_COMMAND, MAIN_ACTIVITY_READ, mainActivityCommandSchema, mainActivityStateSchema } from '../../shared/mainActivity'
 import { isAuthorizedIpcSender, type IpcInvocationEvent, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
@@ -13,7 +15,7 @@ export function registerMainActivityIpc(ipc: IpcMainAdapter, service: MainActivi
   windowProfiler: (event: IpcInvocationEvent) => ProfilerTarget | null): () => void {
   if (service === null) return () => undefined
   const authorize = (event: IpcInvocationEvent): void => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('Open Settings in the main Sotto window.')
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Settings in the main Sotto window.`)
   }
   ipc.handle(MAIN_ACTIVITY_READ, (event, ...args) => {
     authorize(event)

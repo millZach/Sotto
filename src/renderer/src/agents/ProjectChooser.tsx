@@ -1,11 +1,14 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ChevronRight, Folder, FolderPlus, Search } from 'lucide-react'
+import { msg } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 import type { AgentProject, AgentState, ProviderId } from '../../../shared/agents'
 import type { AgentConnection } from './AgentContext'
 import { hostIdOf, listedHostName } from './HostBadge'
 import { FolderBrowserDialog } from './FolderBrowserDialog'
 import { folderKey, folderName, projectAtFolder, projectOnHost } from './projectFolders'
 import { isCompositionKey } from './composerKeys'
+import type { LaterWords } from './interfaceWords'
 
 export { folderKey, folderName } from './projectFolders'
 
@@ -23,6 +26,7 @@ export function useProjectChooser(state: AgentState, onChoose: (choice: ProjectC
 } = {}): {
   readonly search: ReactNode; readonly choices: ReactNode; readonly focusSearch: () => void
 } {
+  const { t } = useLingui()
   const search = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState('')
   const [highlight, setHighlight] = useState(0)
@@ -39,6 +43,7 @@ export function useProjectChooser(state: AgentState, onChoose: (choice: ProjectC
   const browseHostId = hostId ?? state.hostId ?? ''
   const browseHost = state.connections?.find(host => host.hostId === browseHostId)
   const remote = browseHost?.kind === 'remote'
+  const hostName = browseHost ? listedHostName(browseHost) : ''
   const [browsing, setBrowsing] = useState(false)
   useEffect(() => { setHighlight(0); setError(null) }, [hostId])
   const browse = (): void => { if (options.disabled) return; setError(null); setBrowsing(true) }
@@ -56,7 +61,7 @@ export function useProjectChooser(state: AgentState, onChoose: (choice: ProjectC
   }
   return {
     focusSearch: () => search.current?.focus(),
-    search: <><Search size={16} aria-hidden="true" /><input ref={search} type="search" aria-label="Search projects" placeholder="Search projects..." value={query}
+    search: <><Search size={16} aria-hidden="true" /><input ref={search} type="search" aria-label={t`Search projects`} placeholder={t`Search projects...`} value={query}
       onChange={event => { setQuery(event.target.value); setHighlight(0) }}
       onKeyDown={event => {
         if (isCompositionKey(event.nativeEvent)) return
@@ -65,13 +70,13 @@ export function useProjectChooser(state: AgentState, onChoose: (choice: ProjectC
         if (event.key === 'Enter') { event.preventDefault(); choose(highlight) }
       }} /></>,
     choices: <div className="new-thread-dialog__choices">
-      <h3>Sources</h3>
-      <button className="new-thread-choice" type="button" data-highlighted={highlight === 0 || undefined} onMouseEnter={() => setHighlight(0)} onClick={browse}><FolderPlus size={19} /><span><strong>{remote && browseHost ? `Folder on ${listedHostName(browseHost)}` : 'Local folder'}</strong><small>{remote && browseHost ? `Browse folders on ${listedHostName(browseHost)}` : 'Browse a folder on disk'}</small></span><ChevronRight size={15} /></button>
-      <h3>Projects</h3>
+      <h3>{t({ message: 'Sources', comment: 'A heading over the ways to choose a folder for a new thread.' })}</h3>
+      <button className="new-thread-choice" type="button" data-highlighted={highlight === 0 || undefined} onMouseEnter={() => setHighlight(0)} onClick={browse}><FolderPlus size={19} /><span><strong>{remote && browseHost ? t({ message: `Folder on ${hostName}`, comment: '{hostName} is the name of a saved host.' }) : t`Local folder`}</strong><small>{remote && browseHost ? t({ message: `Browse folders on ${hostName}`, comment: '{hostName} is the name of a saved host.' }) : t`Browse a folder on disk`}</small></span><ChevronRight size={15} /></button>
+      <h3>{t({ message: 'Projects', comment: 'A heading over the projects a new thread can start in.' })}</h3>
       {projects.map((item, index) => <button className="new-thread-choice" type="button" key={item.id} data-highlighted={highlight === index + 1 || undefined} onMouseEnter={() => setHighlight(index + 1)} onClick={() => choose(index + 1)}><Folder size={18} /><span><strong>{item.title}</strong><small>{item.path}</small></span><ChevronRight size={15} /></button>)}
-      {!projects.length && <p className="new-thread-dialog__empty">{query ? 'No matching projects.' : remote ? 'No projects on this host yet.' : 'Choose a folder to start your first project.'}</p>}
-      {error && <p className="agent-error" role="alert">{error}</p>}
-      {browsing ? <FolderBrowserDialog state={state} hostId={browseHostId} heading="Choose a folder for the new thread"
+      {!projects.length && <p className="new-thread-dialog__empty tt-paragraph">{query ? t`No matching projects.` : remote ? t`No projects on this host yet.` : t`Choose a folder to start your first project.`}</p>}
+      {error && <p className="agent-error tt-paragraph" role="alert">{error}</p>}
+      {browsing ? <FolderBrowserDialog state={state} hostId={browseHostId} heading={t`Choose a folder for the new thread`}
         onUse={choice => chooseFolder(choice.path, choice.isNew === true)} onClose={() => setBrowsing(false)} /> : null}
     </div>,
   }
@@ -91,7 +96,7 @@ export async function projectForFolder({ folder, isNew = false, command, latest,
   readonly providerId: ProviderId | undefined
   /** The host the folder is on, so the same path on another host is not taken for it. */
   readonly hostId?: string | undefined
-}): Promise<{ readonly project: AgentProject; readonly error: null } | { readonly project: null; readonly error: string }> {
+}): Promise<{ readonly project: AgentProject; readonly error: null } | { readonly project: null; readonly error: LaterWords }> {
   const key = folderKey(folder)
   const attemptKey = `${hostId ?? ''}:${providerId ?? ''}:${key}`
   const findProject = (snapshot: AgentState | null): AgentProject | null => snapshot?.host.projects.find(item => (hostId === undefined || projectOnHost(item, hostId)) && folderKey(item.path) === key) ?? null
@@ -105,7 +110,7 @@ export async function projectForFolder({ folder, isNew = false, command, latest,
   if (!project) {
     const refreshed = await command({ type: 'refresh' })
     project = findProject(refreshed) ?? findProject(latest())
-    if (!project) return { project: null, error: refreshed?.error ?? acknowledgement?.error ?? 'Still waiting for this folder’s project. Try again to check its status; the folder will not be added twice.' }
+    if (!project) return { project: null, error: refreshed?.error ?? acknowledgement?.error ?? msg`Still waiting for this folder’s project. Try again to check its status; the folder will not be added twice.` }
   }
   return { project, error: null }
 }

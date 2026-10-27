@@ -21,6 +21,15 @@ export async function buildHost(outDir = resolve(root, process.env.SOTTO_HOST_OU
         return JSON.stringify({ ...pkg, version })
       },
     }]), {
+      // The host has no interface language and no macro transform (ADR-0123): a module it builds that imports Lingui
+      // would ship a macro that throws when it runs, so the build stops and names the module.
+      name: 'sotto-host-no-lingui',
+      enforce: 'pre',
+      resolveId(id, importer) {
+        if (id === '@lingui' || id.startsWith('@lingui/')) this.error(`The headless host cannot import ${id} (from ${importer ?? 'an entry'}). Move what the host needs into a module without Lingui.`)
+        return null
+      },
+    }, {
       name: 'sotto-host-inventory',
       generateBundle(_options, bundle) {
         const imports = new Set(), dynamicImports = new Set(), packages = new Set()

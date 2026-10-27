@@ -61,7 +61,7 @@ test('signs Cursor in from its row, groups its models by maker, offers its three
     const list = await providerList(page)
     const row = list.getByRole('button', { name: 'Cursor', exact: true })
     const panel = page.getByRole('region', { name: 'Cursor details', exact: true })
-    // Codex's row is open to begin with; End from its header goes to the last, Cursor's, and Enter opens it.
+    // Every row starts closed; End from Codex's header goes to the last, Cursor's, and Enter opens it.
     await list.getByRole('button', { name: 'Codex', exact: true }).focus()
     await page.keyboard.press('End')
     await expect(row).toBeFocused()
@@ -121,11 +121,15 @@ test('signs Cursor in from its row, groups its models by maker, offers its three
     journey.signIn = { page: 'https://cursor.com/', configFolder: 'profile/cursor/config', noOpenBrowser: true }
     expect(existsSync(join(root, 'signed-out'))).toBe(false)
 
-    // Its models under their makers, in Cursor's order, each maker a small heading.
-    const models = panel.getByRole('group', { name: 'Cursor available models', exact: true })
-    await expect(models.getByRole('heading', { level: 5 })).toHaveText(['Cursor', 'Anthropic', 'OpenAI'])
-    await expect(models.getByRole('list', { name: 'Anthropic', exact: true }).getByRole('listitem')).toContainText(['Claude Fixture'])
-    journey.settingsMakers = await models.getByRole('heading', { level: 5 }).allTextContents()
+    // Its models are behind a small field, and its list keeps them under their makers, in Cursor's order.
+    const modelsField = panel.getByRole('button', { name: /^Show Cursor models, /u })
+    await modelsField.click()
+    const models = page.getByRole('dialog', { name: 'Cursor models', exact: true })
+    await expect(models.getByRole('region', { name: 'Anthropic', exact: true }).getByRole('listitem')).toContainText(['Claude Fixture'])
+    journey.settingsMakers = await models.locator('section').evaluateAll(sections => sections.map(section => section.getAttribute('aria-label') ?? ''))
+    expect(journey.settingsMakers).toEqual(['Cursor', 'Anthropic', 'OpenAI'])
+    await page.keyboard.press('Escape')
+    await expect(models).toHaveCount(0)
 
     // Connected, at every size and in light.
     for (const [width, height, appearance] of [[1600, 1000, 'dark'], [1280, 800, 'dark'], [820, 560, 'dark'], [820, 560, 'light']] as const) {
@@ -136,7 +140,11 @@ test('signs Cursor in from its row, groups its models by maker, offers its three
       await page.screenshot({ animations: 'disabled', path: join(evidence, `connected-${width}-${appearance}.png`) })
       expect(await clipped(page, '.providers-settings'), `Providers at ${width} in ${appearance}`).toEqual([])
       await measure('connected lead', panel.locator('.provider-connection p').first(), width, appearance)
-      await measure('maker heading', models.getByRole('heading', { level: 5 }).first(), width, appearance)
+      await modelsField.click()
+      await measure('maker heading', models.locator('.model-picker__group').first(), width, appearance)
+      await measure('model name', models.getByRole('listitem').first(), width, appearance)
+      await page.keyboard.press('Escape')
+      await expect(models).toHaveCount(0)
     }
     // Escape inside the open row closes it and gives focus back to its header.
     await panel.getByRole('button', { name: 'Sign out of Cursor on this computer', exact: true }).focus()

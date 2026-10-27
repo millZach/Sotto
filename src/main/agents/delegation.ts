@@ -10,18 +10,20 @@ import { isThreadClosed, isThreadTurnRunning } from '../../shared/threadActivity
 import { countWorkingThreads, workingThreadsWarning } from '../../shared/workingThreads'
 import { workerMachineHostId, type WorkerMachineSetting, type WorkerPlacementReceipt } from '../../shared/workerMachine'
 import type { WatcherRefusal } from '../../shared/watcher'
+import { HOST_CEILING_HOLD_WORDS, type HostCeilingHold } from '../../shared/desktopDefaults'
 import type { PlacementAsk, WorkerPlacement } from './workerPlacement'
 import type { DesktopBranchMoves } from './branchMoves'
 import { branchStartWords, type BranchStartReceipt } from '../../shared/branchMoves'
 import { WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
 import { cancelDelegationInputSchema, delegatedThreadsBelow, delegateInputSchema, delegationRefusalCodeSchema, delegationWorkSchema, readDelegationInputSchema,
   DELEGATION_BRIEF_MAX, DELEGATION_LEVELS_MAX, DELEGATION_PROMPTS_PER_THREAD, DELEGATION_VIEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES, RECORDED_REFUSALS,
-  type DelegateInput, type DelegationWork, type DelegationNews, type DelegationOutcome, type DelegationRead, type DelegationRefusal, type DelegationRefusalCode, type DelegatedView, type DelegationView, type RefusedView } from '../../shared/delegation'
+  delegationAskedSchema, delegationHostHoldSchema, type DelegateInput, type DelegationWork, type DelegationNews, type DelegationOutcome, type DelegationRead, type DelegationRefusal, type DelegationRefusalCode, type DelegatedView, type DelegationView, type RefusedView } from '../../shared/delegation'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { WATCHER_FINAL_OUTCOMES, watcherBriefTurnIsNewest, watcherNewestTurnReply, watcherTurnOutcome } from './watcherOutcomes'
 import { delegationNewsText, foldDelegationNews, heldWords, type DelegationNewsDetail } from './delegationNews'
 import { WATCHER_QUIET_MS } from '../../shared/watcherOverview'
 import type { AgentState } from '../../shared/agents'
+import type { HostThreadsView } from './control'
 
 /** The commands delegation sends on a thread's behalf: create the delegated thread, send it a brief, stop it. */
 export type DelegationCommand = Extract<AgentCommand, { type: 'create-thread' | 'manual-send' | 'interrupt' }>
@@ -29,14 +31,22 @@ export type DelegationCommand = Extract<AgentCommand, { type: 'create-thread' | 
 export interface DelegationControlHooks {
   /** The user's own command on a thread, never one of Sotto's: a send pauses delegated sends to it, a Stop cascades. */
   userCommand(command: AgentCommand, threadId: string | undefined, answersQuestion: boolean): void
-  /** Every snapshot the coordinator accepts. Reads it once; never copies it. */
-  observe(snapshot: AgentHostSnapshot): void
+  /**
+   * Every snapshot the coordinator accepts. Reads it without copying it; `threads` looks its threads up by ID, when the
+   * coordinator can, so the pass reads only the threads its delegations name (#925 step 5).
+   */
+  observe(snapshot: AgentHostSnapshot, threads?: HostThreadsView): void
   /** The delegated threads whose turns delegation is following, kept in the observed set. */
   observedThreadIds(): readonly string[]
   /** The message ID a delegation gave its brief, so the brief's turn is known by it from the first echo. */
   messageIdFor(draftId: string): string | undefined
   /** Whether a message is one of delegation's briefs, so a thread's watcher never takes it for the user's own. */
   ownsMessage?(messageId: string): boolean
+  /**
+   * A number that moves whenever a message stops being one of delegation's briefs, as when an old delegation is let go,
+   * so Watcher reads again a thread whose newest message it took for a brief (#925 step 5).
+   */
+  briefsRevision?(): number
   /** The guard a delegated brief carries to the provider's writer, asked again after the thread's preparation. */
   guardFor(draftId: string): (() => void) | undefined
   /**
@@ -103,6 +113,17 @@ export interface DelegationServiceOptions {
    * from the delegating thread's branch, so its commits can be brought back to it. Off, it is made as any new worktree is.
    */
   readonly bringBack?: boolean
+  /**
+   * The user's new-thread default as this machine may use it, in place of its own coordinator's (#1310). A headless host
+   * gives it: the desktop defaults its desktop last sent, held to Ask for approval when it was never told them or that
+   * desktop may not answer there, with why. Absent, the coordinator's own new-thread default applies, as on the desktop.
+   */
+  readonly newThreadCeiling?: () => { readonly mode: AgentRuntimeMode; readonly held?: HostCeilingHold }
+  /**
+   * The warning a start's result carries while more than ten threads are working on this machine after it, counted on
+   * this machine's own list. Absent, This computer's words, which mention its battery.
+   */
+  readonly warning?: (count: number) => string | undefined
   /** The clock a held background outcome's release reads, and how it waits for it; tests give their own. */
   readonly now?: () => number
   readonly schedule?: (callback: () => void, delay: number) => () => void
@@ -183,6 +204,11 @@ const recordSchema = z.object({
    * left running was never seen to end (#1263). Whether the delegating thread has been told so, by a wake-up or a read.
    */
   releasedAt: z.iso.datetime().optional(), releaseTold: z.literal(true).optional(),
+  /**
+   * A start on a headless host whose role asked for more than Ask for approval and got Ask for approval because the host had
+   * no desktop defaults yet, or no desktop that sent them may answer there (#1310): what the desktop's roster says.
+   */
+  held: delegationHostHoldSchema.optional(),
   createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(),
 }).strict()
 type DelegationRecord = z.infer<typeof recordSchema>
@@ -202,6 +228,11 @@ const refusedSchema = z.object({ id: z.uuid(), delegatingThreadId: id, action: z
   /** The provider a refused start named. */
   provider: providerIdSchema.optional(),
   code: delegationRefusalCodeSchema, message: z.string().min(1).max(REFUSAL_MESSAGE_MAX),
+  /**
+   * The machine or system a start refused as `MACHINE_UNAVAILABLE` asked for (#1310), which its card names. Only a call
+   * Work across machines offers a machine or system to can carry one; a record from before it has none.
+   */
+  asked: delegationAskedSchema.optional(),
   /** The user's message to the delegating thread the call answered, when Sotto can find one (decision 3). */
   rootUserMessageId: id.optional(),
   /** The delegating thread's newest message when it called, a wake-up's included: the turn the call was made in. */
@@ -248,7 +279,7 @@ const NOTES: Record<WatcherOutcome, string> = {
 }
 const REFUSED_CANCEL = 'This delegation was refused when it was asked for, so nothing was started or sent, and there is nothing to stop.'
 const GONE = 'The delegated thread is gone from Sotto, so nothing more will come of this, and Sotto cannot tell how its turn ended. Start a new delegation if the work is still needed.'
-export const NOT_ADMITTED = 'This thread cannot delegate with Sotto\'s tools. Only Claude Code, Codex, Grok Build and Muse threads on this computer can, outside Watcher, host setup and provider jobs. Threads on another machine get none of Sotto\'s tools yet. Nothing was started.'
+export const NOT_ADMITTED = 'This thread cannot delegate with Sotto\'s tools. Only Claude Code, Codex, Grok Build and Muse threads can, outside Watcher, host setup and provider jobs, on this computer or on a machine whose Sotto offers it. Nothing was started.'
 const LEVEL_LIMIT = 'This thread was started by a delegated thread, and delegation goes two levels deep, so it cannot delegate. Nothing was started.'
 
 /** The text cut to at most this many UTF-8 bytes, never inside a character. */
@@ -337,6 +368,8 @@ export class DelegationService {
   private viewsScheduled = false
   private tail: Promise<unknown> = Promise.resolve()
   private closed = false
+  /** Moves whenever a record, and with it a brief's message, is let go (`DelegationControlHooks.briefsRevision`). */
+  private briefsRevision = 0
   private unhook: (() => void) | undefined
 
   constructor(private readonly options: DelegationServiceOptions) {
@@ -374,10 +407,11 @@ export class DelegationService {
     this.options.host.admitDelegationCommands?.()
     this.unhook = this.options.control.useDelegation({
       userCommand: (command, threadId, answersQuestion) => this.userCommand(command, threadId, answersQuestion),
-      observe: snapshot => this.observe(snapshot),
+      observe: (snapshot, threads) => this.observe(snapshot, threads),
       observedThreadIds: () => this.observedThreadIds(),
       messageIdFor: draftId => this.records.findLast(record => record.draftId === draftId && this.open(record))?.messageId,
       ownsMessage: messageId => this.records.some(record => record.messageId === messageId),
+      briefsRevision: () => this.briefsRevision,
       guardFor: draftId => {
         const record = this.records.findLast(item => item.draftId === draftId && this.open(item))
         return record ? () => this.guardSend(record.id) : undefined
@@ -440,7 +474,7 @@ export class DelegationService {
       const started = this.record(record.id)
       const pending = started !== undefined && (started.deliveryState === 'queued' || started.deliveryState === 'dispatching'
         || started.deliveryState === 'uncertain' || started.deliveryState === 'accepted' && started.outcomeAt === undefined)
-      const warning = admitted.start ? workingThreadsWarning(countWorkingThreads(this.snapshot().threads, pending ? record.delegatedThreadId : undefined)) : undefined
+      const warning = admitted.start ? (this.options.warning ?? workingThreadsWarning)(countWorkingThreads(this.snapshot().threads, pending ? record.delegatedThreadId : undefined)) : undefined
       const waitMs = Math.max(0, Math.min((input.wait_seconds ?? DELEGATION_WAIT_MAX_SECONDS) * 1000,
         context.waitMs === undefined ? Infinity : context.waitMs - 2_000))
       if (this.open(this.record(record.id)!)) {
@@ -542,13 +576,13 @@ export class DelegationService {
       ...(unknownWhy ? { unknownWhy } : {}), told: record.told === outcome, createdAt: record.createdAt, ...(outcomeAt ? { outcomeAt } : {}),
       ...(record.deliveryState === 'failed' ? { notSent: record.failure ?? 'provider' } : {}),
       ...(record.waitSeconds !== undefined && record.waitStartedAt ? { wait: { seconds: record.waitSeconds, startedAt: record.waitStartedAt, ...(record.wentOnAt ? { wentOnAt: record.wentOnAt } : {}) } } : {}),
-      waiting: this.calling.has(record.id) && record.wentOnAt === undefined && this.open(record) }
+      waiting: this.calling.has(record.id) && record.wentOnAt === undefined && this.open(record), ...(record.held ? { held: record.held } : {}) }
   }
   /** A refused delegation as the window shows it: the rule that turned it down, and the turn the call was made in. */
   private refusedView(refused: RefusedDelegation): RefusedView {
     const anchor = refused.callerMessageId ?? refused.rootUserMessageId
     return { id: refused.id, ...(refused.delegatedThreadId ? { thread: refused.delegatedThreadId } : {}), ...(refused.provider ? { provider: refused.provider } : {}),
-      action: refused.action, work: refused.work, outcome: 'refused', refusal: refused.code,
+      action: refused.action, work: refused.work, outcome: 'refused', refusal: refused.code, ...(refused.asked ? { asked: refused.asked } : {}),
       ...(refused.rootUserMessageId ? { rootUserMessageId: refused.rootUserMessageId } : {}), ...(anchor ? { anchorMessageId: anchor } : {}), createdAt: refused.createdAt }
   }
   /**
@@ -684,6 +718,8 @@ export class DelegationService {
     const record = refusedSchema.parse({ id: randomUUID(), delegatingThreadId: caller.id, action: target === undefined ? 'start' : 'send', work: input.work,
       ...(target !== undefined && this.links.get(target)?.delegatingThreadId === caller.id ? { delegatedThreadId: target } : {}),
       ...(target === undefined && input.provider ? { provider: input.provider } : {}),
+      ...(refusal.code === 'MACHINE_UNAVAILABLE' && (input.machine !== undefined || input.os !== undefined)
+        ? { asked: { ...(input.machine !== undefined ? { machine: input.machine } : {}), ...(input.os !== undefined ? { os: input.os } : {}) } } : {}),
       code: refusal.code, message: refusal.message.slice(0, REFUSAL_MESSAGE_MAX), ...(root ? { rootUserMessageId: root } : {}), ...(head ? { callerMessageId: head } : {}),
       createdAt: now() })
     this.refusalEntries.push(record)
@@ -807,8 +843,16 @@ export class DelegationService {
     if (!ceiling.runtimeMode) refuse('PERMISSION_NOT_COMPARABLE', 'This model has no permission mode Sotto can compare. Choose another model. Nothing was started.')
     const mode = explicit ?? ceiling.runtimeMode
     if (!model.runtimeModes?.includes(mode)) refuse('PERMISSION_NOT_COMPARABLE', 'This model does not offer that permission mode. Nothing was started.')
-    if (index(mode) > index(ceiling.runtimeMode)) refuse('PERMISSION_TOO_WIDE', 'A delegated thread cannot have more permission than this thread has, or than the user\'s new-thread default. Nothing was started.')
+    if (index(mode) > index(ceiling.runtimeMode)) {
+      // On a host that holds starts to Ask for approval, the refusal says why when that, not the calling thread, held it.
+      const held = this.newThreadDefault().held, own = caller.providerMode ? 'approval-required' : caller.runtimeMode ?? 'approval-required'
+      refuse('PERMISSION_TOO_WIDE', `A delegated thread cannot have more permission than this thread has, or than the user's new-thread default.${held && index(own) > 0 ? ` ${HOST_CEILING_HOLD_WORDS[held]}` : ''} Nothing was started.`)
+    }
     return { runtimeMode: mode }
+  }
+  /** The user's new-thread default as this machine may use it: the coordinator's own, or what a host was told (#1310). */
+  private newThreadDefault(): { readonly mode: AgentRuntimeMode; readonly held?: HostCeilingHold } {
+    return this.options.newThreadCeiling?.() ?? { mode: this.options.control.configuration().newThreadRuntimeMode ?? 'approval-required' }
   }
   /** The widest a delegated thread may start on: the narrower of the calling thread's own and the new-thread default. */
   private ceiling(model: AgentModel, caller: AgentThread, models: readonly AgentModel[]) {
@@ -819,7 +863,7 @@ export class DelegationService {
       if (mode?.allows !== 'nothing') refuse('PERMISSION_NOT_COMPARABLE', 'This thread\'s own permission profile cannot be compared with Sotto\'s modes, so Sotto cannot tell how much a thread it starts may have. Nothing was started.')
       own = 'approval-required'
     }
-    const configured = this.options.control.configuration().newThreadRuntimeMode ?? 'approval-required'
+    const configured = this.newThreadDefault().mode
     return resolveNewThreadPermission(model, index(own) < index(configured) ? own : configured)
   }
   /**
@@ -833,10 +877,11 @@ export class DelegationService {
     if (mode === wanted) return { mode }
     const index = (value: AgentRuntimeMode) => RUNTIME_MODE_ORDER.indexOf(value)
     const own = caller.providerMode ? 'approval-required' : caller.runtimeMode ?? 'approval-required'
-    const configured = this.options.control.configuration().newThreadRuntimeMode ?? 'approval-required'
+    const { mode: configured, held: hostHeld } = this.newThreadDefault()
     const thread = index(own) < index(configured)
-    // A limit the model does not offer starts on the nearest mode it does, and the receipt says that is why.
-    return { mode, held: { wanted, startedOn: mode, by: thread ? 'delegating-thread' : 'new-thread-default', ...(ceiling.nearestFit ? { unoffered: thread ? own : configured } : {}) } }
+    // A limit the model does not offer starts on the nearest mode it does, and the receipt says that is why. A host that held
+    // the default to Ask for approval says why it did (#1310).
+    return { mode, held: { wanted, startedOn: mode, by: thread ? 'delegating-thread' : hostHeld ?? 'new-thread-default', ...(ceiling.nearestFit ? { unoffered: thread ? own : configured } : {}) } }
   }
   /**
    * Whether the turn running in a delegated thread is the user's own: its newest message is neither a brief nor one of
@@ -926,7 +971,9 @@ export class DelegationService {
     const fromRole = byRole?.runtimeMode && input.permission === undefined ? this.heldToCeiling(byRole.runtimeMode, model, caller, snapshot.models) : undefined
     const permission = this.permission(model, caller, snapshot.models, input.permission ?? fromRole?.mode)
     const delegatedThreadId = randomUUID()
-    const record: DelegationRecord = recordSchema.parse({ ...base, delegatedThreadId, action: 'start', expectedLastUserMessageId: null })
+    const by = fromRole?.held?.by
+    const hostHeld = by === 'not-told' || by === 'no-answer-grant' || by === 'answers-revoked' ? by : undefined
+    const record: DelegationRecord = recordSchema.parse({ ...base, delegatedThreadId, action: 'start', expectedLastUserMessageId: null, ...(hostHeld ? { held: hostHeld } : {}) })
     this.add(record)
     this.creating.add(record.id)
     this.links.set(delegatedThreadId, { threadId: delegatedThreadId, delegatingThreadId: caller.id, createdAt: time, seenHead: null })
@@ -948,6 +995,7 @@ export class DelegationService {
     try { await this.save() }
     catch {
       this.records = this.records.filter(item => item.id !== record.id)
+      this.briefsRevision++
       this.creating.delete(record.id)
       if (record.action === 'start') this.links.delete(record.delegatedThreadId)
       refuse('PROVIDER_UNAVAILABLE', 'Sotto could not save this delegation, so nothing was started or sent. Try again.')
@@ -1156,15 +1204,22 @@ export class DelegationService {
   }
   /**
    * One pass over the coordinator's snapshot: each open brief's outcome from its thread, pauses whose turn has ended, and
-   * briefs whose thread is free. Reads the snapshot's thread list once, whatever the number of delegations.
+   * briefs whose thread is free. It reads only the threads its open delegations and its pauses name: by `view`, the
+   * coordinator's index, when it gives one (#925 step 5), otherwise from the snapshot's thread list read once, whatever the
+   * number of delegations. Each of those threads is read on every pass, since what the pass decides of one also follows
+   * the queue, the user's composer, delegation's own sends and the clock, which move without the thread.
    */
-  private observe(snapshot: AgentHostSnapshot): void {
+  private observe(snapshot: AgentHostSnapshot, view?: HostThreadsView): void {
     if (this.closed) return
     const open = this.records.filter(record => this.open(record))
     if (this.untold.size) this.scheduleNews()
     if (!open.length && !this.paused.size) return
-    const threads = new Map(snapshot.threads.map(thread => [thread.id, thread]))
-    const briefs = new Set(this.records.map(record => record.messageId))
+    let listed: Map<string, AgentThread> | undefined
+    const threads: Pick<ReadonlyMap<string, AgentThread>, 'get'> = view
+      ? { get: id => view.thread(id) }
+      : { get: id => (listed ??= new Map(snapshot.threads.map(thread => [thread.id, thread]))).get(id) }
+    let briefIds: Set<string> | undefined
+    const briefs = { has: (messageId: string) => (briefIds ??= new Set(this.records.map(record => record.messageId))).has(messageId) }
     let changed = false
     for (const threadId of [...this.paused]) {
       const thread = threads.get(threadId)
@@ -1212,7 +1267,7 @@ export class DelegationService {
    * outcome, the work its turn left running never seen to end (#1263). The delegating thread is told once, plainly, rather
    * than wait for work-settled news that may never come. One wait runs, for the next such outcome due, only while one waits.
    */
-  private releaseHeld(snapshot: AgentHostSnapshot, threads: ReadonlyMap<string, AgentThread>): boolean {
+  private releaseHeld(snapshot: AgentHostSnapshot, threads: Pick<ReadonlyMap<string, AgentThread>, 'get'>): boolean {
     this.cancelRelease?.(); this.cancelRelease = undefined
     let released = false, next = Infinity
     const clock = this.clock()
@@ -1392,7 +1447,10 @@ export class DelegationService {
       .map(({ thread, refusal, ...item }) => ({ ...item, ...(thread ? { thread } : {}), ...(refusal ? { refusal } : {}) }))
     const ready = this.ready(snapshot).map(model => ({ provider: model.providerId!, model: model.id, name: model.name,
       efforts: model.reasoningEfforts ?? [], permissions: model.runtimeModes ?? [] }))
-    return { status: 'ok' as const, delegations: own, models: ready, ...(this.options.roles ? { roles: this.roles(caller, snapshot, this.options.roles()) } : {}), limits: this.limits() }
+    // On a headless host (#1310), the new-thread default it holds starts to, and why when it holds them to Ask for approval.
+    const hold = this.options.newThreadCeiling?.()
+    return { status: 'ok' as const, delegations: own, models: ready, ...(this.options.roles ? { roles: this.roles(caller, snapshot, this.options.roles()) } : {}),
+      ...(hold ? { newThreadDefault: { permission: hold.mode, ...(hold.held ? { note: HOST_CEILING_HOLD_WORDS[hold.held] } : {}) } } : {}), limits: this.limits() }
   }
   /**
    * The machines this thread could name, as Watcher's `list_machines` gives them (#1032), while Work across machines is on.
@@ -1433,9 +1491,30 @@ export class DelegationService {
     const excess = this.records.length - RECORDS_MAX
     let dropped = 0
     // A brief still open, or one the delegating thread's current turn counts against its budget, is never dropped.
+    this.briefsRevision++
     this.records = this.records.filter(record => this.open(record) || this.roots.get(record.delegatingThreadId) === record.rootUserMessageId || dropped++ >= excess)
     const kept = new Set(this.records.map(record => record.delegatedThreadId))
     if (this.links.size > RECORDS_MAX) for (const threadId of [...this.links.keys()].slice(0, this.links.size - RECORDS_MAX)) if (!kept.has(threadId)) this.links.delete(threadId)
+  }
+  /**
+   * Cleared threads leave the record (ADR-0140 decision 4): every finished delegation either side of them, their links,
+   * their turn roots and the refusals they were told. A delegation still open is kept: clearing never takes a thread
+   * whose delegated threads are working, so one is left only by a race, and its outcome still needs its record.
+   */
+  forgetThreads(threadIds: ReadonlySet<string>): Promise<void> {
+    const named = (record: { readonly delegatingThreadId: string; readonly delegatedThreadId?: string | undefined }): boolean =>
+      threadIds.has(record.delegatingThreadId) || record.delegatedThreadId !== undefined && threadIds.has(record.delegatedThreadId)
+    const records = this.records.filter(record => !named(record) || this.open(record))
+    const refusals = this.refusals.filter(refusal => !named(refusal))
+    let changed = records.length !== this.records.length || refusals.length !== this.refusals.length
+    if (records.length !== this.records.length) this.records = records
+    if (refusals.length !== this.refusals.length) this.refusals = refusals
+    for (const [threadId, link] of [...this.links]) if (threadIds.has(threadId) || threadIds.has(link.delegatingThreadId)) { this.links.delete(threadId); changed = true }
+    for (const threadId of threadIds) {
+      if (this.roots.delete(threadId)) changed = true
+      this.queuedBriefs.delete(threadId); this.paused.delete(threadId); this.untold.delete(threadId); this.lastWorking.delete(threadId); this.viewsChanged.delete(threadId)
+    }
+    return changed ? this.persist() : Promise.resolve()
   }
   /** Writes the record as it is now; rejects when it could not be saved. */
   private save(): Promise<void> {

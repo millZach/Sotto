@@ -1,10 +1,12 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { t } from '@lingui/core/macro'
-import { Check, ChevronDown, Lock, Shield } from 'lucide-react'
+import { Check, ChevronDown, Lock, Shield, Zap } from 'lucide-react'
+import { msg, t } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 import { hostForThread, capabilitiesForThread, isThreadProviderConnected, PROVIDER_LABELS, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, THREAD_SETTINGS_UNRECONCILED, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../../shared/agents'
 import { catalogEntry, chosenModelId, resolveModel } from '../../../shared/modelCatalog'
 import type { AgentConnection } from './AgentContext'
+import { shownWords, wordsOf, type LaterWords } from './interfaceWords'
 import { moveListboxFocus } from './listboxKeys'
 import { ModelPicker, type UnavailablePickerProvider } from './ModelPicker'
 import { useOwnServersBridge } from './OwnModelServers'
@@ -12,7 +14,7 @@ import { localHostId } from '../features/onboarding/localAgents'
 import { EffortPicker, effortLabel } from './EffortPicker'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { providerKey } from './threadFacts'
-import { pendingSettingsStore, permissionPatch, settingValues, settingValuesFor, unconfirmedKinds, usePendingSettings, usesProviderModes, type SettingKind, type SettingsPatch } from './pendingSettings'
+import { FAST_MODE_NOT_CARRIED, FAST_OFF, FAST_ON, pendingSettingsStore, permissionPatch, settingValues, settingValuesFor, unconfirmedKinds, usePendingSettings, usesProviderModes, type SettingKind, type SettingsPatch } from './pendingSettings'
 import { WatcherPermissionChip } from '../watcher/WatcherPermissionChip'
 import { useWatcherRoom } from '../watcher/watcherRoom'
 import { WatchOnSendToggle } from '../watcher/WatchControls'
@@ -21,12 +23,12 @@ import { useSaveOrchestrating } from '../watcher/orchestratingRole'
 import { useLingui as useInterfaceLanguage } from '../state/interfaceLanguageReact'
 import './threadChips.css'
 
-export const RUNTIME_LABELS: Record<AgentRuntimeMode, string> = {
-  'approval-required': 'Ask for approval',
-  'auto-accept-edits': 'Allow edits',
-  auto: 'Auto',
-  'full-access': 'Full access',
-}
+export const RUNTIME_LABELS: Record<AgentRuntimeMode, string> = wordsOf({
+  'approval-required': msg({ message: 'Ask for approval', comment: 'A permission mode: the agent asks before it acts.' }),
+  'auto-accept-edits': msg({ message: 'Allow edits', comment: 'A permission mode: the agent edits files without asking.' }),
+  auto: msg({ message: 'Auto', comment: 'A permission mode: the agent decides what to ask about.' }),
+  'full-access': msg({ message: 'Full access', comment: 'A permission mode: the agent runs anything without asking.' }),
+})
 /**
  * What each of Cursor's three modes does, said as Cursor doing it (ADR-0128), in the interface language. Cursor has no
  * Allow edits: it edits inside the project without asking under every mode, so Ask for approval says so, and Auto says
@@ -40,6 +42,19 @@ export function cursorModeLine(mode: AgentRuntimeMode): string | undefined {
     default: return undefined
   }
 }
+/**
+ * What each of DeepSeek Harness's three modes does, said as the harness doing it (ADR-0138), in the interface
+ * language. Its permissions are a sandbox boundary: Ask for approval denies a first attempt and the model asks to
+ * retry it, and Allow edits also lets commands and network run inside the sandbox, so both say so.
+ */
+export function deepseekModeLine(mode: AgentRuntimeMode): string | undefined {
+  switch (mode) {
+    case 'approval-required': return t`DeepSeek Harness denies a first write or command and the model then asks you to allow the retry. A model that does not ask simply fails the write.`
+    case 'auto-accept-edits': return t`DeepSeek Harness edits, runs commands and uses the network inside the workspace sandbox without asking. It asks before anything crosses that boundary.`
+    case 'full-access': return t`DeepSeek Harness runs commands and edits files without asking, in the project and outside it.`
+    default: return undefined
+  }
+}
 /** Permissions' glyph, which stands for the value in a narrow composer. */
 export const PERMISSIONS_ICON = <Shield size={14} aria-hidden="true" />
 const capitalise = (value: string): string => value.charAt(0).toUpperCase() + value.slice(1)
@@ -48,8 +63,8 @@ const capitalise = (value: string): string => value.charAt(0).toUpperCase() + va
 export function threadOptionsSummary(model: AgentModel | undefined, effort: string | undefined, mode: AgentRuntimeMode | undefined, providerMode?: string): string {
   const reasoning = effort ?? model?.defaultReasoningEffort
   const own = model?.providerModes?.find(candidate => candidate.id === startingProviderMode(model, providerMode))
-  const permissions = own ? own.name : mode ? RUNTIME_LABELS[mode] : 'Provider default'
-  return [model?.name ?? 'Choose model', reasoning ? capitalise(reasoning) : null, permissions].filter(Boolean).join(' · ')
+  const permissions = own ? own.name : mode ? RUNTIME_LABELS[mode] : t`Provider default`
+  return [model?.name ?? t`Choose model`, reasoning ? capitalise(reasoning) : null, permissions].filter(Boolean).join(' · ')
 }
 
 /**
@@ -57,8 +72,9 @@ export function threadOptionsSummary(model: AgentModel | undefined, effort: stri
  * a build whose main does not take the choice yet. Where it does, `WatcherPermissionChip` stands here instead.
  */
 export function WatcherPermission({ mode = 'approval-required' }: { readonly mode?: AgentRuntimeMode | undefined }): ReactNode {
-  return <span className="thread-options__pinned" title="This Sotto cannot change what Watcher may do without asking.">
-    <Lock size={13} aria-hidden="true" /><span className="tt-visually-hidden">Watcher’s permissions: </span>{RUNTIME_LABELS[mode]}</span>
+  const { t } = useLingui()
+  return <span className="thread-options__pinned" title={t`This Sotto cannot change what Watcher may do without asking.`}>
+    <Lock size={13} aria-hidden="true" /><span className="tt-visually-hidden">{t`Watcher’s permissions:`}{' '}</span>{RUNTIME_LABELS[mode]}</span>
 }
 
 export interface ChoiceOption {
@@ -71,7 +87,7 @@ export interface ChoiceOption {
 export function effortChoices(model: AgentModel | undefined, reasoning: string): ChoiceOption[] {
   const efforts = model?.reasoningEfforts ?? []
   if (efforts.length === 0) return []
-  const lead = efforts.includes(reasoning) ? [] : [{ id: reasoning, label: reasoning ? capitalise(reasoning) : 'Provider default', disabled: true }]
+  const lead = efforts.includes(reasoning) ? [] : [{ id: reasoning, label: reasoning ? capitalise(reasoning) : t`Provider default`, disabled: true }]
   return [...lead, ...efforts.map(effort => ({ id: effort, label: capitalise(effort) }))]
 }
 
@@ -91,10 +107,10 @@ export function modeChoices(model: AgentModel | undefined, runtimeMode: AgentRun
   }
   const modes = model?.runtimeModes ?? []
   if (modes.length === 0) return []
-  const lead = runtimeMode === undefined ? [{ id: '', label: 'Provider default', disabled: true }]
+  const lead = runtimeMode === undefined ? [{ id: '', label: t`Provider default`, disabled: true }]
     : modes.includes(runtimeMode) ? [] : [{ id: runtimeMode, label: RUNTIME_LABELS[runtimeMode], disabled: true }]
   return [...lead, ...modes.map(mode => {
-    const line = model?.providerId === 'cursor' ? cursorModeLine(mode) : undefined
+    const line = model?.providerId === 'cursor' ? cursorModeLine(mode) : model?.providerId === 'deepseek' ? deepseekModeLine(mode) : undefined
     return { id: mode, label: RUNTIME_LABELS[mode], ...(line ? { description: line, translated: true } : {}) }
   })]
 }
@@ -125,12 +141,13 @@ export function ThreadOptionFields({ models, modelId, reasoningEffort, runtimeMo
   const efforts = effortChoices(model, reasoning)
   const own = usesProviderModes(model)
   const modes = modeChoices(model, runtimeMode, providerMode)
+  const { t } = useLingui()
   return <div className="thread-options">
-    <div className="thread-options__model"><span>Model</span><ModelPicker models={models} modelId={modelId} disabled={disabled || modelDisabled} onChange={onModel} /></div>
-    {efforts.length > 0 && <label><span>Reasoning</span><select aria-label={OPTION_CHIP_NAMES.effort} title="Reasoning" value={reasoning} disabled={disabled || modelDisabled} onChange={event => onReasoning(event.target.value)}>
+    <div className="thread-options__model"><span>{t`Model`}</span><ModelPicker models={models} modelId={modelId} disabled={disabled || modelDisabled} onChange={onModel} /></div>
+    {efforts.length > 0 && <label><span>{t`Reasoning`}</span><select aria-label={OPTION_CHIP_NAMES.effort} title={t`Reasoning`} value={reasoning} disabled={disabled || modelDisabled} onChange={event => onReasoning(event.target.value)}>
       {efforts.map(option => <option key={option.id} value={option.id} disabled={option.disabled}>{option.label}</option>)}
     </select></label>}
-    {modes.length > 0 && <label><span>Permissions</span><select aria-label={OPTION_CHIP_NAMES.permissions} title="Permissions" value={(own ? startingProviderMode(model, providerMode) : runtimeMode) ?? ''} disabled={disabled}
+    {modes.length > 0 && <label><span>{t`Permissions`}</span><select aria-label={OPTION_CHIP_NAMES.permissions} title={t`Permissions`} value={(own ? startingProviderMode(model, providerMode) : runtimeMode) ?? ''} disabled={disabled}
       onChange={event => own ? onProviderMode?.(event.target.value) : onRuntime(event.target.value as AgentRuntimeMode)}>
       {modes.map(option => <option key={option.id} value={option.id} disabled={option.disabled} title={option.description}>{option.label}</option>)}
     </select></label>}
@@ -162,22 +179,20 @@ function threadModelChoices(state: AgentState, thread: AgentThread, sameProvider
 }
 
 /**
- * What a permission mode still lets the provider do, said as the provider doing it, for the caption beside the
- * chips while a change away from it waits to be confirmed. The difference decides what the provider does on its
- * next tool call, so the caption names the mode in force rather than the one coming.
+ * The caption beside the chips while a permission change waits: what is still in force, in the provider's name. What a
+ * permission mode still lets the provider do is said as the provider doing it: the difference decides what the
+ * provider does on its next tool call, so the caption names the mode in force rather than the one coming.
  */
-const IN_FORCE: Record<AgentRuntimeMode, string> = {
-  'approval-required': 'asks for approval',
-  'auto-accept-edits': 'makes edits without asking',
-  auto: 'decides what to ask you about',
-  'full-access': 'runs anything without asking',
-}
-
-/** The caption beside the chips while a permission change waits: what is still in force, in the provider's name. */
 export function permissionInForceCaption(provider: string, inForce: { readonly runtimeMode?: AgentRuntimeMode | undefined; readonly providerModeName?: string | undefined }): string {
-  if (inForce.providerModeName) return `${provider} stays on ${inForce.providerModeName} until it confirms.`
-  if (inForce.runtimeMode) return `${provider} still ${IN_FORCE[inForce.runtimeMode]} until it confirms.`
-  return `${provider} keeps its own default until it confirms.`
+  const mode = inForce.providerModeName
+  if (mode) return t({ message: `${provider} stays on ${mode} until it confirms.`, comment: '{provider} is a provider\'s name or "The provider"; {mode} is the provider\'s own name for a permission mode.' })
+  switch (inForce.runtimeMode) {
+    case 'approval-required': return t({ message: `${provider} still asks for approval until it confirms.`, comment: '{provider} is a provider\'s name or "The provider".' })
+    case 'auto-accept-edits': return t({ message: `${provider} still makes edits without asking until it confirms.`, comment: '{provider} is a provider\'s name or "The provider".' })
+    case 'auto': return t({ message: `${provider} still decides what to ask you about until it confirms.`, comment: '{provider} is a provider\'s name or "The provider".' })
+    case 'full-access': return t({ message: `${provider} still runs anything without asking until it confirms.`, comment: '{provider} is a provider\'s name or "The provider".' })
+    default: return t({ message: `${provider} keeps its own default until it confirms.`, comment: '{provider} is a provider\'s name or "The provider".' })
+  }
 }
 
 /**
@@ -187,9 +202,9 @@ export function permissionInForceCaption(provider: string, inForce: { readonly r
  * No answer at all leaves the chip on what the thread last reported, and Try again sends the choice once more.
  */
 export function settingRefusalText(provider: string, wanted: string, inForce: string, error: string | null): string {
-  if (error === null) return `Sotto did not get ${provider}'s answer about ${wanted}, so the chip shows what the thread last reported. Try again to send it once more.`
-  if (error === PROVIDER_REJECTED_ACTION) return `${provider} did not switch to ${wanted}. The thread stays on ${inForce}; nothing else changed.`
-  return `${provider} did not switch to ${wanted}. ${error}`
+  if (error === null) return t({ message: `Sotto did not get ${provider}'s answer about ${wanted}, so the chip shows what the thread last reported. Try again to send it once more.`, comment: '{provider} is a provider\'s name or "The provider"; {wanted} is the chosen model, effort or permission mode.' })
+  if (error === PROVIDER_REJECTED_ACTION) return t({ message: `${provider} did not switch to ${wanted}. The thread stays on ${inForce}; nothing else changed.`, comment: '{provider} is a provider\'s name or "The provider"; {wanted} and {inForce} are a model, effort or permission mode.' })
+  return t({ message: `${provider} did not switch to ${wanted}. ${error}`, comment: '{error} is the provider\'s or Sotto\'s own reason, shown as it came.' })
 }
 
 /**
@@ -202,8 +217,8 @@ export function settingRefusalText(provider: string, wanted: string, inForce: st
 export function unconfirmedSettingText(provider: string, wanted: string, error: string | null, inForce?: string): string {
   if (error === null || error === PROVIDER_RESULT_UNCONFIRMED || error === THREAD_SETTINGS_UNRECONCILED) {
     // A model or effort with no result holds nothing back, so a turn can run on the one before it meanwhile (#1192).
-    if (inForce !== undefined && inForce !== wanted) return `${provider} has not confirmed ${wanted}. Until it does, a turn can still run on ${inForce}.`
-    return `${provider} has not confirmed ${wanted}. The thread starts on ${wanted} the next time it is used, and Sotto checks it then.`
+    if (inForce !== undefined && inForce !== wanted) return t({ message: `${provider} has not confirmed ${wanted}. Until it does, a turn can still run on ${inForce}.`, comment: '{provider} is a provider\'s name or "The provider"; {wanted} and {inForce} are a model, effort or permission mode.' })
+    return t({ message: `${provider} has not confirmed ${wanted}. The thread starts on ${wanted} the next time it is used, and Sotto checks it then.`, comment: '{provider} is a provider\'s name or "The provider"; {wanted} is a model, effort or permission mode.' })
   }
   return error
 }
@@ -233,6 +248,7 @@ export function ChoiceChip({ label, placeholder, value, options, disabled, pendi
    */
   readonly icon?: ReactNode
 }): ReactNode {
+  const { t } = useLingui()
   const [open, setOpen] = useState(false)
   const [below, setBelow] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
@@ -263,7 +279,8 @@ export function ChoiceChip({ label, placeholder, value, options, disabled, pendi
   const current = options.find(option => option.id === value && !option.disabled)
   const shown = current?.label ?? (value ? capitalise(value) : placeholder)
   // A chip that can show its glyph alone says its value in its tooltip too, so the shield can be read by pointing at it.
-  const title = disabled && fixedReason ? `${icon ? `${label}: ${shown}` : label}. ${fixedReason}` : icon ? `${label}: ${shown}` : label
+  const named = icon ? t({ message: `${label}: ${shown}`, comment: 'A chip\'s tooltip: the setting\'s name, then its value.' }) : label
+  const title = disabled && fixedReason ? t({ message: `${named}. ${fixedReason}`, comment: 'A fixed chip\'s tooltip: its name, then why it cannot be pressed now.' }) : named
   const choose = (id: string): void => { onChange(id); setOpen(false); trigger.current?.focus() }
   const listbox = <div ref={list} id={listId} role="listbox" aria-label={label} className={foot ? 'thread-chip-menu__options' : 'thread-chip-menu__list'} data-below={!foot && below ? 'true' : undefined} onKeyDown={event => moveListboxFocus(event, list.current)}>
     {options.map(option => <button type="button" role="option" key={option.id} aria-selected={option.id === value} disabled={option.disabled} onClick={() => choose(option.id)}>
@@ -300,6 +317,63 @@ export interface ThreadContinueOffer {
 const providerNameOf = (thread: AgentThread): string | undefined => thread.providerId ? PROVIDER_LABELS[thread.providerId] : undefined
 
 /**
+ * What fast mode costs, said once in the toggle's tooltip (ADR-0143): the provider's own line where it gives one (Codex's
+ * tier description), Sotto's for Claude Code, and a plain one otherwise.
+ */
+export function fastModeCost(model: AgentModel | undefined, provider: string | undefined): string {
+  const own = model?.fastMode?.description?.trim()
+  if (own) return /[.!?]$/u.test(own) ? own : `${own}.`
+  return provider === 'claude' ? t`Up to 2.5x faster output, at twice the price per token.` : t`Faster output, at a higher price.`
+}
+/** The fast mode toggle's tooltip: whether it is on, what it costs and what a press does. A fixed toggle says no press. */
+export function fastModeTitle(model: AgentModel | undefined, provider: string | undefined, on: boolean, fixed: boolean): string {
+  const cost = fastModeCost(model, provider)
+  if (fixed) return on ? t({ message: `Fast mode is on for this thread. ${cost}`, comment: '{cost} is a sentence about what fast mode costs.' })
+    : t({ message: `Fast mode is off. ${cost}`, comment: '{cost} is a sentence about what fast mode costs.' })
+  return on ? t({ message: `Fast mode is on for this thread. ${cost} Press to turn it off.`, comment: '{cost} is a sentence about what fast mode costs.' })
+    : t({ message: `Fast mode is off. ${cost} Press to turn it on for this thread.`, comment: '{cost} is a sentence about what fast mode costs.' })
+}
+/**
+ * The alert after a fast mode press the provider did not take, as `settingRefusalText` says it for the other chips. A
+ * model change whose fast mode the provider refused went through, so that line names the model the thread is now on.
+ */
+export function fastRefusalText(provider: string, wanted: boolean, error: string | null, model = ''): string {
+  if (error === FAST_MODE_NOT_CARRIED) return t({ message: `${provider} did not switch fast mode on. The thread is on ${model} at normal speed.`, comment: '{provider} is a provider\'s name or "The provider"; {model} is the model the thread is now on.' })
+  if (error === null) return t({ message: `Sotto did not get ${provider}'s answer about fast mode, so the toggle shows what the thread last reported. Try again to send it once more.`, comment: '{provider} is a provider\'s name or "The provider".' })
+  if (error === PROVIDER_REJECTED_ACTION) return wanted
+    ? t({ message: `${provider} did not switch fast mode on. The thread stays at normal speed; nothing else changed.`, comment: '{provider} is a provider\'s name or "The provider".' })
+    : t({ message: `${provider} did not switch fast mode off. The thread stays in fast mode; nothing else changed.`, comment: '{provider} is a provider\'s name or "The provider".' })
+  return wanted ? t({ message: `${provider} did not switch fast mode on. ${error}`, comment: '{error} is the provider\'s or Sotto\'s own reason, shown as it came.' })
+    : t({ message: `${provider} did not switch fast mode off. ${error}`, comment: '{error} is the provider\'s or Sotto\'s own reason, shown as it came.' })
+}
+/** The line when the provider never answered a fast mode press, as `unconfirmedSettingText` says it for the other chips. */
+export function fastUnconfirmedText(provider: string, wanted: boolean, error: string | null): string {
+  if (error === null || error === PROVIDER_RESULT_UNCONFIRMED || error === THREAD_SETTINGS_UNRECONCILED) return wanted
+    ? t({ message: `${provider} has not confirmed fast mode. Until it does, a turn can still run at normal speed.`, comment: '{provider} is a provider\'s name or "The provider".' })
+    : t({ message: `${provider} has not confirmed turning fast mode off. Until it does, a turn can still run in fast mode.`, comment: '{provider} is a provider\'s name or "The provider".' })
+  return error
+}
+
+/**
+ * Fast mode for this thread (ADR-0143, Zach's pick A of the `prototype/composer-fast-mode` tag): a one-press toggle after
+ * the model chip, a muted outline bolt while off and a filled bolt in the accent while on, with `aria-pressed`. Space or
+ * Enter toggles it and focus stays on it. Drawn only for a model that offers fast mode, on Claude Code or Codex.
+ */
+export function FastModeToggle({ model, provider, on, disabled, pending, describedBy, onChange }: {
+  readonly model: AgentModel | undefined; readonly provider: string | undefined; readonly on: boolean; readonly disabled: boolean; readonly pending: boolean
+  readonly describedBy?: string | undefined; readonly onChange: (on: boolean) => void
+}): ReactNode {
+  return <button type="button" className="thread-chip thread-fast tt-focusable" aria-label={OPTION_CHIP_NAMES.fast} aria-pressed={on}
+    title={fastModeTitle(model, provider, on, disabled)} aria-describedby={pending ? describedBy : undefined} data-pending={pending ? 'true' : undefined}
+    disabled={disabled} onClick={() => onChange(!on)}>
+    <Zap size={14} aria-hidden="true" fill={on ? 'currentColor' : 'none'} />
+  </button>
+}
+/** Whether a thread on this model shows the fast mode toggle: the model offers it, on Claude Code or Codex (ADR-0143). */
+export const offersFastMode = (model: AgentModel | undefined, provider: string | undefined): boolean =>
+  model?.fastMode !== undefined && (provider === 'claude' || provider === 'codex')
+
+/**
  * Whether a prompt on this thread is on its way to the provider, which a settings change would have to wait behind. One
  * the user set aside is not: Sotto never sends it again, whatever became of it (#1156).
  */
@@ -310,7 +384,7 @@ export const promptOnItsWay = (state: AgentState, threadId: string): boolean =>
 /** Why Watcher's permissions are fixed now, as a thread's are while it works: main refuses a change until then. */
 export function watcherPermissionFixedReason(state: AgentState, thread: AgentThread): string | undefined {
   return thread.status === 'running' || thread.requests.length > 0 || promptOnItsWay(state, thread.id)
-    ? 'Fixed while Watcher works. It can change once Watcher finishes and nothing waits on you.' : undefined
+    ? t`Fixed while Watcher works. It can change once Watcher finishes and nothing waits on you.` : undefined
 }
 
 /**
@@ -342,8 +416,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   /** Another provider's models, under "Continue in a new thread on", for a started thread that may continue elsewhere. */
   readonly continueOffer?: ThreadContinueOffer | undefined
 }): ReactNode {
-  // Cursor's permission lines are messages, so a change of interface language draws this again.
-  useInterfaceLanguage()
+  const { t } = useLingui()
   const settings = usePendingSettings(thread.id)
   // Your own model servers run with this computer's OpenCode, so the model menu offers to add one only for a thread here,
   // and never for Watcher (ADR-0124, phase 1).
@@ -352,7 +425,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const bar = useRef<HTMLDivElement>(null)
   const refocus = useRef<HTMLButtonElement | null>(null)
   const captionId = useId()
-  const unconfirmedId = useId(), unconfirmedModelId = useId(), unconfirmedEffortId = useId()
+  const unconfirmedId = useId(), unconfirmedModelId = useId(), unconfirmedEffortId = useId(), unconfirmedFastId = useId()
   const { models: own, locked } = threadModelChoices(state, thread, watcher)
   // Watcher keeps its provider; another provider's model is a new Watcher, which main makes and which offers the last
   // one's handover (ADR-0073). Only where the room can open one.
@@ -372,14 +445,14 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
       : [...new Map([...continuing.models.map(model => [model.provider, model.providerId] as const), ...continuing.unavailable.map(item => [item.name, item.providerId] as const)])]
         .map(([name, providerId]) => ({ name, providerId, reason: continuing.refusal! }))
   const models = others.length > 0 ? [...own, ...others] : continuations.length > 0 ? [...own, ...continuations] : own
-  const [replacing, setReplacing] = useState<{ readonly provider: WatcherProvider; readonly refusal: string | null } | null>(null)
+  const [replacing, setReplacing] = useState<{ readonly provider: WatcherProvider; readonly refusal: LaterWords | null } | null>(null)
   const replace = async (provider: WatcherProvider, modelId: string): Promise<void> => {
     if (open === null || settle === undefined) return
     setReplacing({ provider, refusal: null })
     try {
       const refusal = settle(await open({ provider, modelId }))
       setReplacing(refusal === null ? null : { provider, refusal })
-    } catch { setReplacing({ provider, refusal: 'Sotto could not start a new Watcher. Nothing was changed. Try again, or check the provider in Settings, under Providers.' }) }
+    } catch { setReplacing({ provider, refusal: msg`Sotto could not start a new Watcher. Nothing was changed. Try again, or check the provider in Settings, under Providers.` }) }
   }
   /** What the window has drawn from main's published state: the confirmed values a press is measured against. */
   const drawn = settingValues(state, thread)
@@ -395,7 +468,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const fixed = Boolean(thread.archivedAt) || thread.status === 'running' || thread.requests.length > 0 || promptOnItsWay(state, thread.id) || unconfirmed.has('permissions')
     || (locked && !isThreadProviderConnected(state.host, thread))
   const unconfirmedKey = [...unconfirmed].join(',')
-  useLayoutEffect(() => { pendingSettingsStore.observe(thread.id, drawn, unconfirmed) }, [thread.id, drawn.model, drawn.effort, drawn.permissions, unconfirmedKey])
+  useLayoutEffect(() => { pendingSettingsStore.observe(thread.id, drawn, unconfirmed) }, [thread.id, drawn.model, drawn.effort, drawn.permissions, drawn.fast, unconfirmedKey])
   const threads = state.host.threads
   useEffect(() => { pendingSettingsStore.prune(new Set(threads.map(item => item.id))) }, [threads])
   useEffect(() => () => { pendingSettingsStore.forget(thread.id) }, [thread.id])
@@ -415,21 +488,22 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   }
   const capabilities = capabilitiesForThread(state.host, thread)
   const continueOn = continuing === undefined ? undefined : { providers: new Set([...continuations.map(model => model.provider), ...continueUnavailable.map(item => item.name)]),
-    heading: (name: string) => `Continue in a new thread on ${name}`,
-    note: 'Picking one starts a new thread there with a handover of this one. This thread stays as it is.' }
+    heading: (name: string) => t({ message: `Continue in a new thread on ${name}`, comment: '{name} is a provider\'s name.' }),
+    note: t`Picking one starts a new thread there with a handover of this one. This thread stays as it is.` }
   // Continuing needs the thread at rest, not its own provider: a thread whose provider went away can still continue elsewhere.
   const continueFixed = Boolean(thread.archivedAt) || thread.status === 'running' || thread.requests.length > 0 || promptOnItsWay(state, thread.id)
   const pickerFixed = continuations.length > 0 ? continueFixed : fixed
   // Where the thread's own model cannot change in place, its chip lists that model and the providers it may continue on.
   const continueOnly = (current: readonly AgentModel[]): AgentModel[] => [...current.filter(model => model.id === catalogEntry(current, thread.modelId)?.id), ...continuations]
+  const stayingWith = providerNameOf(thread)
   if (locked && !capabilities.configureThread) {
-    if (watcher) return <WatcherPermissionChip model={resolveModel(models, thread.modelId)} provider={thread.providerId ? PROVIDER_LABELS[thread.providerId] : 'The provider'}
+    if (watcher) return <WatcherPermissionChip model={resolveModel(models, thread.modelId)} provider={thread.providerId ? PROVIDER_LABELS[thread.providerId] : t({ message: 'The provider', comment: 'Stands for a provider whose name is not known, at the start of a sentence.' })}
       inForce={thread.runtimeMode} noticeSlot={noticeSlot} disabled={fixed} fixedReason={watcherPermissionFixedReason(state, thread)} />
     if (continuing === undefined) return null
     return <div className="thread-options-bar" data-provider-locked>
       <div className="thread-options thread-options--chips">
         <ModelPicker models={continueOnly(own)} modelId={thread.modelId} disabled={continueFixed} unavailable={continueUnavailable} continueOn={continueOn}
-          note={providerNameOf(thread) ? `This thread stays with ${providerNameOf(thread)}.` : undefined}
+          note={stayingWith ? t({ message: `This thread stays with ${stayingWith}.`, comment: '{stayingWith} is a provider\'s name.' }) : undefined}
           onChange={pressed => { if (continuations.some(model => model.id === pressed)) continuing.onContinue(pressed) }} />
       </div>
     </div>
@@ -442,26 +516,35 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   // What each chip shows with nothing pressed: the drawn values, except that a model change starts on the new
   // model's default effort, so that is what the effort chip shows meanwhile.
   const unpressed = modelId === thread.modelId ? drawn
-    : settingValuesFor({ modelId, ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}), ...(thread.providerMode ? { providerMode: thread.providerMode } : {}) }, model)
+    : settingValuesFor({ modelId, ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}), ...(thread.providerMode ? { providerMode: thread.providerMode } : {}),
+      ...(thread.fastMode ? { fastMode: true } : {}) }, model)
   const reasoning = settings.pending.effort?.value ?? unpressed.effort
   const permission = settings.pending.permissions?.value ?? unpressed.permissions
+  // The choice stays through a change of model; the toggle shows only on a model that offers fast mode (ADR-0143).
+  const fastOn = (settings.pending.fast?.value ?? unpressed.fast) === FAST_ON
+  const fastProvider = model?.providerId ?? thread.providerId
+  const showFast = offersFastMode(model, fastProvider)
   const efforts = effortChoices(model, reasoning)
   const modes = modeChoices(model, thread.runtimeMode, thread.providerMode)
   const providers = new Set(models.map(item => item.provider)).size
   const providerName = thread.providerId ? PROVIDER_LABELS[thread.providerId] : model?.provider
-  const provider = providerName ?? 'The provider'
+  const provider = providerName ?? t({ message: 'The provider', comment: 'Stands for a provider whose name is not known, at the start of a sentence.' })
   const claude = (thread.providerId ?? model?.providerId) === 'claude' || /^claude(?: code)?$/iu.test(model?.provider ?? '')
   const hasUltrathink = /\bultrathink\b/iu.test(getDraftText?.() ?? '')
   const addUltrathink = claude && getDraftText && onDraftText ? (): void => {
     const draftText = getDraftText()
     if (!/\bultrathink\b/iu.test(draftText)) onDraftText(draftText ? `${draftText}${/\s$/u.test(draftText) ? '' : '\n\n'}ultrathink` : 'ultrathink')
   } : undefined
-  const note = others.length > 0 ? 'Another provider’s model starts a new Watcher. This conversation stays in Watcher history, and you can send its handover with your first message.'
-    : locked ? (providerName ? `This thread stays with ${providerName}.` : undefined) : providers > 1 ? 'Any provider until your first message.' : undefined
+  const note = others.length > 0 ? t`Another provider’s model starts a new Watcher. This conversation stays in Watcher history, and you can send its handover with your first message.`
+    : locked ? (providerName ? t({ message: `This thread stays with ${providerName}.`, comment: '{providerName} is a provider\'s name.' }) : undefined) : providers > 1 ? t`Any provider until your first message.` : undefined
   /** A setting's value in words: a model's name, an effort level, a permission mode in its own provider's terms. */
+  const effortName = (value: string): string => {
+    const level = effortLabel(value)
+    return t({ message: `${level} effort`, comment: '{level} is a reasoning effort level, such as High.' })
+  }
   const valueName = (kind: SettingKind, value: string, owner: AgentModel | undefined): string => kind === 'model' ? resolveModel(models, value)?.name ?? value
-    : kind === 'effort' ? (value ? `${effortLabel(value)} effort` : "the model's default effort")
-      : owner?.providerModes?.find(mode => mode.id === value)?.name ?? (value ? RUNTIME_LABELS[value as AgentRuntimeMode] ?? value : "the provider's default")
+    : kind === 'effort' ? (value ? effortName(value) : t`the model's default effort`)
+      : owner?.providerModes?.find(mode => mode.id === value)?.name ?? (value ? RUNTIME_LABELS[value as AgentRuntimeMode] ?? value : t`the provider's default`)
   // Marked from the press until the window draws the provider's answer, not merely until its reply (#306), and
   // while a save is in flight even when the press is back on the value in force: that save may still land first.
   const pendingPermission = settings.pending.permissions ?? null
@@ -471,23 +554,27 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const retry = (kind: SettingKind): void => {
     if (pendingSettingsStore.retry(thread.id, kind, command, drawn)) bar.current?.querySelector<HTMLButtonElement>(`[aria-label="${OPTION_CHIP_NAMES[kind]}"]`)?.focus()
   }
-  const kinds: readonly SettingKind[] = ['model', 'effort', 'permissions']
+  const kinds: readonly SettingKind[] = ['model', 'effort', 'permissions', 'fast']
+  const unconfirmedIds: Readonly<Record<SettingKind, string>> = { model: unconfirmedModelId, effort: unconfirmedEffortId, permissions: unconfirmedId, fast: unconfirmedFastId }
   const notices = <>
-    {replacing?.refusal ? <p className="thread-options__notice" role="alert"><span>{replacing.refusal}</span></p> : null}
+    {replacing?.refusal ? <p className="thread-options__notice tt-paragraph" role="alert"><span>{shownWords(replacing.refusal)}</span></p> : null}
     {kinds.map(kind => {
       const pending = settings.pending[kind]
       if (pending?.awaiting !== 'unconfirmed') return null
-      return <p key={`unconfirmed-${kind}`} id={kind === 'permissions' ? unconfirmedId : kind === 'model' ? unconfirmedModelId : unconfirmedEffortId} className="thread-options__notice" role="alert">
-        <span>{unconfirmedSettingText(provider, valueName(kind, pending.value, model), pending.error, kind === 'permissions' ? undefined : valueName(kind, drawn[kind], confirmedModel))}</span></p>
+      return <p key={`unconfirmed-${kind}`} id={unconfirmedIds[kind]} className="thread-options__notice tt-paragraph" role="alert">
+        <span>{kind === 'fast' ? fastUnconfirmedText(provider, pending.value === FAST_ON, pending.error)
+          : unconfirmedSettingText(provider, valueName(kind, pending.value, model), pending.error, kind === 'permissions' ? undefined : valueName(kind, drawn[kind], confirmedModel))}</span></p>
     })}
     {kinds.map(kind => {
       const refusal = settings.refusals[kind]
       if (!refusal) return null
-      return <p key={`refused-${kind}`} className="thread-options__notice" role="alert">
-        <span>{settingRefusalText(provider, valueName(kind, refusal.wanted, model), valueName(kind, drawn[kind], confirmedModel), refusal.error)}</span>
-        <button type="button" className="tt-focusable" disabled={fixed} onClick={() => retry(kind)}>Try again</button></p>
+      return <p key={`refused-${kind}`} className="thread-options__notice tt-paragraph" role="alert">
+        <span>{kind === 'fast' ? fastRefusalText(provider, refusal.wanted === FAST_ON, refusal.error, valueName('model', drawn.model, confirmedModel))
+          : settingRefusalText(provider, valueName(kind, refusal.wanted, model), valueName(kind, drawn[kind], confirmedModel), refusal.error)}</span>
+        <button type="button" className="tt-focusable" disabled={fixed} onClick={() => retry(kind)}>{t`Try again`}</button></p>
     })}
   </>
+  const replacingName = replacing === null ? '' : PROVIDER_LABELS[replacing.provider]
   return <div ref={bar} className="thread-options-bar" data-provider-locked={locked}>
     <div className="thread-options thread-options--chips">
       <ModelPicker models={modelDisabled && continuations.length > 0 ? continueOnly(models) : models} modelId={modelId}
@@ -504,6 +591,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
         const id = chosenModelId(models, pressed, modelId, thread.modelId); press('model', id, { modelId: id })
         orchestrating?.(id, resolveModel(models, id)?.defaultReasoningEffort ?? null, state.host.models)
       }} />
+      {showFast && <FastModeToggle model={model} provider={fastProvider} on={fastOn} disabled={fixed} pending={settings.pending.fast?.awaiting === 'unconfirmed'} describedBy={unconfirmedFastId}
+        onChange={next => press('fast', next ? FAST_ON : FAST_OFF, { fastMode: next }, unpressed.fast)} />}
       {efforts.length > 0 && <EffortPicker key={`${modelId}:${model?.reasoningEfforts?.join(',') ?? ''}`} value={reasoning} options={efforts}
         disabled={fixed || modelDisabled} pending={settings.pending.effort?.awaiting === 'unconfirmed'} describedBy={unconfirmedEffortId} onChange={reasoningEffort => {
           press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)
@@ -514,15 +603,15 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
       {watcher
         ? <WatcherPermissionChip model={model} provider={provider} inForce={thread.runtimeMode} noticeSlot={noticeSlot}
           disabled={fixed} fixedReason={watcherPermissionFixedReason(state, thread)} />
-        : modes.length > 0 && <ChoiceChip label={OPTION_CHIP_NAMES.permissions} placeholder="Provider default" value={permission} options={modes} disabled={fixed} icon={PERMISSIONS_ICON}
+        : modes.length > 0 && <ChoiceChip label={OPTION_CHIP_NAMES.permissions} placeholder={t`Provider default`} value={permission} options={modes} disabled={fixed} icon={PERMISSIONS_ICON}
         pending={pendingPermission !== null} describedBy={permissionUnconfirmed ? unconfirmedId : captionId}
         onChange={mode => press('permissions', mode, permissionPatch(model, mode), unpressed.permissions)} />}
       {/* Before the first send, Watch puts the new thread under a standing watch once it is sent (Watcher only). */}
       {!watcher && thread.nativeSessionStarted === false ? <WatchOnSendToggle threadId={thread.id} /> : null}
     </div>
     {/* Always present, so assistive technology hears the caption when it arrives. */}
-    <span id={captionId} className="thread-options__caption" role="status">{replacing !== null && replacing.refusal === null ? `Starting a new Watcher on ${PROVIDER_LABELS[replacing.provider]}…` : caption}</span>
-    {locked && thread.status === 'running' && turnNote ? <small>Available after this turn finishes.</small> : null}
+    <span id={captionId} className="thread-options__caption" role="status">{replacing !== null && replacing.refusal === null ? t({ message: `Starting a new Watcher on ${replacingName}…`, comment: '{replacingName} is a provider\'s name.' }) : caption}</span>
+    {locked && thread.status === 'running' && turnNote ? <small>{t`Available after this turn finishes.`}</small> : null}
     {noticeSlot ? createPortal(notices, noticeSlot) : notices}
   </div>
 }

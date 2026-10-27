@@ -14,7 +14,7 @@ export interface AdapterSessionOptions { reaperSweepMs?: number; sessionIdleMs?:
  */
 export type AdapterContractSkips = Readonly<Partial<Record<'uncertain' | 'restart' | 'lazy' | 'sendStages'
   | 'activitySnapshots' | 'refreshThread' | 'threadEvents' | 'backgroundWork' | 'liveSettings'
-  | 'settingsConfirmation' | 'clientUpdate' | 'sendAnswerRunning' | 'attachedFiles', string>>>
+  | 'settingsConfirmation' | 'clientUpdate' | 'sendAnswerRunning' | 'attachedFiles' | 'questions', string>>>
 
 export interface AdapterFixture {
   host: AgentHost; projectId: string; modelId: string; root: string
@@ -75,7 +75,7 @@ export interface AdapterFixture {
     refuse(): Promise<void>
     silence(): Promise<void>
     answer(): Promise<void>
-    effective(threadId: string): Promise<{ process: number; modelId: string; reasoningEffort?: string; runtimeMode: string }>
+    effective(threadId: string): Promise<{ process: number; modelId: string; reasoningEffort?: string; runtimeMode: string; fastMode?: boolean }>
   }
   /**
    * What a thread settings change hands back (#318). `snapshot`: a change the provider confirmed comes back with

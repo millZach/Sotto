@@ -69,6 +69,22 @@ describe('while the server will not answer', () => {
     expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveFocus()
   })
 
+  it('keeps the steps the turn took before the retry one press away, and folds them on Escape', () => {
+    const { transcript } = mount({ status: 'running', messages: [user('u1', LAST, -60)], activities: [
+      turn('u1', { ownServer: { ...SERVER, attempt: 2, attempts: 10 } }),
+      { id: 'read', turnId: 'u1', afterMessageId: 'u1', sequence: 1, kind: 'tool', status: 'completed', title: 'Read', text: 'docs/guide.md' },
+    ] })
+    const line = within(transcript).getByTestId('thread-activity-live')
+    expect(within(line).getByRole('status')).toHaveTextContent('Sparks isn’t answering. Trying again (2 of 10).')
+    const steps = within(line).getByRole('button', { name: '1 step' })
+    expect(steps).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(steps)
+    expect(steps).toHaveAttribute('aria-expanded', 'true')
+    expect(within(document.getElementById(steps.getAttribute('aria-controls')!)!).getAllByRole('listitem')).toHaveLength(1)
+    fireEvent.keyDown(steps, { key: 'Escape' })
+    expect(steps).toHaveAttribute('aria-expanded', 'false')
+  })
+
   it('gives the line back to the work when the server answers', () => {
     mount({ status: 'running', messages: [user('u1', LAST, -60), reply('r1', 'Reading the guide.', -5)], activities: [turn('u1', { ownServer: SERVER })] })
     expect(screen.queryByText(/isn’t answering|Still waiting/u)).toBeNull()
@@ -78,7 +94,7 @@ describe('while the server will not answer', () => {
 describe('the still-waiting line', () => {
   const actions: OwnServerTurnActions = { newestFailure: null, tryAgainBy: null, canTryAgain: false, canStop: true, tryAgain: vi.fn(), openSettings: vi.fn(), stop: vi.fn() }
   const waiting = (activities: AgentActivity[], messages: AgentMessage[] = [user('u1', LAST, 0)]) =>
-    <OwnServerTurnContext.Provider value={actions}><LiveActivity thread={{ status: 'running', activities, messages }} connected /></OwnServerTurnContext.Provider>
+    <OwnServerTurnContext.Provider value={actions}><LiveActivity thread={{ status: 'running', activities, messages }} connected provider="OpenCode" /></OwnServerTurnContext.Provider>
 
   it('says it is still waiting once the server has sent nothing for 30 seconds, and what that means', () => {
     vi.useFakeTimers({ now: E2E_THREADS_NOW + 5_000 })

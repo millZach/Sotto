@@ -5,7 +5,8 @@ import { agentCommandSchema, type AgentCommand } from '../../../src/shared/agent
 import { HOST_UPDATE_REQUEST_ACTIONS, hostRequestSchema, commandFromProtocolV1, protocolAgentCommandSchema } from '../../../src/shared/hostProtocol'
 
 /** Commands that stay on the host machine. A new command type must land here or in REMOTE_COMMANDS. */
-const HOST_LOCAL = ['set-aside-send', 'credential', 'check-reasoning', 'update-client', 'open-thread-folder']
+// Clear now and its preview act on the computer whose Settings set them (ADR-0140 decision 7).
+const HOST_LOCAL = ['set-aside-send', 'credential', 'check-reasoning', 'update-client', 'open-thread-folder', 'preview-clear-threads', 'clear-threads']
 /** Fields only the desktop window sends, which its router reads and never forwards to a host (ADR-0074). */
 // The desktop's router reads these and never sends them on: the host a patch or Update all's press names (ADR-0074, ADR-0077).
 // A desktop window names the machine a command acts on and its router never sends the name on (ADR-0074, ADR-0077):
@@ -103,6 +104,8 @@ describe('remote command allow-list', () => {
       'stage-attachment', 'attachment-content', 'host-folders', ...REMOTE_SIGN_IN_OPERATIONS,
       // An attached file in parts (ADR-0131): staging, the same trust as an image's, which pairing gives.
       'stage-file-part',
+      // A sent file's bytes by its message, for the iPhone's Quick Look: a read, as `preview` is.
+      'attachment-file',
       // A host's own OpenCode signed in to model sources for the desktop that asks (#1107): the same trust as a sign-in.
       ...REMOTE_OPENCODE_SIGN_IN_OPERATIONS,
       // Numeric Usage reads grant nothing; Clear requires the client's current remote-answer policy (ADR-0078).
@@ -117,12 +120,19 @@ describe('remote command allow-list', () => {
       'watcher-phone-set-permission', 'watcher-phone-watch', 'watcher-phone-unwatch',
       // Optional phone steering: removing the user's own follow-up for Watcher, by its queue item, needs only the pairing (#1229).
       'watcher-phone-remove-followup',
+      // Optional phone photos: one photo of the current Watcher's message, a read on the preview guard (October 23, 2026).
+      'watcher-phone-preview',
       // A thread's Files, Changes and Agents: reads only, never commands (ADR-0025, October 5 amendment).
       'thread-files', 'thread-file-preview', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments',
       // The machine's host facts: numbers and the system's own name, read only by a desktop that lists host-facts (#1031).
       'host-facts',
-      // Which repository each of the machine's projects is a copy of, read only by a desktop that lists project-origins (#1032).
+      // Each project's GitHub repository, read only by a desktop that lists project-origins, to place a worker (#1032).
       'project-origins',
+      // A recorded desktop's new-thread default and worker roles for host delegation (#1310): settings, never a grant.
+      'desktop-defaults',
+      // A host thread's delegations and a delegated thread's newest brief, reads for a recorded desktop's window on a
+      // listener that offers delegation-views (#1310), never a reply and never a grant.
+      'delegation-views', 'delegation-brief',
       // A started thread's handover, read only on a listener that offers thread-starts, and only when the user asks (#1028).
       'start-handover',
       // A host update the host runs on itself: a recorded desktop whose remote-answer policy lets it answer (ADR-0088).
@@ -189,6 +199,24 @@ describe('remote command allow-list', () => {
     const base = { v: 1, id: 'read', session: 'session' }
     expect(hostRequestSchema.safeParse({ ...base, op: 'start-handover', threadId: 'thread' }).success).toBe(true)
     expect(hostRequestSchema.safeParse({ ...base, op: 'start-handover', threadId: 'thread', text: 'words' }).success).toBe(false)
+  })
+  it('deletes a thread only on a listener that offers thread-delete, and only for a client that may answer (ADR-0140)', () => {
+    const remove = { type: 'delete-thread', threadId: 'thread' } as AgentCommand
+    const preview = { type: 'preview-delete-thread', threadId: 'thread' } as AgentCommand
+    // A host that does not offer it refuses both, whatever the client's policy.
+    expect(remoteCommandRefusal(remove, { mayAnswer: true })).toBe('forbidden')
+    expect(remoteCommandRefusal(preview, { mayAnswer: true })).toBe('forbidden')
+    // A deletion cannot be taken back, so it is the user's answer: pairing alone is not enough.
+    expect(remoteCommandRefusal(remove, { mayAnswer: false, threadDelete: true })).toBe('forbidden')
+    expect(remoteCommandRefusal(remove, { mayAnswer: true, threadDelete: true })).toBeNull()
+    const ticked = { ...remove, confirmedIgnored: ['dist/'], confirmedItems: [{ path: 'dist/', fileCount: 3 }] } as AgentCommand
+    expect(remoteCommandRefusal(ticked, { mayAnswer: true, threadDelete: true })).toBeNull()
+    // Deleting never answers the uncommitted-changes question: a thread with them is kept.
+    expect(remoteCommandRefusal({ ...remove, withUncommittedChanges: true } as unknown as AgentCommand, { mayAnswer: true, threadDelete: true })).toBe('forbidden')
+    // The preview reads; it deletes nothing.
+    expect(remoteCommandRefusal(preview, { mayAnswer: false, threadDelete: true })).toBeNull()
+    expect(agentCommandSchema.safeParse({ type: 'clear-threads', olderThanDays: 30, threadIds: [] }).success).toBe(false)
+    expect(agentCommandSchema.safeParse({ type: 'preview-clear-threads', olderThanDays: 14 }).success).toBe(false)
   })
   it('takes the user’s Babysit pull request and Stop babysitting without the answer policy, and no field beyond the pull request (ADR-0061)', () => {
     const url = 'https://github.com/o/r/pull/42'
@@ -272,6 +300,8 @@ describe('remote command allow-list', () => {
   it('lets a device without the policy pick a mode that allows nothing and leave clean folders', () => {
     // Asking first is the runtime mode that grants nothing, so a paired device can always lower a thread back to it.
     expect(refuse({ type: 'configure-thread', threadId: 'thread', runtimeMode: 'approval-required' })).toBeNull()
+    // Fast mode changes speed and price, as a model does, and answers no permission (ADR-0143).
+    expect(refuse({ type: 'configure-thread', threadId: 'thread', fastMode: true })).toBeNull()
     expect(refuse({ type: 'create-thread', projectId: 'project', title: 'Asks', modelId: 'codex', runtimeMode: 'approval-required' })).toBeNull()
     expect(refuse({ type: 'create-thread', projectId: 'project', title: 'Asks', modelId: 'devin', providerMode: 'ask' }, false, ['ask-first', 'ask'])).toBeNull()
     expect(refuse({ type: 'configure-thread', threadId: 'thread', providerMode: 'ask' }, false, ['ask-first', 'ask'])).toBeNull()

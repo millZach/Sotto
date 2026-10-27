@@ -12,7 +12,7 @@ export function speedLabel(speed: number): string {
 }
 
 /**
- * Night falls, the move between Threads and Watcher's room (nightFalls.ts): a switch for it, its look (ADR-0119,
+ * Night falls, the move between Dictate or Threads and Watcher's room (nightFalls.ts): a switch for it, its look (ADR-0119,
  * decision 6) and a dial for its speed. The look saves as it is chosen, the arrow keys moving between Band and Stars, and
  * the dial saves when it is let go, as the theme sliders do. Both rest while the switch is off.
  */
@@ -31,8 +31,8 @@ export function NightFallsSettings({ settings, onSave }: {
   const percent = ((speed - SPEEDS.min) / (SPEEDS.max - SPEEDS.min)) * 100
   // The wrapper only names the group (watcher-gate.spec.ts finds Watcher's mentions outside its own page by it); it adds no box.
   return <div id="settings-night-falls" style={{ display: 'contents' }}>
-    <Toggle setting="night-falls" label={t`Night falls between Threads and Watcher`} checked={settings.roomTransition} onCheckedChange={checked => void onSave({ roomTransition: checked })}
-      description={t`The window sweeps between Threads and Watcher's room when you open Watcher's room or go back to Threads, and the owl rides the sweep to its new place. Off, the window changes at once. Reduced motion always changes it at once.`} />
+    <Toggle setting="night-falls" label={t`Night falls between Dictate or Threads and Watcher`} checked={settings.roomTransition} onCheckedChange={checked => void onSave({ roomTransition: checked })}
+      description={t`The window sweeps when you move between Dictate or Threads and Watcher's room, and the owl rides the sweep to its new place. Off, the window changes at once. Reduced motion always changes it at once.`} />
     <div className="tt-field night-falls-look">
       <p className="tt-field__label" id={`${lookId}-label`}><Trans>Night falls look</Trans></p>
       <div className="tt-field__description tt-paragraph">

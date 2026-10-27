@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { randomUUID } from 'node:crypto'
 import { realpath, stat } from 'node:fs/promises'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
@@ -138,7 +139,7 @@ export class CloudIphoneService extends ToolOperations {
   }
   private owned(request: { threadId: string; workspaceId: string; sessionId: string }): SessionRecord {
     const record = this.records.get(request.sessionId)
-    if (!record || record.session.threadId !== request.threadId || record.session.workspaceId !== request.workspaceId) return fail('session-unavailable', 'This cloud iPhone session belongs to another workspace or is gone.')
+    if (!record || record.session.threadId !== request.threadId || record.session.workspaceId !== request.workspaceId) return fail('session-unavailable', t`This cloud iPhone session belongs to another workspace or is gone.`)
     return record
   }
   private statusSnapshot(): CloudIphoneStatus {
@@ -287,7 +288,7 @@ export class CloudIphoneService extends ToolOperations {
   answer(payload: unknown) { return this.run(async (): Promise<CloudSession> => {
     const request = parse(cloudAnswerSchema, payload)
     const record = this.owned(request)
-    if (record.session.status !== 'asking') return fail('blocked', 'This cloud iPhone request already changed or expired. Ask again.')
+    if (record.session.status !== 'asking') return fail('blocked', t`This cloud iPhone request already changed or expired. Ask again.`)
     if (!request.allow) { this.deny(record, null); return structuredClone(record.session) }
     this.clearTimers(record)
     record.session.status = 'starting'
@@ -488,7 +489,7 @@ export class CloudIphoneService extends ToolOperations {
     const request = parse(cloudSessionRequestSchema, payload)
     const record = this.owned(request)
     if (record.session.status === 'asking') { this.deny(record, null); return structuredClone(record.session) }
-    if (!RUNNING_STATUSES.includes(record.session.status)) return fail('blocked', 'This cloud iPhone session has already finished.')
+    if (!RUNNING_STATUSES.includes(record.session.status)) return fail('blocked', t`This cloud iPhone session has already finished.`)
     this.beginEnd(record, 'user')
     const cleanupProblem = await this.teardown(record)
     this.finishEnd(record, cleanupProblem)
@@ -627,10 +628,10 @@ export class CloudIphoneService extends ToolOperations {
     const request = parse(cloudMountSchema, payload)
     const record = this.owned(request)
     if (request.bounds === null) { this.detachMount(record); return }
-    if (record.session.status !== 'active' || !record.viewerUrl) return fail('blocked', 'This cloud iPhone session is not running.')
-    if (!viewerUrlAllowed(record.viewerUrl)) return fail('blocked', 'The cloud iPhone’s viewer address is not secure enough to show.')
+    if (record.session.status !== 'active' || !record.viewerUrl) return fail('blocked', t`This cloud iPhone session is not running.`)
+    if (!viewerUrlAllowed(record.viewerUrl)) return fail('blocked', t`The cloud iPhone’s viewer address is not secure enough to show.`)
     const window = this.dependencies.getWindow()
-    if (!window || window.isDestroyed()) return fail('unavailable', 'The main window is unavailable.')
+    if (!window || window.isDestroyed()) return fail('unavailable', t`The main window is unavailable.`)
     this.ensureMounted(record, window)
     this.setBounds(record, window, request.bounds)
   }) }

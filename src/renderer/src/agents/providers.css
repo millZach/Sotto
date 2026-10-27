@@ -31,6 +31,7 @@
 .provider-badge[data-provider='muse'] { --provider-badge: var(--tt-provider-muse); }
 .provider-badge[data-provider='opencode'] { --provider-badge: var(--tt-provider-opencode-badge); }
 .provider-badge[data-provider='cursor'] { --provider-badge: var(--tt-provider-cursor-badge); }
+.provider-badge[data-provider='deepseek'] { --provider-badge: var(--tt-provider-deepseek-badge); }
 
 /* Update to <version>: a filled chip in the selected card's colour, beside the switch while an update is offered. */
 .provider-row__update { justify-self: end; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 28px; padding: 0 10px; border: 0; border-radius: 5px; background: var(--tt-card-selected); color: var(--tt-accent-text); font: inherit; font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
@@ -44,10 +45,9 @@
 /* A provider's error stays under its header whether the row is open or closed. */
 .provider-row__error { margin: -4px 20px 14px 84px; color: var(--tt-error-text); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 
-/* The open row: its connection and client on the left, its models on the right, set in from the name. */
-.provider-row__panel { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 22px 36px; padding: 4px 22px 22px 84px; animation: provider-arrive 160ms ease both; }
+/* The open row: its connection, models and client, set in from the name. */
+.provider-row__panel { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px 36px; padding: 4px 22px 22px 84px; animation: provider-arrive 160ms ease both; }
 .provider-row__column { display: grid; align-content: start; gap: 20px; min-width: 0; }
-.provider-row__models { gap: 10px; }
 .provider-row__column h4 { margin: 0 0 6px; color: var(--tt-text); font-size: 14px; font-weight: 600; }
 .provider-row__column p:not(.provider-detail__error) { margin: 0; max-width: 36em; color: var(--tt-text-muted); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
 .provider-connection, .provider-client { display: grid; gap: 12px; min-width: 0; }
@@ -73,17 +73,22 @@
 .provider-client__steps code { display: block; padding: 8px 10px; margin-top: 8px; border: 1px solid var(--tt-code-border); border-radius: var(--tt-radius-sm); background: var(--tt-code-bg); color: var(--tt-code-text); font: 12px/1.6 var(--tt-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 .provider-client__steps .tt-button { margin-top: 10px; }
 .provider-row__column .oc-sources { margin-top: 0; padding: 16px 0; border-color: var(--tt-card-inset); border-width: 2px 0; }
-.provider-models { margin: 0; padding: 0; list-style: none; border-top: 2px solid var(--tt-card-inset); }
-.provider-models li { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 11px 0; }
-.provider-models li + li { border-top: 2px solid var(--tt-card-inset); }
-.provider-models li > span { display: grid; gap: 3px; min-width: 0; }
-.provider-models strong { color: var(--tt-text); font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
-.provider-models small { color: var(--tt-text-muted); font-size: 12.5px; overflow-wrap: anywhere; }
-.provider-models li > small { flex: none; }
-.provider-models small[data-agent-setting] { color: var(--tt-accent-text); }
-/* Cursor's models under their makers, in Cursor's order (ADR-0128): each maker a small heading over its own list. */
-.provider-models__maker { margin: 18px 0 6px; color: var(--tt-text-muted); font-size: 12.5px; font-weight: 600; }
-.provider-models__maker:first-child { margin-top: 0; }
+/* A provider's models: a small field naming how many, which opens a searchable list over it (ProviderModelList). */
+.provider-model-list { flex: none; }
+.provider-model-list__trigger { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 6px 10px 6px 12px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.provider-model-list__trigger:hover { background: var(--tt-hover); }
+.provider-model-list__trigger[aria-expanded='true'] { border-color: var(--tt-accent); }
+.provider-model-list__trigger:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+.provider-model-list__trigger svg { color: var(--tt-text-muted); }
+.provider-model-list__models, .provider-model-list__models > section { background: inherit; }
+.provider-model-list__models:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
+.provider-model-list__models ul { margin: 0; padding: 0; list-style: none; }
+.provider-model-list__models li { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 32px; padding: 6px 10px; border-radius: 8px; color: var(--tt-text); font-size: 13px; }
+.provider-model-list__models li:hover, .provider-model-list__models li:focus-visible { background: var(--tt-hover); outline: 0; }
+.provider-model-list__models li > span:first-child { display: grid; gap: 2px; min-width: 0; }
+.provider-model-list__models li b { font-weight: 500; overflow-wrap: anywhere; }
+.provider-model-list__models li small { color: var(--tt-text-muted); font-size: 11.5px; }
+.provider-model-list__tag { flex: none; padding: 1px 7px; border: 1px solid var(--tt-accent-border); border-radius: 4px; background: var(--tt-surface-sunken); color: var(--tt-accent-text); font-size: 11px; white-space: nowrap; }
 .provider-models__empty { color: var(--tt-text-muted); font-size: 14px; line-height: 1.6; }
 /* A refusal inside OpenCode's model sources and its sign-in dialog. */
 .provider-detail__error { margin: 22px 0 0; padding: 12px 14px; border-left: 2px solid var(--tt-error); background: var(--tt-error-contrast); color: var(--tt-error); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
@@ -95,9 +100,6 @@
 .providers-updates .tt-toggle { flex: none; width: auto; grid-template-columns: 36px; gap: 0; }
 .providers-updates .tt-toggle__copy { display: none; }
 
-@container providers (width < 680px) {
-  .provider-row__panel { grid-template-columns: minmax(0, 1fr); }
-}
 @container providers (width < 600px) {
   .provider-row__head { grid-template-columns: minmax(0, 1fr) auto auto; }
   .provider-row__trigger { grid-template-columns: 16px 28px minmax(0, 1fr); }

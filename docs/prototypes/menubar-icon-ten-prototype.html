@@ -1,0 +1,138 @@
+<!doctype html>
+<!--
+  PROTOTYPE: throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: the owl-on-a-branch menu bar icon doesn't work. Which of ten new designs should replace it?
+  (Drake, October 25, 2026.) All ten are drawn on an 18 x 18 point grid at 1x and shown pixel-doubled, with
+  their real idle motion, and a "Listening" switch shows what each does while dictation is on.
+  Picked: 7, Night; polished and taken further in menubar-icon-night-prototype.html.
+-->
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Menu bar icon: ten designs (prototype)</title>
+<style>
+:root{--t:var(--sotto-text,#e9e9ee);--m:var(--sotto-muted,#9b9ba6);--bg:var(--sotto-background,#121211);--s:var(--sotto-surface,#1c1c1a);--b:var(--sotto-border,#34342f);--a:var(--sotto-accent,#e6c229);--f:var(--sotto-font,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--t);font:13px/1.45 var(--f);padding:14px 16px 40px}
+h1{font-size:16px;margin:0 0 2px}p{margin:0 0 10px}.m{color:var(--m)}
+.ctl{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+.ctl button{font:inherit;font-size:12px;color:var(--t);background:var(--s);border:1px solid var(--b);border-radius:7px;padding:4px 10px;cursor:pointer}
+.ctl button[aria-pressed=true]{background:var(--a);color:#1a1600;border-color:var(--a);font-weight:600}
+button:focus-visible{outline:2px solid var(--a);outline-offset:2px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.card{background:var(--s);border:1px solid var(--b);border-radius:10px;padding:10px 11px 11px;display:grid;gap:8px}
+.card h2{font-size:13px;margin:0;display:flex;gap:7px;align-items:baseline}.card h2 span{color:var(--a);font-variant-numeric:tabular-nums}
+.card p{margin:0;font-size:12px;color:var(--m);min-height:34px}
+.zoom{display:flex;justify-content:center;background:#0a0a09;border-radius:8px;padding:8px}
+.bar{display:flex;align-items:center;justify-content:flex-end;gap:2px;height:24px;padding:0 8px;border-radius:6px;font:500 12.5px/1 -apple-system,BlinkMacSystemFont,sans-serif;white-space:nowrap}
+.bar span{padding:0 5px}.bar canvas{display:block;margin:0 1px}
+.dk{background:#26262b;color:#f3f3f6}.lt{background:#ebebef;color:#18181c}
+.wp{background:linear-gradient(rgba(16,16,20,.3),rgba(16,16,20,.3)),linear-gradient(100deg,#d9622b,#f0a63f 45%,#355fa8);color:#fff}
+</style>
+<body>
+<h1>Menu bar icon: ten designs</h1>
+<p class="m">Each is drawn on an 18 × 18 point grid and shown pixel-doubled, at full size in a dark, light and wallpaper bar, and at 8× above. Idle motion is real. Pick by number.</p>
+<div class="ctl">
+  <button id="listen" aria-pressed="false">Listening</button>
+  <button id="calm" aria-pressed="false">Reduced motion</button>
+  <button id="fast" aria-pressed="false">Speed ×3</button>
+</div>
+<div class="grid" id="grid"></div>
+<script>
+const W=18,H=18;
+const C={brown:'#8a5a34',dark:'#5a3820',cream:'#f1dfb8',amber:'#ffc23d',glow:'#ffe58a',pupil:'#1a1206',red:'#ff4d4d',bark:'#6b4423',leaf:'#5fae5a'};
+let listening=false,calm=false,speed=1;
+
+// drawing helpers bound per call
+function kit(ctx){
+  const r=(x,y,w,h,c)=>{ctx.fillStyle=c;ctx.fillRect(x,y,w,h)};
+  const p=(x,y,c)=>r(x,y,1,1,c);
+  const disc=(cx,cy,rad,c)=>{for(let y=0;y<H;y++)for(let x=0;x<W;x++){const dx=x+.5-cx,dy=y+.5-cy;if(dx*dx+dy*dy<=rad*rad)p(x,y,c)}};
+  const clear=(x,y,w,h)=>ctx.clearRect(x,y,w,h);
+  return {r,p,disc,clear};
+}
+const cyc=(t,period,off=0)=>((t+off)%period+period)%period;
+const blink=(t,period=4.3,off=0)=>!calm&&cyc(t,period,off)<.14;
+function glance(t){if(calm)return 0;const c=cyc(t,9);return c>2.2&&c<3.3?-1:c>5.6&&c<6.6?1:0}
+const pulse=(t,hz=1)=>.5+.5*Math.sin(t*Math.PI*2*hz);
+
+const designs=[
+{name:'Perch, simplified',note:'The current idea cut to 12 pixels of owl: no leaves, a 1-point branch, one wing flap every 7 seconds.',
+ draw(k,t,ink){const flap=!calm&&cyc(t,7)<.5,up=flap&&cyc(t,7)%.25<.125;
+  k.r(5,3,8,11,C.brown);k.p(5,2,C.brown);k.p(12,2,C.brown);k.r(6,5,6,4,C.cream);k.r(6,10,6,3,C.cream);
+  const e=listening?C.red:C.amber,d=glance(t);
+  if(blink(t)){k.r(6,6,2,1,C.dark);k.r(10,6,2,1,C.dark)}else{k.r(6,5,2,2,e);k.r(10,5,2,2,e);k.p(7+Math.min(0,d),6,C.pupil);k.p(10+Math.max(0,d),6,C.pupil)}
+  k.p(8,8,C.amber);k.p(9,8,C.amber);
+  if(flap){if(up){k.r(3,4,2,4,C.brown);k.r(13,4,2,4,C.brown)}else{k.r(3,8,2,4,C.brown);k.r(13,8,2,4,C.brown)}}
+  k.r(1,14,16,1,C.bark);k.p(7,13,C.amber);k.p(10,13,C.amber)}},
+{name:'Head',note:'Just the owl’s face, filling the square. Big amber eyes that blink and glance; red while listening.',
+ draw(k,t){k.r(3,4,12,11,C.brown);k.r(2,2,3,3,C.brown);k.r(13,2,3,3,C.brown);k.r(4,13,10,2,C.dark);
+  k.r(4,5,10,6,C.cream);const e=listening?C.red:C.amber,d=glance(t);
+  for(const x of[4,10]){if(blink(t)){k.r(x,7,4,1,C.dark)}else{k.r(x,5,4,4,e);k.r(x+1+d+ (d<0?0:0),6,2,2,C.pupil)}}
+  k.r(8,10,2,2,C.amber)}},
+{name:'Two eyes',note:'Only the eyes, in the bar’s own colour, with ear tufts. Calm, system-native; they glow red while listening.',
+ draw(k,t,ink){const d=glance(t),e=listening?C.red:ink;k.r(2,4,2,2,ink);k.r(14,4,2,2,ink);k.r(3,5,4,1,ink);k.r(11,5,4,1,ink);
+  for(const x of[2,10]){if(blink(t)){k.r(x,10,6,1,e)}else{k.r(x+1,7,4,6,e);k.r(x,8,6,4,e);k.clear(x+2+d,9,2,2)}}}},
+{name:'Template owl',note:'A one-colour silhouette with eyes cut out, so macOS tints it like Apple’s symbols. Ears twitch now and then.',
+ draw(k,t,ink){const tw=!calm&&cyc(t,6)<.3;k.r(4,4,10,12,ink);k.r(3,6,12,8,ink);k.r(4,tw?1:2,2,3,ink);k.r(12,2,2,2,ink);k.p(12,tw?3:2,ink);
+  const d=glance(t);if(blink(t)){k.clear(5,8,3,1);k.clear(10,8,3,1)}else{k.clear(5,6,3,3);k.clear(10,6,3,3);k.r(6+d,7,1,1,ink);k.r(11+d,7,1,1,ink)}
+  k.clear(8,10,2,1);k.clear(5,16,2,1);k.clear(11,16,2,1);if(listening){k.r(5,6,3,3,C.red);k.r(10,6,3,3,C.red)}}},
+{name:'Level bars',note:'Five bars that breathe slowly when idle and follow the voice while listening. Says “dictation” plainly.',
+ draw(k,t,ink){for(let i=0;i<5;i++){let h;if(listening){h=3+Math.round(9*Math.abs(Math.sin(t*(5+i*1.7)+i*2)))}else{h=calm?3:2+Math.round(2*pulse(t,.25+0*i)*(1-Math.abs(i-2)/3))+(i==2?1:0)}
+  k.r(1+i*3+ (i>0?0:0),9-Math.ceil(h/2),2,h,listening?C.red:ink)}}},
+{name:'Bubble',note:'A speech bubble with the owl’s eyes inside, blinking. While listening, the eyes become typing dots.',
+ draw(k,t,ink){k.r(2,3,14,1,ink);k.r(2,13,14,1,ink);k.r(1,4,1,9,ink);k.r(16,4,1,9,ink);k.r(4,14,2,2,ink);k.p(4,16,ink);
+  if(listening){const s=Math.floor(t*3)%4;for(let i=0;i<3;i++)k.r(4+i*4,8,2,2,i<s?C.red:ink+'55')}
+  else{const d=glance(t);for(const x of[4,10]){if(blink(t))k.r(x,9,4,1,ink);else{k.r(x,6,4,5,ink);k.clear(x+1+(d>0?1:0),8,2,2)}}}}},
+{name:'Night',note:'A crescent moon with a pair of eyes in its dark side and one star that twinkles. The owl is implied, not drawn.',
+ draw(k,t,ink){k.disc(9,9,8,ink);k.disc(12,7,6.5,'clear');const d=glance(t),e=listening?C.red:C.amber;
+  if(!blink(t,5.1)){k.r(10+d,8,2,2,e);k.r(14+d,8,2,2,e)}else{k.r(10,9,2,1,e);k.r(14,9,2,1,e)}
+  const tw=calm?1:Math.floor(cyc(t,3)*4)%4;if(tw!==3){k.p(16,2,ink)}if(tw===1){k.p(15,2,ink);k.p(17,2,ink);k.p(16,1,ink);k.p(16,3,ink)}}},
+{name:'Monogram',note:'A blocky S for Sotto. A spark runs along the stroke every 6 seconds; the whole S turns red while listening.',
+ draw(k,t,ink){const path=[[13,3],[12,3],[11,3],[10,3],[9,3],[8,3],[7,3],[6,3],[5,4],[4,5],[4,6],[5,7],[6,8],[7,8],[8,8],[9,8],[10,8],[11,9],[12,10],[13,11],[13,12],[12,13],[11,14],[10,14],[9,14],[8,14],[7,14],[6,14],[5,14]];
+  const c=listening?C.red:ink;for(const[x,y]of path)k.r(x,y,2,2,c);
+  const s=cyc(t,6);if(!calm&&s<1.2){const i=Math.floor(s/1.2*path.length);const[x,y]=path[i];k.r(x,y,2,2,C.glow)}}},
+{name:'Owl mic',note:'A microphone whose head is an owl’s face. Sound arcs open on each side while listening.',
+ draw(k,t,ink){k.r(6,1,6,10,ink);k.r(5,2,8,8,ink);k.p(5,1,ink);k.p(12,1,ink);k.r(8,12,2,3,ink);k.r(5,15,8,1,ink);k.r(3,8,1,3,ink);k.r(14,8,1,3,ink);k.r(4,11,1,1,ink);k.r(13,11,1,1,ink);
+  const d=glance(t);if(blink(t)){k.clear(6,5,2,1);k.clear(10,5,2,1)}else{k.clear(6,4,2,2);k.clear(10,4,2,2);k.p(6+(d>0?1:0),5,listening?C.red:ink);k.p(10+(d>0?1:0),5,listening?C.red:ink)}
+  k.clear(8,7,2,1);if(listening){const o=Math.floor(t*4)%3;for(let i=0;i<=o;i++){k.r(1-i<0?0:1-i+0,4,1,4,C.red);k.r(16+i>17?17:16+i,4,1,4,C.red)}}}},
+{name:'Round hop',note:'A round little owl that hops in place every 8 seconds. Friendlier than the perch, still readable at 18 points.',
+ draw(k,t,ink){const c=cyc(t,8),hop=!calm&&c<.4?(c<.2?-2:-1):0;k.r(5,16,2,1,C.amber);k.r(11,16,2,1,C.amber);
+  const y=hop;k.disc(9,10+y,6.5,C.brown);k.r(3,3+y,2,2,C.brown);k.r(13,3+y,2,2,C.brown);k.disc(9,12+y,3.5,C.cream);
+  const e=listening?C.red:C.amber,d=glance(t);for(const x of[5,10]){if(blink(t,4.7))k.r(x,8+y,3,1,C.dark);else{k.r(x,6+y,3,3,e);k.p(x+1+d,7+y,C.pupil)}}k.p(9,9+y,C.amber);k.p(8,9+y,C.amber)}},
+];
+
+// "clear" colour cuts pixels (for the crescent)
+function wrap(ctx){const k=kit(ctx);const r0=k.r;k.r=(x,y,w,h,c)=>c==='clear'?ctx.clearRect(x,y,w,h):r0(x,y,w,h,c);
+  k.p=(x,y,c)=>k.r(x,y,1,1,c);k.disc=(cx,cy,rad,c)=>{for(let y=0;y<H;y++)for(let x=0;x<W;x++){const dx=x+.5-cx,dy=y+.5-cy;if(dx*dx+dy*dy<=rad*rad)k.p(x,y,c)}};return k}
+
+const views=[];
+const grid=document.getElementById('grid');
+designs.forEach((d,i)=>{
+  const card=document.createElement('section');card.className='card';
+  card.innerHTML=`<h2><span>${i+1}</span>${d.name}</h2><div class="zoom"></div><p>${d.note}</p>`;
+  const z=document.createElement('canvas');z.width=W*8;z.height=H*8;card.querySelector('.zoom').append(z);
+  views.push({d,c:z,s:8,ink:'#f3f3f6'});
+  for(const[cls,ink]of[['dk','#f3f3f6'],['lt','#18181c'],['wp','#ffffff']]){
+    const bar=document.createElement('div');bar.className='bar '+cls;bar.innerHTML='<span>◐</span>';
+    const cv=document.createElement('canvas');cv.width=W*2*devicePixelRatio;cv.height=H*2*devicePixelRatio;cv.style.width=W+'px';cv.style.height=H+'px';
+    bar.append(cv);bar.insertAdjacentHTML('beforeend','<span>ෆ</span><span>Sat 9:41</span>');
+    bar.querySelector('span').textContent='●●○';
+    bar.children[2].textContent='⌁';
+    card.append(bar);views.push({d,c:cv,s:devicePixelRatio,ink});
+  }
+  grid.append(card);
+});
+// real-size canvases: 1 art pixel = 1 pt = devicePixelRatio device pixels
+views.forEach(v=>{if(v.s!==8){v.c.width=W*v.s;v.c.height=H*v.s}});
+
+let last=performance.now(),T=0;
+function frame(now){T+=(now-last)/1000*speed;last=now;
+  for(const v of views){const ctx=v.c.getContext('2d');ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,v.c.width,v.c.height);ctx.setTransform(v.s,0,0,v.s,0,0);
+    v.d.draw(wrap(ctx),T,v.ink)}
+  requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+
+function toggle(id,fn){const b=document.getElementById(id);b.onclick=()=>{const on=b.getAttribute('aria-pressed')!=='true';b.setAttribute('aria-pressed',on);fn(on)}}
+toggle('listen',on=>listening=on);toggle('calm',on=>calm=on);toggle('fast',on=>speed=on?3:1);
+</script>
+</body></html>

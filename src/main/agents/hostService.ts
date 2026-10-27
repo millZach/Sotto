@@ -20,11 +20,14 @@ import type { HostThreadDelegations } from '../../shared/agentsView'
 import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import { listHostFolders } from './hostFolders'
 import type { HostThreadToolReads } from './threadToolReads'
-import type { HostAnswerTarget, HostErrorCode } from '../../shared/hostProtocol'
+import type { HostAnswerTarget, HostAttachmentFile, HostAttachmentFileRequest, HostErrorCode } from '../../shared/hostProtocol'
 import { mayGrantLocally, REMOTE_PERMISSION_DENIED } from './authority'
 import type { HostMachineReport } from '../../shared/hostFacts'
 import type { ProjectOrigins } from '../../shared/workerMachine'
 import type { HostBranchMoveRequest } from '../../shared/branchMoves'
+import type { DesktopDefaultsInput, DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
+import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
+import type { DelegationViews } from './delegationIpc'
 import type { QuestionPageTarget } from './questionPages'
 import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery, type UsageProviderId } from '../../shared/usageDashboard'
 
@@ -114,6 +117,23 @@ export interface HostService {
   /** The host moves branches with this desktop over its socket (`branch-moves`, ADR-0105 decision 8); a remote host's only. */
   readonly supportsBranchMoves?: boolean
   branchMove?(request: HostBranchMoveRequest): Promise<unknown>
+  /**
+   * The host runs delegation for its own threads and keeps the desktop defaults a desktop sends it (#1310), present only
+   * on a headless host whose Owl answer turns on Work across machines. On a desktop's connection to such a host,
+   * `desktopDefaults` sends them; on the host, it keeps them for the client that sent them.
+   */
+  readonly supportsHostDelegation?: boolean
+  desktopDefaults?(defaults: DesktopDefaultsInput, client?: ClientIdentity): Promise<DesktopDefaultsReceipt>
+  /**
+   * The host answers the desktop window's read of its own threads' delegations (#1310), present only where it runs
+   * delegation for them: what a thread delegated and was sent, and a delegated thread's newest brief, never a reply. Thread
+   * IDs are the host's own. `subscribeDelegationViews` hears the threads whose delegations changed; on a desktop's
+   * connection to a host it also hears the connection lost and taken again, after which every read may have moved.
+   */
+  readonly supportsDelegationViews?: boolean
+  delegationViews?(threadId: string): Promise<DelegationsRead>
+  delegationBrief?(threadId: string): Promise<DelegationBrief>
+  subscribeDelegationViews?(listener: (change: DelegationViewsChange) => void): () => void
   /** The host continues agents as threads and forks at a reply (#1028): it takes `continue-agent` and reads `startHandover`. */
   readonly supportsThreadStarts?: boolean
   /** The host keeps which failed threads have been seen and takes `dismiss-failures` (ADR-0092); without it its failed
@@ -121,6 +141,8 @@ export interface HostService {
   readonly supportsFailureSeen?: boolean
   /** The host offers phones the pull request sheet (#1281, ADR-0102), present only when its Owl answer turns it on. */
   readonly supportsPullRequestView?: boolean
+  /** The host deletes its settled threads when asked (ADR-0140), present only when its Owl answer turns clearing on. */
+  readonly supportsThreadDelete?: boolean
   /** The host brings a thread's commits back to the branch of the thread it began from (#1030): it takes `bring-changes-back`. */
   readonly supportsBringBack?: boolean
   /** The words of the handover a thread that began from another goes with on its first message, or null when it has none (#1028). */
@@ -166,6 +188,8 @@ export interface HostService {
   /** A page was opened by its token, which clears the prototype-ready mark it belongs to (ADR-0108). */
   questionPageOpened?(token: string): void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
+  /** One part of a sent attached file a message carries, for the iPhone's Quick Look (ADR-0131); null for anything else. */
+  attachmentFile?(request: HostAttachmentFileRequest): Promise<HostAttachmentFile>
   /** Keeps an image's bytes on this host once and answers with the handle a draft carries instead (ADR-0031). */
   stageAttachment?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
   /** A staged image's bytes, for a composer restoring a chip it has no copy of; null once the host no longer keeps it. */
@@ -197,6 +221,9 @@ export interface HostService {
   /** What delegation's record knows of each thread delegated below one thread, for the iPhone's Agents view (ADR-0103). */
   threadDelegations?(threadId: string): Promise<HostThreadDelegations>
 }
+
+/** What a host's delegation reads hear: the threads whose delegations changed, or its connection lost or taken again. */
+export type DelegationViewsChange = { readonly threadIds: readonly string[] } | { readonly connected: boolean }
 
 export interface RequestAnswerRecovery {
   uncertainRequestIds: string[]
@@ -247,6 +274,7 @@ export interface LocalHostControl {
   questionPage?(token: string): QuestionPageTarget | undefined
   questionPageOpened?(token: string): void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult>
+  attachmentFile?(request: HostAttachmentFileRequest): Promise<HostAttachmentFile>
   stageAttachment?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
   attachmentContent?(digest: string): Promise<AgentAttachmentContent | null>
   gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
@@ -301,6 +329,8 @@ export class LocalHostService implements HostService {
     prompts?: { threadPrompts(threadId: string, beforeMessageId: string): AgentThreadPrompts | null }
     /** The iPhone's pull request sheet (#1281), true only when the host's Owl answer turns it on. */
     pullRequestView?: boolean
+    /** Deleting settled threads (ADR-0140), true only when the host's Owl answer turns clearing on. */
+    threadDelete?: boolean
     /** Attached files that are not images (ADR-0131), true only when the host's Owl answer turns it on. */
     fileStaging?: boolean
     /**
@@ -310,6 +340,10 @@ export class LocalHostService implements HostService {
     agentsView?: { delegations?(threadId: string, threads: readonly AgentThread[]): HostThreadDelegations }
     /** Each project's GitHub origin (#1032), present only when the host's Owl answer turns on Work across machines. */
     projectOrigins?: (projects: readonly AgentProject[]) => Promise<ProjectOrigins>
+    /** Where a headless host keeps the desktop defaults (#1310), present only where it runs delegation for its own threads. */
+    desktopDefaults?: { record(clientId: string, defaults: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> }
+    /** Delegation's own record of the host's threads (#1310), present only where a headless host runs delegation for them. */
+    delegationViews?: DelegationViews
     /** Bringing changes back (#1030), true only when the host's Owl answer turns it on and it runs Git. */
     bringBack?: boolean }) {
     this.control = options.control
@@ -324,12 +358,34 @@ export class LocalHostService implements HostService {
   get supportsHostFacts(): boolean { return this.options.facts !== undefined }
   get supportsThreadStarts(): boolean { return this.options.threadStarts !== undefined }
   get supportsProjectOrigins(): boolean { return this.options.projectOrigins !== undefined }
+  get supportsHostDelegation(): boolean { return this.options.desktopDefaults !== undefined }
+  /** Keeps a desktop's defaults for the client that sent them; the socket listener admits only a recorded desktop. */
+  desktopDefaults(defaults: DesktopDefaultsInput, client: ClientIdentity): Promise<DesktopDefaultsReceipt> {
+    if (!this.options.desktopDefaults) return Promise.reject(new Error('This host does not keep desktop defaults.'))
+    return this.options.desktopDefaults.record(client.clientId, defaults)
+  }
+  get supportsDelegationViews(): boolean { return this.options.delegationViews !== undefined }
+  /** Read from delegation's own record, never a snapshot, as the desktop's own window reads this computer's (#1029). */
+  async delegationViews(threadId: string): Promise<DelegationsRead> {
+    if (!this.options.delegationViews) throw new Error('This host does not run delegation for its threads.')
+    const { made, received } = this.options.delegationViews.views(threadId)
+    return { threadId, delegations: [...made], received: [...received] }
+  }
+  async delegationBrief(threadId: string): Promise<DelegationBrief> {
+    if (!this.options.delegationViews) throw new Error('This host does not run delegation for its threads.')
+    const text = this.options.delegationViews.brief(threadId)
+    return text === undefined ? null : { threadId, text }
+  }
+  subscribeDelegationViews(listener: (change: DelegationViewsChange) => void): () => void {
+    return this.options.delegationViews?.onViewsChanged(threadIds => listener({ threadIds })) ?? (() => undefined)
+  }
   /** Read from the projects as the host last published them, without copying them. */
   projectOrigins(): Promise<ProjectOrigins> {
     if (!this.options.projectOrigins) return Promise.reject(new Error('This host does not report the repositories of its projects.'))
     return this.options.projectOrigins(this.view().host.projects)
   }
   get supportsPullRequestView(): boolean { return this.options.pullRequestView === true }
+  get supportsThreadDelete(): boolean { return this.options.threadDelete === true }
   get supportsAgentsView(): boolean { return this.options.agentsView !== undefined }
   get supportsFileStaging(): boolean { return this.options.fileStaging === true }
   /** Reads the threads as the host last published them, without copying them. */
@@ -411,6 +467,7 @@ export class LocalHostService implements HostService {
   questionPage(token: string): QuestionPageTarget | undefined { return this.control.questionPage?.(token) }
   questionPageOpened(token: string): void { this.control.questionPageOpened?.(token) }
   async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> { return await this.control.attachmentPreview?.(request) ?? null }
+  async attachmentFile(request: HostAttachmentFileRequest): Promise<HostAttachmentFile> { return await this.control.attachmentFile?.(request) ?? null }
   stageAttachment(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle> {
     if (!this.control.stageAttachment) return Promise.reject(new Error(HOST_CANNOT_STAGE_SCREENSHOTS))
     return this.control.stageAttachment(image)

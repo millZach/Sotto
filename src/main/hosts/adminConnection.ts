@@ -1,3 +1,5 @@
+import { i18n } from '@lingui/core'
+import { msg, t } from '@lingui/core/macro'
 import type { SshHostConnection } from './sshLauncher'
 
 /**
@@ -12,7 +14,7 @@ export const ADMIN_IDLE_MS = 60_000
 
 /** The user stopped an admin connection's sign-in while it waited for them: nothing was sent to the host. */
 export class SignInStopped extends Error {
-  constructor() { super('Sotto stopped signing in to the host. Nothing was changed.') }
+  constructor() { super(t`Sotto stopped signing in to the host. Nothing was changed.`) }
 }
 
 export interface AdminConnectionOptions {
@@ -29,7 +31,7 @@ export interface AdminConnectionOptions {
 /** One open SSH connection, with the presses running on it now. */
 interface Open { readonly connection: SshHostConnection; uses: number; timer?: ReturnType<typeof setTimeout> | undefined }
 
-const CLOSED = 'Sotto closed the connection to the host. Nothing was changed. Try again.'
+const CLOSED = msg`Sotto closed the connection to the host. Nothing was changed. Try again.`
 
 /**
  * One saved host's admin connection (ADR-0053): opened by the first press that needs it, shared by every press while it
@@ -77,7 +79,7 @@ export class AdminConnection {
   }
 
   private connect(): Promise<Open> {
-    if (this.closed) return Promise.reject(new Error(CLOSED))
+    if (this.closed) return Promise.reject(new Error(i18n._(CLOSED)))
     if (this.current) return Promise.resolve(this.current)
     if (this.opening) return this.opening
     let open: Open | undefined, gone = false
@@ -87,7 +89,7 @@ export class AdminConnection {
       if (this.opening !== opening || gone) {
         if (this.opening === opening) this.opening = undefined
         void connection.close().catch(() => undefined)
-        throw this.stopped === opening ? new SignInStopped() : new Error(CLOSED)
+        throw this.stopped === opening ? new SignInStopped() : new Error(i18n._(CLOSED))
       }
       this.opening = undefined
       open = this.current = { connection, uses: 0 }

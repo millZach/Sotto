@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { t } from '@lingui/core/macro'
 
 import type { UpdateStatus } from '../../../../shared/contracts'
-import { UPDATES_UNSUPPORTED_MESSAGE, updateProblem, type UpdateAction } from './updateControlLogic'
+import { updatesUnsupportedMessage, updateProblem, type UpdateAction } from './updateControlLogic'
 
 export interface UpdateNotice {
   readonly tone: 'success' | 'error'
@@ -66,9 +67,9 @@ export function useUpdateFlow({ status, checkRequest, check, download, install, 
   const runCheck = useCallback(() => run(async () => {
     const result = await check()
     if (result === null || result.phase.phase === 'unsupported') {
-      notify({ tone: 'error', title: 'Could not check for updates', detail: UPDATES_UNSUPPORTED_MESSAGE })
+      notify({ tone: 'error', title: t`Could not check for updates`, detail: updatesUnsupportedMessage() })
     } else if (result.phase.phase === 'failed' || (result.phase.phase === 'available' && result.phase.problem !== null)) {
-      notify({ tone: 'error', title: 'Could not check for updates', detail: result.phase.problem })
+      notify({ tone: 'error', title: t`Could not check for updates`, detail: result.phase.problem })
     }
     return result
   }), [check, notify, run])
@@ -77,9 +78,9 @@ export function useUpdateFlow({ status, checkRequest, check, download, install, 
     const version = statusRef.current?.phase.phase === 'available' ? statusRef.current.phase.version : null
     const ok = await download()
     if (ok) {
-      notify({ tone: 'success', title: 'Update downloaded', detail: 'Restart Sotto from the update control to install it.', ...(version === null ? {} : { version }) })
+      notify({ tone: 'success', title: t`Update downloaded`, detail: t`Restart Sotto from the update control to install it.`, ...(version === null ? {} : { version }) })
     } else {
-      notify({ tone: 'error', title: 'Could not download update', detail: updateProblem(statusRef.current) })
+      notify({ tone: 'error', title: t`Could not download update`, detail: updateProblem(statusRef.current) })
     }
     return ok
   })) ?? false, [download, notify, run])
@@ -92,7 +93,7 @@ export function useUpdateFlow({ status, checkRequest, check, download, install, 
 
   const confirmInstall = useCallback(async (): Promise<boolean> => (await run(async () => {
     const ok = await install()
-    if (!ok) notify({ tone: 'error', title: 'Could not install update', detail: updateProblem(statusRef.current) })
+    if (!ok) notify({ tone: 'error', title: t`Could not install update`, detail: updateProblem(statusRef.current) })
     return ok
   })) ?? false, [install, notify, run])
 

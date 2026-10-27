@@ -10,6 +10,7 @@ import { agentActivitySchema, MAX_AGENT_ACTIVITIES, type AgentActivity } from '.
 import { threadUsageSchema } from './threadUsage'
 import { agentVisualSchema, VISUAL_MESSAGE_PREFIX, type AgentVisual } from './visuals'
 import { compactionSchema } from './compaction'
+import { clearThreadsAgeSchema, THREAD_CLEAR_MAX, threadClearKeptReasonSchema, threadClearPreviewSchema, threadClearResultSchema } from './threadClear'
 import { agentBackgroundWorkSchema, agentMonitoringSchema } from './agentMonitoring'
 import { gitStatusSchema } from './gitStatus'
 import { agentBabysitEndedSchema, agentBabysittingSchema, BABYSITTING_PER_THREAD_MAX } from './babysitting'
@@ -275,8 +276,17 @@ export const agentProviderModeSchema = z.object({ id: providerEntityId, name: id
   allows: z.enum(['nothing', 'edits', 'everything']).optional() }).strict()
 export type AgentProviderMode = z.infer<typeof agentProviderModeSchema>
 export const agentThreadOptionsSchema = z.object({ modelId: providerEntityId.optional(), reasoningEffort: z.string().min(1).max(64).optional(),
-  runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional() })
+  runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional(),
+  /** Fast mode on or off for this thread (ADR-0143): the user's choice, kept when the thread moves to a model without it. */
+  fastMode: z.boolean().optional() })
 export type AgentThreadOptions = z.infer<typeof agentThreadOptionsSchema>
+/**
+ * A model's fast mode (ADR-0143): faster output at a higher price. Present only on a model whose provider offers it,
+ * Claude Code from its catalog's `supportsFastMode` and Codex from a `priority` service tier. `description` is the
+ * provider's own line about what it costs, where it gives one (Codex's tier description).
+ */
+export const agentModelFastModeSchema = z.object({ description: z.string().max(300).optional() })
+export type AgentModelFastMode = z.infer<typeof agentModelFastModeSchema>
 export const agentModelSchema = z.object({ id: providerEntityId, provider: id, providerId: providerIdSchema.optional(), name: id, ready: z.boolean(),
   /**
    * The provider's own ids in Sotto's order, least to most thorough, so the last is the highest level.
@@ -292,6 +302,8 @@ export const agentModelSchema = z.object({ id: providerEntityId, provider: id, p
   providerModes: z.array(agentProviderModeSchema).max(20).optional(),
   /** The provider names one of its own models as the one to reach for; the picker keeps it at the top. */
   recommended: z.boolean().optional(),
+  /** Present only when the model offers fast mode (ADR-0143); the composer draws its toggle only then. */
+  fastMode: agentModelFastModeSchema.optional(),
   /**
    * Where the model runs, for a provider that offers models from several companies under one sign-in: OpenCode's
    * **model source**, such as OpenCode Zen or Anthropic (ADR-0087). The picker may group by it; `provider` stays the
@@ -336,6 +348,9 @@ export const agentRequestSchema = z.object({
     plan: z.object({ name: text.optional(), overview: text.optional(), steps: text.optional() }).strict().optional() }).optional(),
   delivery: z.literal('uncertain').optional(),
   answerRetryReady: z.literal(true).optional(),
+  /** When the host's coordinator first showed this request (ADR-0135), so a client can say how long it has waited.
+   * The host adds it; no provider does. Absent from hosts that predate it, which say no wait at all. */
+  since: z.string().datetime().optional(),
 })
 export const agentQuestionAnswersSchema = z.record(id, z.object({ optionIds: z.array(id).max(100), text: text.optional() }).strict())
 export type AgentQuestionAnswers = z.infer<typeof agentQuestionAnswersSchema>
@@ -463,6 +478,13 @@ export const worktreeReclaimPreviewSchema = z.object({
   outsideLink: z.string().optional(),
 }).strict()
 export type WorktreeReclaimPreview = z.infer<typeof worktreeReclaimPreviewSchema>
+/**
+ * What Delete thread… shows before it asks (ADR-0140): why the thread is kept, or null when it may go, and, for a thread
+ * with a worktree folder of its own, what removing that folder would take, so the window can List and tick ignored items
+ * and nested work the way Remove worktree does (ADR-0041). Null when the thread has no folder of its own.
+ */
+export const threadDeletePreviewSchema = z.object({ threadId: z.string().min(1).max(512), kept: threadClearKeptReasonSchema.nullable(), worktree: worktreeReclaimPreviewSchema.nullable() }).strict()
+export type ThreadDeletePreview = z.infer<typeof threadDeletePreviewSchema>
 export const agentWorktreeSchema = z.object({
   mode: z.enum(['independent', 'shared']), status: z.enum(['pending', 'ready', 'error']),
   path: z.string().optional(), repositoryRoot: z.string().optional(), branch: z.string().optional(),
@@ -543,6 +565,11 @@ export const agentThreadSchema = z.object({
   reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(),
   /** The provider's own permission mode this thread is set to, where the provider names its own. */
   providerMode: providerEntityId.optional(),
+  /**
+   * The user turned fast mode on for this thread (ADR-0143). It is the choice, not what runs: on a model without fast
+   * mode the thread runs at normal speed and keeps the choice for a model that has it. Absent when off, and from older hosts.
+   */
+  fastMode: z.boolean().optional(),
   status: z.enum(['idle', 'running', 'error']),
   workingDirectory: z.string().optional(), worktree: agentWorktreeSchema.optional(),
   /** The last stacked Git action run on this thread's folder, as it runs and once it is over (ADR-0027). */
@@ -611,6 +638,9 @@ export const agentThreadSchema = z.object({
   /** Why that failure happened, as the failed turn's own record says, cut to its first 600 characters; absent when it says
    * nothing, and from older hosts. The pane reads it to tell the thread's own failure from the provider's other errors. */
   failureReason: z.string().max(600).optional(),
+  /** When the coordinator named the failure `failureId` names (ADR-0135), so a client can say how long it has stood.
+   * Absent while the thread stands in none, for a failure named before the moment was kept, and from older hosts. */
+  failureSince: z.string().datetime().optional(),
   /** The newest message of the user's the provider's adapter has recorded, whether or not `messages` still
    * holds it. A send names it back so the adapter can refuse one that raced the user's own input; a window
    * the adapter put away and took back up carries none of the older messages, so it cannot say. */
@@ -736,6 +766,8 @@ export const agentClientHostSchema = z.object({ hostId: z.uuid(), connected: z.b
   clientUpdates: z.array(providerClientUpdateSchema).max(PROVIDER_COUNT).optional(), clientUpdateRun: clientUpdateRunSchema.optional(),
   /** The host lists `pull-request-babysit`: the Pull request surface offers Babysit pull request on its threads (ADR-0061 decision 11). */
   pullRequestBabysit: z.literal(true).optional(),
+  /** The host deletes its settled threads when asked: it lists `thread-delete` (ADR-0140 decision 7). Absent, Delete thread… is off. */
+  threadDelete: z.literal(true).optional(),
   /** Where a new project goes on this host, in its own format, for Settings → Threads' row per computer (ADR-0074). */
   projectsDirectory: z.string().max(4_096).optional(),
   /** Whether this host lets this computer answer, so a permission default that grants applies there (ADR-0074). */
@@ -808,6 +840,8 @@ export const subscriptionAccountSchema = z.object({
     /** Least to most thorough, the last being the highest level, as on `agentModelSchema.reasoningEfforts`. */
     reasoningEfforts: z.array(z.string()).optional(),
     defaultReasoningEffort: z.string().optional(),
+    /** As on `agentModelSchema.fastMode`: present only when the model offers fast mode. */
+    fastMode: agentModelFastModeSchema.optional(),
   })),
   defaultModelId: z.string().optional(), allowCustomModel: z.boolean().optional(),
 })
@@ -817,7 +851,7 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
 }
 
 export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
-  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor',
+  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor', deepseek: 'DeepSeek Harness',
 }
 const THREAD_PROVIDERS_CONNECTED = 'Thread providers connected'
 /** The bounded success vocabulary old hosts use, including a default provider discovered during connect. */
@@ -920,6 +954,10 @@ export const providerUpgradeSchema = z.object({ recoveryPath: z.string(), migrat
 export const agentStateSchema = z.object({
   legacyManagement: z.boolean().optional(),
   worktreeReclaimPreview: worktreeReclaimPreviewSchema.optional(),
+  /** The answers of `preview-delete-thread`, `preview-clear-threads` and `clear-threads` (ADR-0140), on that reply alone. */
+  threadDeletePreview: threadDeletePreviewSchema.optional(),
+  threadClearPreview: threadClearPreviewSchema.optional(),
+  threadClearResult: threadClearResultSchema.optional(),
   clientScoped: z.boolean().optional(),
   connections: z.array(z.object({ hostId: z.uuid(), name: z.string(), kind: z.enum(['local', 'remote']), connected: z.boolean() })).optional(),
   hostId: z.uuid().optional(),
@@ -1249,6 +1287,18 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('restore-project'), projectId: providerEntityId }).strict(),
   z.object({ type: z.literal('settle-thread'), threadId: id }).strict(),
   z.object({ type: z.literal('restore-thread'), threadId: id }).strict(),
+  /**
+   * Clearing settled threads (ADR-0140), an Owl feature. `preview-delete-thread` says whether one settled thread may be
+   * deleted and what its own worktree would take; `delete-thread` deletes it, with the same confirmations Remove worktree
+   * takes for its folder. `preview-clear-threads` lists this computer's settled threads quiet longer than `olderThanDays`
+   * (0 is any age) that would go and those kept; `clear-threads` deletes those of `threadIds` that still qualify. Each is
+   * checked again as it is deleted, and nothing can be taken back. Unlike Remove worktree, `delete-thread` takes no answer
+   * to uncommitted changes: a thread whose worktree has them is kept (ADR-0140 decision 3).
+   */
+  z.object({ type: z.literal('preview-delete-thread'), threadId: id }).strict(),
+  z.object({ type: z.literal('delete-thread'), threadId: id, confirmedIgnored: z.array(z.string()).optional(), confirmedItems: z.array(z.object({ path: z.string(), fileCount: z.number().int().nonnegative() }).strict()).optional(), confirmedRepositories: z.array(z.object({ path: z.string(), changeCount: z.number().int().nonnegative(), unpushedCommitCount: z.number().int().nonnegative().optional(), kind: z.enum(['worktree', 'repository']) }).strict()).optional() }).strict(),
+  z.object({ type: z.literal('preview-clear-threads'), olderThanDays: clearThreadsAgeSchema }).strict(),
+  z.object({ type: z.literal('clear-threads'), olderThanDays: clearThreadsAgeSchema, threadIds: z.array(id).min(1).max(THREAD_CLEAR_MAX) }).strict(),
   /** A pure Sotto-side edit of the thread's name; the trimmed title must not be empty. */
   z.object({ type: z.literal('rename-thread'), threadId: id, title: z.string().max(512) }).strict(),
   /** Ask the thread's own provider for its name again, on the side, replacing a generated or stand-in one. */
@@ -1335,7 +1385,8 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
    * head as a branch a draft's new worktree takes on first send. */
   z.object({ type: z.literal('git-checkout-pull-request'), threadId: id, reference: z.string().min(1).max(2_048), mode: z.enum(['local', 'worktree']) }).strict(),
   agentThreadOptionsSchema.extend({ type: z.literal('configure-thread'), threadId: id }).strict()
-    .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined || value.providerMode !== undefined, 'Choose a thread setting to change.'),
+    .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined || value.providerMode !== undefined
+      || value.fastMode !== undefined, 'Choose a thread setting to change.'),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),
   /** `shownThreadIds`: which of them the client shows now, where that is fewer; the socket server says so for the paired
    * desktops whose windows are behind another app (ADR-0092). Absent, every observed thread is shown. A paired client
@@ -1425,7 +1476,7 @@ export function hostForThread(host: AgentHostSnapshot, thread: Pick<AgentThread,
   const source = host.clientHosts?.find(item => item.hostId === thread.hostId)
   return source ? { ...host, ...source, providers: source.providers } : host
 }
-const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor'])
+const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor', 'deepseek'])
 /**
  * What Connect providers turns on: every thread client installed on this machine, Devin included, except one the user
  * turned off, added to the ones already on, as a headless host connects them all (ADR-0036). A client already on stays

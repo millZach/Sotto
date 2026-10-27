@@ -1,7 +1,11 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
+import { i18n } from '@lingui/core'
+import { msg, plural } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentRequest } from '../../../shared/agents'
 import { clockLabel } from './threadFacts'
 import { nearestTick, plainOpening, scrubberAfter, scrubberLane, scrubberShown, swell, tickPlaces, type ScrubberMark, type ScrubberMessage } from './messageScrubberMarks'
+import { shownCount } from '../state/interfaceNumbers'
 import './messageScrubber.css'
 
 /** How close the pointer must come to a tick to reach it. */
@@ -48,6 +52,7 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
   /** The reader's wheel over the lane, which scrolls the transcript as the reader's own wheel over it does. */
   readonly onReaderWheel?: ((event: React.WheelEvent) => void) | undefined
 }): ReactNode {
+  const { t } = useLingui()
   const [geometry, setGeometry] = useState<Geometry | null>(null)
   // The card's tick and the focused tick are held by message, so loading earlier messages or a rewind, which shift the
   // ticks, leaves them on the message they were on.
@@ -120,7 +125,9 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
     }
     element.addEventListener('scroll', onScroll, { passive: true })
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(onScroll)
-    observer?.observe(element)
+    // The border box, because a pane narrowed by a split shrinks only the transcript's centring padding: its content box
+    // stays the column's width, and the lane, measured from that padding, would stay where the wider pane put it.
+    observer?.observe(element, { box: 'border-box' })
     if (content.current) observer?.observe(content.current)
     return () => { element.removeEventListener('scroll', onScroll); observer?.disconnect(); cancelAnimationFrame(frame.current) }
   }, [scroller, content, measure, readInView])
@@ -250,7 +257,7 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
   const cardPlace = { left: geometry.column + CARD_GAP, width: Math.max(180, Math.min(CARD_WIDEST, geometry.columnWidth - 2 * CARD_GAP)) }
   const shownMark = hot === null ? undefined : marks[hot.index]
   return <>
-    <nav ref={nav} className="message-scrubber" aria-label="Messages you sent" style={style} data-active={hot !== null || undefined}
+    <nav ref={nav} className="message-scrubber" aria-label={t`Messages you sent`} style={style} data-active={hot !== null || undefined}
       data-narrow={geometry.lane < NARROW_LANE_PX || undefined}
       onPointerMove={onPointerMove} onPointerLeave={leave} onPointerDown={event => { lastPointer.current = event.pointerType }} onWheel={onWheel} onKeyDown={onKeyDown}
       // A press with the pointer leaves focus where it was: focusing the button under it would swap the card's tick for
@@ -284,7 +291,7 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
 
 const opening = (message: ScrubberMessage, attached: number, most: number): string => {
   const words = plainOpening(message.text, most)
-  return words || (attached === 1 ? 'One attachment' : attached > 1 ? `${attached} attachments` : 'An empty message')
+  return words || (attached > 0 ? plural(attached, { one: 'One attachment', other: '# attachments' }) : i18n._(msg`An empty message`))
 }
 
 /**
@@ -297,7 +304,11 @@ const ScrubberTick = React.memo(function ScrubberTick({ index, message, attachme
   readonly register: (index: number, element: HTMLButtonElement | null) => void
 }): ReactNode {
   const ref = useCallback((element: HTMLButtonElement | null) => register(index, element), [register, index])
-  const label = useMemo(() => `Go to your message at ${clockLabel(Date.parse(message.createdAt))}: ${opening(message, attachments, 80)}`, [message, attachments])
+  const { t } = useLingui()
+  const label = useMemo(() => {
+    const time = clockLabel(Date.parse(message.createdAt)), said = opening(message, attachments, 80)
+    return t({ message: `Go to your message at ${time}: ${said}`, comment: '{said} is the start of the message the user sent.' })
+  }, [message, attachments, t])
   return <button ref={ref} type="button" className="message-scrubber__tick" data-index={index} aria-describedby={hot ? cardId : undefined} aria-label={label}
     style={{ top: `${top}px` }} tabIndex={tabbable ? 0 : -1} data-hot={hot || undefined} data-in-view={inView || undefined} />
 })
@@ -332,15 +343,17 @@ function ScrubberCard({ ref, id, mark, index, count, who, running, requests, key
   readonly place: { readonly left: number; readonly width: number }
   readonly onPress: () => void; readonly onEnter: () => void; readonly onLeave: () => void
 }): ReactNode {
+  const { t } = useLingui()
   const after = scrubberAfter(mark, requests)
+  const number = index + 1, more = after.kind === 'asked' ? after.more : 0
   return <div ref={ref} id={id} role="tooltip" className="message-scrubber__card" style={{ top: `${top}px`, left: `${place.left}px`, width: `${place.width}px` }} onClick={onPress} onPointerEnter={onEnter} onPointerLeave={onLeave}>
-    <div className="message-scrubber__head"><b>You</b><span>{clockLabel(Date.parse(mark.message.createdAt))}</span><span>Message {index + 1} of {count}</span></div>
+    <div className="message-scrubber__head"><b>{t({ message: 'You', comment: 'Who wrote a message: the user.' })}</b><span>{clockLabel(Date.parse(mark.message.createdAt))}</span><span>{t`Message ${{ number: shownCount(number) }} of ${{ count: shownCount(count) }}`}</span></div>
     <p className="message-scrubber__said">{opening(mark.message, mark.attachments, 400)}</p>
-    {after.kind === 'reply' ? <><p className="message-scrubber__who">{who} replied</p><p className="message-scrubber__then">{after.text}</p></>
-      : after.kind === 'asked' ? <><p className="message-scrubber__who">{who} asked</p><p className="message-scrubber__then">{after.question}</p>
+    {after.kind === 'reply' ? <><p className="message-scrubber__who"><Trans comment="{who} is the provider or Watcher.">{who} replied</Trans></p><p className="message-scrubber__then">{after.text}</p></>
+      : after.kind === 'asked' ? <><p className="message-scrubber__who"><Trans comment="{who} is the provider or Watcher.">{who} asked</Trans></p><p className="message-scrubber__then">{after.question}</p>
         {after.choices.length ? <ul className="message-scrubber__choices">{after.choices.map(choice => <li key={choice}>{choice}</li>)}</ul> : null}
-        {after.more > 0 ? <p className="message-scrubber__more">{after.more === 1 ? 'One more choice' : `${after.more} more choices`}</p> : null}</>
-        : mark.newest && running ? <p className="message-scrubber__who">{who} is working</p> : null}
-    {keys ? <p className="message-scrubber__keys">Enter goes there. Up and Down move to the others. Esc closes this.</p> : null}
+        {more > 0 ? <p className="message-scrubber__more tt-paragraph">{plural(more, { one: 'One more choice', other: '# more choices' })}</p> : null}</>
+        : mark.newest && running ? <p className="message-scrubber__who"><Trans comment="{who} is the provider or Watcher.">{who} is working</Trans></p> : null}
+    {keys ? <p className="message-scrubber__keys tt-paragraph">{t`Enter goes there. Up and Down move to the others. Esc closes this.`}</p> : null}
   </div>
 }

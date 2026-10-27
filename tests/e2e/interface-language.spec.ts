@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { settingsLayoutProblems } from './support/settingsChecks'
-import { closeSotto, launchSotto, openPage, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
 import { resizeWindow } from './support/sottoWindow'
 
 const shots = evidenceDirectory('artifacts/interface-language')
@@ -33,11 +33,19 @@ async function launch(options: { enabled: boolean; systemLanguages?: string }): 
   }
 }
 
+/**
+ * Opens Settings by its link's address and the Appearance tab by its ID: the window may show any language, and a
+ * pseudo-language changes every name.
+ */
+async function openSettings(page: Page): Promise<void> {
+  await page.locator('a[href="#settings"]').click()
+}
+
 async function openAppearance(page: Page): Promise<Locator> {
   await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true }))
   await page.reload()
-  await openPage(page, 'Settings')
-  await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
+  await openSettings(page)
+  await page.locator('#tab-settings-appearance').click()
   return page.locator('#settings-appearance')
 }
 
@@ -104,8 +112,8 @@ test('Appearance chooses the interface language, and the window follows at once 
     })
     await launched.page.reload()
     await expect.poll(() => launched.page.evaluate(() => (window as unknown as { firstFrameLanguage?: string }).firstFrameLanguage)).toBe('ja')
-    await openPage(launched.page, 'Settings')
-    await launched.page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
+    await openSettings(launched.page)
+    await launched.page.locator('#tab-settings-appearance').click()
     await expect(appearance.getByRole('heading', { level: 2, name: '外観' })).toBeVisible()
 
     // Reduced motion, in the light room and the dark: the field changes and the list opens at once, with the colours

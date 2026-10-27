@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { runGitStatusCommand, type RunGitCommand } from './gitStatus'
 import {
-  BRANCH_BUNDLE_CHUNK_BYTES, BRANCH_BUNDLE_MAX_BYTES, BRANCH_TIPS_MAX, branchMoveRefusal, branchMoveWords, branchNameSchema, commitIdSchema,
+  BRANCH_BUNDLE_CHUNK_BYTES, BRANCH_BUNDLE_GIT_MS, BRANCH_BUNDLE_MAX_BYTES, BRANCH_TIPS_MAX, branchMoveRefusal, branchMoveWords, branchNameSchema, commitIdSchema,
   incomingRef, outgoingRef, SNAPSHOT_UNTRACKED_LISTED, type BranchMoved, type BranchMoveRefusal, type SnapshotCarried,
 } from '../../shared/branchMoves'
 
@@ -35,8 +35,9 @@ export interface AlreadyPresent { readonly type: 'present' }
 /**
  * Each move a receiver took, by its ID, with the commit and ref it was for. Written once its objects are imported and its
  * commit is checked to be a commit, before any ref, so a retry of the same move is answered from it and a move ID that
- * comes back with another commit is refused (ADR-0105). A move ended before it is recorded leaves only unreferenced
- * objects, for Git to collect, and no record, so a retry starts again.
+ * comes back with another commit is refused (ADR-0105). A move seen to have ended at the check before recording
+ * leaves only unreferenced objects, for Git to collect, and no record, so a retry starts again. One that ends while its
+ * record is being saved is recorded all the same and creates no ref, so its retry must carry the same commit.
  */
 const recordsSchema = z.object({ v: z.literal(1), moves: z.record(z.string(), z.object({ commit: commitIdSchema, ref: z.string(), at: z.string() })) })
 type Records = z.infer<typeof recordsSchema>
@@ -304,13 +305,17 @@ export class BranchBundles {
       if (bases.length > 0 && (await this.git(input.repository, ['rev-list', '--count', input.commit, '--stdin'], bases.map(base => '^' + base).join('\n') + '\n')).trim() === '0') {
         return { type: 'present' }
       }
+      // What the objects to send take on disk, before anything is written: a branch far over the cap is refused here rather
+      // than after `git bundle create` has filled the data folder with it. The exact size is checked again below.
+      const estimate = await this.diskUsage(input.repository, input.commit, bases)
+      if (estimate !== null && estimate > this.maxBytes) return branchMoveRefusal('too-large', branchMoveWords.tooLarge(estimate, this.maxBytes))
       const written = await this.withOutgoingRef(input.moveId, async ref => {
         // A symbolic ref already in the outgoing ref's place is never written through or removed: pointing it, or deleting
         // it, would move or delete the branch it names. Both writes use `--no-deref` so only the ref itself is touched.
         if (await this.symbolic(input.repository, ref)) return false
         await this.git(input.repository, ['update-ref', '--no-deref', ref, input.commit], undefined, 30_000)
         try {
-          await this.git(input.repository, ['bundle', 'create', '--quiet', path, ref, '--stdin'], bases.map(base => '^' + base).join('\n') + '\n', 600_000)
+          await this.git(input.repository, ['bundle', 'create', '--quiet', path, ref, '--stdin'], bases.map(base => '^' + base).join('\n') + '\n', BRANCH_BUNDLE_GIT_MS)
         } finally { await this.git(input.repository, ['update-ref', '--no-deref', '-d', ref], undefined, 30_000).catch(() => undefined) }
         return true
       })
@@ -322,6 +327,15 @@ export class BranchBundles {
       await unlink(path).catch(() => undefined)
       return branchMoveRefusal('failed', branchMoveWords.failed)
     }
+  }
+
+  /** The bytes the objects reachable from `commit` and not from `bases` take on disk, or null when Git cannot say (before 2.31). */
+  private async diskUsage(repository: string, commit: string, bases: readonly string[]): Promise<number | null> {
+    try {
+      const output = await this.git(repository, ['rev-list', '--objects', '--disk-usage', commit, '--stdin'], bases.map(base => '^' + base).join('\n') + '\n', 120_000)
+      const bytes = Number(output.trim())
+      return Number.isSafeInteger(bytes) && bytes >= 0 ? bytes : null
+    } catch { return null }
   }
 
   /** Runs `use` with the move's outgoing ref to itself, once any other attempt at the same move has finished with it. */
@@ -448,7 +462,7 @@ export class BranchBundles {
       const landed = await this.landed(repository, moveId, ref, commit)
       if (landed) return landed
       if (fences.some(each => each.cancelled)) return branchMoveRefusal('cut-off', branchMoveWords.cutOff)
-      await this.git(repository, ['bundle', 'unbundle', path], undefined, 600_000)
+      await this.git(repository, ['bundle', 'unbundle', path], undefined, BRANCH_BUNDLE_GIT_MS)
       // A bundle whose one ref names a blob or a tree verifies and imports like any other, so its object's type is
       // checked before the move is recorded: a record of what never landed would turn a good retry into move-differs.
       if (!await this.isCommit(repository, commit)) return branchMoveRefusal('not-whole', branchMoveWords.notWhole)

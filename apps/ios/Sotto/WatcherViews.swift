@@ -81,10 +81,12 @@ struct WatcherView: View {
 
     /// What stays, then each thread Stop all would stop and where it runs: "Fix login test, Claude Code on Laptop".
     private func stopMessage(_ preview: WatcherStopPreview) -> String {
-        let threads = preview.targets.map { target in
-            "\(target.title), \(AgentNames.name(target.provider)) on \(model.computerName(target.hostId) ?? "another computer")"
+        let threads = preview.targets.map { target -> String in
+            let computer = model.computerName(target.hostId) ?? String(localized: "another computer", comment: "Stands in for a computer this iPhone has no name for")
+            return String(localized: "watcher-stop.thread", defaultValue: "\(target.title), \(AgentNames.name(target.provider)) on \(computer)",
+                          comment: "The first %@ is a thread's title, the second the provider's name, such as Claude Code, the third the computer's name")
         }
-        return (["Threads you started or took over keep going, and so does Watcher.", ""] + threads).joined(separator: "\n")
+        return ([String(localized: "Threads you started or took over keep going, and so does Watcher."), ""] + threads).joined(separator: "\n")
     }
 
     /// Slides the bar away, or back. Under Reduce Motion it goes and comes back without sliding, and with VoiceOver on it
@@ -98,7 +100,7 @@ struct WatcherView: View {
     private func prepareStop() {
         Task {
             guard let preview = await model.prepareWatcherStop(hostID) else { return }
-            if preview.targets.isEmpty { model.feedback = "Watcher has no threads of its own to stop. Nothing was stopped." }
+            if preview.targets.isEmpty { model.feedback = String(localized: "Watcher has no threads of its own to stop. Nothing was stopped.") }
             else { stopPreview = preview }
         }
     }
@@ -188,6 +190,7 @@ private struct WatcherHero: View {
                 }
             }
             if model.watcherHostIDs.count > 1 { computerMenu } else { subtitleText }
+            WatcherMachinesLine(hostID: hostID)
             if model.offersWatcherManage(hostID), model.watcherPage(hostID) != nil {
                 WatcherPermissionChip(hostID: hostID).padding(.top, Space.s1)
             }
@@ -204,7 +207,7 @@ private struct WatcherHero: View {
                 .background(Palette.raised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
                 .accessibilityHidden(true)
-            Text("Watcher").font(.sotto(.display, .bold)).tracking(-0.6).foregroundStyle(Palette.ink)
+            Text("Watcher").font(.sotto(.display, .bold)).headingTracking(-0.6).foregroundStyle(Palette.ink)
                 .accessibilityAddTraits(.isHeader)
         }
     }
@@ -233,8 +236,192 @@ private struct WatcherHero: View {
     /// "Codex · GPT-6.1 Sol on Laptop".
     private var subtitle: String {
         let computer = model.name(hostID)
-        guard let running = model.watcherModel(hostID) else { return "On \(computer)" }
-        return running + " on " + computer
+        guard let running = model.watcherModel(hostID) else { return String(localized: "On \(computer)", comment: "Where Watcher runs. %@ is the computer's name") }
+        return String(localized: "\(running) on \(computer)",
+                      comment: "Where Watcher runs. The first %@ is its provider and model, such as Codex · GPT-6.1 Sol; the second is the computer's name")
+    }
+}
+
+// MARK: - Machines
+
+/// The machines line (#1032, Zach's pick D "Names" on October 23, 2026), under Watcher's computer while that computer has
+/// Work across machines on: each machine's name, then its working count, then the words a problem adds, in the warning
+/// ink. A phone always shortens it: no "starting" counts, only the machines with a problem and how many more, and with
+/// nothing wrong anywhere just how many machines and how much works on them. Each name opens that machine's panel, and
+/// the count of the rest shows every machine. Plain text and underlined names, never pills or chips (ADR-0110).
+private struct WatcherMachinesLine: View {
+    @EnvironmentObject var model: AppModel
+    /// Watched for Watcher's page, which publishes on its own store, not on the model.
+    @EnvironmentObject var watcherStore: WatcherStore
+    let hostID: String
+    @State private var all = false
+    @State private var open: OpenMachine?
+    struct OpenMachine: Identifiable { let id: String }
+
+    var body: some View {
+        if model.offersWatcherMachines(hostID), let machines = model.watcherPage(hostID)?.machines, !machines.rows.isEmpty {
+            let rows = MachineLine.named(machines.rows, computer: model.name(hostID))
+            let short = MachineLine.short(rows)
+            let shown = all ? rows : short.shown
+            FlowLayout(spacing: Space.s1) {
+                ForEach(Array(shown.enumerated()), id: \.element.id) { index, machine in
+                    entry(machine, first: index == 0, starting: all)
+                }
+                if !all && short.more > 0 {
+                    if short.shown.isEmpty {
+                        moreButton(MachineLine.calm(rows), label: MachineLine.calmLabel(rows))
+                    } else {
+                        HStack(alignment: .firstTextBaseline, spacing: Space.s1) {
+                            Text("·").foregroundStyle(Palette.muted).accessibilityHidden(true)
+                            moreButton(MachineLine.more(short.more), label: MachineLine.moreLabel(short.more))
+                        }
+                    }
+                }
+            }
+            .font(.sotto(.small))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Machines and what works on each")
+            .accessibilityIdentifier("watcher-machines")
+            // Machine facts are read when Watcher places work, once for each set of starts, and when a panel opens.
+            .onAppear { model.readWatcherMachinesAfterStarts(hostID) }
+            .onChange(of: model.watcherPage(hostID)?.receiptGroups) { _, _ in model.readWatcherMachinesAfterStarts(hostID) }
+            .onChange(of: hostID) { _, _ in all = false; open = nil }
+            .sheet(item: $open) { machine in
+                MachineSheet(hostID: hostID, machineID: machine.id)
+                    .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+            }
+        }
+    }
+
+    /// One machine: its name, a press that opens its panel, then its count and any problem's words.
+    private func entry(_ machine: WatcherMachines.Machine, first: Bool, starting: Bool) -> some View {
+        let count = MachineLine.count(machine, starting: starting)
+        let problems = MachineLine.problems(machine).joined(separator: ", ")
+        return HStack(alignment: .firstTextBaseline, spacing: Space.s1) {
+            if !first { Text("·").foregroundStyle(Palette.muted).accessibilityHidden(true) }
+            Button { open = OpenMachine(id: machine.id) } label: {
+                // A long saved name gives way to an ellipsis; the button's spoken label keeps it whole.
+                Text(machine.name).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
+                    .underline()
+                    .lineLimit(1).truncationMode(.tail)
+                    .frame(maxWidth: 180, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .frame(minHeight: 30)
+            .contentShape(Rectangle())
+            .accessibilityLabel(MachineLine.label(machine))
+            .accessibilityIdentifier("watcher-machine-\(machine.id)")
+            if !count.isEmpty { Text(count).foregroundStyle(Palette.muted).lineLimit(1).fixedSize().accessibilityHidden(true) }
+            if !problems.isEmpty {
+                Text((count.isEmpty ? "" : ", ") + problems).foregroundStyle(Palette.warningText)
+                    .fixedSize(horizontal: false, vertical: true).accessibilityHidden(true)
+            }
+        }
+    }
+
+    private func moreButton(_ words: String, label: String) -> some View {
+        Button { all = true } label: {
+            Text(words).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink).underline()
+        }
+        .buttonStyle(.plain)
+        .frame(minHeight: 30)
+        .contentShape(Rectangle())
+        .accessibilityLabel(label)
+        .accessibilityIdentifier("watcher-machines-more")
+    }
+}
+
+/// One machine's panel, as a sheet (#1032, pick D): its system, CPU busy, memory available and when that was read; why its
+/// load reads unknown when it does; what works there and who started each; and whether new workers start there.
+/// Opening it reads the machines afresh. Where new workers start is changed on the computer, in Settings.
+private struct MachineSheet: View {
+    @EnvironmentObject var model: AppModel
+    @EnvironmentObject var watcherStore: WatcherStore
+    @Environment(\.dismiss) private var dismiss
+    let hostID: String
+    let machineID: String
+
+    var body: some View {
+        let computer = model.name(hostID)
+        let machine = model.watcherPage(hostID)?.machines.flatMap { MachineLine.named($0.rows, computer: computer).first { $0.id == machineID } }
+        ScrollView {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
+                    Text(machine?.name ?? String(localized: "Machine", comment: "A machine panel's title before its name is known")).font(.sotto(.title, .bold)).tracking(-0.4).foregroundStyle(Palette.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: Space.s2)
+                    Button("Done") { dismiss() }
+                        .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
+                        .keyboardShortcut(.cancelAction)
+                        .accessibilityIdentifier("machine-done")
+                }
+                if let machine { details(machine, computer: computer) }
+                else { line("\(computer) no longer lists this machine.") }
+            }
+            .padding(Space.gutter)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(Palette.canvas)
+        .task { await model.readWatcherMachines(hostID) }
+    }
+
+    @ViewBuilder private func details(_ machine: WatcherMachines.Machine, computer: String) -> some View {
+        if !machine.connected {
+            line(MachineLine.notConnected(machine, computer: computer))
+        } else {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                if let system = machine.system {
+                    row("System", system + (machine.logicalCpuCount.map { " · \($0) CPUs" } ?? ""), warn: false)
+                }
+                if machine.cpuState != nil {
+                    row("CPU", MachineLine.cpu(machine), warn: machine.cpuState != "not-busy")
+                    row("Memory", MachineLine.memoryRow(machine), warn: machine.memoryState != "enough")
+                }
+                if let at = machine.loadObservedAt.flatMap({ Stamp.date($0) }) {
+                    row("Read", MachineLine.ago(Date().timeIntervalSince(at)), warn: false)
+                }
+            }
+            if let why = machine.unknownWhy { line(why) }
+            Text(MachineLine.panelCount(machine)).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
+            if let over = MachineLine.over(machine) { line(over, warn: true) }
+            if !machine.threads.isEmpty || machine.starting > 0 {
+                VStack(alignment: .leading, spacing: Space.s2) {
+                    ForEach(Array(machine.threads.enumerated()), id: \.offset) { _, thread in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(thread.title).font(.sotto(.small)).foregroundStyle(Palette.ink).lineLimit(2)
+                            Text(thread.who).font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                    if machine.working > machine.threads.count {
+                        Text("and \(machine.working - machine.threads.count) more").font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                    }
+                    if machine.starting > 0 {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(machine.starting) placed here, starting").font(.sotto(.small)).foregroundStyle(Palette.ink)
+                            Text("Counted, so the next start sees it").font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+            }
+        }
+        line("Where new workers start is set on \(computer), in Settings, under Watcher.")
+    }
+
+    private func row(_ name: String, _ value: String, warn: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
+            Text(name).foregroundStyle(Palette.muted).frame(width: 72, alignment: .leading)
+            Text(value).foregroundStyle(warn ? Palette.warningText : Palette.ink).monospacedDigit().fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.sotto(.small))
+        .accessibilityElement(children: .combine)
+    }
+
+    private func line(_ words: String, warn: Bool = false) -> some View {
+        Text(words).font(.sotto(.small)).foregroundStyle(warn ? Palette.warningText : Palette.muted).fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -259,16 +446,26 @@ private struct WatcherStatePill: View {
         .background(state.fill, in: Capsule())
         .fixedSize()
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Watcher, " + state.word)
+        .accessibilityLabel(String(localized: "Watcher, \(state.word)", comment: "For VoiceOver. %@ is Watcher's state, such as Working"))
         .accessibilityIdentifier("watcher-state")
     }
     static func state(_ model: AppModel, _ hostID: String) -> (word: String, tone: Light.Tone, ink: ThemeRole, fill: ThemeRole) {
-        guard model.online(hostID) else { return ("Can’t reach it", .off, Palette.muted, Palette.fillSoft) }
-        guard let page = model.watcherPage(hostID), let current = page.current else { return ("Not started", .off, Palette.muted, Palette.fillSoft) }
-        if page.needsYou.contains(where: { page.isOwn($0) }) { return ("Needs you", .warning, Palette.warningText, Palette.warning.opacity(Tint.accentPill)) }
-        if current.status == "error" { return ("Failed", .danger, Palette.dangerText, Palette.danger.opacity(0.12)) }
-        if page.working { return ("Working", .accent, Palette.accentText, Palette.accent.opacity(Tint.accentPill)) }
-        return ("Idle", .off, Palette.muted, Palette.fillSoft)
+        guard model.online(hostID) else {
+            return (String(localized: "Can’t reach it", comment: "Watcher's state: its computer can't be reached"), .off, Palette.muted, Palette.fillSoft)
+        }
+        guard let page = model.watcherPage(hostID), let current = page.current else {
+            return (String(localized: "Not started", comment: "Watcher's state: it isn't running"), .off, Palette.muted, Palette.fillSoft)
+        }
+        if page.needsYou.contains(where: { page.isOwn($0) }) {
+            return (String(localized: "Needs you", comment: "Watcher's state: it is waiting on the user"), .warning, Palette.warningText, Palette.warning.opacity(Tint.accentPill))
+        }
+        if current.status == "error" {
+            return (String(localized: "Failed", comment: "Watcher's state: it stopped with an error"), .danger, Palette.dangerText, Palette.danger.opacity(0.12))
+        }
+        if page.working {
+            return (String(localized: "Working", comment: "Watcher's state: it is taking a turn"), .accent, Palette.accentText, Palette.accent.opacity(Tint.accentPill))
+        }
+        return (String(localized: "Idle", comment: "Watcher's state: nothing is running"), .off, Palette.muted, Palette.fillSoft)
     }
 }
 
@@ -278,8 +475,8 @@ private struct SectionSwitch: View {
     let watched: Int
     var body: some View {
         HStack(spacing: 4) {
-            option(.conversation, "Conversation", count: nil, id: "watcher-section-conversation")
-            option(.watched, "Watched", count: watched, id: "watcher-section-watched")
+            option(.conversation, String(localized: "Conversation", comment: "One of Watcher's two panes"), count: nil, id: "watcher-section-conversation")
+            option(.watched, String(localized: "Watched", comment: "One of Watcher's two panes: the threads it watches"), count: watched, id: "watcher-section-watched")
         }
         .padding(4)
         .background(Palette.fillSoft, in: Capsule())
@@ -304,9 +501,15 @@ private struct SectionSwitch: View {
             .contentShape(Capsule())
         }
         .buttonStyle(PressStyle())
-        .accessibilityLabel(count.map { "\(title), \($0) \($0 == 1 ? "thread" : "threads")" } ?? title)
+        .accessibilityLabel(spoken(title, count: count))
         .accessibilityAddTraits(chosen ? [.isSelected] : [])
         .accessibilityIdentifier(id)
+    }
+    /// "Watched, 3 threads", for VoiceOver.
+    private func spoken(_ title: String, count: Int?) -> String {
+        guard let count else { return title }
+        let threads = count == 1 ? String(localized: "1 thread") : String(localized: "\(count) threads")
+        return String(localized: "\(title), \(threads)", comment: "For VoiceOver. The first %@ is a Watcher pane's name; the second a count of threads, such as 3 threads")
     }
 }
 
@@ -401,6 +604,8 @@ private struct WatcherConversationPane: View {
     /// The reader is on a card (`WatcherFollow.held`), as the scroll anchor needs it. Changed only where that is decided,
     /// never as the page scrolls, and read only on iOS 18 and later.
     @State private var holdingCard = false
+    /// A message's photos, open full screen.
+    @State private var viewing: OpenPhotos?
     private static let end = "watcher-end"
     private static let sendingID = "watcher-sending"
     /// A waiting card's place on the page, to scroll it whole above the box.
@@ -409,6 +614,9 @@ private struct WatcherConversationPane: View {
     var body: some View {
         let page = model.watcherPage(hostID)
         let sending = model.watcherSending[hostID]
+        let sendingPhotos = model.watcherSendingPhotos[hostID] ?? []
+        // The photos of Watcher's messages are its thread's, read through Watcher's page.
+        let ref = page?.current.map { ThreadRef(hostID: hostID, threadID: $0.target.threadId) }
         let items = page.map { WatcherConversation.items($0) } ?? []
         let newest = sending != nil ? Self.sendingID : items.last?.id ?? Self.end
         // While a card waits on the user, the bar stays where it is (#1288).
@@ -426,14 +634,14 @@ private struct WatcherConversationPane: View {
                             ForEach(items) { item in
                                 Group {
                                     switch item {
-                                    case .message(let message): WatcherMessage(message: message).equatable()
+                                    case .message(let message): WatcherMessage(message: message, ref: ref) { viewing = $0 }.equatable()
                                     case .receipts(let group, _): ReceiptCard(hostID: hostID, group: group)
                                     case .ownChange(let change): WatcherOwnChangeLine(change: change)
                                     }
                                 }
                                 .id(item.id)
                             }
-                            if let sending { SendingBubble(text: sending).id(Self.sendingID) }
+                            if let sending { SendingBubble(text: sending, photos: sendingPhotos).id(Self.sendingID) }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(reader { follow.newest = $0.maxY })
@@ -519,6 +727,7 @@ private struct WatcherConversationPane: View {
             // the layout while it is away. It stays until no card waits (#1288).
             .onChange(of: pinned, initial: true) { _, waits in if waits { slideBar(false) } }
         }
+        .fullScreenCover(item: $viewing) { PhotoViewer(opened: $0) }
     }
 
     /// Scrolls to the hero at the page's top. The reader is reading there now, so Watcher's new words leave them there;
@@ -645,19 +854,23 @@ private struct WatcherConversationPane: View {
         // A read that failed while a page is shown says so over the page it left.
         if page != nil, model.online(hostID), let problem = model.watcherReadProblems[hostID] { note(problem) }
         if let notice = page?.recoveryNotice, !notice.isEmpty { note(notice) }
-        if page?.conversation.earlierAvailable == true { note("Earlier messages are in Sotto on \(model.name(hostID)).") }
+        if page?.conversation.earlierAvailable == true {
+            note(String(localized: "Earlier messages are in Sotto on \(model.name(hostID)).", comment: "%@ is the computer's name"))
+        }
         if let page, page.current == nil {
-            note("Watcher isn’t running on \(model.name(hostID)). Start it in Sotto on \(model.name(hostID)), then ask it here.")
+            note(String(localized: "Watcher isn’t running on \(model.name(hostID)). Start it in Sotto on \(model.name(hostID)), then ask it here.",
+                        comment: "Both %@ are the computer's name"))
         } else if let page, page.conversation.messages.isEmpty, model.watcherSending[hostID] == nil {
-            note("Ask Watcher to start, check on or stop your threads. It answers nothing for you.")
+            note(String(localized: "Ask Watcher to start, check on or stop your threads. It answers nothing for you."))
         } else if page == nil {
-            note(model.online(hostID) ? model.watcherReadProblems[hostID] ?? "Reading Watcher on \(model.name(hostID))…"
-                 : "Reconnect to \(model.name(hostID)) to read Watcher.")
+            note(model.online(hostID) ? model.watcherReadProblems[hostID] ?? String(localized: "Reading Watcher on \(model.name(hostID))…", comment: "%@ is the computer's name")
+                 : String(localized: "Reconnect to \(model.name(hostID)) to read Watcher.", comment: "%@ is the computer's name"))
         }
     }
     private func note(_ words: String) -> some View {
         Text(words).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .center).multilineTextAlignment(.center)
+            .paragraphDirection()
     }
 
     /// What waits on the user: workers' own cards, each saying where its answer goes, then Watcher's own.
@@ -669,8 +882,9 @@ private struct WatcherConversationPane: View {
                 VStack(alignment: .leading, spacing: Space.s2) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         WatcherOwlMark(size: 12).foregroundStyle(Palette.muted).accessibilityHidden(true)
-                        Text("The thread’s own card. Your answer goes to \(card.title), not to Watcher.")
+                        Text("The thread’s own card. Your answer goes to \(card.title), not to Watcher.", comment: "%@ is a thread's title")
                             .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                            .paragraphDirection()
                     }
                     .accessibilityElement(children: .combine)
                     WatcherRequestCard(hostID: hostID, card: card, own: false, review: review)
@@ -694,18 +908,35 @@ private struct WatcherConversationPane: View {
 /// owl, its name and the time. Drawn again only when the message changes, not each time Watcher's page moves.
 private struct WatcherMessage: View, Equatable {
     let message: Message
+    /// Watcher's thread, whose photos these are; nil while the page names no Watcher.
+    let ref: ThreadRef?
+    let open: (OpenPhotos) -> Void
     @Environment(\.sottoDensity) private var density
-    static func == (a: Self, b: Self) -> Bool { a.message == b.message }
+    /// Opening a photo is the same action for every message.
+    static func == (a: Self, b: Self) -> Bool { a.message == b.message && a.ref == b.ref }
     var body: some View {
         if message.role == "user" {
-            MarkdownText(text: message.text).equatable()
-                .foregroundStyle(Palette.bubbleInk)
-                .padding(.horizontal, Space.s4)
-                .padding(.vertical, Space.dense(Space.s3, density))
-                .background(Palette.bubble, in: bubble)
-                .overlay(bubble.stroke(Palette.accent.opacity(0.12), lineWidth: 1))
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.leading, 48)
+            // The user's photos stand on their own above their words, as in a thread and in Messages.
+            let photos: [Attachment] = ref == nil ? [] : (message.attachments ?? []).filter(\.hasPreview)
+            VStack(alignment: .trailing, spacing: Space.s1) {
+                if let ref { SentPhotoButtons(ref: ref, messageID: message.id, photos: photos, open: open) }
+                if !message.text.isEmpty || photos.count != (message.attachments ?? []).count {
+                    VStack(alignment: .leading, spacing: Space.s2) {
+                        if !message.text.isEmpty { MarkdownText(text: message.text).equatable() }
+                        // A photo Sotto keeps no copy of is named, and so is a file, as in a thread (ADR-0131).
+                        ForEach((message.attachments ?? []).filter { photo in !photos.contains { $0.id == photo.id } }) { attachment in
+                            Label("\(attachment.name) (open on the desktop)", systemImage: attachment.mimeType.map { PhotoLimits.mimeTypes.contains($0) } == false ? "doc" : "photo").font(.sotto(.small))
+                        }
+                    }
+                    .foregroundStyle(Palette.bubbleInk)
+                    .padding(.horizontal, Space.s4)
+                    .padding(.vertical, Space.dense(Space.s3, density))
+                    .background(Palette.bubble, in: bubble)
+                    .overlay(bubble.stroke(Palette.accent.opacity(0.12), lineWidth: 1))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.leading, 48)
         } else {
             VStack(alignment: .leading, spacing: Space.s2) {
                 HStack(spacing: Space.s2) {
@@ -714,7 +945,7 @@ private struct WatcherMessage: View, Equatable {
                         .frame(width: 18, height: 18)
                         .background(Palette.accent.opacity(0.22), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                         .accessibilityHidden(true)
-                    Text(time.map { "Watcher · \($0)" } ?? "Watcher").font(.sotto(.caption, .semibold)).foregroundStyle(Palette.muted)
+                    Text(verbatim: time.map { "Watcher · \($0)" } ?? "Watcher").font(.sotto(.caption, .semibold)).foregroundStyle(Palette.muted)
                 }
                 MarkdownText(text: message.text).equatable().foregroundStyle(Palette.ink)
             }
@@ -730,11 +961,36 @@ private struct WatcherMessage: View, Equatable {
 /// Words on their way to Watcher.
 private struct SendingBubble: View {
     let text: String
+    let photos: [DraftPhoto]
+    private static let shown = 4
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
-            Text(text).font(.sotto(.body)).foregroundStyle(Palette.bubbleInk)
-                .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
-                .background(Palette.bubble.opacity(0.6), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            if !photos.isEmpty {
+                // At most four, then how many more, so eight fit the narrowest iPhone.
+                HStack(spacing: 6) {
+                    ForEach(photos.prefix(Self.shown)) { photo in
+                        Group {
+                            if let thumbnail = photo.prepared?.thumbnail { Image(decorative: thumbnail, scale: 1).resizable().scaledToFill() }
+                            else { Rectangle().fill(Palette.surface) }
+                        }
+                        .frame(width: 60, height: 60)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .opacity(0.6)
+                    }
+                    if photos.count > Self.shown {
+                        Text("+\(photos.count - Self.shown)").font(.sotto(.body, .semibold)).foregroundStyle(Palette.muted)
+                            .frame(width: 60, height: 60)
+                            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                }
+                .accessibilityElement()
+                .accessibilityLabel(photos.count == 1 ? String(localized: "1 photo") : String(localized: "\(photos.count) photos"))
+            }
+            if !text.isEmpty {
+                Text(text).font(.sotto(.body)).foregroundStyle(Palette.bubbleInk)
+                    .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
+                    .background(Palette.bubble.opacity(0.6), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            }
             HStack(spacing: 6) { ProgressView().controlSize(.mini); Text("Sending to Watcher…") }
                 .font(.sotto(.caption)).foregroundStyle(Palette.muted)
                 .accessibilityElement(children: .combine)
@@ -759,9 +1015,11 @@ private struct WatcherFollowupLine: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(WatcherWords.followup(item.status)).font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
-                Text(item.text).font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(1).truncationMode(.tail)
+                Text(item.text.isEmpty ? String(localized: "Photos", comment: "Stands in for a queued message to Watcher that carries only photos") : item.text)
+                    .font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(1).truncationMode(.tail)
                 if let note = WatcherWords.followupNote(item.status, page: page, computer: model.name(hostID)) {
                     Text(note).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                        .paragraphDirection()
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -774,7 +1032,8 @@ private struct WatcherFollowupLine: View {
                     .contentShape(Rectangle())
                     .buttonStyle(PressStyle())
                     .disabled(!model.canRemoveWatcherFollowup(item, on: hostID))
-                    .accessibilityLabel("Remove “\(item.text)” from the queue")
+                    .accessibilityLabel(item.text.isEmpty ? String(localized: "Remove these photos from the queue")
+                                        : String(localized: "Remove “\(item.text)” from the queue", comment: "%@ is the queued message's own words"))
                     .accessibilityIdentifier("watcher-followup-remove")
             }
         }
@@ -792,16 +1051,17 @@ private struct SetAsideCard: View {
     let words: WatcherSetAside
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
-            Text(words.unconfirmed ? "Watcher didn’t confirm this message" : "Your message to Watcher wasn’t sent")
+            (words.unconfirmed ? Text("Watcher didn’t confirm this message") : Text("Your message to Watcher wasn’t sent"))
                 .font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
-            Text(words.text).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
+            Text(verbatim: words.text).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
             if words.unconfirmed {
                 Text("Check the conversation before you send it again.").font(.sotto(.small)).foregroundStyle(Palette.muted)
                     .fixedSize(horizontal: false, vertical: true)
+                    .paragraphDirection()
             }
             Button("Put it back in the box") { model.restoreWatcherWords(words, on: hostID) }
                 .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
-                .disabled(!(model.drafts[model.watcherDraftKey(hostID)] ?? "").isEmpty)
+                .disabled(!model.canRestoreWatcherWords(on: hostID))
                 .accessibilityHint("Once the box is empty")
         }
         .card()
@@ -830,7 +1090,7 @@ private struct ReceiptCard: View {
             .accessibilityAddTraits(.isHeader)
             ForEach(Array(group.rows.enumerated()), id: \.element.id) { index, row in
                 if index > 0 { Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, Space.s4 + 44) }
-                ReceiptRow(row: row, computer: model.computerName(row.target.hostId) ?? "another computer",
+                ReceiptRow(row: row, computer: model.computerName(row.target.hostId) ?? String(localized: "another computer", comment: "Stands in for a computer this iPhone has no name for"),
                            thread: model.thread(row.target.ref), watched: model.watchedByWatcher(row.target.ref))
             }
         }
@@ -870,10 +1130,11 @@ private struct ReceiptRow: View {
                 .background(Palette.fillSoft, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                Text(row.title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
+                Text(verbatim: row.title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(WatcherWords.action(row.action)).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
-                PlaceLine(providerID: row.provider, watched: watched, text: "\(AgentNames.name(row.provider)) on \(computer)")
+                PlaceLine(providerID: row.provider, watched: watched,
+                          text: String(localized: "\(AgentNames.name(row.provider)) on \(computer)", comment: "Where a thread runs. The first %@ is the provider's name, such as Claude Code; the second is the computer's name"))
                 if let words = WatcherWords.delivery(row) {
                     Text(words).font(.sotto(.small, .semibold))
                         .foregroundStyle(row.deliveryState == "failed" ? Palette.dangerText : Palette.warningText)
@@ -907,7 +1168,9 @@ private struct ReceiptRow: View {
         }
     }
     private var spoken: String {
-        var words = "\(row.title), \(WatcherWords.action(row.action)), \(AgentNames.name(row.provider)) on \(computer)" + WatchedWords.spoken(watched)
+        var words = String(localized: "\(row.title), \(WatcherWords.action(row.action)), \(AgentNames.name(row.provider)) on \(computer)",
+                           comment: "For VoiceOver. The first %@ is a thread's title, the second what Watcher did, such as Started, the third the provider's name, the fourth the computer's name")
+            + WatchedWords.spoken(watched)
         if let delivery = WatcherWords.delivery(row) { words += ", " + delivery }
         else if let thread { words += ", " + ThreadState(thread).words }
         return words
@@ -967,9 +1230,11 @@ private struct WatcherOwnChangeLine: View {
             let none: Text = Text("It gave no reason.").font(.sotto(.small)).foregroundStyle(theme.color(.warningText))
             return head + none
         }
-        let said: Text = Text("Its reason: ").font(.sotto(.small)).foregroundStyle(theme.color(.muted))
-        let words: Text = Text("“\(reason)”").font(.sotto(.small)).foregroundStyle(theme.color(.ink))
-        return head + said + words
+        let quoted: Text = Text("“\(reason)”", comment: "%@ is Watcher's reason in its own words, in quotation marks")
+            .font(.sotto(.small)).foregroundStyle(theme.color(.ink))
+        let said: Text = Text("Its reason: \(quoted)", comment: "%@ is Watcher's reason, already in quotation marks")
+            .font(.sotto(.small)).foregroundStyle(theme.color(.muted))
+        return head + said
     }
 
     /// The files, as the provider named them, and how many more it changed without naming them.
@@ -985,7 +1250,8 @@ private struct WatcherOwnChangeLine: View {
                     }
                 }
                 if count > change.files.count {
-                    Text("and \(WatcherWords.files(count - change.files.count)) more").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                    let unnamed = count - change.files.count
+                    (unnamed == 1 ? Text("and 1 file more") : Text("and \(unnamed) files more")).font(.sotto(.small)).foregroundStyle(Palette.muted)
                 }
             }
         }
@@ -1035,12 +1301,18 @@ private struct WatcherRequestCard: View {
         return card.request
     }
     private var isPermission: Bool { request.kind == "permission" }
-    private var tag: String { isPermission ? "Permission" : "Question" }
+    private var tag: String {
+        isPermission ? String(localized: "Permission", comment: "The tag on a card asking for permission")
+            : String(localized: "Question", comment: "The tag on a card asking a question")
+    }
     private var ask: String { isPermission ? request.text : (request.questions?.first?.question ?? request.text) }
     private var computer: String { model.name(hostID) }
     /// "Claude Code on Laptop": the thread's provider and computer.
-    private var whereItRuns: String { "\(AgentNames.name(card.provider)) on \(model.computerName(card.target.hostId) ?? "another computer")" }
-    private var reviewWords: String { isPermission ? "Review permission" : "Review question" }
+    private var whereItRuns: String {
+        let computer = model.computerName(card.target.hostId) ?? String(localized: "another computer", comment: "Stands in for a computer this iPhone has no name for")
+        return String(localized: "\(AgentNames.name(card.provider)) on \(computer)", comment: "Where a thread runs. The first %@ is the provider's name, such as Claude Code; the second is the computer's name")
+    }
+    private var reviewWords: String { isPermission ? String(localized: "Review permission") : String(localized: "Review question") }
     /// Watcher's own permissions are asked each time: it can't be given one that lasts.
     private var asksEachTime: Bool {
         own && isPermission && !(request.permissionChoices ?? []).contains { $0.kind == "allow-session" || $0.kind == "allow-always" }
@@ -1070,7 +1342,7 @@ private struct WatcherRequestCard: View {
                         Text("Watcher")
                     }
                 } else {
-                    Text(card.title)
+                    Text(verbatim: card.title)
                 }
             }
             .font(.sotto(.lead, .semibold)).foregroundStyle(Palette.ink)
@@ -1078,7 +1350,7 @@ private struct WatcherRequestCard: View {
             .padding(.top, Space.s2)
             PlaceLine(providerID: card.provider, watched: !own && model.watchedByWatcher(card.target.ref), text: whereItRuns)
                 .padding(.top, Space.s1)
-            Text(ask).font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(4)
+            Text(verbatim: ask).font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, Space.s3)
             if let command = request.context?.command, !command.isEmpty {
@@ -1093,6 +1365,7 @@ private struct WatcherRequestCard: View {
             if asksEachTime {
                 Text("Watcher asks each time. It can’t be given lasting permission.")
                     .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                    .paragraphDirection()
                     .padding(.top, Space.s2)
             }
         }
@@ -1114,6 +1387,7 @@ private struct WatcherRequestCard: View {
                 VStack(alignment: .leading, spacing: Space.s2) {
                     Text("Not confirmed yet. Check the thread before answering again.")
                         .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                        .paragraphDirection()
                     Button("Check again") { Task { await model.checkDelivery(place.hostID) } }
                         .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
                         .disabled(!model.online(place.hostID))
@@ -1133,11 +1407,13 @@ private struct WatcherRequestCard: View {
             note(words, reviews: false)
         case .answer(let place, let current):
             if !current.supported {
-                note("Answer this one in Sotto on \(model.name(place.hostID)).", reviews: false)
+                note(String(localized: "Answer this one in Sotto on \(model.name(place.hostID)).", comment: "%@ is the computer's name"), reviews: false)
             } else if !model.mayAnswer(at: place) {
-                note("This iPhone can’t answer on \(model.name(place.hostID)) yet.", reviews: true)
+                note(String(localized: "This iPhone can’t answer on \(model.name(place.hostID)) yet.", comment: "%@ is the computer's name"), reviews: true)
             } else if !card.connected {
-                note("\(AgentNames.name(card.provider)) isn’t connected on \(model.computerName(card.target.hostId) ?? computer). Answer once it’s back.", reviews: false)
+                let elsewhere = model.computerName(card.target.hostId) ?? computer
+                note(String(localized: "\(AgentNames.name(card.provider)) isn’t connected on \(elsewhere). Answer once it’s back.",
+                            comment: "The first %@ is the provider's name, such as Claude Code; the second is the computer's name"), reviews: false)
             } else if isPermission {
                 permissionActions(enabled: model.canAnswer(current, at: place) && !model.answering(place.hostID))
             } else if let options = current.oneTapOptions {
@@ -1152,6 +1428,7 @@ private struct WatcherRequestCard: View {
         HStack(spacing: Space.s3) {
             if let words {
                 Text(words).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                    .paragraphDirection()
             }
             Spacer(minLength: 0)
             if reviews {
@@ -1166,7 +1443,7 @@ private struct WatcherRequestCard: View {
         OneTapQuestion(options: options, enabled: enabled, picked: $picked, sendID: "watcher-card-send") { choice in
             send(choice: choice, answers: ThreadsView.oneTapAnswers(request, choice: choice))
         } more: {
-            Button(request.questions?.first?.allowFreeText == true ? "Write your own" : reviewWords, action: openReview)
+            Button(request.questions?.first?.allowFreeText == true ? String(localized: "Write your own") : reviewWords, action: openReview)
                 .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
         }
     }
@@ -1188,7 +1465,8 @@ private struct WatcherRequestCard: View {
     /// More choices when the request has choices the card doesn't show; otherwise Details opens the whole request.
     private var moreWords: String {
         let shown = request.cardPermissionChoices?.count ?? 0
-        return (request.permissionChoices?.count ?? 0) > shown ? "More choices" : "Details"
+        return (request.permissionChoices?.count ?? 0) > shown ? String(localized: "More choices")
+            : String(localized: "Details", comment: "Opens the whole request")
     }
 
     /// Deny, then Allow once, in the provider's own words. A request with no choices of its own takes Deny and Allow.
@@ -1218,6 +1496,7 @@ private struct WatcherDock: View {
             if let held = model.watcherSendHeld(hostID) {
                 Text(held).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .paragraphDirection()
                     .padding(.horizontal, Space.s4).padding(.vertical, Space.s2)
                     .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                     .accessibilityIdentifier("watcher-send-held")
@@ -1236,6 +1515,7 @@ private struct WatcherDock: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Can’t reach \(model.name(hostID))").font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
                     Text("Watcher carries on there. Your words are kept.").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                        .paragraphDirection()
                 }
                 Spacer(minLength: 0)
                 Button("Reconnect") { Task { await model.connect(hostID) } }.buttonStyle(PlainStyle(compact: true))
@@ -1264,7 +1544,11 @@ private struct WatcherDock: View {
     }
 
     private var field: some View {
-        let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
+        let box = PhotoBox.watcher(hostID: hostID)
+        let photos = model.photos(box)
+        // Locked from the press of a message with photos until Watcher answers, so nothing typed meanwhile joins it.
+        let preparing = model.preparingSends.contains(box.id)
+        let shape = RoundedRectangle(cornerRadius: photos.isEmpty ? 26 : 22, style: .continuous)
         let working = model.watcherPage(hostID)?.working == true
         let canSend = model.canSendToWatcher(hostID)
         // While Watcher's turn runs on a computer that takes it, Send steers into that turn, or queues when its provider
@@ -1273,28 +1557,42 @@ private struct WatcherDock: View {
         let steering = model.offersWatcherSteer(hostID) && current?.status == "running"
         let queueing = steering && current?.steers == false
         let symbol = queueing ? "text.badge.plus" : steering ? "arrow.turn.up.right" : "arrow.up"
-        let label = queueing ? "Queue for after this turn" : steering ? "Steer into Watcher’s turn" : "Send to Watcher"
+        let label = queueing ? String(localized: "Queue for after this turn") : steering ? String(localized: "Steer into Watcher’s turn") : String(localized: "Send to Watcher")
         return HStack(alignment: .bottom, spacing: Space.s2) {
-            TextField("Ask Watcher", text: draft, prompt: Text(working ? "Ask Watcher while it works" : "Ask Watcher").foregroundStyle(Palette.placeholder), axis: .vertical)
-                .font(.sotto(.body))
-                .foregroundStyle(Palette.ink)
-                .lineLimit(1...6)
-                .focused($focused)
-                .padding(.vertical, 11)
-                .padding(.leading, Space.s3)
-                .accessibilityLabel("Ask Watcher")
-                .accessibilityIdentifier("watcher-reply")
+            AttachPhotosButton(box: box)
+            // Photos wait inside the box, above the words, as in a thread's reply box.
+            VStack(alignment: .leading, spacing: Space.s2) {
+                if !photos.isEmpty { DraftPhotoStrip(box: box).padding(.top, Space.s1) }
+                if let notice = model.photoNotices[box.id] {
+                    Text(notice).font(.sotto(.small)).foregroundStyle(Palette.dangerText).fixedSize(horizontal: false, vertical: true)
+                        .paragraphDirection()
+                        .accessibilityAddTraits(.updatesFrequently)
+                }
+                TextField("Ask Watcher", text: draft, prompt: (working ? Text("Ask Watcher while it works") : Text("Ask Watcher")).foregroundStyle(Palette.placeholder), axis: .vertical)
+                    .font(.sotto(.body))
+                    .foregroundStyle(Palette.ink)
+                    .lineLimit(1...6)
+                    .focused($focused)
+                    .padding(.vertical, 11)
+                    .accessibilityLabel("Ask Watcher")
+                    .accessibilityIdentifier("watcher-reply")
+                    .disabled(preparing)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             // Sending puts the keyboard away, as the design does, so Watcher's answer has room on a small phone.
             Button { willSend(); focused = false; Task { await model.sendToWatcher(hostID) } } label: {
-                Image(systemName: symbol).font(.system(size: 17, weight: .semibold))
-                    .frame(width: 44, height: 44)
-                    .foregroundStyle(canSend ? Palette.onAccent : Palette.muted)
-                    .background(canSend ? Palette.accent : Palette.fillSoft, in: Circle())
-                    .contentShape(Circle())
+                Group {
+                    if preparing { ProgressView().tint(Palette.onAccent) }
+                    else { Image(systemName: symbol).font(.system(size: 17, weight: .semibold)) }
+                }
+                .frame(width: 44, height: 44)
+                .foregroundStyle(canSend || preparing ? Palette.onAccent : Palette.muted)
+                .background(canSend || preparing ? Palette.accent : Palette.fillSoft, in: Circle())
+                .contentShape(Circle())
             }
             .buttonStyle(PressStyle())
             .disabled(!canSend)
-            .accessibilityLabel(label)
+            .accessibilityLabel(preparing ? String(localized: "watcher-send.sending", defaultValue: "Sending to Watcher", comment: "The send button's name while a message is on its way to Watcher") : label)
             .accessibilityIdentifier("watcher-send")
         }
         .padding(6)
@@ -1370,7 +1668,7 @@ private struct WatcherPermissionChip: View {
         .disabled(!model.canChangeWatcherPermission(hostID))
         .accessibilityLabel("Watcher’s permissions")
         .accessibilityValue(WatcherPermissions.name(mode))
-        .accessibilityHint(fixed ? WatcherPermissions.fixedHint : "Opens what Watcher may do without asking")
+        .accessibilityHint(fixed ? WatcherPermissions.fixedHint : String(localized: "Opens what Watcher may do without asking"))
         .opacity(fixed ? 0.55 : 1)
         .accessibilityIdentifier("watcher-permissions")
     }
@@ -1378,6 +1676,7 @@ private struct WatcherPermissionChip: View {
     @ViewBuilder private func captionText(_ caption: String?) -> some View {
         if let caption {
             Text(caption).font(.sotto(.caption)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                .paragraphDirection()
                 .accessibilityIdentifier("watcher-permissions-in-force")
         }
     }
@@ -1386,6 +1685,7 @@ private struct WatcherPermissionChip: View {
     @ViewBuilder private func fixedText(_ shown: Bool) -> some View {
         if shown {
             Text(WatcherPermissions.fixed).font(.sotto(.caption)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                .paragraphDirection()
                 .accessibilityIdentifier("watcher-permissions-fixed")
         }
     }
@@ -1407,25 +1707,28 @@ private struct WatcherPermissionSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.s3) {
                 VStack(alignment: .leading, spacing: Space.s1) {
-                    Text(WatcherPermissions.title).font(.sotto(.title, .bold)).tracking(-0.4).foregroundStyle(Palette.ink)
+                    Text(WatcherPermissions.title).font(.sotto(.title, .bold)).headingTracking(-0.4).foregroundStyle(Palette.ink)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityAddTraits(.isHeader)
-                    Text(provider.map { "Watcher on \(computer), on \($0)" } ?? "Watcher on \(computer)")
+                    Text(provider.map { String(localized: "Watcher on \(computer), on \($0)", comment: "The first %@ is the computer's name; the second is Watcher's provider, such as Codex") }
+                         ?? String(localized: "Watcher on \(computer)", comment: "%@ is the computer's name"))
                         .font(.sotto(.small)).foregroundStyle(Palette.muted)
                 }
                 if !model.mayAnswer(hostID) {
                     Text(WatcherPermissions.asksOnly(computer)).font(.sotto(.small)).foregroundStyle(Palette.warningText)
                         .fixedSize(horizontal: false, vertical: true)
+                        .paragraphDirection()
                         .accessibilityIdentifier("watcher-permissions-asks-only")
                 }
                 VStack(spacing: Space.s2) {
                     ForEach(model.watcherPermissionModes(hostID), id: \.self) { mode in
-                        option(mode, provider: provider ?? "The provider", computer: computer)
+                        option(mode, provider: provider ?? String(localized: "The provider", comment: "Stands in for the provider's name at the start of a sentence"), computer: computer)
                     }
                 }
                 .padding(.top, Space.s1)
                 Text(WatcherPermissions.foot).font(.sotto(.small)).foregroundStyle(Palette.muted)
                     .fixedSize(horizontal: false, vertical: true)
+                    .paragraphDirection()
             }
             .padding(.horizontal, Space.gutter)
             .padding(.top, Space.s6)
@@ -1444,6 +1747,7 @@ private struct WatcherPermissionSheet: View {
                     Text(WatcherPermissions.name(mode)).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
                     Text(WatcherPermissions.line(mode, provider: provider, computer: computer)).font(.sotto(.small))
                         .foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                        .paragraphDirection()
                 }
                 Spacer(minLength: Space.s2)
                 if chosen {
@@ -1539,7 +1843,7 @@ private struct WatchedPane: View {
                     if page.watched.isEmpty {
                         if !manages {
                             Text("Watcher isn’t working with any threads now.").font(.sotto(.body)).foregroundStyle(Palette.muted)
-                                .fixedSize(horizontal: false, vertical: true).padding(.vertical, Space.s6)
+                                .fixedSize(horizontal: false, vertical: true).paragraphDirection().padding(.vertical, Space.s6)
                         }
                     } else {
                         VStack(spacing: Space.s3) {
@@ -1557,10 +1861,10 @@ private struct WatchedPane: View {
                     // how many new threads it starts at once.
                     if !manages {
                         Text(WatcherWords.room(page)).font(.sotto(.small)).foregroundStyle(Palette.muted)
-                            .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s3)
+                            .fixedSize(horizontal: false, vertical: true).paragraphDirection().padding(.top, Space.s3)
                     }
                     if !page.noLongerWatched.isEmpty {
-                        SectionHeading("No longer watched", count: page.noLongerWatched.count)
+                        SectionHeading(String(localized: "No longer watched", comment: "A heading over the threads Watcher no longer watches"), count: page.noLongerWatched.count)
                         VStack(spacing: 0) {
                             ForEach(Array(page.noLongerWatched.enumerated()), id: \.element.target.ref.id) { index, thread in
                                 if index > 0 { Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, Space.s4 + 20) }
@@ -1570,8 +1874,8 @@ private struct WatchedPane: View {
                         .sottoCard(.plain)
                     }
                 } else {
-                    Text(model.online(hostID) ? model.watcherReadProblems[hostID] ?? "Reading Watcher on \(model.name(hostID))…"
-                         : "Reconnect to \(model.name(hostID)) to read Watcher.")
+                    Text(model.online(hostID) ? model.watcherReadProblems[hostID] ?? String(localized: "Reading Watcher on \(model.name(hostID))…", comment: "%@ is the computer's name")
+                         : String(localized: "Reconnect to \(model.name(hostID)) to read Watcher.", comment: "%@ is the computer's name"))
                         .font(.sotto(.body)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
                         .padding(.vertical, Space.s7)
                 }
@@ -1596,7 +1900,7 @@ private struct WatchedPane: View {
     }
 
     private func computer(_ thread: WatcherPage.WatchedThread) -> String {
-        model.computerName(thread.target.hostId) ?? "another computer"
+        model.computerName(thread.target.hostId) ?? String(localized: "another computer", comment: "Stands in for a computer this iPhone has no name for")
     }
 
     private func stopWatching(_ thread: WatcherPage.WatchedThread) {
@@ -1609,6 +1913,7 @@ private struct WatchedPane: View {
             Text(WatcherWords.watchedLead(page.watched.count, standing: page.watched.filter { page.standingWatch($0.target.ref) != nil }.count))
                 .font(.sotto(.body)).foregroundStyle(Palette.muted)
                 .fixedSize(horizontal: false, vertical: true)
+                .paragraphDirection()
                 .accessibilityIdentifier("watcher-watched-lead")
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: Space.s3) {
@@ -1720,7 +2025,7 @@ private struct WatchedCard: View {
                 .accessibilityIdentifier("watched-\(thread.target.ref.id)")
         }
     }
-    private var running: Bool { WatcherWords.status(thread) == "Working" }
+    private var running: Bool { WatcherWords.working(thread) }
     private var summary: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Space.s2) {
@@ -1733,13 +2038,15 @@ private struct WatchedCard: View {
                 }
             }
             .frame(minHeight: 18)
-            Text(thread.title).font(.sotto(.lead, .semibold)).foregroundStyle(Palette.ink)
+            Text(verbatim: thread.title).font(.sotto(.lead, .semibold)).foregroundStyle(Palette.ink)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, Space.s2)
-            PlaceLine(providerID: thread.provider, watched: true, text: "\(AgentNames.name(thread.provider)) on \(computer)")
+            PlaceLine(providerID: thread.provider, watched: true,
+                      text: String(localized: "\(AgentNames.name(thread.provider)) on \(computer)", comment: "Where a thread runs. The first %@ is the provider's name, such as Claude Code; the second is the computer's name"))
                 .padding(.top, Space.s1)
             if let doing {
                 Text(doing).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                    .paragraphDirection()
                     .padding(.top, Space.s2)
             }
         }
@@ -1767,7 +2074,9 @@ private struct WatchedCard: View {
         .padding(.bottom, Space.s3)
     }
     private var spoken: String {
-        var words = "\(thread.title), \(WatcherWords.status(thread)), \(AgentNames.name(thread.provider)) on \(computer)" + WatchedWords.spoken(true)
+        var words = String(localized: "\(thread.title), \(WatcherWords.status(thread)), \(AgentNames.name(thread.provider)) on \(computer)",
+                           comment: "For VoiceOver. The first %@ is a thread's title, the second its state, such as Working, the third the provider's name, the fourth the computer's name")
+            + WatchedWords.spoken(true)
         if let doing { words += ". " + doing }
         return words
     }
@@ -1786,18 +2095,19 @@ private struct WatchPicker: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.s3) {
                 HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                    Text("Watch a thread").font(.sotto(.title, .bold)).tracking(-0.4).foregroundStyle(Palette.ink)
+                    Text("Watch a thread").font(.sotto(.title, .bold)).headingTracking(-0.4).foregroundStyle(Palette.ink)
                         .accessibilityAddTraits(.isHeader)
                     Spacer(minLength: Space.s2)
                     Button("Cancel") { dismiss() }
                         .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
                         .keyboardShortcut(.cancelAction)
                 }
-                Text("Watcher on \(model.name(hostID)) keeps it going and brings you its questions and permissions, until you stop it.")
+                Text("Watcher on \(model.name(hostID)) keeps it going and brings you its questions and permissions, until you stop it.", comment: "%@ is the computer's name")
                     .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                    .paragraphDirection()
                 if rows.isEmpty {
                     Text("Every thread this iPhone can reach is watched already, or settled.").font(.sotto(.body)).foregroundStyle(Palette.muted)
-                        .fixedSize(horizontal: false, vertical: true).padding(.vertical, Space.s6)
+                        .fixedSize(horizontal: false, vertical: true).paragraphDirection().padding(.vertical, Space.s6)
                 } else {
                     VStack(spacing: 0) {
                         ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
@@ -1861,6 +2171,7 @@ struct WatchToast: View {
                     WatcherOwlMark(size: 18).foregroundStyle(Palette.accentText).accessibilityHidden(true)
                     Text(notice.words).font(.sotto(.small)).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .paragraphDirection()
                     Button("Undo") { Task { await model.undoWatch(notice) } }
                         .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
                         .disabled(!model.canChangeWatch(notice.target))
@@ -1901,10 +2212,10 @@ private struct LeftRow: View {
         HStack(alignment: .top, spacing: Space.s3) {
             Light(tone: .off).padding(.top, 6)
             VStack(alignment: .leading, spacing: 2) {
-                Text(thread.title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
+                Text(verbatim: thread.title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
                     .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 PlaceLine(providerID: thread.provider, watched: false,
-                          text: "\(WatcherWords.left(thread)) · \(AgentNames.name(thread.provider)) on \(computer)")
+                          text: WatcherWords.left(thread) + " · " + String(localized: "\(AgentNames.name(thread.provider)) on \(computer)", comment: "Where a thread runs. The first %@ is the provider's name, such as Claude Code; the second is the computer's name"))
             }
             Spacer(minLength: 0)
         }
@@ -1913,5 +2224,8 @@ private struct LeftRow: View {
         .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
         .contentShape(Rectangle())
     }
-    private var spoken: String { "\(thread.title), \(WatcherWords.left(thread)), \(AgentNames.name(thread.provider)) on \(computer)" }
+    private var spoken: String {
+        String(localized: "\(thread.title), \(WatcherWords.left(thread)), \(AgentNames.name(thread.provider)) on \(computer)",
+               comment: "For VoiceOver. The first %@ is a thread's title, the second why Watcher no longer watches it, the third the provider's name, the fourth the computer's name")
+    }
 }

@@ -24,6 +24,14 @@
 .thread-prompt .thread-chip:hover:not(:disabled), .thread-prompt .thread-chip[aria-expanded='true'] { border-color: transparent; background: var(--tt-hover); color: var(--tt-text); }
 .thread-prompt .thread-chip.watch-on-send[aria-pressed='true'], .thread-prompt .thread-chip.watch-on-send[aria-pressed='true']:hover:not(:disabled) { border-color: var(--tt-accent-border); background: color-mix(in srgb, var(--tt-accent) 14%, transparent); color: var(--tt-accent-text); }
 
+/* Fast mode (ADR-0143, pick A of the prototype/composer-fast-mode tag): a square text button after the model chip. Off, a
+   muted outline bolt; on, the bolt filled in the theme's accent. It keeps the chips' 28px and their hover wash. */
+.thread-chip.thread-fast { justify-content: center; width: 28px; min-width: 28px; padding: 0; }
+.thread-prompt .thread-chip.thread-fast { padding: 0; }
+.thread-chip.thread-fast[aria-pressed='false'] > svg { opacity: .75; }
+.thread-chip.thread-fast[aria-pressed='true'], .thread-chip.thread-fast[aria-pressed='true']:hover:not(:disabled) { color: var(--tt-accent-text); }
+.thread-prompt .thread-chip.thread-fast[aria-pressed='true'] > svg { opacity: 1; }
+
 /* A glyph that stands for the value appears only where the composer is narrow; the words stay for assistive technology. */
 .thread-chip > .thread-chip__icon { display: none; flex: none; }
 @container thread-pane (max-width: 720px) {
@@ -52,7 +60,7 @@
 .thread-prompt > .thread-options-notices, .thread-workspace__compose .agent-composer > .thread-options-notices { grid-column: 2; }
 .thread-options__notice { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0; color: var(--threads-warning-text, var(--tt-error-text)); font-size: 12.5px; line-height: 1.4; }
 .thread-options__notice > span { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
-.thread-options__notice > button { flex: none; height: 26px; padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; cursor: pointer; }
+.thread-options__notice > button { flex: none; height: 26px; min-height: 26px; padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; cursor: pointer; }
 .thread-options__notice > button:hover:not(:disabled) { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
 .thread-options__notice > button:disabled { opacity: .55; cursor: default; }
 
@@ -63,6 +71,7 @@
 .thread-chip-menu__list[data-below='true'] { top: calc(100% + 6px); bottom: auto; }
 :is(.thread-chip-menu__list, .thread-chip-menu__options) > button { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 32px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; text-align: left; white-space: nowrap; cursor: pointer; }
 :is(.thread-chip-menu__list, .thread-chip-menu__options) > button:hover:not(:disabled), :is(.thread-chip-menu__list, .thread-chip-menu__options) > button:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
+:is(.thread-chip-menu__list, .thread-chip-menu__options) > button:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
 :is(.thread-chip-menu__list, .thread-chip-menu__options) > button[aria-selected='true'] { color: var(--tt-activity); }
 :is(.thread-chip-menu__list, .thread-chip-menu__options) > button:disabled { opacity: .45; cursor: default; }
 /* A permission mode named for what the provider stops asking says, underneath, what Sotto still asks. */

@@ -30,7 +30,8 @@ import XCTest
             app.terminate()
             XCTAssertTrue(app.wait(for: .notRunning, timeout: 20), "The earlier copy of Sotto must stop before the next launch")
         }
-        app.launchArguments = arguments
+        // The journeys read English labels, so Sotto runs in English whatever the simulator's language (ADR-0123).
+        app.launchArguments = arguments + ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30), "Sotto must come to the foreground after launch")
         XCTAssertTrue(app.textFields["thread-search"].waitForExistence(timeout: 20))
@@ -161,7 +162,7 @@ import XCTest
         }
         // Window geometry and screenshot orientation can settle separately during rotation.
         let ready = XCTNSPredicateExpectation(predicate: rendered, object: app)
-        let result = XCTWaiter.wait(for: [ready], timeout: 10)
+        let result = XCTWaiter.wait(for: [ready], timeout: 20)
         if result != .completed {
             capture("rotation-not-ready")
             let diagnostic = XCTAttachment(string: samples.joined(separator: "\n"))
@@ -179,6 +180,19 @@ import XCTest
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed,
                        "Back must be hittable after a request sheet closes")
         button.tap()
+    }
+    /// Presses `control` and waits up to `timeout` for `done`. A loaded CI simulator now and then drops a synthesized tap:
+    /// the tap reports success and the app never sees it (#1320). So when nothing has happened after a first look and
+    /// `untouched` says the control still reads as it did before the press, it is pressed once more; `untouched` keeps a
+    /// press that only landed late from being undone by the second.
+    @discardableResult
+    private func press(_ control: XCUIElement, until done: NSPredicate, timeout: TimeInterval = 20,
+                       untouched: () -> Bool = { true }) -> XCTWaiter.Result {
+        control.tap()
+        let first = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: done, object: nil)], timeout: min(8, timeout))
+        if first == .completed { return first }
+        if untouched() { control.tap() }
+        return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: done, object: nil)], timeout: timeout)
     }
     /// Generous on purpose: it ends as soon as the element goes, and a loaded CI simulator can take seconds just to look.
     private func waitUntilGone(_ element: XCUIElement, timeout: TimeInterval = 20) -> Bool {
@@ -585,8 +599,10 @@ import XCTest
         let failing = labelled("Gates (Windows), Failed, 14 minutes 2 seconds")
         XCTAssertTrue(failing.waitForExistence(timeout: 5), "The failing check comes first, with how long it took")
         XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Lint, Passed")).firstMatch.exists, "Passed checks fold away while one fails")
-        app.buttons["pull-request-passed-checks"].tap()
-        XCTAssertTrue(text("Lint, Passed").waitForExistence(timeout: 5), "Show passed opens them in place")
+        let showPassed = app.buttons["pull-request-passed-checks"]
+        let lint = text("Lint, Passed")
+        press(showPassed, until: NSPredicate { _, _ in lint.exists }, untouched: { showPassed.label.hasPrefix("Show") })
+        XCTAssertTrue(lint.waitForExistence(timeout: 5), "Show passed opens them in place")
         capture("pull-request-sheet-checks")
 
         let babysit = app.buttons["babysit-pull-request"]
@@ -914,8 +930,8 @@ import XCTest
             seen = "permissions \(frame), between \(band.top) and \(band.bottom)"
             return frame.minY >= band.top && frame.maxY <= band.bottom && permissions.isHittable
         }
-        owl.tap()
-        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: shown, object: nil)], timeout: 20)
+        // Going to the top again does nothing more, so a dropped press is simply pressed again.
+        let result = press(owl, until: shown)
         if result != .completed { explain("watcher-hero-permissions-not-shown", seen) }
         XCTAssertEqual(result, .completed, "The owl brings Watcher's permissions into view (\(seen))")
         return permissions
@@ -1390,7 +1406,8 @@ import XCTest
             matches = inPlace ? matches + 1 : 0
             return matches >= 2
         }
-        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: placed, object: nil)], timeout: 20)
+        // Two looks in a row; on a loaded runner one look can take ten seconds (#1320).
+        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: placed, object: nil)], timeout: 30)
         if result != .completed { explain("watcher-card-under-the-box", seen) }
         XCTAssertEqual(result, .completed, "\(what) stays whole above the box while Watcher writes (\(seen))")
     }

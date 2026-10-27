@@ -48,6 +48,11 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   'retry-thread-worktree': ['threadId'], 'refresh-thread-worktree': ['threadId', 'background'],
   'restore-thread-branch': ['threadId', 'withUncommittedChanges'],
   'preview-reclaim-thread-worktree': ['threadId'],
+  // Deleting a settled thread cannot be taken back, so it takes the remote-answer policy, as clearing Usage does, and only
+  // on a listener that offers `thread-delete` (ADR-0140): see remoteCommandRefusal. Clear now and the automatic rule act
+  // on the computer whose Settings set them, so neither is a remote command.
+  'preview-delete-thread': ['threadId'],
+  'delete-thread': ['threadId', 'confirmedIgnored', 'confirmedItems', 'confirmedRepositories'],
   'reclaim-thread-worktree': ['threadId', 'withUncommittedChanges', 'confirmedIgnored', 'confirmedItems', 'confirmedRepositories'],
   'configure-thread-working-copy': ['threadId', 'workingCopy', 'baseBranch', 'startFromOrigin', 'existingWorktreePath'],
   // The Git actions run on the host's own folder and discard nothing: Git refuses a switch that would lose work,
@@ -67,7 +72,8 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   // Babysitting is the user's own request too, and grants nothing: a wake-up approves, merges and answers nothing
   // (ADR-0061 decisions 4 and 11), so neither needs a remote-answer policy record.
   'babysit-pull-request': ['threadId', 'url'], 'stop-babysitting': ['threadId', 'url'],
-  'configure-thread': ['threadId', 'modelId', 'reasoningEffort', 'runtimeMode', 'providerMode'],
+  // Fast mode changes a thread's speed and price, as a model does, and answers no permission (ADR-0143).
+  'configure-thread': ['threadId', 'modelId', 'reasoningEffort', 'runtimeMode', 'providerMode', 'fastMode'],
   'select-thread': ['threadId'], 'observe-threads': ['threadIds'], 'load-earlier-messages': ['threadId', 'throughMessageId'],
   // Dismiss all marks failed threads seen, as opening each would (ADR-0092). It answers no request: a thread waiting on a
   // permission or a question is never marked, so pairing is enough.
@@ -139,6 +145,7 @@ export function remoteCommandNeedsAnswerPolicy(command: AgentCommand, askingProv
     case 'configure': return command.patch.newThreadRuntimeMode != null && command.patch.newThreadRuntimeMode !== 'approval-required'
     case 'restore-thread-branch': return command.withUncommittedChanges === true
     case 'reclaim-thread-worktree': return command.withUncommittedChanges === true || Boolean(command.confirmedIgnored?.length)
+    case 'delete-thread': return true
     default: return false
   }
 }
@@ -152,6 +159,8 @@ export function remoteCommandRefusal(command: AgentCommand, context: { readonly 
   readonly clientUpdates?: boolean | undefined
   /** Whether this listener offers `thread-starts`: only a host whose Owl answer turns them on (#1028). */
   readonly threadStarts?: boolean | undefined
+  /** Whether this listener offers `thread-delete`: only a host whose Owl answer turns clearing on, to a desktop (ADR-0140). */
+  readonly threadDelete?: boolean | undefined
   /** Whether this listener offers `bring-changes-back`: only a host whose Owl answer turns it on (#1030). */
   readonly bringBack?: boolean | undefined
   /** Whether this client is one the launch script recorded as a desktop: only a desktop moves branches (ADR-0105). */
@@ -163,6 +172,7 @@ export function remoteCommandRefusal(command: AgentCommand, context: { readonly 
   if ((command.type === 'queue-client-updates' || command.type === 'cancel-client-updates') && context.clientUpdates !== true) return 'forbidden'
   if (startsThread(command) && context.threadStarts !== true) return 'forbidden'
   if (command.type === 'bring-changes-back' && (context.bringBack !== true || command.away !== undefined && context.desktop !== true)) return 'forbidden'
+  if ((command.type === 'delete-thread' || command.type === 'preview-delete-thread') && context.threadDelete !== true) return 'forbidden'
   if (Object.keys(command).some(key => key !== 'type' && !fields.includes(key))) return 'forbidden'
   if (command.type === 'configure' && Object.keys(command.patch).some(key => !(REMOTE_CONFIGURATION_FIELDS as readonly string[]).includes(key))) return 'forbidden'
   // Muse without its shell sandbox is the host's own Settings' to choose, even for a client that may answer (ADR-0079).

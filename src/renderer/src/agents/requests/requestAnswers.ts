@@ -1,4 +1,5 @@
 import { useEffect, useSyncExternalStore } from 'react'
+import { t } from '@lingui/core/macro'
 import type { AgentQuestionAnswers, AgentRequest } from '../../../../shared/agents'
 import { requestDraftQuestions, requestDraftKey, requestDraftOwnerKey, requestDraftSchema, sameRequestQuestions, type RequestDraftBridge, type RequestDraftCheckResult, type RequestDraftOwner, type RequestDraftStatus, type RequestDraftTarget } from '../../../../shared/requestDrafts'
 
@@ -123,7 +124,8 @@ export function permissionSummary(request: AgentRequest): { readonly title: stri
   const [first = '', ...rest] = request.text.split('\n')
   const context = request.context
   const restText = rest.join('\n').trim()
-  const title = first.trim() || (context?.toolName ? `Use ${context.toolName}` : 'Permission request')
+  const toolName = context?.toolName
+  const title = first.trim() || (toolName ? t({ message: `Use ${toolName}`, comment: 'A permission request\'s title: {toolName} is the tool the agent asks to use.' }) : t`Permission request`)
   const command = context?.command ?? (restText && !context?.details ? restText : undefined)
   const details = context?.details && context.details.trim() !== command?.trim() ? context.details : undefined
   return { title, ...(command ? { command } : {}), ...(context?.cwd ? { cwd: context.cwd } : {}), ...(details ? { details } : {}) }
@@ -151,8 +153,9 @@ export interface RequestEntry {
 }
 
 const EMPTY_ENTRY: RequestEntry = { selections: {}, phase: 'idle', error: null, choice: null, revision: 0, save: 'saved', saveError: null }
-const SAVE_ERROR = 'Could not confirm this answer draft was saved. Keep this window open and try Save again.'
-const draftError = (error: unknown): string => error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : SAVE_ERROR
+const saveUnconfirmed = (): string => t`Could not confirm this answer draft was saved. Keep this window open and try Save again.`
+const draftError = (error: unknown): string => error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : saveUnconfirmed()
+const otherQuestion = (): string => t`The saved answer belongs to a different question. Reload the original answer before editing.`
 
 /** Include the question definition: a provider reusing IDs must never inherit another form's answers. */
 export function requestAnswerOwnerKey(ownerId: string, request: AgentRequest, owner?: RequestDraftOwner): string {
@@ -262,14 +265,14 @@ export class RequestAnswerStore {
       if (!currentRead()) return
       const current = this.get(ownerId, requestId)
       if (status.status === 'draft' && requestDraftKey(status.draft.target) !== requestDraftKey(binding.target)) {
-        throw new Error('The saved answer belongs to a different question. Reload the original answer before editing.')
+        throw new Error(otherQuestion())
       }
       if (status.status === 'unconfirmed') {
         // A native re-offer starts a new delivery boundary even when the provider reuses
         // the form and request ID. Delivered selections belong to the older attempt.
         binding.loaded = true
         if (current.revision > status.revision) {
-          if (restoring) this.set(ownerId, requestId, { ...current, save: 'unsaved', saveError: SAVE_ERROR })
+          if (restoring) this.set(ownerId, requestId, { ...current, save: 'unsaved', saveError: saveUnconfirmed() })
           return
         }
         if (binding.reofferedRevision !== status.revision) {
@@ -355,7 +358,7 @@ export class RequestAnswerStore {
       selections: Object.fromEntries(Object.entries(entry.selections).map(([id, selection]) => [id, { ...selection, optionIds: [...selection.optionIds] }])),
       held: entry.phase === 'sending' || entry.phase === 'sent' || entry.phase === 'unconfirmed' })
     if (!parsed.success) {
-      this.set(ownerId, requestId, { ...entry, save: 'unsaved', saveError: 'This answer could not be saved. Use the offered choices and at most 24,000 characters per answer.' })
+      this.set(ownerId, requestId, { ...entry, save: 'unsaved', saveError: t`This answer could not be saved. Use the offered choices and at most 24,000 characters per answer.` })
       return false
     }
     const draft = parsed.data
@@ -367,7 +370,7 @@ export class RequestAnswerStore {
       try {
         const saved = await binding.bridge.save(draft)
         if (generation !== binding.generation) return true
-        if (saved.revision !== draft.revision || JSON.stringify(saved) !== JSON.stringify(draft)) throw new Error(SAVE_ERROR)
+        if (saved.revision !== draft.revision || JSON.stringify(saved) !== JSON.stringify(draft)) throw new Error(saveUnconfirmed())
         const current = this.get(ownerId, requestId)
         if (current.revision === draft.revision) this.set(ownerId, requestId, { ...current, save: 'saved', saveError: null })
         return true
@@ -394,7 +397,7 @@ export class RequestAnswerStore {
     if (this.bindings.has(RequestAnswerStore.key(ownerId, requestId)) && !await this.flush(ownerId, requestId)) {
       // A lost save acknowledgement might have persisted the hold. Main must check it before any delivery.
       if (submittedBinding && (submittedBinding.generation !== submittedGeneration || this.isAccepted(ownerId, requestId, submittedBinding))) return
-      this.set(ownerId, requestId, { ...this.get(ownerId, requestId), phase: 'unconfirmed', error: 'This answer was not sent because its draft could not be saved. Check again after storage is available.' })
+      this.set(ownerId, requestId, { ...this.get(ownerId, requestId), phase: 'unconfirmed', error: t`This answer was not sent because its draft could not be saved. Check again after storage is available.` })
       return
     }
     if (submittedBinding && (submittedBinding.generation !== submittedGeneration || this.isAccepted(ownerId, requestId, submittedBinding))) return
@@ -476,7 +479,7 @@ export class RequestAnswerStore {
     }
     const draft = result.draft
     const binding = this.bindings.get(RequestAnswerStore.key(ownerId, requestId))
-    if (draft && requestDraftKey(draft.target) !== requestDraftKey(binding?.target ?? draft.target)) throw new Error('The saved answer belongs to a different question. Reload the original answer before editing.')
+    if (draft && requestDraftKey(draft.target) !== requestDraftKey(binding?.target ?? draft.target)) throw new Error(otherQuestion())
     if (draft && binding && this.isAccepted(ownerId, requestId, binding) && draft.revision > current.revision) {
       binding.generation++
       this.set(ownerId, requestId, { ...current, selections: draft.selections, revision: draft.revision,
