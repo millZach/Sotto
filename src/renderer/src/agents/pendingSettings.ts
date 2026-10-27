@@ -2,10 +2,10 @@ import { useSyncExternalStore } from 'react'
 import { hostForThread, type AgentCommand, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
 
-/** The three settings an option chip changes. */
-export type SettingKind = 'model' | 'effort' | 'permissions'
-export type SettingsPatch = { readonly modelId?: string; readonly reasoningEffort?: string; readonly runtimeMode?: AgentRuntimeMode; readonly providerMode?: string }
-/** A thread's settings as the window drew them from main's published state, one string per chip. */
+/** The settings an option chip changes: the three choice chips and the fast mode toggle (ADR-0143). */
+export type SettingKind = 'model' | 'effort' | 'permissions' | 'fast'
+export type SettingsPatch = { readonly modelId?: string; readonly reasoningEffort?: string; readonly runtimeMode?: AgentRuntimeMode; readonly providerMode?: string; readonly fastMode?: boolean }
+/** A thread's settings as the window drew them from main's published state, one string per chip; fast mode is `on` or `off`. */
 export type SettingValues = Readonly<Record<SettingKind, string>>
 /** The connection's command, from the render a press was made in: a press belongs to the thread it was made on. */
 export type SendSettings = (command: Extract<AgentCommand, { type: 'configure-thread' }>) => Promise<AgentState | null>
@@ -27,7 +27,7 @@ export interface PendingSettingsView {
   readonly refusals: Readonly<Partial<Record<SettingKind, SettingRefusal>>>
 }
 
-const KINDS: readonly SettingKind[] = ['model', 'effort', 'permissions']
+const KINDS: readonly SettingKind[] = ['model', 'effort', 'permissions', 'fast']
 const EMPTY: PendingSettingsView = { pending: {}, refusals: {} }
 /**
  * How long a confirmed press is held for the window to draw it. Main publishes the state its answer carries, so
@@ -50,16 +50,25 @@ interface Entry {
   unconfirmed: { readonly error: string | null; drawn: boolean } | null
 }
 
+/** Fast mode's two values, as the toggle's pending setting holds them. */
+export const FAST_ON = 'on', FAST_OFF = 'off'
+/**
+ * The fast mode refusal a model change leaves when the provider took the model and not the fast mode it carried. It
+ * stands in a refusal's `error`, and the toggle's line says it in its own words; it is never shown as it is.
+ */
+export const FAST_MODE_NOT_CARRIED = 'fast-mode-not-carried'
 /** Each setting's value on this thread as its own model reads it: the defaults are the model's. */
 export function settingValues(state: AgentState, thread: AgentThread): SettingValues {
   const model = resolveModel(hostForThread(state.host, thread).models, thread.modelId)
   return settingValuesFor(thread, model)
 }
-export function settingValuesFor(thread: Pick<AgentThread, 'modelId' | 'reasoningEffort' | 'runtimeMode' | 'providerMode'>, model: AgentModel | undefined): SettingValues {
+export function settingValuesFor(thread: Pick<AgentThread, 'modelId' | 'reasoningEffort' | 'runtimeMode' | 'providerMode' | 'fastMode'>, model: AgentModel | undefined): SettingValues {
   return {
     model: thread.modelId,
     effort: thread.reasoningEffort ?? model?.defaultReasoningEffort ?? '',
     permissions: (usesProviderModes(model) ? thread.providerMode ?? model?.providerModes?.[0]?.id : thread.runtimeMode) ?? '',
+    // The user's choice, which a model without fast mode keeps (ADR-0143); whether it runs is the model's to say.
+    fast: thread.fastMode === true ? FAST_ON : FAST_OFF,
   }
 }
 /** Whether this model's permission list is the provider's own vocabulary rather than Sotto's four. */
@@ -76,6 +85,7 @@ export function unconfirmedKinds(state: AgentState | null, threadId: string): Re
     if (item.modelId !== undefined) kinds.add('model')
     if (item.reasoningEffort !== undefined) kinds.add('effort')
     if (item.runtimeMode !== undefined || item.providerMode !== undefined) kinds.add('permissions')
+    if (item.fastMode !== undefined) kinds.add('fast')
   }
   return kinds
 }
@@ -218,6 +228,11 @@ export class PendingSettingsStore {
         }
         const thread = reply.host.threads.find(item => item.id === threadId)
         const expected = thread ? settingValues(reply, thread)[kind] : null
+        // A model change that ends with fast mode off where it was on is the provider refusing the fast mode the change
+        // carried (ADR-0143): the model went through, and the toggle's line says fast mode did not.
+        if (kind === 'model' && thread && this.lastDrawn.get(threadId)?.fast === FAST_ON && settingValues(reply, thread).fast === FAST_OFF) {
+          this.refusals.set(keyOf(threadId, 'fast'), { kind: 'fast', wanted: FAST_ON, patch: { fastMode: true }, error: FAST_MODE_NOT_CARRIED })
+        }
         if (expected === null || this.lastDrawn.get(threadId)?.[kind] === expected) { this.drop(key, entry); return }
         this.hold(entry, expected, () => { if (this.entries.get(key) === entry && !entry.sending) { this.drop(key, entry); this.emit(threadId) } })
         return

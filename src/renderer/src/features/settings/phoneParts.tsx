@@ -1,5 +1,6 @@
 import React, { type ReactNode } from 'react'
 import { Circle, CircleCheck, CircleX, Smartphone } from 'lucide-react'
+import { Trans, useLingui } from '@lingui/react/macro'
 import type { PairedPhone } from '../../../../shared/phones'
 import { Button } from '../../components/Button'
 
@@ -20,7 +21,10 @@ export function countdown(expiresAt: string, now: number): { text: string; fract
 }
 
 export function StepMark({ step }: { readonly step: Step }): ReactNode {
-  const label = step === 'ok' ? 'Done' : step === 'failed' ? 'Failed' : 'Not yet'
+  const { t } = useLingui()
+  const label = step === 'ok'
+    ? t({ message: 'Done', comment: 'A setup step that has finished.' })
+    : step === 'failed' ? t({ message: 'Failed', comment: 'A setup step that failed.' }) : t({ message: 'Not yet', comment: 'A setup step still to come.' })
   return <span className="phones-step__mark" role="img" aria-label={label}>
     {step === 'ok' ? <CircleCheck size={22} strokeWidth={1.7} aria-hidden="true" /> : step === 'failed' ? <CircleX size={22} strokeWidth={1.7} aria-hidden="true" /> : <Circle size={22} strokeWidth={1.7} aria-hidden="true" />}
   </span>
@@ -33,22 +37,24 @@ export function PhoneRow({ phone, answersAvailable, onCanAnswer, onRemove, disab
   /** Shown as it was last read, from a host that cannot be reached now. */
   readonly disabled?: boolean
 }): ReactNode {
+  const { t } = useLingui()
+  const name = phone.name, paired = pairedOn(phone.pairedAt)
   return <section className="hosts-row" aria-label={phone.name}>
     <span className="hosts-row__icon" aria-hidden="true"><Smartphone size={18} /></span>
     <div className="hosts-row__info">
       <h4>{phone.name}</h4>
-      <p className="hosts-row__meta">Paired {pairedOn(phone.pairedAt)} · <span data-phase={phone.connected ? 'connected' : 'disconnected'}>{phone.connected ? 'Connected' : 'Not connected'}</span></p>
-      <p className="phones-grant">{phone.canAnswer ? 'Reads and replies. Can answer questions and permissions.' : 'Reads and replies. Can’t answer questions or permissions.'}</p>
+      <p className="hosts-row__meta"><Trans>Paired {paired}</Trans> · <span data-phase={phone.connected ? 'connected' : 'disconnected'}>{phone.connected ? t({ message: 'Connected', comment: 'A provider on a host, or a host: connected and ready.' }) : t`Not connected`}</span></p>
+      <p className="phones-grant tt-paragraph">{phone.canAnswer ? t`Reads and replies. Can answer questions and permissions.` : t`Reads and replies. Can’t answer questions or permissions.`}</p>
     </div>
     <div className="hosts-row__actions">
       <span className="phones-answer">
-        <span aria-hidden="true">Can answer</span>
-        <button type="button" role="switch" aria-checked={phone.canAnswer} aria-label={`Can answer: let ${phone.name} answer questions and permissions`} disabled={disabled || !answersAvailable}
+        <span aria-hidden="true">{t`Can answer`}</span>
+        <button type="button" role="switch" aria-checked={phone.canAnswer} aria-label={t`Can answer: let ${name} answer questions and permissions`} disabled={disabled || !answersAvailable}
           className="tt-toggle tt-focusable hosts-switch__control" onClick={() => onCanAnswer(!phone.canAnswer)}>
           <span className="tt-toggle__track" aria-hidden="true"><span className="tt-toggle__thumb" /></span>
         </button>
       </span>
-      <Button variant="danger" aria-label={`Remove ${phone.name}`} disabled={disabled} onClick={onRemove}>Remove</Button>
+      <Button variant="danger" aria-label={t`Remove ${name}`} disabled={disabled} onClick={onRemove}>{t({ message: 'Remove', comment: 'Removes a paired phone.' })}</Button>
     </div>
   </section>
 }

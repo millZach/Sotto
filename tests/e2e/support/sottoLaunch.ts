@@ -1,9 +1,10 @@
 import { ownedE2EProfile, removeOwnedE2EProfile } from './e2eProfile'
+import type { ChildProcess } from 'node:child_process'
 
 import { _electron as electron, expect, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 
 import { requireOwnedE2EProfile } from '../../../scripts/e2e-profile-policy.mjs'
-import type { E2EScenario } from '../../../src/shared/e2e'
+import { E2E_UNCAUGHT_EXIT_CODE, E2E_UNCAUGHT_PREFIX, type E2EScenario } from '../../../src/shared/e2e'
 
 /**
  * An entity ID without its host qualification. `clientScoped` mode prefixes every thread and project ID with
@@ -80,6 +81,7 @@ export async function launchSotto(
       args: [process.env.SOTTO_E2E_MAIN_ENTRY ?? 'out/main/index.js'],
       env: e2eEnvironment(scenario, profile),
     })
+    keepUncaughtReport(application)
     const page = await dependencies.firstWindow(application)
     await page.waitForLoadState('domcontentloaded')
     return { app: application, page, userData: profile, ownsUserData }
@@ -93,9 +95,49 @@ export async function launchSotto(
 export { resizeWindow } from './sottoWindow'
 export { captureWindow } from './sottoCapture'
 
+/**
+ * Each launched main's process, kept at launch because Playwright no longer hands it out once the app is closed, and
+ * what it wrote after an uncaught exception (#1577): its stable line and the frames under it.
+ */
+const launchedProcesses = new WeakMap<ElectronApplication, { child: ChildProcess; report: string }>()
+
+function keepUncaughtReport(application: ElectronApplication): void {
+  // A stand-in application in the launch helper's own tests has no process.
+  const child = typeof application.process === 'function' ? application.process() : null
+  if (!child?.stderr) return
+  const kept = { child, report: '' }
+  launchedProcesses.set(application, kept)
+  let seen = ''
+  child.stderr.on('data', (chunk: Buffer | string) => {
+    if (kept.report) { kept.report = (kept.report + String(chunk)).slice(0, 4_000); return }
+    seen = (seen + String(chunk)).slice(-4_000)
+    const at = seen.indexOf(E2E_UNCAUGHT_PREFIX)
+    if (at >= 0) kept.report = seen.slice(at)
+  })
+}
+
+/** The process's exit code once it has exited; null when it is still running after `withinMs`. */
+async function exitCode(application: ElectronApplication, withinMs: number): Promise<number | null> {
+  const child = launchedProcesses.get(application)?.child
+  if (!child) return null
+  if (child.exitCode !== null || child.signalCode !== null) return child.exitCode
+  return new Promise(resolve => {
+    const timer = setTimeout(() => resolve(null), withinMs)
+    child.once('exit', code => { clearTimeout(timer); resolve(code) })
+  })
+}
+
+/**
+ * Closes Sotto and removes the profile it owns. An uncaught exception in main, during the test or while it closed,
+ * ends main with `E2E_UNCAUGHT_EXIT_CODE` rather than a box on the desktop (#1577), and fails the test here with the
+ * place it was thrown.
+ */
 export async function closeSotto(launched: LaunchedSotto): Promise<void> {
   await launched.app.close().catch(() => undefined)
   if (launched.ownsUserData) await removeOwnedE2EProfile(launched.userData)
+  if (await exitCode(launched.app, 5_000) === E2E_UNCAUGHT_EXIT_CODE) {
+    throw new Error(`Sotto's main process had an uncaught exception.\n${launchedProcesses.get(launched.app)?.report.trim() || '(It wrote no report.)'}`)
+  }
 }
 
 /** The Threads page landmark: its sidebar. */

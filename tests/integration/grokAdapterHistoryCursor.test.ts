@@ -18,7 +18,7 @@ const caughtUp = (turns = TURNS) => expect.poll(async () => (await userMessages(
 
 /** The poll timer never fires here, so every history read in this file belongs to an awaited call. */
 async function longHistory() {
-  f = await grokFixture(undefined, 2000, 600_000)
+  f = await grokFixture(undefined, undefined, 600_000)
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
   const id = randomUUID()

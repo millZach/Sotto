@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { sameReviewLine, type ReviewLine } from '../agents/reviewComments'
 import type { DiffLine } from './changesStore'
 
@@ -104,8 +105,12 @@ export function rowsShowing(lines: readonly DiffLine[], rows: readonly DiffRow[]
 
 /** What a screen reader hears for a row: whether each line was added or removed, its number, then its text. */
 export function rowLabel(row: DiffRow): string {
-  const one = (line: DiffLine): string => line.kind === 'add' ? `Added line ${line.newLine}: ${line.text}`
-    : line.kind === 'remove' ? `Removed line ${line.oldLine}: ${line.text}` : `Line ${line.newLine}: ${line.text}`
+  const one = (line: DiffLine): string => {
+    const number = line.kind === 'remove' ? line.oldLine : line.newLine, text = line.text
+    return line.kind === 'add' ? t({ message: `Added line ${number}: ${text}`, comment: '{text} is the line of code itself.' })
+      : line.kind === 'remove' ? t({ message: `Removed line ${number}: ${text}`, comment: '{text} is the line of code itself.' })
+        : t({ message: `Line ${number}: ${text}`, comment: '{text} is the line of code itself.' })
+  }
   if (row.line) return one(row.line)
   if (row.old && row.old === row.next) return one(row.old)
   return [row.old, row.next].flatMap(line => line ? [one(line)] : []).join('; ')

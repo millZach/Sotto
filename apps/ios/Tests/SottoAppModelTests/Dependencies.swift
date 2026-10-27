@@ -55,6 +55,8 @@ struct HostRefusal: Error, LocalizedError {
     /// The computer's answer to `stage-attachment` and `preview`, given the request's image or preview fields.
     static var stageHandler: ((JSONValue) async throws -> JSONValue)?
     static var previewHandler: ((JSONValue) async throws -> JSONValue)?
+    /// The computer's answer to `stage-file-part` and `attachment-file`, given the operation and its part or request fields.
+    static var fileHandler: ((String, JSONValue) async throws -> JSONValue)?
     /// The photo load limit the photo tests give the model: never passing, unless a test says otherwise.
     static var photoLoadLimit: @Sendable () async throws -> Void = { try await Task.sleep(nanoseconds: 3_600_000_000_000) }
     static var receipts: [String: JSONValue] = [:]
@@ -134,6 +136,8 @@ struct HostRefusal: Error, LocalizedError {
         if op == "host-folders", let handler = Self.folderHandler { return try await handler(hostID, operation["request"] ?? .null) }
         if op == "stage-attachment", let handler = Self.stageHandler { return try await handler(operation["image"] ?? .null) }
         if op == "preview", let handler = Self.previewHandler { return try await handler(operation["request"] ?? .null) }
+        if op == "stage-file-part", let handler = Self.fileHandler { return try await handler(op, operation["part"] ?? .null) }
+        if op == "attachment-file", let handler = Self.fileHandler { return try await handler(op, operation["request"] ?? .null) }
         return .null
     }
     func disconnect() { disconnects += 1 }

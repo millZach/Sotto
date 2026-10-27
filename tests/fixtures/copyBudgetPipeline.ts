@@ -35,6 +35,12 @@ export interface CopyBudgetPipeline {
   /** Updates the coordinator broadcast since the last reset. */
   broadcasts(): number
   resetCounts(): void
+  /**
+   * Holds the workspace's saves until the returned call, which makes the one save they came to. The workspace saves at
+   * most once a 250 ms window while anything changes, so how many saves fall inside a stream depends on how long the
+   * machine takes to run it: one, two, or three on a slow one. Each copies the saved organization on stable.
+   */
+  holdSaves(): () => Promise<void>
   stop(): Promise<void>
 }
 
@@ -64,7 +70,7 @@ export async function copyBudgetPipeline(root: string, threads: number, owl: boo
   const adapter = new StreamingAdapter(state)
   const native = new ConfiguredProviderHost({ directory: root, provider: () => 'claude', enabledProviders: () => ['claude'], threadProvider: id => registry.byThread(id)?.provider,
     hosts: { claude: new SottoThreadHost('claude', adapter, registry), codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(),
-      muse: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), opencode: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) } })
+      muse: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), opencode: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), cursor: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), deepseek: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) } })
   const workspace = new WorkspaceHost(native, root, () => true, undefined, owl, owl, owl)
   await workspace.initialize()
   const credentials = await testCredentials(root, { mode: 'unavailable' })
@@ -126,6 +132,17 @@ export async function copyBudgetPipeline(root: string, threads: number, owl: boo
     adapter, control, streamIds, parentId,
     broadcasts: () => broadcasts,
     resetCounts: () => { broadcasts = 0 },
+    holdSaves: () => {
+      const saving = workspace as unknown as { writeSoon(): void; flush(): Promise<void> }
+      if (typeof saving.writeSoon !== 'function' || typeof saving.flush !== 'function') throw new Error('The workspace no longer saves through writeSoon and flush; hold its saves another way.')
+      const writeSoon = Object.getOwnPropertyDescriptor(saving, 'writeSoon')
+      let owed = false
+      saving.writeSoon = () => { owed = true }
+      return async () => {
+        if (writeSoon) Object.defineProperty(saving, 'writeSoon', writeSoon); else delete (saving as { writeSoon?: unknown }).writeSoon
+        if (owed) await saving.flush()
+      }
+    },
     stop,
   }
 }

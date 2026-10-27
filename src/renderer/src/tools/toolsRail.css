@@ -120,7 +120,7 @@
 .tools-panel__pinned-owner .tools-panel__thread-title { min-width: 0; overflow: hidden; color: var(--tt-text-2); text-overflow: ellipsis; }
 .tools-panel__tag { flex: none; padding: 0 6px; border: 1px solid var(--tt-accent-border); border-radius: 4px; color: var(--tt-accent-text); font-size: 12px; line-height: 16px; }
 .tools-panel__foot-actions { display: flex; flex: none; align-items: center; margin-left: auto; }
-.tools-panel__foot .files-icon--small { width: 26px; height: 26px; border-radius: 6px; }
+.tools-panel__foot .files-icon--small { width: 26px; height: 26px; min-height: 26px; border-radius: 6px; }
 .tools-panel__accessible { position: absolute!important; width: 1px!important; height: 1px!important; padding: 0!important; margin: -1px!important; overflow: hidden!important; clip-path: inset(50%); white-space: nowrap!important; border: 0!important; }
 
 .tools-panel__status:empty { display: none; }
@@ -133,8 +133,8 @@
 /* At the minimum desktop window, Tools and the conversation take the field together. Closing Tools restores
    project navigation; the selected thread and sidebar state stay mounted. */
 @media (max-width: 950px) {
-  .threads-view:has(.tools-panel) { grid-template-columns: minmax(0, 1fr); }
-  .threads-view:has(.tools-panel) > .thread-nav { display: none; }
+  .threads-view[data-tools] { grid-template-columns: minmax(0, 1fr); }
+  .threads-view[data-tools] > .thread-nav { display: none; }
 }
 
 /* Surfaces inside the panel: controls keep to the edges and the page, terminal and code get the field. */
@@ -148,10 +148,10 @@
 .tools-panel .browser-tabs__tab[aria-selected='true'] > svg { color: var(--tt-accent-text); }
 /* The address is the browser's second, slimmer row. */
 .tools-panel .browser-toolbar { gap: 1px; min-height: 40px; padding-inline: 8px 6px; }
-.tools-panel .browser-address { height: 28px; margin-inline: 4px; padding-inline: 9px; border-color: var(--tt-hairline); border-radius: 6px; font-size: 13px; }
-.tools-panel .browser-toolbar .files-icon { width: 28px; height: 28px; border-radius: 6px; }
+.tools-panel .browser-address { height: 28px; min-height: 28px; margin-inline: 4px; padding-inline: 9px; border-color: var(--tt-hairline); border-radius: 6px; font-size: 13px; }
+.tools-panel .browser-toolbar .files-icon { width: 28px; height: 28px; min-height: 28px; border-radius: 6px; }
 /* The viewport size ends the address row. */
-.tools-panel .browser-viewport-size { flex: none; max-width: 112px; height: 28px; margin-left: 2px; padding: 0 4px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 13px; }
+.tools-panel .browser-viewport-size { flex: none; max-width: 112px; height: 28px; min-height: 28px; margin-left: 2px; padding: 0 4px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 13px; }
 .tools-panel .browser-review-unavailable { flex: none; margin: 0; padding: 6px 14px; border-bottom: 1px solid var(--tt-hairline); }
 .tools-panel .browser-page { min-width: 0; }
 .tools-panel .browser-empty { justify-content: center; align-items: flex-start; padding: 32px; }
@@ -168,7 +168,7 @@
 .tools-panel .files-preview__head { min-height: 38px; padding-inline: 14px 6px; }
 .tools-panel .files-preview__title { flex-wrap: wrap; gap: 2px 8px; }
 .tools-panel .files-preview__actions { flex: none; }
-.tools-panel .files-preview__actions .files-icon { width: 28px; height: 28px; border-radius: 6px; }
+.tools-panel .files-preview__actions .files-icon { width: 28px; height: 28px; min-height: 28px; border-radius: 6px; }
 .tools-panel .files-toggle { border-radius: 6px; font-size: 13px; }
 .tools-panel .files-preview__body { background: var(--tt-code-bg); }
 .tools-panel .files-preview__text { width: auto; min-width: 0; padding: 14px 16px 20px; font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }

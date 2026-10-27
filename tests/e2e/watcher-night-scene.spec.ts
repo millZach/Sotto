@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 
+import sharp from 'sharp'
 import { expect, test, type Page } from '@playwright/test'
 
 import { E2E_THREADS_NOW } from '../../src/shared/e2e'
@@ -13,14 +14,17 @@ import { pageBoundProblems } from './support/designCapture'
 import { onReleaseTrack } from './support/releaseTrack'
 import { captureWindow } from './support/sottoCapture'
 import { openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { laneBackgrounds, tickContrast } from './support/scrubberLane'
 import { holdOwlSky } from './support/sottoOwl'
 import { resizeContentWindow } from './support/sottoWindow'
 
 /**
  * Watcher's night scene on the built app (Zach's picks on October 21 and 22, 2026, `prototype/watcher-owl-scene` and
  * `prototype/watcher-owl-family`): the ASCII night in the side margins of Watcher's room, with Watcher's owl and a thread
- * owl for each watched thread, at the three sizes in dark and light, with reduced motion, and live. Nothing may be drawn
- * in the column. A capture run's fixed clock holds the scene still with every owl sitting, so those captures repeat; a
+ * owl for each watched thread, at the three sizes in dark and light, with reduced motion, and live. In the column only
+ * the sky and hills show, still under the words (variant D of `docs/prototypes/watcher-floating-composer-prototype.html`,
+ * October 23, 2026; watcher-column.spec.ts holds every word there to 4.5:1), and no owl at all. A capture run's fixed
+ * clock holds the scene still with every owl sitting, so those captures repeat; a
  * newcomer's flight out of the moon, a press and the paint rates are checked on a live clock. Main's Watcher is stood in
  * for by a seeded projection, as in watcher.spec.ts. Run after `npm run build`. Captures go to disposable run evidence;
  * `SOTTO_E2E_EVIDENCE=publish` writes artifacts/watcher-owl-family.
@@ -120,10 +124,12 @@ const owl = (page: Page) => page.locator('#watcher-pane > canvas.watcher-scene--
 const owlButtons = (page: Page) => page.locator('#watcher-pane > .watcher-scene--owls > .watcher-scene__owl')
 
 /**
- * The scene is decoration and lives only in the margins: both canvases hidden, never focusable, never pressed, and
- * not one painted pixel on either between the composer's sides, below the header, where the room's words are.
+ * The scene is decoration: both canvases hidden, never focusable, never pressed. Between the composer's sides, below the
+ * header, the owls' canvas paints nothing; where the margins have trees, and so a landscape (`landscape`; the smallest
+ * window's rail of eyes has none), the landscape's paints in the column too, under the words as well as between them, so
+ * the column does not read as an empty panel. How strongly it may paint under a word is watcher-column.spec.ts's.
  */
-async function sceneHolds(page: Page, key: string): Promise<void> {
+async function sceneHolds(page: Page, key: string, landscape = true): Promise<void> {
   for (const canvas of [land(page), owl(page)]) {
     await expect(canvas).toHaveAttribute('aria-hidden', 'true')
     expect(await canvas.evaluate(node => [node.tabIndex, getComputedStyle(node).pointerEvents])).toEqual([-1, 'none'])
@@ -134,25 +140,53 @@ async function sceneHolds(page: Page, key: string): Promise<void> {
     const base = pane.getBoundingClientRect()
     const composer = pane.querySelector('.thread-workspace__compose .thread-prompt')!.getBoundingClientRect()
     const header = Math.max(...[...pane.querySelectorAll(':scope > :is(.watcher-head, .watcher-glance)')].map(node => node.getBoundingClientRect().bottom))
+    // Every line of words in the transcript that shows, in pane pixels.
+    const PAD = 0
+    const transcript = pane.querySelector('.thread-workspace__transcript')!
+    const view = transcript.getBoundingClientRect()
+    const words: Array<{ x0: number; y0: number; x1: number; y1: number }> = []
+    const keep = (r: DOMRect, pad = PAD): void => {
+      if (r.width < 1 || r.height < 1 || r.bottom <= view.top || r.top >= view.bottom) return
+      words.push({ x0: r.left - base.left - pad, y0: Math.max(r.top, view.top) - base.top - pad, x1: r.right - base.left + pad, y1: Math.min(r.bottom, view.bottom) - base.top + pad })
+    }
+    const walker = document.createTreeWalker(transcript, NodeFilter.SHOW_TEXT)
+    const range = document.createRange()
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      if (!node.nodeValue?.trim()) continue
+      range.selectNodeContents(node)
+      for (const rect of range.getClientRects()) keep(rect)
+    }
     const out: Record<string, number> = {}
     for (const canvas of pane.querySelectorAll<HTMLCanvasElement>(':scope > canvas.watcher-scene')) {
       const scale = canvas.width / canvas.clientWidth
       const x0 = Math.ceil((composer.left - base.left + 2) * scale), x1 = Math.floor((composer.right - base.left - 2) * scale)
       const y0 = Math.ceil((header - base.top) * scale), y1 = canvas.height
-      const data = canvas.getContext('2d')!.getImageData(x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0)).data
-      let painted = 0
-      for (let i = 3; i < data.length; i += 4) if (data[i]! > 0) painted++
-      out[canvas.className] = painted
+      const w = Math.max(1, x1 - x0), h = Math.max(1, y1 - y0)
+      const data = canvas.getContext('2d')!.getImageData(x0, y0, w, h).data
+      let onWords = 0, elsewhere = 0
+      for (let i = 3; i < data.length; i += 4) {
+        if (data[i]! === 0) continue
+        const p = (i - 3) / 4, x = (x0 + p % w) / scale, y = (y0 + Math.floor(p / w)) / scale
+        if (words.some(b => x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1)) onWords++
+        else elsewhere++
+      }
+      out[`${canvas.className} on words`] = onWords
+      out[`${canvas.className} elsewhere`] = elsewhere
     }
+    out.lines = words.length
     return out
   })
-  for (const [canvas, painted] of Object.entries(reading)) expect(painted, `${canvas} pixels in the column, ${key}`).toBe(0)
+  expect(reading.lines, `lines measured, ${key}`).toBeGreaterThan(1)
+  if (landscape) expect(reading['watcher-scene watcher-scene--land on words']! + reading['watcher-scene watcher-scene--land elsewhere']!, `landscape pixels in the column, ${key}`).toBeGreaterThan(0)
+  expect(reading['watcher-scene watcher-scene--owl on words']! + reading['watcher-scene watcher-scene--owl elsewhere']!, `owl pixels in the column, ${key}`).toBe(0)
   recorded[key] = reading
 }
 
 /**
- * The message scrubber's lane, when a long conversation shows it, holds none of the scene: not one painted pixel on
- * either canvas inside it, and no thread owl's button over it (ADR-0109).
+ * The message scrubber's lane, when a long conversation shows it, paints nothing of its own: the sky and the hills run on
+ * under it at the column's share, so its ticks float over them, while no owl is drawn in it and no thread owl's button
+ * lies over it (ADR-0109, amended October 24, 2026). Its ticks keep 3:1 against what lies beside them on screen, the
+ * resting lane's faintness and the scene's glyphs included.
  */
 async function laneHolds(page: Page, key: string): Promise<void> {
   const lane = page.locator('#watcher-pane .message-scrubber')
@@ -170,6 +204,13 @@ async function laneHolds(page: Page, key: string): Promise<void> {
       let painted = 0
       for (let i = 3; i < data.length; i += 4) if (data[i]! > 0) painted++
       out[canvas.className] = painted
+      // The margin just outside the lane, down the same rows: where the scene draws a landscape there, it runs on under the
+      // lane too. A narrow window draws none, only the rail of eyes.
+      const side = Math.max(1, Math.min(x0, x1 - x0))
+      const beside = canvas.getContext('2d')!.getImageData(x0 - side, y0, side, Math.max(1, y1 - y0)).data
+      let outside = 0
+      for (let i = 3; i < beside.length; i += 4) if (beside[i]! > 0) outside++
+      out[`${canvas.className} beside`] = outside
     }
     out.owlButtons = [...pane.querySelectorAll(':scope > .watcher-scene--owls > .watcher-scene__owl')].filter(button => {
       const own = button.getBoundingClientRect()
@@ -177,13 +218,40 @@ async function laneHolds(page: Page, key: string): Promise<void> {
     }).length
     return out
   })
-  for (const [part, painted] of Object.entries(reading)) expect(painted, `${part} in the scrubber's lane, ${key}`).toBe(0)
-  recorded[`lane-${key}`] = reading
+  if (reading['watcher-scene watcher-scene--land beside']! > 0) expect(reading['watcher-scene watcher-scene--land'], `the landscape under the scrubber's lane, ${key}`).toBeGreaterThan(0)
+  expect(reading['watcher-scene watcher-scene--owl'], `owls in the scrubber's lane, ${key}`).toBe(0)
+  expect(reading.owlButtons, `thread owls' buttons over the scrubber's lane, ${key}`).toBe(0)
+  expect(await laneBackgrounds(page, '#watcher-pane'), `what the scrubber's lane paints, ${key}`).toEqual([])
+  const decode = async (png: Buffer) => { const { data, info } = await sharp(png).removeAlpha().raw().toBuffer({ resolveWithObject: true }); return { data, width: info.width, height: info.height, channels: info.channels } }
+  // The same ticks with the scene and over the bare room, the scene's canvases hidden for the second capture.
+  const read = async (): Promise<{ scene: number; bare: number; ticks: number }> => {
+    const scene = await tickContrast(page, '#watcher-pane', await page.screenshot(), decode)
+    await page.evaluate(() => { for (const canvas of document.querySelectorAll<HTMLElement>('#watcher-pane > canvas.watcher-scene')) canvas.style.visibility = 'hidden' })
+    const bare = await tickContrast(page, '#watcher-pane', await page.screenshot(), decode)
+    await page.evaluate(() => { for (const canvas of document.querySelectorAll<HTMLElement>('#watcher-pane > canvas.watcher-scene')) canvas.style.removeProperty('visibility') })
+    return { scene: scene.worst, bare: bare.worst, ticks: scene.ticks }
+  }
+  // At rest the lane is faint on purpose (ADR-0109).
+  await page.mouse.move(0, 0)
+  await page.waitForTimeout(200)
+  const rest = await read()
+  // Pointed at, as the reader reads it, every tick keeps 3:1 over the scene.
+  const box = (await lane.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + 4)
+  await expect(lane).toHaveCSS('opacity', '1')
+  await page.waitForTimeout(200)
+  const active = await read()
+  await page.mouse.move(0, 0)
+  recorded[`lane-${key}`] = { ...reading, rest, active }
+  expect(rest.ticks, `ticks read, ${key}`).toBeGreaterThan(0)
+  // At rest the lane is faint on purpose, under 3:1 over the bare room too; over the scene it still shows.
+  expect(rest.scene, `the resting ticks over the scene, against ${rest.bare} over the bare room, ${key}`).toBeGreaterThan(1.2)
+  expect(active.scene, `the ticks pointed at over the scene, against ${active.bare} over the bare room, ${key}`).toBeGreaterThanOrEqual(3)
 }
 
 test.describe("Watcher's night scene on the built app", () => {
   test.describe.configure({ mode: 'serial', timeout: 5 * 60_000 })
-  test.beforeAll(async () => { await mkdir(evidence, { recursive: true }) })
+  test.beforeAll(async () => { for (const folder of [evidence, scrubberEvidence]) await mkdir(folder, { recursive: true }) })
   test.afterAll(async () => {
     if (Object.keys(recorded).length > 0) await writeFile(resolve(evidence, 'readings.json'), `${JSON.stringify(recorded, null, 2)}\n`, 'utf8')
   })
@@ -201,7 +269,7 @@ test.describe("Watcher's night scene on the built app", () => {
           await settle(page)
           expect(await pageBoundProblems(page), `first entry at ${width}x${height}`).toEqual([])
           await expect(owl(page)).toHaveAttribute('data-owl', 'perched')
-          await sceneHolds(page, `first-${appearance}-${width}x${height}`)
+          await sceneHolds(page, `first-${appearance}-${width}x${height}`, width >= 1280)
           await capture(launched, `first-entry-${appearance}-${width}x${height}.png`)
         }
         await seedRoom(page, true, [['footer-links', 'running'], ['visual-gate', 'waiting'], ['weekly-note', 'idle']])
@@ -212,7 +280,7 @@ test.describe("Watcher's night scene on the built app", () => {
           expect(await pageBoundProblems(page), `conversation at ${width}x${height}`).toEqual([])
           // An owl for each watched thread: on the trees, or at the smallest window on the rail of eyes.
           await expect(owlButtons(page)).toHaveCount(3)
-          await sceneHolds(page, `owls-${appearance}-${width}x${height}`)
+          await sceneHolds(page, `owls-${appearance}-${width}x${height}`, width >= 1280)
           await capture(launched, `thread-owls-${appearance}-${width}x${height}.png`)
         }
         // Watched keeps the scene; Visualize, whose picture takes the pane's whole width, puts it away.
@@ -248,7 +316,7 @@ test.describe("Watcher's night scene on the built app", () => {
           await settle(page)
           expect(await pageBoundProblems(page), `scrubber at ${width}x${height}`).toEqual([])
           await expect(owlButtons(page)).toHaveCount(3)
-          await sceneHolds(page, `scrubber-${appearance}-${width}x${height}`)
+          await sceneHolds(page, `scrubber-${appearance}-${width}x${height}`, width >= 1280)
           await laneHolds(page, `${appearance}-${width}x${height}`)
           await settle(page)
           await holdOwlSky(page)
@@ -257,6 +325,41 @@ test.describe("Watcher's night scene on the built app", () => {
       }))
     })
   }
+
+  test('a conversation longer than its window marks every message sent to Watcher and reaches the first', async () => {
+    const turns = 60
+    await onReleaseTrack('owl', () => withSotto(launchOptions('dark'), async (launched) => {
+      const { page } = launched
+      await openThreads(page)
+      await seedRoom(page, true, [['footer-links', 'running']])
+      await openRoom(page)
+      await page.evaluate(async ({ thread, now, turns }) => {
+        await window.sottoE2E!.agentEvent!({ type: 'history', threadId: thread, text: '', messages: Array.from({ length: turns * 2 }, (_, index) => ({
+          id: `long-${index}`, role: index % 2 ? 'assistant' as const : 'user' as const,
+          text: index % 2 ? `Watching it. Package (Windows) is still running for message ${(index - 1) / 2 + 1}.` : `Is the release thread green yet? (${index / 2 + 1})`,
+          createdAt: new Date(now - (turns * 2 - index) * 60_000).toISOString() })) })
+      }, { thread: CURRENT, now: E2E_THREADS_NOW, turns })
+      const pane = page.locator('#watcher-pane')
+      await expect(pane.getByText(`Is the release thread green yet? (${turns})`, { exact: true })).toBeVisible()
+      // Watcher's conversation comes back from another page on its newest ten turns, from the thread's store.
+      await page.getByRole('tablist', { name: 'Page' }).getByRole('tab', { name: 'Dictate', exact: true }).click()
+      await expect(pane).toHaveCount(0)
+      await openRoom(page)
+      await expect(pane.getByText(`Is the release thread green yet? (${turns})`, { exact: true })).toBeVisible()
+      await expect(pane.getByText('Is the release thread green yet? (1)', { exact: true })).toHaveCount(0)
+      // Everything the window holds is drawn, and the rest is only in the store.
+      await expect(pane.getByRole('button', { name: 'Show earlier messages', exact: true })).toBeVisible()
+      const ticks = pane.getByRole('navigation', { name: 'Messages you sent' }).getByRole('button')
+      await expect(ticks).toHaveCount(turns)
+      await ticks.nth(turns - 1).focus()
+      await page.keyboard.press('Home')
+      await expect(page.locator('.message-scrubber__card')).toContainText(`Message 1 of ${turns}`)
+      await expect(page.locator('.message-scrubber__card')).toContainText('Watcher replied')
+      await page.keyboard.press('Enter')
+      await expect(pane.locator('[data-message-id="long-0"]')).toBeFocused()
+      await expect(ticks).toHaveCount(turns)
+    }))
+  })
 
   test('reduced motion: nothing flies, owls sit from the first frame, and the scene holds still', async () => {
     await onReleaseTrack('owl', () => withSotto(launchOptions('dark', { motion: 'reduced', live: true }), async (launched) => {

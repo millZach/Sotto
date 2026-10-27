@@ -1,9 +1,14 @@
 import React, { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { i18n } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
+import { slimMoving } from '../agents/slimComposer'
 import { useReducedMotion } from '../state/reducedMotion'
 import {
-  addRipple, frameDelay, frameDue, frameSleep, inMargin, liveRipples, nextPlace, owlAt, planFlight, sceneInk, stayAt,
-  type Box, type Look, type OwlStage, type Rgb, type Ripple, type SceneLayout, type SceneMeasure, type WatcherOwlState,
+  addRipple, frameDelay, frameDue, frameSleep, glassOpacity, heldRoom, inMargin, liveRipples, nextPlace, owlAt, planFlight, sceneInk, stayAt,
+  type Box, type Look, type OwlStage, type Rgb, type Ripple, type SceneLayout, type SceneMeasure, type WatcherOwlState, type Word,
 } from './nightScene'
+import { toRgb } from './canvasColor'
 import { NightScenePainter, type SceneFrame } from './nightScenePainter'
 import { OwlFamily, pileLabel, type FamilyMotion, type OwlMood, type ThreadOwlPose, type WatchedOwl } from './owlFamily'
 import { watchResolution } from './watchResolution'
@@ -31,8 +36,17 @@ export function measureRoom(pane: HTMLElement): SceneMeasure | null {
   if (form == null || compose == null) return null
   const base = pane.getBoundingClientRect(), top = pane.scrollTop
   const at = (element: Element): Box => relative(element.getBoundingClientRect(), base, top)
-  const composer = at(form)
-  if (composer.w < 1 || composer.h < 1) return null
+  const card = at(form)
+  if (card.w < 1 || card.h < 1) return null
+  // While the composer is slim (ADR-0125) the scene keeps the full card's place, which the pane remembers as the card's
+  // height and how far its foot stood above the composer's, so it holds still as the card and the row under it change.
+  const slim = compose.hasAttribute('data-slim'), style = getComputedStyle(compose)
+  const full = slim ? parseFloat(style.getPropertyValue('--thread-prompt-full')) : Number.NaN
+  const foot = slim ? parseFloat(style.getPropertyValue('--thread-prompt-foot')) : Number.NaN
+  const room = at(compose)
+  const composer = !Number.isFinite(full) ? card
+    : Number.isFinite(foot) ? { ...card, y: room.y + room.h - foot - full, h: full }
+    : full > card.h ? { ...card, y: card.y + card.h - full, h: full } : card
   const words: Box[] = []
   const shown = (box: Box): boolean => box.w > 1 && box.h > 1
   const word = (element: Element): void => { const box = at(element); if (shown(box) && element.textContent?.trim()) words.push(box) }
@@ -54,14 +68,12 @@ export function measureRoom(pane: HTMLElement): SceneMeasure | null {
   return { width: pane.clientWidth, height: pane.clientHeight, header, composer, words, ...lane !== undefined && shown(lane) ? { lane } : {} }
 }
 
-/** A colour as the canvas paints it, whatever form the style gave it in. */
-export function toRgb(value: string, pixel: CanvasRenderingContext2D): Rgb | null {
-  pixel.clearRect(0, 0, 1, 1)
-  pixel.fillStyle = 'rgba(0, 0, 0, 0)'
-  pixel.fillStyle = value
-  pixel.fillRect(0, 0, 1, 1)
-  const [r = 0, g = 0, b = 0, a = 0] = pixel.getImageData(0, 0, 1, 1).data
-  return a === 0 ? null : { r, g, b }
+/** A colour words are written in, with its opacity, so a translucent one is counted as it shows. */
+export function toWord(value: string, pixel: CanvasRenderingContext2D): Word | null {
+  const rgb = toRgb(value, pixel)
+  if (rgb === null) return null
+  const a = pixel.getImageData(0, 0, 1, 1).data[3]! / 255
+  return a >= 1 ? rgb : { ...rgb, a }
 }
 
 /** The surface the scene is drawn on: the first painted background at or above the pane. */
@@ -79,7 +91,11 @@ const TIP_HALF = 126
 const TIP_HEIGHT = 44
 
 /** What a thread owl's tooltip says of its thread. */
-const MOOD_WORDS: Record<OwlMood, string> = { awake: 'Working', waiting: 'Waiting on you. Press to answer.', asleep: 'Not working now' }
+const MOOD_WORDS = {
+  awake: msg({ message: 'Working', comment: 'A thread’s status' }),
+  waiting: msg`Waiting on you. Press to answer.`,
+  asleep: msg`Not working now`,
+} as const satisfies Record<OwlMood, unknown>
 
 /** A perched thread owl's button, or the "+N" pile's. */
 interface Target {
@@ -95,7 +111,10 @@ interface Target {
 /**
  * Watcher's night scene, in the room's side margins (Zach's picks on October 21 and 22, 2026, `prototype/watcher-owl-scene`
  * and `prototype/watcher-owl-family`): an ASCII night beside the column with Watcher's owl in its tree and a thread owl
- * for each thread Watcher watches. Nothing is drawn in the column, so nothing is drawn behind or over the room's words.
+ * for each thread Watcher watches. The sky and the hills run on under the column and the glass composer at 85% (the
+ * user's pick on October 23, 2026, variant D of `docs/prototypes/watcher-floating-composer-prototype.html`), and never
+ * move for the words passing over them; no glyph there is stronger than the words over it allow (ADR-0126), and each
+ * word carries a soft glow of the canvas (watcher.css). Trees, owls and ripples stay in the margins.
  * Watcher's owl flies now and then, at random, to the other tree or onto a branch off the composer, and back. A new
  * watched thread's owl comes out of a whirlpool in the moon, which sends out a ripple; a settled or unwatched thread's
  * owl flies back into it. A press in the open margin sends out a ripple too, and Watcher's owl looks toward it. Below a
@@ -118,6 +137,8 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
   /** The "+N" pile's press: the Watched view, where every watched thread is. */
   readonly onShowWatched: () => void
 }): ReactNode {
+  // Named `say` here, since `t` is the scene's clock.
+  const { t: say } = useLingui()
   const reduced = useReducedMotion()
   const still = reduced || held
   const [phase, setPhase] = useState<'shown' | 'leaving' | 'gone'>(shown ? 'shown' : 'gone')
@@ -172,6 +193,8 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
     let request: number | null = null
     let layoutRequest: number | null = null
     let measured = ''
+    // The room as last measured with the composer full, which the scene keeps while the composer is slim.
+    let fullRoom: SceneMeasure | null = null
     let inked = ''
     let layout: SceneLayout | null = null
     let family: OwlFamily | null = kept.current.family
@@ -183,8 +206,10 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
     /** When the last frame started, and how long after it the next is due; null while nothing moves. */
     let last = Number.NEGATIVE_INFINITY
     let delay: number | null = 0
-    // An end-to-end run counts the frames painted on the pane, so a test can tell drawing from holding still.
+    // An end-to-end run counts the frames painted on the pane, so a test can tell drawing from holding still, and the
+    // layouts, so a test can tell the scene holding still from laying itself out again.
     let frames = 0
+    let layouts = 0
     const counted = window.sottoE2E !== undefined
     origin.current ??= performance.now()
     const clock = (): number => (performance.now() - origin.current!) / 1000
@@ -221,12 +246,13 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
       for (const box of painter.targets(poses, t, stillRef.current)) {
         const item = byKey.get(box.key)
         if (item === undefined || item.threadId === null) continue
-        next.push({ key: item.key, box, title: item.title, words: MOOD_WORDS[item.mood], open: { threadId: item.threadId, atRequest: item.mood === 'waiting' }, below: tipBelow(box.y) })
+        next.push({ key: item.key, box, title: item.title, words: i18n._(MOOD_WORDS[item.mood]), open: { threadId: item.threadId, atRequest: item.mood === 'waiting' }, below: tipBelow(box.y) })
       }
       if (pile !== null) {
         const w = pileLabel(pile.count, layout?.mode === 'rail').length * 7 + 10
         const x = Math.max(0, Math.min((layout?.width ?? w) - w, pile.spot.x - w / 2))
-        next.push({ key: 'pile', box: { x, y: pile.spot.y - 16, w, h: 18 }, title: `${pile.count} more`, words: 'Press to see every watched thread on Watched.', open: null, below: tipBelow(pile.spot.y - 16) })
+        const more = pile.count
+        next.push({ key: 'pile', box: { x, y: pile.spot.y - 16, w, h: 18 }, title: i18n._(msg`${more} more`), words: i18n._(msg`Press to see every watched thread on Watched.`), open: null, below: tipBelow(pile.spot.y - 16) })
       }
       const key = next.map(item => `${item.key}:${item.box.x}:${item.box.y}:${item.title}:${item.words}`).join('|')
       if (key !== targetKey) { targetKey = key; setTargets(next) }
@@ -247,6 +273,8 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
       const pile = marker !== null && count > 0 ? { spot: marker, count } : null
       const painted = painter.draw({ t, still: isStill, ripples, watcher: owlNow, owls: poses, whirl: family.whirl(t), pile })
       if (painted && counted) pane.dataset.nightSceneFrames = String(++frames)
+      // And what it drew behind the words over the column, so a test can see a ripple or an owl crossing under them.
+      if (painted && counted) pane.dataset.nightSceneBehind = `${painter.behind.ripple},${painter.behind.owl}`
       const nextStage = owlNow?.stage ?? 'perched'
       if (nextStage !== stage) { stage = nextStage; owl.dataset.owl = stage }
       syncTargets(t, poses, pile)
@@ -286,18 +314,37 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
 
     const readInk = (): void => {
       const style = getComputedStyle(ink)
+      // Every colour the conversation's words can take, each with its opacity: the text, its secondary tier (the names and
+      // times take it there), and links at rest and pointed at (the probe's borders, nightScene.css).
       const text = toRgb(style.color, pixel), accent = toRgb(style.backgroundColor, pixel), surface = surfaceOf(pane, pixel)
       if (text === null || accent === null || surface === null) return
-      const key = JSON.stringify([text, accent, surface, style.fontFamily])
+      const present = (word: Word | null): word is Word => word !== null
+      const words = [toWord(style.color, pixel), toWord(style.borderTopColor, pixel), toWord(style.borderRightColor, pixel), toWord(style.borderBottomColor, pixel)].filter(present)
+      // The glass composer's own words, its text, secondary and muted tiers, and its card (the probe's outline).
+      const card = toRgb(style.outlineColor, pixel)
+      const cardWords = [toWord(style.color, pixel), toWord(style.borderTopColor, pixel), toWord(style.borderLeftColor, pixel)].filter(present)
+      const key = JSON.stringify([text, accent, words, card, cardWords, surface, style.fontFamily])
       if (key === inked) return
       inked = key
-      painter.setInk(sceneInk(surface, text, accent), style.fontFamily)
+      const scene = sceneInk(surface, text, accent, words)
+      painter.setInk(scene, style.fontFamily)
+      // The glass is as thick as its words need over pure white or pure black, so nothing passing under it, a picture in
+      // the conversation included, takes a word on it under 4.5:1. It stays set when the scene steps away.
+      if (card !== null) pane.style.setProperty('--watcher-glass', `${Math.round(glassOpacity(card, cardWords) * 100)}%`)
+      // An end-to-end run reads the column's ceiling off the pane, to report it beside the contrast it measures.
+      if (counted) pane.dataset.nightSceneCap = JSON.stringify(scene.column)
       wake()
     }
     const relayout = (): void => {
       layoutRequest = null
       if (disposed) return
-      const measure = measureRoom(pane)
+      // While the composer's card moves between slim and full its box is neither: the scene keeps its layout and looks
+      // again next frame, until the card has settled.
+      const card = pane.querySelector<HTMLElement>(':scope > .thread-workspace__compose > .thread-prompt')
+      if (card !== null && slimMoving(card)) { scheduleLayout(); return }
+      const room = measureRoom(pane)
+      if (card?.parentElement?.hasAttribute('data-slim') !== true) fullRoom = room
+      const measure = heldRoom(room, fullRoom)
       const dpr = window.devicePixelRatio || 1
       const key = measure === null ? '' : JSON.stringify([measure, dpr])
       if (key === measured) return
@@ -305,8 +352,9 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
       observeParts()
       const next = measure === null ? null : painter.resize(measure, dpr)
       if (next === null) {
-        // No composer to set the column by, such as a first entry whose composer went with the last model: nothing is
-        // drawn, and no frame is asked for, until the room can be measured again.
+        // No composer to set the column by, such as a first entry whose composer went with the last model, or the room
+        // between one Watcher and the next: the scene keeps its last frame, and no frame is asked for, until the room can
+        // be measured again.
         painter.invalidate()
         halt()
         layout = null
@@ -318,6 +366,7 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
       }
       const t = clock()
       layout = next
+      if (counted) pane.dataset.nightSceneLayouts = String(++layouts)
       // A new layout ends every flight where it was going.
       if (watcher.flight !== null) watcher = { at: watcher.flight.to, side: watcher.flight.side, flight: null, next: watcher.next }
       if (next.mode !== 'trees') watcher = { at: 'home', side: 'left', flight: null, next: watcher.next }
@@ -331,7 +380,11 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
         takeOwls()
       }
       readInk()
-      wake()
+      // Laying out cleared the canvases: the scene is drawn again in this same frame, so it never shows blank.
+      halt()
+      delay = 0
+      last = Number.NEGATIVE_INFINITY
+      frame(performance.now())
     }
     const scheduleLayout = (): void => { if (layoutRequest === null && !disposed) layoutRequest = requestAnimationFrame(relayout) }
 
@@ -347,9 +400,10 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
       const lane = pane.querySelector('.message-scrubber')
       if (lane !== null) { sizes.observe(lane); laneMoves.observe(lane, { attributes: true, attributeFilter: ['style'] }) }
     }
-    // The composer and what stands on it come and go; typing in the composer is left to the size watch.
+    // The composer and what stands on it come and go; typing in the composer is left to the size watch, and the
+    // conversation's words, which the scene never follows, are left alone.
     const parts = new MutationObserver(records => {
-      if (records.some(record => !(record.target instanceof Element && record.target.closest('.thread-prompt')))) scheduleLayout()
+      if (records.some(record => !(record.target instanceof Element && record.target.closest('.thread-prompt, .thread-workspace__transcript')))) scheduleLayout()
     })
     parts.observe(pane, { childList: true, subtree: true })
     // A theme or mode change repaints the scene in the new inks.
@@ -409,15 +463,15 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
     <canvas ref={front} className="watcher-scene watcher-scene--owl" data-leaving={fading} aria-hidden="true" />
     {/* The owls' buttons answer the pointer only; Watched is the keyboard's way to the same threads. */}
     <div className="watcher-scene watcher-scene--owls" data-leaving={fading} aria-hidden="true">
-      {targets.map(target => <button key={target.key} type="button" tabIndex={-1} className="watcher-scene__owl" data-pile={target.open === null || undefined}
-        aria-label={target.open === null ? 'Show every watched thread' : `Open ${target.title} beside Watcher`}
+      {targets.map(target => { const title = target.title; return <button key={target.key} type="button" tabIndex={-1} className="watcher-scene__owl" data-pile={target.open === null || undefined}
+        aria-label={target.open === null ? say`Show every watched thread` : say`Open ${title} beside Watcher`}
         style={{ left: target.box.x, top: target.box.y, width: target.box.w, height: target.box.h }}
         onPointerEnter={() => setTip(target)} onPointerLeave={() => setTip(current => current?.key === target.key ? null : current)}
         onClick={event => {
           setTip(null)
           if (target.open === null) { onShowWatched(); return }
           onOpen(target.open.threadId, { atRequest: target.open.atRequest, inThreads: event.shiftKey, from: event.currentTarget })
-        }} />)}
+        }} /> })}
     </div>
     {tip !== null ? <div className="watcher-scene__tip" data-below={tip.below || undefined} style={tipStyle} aria-hidden="true"><b>{tip.title}</b><span>{tip.words}</span></div> : null}
     <i ref={probe} className="watcher-scene__ink" aria-hidden="true" />

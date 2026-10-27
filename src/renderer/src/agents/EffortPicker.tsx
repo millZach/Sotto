@@ -1,25 +1,36 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
+import { msg, t } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
+import { wordsOf } from './interfaceWords'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { useReducedMotion } from '../state/reducedMotion'
 import './effortPicker.css'
 
 interface EffortOption { readonly id: string; readonly label: string; readonly disabled?: boolean }
-export const effortLabel = (value: string): string => value === 'xhigh' ? 'Extra high' : value.charAt(0).toUpperCase() + value.slice(1)
+/** The levels Sotto knows by name; a provider's other levels show as the provider names them, capitalised. */
+const EFFORT_NAMES: Readonly<Record<string, string>> = wordsOf({
+  minimal: msg({ message: 'Minimal', comment: 'A reasoning effort level.' }),
+  low: msg({ message: 'Low', comment: 'A reasoning effort level.' }),
+  medium: msg({ message: 'Medium', comment: 'A reasoning effort level.' }),
+  high: msg({ message: 'High', comment: 'A reasoning effort level.' }),
+  xhigh: msg({ message: 'Extra high', comment: 'A reasoning effort level.' }),
+  max: msg({ message: 'Max', comment: 'A reasoning effort level, the highest some models offer.' }),
+})
+export const effortLabel = (value: string): string => Object.hasOwn(EFFORT_NAMES, value) ? EFFORT_NAMES[value]! : value.charAt(0).toUpperCase() + value.slice(1)
 
 /** One line per level: what it does and what it costs. The top of any list gets the top line, whatever its name. */
-const EFFORT_LINES: Record<string, string> = {
-  minimal: 'Fastest. For the smallest tasks.',
-  low: 'Fast. For small, clear tasks.',
-  medium: 'The usual balance of speed and care.',
-  high: 'Takes longer and catches more.',
-  xhigh: 'Much longer. For stubborn problems.',
-  max: "Near the model's limit. Slow and costly.",
-}
-const TOP_LINE = 'Everything the model has. Slowest, costliest.'
+const EFFORT_LINES: Readonly<Record<string, string>> = wordsOf({
+  minimal: msg`Fastest. For the smallest tasks.`,
+  low: msg`Fast. For small, clear tasks.`,
+  medium: msg`The usual balance of speed and care.`,
+  high: msg`Takes longer and catches more.`,
+  xhigh: msg`Much longer. For stubborn problems.`,
+  max: msg`Near the model's limit. Slow and costly.`,
+})
 export function effortLine(id: string, index: number, count: number): string {
-  if (count > 1 && index === count - 1) return TOP_LINE
-  return EFFORT_LINES[id] ?? (index === 0 ? EFFORT_LINES.low! : 'More time for difficult problems.')
+  if (count > 1 && index === count - 1) return t`Everything the model has. Slowest, costliest.`
+  return (Object.hasOwn(EFFORT_LINES, id) ? EFFORT_LINES[id] : undefined) ?? (index === 0 ? EFFORT_LINES.low! : t`More time for difficult problems.`)
 }
 
 /** How long the arrival at the top level plays: the wash through the card and the composer, then the letters settle. */
@@ -89,6 +100,7 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
   onUltrathink?: (() => void) | undefined; hasUltrathink?: boolean | undefined; defaultValue?: string | undefined; modelName?: string | undefined
   id: string; trigger: RefObject<HTMLButtonElement | null>; arriving: boolean; still: boolean
 }): ReactNode {
+  const { t } = useLingui()
   const choices = options.filter(option => !option.disabled)
   const count = choices.length
   const actual = choices.findIndex(option => option.id === value)
@@ -171,28 +183,36 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
     return () => input.removeEventListener('wheel', wheel)
   })
   const magnet = (raw: number): number => { const near = Math.round(raw), d = raw - near; return Math.abs(d) < MAGNET ? near + d * Math.pow(Math.abs(d) / MAGNET, 2) : raw }
-  const word = !known ? (value ? effortLabel(value) : 'Provider default') : effortLabel((dragging ? shown?.id : value) ?? value)
-  const line = !known ? `${value ? effortLabel(value) : 'Provider default'} is set. Choose a level this model offers.`
+  const setLevel = value ? effortLabel(value) : t`Provider default`
+  const word = !known ? setLevel : effortLabel((dragging ? shown?.id : value) ?? value)
+  const line = !known ? t({ message: `${setLevel} is set. Choose a level this model offers.`, comment: '{setLevel} is a reasoning effort level, or "Provider default".' })
     : effortLine((dragging ? shown?.id : value) ?? value, dragging ? selected : actual, count)
   // The slider announces where the thumb is, so a drag is heard as it moves; the word above follows the same rule.
-  const valueText = known ? effortLabel(shown?.id ?? value) : value ? effortLabel(value) : 'Provider default'
-  return <div ref={panel} id={id} popover={typeof HTMLElement.prototype.showPopover === 'function' ? 'manual' : undefined} role="dialog" aria-label="Reasoning effort"
+  const valueText = known ? effortLabel(shown?.id ?? value) : setLevel
+  const defaultLevel = defaultValue === undefined ? '' : effortLabel(defaultValue)
+  const defaultTitle = modelName !== undefined
+    ? t({ message: `Use ${modelName}'s default, ${defaultLevel}`, comment: '{modelName} is a model\'s name; {defaultLevel} is a reasoning effort level.' })
+    : t({ message: `Use the model's default, ${defaultLevel}`, comment: '{defaultLevel} is a reasoning effort level.' })
+  const ultrathinkWords = hasUltrathink
+    ? t({ message: 'Ultrathink is in this prompt', comment: 'Ultrathink is a keyword Claude Code reads in a prompt; keep it as it is.' })
+    : t({ message: 'Add Ultrathink to prompt', comment: 'Ultrathink is a keyword Claude Code reads in a prompt; keep it as it is.' })
+  return <div ref={panel} id={id} popover={typeof HTMLElement.prototype.showPopover === 'function' ? 'manual' : undefined} role="dialog" aria-label={t`Reasoning effort`}
     className="effort-card" data-still={still} data-top={top} data-arriving={arriving} data-unknown={!known} data-dragging={dragging}>
     <div className="effort-card__head">
       <p className="effort-card__word" data-top={top && !dragging} data-unknown={!known}>
         {Array.from(word, (letter, index) => <span key={`${word}-${index}`} style={{ '--effort-letter': index } as CSSProperties}>{letter === ' ' ? '\u00a0' : letter}</span>)}
       </p>
       {defaultIndex >= 0 && <button type="button" className="effort-card__default tt-focusable" disabled={disabled || value === defaultValue}
-        title={`Use ${modelName ?? 'the model'}'s default, ${effortLabel(defaultValue!)}`} onClick={() => choose(defaultIndex)}>Default</button>}
+        title={defaultTitle} onClick={() => choose(defaultIndex)}>{t({ message: 'Default', comment: 'A button that sets the model\'s own default reasoning effort.' })}</button>}
     </div>
-    <p id={`${id}-description`} className="effort-card__line">{line}</p>
+    <p id={`${id}-description`} className="effort-card__line tt-paragraph">{line}</p>
     <div className="effort-card__track">
       <div className="effort-card__pill" aria-hidden="true">
         <div className="effort-card__fill" />
         {choices.map((option, index) => <span key={option.id} className="effort-card__dot" data-under={index <= selected} style={{ '--effort-stop': count > 1 ? index / (count - 1) : 0 } as CSSProperties} />)}
       </div>
       <span className="effort-card__thumb" aria-hidden="true" />
-      <input ref={range} type="range" aria-label="Thread reasoning effort" aria-valuetext={valueText} aria-valuenow={selected}
+      <input ref={range} type="range" aria-label={t`Thread reasoning effort`} aria-valuetext={valueText} aria-valuenow={selected}
         aria-describedby={`${id}-description`} aria-disabled={disabled || count === 0} min={0} max={Math.max(0, count - 1)} step={.001} value={position}
         onPointerDown={event => { if (disabled) { event.preventDefault(); return } drag.current = true; setHeld(set); setDragging(true); event.currentTarget.setPointerCapture?.(event.pointerId) }}
         onPointerUp={event => { if (!drag.current) return; drag.current = false; setDragging(false); choose(Math.round(Number(event.currentTarget.value))) }}
@@ -208,10 +228,10 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
           choose(next)
         }} />
     </div>
-    <div className="effort-card__ends" aria-hidden="true"><span>Faster</span><span>More thorough</span></div>
+    <div className="effort-card__ends" aria-hidden="true"><span>{t({ message: 'Faster', comment: 'The low end of the reasoning effort slider.' })}</span><span>{t({ message: 'More thorough', comment: 'The high end of the reasoning effort slider.' })}</span></div>
     {onUltrathink && <button type="button" className="effort-card__ultrathink tt-focusable" disabled={hasUltrathink} data-on={hasUltrathink} onClick={onUltrathink}
-      aria-label={hasUltrathink ? 'Ultrathink is in this prompt' : 'Add Ultrathink to prompt'}>
-      <i aria-hidden="true"><Check size={10} strokeWidth={3} /></i>{hasUltrathink ? 'Ultrathink is in this prompt' : 'Add Ultrathink to prompt'}
+      aria-label={ultrathinkWords}>
+      <i aria-hidden="true"><Check size={10} strokeWidth={3} /></i>{ultrathinkWords}
     </button>}
     <div className="effort-card__wash" aria-hidden="true" />
   </div>
@@ -236,6 +256,7 @@ export function EffortPicker({ value, options, disabled, onChange, onUltrathink,
   readonly defaultValue?: string | undefined
   readonly modelName?: string | undefined
 }): ReactNode {
+  const { t } = useLingui()
   const [open, setOpen] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
   const wrapper = useRef<HTMLDivElement>(null)
@@ -267,7 +288,7 @@ export function EffortPicker({ value, options, disabled, onChange, onUltrathink,
       className="thread-chip tt-focusable" data-effort-top={top} aria-describedby={pending ? describedBy : undefined} data-pending={pending ? 'true' : undefined}
       disabled={disabled} onClick={() => setOpen(current => !current)}>
       {pending ? <i className="thread-chip__pending" aria-hidden="true" /> : null}
-      <span>{level ? effortLabel(level) : 'Effort'}</span><ChevronDown size={12} aria-hidden="true" />
+      <span>{level ? effortLabel(level) : t({ message: 'Effort', comment: 'The reasoning effort chip, when no level is set.' })}</span><ChevronDown size={12} aria-hidden="true" />
     </button>
     {open && <EffortSurface value={level} options={options} disabled={disabled} onChange={onChange} onUltrathink={onUltrathink} hasUltrathink={hasUltrathink}
       defaultValue={defaultValue} modelName={modelName} id={id} trigger={trigger} arriving={arriving} still={still} />}

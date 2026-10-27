@@ -13,7 +13,7 @@ const send = (id: string) => f.host.execute({ type: 'send', commandId: randomUUI
 const prompts = async () => (await f.driver.requests()).filter(request => request.method === 'session/prompt')
 beforeEach(async () => {
   // The test explicitly drives reads; no periodic background race is needed.
-  f = await devinFixture(undefined, 5000, 60_000)
+  f = await devinFixture(undefined, undefined, 60_000)
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
 })

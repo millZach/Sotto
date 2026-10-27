@@ -56,3 +56,19 @@ it('draws Muse’s mark on the iPhone from the desktop’s path and view box (#1
   phone.forEach((value, index) => expect(value).toBeCloseTo(desktop[index]!, 4))
   expect(read('apps/ios/Sotto/ProviderMarks.swift')).toContain('"muse": "ProviderMuse"')
 })
+
+it('draws Cursor’s cube on both phones from the desktop’s path and view box (ADR-0128)', () => {
+  const match = /cursor: \{\s*viewBox: '([^']+)',\s*path: '([^']+)'/u.exec(read('src/renderer/src/agents/ProviderMark.tsx'))
+  if (!match) throw new Error('The desktop has no Cursor mark.')
+  const [, viewBox, path] = match
+  expect(viewBox).toBe('0 0 24 24')
+  // Android draws the desktop's path as it is, in one shape at full strength.
+  expect(read(`${ANDROID}/core/ProviderMarks.kt`)).toContain(`"cursor" to ProviderMarkShape(24f, 24f, listOf(MarkShape("${path!}", 1f)))`)
+  // The iPhone's asset spaces the same path out, with the same commands and numbers.
+  const asset = read('apps/ios/Sotto/Resources/Assets.xcassets/ProviderCursor.imageset/ProviderCursor.svg')
+  expect(asset).toContain(`viewBox="${viewBox!}"`)
+  const drawn = /\bd="([^"]+)"/u.exec(asset)![1]!
+  expect(drawn.replace(/[^A-Za-z]/gu, '')).toBe(path!.replace(/[^A-Za-z]/gu, ''))
+  expect(drawn.match(/-?\d*\.?\d+/gu)!.map(Number)).toEqual(path!.match(/-?\d*\.?\d+/gu)!.map(Number))
+  expect(read('apps/ios/Sotto/ProviderMarks.swift')).toContain('"cursor": "ProviderCursor"')
+})

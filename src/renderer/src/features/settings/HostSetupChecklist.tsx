@@ -1,9 +1,13 @@
 import { writeClipboard } from '../../agents/richActions'
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Check, Circle, Clock, Copy, LoaderCircle, X } from 'lucide-react'
+import { i18n, type MessageDescriptor } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { HOST_SETUP_STEPS, type HostSetupStep, type HostStatus } from '../../../../shared/hosts'
 import { Button } from '../../components/Button'
 import { tailnetStepNote, type TailnetStepView } from './hostTailnetWords'
+import { shownWords, type LaterWords } from './laterWords'
 import './hostSetup.css'
 
 /** Where Add host stands once pressed: still connecting, stopped at a failed step, or connected and saved. */
@@ -15,8 +19,8 @@ type StepState = 'done' | 'active' | 'waiting' | 'failed' | 'todo'
  * there. A host connected before its step runs again, as Try the tailnet again runs it, is on SSH until that step is done.
  */
 export function hostSetupTitle(name: string, outcome: HostSetupOutcome, tailnet?: TailnetStepView): string {
-  if (outcome === 'connected') return tailnet?.state === 'ssh' || tailnet?.state === 'active' ? `${name} is connected over SSH` : `${name} is connected`
-  return outcome === 'failed' ? `${name} could not be added` : `Connecting to ${name}`
+  if (outcome === 'connected') return tailnet?.state === 'ssh' || tailnet?.state === 'active' ? i18n._(msg`${name} is connected over SSH`) : i18n._(msg`${name} is connected`)
+  return outcome === 'failed' ? i18n._(msg`${name} could not be added`) : i18n._(msg`Connecting to ${name}`)
 }
 
 /**
@@ -25,7 +29,7 @@ export function hostSetupTitle(name: string, outcome: HostSetupOutcome, tailnet?
  * host to the tailnet while the dialog is open shows here too; a host still on SSH keeps the reason main gave, or the
  * row's reason after a press. A press that failed says why, and one still running is under way.
  */
-export function tailnetStepView(added: HostStatus | undefined, adding: HostStatus | undefined, press: { readonly running: boolean; readonly error?: string } | null): TailnetStepView {
+export function tailnetStepView(added: HostStatus | undefined, adding: HostStatus | undefined, press: { readonly running: boolean; readonly error?: LaterWords } | null): TailnetStepView {
   if (press?.running) return { state: 'active' }
   if (!added) return adding?.addTailnet ?? { state: 'todo' }
   // A press that failed says why, until a 5-minute check moves the host to the tailnet after all.
@@ -40,29 +44,36 @@ export function tailnetStepView(added: HostStatus | undefined, adding: HostStatu
 
 /** "forge · user and port from your SSH configuration": what Add host was asked to connect to. */
 export function hostSetupSummary(user: string, port: number | undefined): string {
-  if (user && port) return `as ${user}, port ${port}`
-  if (user) return `as ${user}, port from your SSH configuration`
-  if (port) return `port ${port}, user from your SSH configuration`
-  return 'user and port from your SSH configuration'
+  if (user && port) return i18n._(msg`as ${user}, port ${port}`)
+  if (user) return i18n._(msg`as ${user}, port from your SSH configuration`)
+  if (port) return i18n._(msg`port ${port}, user from your SSH configuration`)
+  return i18n._(msg`user and port from your SSH configuration`)
 }
 
 /** Each step's name: still to come, under way, done, and failed. */
 function stepTitle(step: HostSetupStep, state: StepState, name: string): string {
-  const titles: Record<HostSetupStep, readonly [todo: string, active: string, done: string, failed: string]> = {
-    reach: [`Reach ${name}`, `Reaching ${name}…`, `Reached ${name}`, `Could not reach ${name}`],
-    tailscale: ['Approve in Tailscale', 'Waiting for your approval in Tailscale', 'Approved in Tailscale', 'Not approved in Tailscale'],
-    'sign-in': ['Sign in', 'Signing in…', 'Signed in', 'Could not sign in'],
-    install: ['Check the host installation', 'Checking the host installation…', 'Host installed', `The host cannot run on ${name} yet`],
-    start: ['Start the host', 'Starting the host…', 'Host started', 'The host did not start'],
-    pair: ['Pair this computer', 'Pairing this computer…', 'Paired', 'Could not pair this computer'],
+  const titles: Record<HostSetupStep, readonly [todo: MessageDescriptor, active: MessageDescriptor, done: MessageDescriptor, failed: MessageDescriptor]> = {
+    reach: [msg`Reach ${name}`, msg`Reaching ${name}…`, msg`Reached ${name}`, msg`Could not reach ${name}`],
+    tailscale: [msg`Approve in Tailscale`, msg`Waiting for your approval in Tailscale`, msg`Approved in Tailscale`, msg`Not approved in Tailscale`],
+    'sign-in': [msg({ message: 'Sign in', comment: 'A step of adding a host: signing in to it over SSH.' }), msg`Signing in…`, msg`Signed in`, msg`Could not sign in`],
+    install: [msg`Check the host installation`, msg`Checking the host installation…`, msg`Host installed`, msg`The host cannot run on ${name} yet`],
+    start: [msg`Start the host`, msg`Starting the host…`, msg`Host started`, msg`The host did not start`],
+    pair: [msg`Pair this computer`, msg`Pairing this computer…`, msg({ message: 'Paired', comment: 'A step of adding a host: this computer is paired with it.' }), msg`Could not pair this computer`],
   }
   const [todo, active, done, failed] = titles[step]
-  return state === 'done' ? done : state === 'failed' ? failed : state === 'todo' ? todo : active
+  return i18n._(state === 'done' ? done : state === 'failed' ? failed : state === 'todo' ? todo : active)
 }
 
-const MARK_LABEL: Record<StepState, string> = { done: 'Done', active: 'In progress', waiting: 'Waiting for you', failed: 'Failed', todo: 'Not started' }
+const MARK_LABEL: Readonly<Record<StepState, MessageDescriptor>> = {
+  done: msg({ message: 'Done', comment: 'A setup step that has finished.' }),
+  active: msg`In progress`,
+  waiting: msg`Waiting for you`,
+  failed: msg({ message: 'Failed', comment: 'A setup step that failed.' }),
+  todo: msg`Not started`,
+}
 function StepMark({ state }: { readonly state: StepState }): ReactNode {
-  return <span className="host-setup__mark" data-state={state} role="img" aria-label={MARK_LABEL[state]}>
+  const { i18n } = useLingui()
+  return <span className="host-setup__mark" data-state={state} role="img" aria-label={i18n._(MARK_LABEL[state])}>
     {state === 'done' ? <Check size={16} strokeWidth={2.2} aria-hidden="true" />
       : state === 'failed' ? <X size={16} strokeWidth={2.2} aria-hidden="true" />
         : state === 'waiting' ? <Clock size={16} strokeWidth={1.9} aria-hidden="true" />
@@ -72,23 +83,28 @@ function StepMark({ state }: { readonly state: StepState }): ReactNode {
 }
 
 /** A command the user runs to fix a failure, with Copy, under the sentence that introduces it when there is one. Sotto never runs it. */
-export function FixCommand({ fix }: { readonly fix: { readonly text?: string | undefined; readonly command: string } }): ReactNode {
+export function FixCommand({ fix, ours = false }: {
+  readonly fix: { readonly text?: string | undefined; readonly command: string }
+  /** The sentence is Sotto's own message, rather than main's or a host's. */
+  readonly ours?: boolean
+}): ReactNode {
+  const { t } = useLingui()
   const [copied, setCopied] = useState<'copied' | 'failed' | null>(null)
   useEffect(() => { if (!copied) return; const timer = setTimeout(() => setCopied(null), 1500); return () => clearTimeout(timer) }, [copied])
   const copy = async (): Promise<void> => {
     try { await writeClipboard(fix.command); setCopied('copied') } catch { setCopied('failed') }
   }
   return <>
-    {fix.text ? <p>{fix.text}</p> : null}
+    {fix.text ? <p className={ours ? 'tt-paragraph' : undefined}>{fix.text}</p> : null}
     <div className="host-setup__command">
       <code>{fix.command}</code>
-      <Button variant="secondary" aria-label="Copy the command" onClick={() => void copy()}>
-        {copied === 'copied' ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}{copied === 'copied' ? 'Copied' : 'Copy'}
+      <Button variant="secondary" aria-label={t`Copy the command`} onClick={() => void copy()}>
+        {copied === 'copied' ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}{copied === 'copied' ? t`Copied` : t`Copy`}
       </Button>
     </div>
-    {copied === 'failed' ? <p className="host-setup__quiet">The command could not be copied. Select it and copy it yourself.</p> : null}
+    {copied === 'failed' ? <p className="host-setup__quiet tt-paragraph"><Trans>The command could not be copied. Select it and copy it yourself.</Trans></p> : null}
     {/* The button keeps saying what a press does; this says that it worked. */}
-    <span className="tt-visually-hidden" role="status">{copied === 'copied' ? 'Copied the command' : ''}</span>
+    <span className="tt-visually-hidden" role="status">{copied === 'copied' ? t`Copied the command` : ''}</span>
   </>
 }
 
@@ -123,9 +139,9 @@ export function HostSetupChecklist({ name, summary, host, outcome, error, approv
   readonly host: HostStatus | undefined
   readonly outcome: HostSetupOutcome
   /** Main's failure sentence, or one from the dialog itself. */
-  readonly error: string | null
+  readonly error: LaterWords | null
   /** Why Open approval page did not open, shown on the Tailscale card while Tailscale still waits. */
-  readonly approvalError?: string | null | undefined
+  readonly approvalError?: LaterWords | null | undefined
   /** SSH's question (a host key, a password or a passphrase), shown on the step that is asking. */
   readonly question?: ReactNode
   /** Back to the form; the attempt is dropped first. Absent once the host is added. */
@@ -141,6 +157,7 @@ export function HostSetupChecklist({ name, summary, host, outcome, error, approv
   /** On the connected card: the offer to start the host at boot, or what came of it (ADR-0054). */
   readonly boot?: ReactNode
 }): ReactNode {
+  const { t } = useLingui()
   const approval = useRef<HTMLButtonElement>(null)
   const approvalUrl = host?.tailscale?.waiting ? host.tailscale.url : undefined
   // Tailscale's approval is the one thing to do while it waits, so focus goes to it when it arrives.
@@ -169,37 +186,42 @@ export function HostSetupChecklist({ name, summary, host, outcome, error, approv
   const progress = outcome !== 'connecting' ? '' : waiting ? stepTitle('tailscale', 'waiting', name) : current ? stepTitle(current, 'active', name)
     : tailnet?.state === 'active' ? tailnetStepTitle('active', name) : ''
   // The connected card: a host whose tailnet step runs again, as Try the tailnet again runs it, is still on SSH meanwhile.
-  const over = tailnet?.state === 'done' ? ' over your tailnet' : tailnet?.state === 'ssh' || tailnet?.state === 'active' ? ' over SSH' : ''
+  const added = host?.name ?? name
+  const connected = tailnet?.state === 'done'
+    ? <Trans>{added} is added and connected over your tailnet. Its projects and threads show in the Threads sidebar with a {added} badge.</Trans>
+    : tailnet?.state === 'ssh' || tailnet?.state === 'active'
+      ? <Trans>{added} is added and connected over SSH. Its projects and threads show in the Threads sidebar with a {added} badge.</Trans>
+      : <Trans>{added} is added and connected. Its projects and threads show in the Threads sidebar with a {added} badge.</Trans>
   return <div className="host-setup">
     <span className="tt-visually-hidden" role="status">{progress}</span>
     <div className="host-setup__summary">
       <p><b>{name}</b> <span>· {summary}</span></p>
-      {onChange ? <Button variant="ghost" onClick={onChange} aria-label={outcome === 'connecting' ? 'Change the host to add, and stop connecting' : 'Change the host to add'}>Change</Button> : null}
+      {onChange ? <Button variant="ghost" onClick={onChange} aria-label={outcome === 'connecting' ? t`Change the host to add, and stop connecting` : t`Change the host to add`}>{t({ message: 'Change', comment: 'Goes back to change which host to add.' })}</Button> : null}
     </div>
     {agent?.line}
-    <ol className="host-setup__steps" aria-label="Connection steps">
+    <ol className="host-setup__steps" aria-label={t`Connection steps`}>
       {steps.map((step, index) => {
         const state = stateOf(index, step)
         // While Tailscale waits, that is where the user is, whichever step the connect is on.
         const reached = agent !== undefined && index === at
         return <li key={step} data-state={state} aria-current={state === 'waiting' || (state === 'active' && !waiting) || (reached && agent.waiting) ? 'step' : undefined}>
           <StepMark state={state} />
-          <span className="host-setup__title">{stepTitle(step, state, name)}{state === 'done' && agent?.byAgent.includes(step) ? <span className="host-setup__by"> by the agent</span> : null}</span>
-          {reached && host?.phase === 'error' && error ? <div className="host-setup__detail"><p className="host-setup__note">The last check stopped here. {error}</p></div> : null}
+          <span className="host-setup__title">{stepTitle(step, state, name)}{state === 'done' && agent?.byAgent.includes(step) ? <span className="host-setup__by"> {t({ message: 'by the agent', comment: 'After a step that is done, as in "Signed in by the agent".' })}</span> : null}</span>
+          {reached && host?.phase === 'error' && error ? <div className="host-setup__detail"><p className="host-setup__note tt-paragraph">{t`The last check stopped here.`} {shownWords(error)}</p></div> : null}
           {reached && agent.waiting ? <div className="host-setup__detail">{agent.waiting}</div> : null}
           {state === 'waiting' ? <div className="host-setup__detail"><div className="hosts-notice host-setup__card" role="status">
-            <p>{forwardHeld
-              ? `${name} uses Tailscale SSH, which asks you to approve the port forward as well. Approve it in your browser within 30 seconds and Sotto carries on.`
-              : `${name} uses Tailscale SSH, which asks you to approve new connections in your browser. Sotto waits up to 5 minutes and carries on when you approve.`}</p>
+            <p className="tt-paragraph">{forwardHeld
+              ? t`${name} uses Tailscale SSH, which asks you to approve the port forward as well. Approve it in your browser within 30 seconds and Sotto carries on.`
+              : t`${name} uses Tailscale SSH, which asks you to approve new connections in your browser. Sotto waits up to 5 minutes and carries on when you approve.`}</p>
             <div className="host-setup__actions">
-              {approvalUrl ? <Button ref={approval} onClick={onOpenApproval}>Open approval page</Button> : null}
-              <button type="button" className="host-setup__link tt-focusable" onClick={onOpenGuide}>Why Tailscale asks</button>
+              {approvalUrl ? <Button ref={approval} onClick={onOpenApproval}>{t`Open approval page`}</Button> : null}
+              <button type="button" className="host-setup__link tt-focusable" onClick={onOpenGuide}>{t`Why Tailscale asks`}</button>
             </div>
-            {approvalError ? <p className="host-setup__problem" role="alert">{approvalError}</p> : null}
+            {approvalError ? <p className={typeof approvalError === 'string' ? 'host-setup__problem' : 'host-setup__problem tt-paragraph'} role="alert">{shownWords(approvalError)}</p> : null}
           </div></div> : null}
           {state === 'active' && question ? <div className="host-setup__detail">{question}</div> : null}
           {state === 'failed' && error ? <div className="host-setup__detail"><div className="hosts-notice hosts-notice--error host-setup__card" role="alert">
-            <p>{error}</p>
+            <p className={typeof error === 'string' ? undefined : 'tt-paragraph'}>{shownWords(error)}</p>
             {host?.fix ? <FixCommand fix={host.fix} /> : null}
             {offer}
           </div></div> : null}
@@ -207,9 +229,9 @@ export function HostSetupChecklist({ name, summary, host, outcome, error, approv
       })}
       {tailnet ? <TailnetStep view={tailnet} name={name} address={host?.tailnetAddress} /> : null}
     </ol>
-    {outcome === 'connecting' && error && !agent ? <div className="hosts-notice hosts-notice--error host-setup__card" role="alert"><p>{error}</p></div> : null}
+    {outcome === 'connecting' && error && !agent ? <div className="hosts-notice hosts-notice--error host-setup__card" role="alert"><p className={typeof error === 'string' ? undefined : 'tt-paragraph'}>{shownWords(error)}</p></div> : null}
     {outcome === 'connected' && !agent ? <div className="hosts-notice host-setup__card host-setup__card--done" role="status">
-      <p>{host?.name ?? name} is added and connected{over}. Its projects and threads show in the Threads sidebar with a {host?.name ?? name} badge.</p>
+      <p className="tt-paragraph">{connected}</p>
       {boot}
     </div> : null}
   </div>
@@ -217,8 +239,8 @@ export function HostSetupChecklist({ name, summary, host, outcome, error, approv
 
 /** Each state's title for the tailnet step. */
 function tailnetStepTitle(state: TailnetStepView['state'], name: string): string {
-  return state === 'active' ? `Reaching ${name} over your tailnet…` : state === 'done' ? `Reached ${name} over your tailnet`
-    : state === 'ssh' ? `Could not reach ${name} over your tailnet` : `Reach ${name} over your tailnet`
+  return state === 'active' ? i18n._(msg`Reaching ${name} over your tailnet…`) : state === 'done' ? i18n._(msg`Reached ${name} over your tailnet`)
+    : state === 'ssh' ? i18n._(msg`Could not reach ${name} over your tailnet`) : i18n._(msg`Reach ${name} over your tailnet`)
 }
 
 /**
@@ -231,10 +253,10 @@ function TailnetStep({ view, name, address }: { readonly view: TailnetStepView; 
   return <li data-state={state} aria-current={state === 'active' ? 'step' : undefined}>
     <StepMark state={state} />
     <span className="host-setup__title">{tailnetStepTitle(view.state, name)}</span>
-    {view.state === 'active' ? <div className="host-setup__detail"><p className="host-setup__note">{name} is added. Sotto turns on Tailscale Serve on {name}, on your tailnet only, and tries the address {name} reports. If it doesn’t answer, {name} stays connected over SSH.</p></div> : null}
+    {view.state === 'active' ? <div className="host-setup__detail"><p className="host-setup__note tt-paragraph"><Trans>{name} is added. Sotto turns on Tailscale Serve on {name}, on your tailnet only, and tries the address {name} reports. If it doesn’t answer, {name} stays connected over SSH.</Trans></p></div> : null}
     {view.state === 'done' && address ? <div className="host-setup__detail"><p className="host-setup__note host-setup__address">{address}</p></div> : null}
     {/* The command wraps here rather than scrolling under Copy, so the whole of it shows at the window's smallest size. */}
-    {note?.command ? <div className="host-setup__detail"><div className="hosts-notice hosts-notice--error host-setup__card host-setup__card--wrap"><FixCommand fix={{ text: note.text, command: note.command }} /></div></div>
-      : note ? <div className="host-setup__detail"><p className="host-setup__note">{note.text}</p></div> : null}
+    {note?.command ? <div className="host-setup__detail"><div className="hosts-notice hosts-notice--error host-setup__card host-setup__card--wrap"><FixCommand fix={{ text: note.text, command: note.command }} ours /></div></div>
+      : note ? <div className="host-setup__detail"><p className={view.state === 'ssh' && view.why === 'error' && typeof view.error === 'string' ? 'host-setup__note' : 'host-setup__note tt-paragraph'}>{note.text}</p></div> : null}
   </li>
 }

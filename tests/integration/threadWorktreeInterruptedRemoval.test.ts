@@ -252,3 +252,102 @@ describe('a worktree removal cut off partway (#1297)', () => {
     expect((await registrations(f.project))[1]).toContain('locked Kept on purpose')
   })
 })
+
+describe('removing a worktree that holds dependencies, and the folder a cut-off removal left (#1301)', () => {
+  /** What `git worktree remove` killed at its deadline left: no `.git`, early files gone, part of `node_modules`. */
+  const cutOffByGit = async (path: string, names: readonly string[] = ['.gitignore', 'a.txt', 'b.txt']) => {
+    await rm(join(path, '.git'))
+    for (const name of names) await rm(join(path, name), { recursive: true })
+    await rm(join(path, 'node_modules', 'alpha'), { recursive: true })
+  }
+  const errorRecord = { status: 'error' as const, error: 'Git has locked this worktree or reports an incomplete checkout. Restore the checkout before continuing.' }
+
+  it('deletes dependencies for as long as they take with no Git command running, then gives Git only the `.git` file', async () => {
+    const f = await installedWorktree()
+    let running = 0
+    const seen: string[][] = []
+    const counting: RunGit = async (cwd, args, options) => {
+      if (args[0] === 'worktree' && args[1] === 'remove') seen.push(await readdir(f.a.path!))
+      running++
+      try { return await git(cwd, args, options) } finally { running-- }
+    }
+    // The deletion is held for as long as the test likes, as a 1.4 GB `node_modules` on a slow disk holds it.
+    let entered!: () => void, release!: () => void
+    const inside = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
+    const slow = new ThreadWorktrees(f.root, counting, undefined, async root => { entered(); await gate; await removeFolderContents(root, { keep: new Set(['.git']) }) })
+    const timer = vi.spyOn(globalThis, 'setTimeout')
+    try {
+      const reclaiming = slow.reclaim(f.a, { automatic: true })
+      await inside
+      // No Git process runs while Sotto deletes, so no Git deadline is counting down.
+      expect(running).toBe(0)
+      expect((await registrations(f.project))[1]).toContain(`locked ${REMOVING_LOCK_REASON}`)
+      const armed = timer.mock.calls.length
+      release()
+      expect((await reclaiming).reclaimedAt).toBeTruthy()
+      // Git's own removal, of the `.git` file alone, has no deadline to be cut off by either.
+      expect(timer.mock.calls.slice(armed).some(call => typeof call[1] === 'number' && call[1] >= 30_000)).toBe(false)
+    } finally { timer.mockRestore() }
+    expect(seen).toEqual([['.git']])
+    await expect(lstat(f.a.path!)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await registrations(f.project)).toHaveLength(1)
+  })
+
+  it('unlinks a junction in node_modules when it finishes a removal, and leaves the folder it led to whole', async () => {
+    const f = await installedWorktree()
+    await expect(new ThreadWorktrees(f.root, git, undefined, stopped).reclaim(f.a, { automatic: true })).rejects.toThrow()
+    // A link made after the checks, as a crash between the lock and the deletion could leave one.
+    const outside = join(f.root, 'real-install'); await mkdir(join(outside, 'dep'), { recursive: true })
+    await writeFile(join(outside, 'dep', 'index.js'), 'the real install')
+    await symlink(outside, join(f.a.path!, 'node_modules', 'linked'), 'junction')
+    expect((await f.service.resumeRemoval(f.a)).reclaimedAt).toBeTruthy()
+    await expect(lstat(f.a.path!)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await readFile(join(outside, 'dep', 'index.js'), 'utf8')).toBe('the real install')
+  })
+
+  it('puts back a folder Git’s cut-off removal left, so a thread whose record turned to an error can send again', async () => {
+    const f = await installedWorktree()
+    const branch = f.a.branch!
+    await cutOffByGit(f.a.path!)
+    // A send puts a missing or broken folder back before the turn, from an error record too.
+    const sent = await f.service.inspect(await f.service.restore({ ...f.a, ...errorRecord }))
+    expect(sent).toMatchObject({ status: 'ready', error: undefined, branch, dirty: false })
+    expect(await readFile(join(f.a.path!, 'a.txt'), 'utf8')).toBe('a.txt committed')
+    expect((await registrations(f.project))[1]).not.toMatch(/locked|prunable/u)
+    // The thread works in it again.
+    await writeFile(join(await f.service.workingDirectory(sent), 'c.txt'), 'after the repair')
+    await git(f.a.path!, ['add', 'c.txt']); await commit(f.a.path!, 'After the repair')
+    expect((await git(f.project, ['log', '-1', '--format=%s', branch])).trim()).toBe('After the repair')
+  })
+
+  it('keeps untracked and changed files as they are while it puts the missing ones back', async () => {
+    const f = await installedWorktree()
+    // Files sorting after node_modules outlive Git's cut-off removal.
+    await writeFile(join(f.a.path!, 'z.txt'), 'z.txt changed, not committed')
+    await writeFile(join(f.a.path!, 'notes.md'), 'my own notes')
+    await cutOffByGit(f.a.path!)
+    const ready = await f.service.ensure({ ...f.a, ...errorRecord })
+    expect(ready).toMatchObject({ status: 'ready', error: undefined, dirty: true })
+    expect(await readFile(join(f.a.path!, 'z.txt'), 'utf8')).toBe('z.txt changed, not committed')
+    expect(await readFile(join(f.a.path!, 'notes.md'), 'utf8')).toBe('my own notes')
+    expect(await readFile(join(f.a.path!, 'a.txt'), 'utf8')).toBe('a.txt committed')
+    expect((await git(f.a.path!, ['status', '--porcelain'])).split(/\r?\n/u).filter(Boolean).sort()).toEqual([' M z.txt', '?? notes.md'])
+  })
+
+  it('refuses, and overwrites nothing, when a file of the user’s stands where Git puts back a folder', async () => {
+    const f = await installedWorktree()
+    await mkdir(join(f.a.path!, 'docs')); await writeFile(join(f.a.path!, 'docs', 'guide.md'), 'committed guide')
+    await git(f.a.path!, ['add', 'docs']); await commit(f.a.path!, 'Docs')
+    await cutOffByGit(f.a.path!, ['docs'])
+    await writeFile(join(f.a.path!, 'docs'), 'a file of mine called docs')
+    await expect(f.service.resumeRemoval(f.a)).rejects.toThrow('docs is in the way of the files Git puts back, and Sotto left it as it is. Move it out of the folder, then choose Refresh to try again.')
+    expect(await readFile(join(f.a.path!, 'docs'), 'utf8')).toBe('a file of mine called docs')
+    // The repair keeps its lock, so nothing sends into the folder until it is done.
+    expect((await registrations(f.project))[1]).toContain(`locked ${REPAIRING_LOCK_REASON}`)
+    await expect(f.service.ensure({ ...f.a, ...errorRecord })).rejects.toThrow('docs is in the way')
+    await rename(join(f.a.path!, 'docs'), join(f.a.path!, 'docs-mine'))
+    expect(await f.service.ensure({ ...f.a, ...errorRecord })).toMatchObject({ status: 'ready', error: undefined })
+    expect(await readFile(join(f.a.path!, 'docs', 'guide.md'), 'utf8')).toBe('committed guide')
+    expect(await readFile(join(f.a.path!, 'docs-mine'), 'utf8')).toBe('a file of mine called docs')
+  })
+})

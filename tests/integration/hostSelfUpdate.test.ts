@@ -1,13 +1,12 @@
 // @vitest-environment node
-import { execFile, spawn, type ChildProcess } from 'node:child_process'
-import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { spawn, type ChildProcess } from 'node:child_process'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { delimiter, join, resolve } from 'node:path'
-import { isBuiltin } from 'node:module'
-import { build } from 'vite'
+import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import { collectLaunchScript as collect, launchScriptChild } from '../fixtures/launchScriptRunner'
 import { hostRelease, localArchiveName, releasesPage, sha256, sidecar, tarGz } from '../fixtures/hostArchive'
+import { buildSelfUpdatingHost, CLEAN_UP_TIMEOUT_MS, installSelfUpdatingHost, stopEverythingIn } from '../fixtures/selfUpdatingHostBuild'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { hostLaunchTimings, HOST_STOP_DRAIN_MS, HOST_READY_TIMEOUT_MS } from '../../src/shared/hostLaunchTimings'
@@ -22,35 +21,12 @@ import type { SocketFrames } from '../../src/host/socketFrames'
 // rollback starts once more. A run that is not stuck never reaches this.
 vi.setConfig({ testTimeout: HOST_STOP_DRAIN_MS + 3 * HOST_READY_TIMEOUT_MS + 60_000 })
 const OLD = '9.9.8', NEW = '9.9.9', FILE = localArchiveName(NEW)
-let built: { directory: string; source: string } | undefined
+let built: { readonly directory: string; readonly source: string } | undefined
 const roots: string[] = [], pages: { close(): Promise<void> }[] = [], raws: SocketFrames[] = [], children: ChildProcess[] = []
 
-beforeAll(async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'sotto-self-update-build-'))
-  await build({ configFile: false, logLevel: 'silent', define: { 'require.main': 'undefined' }, ssr: { noExternal: true },
-    build: { ssr: resolve('tests/fixtures/selfUpdatingHost.ts'), target: 'node24', outDir: directory, emptyOutDir: true,
-      rollupOptions: { external: id => isBuiltin(id), output: { format: 'cjs', entryFileNames: 'index.js' } } } })
-  built = { directory, source: await readFile(join(directory, 'index.js'), 'utf8') }
-}, 180_000)
+beforeAll(async () => { built = await buildSelfUpdatingHost() }, 180_000)
 afterAll(async () => { if (built) await rm(built.directory, { recursive: true, force: true }) })
 
-/**
- * Every process this test started is stopped: the hosts, the restart that outlives the host that started it, and anything
- * else whose command line names the test's own folder. Leftover hosts from launch tests have been found running for days.
- */
-async function stopEverythingIn(root: string): Promise<void> {
-  const pids = await new Promise<number[]>(done => {
-    if (process.platform === 'win32') {
-      const filter = `$_.CommandLine -and $_.CommandLine.Contains('${root.replaceAll("'", "''")}')`
-      execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `Get-CimInstance Win32_Process | Where-Object { ${filter} } | ForEach-Object { $_.ProcessId }`],
-        { windowsHide: true, encoding: 'utf8' }, (_error, stdout) => done(String(stdout ?? '').split(/\s+/u).map(Number).filter(pid => Number.isInteger(pid) && pid > 0)))
-    } else {
-      execFile('ps', ['-axo', 'pid=,command='], { encoding: 'utf8' }, (_error, stdout) => done(String(stdout ?? '').split('\n')
-        .filter(line => line.includes(root)).map(line => Number(line.trim().split(/\s+/u)[0])).filter(pid => Number.isInteger(pid) && pid > 0)))
-    }
-  })
-  for (const pid of pids) if (pid !== process.pid) { try { process.kill(pid, 'SIGKILL') } catch { /* already gone */ } }
-}
 afterEach(async () => {
   for (const frames of raws.splice(0)) frames.close()
   for (const child of children.splice(0)) if (child.exitCode === null) child.kill('SIGKILL')
@@ -59,20 +35,14 @@ afterEach(async () => {
     await stopEverythingIn(root)
     await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }).catch(() => undefined)
   }
-})
+}, CLEAN_UP_TIMEOUT_MS)
 
 /** forge's host as an SSH launch leaves it: a flat install of `OLD`, started by the launch script, with ssh on its path recording any use. */
 async function installedHost(publish: Map<string, Uint8Array | string>, hold?: Parameters<typeof releasesPage>[2]) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-self-update-')); roots.push(root)
-  const install = join(root, 'sotto-host'), data = join(root, 'data'), bin = join(root, 'bin'), sshUsed = join(root, 'ssh-used')
-  await mkdir(join(install, 'host'), { recursive: true }); await mkdir(bin)
-  await copyFile(join(built!.directory, 'index.js'), join(install, 'host', 'index.js'))
-  await writeFile(join(install, 'package.json'), JSON.stringify({ name: 'sotto-host', version: OLD }))
-  await writeFile(join(bin, 'ssh'), `#!/bin/sh\necho used > '${sshUsed}'\nexit 255\n`, { mode: 0o755 })
-  await writeFile(join(bin, 'ssh.cmd'), `@echo used > "${sshUsed}"\r\n@exit /b 255\r\n`)
+  const { install, data, sshUsed, env: installEnv } = await installSelfUpdatingHost(root, built!.directory, OLD)
   const page = await releasesPage(publish, 0, hold); pages.push(page)
-  const pathKey = Object.keys(process.env).find(key => key.toUpperCase() === 'PATH') ?? 'PATH'
-  const env = { ...process.env, [pathKey]: bin + delimiter + (process.env[pathKey] ?? ''), SOTTO_TEST_HOST_RELEASES_URL: page.url }
+  const env = { ...installEnv, SOTTO_TEST_HOST_RELEASES_URL: page.url }
   const configuration = { installPath: install, dataDirectory: data, remotePort: 0, ...hostLaunchTimings() }
   const script = async (operation: Record<string, unknown>): Promise<Record<string, unknown>> => {
     const outcome = await collect(launchScriptChild({ ...configuration, ...operation }, env, child => children.push(child)))
@@ -145,7 +115,7 @@ it('downloads, installs and restarts into a newer release over its socket with n
   const again = await connect(host.data, host.paired.token)
   expect(again.hello.sottoVersion).toBe(NEW)
   await vi.waitFor(async () => expect(await again.update({ action: 'outcome' })).toEqual({ type: 'update-outcome', running: NEW,
-    restart: { state: 'finished', version: NEW, result: { type: 'ready', hostId: host.hostId, pid: next.pid } } }), { timeout: 10_000 })
+    restart: { state: 'finished', version: NEW, attempt: expect.stringMatching(/^[a-f0-9]{16}$/u), result: { type: 'ready', hostId: host.hostId, pid: next.pid } } }), { timeout: 10_000 })
   // It runs the newer release now, so the same version is refused rather than installed again.
   expect(await again.update({ action: 'fetch', version: NEW })).toEqual({ type: 'error', reason: 'update-invalid' })
   await expect(readFile(host.sshUsed)).rejects.toMatchObject({ code: 'ENOENT' })
@@ -162,7 +132,7 @@ it('starts the old version again when the new one will not start, and says so th
   expect(back.sottoVersion).toBe(OLD)
   const again = await connect(host.data, host.paired.token)
   await vi.waitFor(async () => expect(await again.update({ action: 'outcome' })).toEqual({ type: 'update-outcome', running: OLD,
-    restart: { state: 'finished', version: NEW, result: { type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' } } }), { timeout: 10_000 })
+    restart: { state: 'finished', version: NEW, attempt: expect.stringMatching(/^[a-f0-9]{16}$/u), result: { type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' } } }), { timeout: 10_000 })
   await expect(readFile(join(host.install, 'current'))).rejects.toMatchObject({ code: 'ENOENT' })
 })
 

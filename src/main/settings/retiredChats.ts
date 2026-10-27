@@ -1,6 +1,9 @@
 import { readFile, readdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
+import { i18n } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
 import { z } from 'zod'
+
 import { agentCommandSchema, agentMessageSchema, agentRequestSchema, agentThreadSchema } from '../../shared/agents'
 import { agentSkillReferencesSchema } from '../../shared/agentSkills'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -22,8 +25,8 @@ const chatSchema = agentThreadSchema.omit({ projectId: true, workingDirectory: t
 const savedSchema = z.object({ selectedChatId: chatSchema.shape.id.nullable(), chats: z.array(chatSchema) })
   .refine(saved => new Set(saved.chats.map(chat => chat.id)).size === saved.chats.length, 'Personal chat IDs must be unique.')
 type Saved = z.infer<typeof savedSchema>
-const unreadable = 'Local history is off, but saved Chats could not be read safely. The original personal-chat/chats.json is unchanged. Repair that file and save Settings again.'
-const failed = 'Local history is off, but saved Chats could not be cleared. Restore access to personal-chat/chats.json and save Settings again.'
+const unreadable = msg`Local history is off, but saved Chats could not be read safely. The original personal-chat/chats.json is unchanged. Repair that file and save Settings again.`
+const failed = msg`Local history is off, but saved Chats could not be cleared. Restore access to personal-chat/chats.json and save Settings again.`
 
 /** Local files only. This owns no provider, replay, navigation or conversation operations. */
 export class RetiredChatHistory {
@@ -55,14 +58,14 @@ export class RetiredChatHistory {
       let source: string
       try { source = await readFile(this.path, 'utf8') }
       catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error(unreadable, { cause: error })
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error(i18n._(unreadable), { cause: error })
         // No primary is needed to discard abandoned writes, and a missing directory stays missing.
         if (this.historyEnabled()) return
-        try { await this.clearAbandonedCopies() } catch { throw new Error(failed) }
+        try { await this.clearAbandonedCopies() } catch { throw new Error(i18n._(failed)) }
         return
       }
       let saved: Saved
-      try { saved = savedSchema.parse(JSON.parse(source)) } catch { throw new Error(unreadable) }
+      try { saved = savedSchema.parse(JSON.parse(source)) } catch { throw new Error(i18n._(unreadable)) }
       for (const chat of saved.chats) {
         chat.messages = []; chat.requests = []; chat.title = 'Personal chat'; delete chat.activities
         for (const submission of chat.submissions) { submission.text = ''; submission.skills = [] }
@@ -81,7 +84,7 @@ export class RetiredChatHistory {
         // A killed atomic write can retain old content. Only this store's exact temporary names are removed,
         // after its primary has been read safely; native histories and other files remain provider-owned.
         await this.clearAbandonedCopies()
-      } catch { throw new Error(failed) }
+      } catch { throw new Error(i18n._(failed)) }
     })
     this.writing = work
     return work

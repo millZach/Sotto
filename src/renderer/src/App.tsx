@@ -1,4 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { i18n, type MessageDescriptor } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 
 import { speechModelSummary } from './components/SpeechModelStatus'
 import { PARAKEET_V3, sottoSpeechModel, type SpeechModelOption, type SpeechModelStatus } from '../../shared/speechModel'
@@ -53,18 +56,18 @@ import { StartingScreenGate } from './features/starting/StartingScreen'
 import { appearancePreview, applyAppearance, systemPrefersDark, useAppearancePreviewVersion, useSystemPrefersDark } from './state/appearance'
 
 const recoveryMessages = {
-  DESKTOP_CLIPBOARD_UNAVAILABLE: 'Sotto could not use wl-clipboard. It used its own clipboard instead, so other apps may not see the text. Install wl-clipboard, then copy again.',
-  RETIRED_CHAT_HISTORY_NOT_CLEARED: 'Saved chat history could not be fully cleared. Some local chat data was left in place. Repair local storage, then save Settings or restart Sotto to try again.',
-  ANSWER_HISTORY_NOT_CLEARED: 'Saved answer cleanup could not finish. The original file was preserved. Repair local storage, then restart Sotto to try again.',
-  REMOTE_DRAFT_STORAGE_NOT_UPDATED: 'Unsent remote draft storage could not be updated. Draft text may not be saved, and older disk copies may remain. Keep a copy before quitting. Repair local storage, then save Settings or restart Sotto to try again.',
-  REMOTE_DRAFTS_UNREADABLE: 'Unsent remote drafts could not be read. The original file was preserved. Repair local storage, then restart Sotto to try again.',
-  OPENROUTER_KEY_MIGRATION_FAILED: 'The OpenRouter key could not be stored securely. Enter it again in Settings → Cleanup.',
-  SETTINGS_RECOVERED: 'Sotto restored default settings after a local settings file could not be read. The original file was preserved.',
-  CREDENTIALS_RECOVERED: 'Sotto could not read its saved keys. The encrypted file was preserved. Add your keys again in Settings.',
-  HISTORY_RECOVERED: 'Sotto started with an empty history after its local history file could not be read. The original file was preserved.',
-  ACCESSIBILITY_PERMISSION_REQUIRED: 'Sotto copied the transcript instead of pasting it. Automatic paste needs Sotto allowed in System Settings > Privacy & Security > Accessibility, and allowed to control System Events under System Settings > Privacy & Security > Automation. After an update, if paste still fails, remove Sotto from the Accessibility list and add it again.',
-  AUTOMATION_PERMISSION_REQUIRED: 'Sotto copied the transcript instead of pasting it. Paste it with ⌘V. Automatic paste needs Sotto allowed to control System Events in System Settings > Privacy & Security > Automation.',
-} as const satisfies Record<Exclude<RecoveryNotice['code'], 'OPENROUTER_KEY_UNREADABLE'>, string>
+  DESKTOP_CLIPBOARD_UNAVAILABLE: msg`Sotto could not use wl-clipboard. It used its own clipboard instead, so other apps may not see the text. Install wl-clipboard, then copy again.`,
+  RETIRED_CHAT_HISTORY_NOT_CLEARED: msg`Saved chat history could not be fully cleared. Some local chat data was left in place. Repair local storage, then save Settings or restart Sotto to try again.`,
+  ANSWER_HISTORY_NOT_CLEARED: msg`Saved answer cleanup could not finish. The original file was preserved. Repair local storage, then restart Sotto to try again.`,
+  REMOTE_DRAFT_STORAGE_NOT_UPDATED: msg`Unsent remote draft storage could not be updated. Draft text may not be saved, and older disk copies may remain. Keep a copy before quitting. Repair local storage, then save Settings or restart Sotto to try again.`,
+  REMOTE_DRAFTS_UNREADABLE: msg`Unsent remote drafts could not be read. The original file was preserved. Repair local storage, then restart Sotto to try again.`,
+  OPENROUTER_KEY_MIGRATION_FAILED: msg`The OpenRouter key could not be stored securely. Enter it again in Settings → Cleanup.`,
+  SETTINGS_RECOVERED: msg`Sotto restored default settings after a local settings file could not be read. The original file was preserved.`,
+  CREDENTIALS_RECOVERED: msg`Sotto could not read its saved keys. The encrypted file was preserved. Add your keys again in Settings.`,
+  HISTORY_RECOVERED: msg`Sotto started with an empty history after its local history file could not be read. The original file was preserved.`,
+  ACCESSIBILITY_PERMISSION_REQUIRED: msg`Sotto copied the transcript instead of pasting it. Automatic paste needs Sotto allowed in System Settings > Privacy & Security > Accessibility, and allowed to control System Events under System Settings > Privacy & Security > Automation. After an update, if paste still fails, remove Sotto from the Accessibility list and add it again.`,
+  AUTOMATION_PERMISSION_REQUIRED: msg`Sotto copied the transcript instead of pasting it. Paste it with ⌘V. Automatic paste needs Sotto allowed to control System Events in System Settings > Privacy & Security > Automation.`,
+} as const satisfies Record<Exclude<RecoveryNotice['code'], 'OPENROUTER_KEY_UNREADABLE'>, MessageDescriptor>
 
 // The macOS pane that holds the permission a notice is about.
 const recoveryPanes: Partial<Record<RecoveryNotice['code'], SystemSettingsPane>> = {
@@ -75,7 +78,7 @@ const recoveryPanes: Partial<Record<RecoveryNotice['code'], SystemSettingsPane>>
 function recoveryToast(notice: RecoveryNotice, platform: SottoPlatform): ToastMessage {
   const text = notice.code === 'OPENROUTER_KEY_UNREADABLE'
     ? platformCopy(platform).openRouterKeyUnreadable
-    : recoveryMessages[notice.code]
+    : i18n._(recoveryMessages[notice.code])
   const pane = recoveryPanes[notice.code]
   return {
     id: notice.code,
@@ -117,7 +120,7 @@ function chosenSpeechModelName(models: readonly SpeechModelOption[] | null, choi
   const chosen = models?.find((model) => model.id === choice)
   if (chosen !== undefined) return chosen.name
   if (choice === null) return PARAKEET_V3.name
-  return sottoSpeechModel(choice)?.name ?? 'The speech model'
+  return sottoSpeechModel(choice)?.name ?? i18n._(msg`The speech model`)
 }
 
 function FooterStatus({ navigation, dictationOn, speechModel, speechModelName }: {
@@ -127,17 +130,19 @@ function FooterStatus({ navigation, dictationOn, speechModel, speechModelName }:
   readonly speechModel: SpeechModelStatus | null
   readonly speechModelName: string
 }): ReactNode {
+  const { t } = useLingui()
   switch (navigation) {
-    case 'usage': return 'Numeric usage stays on each computer.'
-    case 'memory': return 'Your preferences, with their history.'
-    case 'settings': return 'Changes save as you make them.'
-    case 'help': return 'Shortcuts, privacy, and troubleshooting.'
+    case 'usage': return t`Numeric usage stays on each computer.`
+    case 'memory': return t`Your preferences, with their history.`
+    case 'settings': return t`Changes save as you make them.`
+    case 'help': return t`Shortcuts, privacy, and troubleshooting.`
     default: return dictationOn ? speechModelSummary(speechModel, speechModelName) : null
   }
 }
 
 export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), watcherBridge = window.sotto?.watcher }: AppProps): ReactNode {
   const app = useApp()
+  const { t } = useLingui()
   const watcherEnabled = useWatcherEnabled()
   const dictationOn = useDictationOn()
   const usageEnabled = useOwlFeature('usage')
@@ -205,7 +210,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         <strong>{notice.title}</strong>
         {notice.detail === null ? null : <> {notice.detail}</>}
         {link !== null && open !== undefined
-          ? <> <button type="button" className="tt-toast__link tt-focusable" onClick={() => { void open(link) }}>Read more</button></>
+          ? <> <button type="button" className="tt-toast__link tt-focusable" onClick={() => { void open(link) }}><Trans>Read more</Trans></button></>
           : null}
       </>
     )
@@ -368,13 +373,13 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
 
   let content: ReactNode
   if (app.status === 'loading') {
-    content = <main className="app-loading" aria-busy="true"><p role="status">Preparing Sotto...</p></main>
+    content = <main className="app-loading" aria-busy="true"><p className="tt-paragraph" role="status"><Trans>Preparing Sotto...</Trans></p></main>
   } else if (app.status === 'unavailable' || app.settings === null) {
     content = (
       <main className="app-unavailable">
         <Card>
-          <h1>Sotto could not finish starting</h1>
-          <p>Your data was not changed. Close and reopen Sotto, then try again.</p>
+          <h1><Trans>Sotto could not finish starting</Trans></h1>
+          <p className="tt-paragraph"><Trans>Your data was not changed. Close and reopen Sotto, then try again.</Trans></p>
         </Card>
       </main>
     )
@@ -461,6 +466,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           onResetSettings={app.actions.resetSettings}
           onClearHistory={app.actions.clearHistory}
           onCheckOpenRouterKey={app.actions.checkOpenRouterKey}
+          onListOpenRouterModels={app.actions.listOpenRouterModels}
           speechModel={app.speechModel}
           onDownloadSpeechModel={downloadSpeechModel}
           speechModels={app.speechModels}
@@ -530,8 +536,8 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           <ConfirmationDialog
             title={pendingInstall.title}
             description={pendingInstall.description}
-            confirmLabel="Restart and install"
-            cancelLabel="Not now"
+            confirmLabel={t`Restart and install`}
+            cancelLabel={t`Not now`}
             danger={false}
             onConfirm={async () => { await updateFlow.confirmInstall(); return true }}
             onCancel={updateFlow.cancelInstall}
@@ -549,7 +555,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           ...(themeNotice === null ? [] : [themeNotice]),
           ...(settingsNotice === null ? [] : [{
             id: 'settings-save', tone: 'error' as const,
-            message: <>{settingsNotice} <button type="button" className="tt-toast__link tt-focusable" aria-label="Dismiss dictionary save notice" onClick={() => setSettingsNotice(null)}>Dismiss</button></>,
+            message: <>{settingsNotice} <button type="button" className="tt-toast__link tt-focusable" aria-label={t`Dismiss dictionary save notice`} onClick={() => setSettingsNotice(null)}><Trans>Dismiss</Trans></button></>,
           }]),
           ...updateToasts,
         ]} />

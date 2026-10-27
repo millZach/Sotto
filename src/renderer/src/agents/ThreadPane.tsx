@@ -1,7 +1,9 @@
-import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { Trans, useLingui } from '@lingui/react/macro'
+import { useMark } from '../components/marks'
 import { Archive, ArchiveRestore, Columns2, CornerDownRight, Pencil, Plug, Shrink, Sparkles, X } from 'lucide-react'
-import { capabilitiesForThread, hostForThread, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
-import { isThreadArchived, isThreadClosed } from '../../../shared/threadActivity'
+import { capabilitiesForThread, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
+import { isThreadArchived, isThreadClosed, threadOrnamentAllowed } from '../../../shared/threadActivity'
 import { continueThreadRefusal } from '../../../shared/continueThread'
 import { ThreadNameField } from './ThreadName'
 import type { AgentConnection } from './AgentContext'
@@ -14,8 +16,9 @@ import { CloudIphoneRequest } from './requests/CloudIphoneRequest'
 import { PrototypeReady } from './requests/PrototypeReady'
 import { RequestDraftRecovery } from './requests/RequestDraftRecovery'
 import { requestAnswerOwnerKey, requestAnswerStore } from './requests/requestAnswers'
-import { threadRequestBlocked, threadRequestOwner } from './requests/threadRequests'
-import { answeredChoices, answerWords } from './requests/answeredChoices'
+import { threadRequestBlocked, threadRequestCheck, threadRequestOwner, threadRequestSubmit } from './requests/threadRequests'
+
+export { checkedOnConnectedHost } from './requests/threadRequests'
 import { useWatcherEnabled } from '../state/watcherFeature'
 import { ThreadComposer } from './ThreadComposer'
 import { FailedTurnNotice, failedTurnExplanation } from './FailedTurnNotice'
@@ -23,19 +26,23 @@ import { isThreadFailureText } from '../../../shared/threadFailures'
 import { usePendingSettings } from './pendingSettings'
 import { hasDraftContent, submissionStatus, useSubmissions, type ThreadDraftStore } from './threadDraftStore'
 import { ThreadBranchNotice, useSettleThread } from './ThreadWorkingCopy'
+import { useDeleteThread } from './DeleteThread'
 import type { ThreadRow } from './threadFacts'
 import { ThreadTranscript } from './ThreadTranscript'
 import { ThreadWebLinks } from '../tools/webLinks'
+import { RunCommands } from '../tools/runCommand'
 import { ThreadBabysitting, ThreadMonitor, ThreadHeld, ThreadWaitingCommand, ThreadWorking, useHeldAction } from './ThreadMonitor'
 import { ornamentPose } from './threadActivityView'
 import { compactionBusy, compactionOffered, ThreadCompaction } from './ThreadCompaction'
 import { useWatchedThread } from '../watcher/watcherRoom'
 import { WatchedBadge } from '../watcher/WatcherOwl'
-import { WatchedNote, WatchHeaderToggle, WatchToast } from '../watcher/WatchControls'
+import { WatchHeaderToggle, WatchToast } from '../watcher/WatchControls'
 import { prefersReducedMotion } from '../state/reducedMotion'
-import { DelegatedBy, DelegationComposerNote } from './DelegationCards'
+import { DelegatedBy, DelegationComposerNote } from './DelegatedWork'
 import { ContinueComposerNote, ContinueNow } from './ContinueThread'
 import { continueChoiceFor, continueModels, continueStore, providerDefaults, useContinueEnabled } from './continuations'
+import { useOwlFeature } from '../state/owlFeature'
+import { composerSlim, slimMoving, useSlimMotion } from './slimComposer'
 
 type Command = AgentConnection['command']
 
@@ -83,23 +90,65 @@ function useComposerLift(slot: HTMLElement | null, compose: React.RefObject<HTML
 }
 
 /**
- * The composer floats over the transcript's foot: the pane learns its height, so the transcript scrolls under it and
- * keeps room to bring its last line clear of the card.
+ * From the top of the first thing drawn in the composer to its foot: what of it shows, slim or full. Read from the layout
+ * rather than the screen, so the card's move between the two does not count.
  */
-function useComposerFloat(compose: React.RefObject<HTMLDivElement | null>): void {
+function shownHeight(compose: HTMLElement): number {
+  let top = compose.offsetHeight
+  for (const child of compose.children) {
+    if (!(child instanceof HTMLElement) || child.offsetHeight === 0) continue
+    // The card's top margin is the creature's room above it.
+    top = Math.min(top, child.offsetTop - (parseFloat(getComputedStyle(child).marginTop) || 0))
+  }
+  return Math.max(0, compose.offsetHeight - top)
+}
+
+/**
+ * The composer floats over the transcript's foot: the pane learns its height, so the transcript scrolls under it and
+ * keeps room to bring its last line clear of the card. While the composer is slim (ADR-0125) it keeps that room, so the
+ * transcript neither moves nor changes size; the pane learns how much of it shows, for the Jump button, and keeps the
+ * card's full height, which Watcher's night scene lays out by. While the card moves between the two the composer keeps
+ * that room too (slimComposer.ts), and nothing is read until the card has settled.
+ */
+function useComposerFloat(compose: React.RefObject<HTMLDivElement | null>, slim: boolean): () => void {
+  const measure = useRef<() => void>(() => undefined)
   useLayoutEffect(() => {
     const element = compose.current
     const pane = element?.parentElement
     if (!element || !pane || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(() => pane.style.setProperty('--thread-compose-measured', `${element.offsetHeight}px`))
-    observer.observe(element)
-    return () => { observer.disconnect(); pane.style.removeProperty('--thread-compose-measured') }
+    measure.current = () => {
+      const card = element.querySelector<HTMLElement>(':scope > .thread-prompt')
+      if (card != null && slimMoving(card)) return
+      // The composer's height to the fraction of a pixel, as it is laid out. The transcript fills what the composer's room
+      // leaves, so a room rounded up past the composer, as whole pixels at 150% display scaling can be, runs the transcript
+      // past the pane's foot and gives the pane a scroll bar of its own.
+      pane.style.setProperty('--thread-compose-measured', `${element.getBoundingClientRect().height}px`)
+      pane.style.setProperty('--thread-compose-shown', `${shownHeight(element)}px`)
+      if (card != null && !element.hasAttribute('data-slim')) {
+        // The full card's height and how far its foot stands above the composer's, to the fraction of a pixel, so
+        // Watcher's night scene keeps the card's place exactly while it is slim, whatever the row under it does.
+        const box = card.getBoundingClientRect()
+        pane.style.setProperty('--thread-prompt-full', `${box.height}px`)
+        pane.style.setProperty('--thread-prompt-foot', `${element.getBoundingClientRect().bottom - box.bottom}px`)
+      }
+    }
+    const observer = new ResizeObserver(() => measure.current())
+    // The border box: a short pane changes only the composer's padding, which its content box does not see.
+    observer.observe(element, { box: 'border-box' })
+    return () => {
+      observer.disconnect()
+      measure.current = () => undefined
+      for (const name of ['--thread-compose-measured', '--thread-compose-shown', '--thread-prompt-full', '--thread-prompt-foot']) pane.style.removeProperty(name)
+    }
   }, [compose])
+  // Slim or full, the composer's own box keeps its height; what shows of it changes.
+  useLayoutEffect(() => { measure.current() }, [slim])
+  return useCallback(() => measure.current(), [])
 }
 
 /**
- * The thread's pending requests, each answered by its own ID in this pane and nowhere else on the page.
- * A plain question points at the composer; everything the provider structured is answered in place.
+ * The thread's pending requests, each answered by its own ID through the one store every surface sends by
+ * (ADR-0135). A plain question points at the composer; everything the provider structured is answered in place.
  */
 function ThreadRequests({ row, state, command, onAnswer, kind }: {
   readonly row: ThreadRow; readonly state: AgentState; readonly command: Command; readonly onAnswer: () => void; readonly kind: 'question' | 'permission'
@@ -108,30 +157,20 @@ function ThreadRequests({ row, state, command, onAnswer, kind }: {
   const watcherOn = useWatcherEnabled()
   const thread = row.thread
   const requests = thread.requests.filter(request => request.kind === kind)
-  if (isThreadClosed(thread) || requests.length === 0) return null
+  const shown = !isThreadClosed(thread) && requests.length > 0
+  useMark('questions', kind === 'question' && shown)
+  if (!shown) return null
   const blocked = threadRequestBlocked(row, state)
   return <div className={kind === 'question' ? 'thread-questions' : undefined}>{requests.map(request => {
     return <AgentRequestCard placement={kind === 'question' ? 'composer' : undefined} key={request.id} ownerId={thread.id} ownerTitle={thread.title} request={request} blocked={blocked}
       messageLinks={kind === 'question' ? messageLinks(thread.messages) : []}
       draftOwner={threadRequestOwner(row, state)}
       onWriteAnswer={onAnswer}
-      onSubmit={answer => command({ type: 'answer', threadId: thread.id, requestId: request.id, ...answer }).then(result => {
-        // What main took is kept for this window, so Watcher's line for this request can say what was chosen.
-        if (watcherOn && result !== null && result.error === null) answeredChoices.note(thread.id, request.id, answerWords(request, answer), true)
-        return result === null ? null : { error: result.error }
-      })}
-      onCheck={() => command({ type: 'observe-threads', threadIds: [thread.id] }).then(result => checkedOnConnectedHost(result, thread.id))} />
+      onSubmit={threadRequestSubmit(command, thread, request, watcherOn)}
+      onCheck={() => threadRequestCheck(command, thread.id)} />
   })}</div>
 }
 
-/**
- * Whether Check again read the thread afresh. Main lets a dropped connection pass an observation quietly, so the reply
- * counts only while the thread's host is still connected.
- */
-export function checkedOnConnectedHost(result: AgentState | null, threadId: string): boolean {
-  const checked = result?.host.threads.find(item => item.id === threadId)
-  return result !== null && result.error === null && checked !== undefined && hostForThread(result.host, checked).connected
-}
 
 export interface ThreadPaneProps {
   readonly row: ThreadRow
@@ -174,6 +213,7 @@ export interface ThreadPaneProps {
  * Everything here acts on `row.thread.id`; a split workspace mounts one per open thread.
  */
 export function ThreadPane({ row, state, command, store, focused, promptId, error, onClose, onOpenBeside, workingCopy, actions, notice, drawer, now, watcherHeader, watcherBody, watcherEmpty }: ThreadPaneProps): ReactNode {
+  const { t } = useLingui()
   const [followSignal, setFollowSignal] = useState(0)
   const [renaming, setRenaming] = useState(false)
   const renameReturn = useRef<HTMLElement | null>(null)
@@ -191,7 +231,6 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const [greetingSlot, setGreetingSlot] = useState<HTMLElement | null>(null)
   const compose = useRef<HTMLDivElement>(null)
   const liftComposer = useComposerLift(greetingSlot, compose, row.thread.id)
-  useComposerFloat(compose)
   const submissions = useSubmissions(store)
   // The pane only needs to know whether a draft exists. Subscribing to its text
   // re-renders the transcript and header synchronously on every keystroke.
@@ -199,10 +238,23 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const thread = row.thread
   // Watcher's own pane carries its own header and composer; it is never itself a watched thread.
   const ownPane = watcherHeader !== undefined
+  // The slim composer (ADR-0125; Owl only, and in Watcher's pane only with Watcher on): one line while the user reads
+  // back, full again at the end, on focus or with a draft. The transcript tells the pane only when the reader crosses.
+  const watcherOn = useWatcherEnabled()
+  const slimOn = useOwlFeature('composer-shrink') && (watcherOn || !ownPane)
+  const [readingBack, setReadingBack] = useState(false)
+  const [composeFocused, setComposeFocused] = useState(false)
+  const slim = composerSlim({ enabled: slimOn, readingBack, focused: composeFocused, draft: paneHasDraft,
+    questionWaits: !isThreadClosed(thread) && thread.requests.some(request => request.kind === 'question') })
+  // The pane wears the slim composer as a mark, for the Jump button above it.
+  useMark('slim', slim)
+  // The pane measures the composer's new shape before the card starts moving to it.
+  const measureCompose = useComposerFloat(compose, slim)
+  useSlimMotion(compose, slim, measureCompose)
   const watched = useWatchedThread(thread.id) && !ownPane
   const closed = isThreadClosed(thread)
   const rowConnected = row.connected
-  const ornamentAllowed = rowConnected && !closed && thread.status !== 'error' && thread.requests.length === 0
+  const ornamentAllowed = threadOrnamentAllowed(thread, rowConnected)
   const liveMonitors = ornamentAllowed ? thread.monitoring ?? [] : []
   const liveWork = ornamentAllowed ? thread.backgroundWork ?? [] : []
   const liveCommands = liveWork.filter(task => task.type === 'command')
@@ -264,44 +316,58 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const { settle: settleThread, dialog: settleDialog } = useSettleThread(command)
   /* Renaming is Sotto's own record of the thread: it neither waits for a running turn nor tells the provider. */
   const naming: PaneMenuItem[] = [
-    ...(!isThreadArchived(thread) && !renaming ? [{ id: 'rename', label: 'Rename', icon: <Pencil size={15} aria-hidden="true" />, run: () => { renameReturn.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setRenaming(true) } }] : []),
+    ...(!isThreadArchived(thread) && !renaming ? [{ id: 'rename', label: t({ message: 'Rename', comment: 'Rename the thread.' }), icon: <Pencil size={15} aria-hidden="true" />, run: () => { renameReturn.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setRenaming(true) } }] : []),
     // The thread's own provider writes the name from its first exchange (ADR-0026); a name typed by hand is left
     // alone and offers no rewrite, and neither does a Devin thread, whose provider writes nothing.
     ...(!isThreadArchived(thread) && !renaming && thread.titleSource !== 'user' && providerWritesShortText(thread.providerId)
-      ? [{ id: 'regenerate', label: 'Regenerate title', icon: <Sparkles size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void command({ type: 'regenerate-thread-title', threadId: thread.id }) }] : []),
-    ...(onOpenBeside ? [{ id: 'beside', label: 'Open beside', icon: <Columns2 size={15} aria-hidden="true" />, run: onOpenBeside }] : []),
+      ? [{ id: 'regenerate', label: t`Regenerate title`, icon: <Sparkles size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void command({ type: 'regenerate-thread-title', threadId: thread.id }) }] : []),
+    ...(onOpenBeside ? [{ id: 'beside', label: t`Open beside`, icon: <Columns2 size={15} aria-hidden="true" />, run: onOpenBeside }] : []),
   ]
   // Compaction is offered where it can run: the banner under the composer only ever recommends it.
   const context: PaneMenuItem[] = compactionOffered(capabilities, thread) && rowConnected && !closed && !compactionBusy(thread, threadBusy)
-    ? [{ id: 'compact', label: 'Compact context', icon: <Shrink size={15} aria-hidden="true" />, run: () => void command({ type: 'compact-thread', threadId: thread.id }) }] : []
+    ? [{ id: 'compact', label: t`Compact context`, icon: <Shrink size={15} aria-hidden="true" />, run: () => void command({ type: 'compact-thread', threadId: thread.id }) }] : []
   const shelf: PaneMenuItem[] = row.settledBy === null
-    ? [{ id: 'settle', label: 'Settle', icon: <Archive size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void settleThread(thread, row.project) }]
+    ? [{ id: 'settle', label: t({ message: 'Settle', comment: 'Settle the thread: put it away on the Settled shelf.' }), icon: <Archive size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void settleThread(thread, row.project) }]
     : row.settledBy === 'thread'
-      ? [{ id: 'restore', label: 'Restore', icon: <ArchiveRestore size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void command({ type: 'restore-thread', threadId: thread.id }) }] : []
+      ? [{ id: 'restore', label: t({ message: 'Restore', comment: 'Restore a settled thread to open work.' }), icon: <ArchiveRestore size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void command({ type: 'restore-thread', threadId: thread.id }) }] : []
   // Continue on another provider (ADR-0089; Owl only): the composer begins it, with the model picker open on the other providers.
   const continueOn = useContinueEnabled() && !ownPane && thread.nativeSessionStarted !== false && thread.remoteHost !== true && !isThreadArchived(thread)
     && thread.kind !== 'watcher' && thread.kind !== 'watcher-history'
   const continueTargets = continueOn ? providerDefaults(state, continueModels(state, thread)) : []
   const continueRefusal = continueOn ? continueThreadRefusal(thread) : null
-  const continuing: PaneMenuItem[] = continueTargets.length > 0 ? [{ id: 'continue', label: 'Continue on another provider…', icon: <CornerDownRight size={15} aria-hidden="true" />,
+  const continuing: PaneMenuItem[] = continueTargets.length > 0 ? [{ id: 'continue', label: t`Continue on another provider…`, icon: <CornerDownRight size={15} aria-hidden="true" />,
     disabled: continueRefusal !== null, ...(continueRefusal !== null ? { hint: continueRefusal } : {}),
     run: () => { continueStore.set(thread.id, { ...continueChoiceFor(state, thread, continueTargets[0]!.id, continueStore.get(thread.id)), pick: true }) } }] : []
   const recovery: PaneMenuItem[] = [
-    ...(!rowConnected ? [{ id: 'reconnect', label: 'Reconnect', icon: <Plug size={15} aria-hidden="true" />, disabled: state.connection === 'connecting', run: () => void command({ type: 'connect', ...reconnect }) }] : []),
+    ...(!rowConnected ? [{ id: 'reconnect', label: t`Reconnect`, icon: <Plug size={15} aria-hidden="true" />, disabled: state.connection === 'connecting', run: () => void command({ type: 'connect', ...reconnect }) }] : []),
   ]
+  // Delete thread… (ADR-0140; Owl only): a settled thread's last item, after its own rule, since it cannot be taken back.
+  const { items: removal, dialog: deleteDialog } = useDeleteThread(row, state, command, { ownPane })
   const focusAnswerComposer = (): void => { document.getElementById(promptId)?.focus() }
+  const title = thread.title, provider = row.provider
+  // A key typed in the transcript is the start of a message: the composer takes it, and comes back full to show it.
+  const typeAhead = slimOn ? focusAnswerComposer : undefined
+  // Slim, the disc is pressed where it stands: focus would bring the composer back full and move the disc from under the
+  // pointer before the press lands. A press anywhere else on the slim card puts the caret in it.
+  const pressSlim = (event: React.MouseEvent): void => {
+    const target = event.target as Element
+    if (target.closest('.thread-prompt__actions button') !== null) { event.preventDefault(); return }
+    if (target.closest('.thread-prompt') === null || target.closest('button, a, [contenteditable]') !== null) return
+    event.preventDefault()
+    focusAnswerComposer()
+  }
   return <>
     {ownPane ? watcherHeader : <header className="thread-workspace__head">
       <div className="thread-workspace__title">
         <ProviderMark provider={row.providerId} name={row.provider} size={16} />
         {watched ? <WatchedBadge size={16} /> : null}
         {renaming
-          ? <h2><ThreadNameField title={thread.title} label={`Rename ${thread.title}`} className="thread-workspace__rename tt-focusable"
+          ? <h2><ThreadNameField title={thread.title} label={t`Rename ${title}`} className="thread-workspace__rename tt-focusable"
             onRename={next => void command({ type: 'rename-thread', threadId: thread.id, title: next })} onDone={restore => { restoreRenameFocus.current = restore; setRenaming(false) }} /></h2>
           : <h2>{thread.title}</h2>}
         <span className="thread-workspace__crumb" data-has-working-copy={Boolean(workingCopy) || undefined}><span>{row.project?.title ?? row.provider}</span>{workingCopy}
-          {row.settledBy === 'thread' || row.settledBy === 'project' ? <span className="thread-workspace__tag">Settled</span> : null}
-          {!rowConnected ? <span className="thread-workspace__tag" data-tone="warning">{row.provider} disconnected</span> : null}
+          {row.settledBy === 'thread' || row.settledBy === 'project' ? <span className="thread-workspace__tag"><Trans>Settled</Trans></span> : null}
+          {!rowConnected ? <span className="thread-workspace__tag" data-tone="warning">{t({ message: `${provider} disconnected`, comment: '{provider} is the provider\'s name, such as Codex.' })}</span> : null}
         </span>
       </div>
       <div className="thread-workspace__actions">
@@ -310,20 +376,22 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         {/* T3's Git action: the quick action its status decides, the chevron with the rest (ADR-0027). */}
         {!closed ? <GitActionButton thread={thread} command={command} noticeSlot={gitNoticeSlot} onExplainedError={setGitExplained} /> : null}
         {actions}
-        <PaneMenu groups={[naming, continuing, context, shelf, recovery]} />
+        <PaneMenu groups={[naming, continuing, context, shelf, recovery, removal]} />
       </div>
-      {onClose ? <button type="button" className="pane-action thread-pane__close tt-focusable" data-pane-close aria-label={`Close ${thread.title} pane`} title="Close pane" onClick={onClose}><X size={16} aria-hidden="true" /></button> : null}
+      {onClose ? <button type="button" className="pane-action thread-pane__close tt-focusable" data-pane-close aria-label={t({ message: `Close ${title} pane`, comment: '{title} is a thread\'s title.' })} title={t`Close pane`} onClick={onClose}><X size={16} aria-hidden="true" /></button> : null}
     </header>}
     {/* Delegated by the thread that started this one, a link back (ADR-0081; Owl only). */}
     {ownPane ? null : <DelegatedBy thread={thread} state={state} command={command} />}
     {settleDialog}
+    {deleteDialog}
     {thread.historySaveNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.historySaveNotice}</p> : null}
     {thread.requestNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.requestNotice}</p> : null}
     {error && error !== thread.requestNotice && !deliveryExplains && !answerExplains && !settingsExplains && !turnExplains && error !== toolbarExplained && error !== gitExplained ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
     {ownPane && watcherBody != null ? <div className="thread-transcript">
       {watcherBody}
       <ThreadRequests kind="permission" row={row} state={state} command={command} onAnswer={focusAnswerComposer} />
-    </div> : <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} greetingSlot={greetingSlot} emptyNote={ownPane ? watcherEmpty : undefined}>
+    </div> : <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}>{/* A reply's commands run only in a pane with its own Terminal drawer, never a paired host's thread (ADR-0139; Owl only). */}<RunCommands threadId={thread.id} offered={drawer != null && !thread.remoteHost}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} greetingSlot={greetingSlot} emptyNote={ownPane ? watcherEmpty : undefined}
+      onReadingBack={slimOn ? setReadingBack : undefined} onTypeAhead={typeAhead} onQuoted={focusAnswerComposer}>
       <ThreadRequests kind="permission" row={row} state={state} command={command} onAnswer={focusAnswerComposer} />
       {/* A turn stopped at its limit offers the other providers to continue on (ADR-0089; Owl only). */}
       {ownPane ? null : <ContinueNow thread={thread} state={state} onStart={focusAnswerComposer} />}
@@ -333,9 +401,10 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         live={closed ? [] : thread.requests} provider={row.provider}
         observation={state.connection === 'connecting' ? 'loading' : !rowConnected ? 'disconnected' : thread.historyStatus === 'loading' ? 'loading' : thread.historyStatus === 'error' ? 'unavailable' : 'ready'}
         observed={JSON.stringify([rowConnected, state.connection, thread.historyStatus, thread.status, closed, thread.requests.map(request => [request.id, request.delivery, request.questions])])} />
-    </ThreadTranscript></ThreadWebLinks>}
+    </ThreadTranscript></RunCommands></ThreadWebLinks>}
     <div className="thread-greeting-slot" ref={setGreetingSlot} />
-    <div className="thread-workspace__compose" ref={compose}>
+    <div className="thread-workspace__compose" ref={compose} data-slim={slim || undefined} onMouseDown={slim ? pressSlim : undefined}
+      onFocus={() => setComposeFocused(true)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setComposeFocused(false) }}>
       {/* What a Watch or Stop watching press did, just above the focused pane's composer (Owl only). */}
       {focused ? <WatchToast /> : null}
       {notice}
@@ -352,8 +421,6 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       {/* The row under the composer is compaction's alone. Side by side it keeps one line even when compaction has
           nothing to say, so panes keep their composers at the same height whether or not one has been compacted. */}
       <div className="thread-pane__meta">
-        {/* Said before a send, not after: what watching means here, and Stop watching. */}
-        {ownPane ? null : <WatchedNote threadId={thread.id} title={thread.title} />}
         {/* What Stop also stops, or what a turn here does to the thread that delegated (ADR-0081; Owl only). */}
         {ownPane ? null : <DelegationComposerNote thread={thread} state={state} />}
         {/* Just continued elsewhere: this thread can still be sent to (ADR-0089; Owl only). */}

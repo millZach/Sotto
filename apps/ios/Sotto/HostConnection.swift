@@ -274,10 +274,10 @@ extension HostConnection {
             return .hostRefused(failure.message)
         }
         if route == "/v1/pair" && (400..<500).contains(status) {
-            return .rejected("That code didn't work. Codes work once and last five minutes; get a new one on that computer.")
+            return .rejected(String(localized: "That code didn't work. Codes work once and last five minutes; get a new one on that computer."))
         }
         if status == 401 || status == 403 {
-            return .rejected("This iPhone is no longer paired with \(name). Remove it in Computers and add it again.")
+            return .rejected(String(localized: "This iPhone is no longer paired with \(name). Remove it in Computers and add it again.", comment: "%@ is the computer's name."))
         }
         return .sottoNotRunning(name)
     }

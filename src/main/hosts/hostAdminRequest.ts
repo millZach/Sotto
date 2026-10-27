@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import type { z } from 'zod'
 import type { PressConnection } from './adminConnection'
 
@@ -26,9 +27,9 @@ export async function hostAdminRequest<T extends { readonly hostId: string }>(co
     body: JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(timeoutMs),
   })
   if (response.status === 401 && again) return hostAdminRequest(connection, route, body, answer, hostId, timeoutMs, fetcher, false)
-  if (!response.ok) throw new HostAdminRefused(response.status, response.status === 401 ? 'The host refused the administrative token.' : 'The host refused the request.')
+  if (!response.ok) throw new HostAdminRefused(response.status, response.status === 401 ? t`The host refused the administrative token.` : t`The host refused the request.`)
   const parsed = answer.safeParse(await response.json().catch(() => null))
-  if (!parsed.success) throw new HostAdminRefused(response.status, 'The host answered with something else.')
-  if (parsed.data.hostId !== hostId) throw new Error('The host identity changed.')
+  if (!parsed.success) throw new HostAdminRefused(response.status, t`The host answered with something else.`)
+  if (parsed.data.hostId !== hostId) throw new Error(t`The host identity changed.`)
   return parsed.data
 }

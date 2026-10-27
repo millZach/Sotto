@@ -15,13 +15,13 @@ public enum ThreadState: String, Sendable {
     }
     public var words: String {
         switch self {
-        case .needsAnswer: return "Needs your answer"
-        case .asked: return "Asked you a question"
-        case .working: return "Working"
-        case .waiting: return "Waiting"
-        case .compacting: return "Compacting context"
-        case .failed: return "Turn failed"
-        case .done: return "Done"
+        case .needsAnswer: return String(localized: "Needs your answer", bundle: .module)
+        case .asked: return String(localized: "Asked you a question", bundle: .module)
+        case .working: return String(localized: "Working", bundle: .module, comment: "A thread's state: its agent is at work")
+        case .waiting: return String(localized: "Waiting", bundle: .module, comment: "A thread's state: only background commands are running")
+        case .compacting: return String(localized: "Compacting context", bundle: .module, comment: "A thread's state: the agent is shortening the conversation it remembers")
+        case .failed: return String(localized: "Turn failed", bundle: .module, comment: "A thread's state: its last turn ended with an error")
+        case .done: return String(localized: "Done", bundle: .module, comment: "A thread's state: nothing is running or asked")
         }
     }
     public var workInProgress: Bool { self == .working || self == .waiting || self == .compacting }
@@ -53,9 +53,9 @@ public enum ComputerStatus: String, Sendable {
     case connecting, online, unreachable
     public var words: String {
         switch self {
-        case .connecting: return "Connecting…"
-        case .online: return "Online"
-        case .unreachable: return "Can’t reach it"
+        case .connecting: return String(localized: "Connecting…", bundle: .module, comment: "A computer's status")
+        case .online: return String(localized: "Online", bundle: .module, comment: "A computer's status")
+        case .unreachable: return String(localized: "Can’t reach it", bundle: .module, comment: "A computer's status: this iPhone can't reach it")
         }
     }
 }

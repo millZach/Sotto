@@ -4,9 +4,18 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { AGENT_MAX_ATTACHMENT_BYTES, type AgentMessage } from '../../shared/agents'
 import { CodexRolloutIdentities, type RolloutIdentity } from './codexMessageIdentity'
+import { isAttachedFilesNote, stripAttachedFilesNote } from './attachedFiles'
 
 export const promptDigest = (text: string): string => createHash('sha256').update(text).digest('hex')
-export const textOf = (content?: { type: string; text?: string | undefined }[]): string => (content ?? []).filter(c => c.type === 'text').map(c => c.text ?? '').join('\n')
+type TextContent = { type: string; text?: string | undefined }[]
+/** A message's text items, joined. */
+export const textOf = (content?: TextContent): string => (content ?? []).filter(c => c.type === 'text').map(c => c.text ?? '').join('\n')
+/**
+ * A user message's text items without one that is exactly the note naming attached files, which Sotto sends apart from
+ * the user's words (ADR-0131). Readers use it only when the message's origin recorded an attached file.
+ */
+export const wordsOf = (content?: TextContent): string => (content ?? [])
+  .filter(c => c.type === 'text' && !isAttachedFilesNote(c.text ?? '')).map(c => c.text ?? '').join('\n')
 // An authored rollout row can contain the full accepted image batch as base64.
 const MAX_ROLLOUT_LINE_BYTES = Math.ceil(AGENT_MAX_ATTACHMENT_BYTES / 3) * 4 + 1024 * 1024
 const entrySchema = z.object({ timestamp: z.string(), ordinal: z.number().optional(), type: z.string(), payload: z.unknown() })
@@ -14,7 +23,7 @@ const textContent = z.array(z.object({ type: z.string(), text: z.string().option
 const userEvent = z.object({ type: z.string(), id: z.string().optional(), message: z.string().optional(), text: z.string().optional(),
   client_id: z.string().nullish(), images: z.array(z.string()).optional(), local_images: z.array(z.string()).optional(),
   content: textContent.optional(), item: z.object({ type: z.string(), id: z.string().optional(), client_id: z.string().nullish(), content: textContent.optional() }).optional() })
-type Tail = { path?: string | undefined; locateAfter: number; locateBackoffMs: number; locateGeneration: number; offset: number; buffer: Buffer[]; bufferedBytes: number; discarding: boolean; own: Map<string, string>; seen: Set<string>; identities: CodexRolloutIdentities }
+type Tail = { path?: string | undefined; locateAfter: number; locateBackoffMs: number; locateGeneration: number; offset: number; buffer: Buffer[]; bufferedBytes: number; discarding: boolean; own: Map<string, string>; files: Set<string>; seen: Set<string>; identities: CodexRolloutIdentities }
 const INITIAL_LOCATE_BACKOFF_MS = 2000
 const MAX_LOCATE_BACKOFF_MS = 60_000
 
@@ -27,18 +36,22 @@ export class CodexSessionLogWatcher {
   private stopped = false
   constructor(private readonly options: { codexHome: string; pollIntervalMs?: number | undefined; onMessage: (threadId: string, message: AgentMessage) => void }) {}
   observe(threadId: string): void {
-    if (!this.tails.has(threadId)) this.tails.set(threadId, { locateAfter: 0, locateBackoffMs: INITIAL_LOCATE_BACKOFF_MS, locateGeneration: 0, offset: 0, buffer: [], bufferedBytes: 0, discarding: false, own: new Map(), seen: new Set(), identities: new CodexRolloutIdentities() })
+    if (!this.tails.has(threadId)) this.tails.set(threadId, { locateAfter: 0, locateBackoffMs: INITIAL_LOCATE_BACKOFF_MS, locateGeneration: 0, offset: 0, buffer: [], bufferedBytes: 0, discarding: false, own: new Map(), files: new Set(), seen: new Set(), identities: new CodexRolloutIdentities() })
   }
   identities(threadId: string, turnId: string): readonly RolloutIdentity[] { return this.tails.get(threadId)?.identities.get(turnId) ?? [] }
-  sent(threadId: string, messageId: string, text: string): void { this.sentDigest(threadId, messageId, promptDigest(text)) }
-  sentDigest(threadId: string, messageId: string, digest: string): void {
+  /** A prompt Sotto sent, by its words' digest; `files` when it carried an attached file, and so the note (ADR-0131). */
+  sent(threadId: string, messageId: string, text: string, files = false): void { this.sentDigest(threadId, messageId, promptDigest(text), files) }
+  sentDigest(threadId: string, messageId: string, digest: string, files = false): void {
     this.observe(threadId)
     const tail = this.tails.get(threadId)!
     tail.own.set(messageId, digest)
+    if (files) tail.files.add(messageId); else tail.files.delete(messageId)
     tail.locateAfter = 0; tail.locateBackoffMs = INITIAL_LOCATE_BACKOFF_MS
     tail.locateGeneration++
   }
-  forget(threadId: string, messageId: string): void { this.tails.get(threadId)?.own.delete(messageId) }
+  forget(threadId: string, messageId: string): void { const tail = this.tails.get(threadId); tail?.own.delete(messageId); tail?.files.delete(messageId) }
+  /** A deleted thread (ADR-0140): stop tailing its rollout and drop any read in flight for it. */
+  drop(threadId: string): void { this.tails.delete(threadId); this.reading.delete(threadId) }
   start(): void {
     if (this.timer || this.stopped) return
     this.timer = setInterval(() => { void this.poll() }, this.options.pollIntervalMs ?? 1000)
@@ -127,7 +140,14 @@ export class CodexSessionLogWatcher {
       const event = userEvent.parse(entry.payload)
       const item = event.type === 'item_completed' && ['UserMessage', 'user_message'].includes(event.item?.type ?? '') ? event.item : undefined
       if (!item && event.type !== 'user_message') return
-      const text = item ? textOf(item.content) : event.message ?? event.text ?? textOf(event.content)
+      const clientId = item?.client_id ?? event.client_id
+      // A rollout's `message` may join the input's text items, the note naming attached files among them. It comes off
+      // only for a prompt Sotto sent with an attached file, found by its client ID or, without one, by its words (ADR-0131).
+      const all = item ? textOf(item.content) : event.message ?? event.text ?? textOf(event.content)
+      const words = item ? wordsOf(item.content) : stripAttachedFilesNote(all)
+      const sentWithFiles = (digest: string): boolean => clientId ? tail.files.has(clientId) && tail.own.get(clientId) === digest
+        : [...tail.files].some(messageId => tail.own.get(messageId) === digest)
+      const text = words !== all && sentWithFiles(promptDigest(words)) ? words : all
       const hasImages = (event.images?.length ?? 0) > 0 || (event.local_images?.length ?? 0) > 0
         || (item?.content ?? event.content)?.some(part => part.type === 'image' || part.type === 'localImage')
       if (!text && !hasImages) return
@@ -135,7 +155,6 @@ export class CodexSessionLogWatcher {
       if (tail.seen.has(id)) return
       tail.seen.add(id)
       const digest = promptDigest(text)
-      const clientId = item?.client_id ?? event.client_id
       const conflictingClient = item?.client_id && event.client_id && item.client_id !== event.client_id
       if (!conflictingClient && clientId && tail.own.get(clientId) === digest) return
       // No-client legacy rows stay unowned until complete turn history can

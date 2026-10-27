@@ -1,10 +1,8 @@
 // @vitest-environment node
 import { spawn } from 'node:child_process'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
-import { isBuiltin } from 'node:module'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
-import { build } from 'vite'
+import { dirname, join } from 'node:path'
 import { afterAll, beforeAll } from 'vitest'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { publicProviderEntityId, type ProviderId } from '../../src/shared/agents'
@@ -15,13 +13,16 @@ import { codexFixture, codexFixtureSkips } from '../fixtures/codexFixture'
 import { devinFixture, devinFixtureSkips } from '../fixtures/devinFixture'
 import { grokFixture, grokFixtureSkips } from '../fixtures/fakeGrokThreadFixture'
 import { opencodeFixture, opencodeFixtureSkips } from '../fixtures/fakeOpenCodeFixture'
+import { cursorFixture, cursorFixtureSkips } from '../fixtures/fakeCursorFixture'
 import { serveStandIn } from '../fixtures/serveStandIn'
 import { ensureFixtureDesktopAnswers } from '../fixtures/sshDesktopAnswers'
 import { describeHostServiceContract } from './hostServiceContract'
+import { bundleDesktopMain } from '../fixtures/desktopMainBundle'
 let buildRoot: string
 beforeAll(async () => {
   buildRoot = await mkdtemp(join(tmpdir(), 'sotto-socket-build-'))
-  await build({ configFile: false, logLevel: 'silent', ssr: { noExternal: ['zod'] }, build: { ssr: resolve('tests/fixtures/socketHostChild.ts'), target: 'node24', outDir: buildRoot, emptyOutDir: false, rollupOptions: { external: id => isBuiltin(id), output: { format: 'cjs', entryFileNames: 'host.cjs' } } } })
+  // The child runs this desktop's own client of the host (its host router and socket client), so it is built as main is.
+  await bundleDesktopMain('tests/fixtures/socketHostChild.ts', join(buildRoot, 'host.cjs'))
 })
 afterAll(async () => { if (buildRoot && dirname(buildRoot) === tmpdir() && buildRoot.includes('sotto-socket-build-')) await rm(buildRoot, { recursive: true, force: true }) })
 /**
@@ -59,7 +60,7 @@ async function fixture(provider: ProviderId, native: AdapterFixture, session: Ad
     stand = await serveStandIn(() => port)
   }
   // OpenCode runs only on an Owl host, so its desktop is an Owl one, which holds no provider (ADR-0087, #1107).
-  const client = new SocketHostService({ url: stand?.url ?? url, token: paired.token, expectedHostId: descriptor.hostId, ...(provider === 'opencode' ? { heldProviders: new Set() } : {}) })
+  const client = new SocketHostService({ url: stand?.url ?? url, token: paired.token, expectedHostId: descriptor.hostId, ...(provider === 'opencode' || provider === 'cursor' ? { heldProviders: new Set() } : {}) })
   await client.connect()
   const stop = async (): Promise<void> => { await client.close(); await stand?.close(); await call('stop'); await exited }
   return {
@@ -84,6 +85,7 @@ const providers: { provider: ProviderId; create: (session?: AdapterSessionOption
   { provider: 'devin', create: session => devinFixture(undefined, undefined, undefined, session), skips: devinFixtureSkips },
   // Hosts take OpenCode since #1107.
   { provider: 'opencode', create: session => opencodeFixture(undefined, undefined, session), skips: opencodeFixtureSkips },
+  { provider: 'cursor', create: session => cursorFixture(undefined, undefined, session), skips: cursorFixtureSkips },
 ]
 for (const provider of providers) describeHostServiceContract('Socket child ' + provider.provider, async session => fixture(provider.provider, await provider.create(session), session), provider.skips)
 // The same contract over a desktop's tailnet connection. The transport is what changes, so one provider carries it.

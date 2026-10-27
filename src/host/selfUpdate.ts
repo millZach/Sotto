@@ -4,10 +4,11 @@ import { access, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 import { HOST_NODE_RANGE, LAUNCH_SCRIPT_SOURCE } from '../main/hosts/launchScript'
-import { HOST_DOWNLOAD_TIMEOUT_MS, hostLaunchTimings } from '../shared/hostLaunchTimings'
+import { hostLaunchTimings } from '../shared/hostLaunchTimings'
 import { HOST_RELEASES_URL, HOST_UPDATE_STEPS, HOST_VERSION_PATTERN, hostArchiveName, type HostUpdateStep } from '../shared/hostUpdates'
-import { compareHostToTarget, HOST_UPDATE_ANSWER_WAIT_MS, hostUpdateAttemptFile, HOST_UPDATE_RESTART_BUDGET_MS, HOST_UPDATE_RESTART_WAIT_MS, HOST_UPDATE_STATUS_FILE, HOST_UPDATE_STATUS_LIMIT_BYTES, hostUpdateErrorSchema, hostUpdateFetchedSchema, hostUpdateInstalledSchema, hostUpdateStatusSchema,
-  type HostUpdateAnswer, type HostUpdateStatus } from '../shared/hostSelfUpdate'
+import { compareHostToTarget, HOST_UPDATE_ANSWER_WAIT_MS, HOST_UPDATE_FETCH_BUDGET_MS, HOST_UPDATE_INSTALL_BUDGET_MS, hostUpdateAttemptFile, HOST_UPDATE_RESTART_BUDGET_MS, HOST_UPDATE_RESTART_WAIT_MS, HOST_UPDATE_STATUS_FILE, HOST_UPDATE_STATUS_LIMIT_BYTES, hostUpdateErrorSchema, hostUpdateFetchedSchema, hostUpdateInstalledSchema, hostUpdateStatusSchema,
+  type HostUpdateAnswer, type HostUpdateRequest, type HostUpdateStatus } from '../shared/hostSelfUpdate'
+export type { HostUpdateRequest } from '../shared/hostSelfUpdate'
 import { startedBySotto, type HostStartedBy } from '../shared/hostConnection'
 import type { HostUpdateRequestAction } from '../shared/hostProtocol'
 import { processAlive } from './lock'
@@ -94,12 +95,6 @@ export interface HostSelfUpdateOptions {
 }
 /** Why a host offers no self-update: Sotto did not start it, or it does not run from a release's own layout. */
 export type HostSelfUpdateRefusal = 'update-not-owned' | 'update-layout'
-export interface HostUpdateRequest {
-  readonly action: HostUpdateRequestAction
-  readonly version?: string | undefined
-  readonly file?: string | undefined
-  readonly sha256?: string | undefined
-}
 export interface HostUpdateContext {
   /** The client that asked. Only it may cancel its own download. */
   readonly owner: object
@@ -120,7 +115,6 @@ export function createHostSelfUpdate(options: HostSelfUpdateOptions): { readonly
 
 const pause = (ms: number): Promise<void> => new Promise(done => setTimeout(done, ms))
 const OUTPUT_LIMIT = 65_536
-const INSTALL_BUDGET_MS = 10 * 60_000
 const fetchResult = z.union([hostUpdateFetchedSchema, hostUpdateErrorSchema])
 const installResult = z.union([hostUpdateInstalledSchema, hostUpdateErrorSchema])
 const invalid = (): HostUpdateAnswer => ({ type: 'error', reason: 'update-invalid' })
@@ -170,10 +164,10 @@ export class HostSelfUpdate {
         // A restart whose process has gone, or that has run far past any restart's time, was interrupted before it could
         // say how it ended: Sotto cannot tell which version is running beyond what this host says it runs.
         if (status.state === 'restarting' && interrupted(read)) {
-          return { type: 'update-outcome', running: this.options.sottoVersion, restart: { state: 'finished', version: status.version, result: { type: 'error', reason: 'update-lost' } } }
+          return { type: 'update-outcome', running: this.options.sottoVersion, restart: { state: 'finished', version: status.version, attempt: status.attempt, result: { type: 'error', reason: 'update-lost' } } }
         }
         return { type: 'update-outcome', running: this.options.sottoVersion,
-          restart: status.state === 'restarting' ? { state: 'restarting', version: status.version } : { state: 'finished', version: status.version, result: status.result } }
+          restart: status.state === 'restarting' ? { state: 'restarting', version: status.version, attempt: status.attempt } : { state: 'finished', version: status.version, attempt: status.attempt, result: status.result } }
       }
     }
   }
@@ -206,7 +200,7 @@ export class HostSelfUpdate {
       // The launch script's download holds the folder's update lock, as it does over SSH, so the two refuse each other.
       if (context.gone.aborted) return { type: 'update-cancelled', cancelled: true }
       context.onStep('download')
-      const result = await this.script(this.configuration({ op: 'update-fetch', version }), context.onStep, 2 * HOST_DOWNLOAD_TIMEOUT_MS + 10_000, abort.signal)
+      const result = await this.script(this.configuration({ op: 'update-fetch', version }), context.onStep, HOST_UPDATE_FETCH_BUDGET_MS, abort.signal)
       if (abort.signal.aborted) return { type: 'update-cancelled', cancelled: true }
       return fetchResult.safeParse(result).data ?? { type: 'error', reason: 'update-failed' }
     } finally {
@@ -224,7 +218,7 @@ export class HostSelfUpdate {
     if (!this.take('install')) return busy()
     // Unpacking carries on when the client's socket closes, as it does over SSH: it is never stopped partway.
     try {
-      const result = await this.script(this.configuration({ op: 'update-install', version, file: request.file, sha256: request.sha256 }), context.onStep, INSTALL_BUDGET_MS)
+      const result = await this.script(this.configuration({ op: 'update-install', version, file: request.file, sha256: request.sha256 }), context.onStep, HOST_UPDATE_INSTALL_BUDGET_MS)
       return installResult.safeParse(result).data ?? { type: 'error', reason: 'update-failed' }
     } finally { this.running = null }
   }

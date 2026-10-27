@@ -1,6 +1,7 @@
 import { focusedComposerField } from '../agents/promptSelection'
 import React, { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { Globe, Minimize2, PanelRight, Pause, Play, X } from 'lucide-react'
+import { useLingui } from '@lingui/react/macro'
 import type { AgentState } from '../../../shared/agents'
 import type { BrowserBounds, BrowserBridge, BrowserPage } from '../../../shared/browser'
 import { pageLabel, useThreadBrowser, useBrowserTasks } from './browserStore'
@@ -31,14 +32,15 @@ function BrowserPlayerFrame({ page, mount, boundary }: {
   readonly mount: (bounds: BrowserBounds | null) => void
   readonly boundary: React.RefObject<HTMLElement | null>
 }): ReactNode {
+  const { t } = useLingui()
   const host = useRef<HTMLDivElement>(null)
   const covered = useOverlayOpen(boundary, host)
   const show = page !== undefined && page.status !== 'unavailable' && covered === false
   useBrowserPageMount(host, show, mount)
   return <div className="browser-player__frame">
-    {!page ? null : page.status === 'unavailable' ? <p className="browser-player__frame-note">This page could not load.</p>
+    {!page ? null : page.status === 'unavailable' ? <p className="browser-player__frame-note tt-paragraph">{t`This page could not load.`}</p>
       : <div ref={host} className="browser-player__viewport" data-covered={covered || undefined}>
-        {covered ? <p className="browser-player__frame-note">The page steps aside while a menu or dialog is open.</p> : null}
+        {covered ? <p className="browser-player__frame-note tt-paragraph">{t`The page steps aside while a menu or dialog is open.`}</p> : null}
       </div>}
   </div>
 }
@@ -60,6 +62,7 @@ export interface BrowserPlayerProps {
  * while Tools > Browser already shows the same thread's same page, the way the old preview did.
  */
 export function BrowserPlayer({ state, focusedThreadId, bridge, store, autoShow = true, playerStore = browserPlayerStore }: BrowserPlayerProps): ReactNode {
+  const { t } = useLingui()
   const chrome = useToolsPanelChrome(store)
   const tasks = useBrowserTasks(store.browser)
   // Sotto's browser is this computer's, so a remote host's threads have no tasks here to watch.
@@ -102,7 +105,8 @@ export function BrowserPlayer({ state, focusedThreadId, bridge, store, autoShow 
   const page = threadBrowser?.pages.find(item => item.id === task.pageId)
   const titleText = page ? pageLabel(page) : task.description
   const active = task.status === 'working' || task.status === 'paused'
-  const actionText = task.pendingAction ? 'Waiting for your answer' : task.status === 'paused' ? 'Browser paused' : task.summary || task.description
+  const actionText = task.pendingAction ? t`Waiting for your answer` : task.status === 'paused' ? t`Browser paused` : task.summary || task.description
+  const title = thread.title
   const dotState = task.pendingAction ? 'waiting' : task.status === 'working' ? 'working' : 'idle'
   const grant = threadBrowser?.grant ?? null
 
@@ -116,7 +120,7 @@ export function BrowserPlayer({ state, focusedThreadId, bridge, store, autoShow 
   if (visibility === 'shrunk') {
     return <button type="button" className="browser-player-pill tt-focusable" onKeyDown={escape}
       style={{ right: Math.max(8, size.width - rect.x - rect.width), bottom: Math.max(8, size.height - rect.y - rect.height) }}
-      aria-label={`Show the browser for ${thread.title}: ${actionText}`} onClick={() => playerStore.restore(threadId)}>
+      aria-label={t({ message: `Show the browser for ${title}: ${actionText}`, comment: '{title} is a thread\'s title; {actionText} says what the browser task is doing.' })} onClick={() => playerStore.restore(threadId)}>
       <Globe size={15} aria-hidden="true" /><span className="browser-player-pill__dot" data-state={dotState} aria-hidden="true" /><span className="browser-player-pill__text">{actionText}</span>
     </button>
   }
@@ -191,40 +195,40 @@ export function BrowserPlayer({ state, focusedThreadId, bridge, store, autoShow 
     void store.browser.stopGrant(bridge, threadId).then(error => { if (error) setProblem(error) }).finally(() => setStoppingGrant(false))
   }
 
-  return <aside ref={playerRoot} className="browser-player" aria-label={`Browser for ${thread.title}`} data-covers-native-view style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }} onKeyDown={escape}>
-    <div className="browser-player__bar" role="group" aria-roledescription="drag handle" tabIndex={0}
-      aria-label="Move the browser. Drag, or use the arrow keys; hold Shift to move further."
-      title="Drag to move" onPointerDown={startDrag} onKeyDown={barKeyDown}>
+  return <aside ref={playerRoot} className="browser-player" aria-label={t({ message: `Browser for ${title}`, comment: '{title} is a thread\'s title.' })} data-covers-native-view style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }} onKeyDown={escape}>
+    <div className="browser-player__bar" role="group" aria-roledescription={t({ message: 'drag handle', comment: 'What a screen reader calls the bar that moves a floating player, read after its name.' })} tabIndex={0}
+      aria-label={t`Move the browser. Drag, or use the arrow keys; hold Shift to move further.`}
+      title={t`Drag to move`} onPointerDown={startDrag} onKeyDown={barKeyDown}>
       <Globe size={15} aria-hidden="true" />
       <span className="browser-player__title" title={titleText}>{titleText}</span>
       {pageHost(page) !== titleText ? <span className="browser-player__host">{pageHost(page)}</span> : null}
-      <button type="button" className="files-icon tt-focusable" aria-label="Move the browser into Tools" title="Move into Tools" onClick={moveIntoTools}><PanelRight size={15} aria-hidden="true" /></button>
-      <button type="button" className="files-icon tt-focusable" aria-label="Shrink the browser to a pill" title="Shrink" onClick={shrinkToPill}><Minimize2 size={15} aria-hidden="true" /></button>
-      <button type="button" className="files-icon tt-focusable" aria-label="Hide the browser; the agent keeps working" title="Hide" onClick={hideToComposer}><X size={15} aria-hidden="true" /></button>
+      <button type="button" className="files-icon tt-focusable" aria-label={t`Move the browser into Tools`} title={t`Move into Tools`} onClick={moveIntoTools}><PanelRight size={15} aria-hidden="true" /></button>
+      <button type="button" className="files-icon tt-focusable" aria-label={t`Shrink the browser to a pill`} title={t`Shrink`} onClick={shrinkToPill}><Minimize2 size={15} aria-hidden="true" /></button>
+      <button type="button" className="files-icon tt-focusable" aria-label={t`Hide the browser; the agent keeps working`} title={t({ message: 'Hide', comment: 'Hides the browser player.' })} onClick={hideToComposer}><X size={15} aria-hidden="true" /></button>
     </div>
     <BrowserPlayerFrame page={page} mount={mount} boundary={playerRoot} />
     <div className="browser-player__foot">
-      {task.pendingAction ? <div className="browser-player__request" role="group" aria-label="Browser action permission">
+      {task.pendingAction ? <div className="browser-player__request" role="group" aria-label={t`Browser action permission`}>
         <p>{task.pendingAction.description}</p>
         <div className="browser-player__request-row">
-          <button type="button" className="tt-button tt-button--primary tt-focusable" disabled={answering || task.status === 'paused'} onClick={() => answer(true)}>Allow once</button>
-          <button type="button" className="tt-button tt-focusable" aria-label="Allow this thread to use the browser without asking" title="Allow this thread to use the browser without asking" disabled={answering || task.status === 'paused'} onClick={() => answer(true, true)}>Allow this thread</button>
-          <button type="button" className="tt-button tt-focusable" disabled={answering} onClick={() => answer(false)}>Deny</button>
+          <button type="button" className="tt-button tt-button--primary tt-focusable" disabled={answering || task.status === 'paused'} onClick={() => answer(true)}>{t`Allow once`}</button>
+          <button type="button" className="tt-button tt-focusable" aria-label={t`Allow this thread to use the browser without asking`} title={t`Allow this thread to use the browser without asking`} disabled={answering || task.status === 'paused'} onClick={() => answer(true, true)}>{t`Allow this thread`}</button>
+          <button type="button" className="tt-button tt-focusable" disabled={answering} onClick={() => answer(false)}>{t`Deny`}</button>
         </div>
       </div> : null}
       <div className="browser-player__status">
         <span className="browser-player__dot" data-state={dotState} aria-hidden="true" /><span className="browser-player__action">{actionText}</span>
         {active ? <button type="button" className="browser-review-link tt-focusable" onClick={() => void store.browser.controlTask(bridge, task, task.status === 'paused' ? 'resume' : 'pause').then(error => setProblem(error))}>
-          {task.status === 'paused' ? <Play size={13} aria-hidden="true" /> : <Pause size={13} aria-hidden="true" />}{task.status === 'paused' ? 'Resume' : 'Pause'}</button> : null}
+          {task.status === 'paused' ? <Play size={13} aria-hidden="true" /> : <Pause size={13} aria-hidden="true" />}{task.status === 'paused' ? t({ message: 'Resume', comment: 'Lets a paused browser task carry on.' }) : t({ message: 'Pause', comment: 'Pauses a browser task.' })}</button> : null}
       </div>
       {!task.pendingAction && grant ? <div className="browser-player__grant">
-        <span>Uses the browser without asking</span>
-        <button type="button" className="browser-review-link tt-focusable" aria-label="Stop letting this thread use the browser without asking" title="This thread will ask before opening, clicking or typing again" disabled={stoppingGrant} onClick={stopGrant}>Stop</button>
+        <span>{t`Uses the browser without asking`}</span>
+        <button type="button" className="browser-review-link tt-focusable" aria-label={t`Stop letting this thread use the browser without asking`} title={t`This thread will ask before opening, clicking or typing again`} disabled={stoppingGrant} onClick={stopGrant}>{t({ message: 'Stop', comment: 'Stops letting this thread use the browser without asking.' })}</button>
       </div> : null}
       {problem ? <p className="browser-review-problem" role="alert">{problem}</p> : null}
     </div>
-    <div className="browser-player__grip" role="separator" tabIndex={0} aria-label="Resize the browser. Use the arrow keys; hold Shift to resize further."
-      title="Drag to resize" onPointerDown={startResize} onKeyDown={gripKeyDown} />
+    <div className="browser-player__grip" role="separator" tabIndex={0} aria-label={t`Resize the browser. Use the arrow keys; hold Shift to resize further.`}
+      title={t`Drag to resize`} onPointerDown={startResize} onKeyDown={gripKeyDown} />
   </aside>
 }
 

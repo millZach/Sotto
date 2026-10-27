@@ -77,7 +77,12 @@
 .segmented-control { grid-area: control; display: inline-flex; align-items: center; justify-self: end; padding: 3px; border: 0; border-radius: 6px; gap: 2px; background: var(--tt-surface-sunken); }
 .settings-rows .segmented-control { background: var(--tt-card-inset); }
 .segmented-control button { min-height: 30px; padding: 2px 12px; border: 0; border-radius: 4px; font: inherit; font-size: 14px; white-space: nowrap; color: var(--tt-text-muted); background: none; cursor: pointer; }
-.segmented-control button:hover { color: var(--tt-text); }
+.segmented-control button:hover:not(:disabled) { color: var(--tt-text); }
+.segmented-control button:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
+.segmented-control button:disabled { opacity: .5; cursor: default; }
+/* Night falls' look: a line for each choice under the row's name, the choice's name leading its line. */
+.night-falls-look__line { display: block; }
+.night-falls-look__line > strong { color: var(--tt-text); font-weight: 600; }
 .segmented-control button[aria-checked='true'] { color: var(--tt-text); background: var(--tt-segment-on); box-shadow: var(--tt-shadow-sm); }
 @media (max-width: 620px) { .settings-rows .tt-field { grid-template-areas: 'label' 'description' 'control' 'error'; } .segmented-control { justify-self: start; } }
 
@@ -108,12 +113,13 @@
 .settings-find__results ul { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
 .settings-find__results button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 8px 12px; border: 0; border-radius: 6px; color: var(--tt-text); background: transparent; text-align: left; font: inherit; font-size: 14px; line-height: 1.35; cursor: pointer; }
 .settings-find__results button:hover { background: var(--tt-sidebar-row-hover); }
+.settings-find__results button:active { background: var(--tt-hover-strong); }
 .settings-find__results small { color: var(--tt-text-muted); font-size: 12.5px; }
 .settings-find__empty { margin: 4px 12px; color: var(--tt-text-muted); font-size: 13.5px; line-height: 1.45; }
 /* A row of its own inside a group's card: the card's dividers already separate it. */
 .settings-view .settings-rows > .settings-danger-row { border-top: 0; }
 .settings-detail { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
-.settings-view .settings-scroll { flex: 1; min-width: 0; min-height: 0; padding: 42px 6vw 40px; overflow: auto; scroll-padding-top: 24px; }
+.settings-view .settings-scroll { flex: 1; min-width: 0; min-height: 0; padding: 40px 6vw 40px; overflow: auto; scroll-padding-top: 24px; }
 .settings-form { width: 100%; max-width: 790px; margin: 0 auto; }
 .settings-form > [hidden] { display: none !important; }
 .settings-form > [role='tabpanel']:not([hidden]) { animation: settings-arrive 180ms ease; }
@@ -162,36 +168,7 @@
 .settings-view .settings-danger-row { gap: 24px; }
 .settings-view .settings-danger-row h3 { font-size: 15px; }
 .settings-view .settings-danger-row p { font-size: 13px; line-height: 1.5; }
-/* Nested production account and provider controls share the focused form. */
-.settings-view .providers-workspace { grid-template-columns: minmax(0, 1fr); min-height: 0; border: 0; border-radius: 0; background: none; overflow: visible; }
-.settings-view .providers-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 6px 0 0; border: 0; }
-/* Each provider is its own card, with its toggle at the end of its name's line and its status under both (ADR-0110,
-   Zach's pick P1). The select button fills the card, so a press anywhere on it selects; the toggle sits over the
-   button's top right corner and follows it in the Tab order. The selected card wears the accent edge and wash. */
-.settings-view .providers-list__row { display: grid; grid-template: 'card' auto / minmax(0, 1fr); align-items: start; gap: 0; padding: 0; border: 1px solid transparent; border-radius: 12px; background: var(--tt-card); }
-.settings-view .providers-list__row:hover:not([data-selected='true']) { background: color-mix(in srgb, var(--tt-accent-surface) 30%, var(--tt-card)); }
-.settings-view .providers-list__row[data-selected='true'] { border-color: var(--tt-accent); background: var(--tt-card-selected); box-shadow: 0 0 0 1px var(--tt-accent); }
-/* Four cards share a form at most 790 pixels wide, so the spacing is tight enough for Claude Code's name beside its toggle. */
-.settings-view .providers-list__select { grid-area: card; display: grid; grid-template-columns: auto minmax(0, 1fr) 36px; grid-template-areas: 'mark name .' 'status status status'; align-items: center; gap: 6px 8px; width: 100%; padding: 13px 12px; border-radius: 11px; }
-.settings-view .providers-list__select > span { display: contents; }
-.settings-view .providers-list__select > .provider-mark { display: block; grid-area: mark; margin: 0; }
-.settings-view .providers-list__select strong { grid-area: name; min-width: 0; overflow: hidden; font-size: 14px; white-space: nowrap; text-overflow: ellipsis; }
-.settings-view .providers-list__select small { grid-area: status; min-width: 0; }
-/* The toggle's words are hidden here, so it is only its 36 pixel track, the width the name's line keeps free for it. */
-.settings-view .providers-list__row .tt-toggle { z-index: 1; grid-area: card; justify-self: end; align-self: start; grid-template-columns: 36px; gap: 0; margin: 13px 12px 0 0; padding: 0; }
-/* Four cards need about 760 pixels of form, which a window between 900 and 1100 wide does not leave beside the
-   Settings sidebar, so the list counts its columns from its own width: two below that, one below 380. */
-.settings-view .providers-settings { container: providers / inline-size; }
-@container providers (width < 760px) { .settings-view .providers-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } }
-@container providers (width < 380px) { .settings-view .providers-list { grid-template-columns: minmax(0, 1fr); } }
-/* The selected provider's detail is a card of its own under them. */
-.settings-view .provider-detail { margin-top: 18px; padding: 0 20px 6px; border-radius: var(--tt-radius-lg); background: var(--tt-card); }
-.settings-view .provider-detail__header { padding: 18px 0 14px; }
-.settings-view .provider-detail__version { padding: 1px 7px; border-radius: 4px; background: var(--tt-card-inset); }
-.settings-view .provider-tabs { padding: 0; }
-.settings-view .provider-detail__body { padding: 22px 0 16px; }
-.settings-view .provider-models li + li { border-top: 2px solid var(--tt-card-inset); }
-.settings-view .provider-default { grid-template-columns: minmax(0, 1fr) minmax(140px, 240px); align-items: center; gap: 22px; padding: 20px 0; border-top: 1px solid var(--tt-hairline); }
+/* Nested production account controls share the focused form. Settings → Providers styles its own list (providers.css). */
 .settings-view .account-rows > label, .settings-view .account-rows > .account-row { grid-template-columns: minmax(0, 1fr) minmax(140px, 240px); gap: 12px 22px; padding: 18px 0; font-size: 15px; }
 .settings-view .account-rows > .account-row--chips { grid-template-columns: minmax(160px, 1fr) minmax(0, auto); }
 .settings-view .account-rows input:not([type='checkbox'], [type='range']), .settings-view .account-rows select { min-height: 38px; padding: 7px 12px; border-radius: 6px; font-size: 14px; }
@@ -204,9 +181,9 @@
 .settings-view .agent-voice-settings .agent-fields input, .settings-view .agent-voice-settings .agent-fields select { min-width: 0; font-size: 14px; }
 @keyframes settings-arrive { from { opacity: .6; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 @media (max-width: 1100px) {
-  .settings-view .settings-scroll { padding: 32px 35px; }
-  .settings-feedback { padding-inline: 35px; }
-  [data-platform='linux'] .settings-view .settings-feedback { padding-right: 35px; }
+  .settings-view .settings-scroll { padding: 32px 36px; }
+  .settings-feedback { padding-inline: 36px; }
+  [data-platform='linux'] .settings-view .settings-feedback { padding-right: 36px; }
 }
 @media (max-width: 900px) {
   .settings-sidebar h1 { font-size: 25px; margin-bottom: 20px; }
@@ -217,13 +194,12 @@
   .settings-view .settings-scroll { padding: 28px; }
   .settings-feedback { padding-inline: 28px; }
   [data-platform='linux'] .settings-view .settings-feedback { padding-right: 28px; }
-  .settings-view .settings-rows .tt-field, .settings-view .account-rows > label, .settings-view .account-rows > .account-row, .settings-view .provider-default { grid-template-columns: minmax(0, 1fr) minmax(140px, 210px); column-gap: 18px; }
+  .settings-view .settings-rows .tt-field, .settings-view .account-rows > label, .settings-view .account-rows > .account-row { grid-template-columns: minmax(0, 1fr) minmax(140px, 210px); column-gap: 18px; }
   /* A chip group still needs its own wider room here, the same as at full width, or the 210px column above wins
      on equal specificity by coming later and squeezes all three chips into it. */
   .settings-view .account-rows > .account-row--chips { grid-template-columns: minmax(160px, 1fr) minmax(0, auto); }
   .settings-view .settings-rows .tt-field:has(.segmented-control) { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'label' 'description' 'control' 'error'; gap: 9px; }
   .settings-view .settings-rows .tt-field:has(.segmented-control) .segmented-control { justify-self: start; }
-  .settings-view .providers-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 }
 @media (max-height: 650px) {
   .settings-sidebar h1 { margin-bottom: 22px; }
@@ -239,11 +215,10 @@
   .settings-view .settings-scroll { padding-inline: 20px; }
   .settings-feedback { padding-inline: 20px; }
   [data-platform='linux'] .settings-view .settings-feedback { padding-right: 20px; }
-  .settings-view .settings-rows .tt-field, .settings-view .account-rows > label, .settings-view .account-rows > .account-row, .settings-view .provider-default { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'label' 'description' 'control' 'error'; gap: 9px; }
+  .settings-view .settings-rows .tt-field, .settings-view .account-rows > label, .settings-view .account-rows > .account-row { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'label' 'description' 'control' 'error'; gap: 9px; }
   .settings-view .settings-rows .tt-field > .tt-input, .settings-view .settings-rows .tt-field > .tt-select { grid-area: control; }
   .settings-view .settings-rows .tt-field > .tt-button { justify-self: start; }
   .settings-view .account-row__control { justify-content: flex-start; }
-  .settings-view .providers-list { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { .settings-form > [role='tabpanel']:not([hidden]) { animation: none; } .settings-subnav button { transition: none; } }
 [data-reduced-motion='on'] .settings-form > [role='tabpanel']:not([hidden]) { animation: none; }
@@ -257,14 +232,6 @@
 .settings-view .agent-wake-advanced > summary:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 3px; }
 .settings-view #settings-agents > .account-settings > .account-settings .account-rows > label:first-child { border-top: 0; }
 @media (max-height: 650px) {
-  .settings-view .providers-list { padding-top: 4px; gap: 8px; }
-  .settings-view .providers-list__select { row-gap: 4px; padding: 9px 12px; }
-  .settings-view .providers-list__row .tt-toggle { margin: 9px 12px 0 0; }
-  .settings-view .provider-detail { margin-top: 12px; }
-  .settings-view .provider-detail__header { min-height: 50px; padding: 12px 0 10px; }
-  .settings-view .provider-detail__body { padding-top: 16px; }
-  .settings-view .provider-tabs button { min-height: 38px; padding-bottom: 10px; }
-  .settings-view .provider-default { margin-top: 20px; padding-block: 16px; }
   .settings-view .account-rows > label, .settings-view .account-rows > .account-row { padding-block: 13px; }
   .settings-view .agent-voice-settings { margin-top: 12px; padding-top: 16px; }
 }
@@ -294,3 +261,24 @@
 .speech-model-status__bar > span { display: block; height: 100%; background: var(--tt-accent); transition: width 240ms ease-out; }
 .speech-model-status__ready { color: var(--tt-accent-text); font-weight: 600; }
 .speech-model-status__error { color: var(--tt-error-text); }
+
+/* Settings → Cleanup's model search (Owl cleanup-model): the input and its refresh button share the control
+   column, and the list floats under them over the rows below. */
+.settings-view .settings-rows .cleanup-model__control { grid-area: control; position: relative; display: flex; gap: 6px; min-width: 0; }
+.settings-view .settings-rows .cleanup-model__control > .tt-input { flex: 1; min-width: 0; min-height: 38px; border: 1px solid transparent; border-radius: 6px; background: var(--tt-card-inset); color: var(--tt-text); font-size: 14px; text-overflow: ellipsis; }
+.settings-view .settings-rows .cleanup-model__control > .tt-input:hover { border-color: var(--tt-border); }
+.cleanup-model__refresh { flex: none; display: grid; place-items: center; width: 38px; border: 1px solid transparent; border-radius: 6px; background: var(--tt-card-inset); color: var(--tt-text-muted); cursor: pointer; }
+.cleanup-model__refresh:hover:not(:disabled) { border-color: var(--tt-border); color: var(--tt-text); }
+.cleanup-model__refresh:disabled { cursor: default; opacity: 0.5; }
+.cleanup-model__list { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0; max-height: min(280px, 45vh); margin: 0; padding: 4px; overflow-y: auto; list-style: none; border: 1px solid var(--tt-border); border-radius: 8px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-lg); }
+.cleanup-model__list[data-above] { top: auto; bottom: calc(100% + 4px); }
+.cleanup-model__list > [role='option'] { display: grid; gap: 1px; padding: 7px 9px; border-radius: 5px; cursor: pointer; }
+.cleanup-model__list > [data-active] { background: var(--tt-hover); }
+.cleanup-model__list > [aria-selected='true'] .cleanup-model__name { color: var(--tt-primary); }
+.cleanup-model__name { overflow: hidden; color: var(--tt-text); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.cleanup-model__slug { overflow: hidden; color: var(--tt-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.cleanup-model__empty { padding: 8px 9px; color: var(--tt-text-muted); font-size: 13px; }
+/* The list's sections when the user's own servers are listed (ADR-0136), and Measure's line under the box. */
+.cleanup-model__section { padding: 8px 9px 4px; color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
+.cleanup-model__measure { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.cleanup-model__measure > .settings-remote-status { flex: 1 1 260px; margin: 0; }

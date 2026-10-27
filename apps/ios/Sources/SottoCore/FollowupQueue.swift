@@ -26,12 +26,12 @@ public enum FollowupQueue {
     /// What a card says about its message, in a few words.
     public static func state(_ item: Followup) -> String {
         switch item.status {
-        case "queued": return "Queued for after this turn"
-        case "dispatching": return "Sending…"
-        case "uncertain": return "Not confirmed"
-        case "failed": return "Couldn’t send"
-        case "paused": return "Paused"
-        default: return "Queued"
+        case "queued": return String(localized: "Queued for after this turn", bundle: .module)
+        case "dispatching": return String(localized: "Sending…", bundle: .module, comment: "A queued message on its way to the computer")
+        case "uncertain": return String(localized: "Not confirmed", bundle: .module, comment: "A queued message the computer has not confirmed it received")
+        case "failed": return String(localized: "Couldn’t send", bundle: .module, comment: "A queued message that failed to send")
+        case "paused": return String(localized: "Paused", bundle: .module, comment: "A queued message held back until the user sends it on")
+        default: return String(localized: "Queued", bundle: .module, comment: "A message waiting in the follow-up queue")
         }
     }
 
@@ -67,11 +67,11 @@ public enum ContextCompaction {
     /// Why the thread can't be compacted now, in a few words, or nil when it can. `messages` is the history this iPhone
     /// has read; nil when it hasn't read the thread, which leaves the history to the computer to judge.
     public static func held(_ thread: ThreadSummary, messages: [Message]?, earlierAvailable: Bool) -> String? {
-        if let status = thread.compaction?.status, status == "running" || status == "uncertain" { return "Already compacting" }
-        if thread.status == "running" { return "Available when this turn ends" }
-        if !thread.requests.isEmpty { return "Available once the waiting request is answered" }
+        if let status = thread.compaction?.status, status == "running" || status == "uncertain" { return String(localized: "Already compacting", bundle: .module) }
+        if thread.status == "running" { return String(localized: "Available when this turn ends", bundle: .module) }
+        if !thread.requests.isEmpty { return String(localized: "Available once the waiting request is answered", bundle: .module) }
         if let messages, !earlierAvailable, !messages.contains(where: { $0.role == "user" && !isCompact($0.text) }) {
-            return "Nothing to compact yet"
+            return String(localized: "Nothing to compact yet", bundle: .module)
         }
         return nil
     }

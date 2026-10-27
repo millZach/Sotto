@@ -1,6 +1,6 @@
 import { pullRequestAddress, pullRequestKey } from '../../shared/gitPullRequests'
-import { type WatcherKeptState, type WatcherMergeQueueItem, type WatcherPullRequestSummary, type WatcherStaleNote,
-  type WatcherThreadTarget } from '../../shared/watcher'
+import { WATCHER_KEPT_LISTS, WATCHER_KEPT_UNTOUCHED_MS, type WatcherKeptState, type WatcherMergeQueueItem, type WatcherPullRequestSummary,
+  type WatcherStaleNote, type WatcherThreadTarget } from '../../shared/watcher'
 
 /**
  * What read_state computes from live data at each read (#1274). After a compaction, notes Watcher kept by hand still
@@ -64,13 +64,16 @@ const NUMBERS = /(?:#|\b(?:pr|pull request)\s*#?\s*)(\d+)\b/giu
 const WORDED_NUMBERS = /\b(?:pr|pull request)\s*#?\s*(\d+)\b/giu
 const shown = (title: string) => title.length > TITLE_SHOWN_MAX ? `${title.slice(0, TITLE_SHOWN_MAX - 1)}…` : title
 
+const DAY_MS = 24 * 60 * 60 * 1_000
 /**
- * The kept notes that name a settled or unwatched thread, by its title or ID, or a merged or closed pull request, by its
- * link or number, and why. A title two threads share is said of the one that is watched and not settled when there is
- * one, so it flags nothing; a number two pull requests share flags only when neither is open.
+ * The open kept lines that may be done, by ID, and why: one that names a settled or unwatched thread, by its title or ID,
+ * or a merged or closed pull request, by its link or number, and one not added or edited in WATCHER_KEPT_UNTOUCHED_MS,
+ * so an old line is looked at again rather than carried on (October 24, 2026). A title two threads share is said of the
+ * one that is watched and not settled when there is one, so it flags nothing; a number two pull requests share flags only
+ * when neither is open. A closed line is done already, and flags nothing.
  */
 export function watcherStaleNotes(kept: Pick<WatcherKeptState, 'decisions' | 'rules' | 'issues'>, threads: readonly WatcherKnownThread[],
-  pullRequests: readonly WatcherKnownPullRequest[]): WatcherStaleNote[] {
+  pullRequests: readonly WatcherKnownPullRequest[], now: number): WatcherStaleNote[] {
   const live = new Set(threads.filter(thread => thread.watched && !thread.settled).map(thread => fold(thread.title)))
   const over = threads.filter(thread => thread.settled || !thread.watched)
   const byKey = new Map<string, WatcherKnownPullRequest>(), byNumber = new Map<number, WatcherKnownPullRequest[]>()
@@ -80,8 +83,9 @@ export function watcherStaleNotes(kept: Pick<WatcherKeptState, 'decisions' | 'ru
     byKey.set(prKey, pr); byNumber.set(pr.number, [...byNumber.get(pr.number) ?? [], pr])
   }
   const notes: WatcherStaleNote[] = []
-  for (const list of ['decisions', 'rules', 'issues'] as const) kept[list].forEach((note, index) => {
-    const text = fold(note), reasons: string[] = []
+  for (const list of WATCHER_KEPT_LISTS) for (const line of kept[list]) {
+    if (line.closedAt !== undefined) continue
+    const note = line.text, text = fold(note), reasons: string[] = []
     for (const thread of over) {
       const title = fold(thread.title)
       const byTitle = (title.length >= TITLE_MIN || title.includes(' ')) && !STAND_IN_TITLES.has(title) && !live.has(title) && names(text, title)
@@ -106,7 +110,12 @@ export function watcherStaleNotes(kept: Pick<WatcherKeptState, 'decisions' | 'ru
       numbers.add(number)
       reasons.push(`Names pull request #${number}, which is ${known.every(pr => pr.state === 'merged') ? 'merged' : known.every(pr => pr.state === 'closed') ? 'closed' : 'merged or closed'}.`)
     }
-    if (reasons.length) notes.push({ list, index, reasons: reasons.slice(0, 5) })
-  })
+    const untouched = now - Date.parse(line.touchedAt)
+    if (untouched >= WATCHER_KEPT_UNTOUCHED_MS) {
+      reasons.splice(5)
+      reasons.push(`Not added or edited for ${Math.floor(untouched / DAY_MS)} days. If it is done, close it; if it still stands, edit it, with the same words if they still fit; if it is wrong, drop it.`)
+    }
+    if (reasons.length) notes.push({ list, id: line.id, reasons: reasons.slice(0, 6) })
+  }
   return notes
 }

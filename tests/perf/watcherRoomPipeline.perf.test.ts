@@ -1,11 +1,12 @@
 // @vitest-environment node
 // SOTTO_PERF_BENCH=1 npx vitest run tests/perf/watcherRoomPipeline.perf.test.ts --maxWorkers=1 --disable-console-intercept
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { build } from 'esbuild'
 import { _electron as electron } from '@playwright/test'
 import { describe, expect, it } from 'vitest'
+import { bundleDesktopMain } from '../fixtures/desktopMainBundle'
 import { median, PERF_BENCH } from '../fixtures/perfBench'
 
 describe.skipIf(!PERF_BENCH)('actual Electron Watcher room pipeline (#991)', () => {
@@ -13,11 +14,15 @@ describe.skipIf(!PERF_BENCH)('actual Electron Watcher room pipeline (#991)', () 
     const root = await mkdtemp(join(tmpdir(), 'sotto-watcher-room-entry-'))
     if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-watcher-room-entry-')) throw new Error('Unexpected owned fixture path')
     const main = join(root, 'main.cjs'), preload = join(root, 'preload.cjs'), page = join(root, 'page.js')
-    await writeFile(preload, `const {contextBridge,ipcRenderer}=require('electron');let start;const receivers={};
-      for(const channel of ['room','shell','detail'])ipcRenderer.on(channel,(_event,value,revision)=>receivers[channel]?.(value,revision));contextBridge.exposeInMainWorld('bench',{
-      onRoom:listener=>{receivers.room=listener},onState:listener=>{receivers.shell=listener},onDetail:listener=>{receivers.detail=listener},
+    // The room reaches the page through the real preload's reassembly of main's room updates (#1450), on the real channel.
+    // Each send's source revision comes just before it on a channel of the benchmark's own.
+    await build({ stdin: { contents: `import {contextBridge,ipcRenderer} from 'electron';
+      import {watcherRoomChanges} from './src/preload/watcherRoomChanges';let start,roomRevision=0,offRoom;const receivers={};
+      const onRoomChanged=watcherRoomChanges(ipcRenderer);ipcRenderer.on('room-revision',(_event,revision)=>{roomRevision=revision});
+      for(const channel of ['shell','detail'])ipcRenderer.on(channel,(_event,value,revision)=>receivers[channel]?.(value,revision));contextBridge.exposeInMainWorld('bench',{
+      onRoom:listener=>{offRoom?.();offRoom=onRoomChanged(room=>listener(room,roomRevision))},onState:listener=>{receivers.shell=listener},onDetail:listener=>{receivers.detail=listener},
       get:()=>ipcRenderer.invoke('get'),startCpu:()=>{start=process.cpuUsage()},endCpu:()=>{const used=process.cpuUsage(start);return{cpuMs:(used.user+used.system)/1000}},
-      measure:options=>ipcRenderer.invoke('measure',options)});`)
+      measure:options=>ipcRenderer.invoke('measure',options)});`, resolveDir: process.cwd() }, bundle: true, platform: 'node', format: 'cjs', external: ['electron'], outfile: preload })
     await build({ stdin: { contents: `import {wrapAgentBridge} from './src/renderer/src/agents/agentStateCatalogs';
       import {createRoomCompletion} from './tests/fixtures/watcherRoomCompletion';
       import {createStateSharing} from './src/renderer/src/agents/stateSharing';
@@ -31,15 +36,17 @@ describe.skipIf(!PERF_BENCH)('actual Electron Watcher room pipeline (#991)', () 
       const completion=createRoomCompletion(()=>window.bench.endCpu().cpuMs);
       window.completeRoom=(target,timeout)=>completion.wait(target,timeout);
       window.room=null;window.bench.onRoom((value,revision)=>{window.room=value;completion.receive(value,revision)})};window.restart();`, resolveDir: process.cwd() }, bundle: true, platform: 'browser', outfile: page })
-    await build({ stdin: { contents: `import {app,BrowserWindow,ipcMain} from 'electron';
+    // Main's half runs main's own Watcher room and socket client, whose words are messages, so it is built as main is.
+    await bundleDesktopMain('watcherRoomPipelineMain.ts', main, { external: ['electron'], contents: `import './src/main/interfaceLanguage';
+      import {app,BrowserWindow,ipcMain} from 'electron';
       import {measureWatcherRoom} from './tests/fixtures/watcherRoomPipeline';let window;
       app.setPath('userData',${JSON.stringify(join(root, 'profile'))});
       ipcMain.handle('get',()=>{throw Error('Unexpected shell recovery')});
+      ipcMain.handle('sotto:watcher:get',()=>{throw Error('Unexpected room recovery')});
       ipcMain.handle('measure',async(_event,{streamCount,enabled})=>{await window.webContents.executeJavaScript('window.restart()');return measureWatcherRoom(window,streamCount,enabled)});
       app.whenReady().then(async()=>{window=new BrowserWindow({show:false,webPreferences:{preload:${JSON.stringify(preload)},contextIsolation:true,sandbox:false}});
       await window.loadURL('data:text/html,<title>Watcher room pipeline fixture</title>');
-      await window.webContents.executeJavaScript(require('node:fs').readFileSync(${JSON.stringify(page)},'utf8'))});`, resolveDir: process.cwd() },
-      bundle: true, platform: 'node', external: ['electron', 'node-pty', 'sherpa-onnx-node'], outfile: main })
+      await window.webContents.executeJavaScript(require('node:fs').readFileSync(${JSON.stringify(page)},'utf8'))});` })
     let app: Awaited<ReturnType<typeof electron.launch>> | undefined
     try {
       app = await electron.launch({ args: [main], env: Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined && entry[0] !== 'ELECTRON_RUN_AS_NODE')) })

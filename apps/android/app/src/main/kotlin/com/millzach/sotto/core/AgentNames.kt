@@ -5,6 +5,6 @@ object AgentNames {
     fun name(providerID: String?): String =
         mapOf(
             "claude" to "Claude Code", "codex" to "Codex", "grok" to "Grok Build", "devin" to "Devin", "muse" to "Muse",
-            "opencode" to "OpenCode",
+            "opencode" to "OpenCode", "cursor" to "Cursor",
         )[providerID ?: ""] ?: "The agent"
 }

@@ -127,6 +127,20 @@ const record = message => appendFileSync(file('requests.jsonl'), JSON.stringify(
 const ROLE_KEYS = new Set(['model', 'model_reasoning_effort', 'sandbox_mode', 'approval_policy', 'approvals_reviewer', 'developer_instructions'])
 const SANDBOXES = new Set(['read-only', 'workspace-write', 'danger-full-access'])
 /**
+ * The service tier a request leaves a thread on, as codex-cli 0.164.0 answered it: a named tier, `default` for null, and
+ * `fallback` when none is named. `priority` (Fast) is taken only for a model `model/list` lists it for, and only the two
+ * tiers are known; anything else is a violation.
+ */
+function serviceTierFrom(method, model, requested, fallback) {
+  if (requested === undefined) return fallback
+  if (requested === null || requested === 'default') return 'default'
+  const listed = (read('script.json', {}).models ?? []).find(entry => entry.model === model)
+  if (requested !== 'priority' || !listed?.serviceTiers?.some(tier => tier.id === 'priority')) {
+    appendFileSync(file('violations.jsonl'), JSON.stringify({ method, reason: `Service tier ${requested} is not offered for ${model}.` }) + '\n')
+  }
+  return requested
+}
+/**
  * Codex validates each `agents.<name>` role as a thread loads: a missing description, a `config_file` that is not a
  * file, or a file with a key or value it does not take is dropped with a warning naming the role. `script.malformedRole`
  * forces one. Only `key = "string"` lines are read, which is all Sotto writes.
@@ -287,7 +301,8 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
   else if (method === 'thread/start') {
     const thread = { id: randomUUID(), cwd: params.cwd, model: params.model, createdAt: Math.floor(Date.now() / 1000), status: { type: 'idle' }, turns: [],
       defaultModeRequestUserInput: params.config?.['features.default_mode_request_user_input'] === true,
-      approvalPolicy: params.approvalPolicy, approvalsReviewer: params.approvalsReviewer, sandbox: params.sandbox, reasoningEffort: params.config?.model_reasoning_effort ?? 'low' }
+      approvalPolicy: params.approvalPolicy, approvalsReviewer: params.approvalsReviewer, sandbox: params.sandbox, reasoningEffort: params.config?.model_reasoning_effort ?? 'low',
+      serviceTier: serviceTierFrom(method, params.model, params.serviceTier, script.defaultServiceTier ?? 'default') }
     state.threads[thread.id] = thread
     loadedThreads.add(thread.id); owns(thread.id)
     save()
@@ -295,7 +310,7 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     checkRoles(thread.id, params.config, script)
     notify('thread/started', { thread })
     reply({ thread, model: params.model, cwd: params.cwd, approvalPolicy: thread.approvalPolicy, approvalsReviewer: thread.approvalsReviewer,
-      reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' }, ...script.threadStartSettings })
+      reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' }, serviceTier: thread.serviceTier, ...script.threadStartSettings })
   } else if (method === 'thread/fork') {
     // Codex 0.162.1's durable fork, as the e5-fork spike found it (#1028): a new thread whose history points into its
     // source's, under the source's own turn IDs, up to `lastTurnId` when given. Sotto asks for a durable fork without
@@ -314,7 +329,8 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
       createdAt: Math.floor(Date.now() / 1000), status: { type: 'idle' }, turns: JSON.parse(JSON.stringify(source.turns.slice(0, end))),
       defaultModeRequestUserInput: params.config?.['features.default_mode_request_user_input'] === true,
       approvalPolicy: params.approvalPolicy ?? source.approvalPolicy, approvalsReviewer: params.approvalsReviewer ?? source.approvalsReviewer,
-      sandbox: params.sandbox ?? source.sandbox, reasoningEffort: params.config?.model_reasoning_effort ?? source.reasoningEffort ?? 'low' }
+      sandbox: params.sandbox ?? source.sandbox, reasoningEffort: params.config?.model_reasoning_effort ?? source.reasoningEffort ?? 'low',
+      serviceTier: serviceTierFrom(method, params.model ?? source.model, params.serviceTier, source.serviceTier ?? 'default') }
     state.threads[thread.id] = thread
     loadedThreads.add(thread.id); owns(thread.id)
     save()
@@ -322,7 +338,7 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     checkRoles(thread.id, params.config, script)
     notify('thread/started', { thread: { ...thread, turns: [] } })
     reply({ thread: { ...thread, turns: [] }, model: thread.model, cwd: thread.cwd, approvalPolicy: thread.approvalPolicy, approvalsReviewer: thread.approvalsReviewer,
-      reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' } })
+      reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' }, serviceTier: thread.serviceTier })
   } else if (method === 'thread/resume' || method === 'thread/read') {
     const thread = state.threads[params.threadId]
     if (thread && lineageMissing(thread)) { setTimeout(() => emit({ id, error: { code: -32600, message: `invalid paginated history lineage for ${lineageMissing(thread)}: missing source rollout` } }), delay); return }
@@ -337,6 +353,7 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
       // Native resume returns an already loaded session without applying overrides.
       if (method === 'thread/resume' && !loadedThreads.has(thread.id)) {
         for (const key of ['model', 'approvalPolicy', 'approvalsReviewer', 'sandbox']) if (params[key] !== undefined) thread[key] = params[key]
+        if ('serviceTier' in params) thread.serviceTier = serviceTierFrom(method, thread.model, params.serviceTier, 'default')
         if (params.config && 'model_reasoning_effort' in params.config) thread.reasoningEffort = params.config.model_reasoning_effort ?? 'low'
         if (params.config && 'features.default_mode_request_user_input' in params.config) thread.defaultModeRequestUserInput = params.config['features.default_mode_request_user_input'] === true
         // A thread already loaded keeps the roles it was loaded with; only a fresh load reads them again.
@@ -356,7 +373,8 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
       const unpaged = thread.historyMode === 'paginated' && method === 'thread/read'
       const history = { ...JSON.parse(JSON.stringify(thread)), turns: method === 'thread/resume' && params.excludeTurns || unpaged ? [] : historyTurns(thread, script) }
       reply({ thread: history, model: thread.model, approvalPolicy: thread.approvalPolicy, approvalsReviewer: thread.approvalsReviewer,
-        reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' }, ...(method === 'thread/resume' ? script.threadResumeSettings : {}) })
+        reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' }, serviceTier: script.serviceTierReported ?? thread.serviceTier ?? 'default',
+        ...(method === 'thread/resume' ? script.threadResumeSettings : {}) })
     }
     else emit({ id, error: { code: -32000, message: 'Unknown thread' } })
   } else if (method === 'thread/turns/list') {
@@ -382,10 +400,19 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     if (!thread || !loadedThreads.has(thread.id)) { emit({ id, error: { code: -32600, message: 'Thread is not loaded' } }); return }
     for (const key of ['model', 'approvalPolicy', 'approvalsReviewer']) if (params[key] != null) thread[key] = params[key]
     if (params.effort != null) thread.reasoningEffort = params.effort
+    // Codex 0.164.0: a tier named sets it, null sets `default`, and none leaves it as it was.
+    if ('serviceTier' in params) thread.serviceTier = serviceTierFrom(method, thread.model, params.serviceTier, 'default')
     if (params.sandboxPolicy) thread.sandbox = { readOnly: 'read-only', workspaceWrite: 'workspace-write', dangerFullAccess: 'danger-full-access' }[params.sandboxPolicy.type]
     save()
     const settings = { model: thread.model, effort: thread.reasoningEffort, approvalPolicy: thread.approvalPolicy, approvalsReviewer: thread.approvalsReviewer,
-      sandboxPolicy: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' } }
+      // `serviceTierReported` stands for a Codex that answers with another tier than the one it was asked for, here and on a read.
+      serviceTier: script.serviceTierReported ?? thread.serviceTier ?? 'default', sandboxPolicy: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' } }
+    if (script.stopBeforeSettingsConfirmation) {
+      // Acknowledge the change, then stop before confirming it: the confirmation is lost without waiting out a deadline.
+      delete script.stopBeforeSettingsConfirmation; writeFileSync(file('script.json'), JSON.stringify(script))
+      process.stdout.write(JSON.stringify({ id, result: {} }) + '\n', () => process.exit(0))
+      return
+    }
     if (!script.dropSettingsNotification) {
       const changed = () => notify('thread/settings/updated', { threadId: thread.id, threadSettings: settings })
       if (script.settingsNotificationDelay) setTimeout(changed, script.settingsNotificationDelay)

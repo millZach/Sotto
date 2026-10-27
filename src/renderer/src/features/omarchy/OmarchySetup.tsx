@@ -1,5 +1,7 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Check, Keyboard, LoaderCircle, Palette } from 'lucide-react'
+import { t } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { OMARCHY_PIECES, type OmarchyPiece, type OmarchySetupBridge, type OmarchySetupCommand, type OmarchySetupState } from '../../../../shared/omarchySetup'
 import { formatAccelerator } from '../../../../shared/accelerator'
 import type { DictationShortcutSet } from '../../../../shared/dictationShortcuts'
@@ -15,19 +17,27 @@ const DEFAULT_SHORTCUTS: DictationShortcutSet = { press: [defaultHotkey('linux')
 function keysCopy(shortcuts: DictationShortcutSet): { title: string; what: string; done: string } {
   const words = (chord: string): string => formatAccelerator(chord, 'linux', 'editing')
   const hold = shortcuts.hold[0], press = shortcuts.press[0]
-  const title = [hold, press].filter((chord): chord is string => chord !== undefined).map(words).join(' and ')
-  if (hold === undefined) return { title, what: `Press ${words(press ?? '')} to start and stop.`, done: `Press ${words(press ?? '')} anywhere to talk.` }
-  return { title, what: press === undefined ? `Hold ${words(hold)} to talk.` : `Hold ${words(hold)} to talk, or press ${words(press)} to start and stop.`, done: `Hold ${words(hold)} anywhere to talk.` }
+  const chords = [hold, press].filter((chord): chord is string => chord !== undefined).map(words)
+  const first = chords[0] ?? '', second = chords[1]
+  const title = second === undefined ? first : t`${first} and ${second}`
+  const held = hold === undefined ? '' : words(hold), pressed = words(press ?? '')
+  if (hold === undefined) return { title, what: t`Press ${pressed} to start and stop.`, done: t`Press ${pressed} anywhere to talk.` }
+  return { title, what: press === undefined ? t`Hold ${held} to talk.` : t`Hold ${held} to talk, or press ${pressed} to start and stop.`, done: t`Hold ${held} anywhere to talk.` }
 }
 
-const PIECES = {
-  keys: { title: 'F9 and Super+Ctrl+X', short: 'the keys', what: 'Hold F9 to talk, or press Super+Ctrl+X to start and stop.',
-    files: ['~/.config/hypr/sotto-bindings.lua', 'One line at the end of ~/.config/hypr/bindings.lua, after a backup copy.'] },
-  owl: { title: 'The owl in the bar', short: 'the owl', what: 'Sotto in the Omarchy bar, and a pill with Stop and Cancel while you talk.',
-    files: ['~/.config/omarchy/plugins/sotto.dictation/', 'Its place on the bar, in ~/.config/omarchy/shell.json.'] },
-  theme: { title: 'The Omarchy theme', short: 'the theme', what: 'Sotto’s colours change with omarchy theme set.',
-    files: ['~/.config/omarchy/themed/sotto.json.tpl', 'Omarchy in both columns of Settings › Appearance, with Match Linux.'] },
-} as const
+/** Each piece in the interface language, read as the panel draws. The keys piece's title and words come from `keysCopy`. */
+function piecesCopy(): Record<OmarchyPiece, { readonly short: string; readonly title?: string; readonly what?: string; readonly files: readonly string[] }> {
+  return {
+    keys: { short: t({ message: 'the keys', comment: 'A piece of the Omarchy setup, named inside "Set up …", "Remove …" and "Try … again"' }),
+      files: ['~/.config/hypr/sotto-bindings.lua', t`One line at the end of ~/.config/hypr/bindings.lua, after a backup copy.`] },
+    owl: { title: t`The owl in the bar`, short: t({ message: 'the owl', comment: 'A piece of the Omarchy setup, named inside "Set up …", "Remove …" and "Try … again"' }),
+      what: t`Sotto in the Omarchy bar, and a pill with Stop and Cancel while you talk.`,
+      files: ['~/.config/omarchy/plugins/sotto.dictation/', t`Its place on the bar, in ~/.config/omarchy/shell.json.`] },
+    theme: { title: t`The Omarchy theme`, short: t({ message: 'the theme', comment: 'A piece of the Omarchy setup, named inside "Set up …", "Remove …" and "Try … again"' }),
+      what: t`Sotto’s colours change with omarchy theme set.`,
+      files: ['~/.config/omarchy/themed/sotto.json.tpl', t`Omarchy in both columns of Settings › Appearance, with Match Linux.`] },
+  }
+}
 
 export function useOmarchySetup(enabled: boolean, bridge = typeof window === 'undefined' ? undefined : window.sotto?.omarchySetup) {
   const [state, setState] = useState<OmarchySetupState | null>(null)
@@ -83,7 +93,9 @@ export function OmarchySetupPanel({ surface = 'settings', visible = true, contro
   /** What Sotto's keys bind, so the keys piece names them. */
   readonly shortcuts?: DictationShortcutSet
 }): ReactNode {
+  const { t } = useLingui()
   const keys = keysCopy(shortcuts)
+  const PIECES = piecesCopy()
   const local = useOmarchySetup(!controller && visible, bridge ?? window.sotto?.omarchySetup)
   const setup = controller ?? local
   const { state, busy } = setup
@@ -114,62 +126,65 @@ export function OmarchySetupPanel({ surface = 'settings', visible = true, contro
       ;(next ?? root.current)?.focus()
     })
   }
+  const [firstShort, secondShort] = todo.map(piece => PIECES[piece].short)
+  const setUpLabel = secondShort === undefined ? t`Set up ${firstShort}` : t`Set up ${firstShort} and ${secondShort}`
   const install = (pieces: OmarchyPiece[]): Promise<void> => act({ type: 'setup', pieces, keys: state?.keyConflicts.length ? keyChoice : 'unconfirmed' })
   const statusText = (piece: OmarchyPiece): string => {
     const current = state?.pieces[piece]
-    if (!current) return 'Checking'
-    return { missing: 'Not set up', failed: 'Not set up', done: 'Done', manual: 'Set up by hand', stale: 'Update ready',
-      conflict: 'Needs your choice', skipped: 'Left alone', queued: 'Waiting', working: state?.operation === 'remove' ? 'Removing' : 'Setting up' }[current.status]
+    if (!current) return t`Checking`
+    return { missing: t`Not set up`, failed: t`Not set up`, done: t({ message: 'Done', comment: 'An Omarchy setup piece that is set up' }), manual: t`Set up by hand`, stale: t`Update ready`,
+      conflict: t`Needs your choice`, skipped: t`Left alone`, queued: t`Waiting`, working: state?.operation === 'remove' ? t`Removing` : t`Setting up` }[current.status]
   }
 
-  return <div className="omarchy-setup" ref={root} tabIndex={-1} aria-label="Omarchy setup" aria-busy={busy}
+  return <div className="omarchy-setup" data-setting="omarchy-setup" ref={root} tabIndex={-1} aria-label={t`Omarchy setup`} aria-busy={busy}
     onKeyDown={event => { if (event.key === 'Escape' && files && !updateQuestion) { event.stopPropagation(); setFiles(false); filesButton.current?.focus() } }}>
     {surface === 'settings' ? <div className="omarchy-setup__head"><div>
-      <p className="tt-field__label">Omarchy</p><p className="tt-field__description">Sotto’s keys, its owl in the bar and the Omarchy theme.</p>
-    </div>{owned.length > 0 ? <Button variant="ghost" disabled={busy} onClick={() => void act({ type: 'remove', pieces: owned })}>Remove all</Button> : null}</div> : null}
-    {state?.notice ? <p className="omarchy-setup__notice" role="status">{state.notice}</p> : null}
-    {setup.error || !setup.available ? <p role="alert">Sotto could not check Omarchy setup. Your files were left alone. Try again.
-      {setup.available ? <Button variant="secondary" onClick={() => void act({ type: 'inspect' })}>Try again</Button> : null}</p> : null}
+      <p className="tt-field__label">Omarchy</p><p className="tt-field__description tt-paragraph"><Trans>Sotto’s keys, its owl in the bar and the Omarchy theme.</Trans></p>
+    </div>{owned.length > 0 ? <Button variant="ghost" disabled={busy} onClick={() => void act({ type: 'remove', pieces: owned })}><Trans>Remove all</Trans></Button> : null}</div> : null}
+    {state?.notice ? <p className="omarchy-setup__notice tt-paragraph" role="status">{state.notice}</p> : null}
+    {setup.error || !setup.available ? <p className="tt-paragraph" role="alert"><Trans>Sotto could not check Omarchy setup. Your files were left alone. Try again.</Trans>
+      {setup.available ? <Button variant="secondary" onClick={() => void act({ type: 'inspect' })}><Trans>Try again</Trans></Button> : null}</p> : null}
     <ul className="omarchy-setup__pieces">
       {OMARCHY_PIECES.map(piece => {
         const current = state?.pieces[piece], definition = piece === 'keys' ? { ...PIECES.keys, title: keys.title, what: keys.what } : PIECES[piece]
+        const short = definition.short
         const conflict = piece === 'keys' && state && state.keyConflicts.length > 0 &&
           (['missing', 'stale', 'skipped', 'failed'].includes(current?.status ?? '') || current?.status === 'conflict' && !current.owned)
         return <li key={piece} className="omarchy-setup__piece" data-piece={piece} data-state={current?.status ?? 'checking'}>
           <span className="omarchy-setup__icon">{piece === 'keys' ? <Keyboard size={20} /> : piece === 'theme' ? <Palette size={20} /> : <SottoGlyph />}</span>
           <strong className="omarchy-setup__name">{definition.title}</strong>
-          <p className="omarchy-setup__what">{definition.what}</p>
+          <p className="omarchy-setup__what tt-paragraph">{definition.what}</p>
           <div className="omarchy-setup__side"><span className="omarchy-setup__status" role="status">
             {current?.status === 'working' ? <LoaderCircle size={15} className="omarchy-setup__spin" aria-hidden="true" /> : ['done', 'manual'].includes(current?.status ?? '') ? <Check size={15} aria-hidden="true" /> : null}
             {statusText(piece)}</span>
-            {surface === 'settings' && owned.includes(piece) ? <Button variant="ghost" disabled={busy} aria-label={`Remove ${definition.short}`} onClick={() => void act({ type: 'remove', pieces: [piece] })}>Remove</Button> : null}
-            {current?.status === 'stale' && piece === 'owl' ? <Button variant="secondary" disabled={busy} onClick={() => setUpdateQuestion(true)}>Update the owl</Button> : null}
+            {surface === 'settings' && owned.includes(piece) ? <Button variant="ghost" disabled={busy} aria-label={t`Remove ${short}`} onClick={() => void act({ type: 'remove', pieces: [piece] })}><Trans>Remove</Trans></Button> : null}
+            {current?.status === 'stale' && piece === 'owl' ? <Button variant="secondary" disabled={busy} onClick={() => setUpdateQuestion(true)}><Trans>Update the owl</Trans></Button> : null}
           </div>
-          {conflict ? <div className="omarchy-setup__detail"><p id={`${label}-keys`}>{state.keyConflicts.join(' ')}</p>
+          {conflict ? <div className="omarchy-setup__detail"><p className="tt-paragraph" id={`${label}-keys`}>{state.keyConflicts.join(' ')}</p>
             {current?.retry !== 'remove' ? <div className="omarchy-setup__choices" role="radiogroup" aria-labelledby={`${label}-keys`}>
-              <label><input type="radio" name={`${label}-choice`} checked={keyChoice === 'give'} disabled={busy} onChange={() => setKeyChoice('give')} />Give F9 to Sotto</label>
-              <label><input type="radio" name={`${label}-choice`} checked={keyChoice === 'keep'} disabled={busy} onChange={() => setKeyChoice('keep')} />Leave my keys alone</label>
+              <label><input type="radio" name={`${label}-choice`} checked={keyChoice === 'give'} disabled={busy} onChange={() => setKeyChoice('give')} /><Trans>Give F9 to Sotto</Trans></label>
+              <label><input type="radio" name={`${label}-choice`} checked={keyChoice === 'keep'} disabled={busy} onChange={() => setKeyChoice('keep')} /><Trans>Leave my keys alone</Trans></label>
             </div> : null}
           </div> : null}
-          {piece === 'keys' && state?.voxtype && current?.status === 'missing' ? <p className="omarchy-setup__detail">Voxtype has these keys now. Sotto takes them over; Voxtype stays installed.</p> : null}
-          {current?.message && current.status !== 'working' ? <div className="omarchy-setup__detail" role={current.status === 'failed' ? 'alert' : undefined}><p>{current.message}</p>
-            {current.status === 'failed' ? <Button data-next variant="secondary" disabled={busy} aria-label={`Try ${definition.short} again`}
-              onClick={() => void (current.retry === 'inspect' ? act({ type: 'inspect' }) : current.retry === 'remove' ? act({ type: 'remove', pieces: [piece] }) : install([piece]))}>Try again</Button> : null}
+          {piece === 'keys' && state?.voxtype && current?.status === 'missing' ? <p className="omarchy-setup__detail tt-paragraph"><Trans>Voxtype has these keys now. Sotto takes them over; Voxtype stays installed.</Trans></p> : null}
+          {current?.message && current.status !== 'working' ? <div className="omarchy-setup__detail" role={current.status === 'failed' ? 'alert' : undefined}><p className="tt-paragraph">{current.message}</p>
+            {current.status === 'failed' ? <Button data-next variant="secondary" disabled={busy} aria-label={t`Try ${short} again`}
+              onClick={() => void (current.retry === 'inspect' ? act({ type: 'inspect' }) : current.retry === 'remove' ? act({ type: 'remove', pieces: [piece] }) : install([piece]))}><Trans>Try again</Trans></Button> : null}
           </div> : null}
           {files ? <ul className="omarchy-setup__files">{definition.files.map(file => <li key={file}>{file}</li>)}</ul> : null}
         </li>
       })}
     </ul>
-    {all ? <div className="omarchy-setup__done" role="status"><strong>Sotto is set up in Omarchy.</strong>
-      <p>{surface === 'first-run' ? 'You’ll try F9 in the Shortcut step, once the speech model is downloaded.' : keys.done}</p></div> : null}
+    {all ? <div className="omarchy-setup__done" role="status"><strong><Trans>Sotto is set up in Omarchy.</Trans></strong>
+      <p className="tt-paragraph">{surface === 'first-run' ? t`You’ll try F9 in the Shortcut step, once the speech model is downloaded.` : keys.done}</p></div> : null}
     <div className="omarchy-setup__actions">
       {todo.length > 0 || busy ? <Button data-next disabled={busy} onClick={() => void install(todo)}>
-        {busy ? setup.removing ? 'Removing' : 'Setting up' : todo.length === 3 ? 'Set up all three' : `Set up ${todo.map(piece => PIECES[piece].short).join(' and ')}`}
+        {busy ? setup.removing ? t`Removing` : t`Setting up` : todo.length === 3 ? t`Set up all three` : setUpLabel}
       </Button> : null}
-      <Button ref={filesButton} variant="ghost" aria-expanded={files} onClick={() => setFiles(!files)}>{files ? 'Hide the files it changes' : 'Show the files it changes'}</Button>
+      <Button ref={filesButton} variant="ghost" aria-expanded={files} onClick={() => setFiles(!files)}>{files ? t`Hide the files it changes` : t`Show the files it changes`}</Button>
     </div>
-    {updateQuestion ? <ConfirmationDialog title="Update the owl?" description="Updating restarts the bar for a moment."
-      confirmLabel="Update the owl" cancelLabel="Cancel" danger={false}
+    {updateQuestion ? <ConfirmationDialog title={t`Update the owl?`} description={t`Updating restarts the bar for a moment.`}
+      confirmLabel={t`Update the owl`} cancelLabel={t`Cancel`} danger={false}
       onConfirm={async () => { await act({ type: 'update-owl' }) }} onCancel={() => setUpdateQuestion(false)} fallbackFocusRef={root} /> : null}
   </div>
 }

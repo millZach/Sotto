@@ -65,7 +65,7 @@ export async function stack(root: string, withActivity: boolean, streamCount: nu
   const native = new ConfiguredProviderHost({ directory: root, provider: () => 'claude', enabledProviders: () => ['claude', 'codex'],
     threadProvider: id => registry.byThread(id)?.provider,
     hosts: { claude: new SottoThreadHost('claude', adapters.claude, registry), codex: new SottoThreadHost('codex', adapters.codex, registry),
-      grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), opencode: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) } })
+      grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), opencode: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), cursor: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), deepseek: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) } })
   const workspace = new WorkspaceHost(native, root, () => true, undefined,
     watcherEnabled, /* museEnabled */ false, /* streamingPublishCostEnabled */ true)
   await workspace.initialize()

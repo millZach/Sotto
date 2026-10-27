@@ -1,12 +1,22 @@
 import React, { useId, type ReactNode } from 'react'
+import { i18n } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { Plural, Trans, useLingui } from '@lingui/react/macro'
 import { openAtRequestLabel, threadPress, waitKind, type OpenThread, type OverviewEntry, type WaitKind } from './WatcherOverview'
 
 /** How many names the line holds before the rest are counted: more than this and it would stop being one quiet line. */
 const NAMES = 5
-const WHY: Record<WaitKind, string> = { question: 'question', permission: 'permission', failed: 'last turn failed', prototype: 'prototype to review' }
+const WHY = {
+  question: msg({ message: 'question', comment: 'Why a thread needs the user, after its name' }),
+  permission: msg({ message: 'permission', comment: 'Why a thread needs the user, after its name' }),
+  failed: msg`last turn failed`,
+  prototype: msg`prototype to review`,
+} as const satisfies Record<WaitKind, unknown>
 
 /** What a press on a name does when the thread's request has its card in Watcher's conversation. */
-export const goToAskLabel = (title: string, kind: 'question' | 'permission'): string => `Go to the ${kind} from ${title} in this conversation`
+export const goToAskLabel = (title: string, kind: 'question' | 'permission'): string => kind === 'question'
+  ? i18n._(msg`Go to the question from ${title} in this conversation`)
+  : i18n._(msg`Go to the permission from ${title} in this conversation`)
 
 /**
  * One quiet line under Watcher's header naming each thread that needs the user and why: a question, a permission or a
@@ -27,11 +37,13 @@ export function WatcherGlance({ entries, onOpen, onShowAll, inline, onJump }: {
   readonly onJump?: ((threadId: string, requestId: string | undefined) => boolean) | undefined
 }): ReactNode {
   const heading = useId()
+  const { t } = useLingui()
   if (entries.length === 0) return null
   const named = entries.slice(0, NAMES)
   const more = entries.length - named.length
+  const waiting = entries.length
   return <section className="watcher-glance" aria-labelledby={heading}>
-    <h2 className="watcher-glance__lead" id={heading}>{entries.length} need{entries.length === 1 ? 's' : ''} you</h2>
+    <h2 className="watcher-glance__lead" id={heading}><Plural value={waiting} one="# needs you" other="# need you" /></h2>
     <ul className="watcher-glance__names">
       {named.map(entry => {
         const thread = entry.overview.thread
@@ -43,10 +55,10 @@ export function WatcherGlance({ entries, onOpen, onShowAll, inline, onJump }: {
           <span className="watcher-row__ring" data-tone={kind === 'failed' ? 'failed' : kind === 'prototype' ? 'prototype' : 'needs'} aria-hidden="true" />
           <button type="button" className="watcher-glance__name tt-focusable" aria-label={here ? goToAskLabel(thread.title, kind) : openAtRequestLabel(thread.title, kind)} title={thread.title}
             onClick={event => { if (here && !event.shiftKey && onJump?.(thread.id, requestId) === true) return; press.onClick(event) }} onKeyDown={press.onKeyDown}><span>{thread.title}</span></button>
-          <span className="watcher-glance__why" aria-hidden="true">{WHY[kind]}</span>
+          <span className="watcher-glance__why" aria-hidden="true">{i18n._(WHY[kind])}</span>
         </li>
       })}
-      {more > 0 ? <li><button type="button" className="watcher-glance__name tt-focusable" aria-label={`${more} more need you. Show all threads`} onClick={event => onShowAll(event.currentTarget)}>{more} more</button></li> : null}
+      {more > 0 ? <li><button type="button" className="watcher-glance__name tt-focusable" aria-label={t`${more} more need you. Show all threads`} onClick={event => onShowAll(event.currentTarget)}><Trans>{more} more</Trans></button></li> : null}
     </ul>
   </section>
 }

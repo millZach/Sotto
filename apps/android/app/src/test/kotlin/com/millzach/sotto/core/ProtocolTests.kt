@@ -71,7 +71,8 @@ class ProtocolTests {
         val old = decode<ThreadSummary>("""{"id":"worker","projectId":"project","title":"Worker","status":"idle","requests":[]}""")
         assertNull(old.kind)
         assertNull(old.watchedByWatcher)
-        val shell = decode<Shell>("""{"host":{"name":"Laptop","threads":[],"projects":[],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true}},"watcher":{"futurePage":"ignored","runtimeMode":"full-access","standingWatches":[],"ownChanges":[]}}""")
+        // The machines line (#1032) rides on the Watcher page too, which this client never asks for and ignores.
+        val shell = decode<Shell>("""{"host":{"name":"Laptop","threads":[],"projects":[],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true}},"watcher":{"futurePage":"ignored","runtimeMode":"full-access","standingWatches":[],"ownChanges":[],"machines":{"readAt":null,"rows":[{"hostId":"host","name":"This computer","thisComputer":true,"connected":true,"working":2,"starting":0,"isDefault":true,"cpuState":null,"memoryState":null,"threads":[]}]}}}""")
         assertTrue(shell.host.threads.isEmpty())
         assertFalse(Wire.snapshotHello.toString().contains("watcher-phone"))
         val receipt = decode<Receipt>("""{"status":"completed","watcherManage":{"status":"ok"}}""")

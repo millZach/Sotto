@@ -52,16 +52,22 @@ export interface ConnectFacts {
   readonly lastVia?: HostVia | undefined
   /** How long this run of retries has gone on, from the drop that began it; absent when this is not a retry. */
   readonly retryingForMs?: number | undefined
+  /**
+   * How long this run of retries tries the tailnet alone: `TAILNET_ONLY_MS` after a drop, and the whole restart budget
+   * after a restart sent over the tailnet, whose new host takes longer to come up than a network takes to come back.
+   */
+  readonly tailnetOnlyMs?: number | undefined
 }
 
 /**
  * The connections a connect tries, in order. The tailnet comes first when the owner prefers it, an address is known and
  * this computer is paired; SSH follows it, except in the first minute of retries for a host whose last connection was a
- * tailnet connection (ADR-0053, October 13 amendment).
+ * tailnet connection (ADR-0053, October 13 amendment), or of the restart budget after a host update's restart sent over the
+ * tailnet (ADR-0088, October 16 amendment).
  */
 export function connectOrder(facts: ConnectFacts): readonly HostVia[] {
   if (facts.adding || facts.edited || facts.prefer !== 'tailnet' || !facts.address || !facts.paired) return ['ssh']
-  const tailnetOnly = facts.lastVia === 'tailnet' && facts.retryingForMs !== undefined && facts.retryingForMs < TAILNET_ONLY_MS
+  const tailnetOnly = facts.lastVia === 'tailnet' && facts.retryingForMs !== undefined && facts.retryingForMs < (facts.tailnetOnlyMs ?? TAILNET_ONLY_MS)
   return tailnetOnly ? ['tailnet'] : ['tailnet', 'ssh']
 }
 

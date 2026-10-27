@@ -117,6 +117,16 @@ describe('main-window theme tokens', () => {
     for (const provider of ['codex', 'claude', 'grok'] as const) {
       expect(contrast(color('provider-ink'), color(`provider-${provider}`)), `${provider} badge`).toBeGreaterThanOrEqual(4.5)
     }
+    expect(contrast(color('provider-ink'), color('provider-cursor-badge')), 'cursor badge').toBeGreaterThanOrEqual(4.5)
+    expect(contrast(color('provider-ink'), color('provider-deepseek-badge')), 'deepseek badge').toBeGreaterThanOrEqual(4.5)
+  })
+
+  it.each(combinations)('%s mode of %s draws Cursor’s mark at 3:1 wherever it sits', (mode, id) => {
+    const color = palette(mode, id)
+    // Cursor's token is drawn straight in both modes, as OpenCode's is: the model menu's rail and chip, the sidebar and a host tile.
+    for (const surface of ['canvas', 'surface', 'surface-elevated', 'sidebar', 'card', 'card-selected', 'selected'] as const) {
+      expect(contrast(color('provider-cursor'), color(surface)), `Cursor's mark on ${surface}`).toBeGreaterThanOrEqual(3)
+    }
   })
 
   it.each(combinations)('%s mode of %s draws every chart series and Other at 3:1 on the room and the surface', (mode, id) => {
@@ -240,7 +250,7 @@ describe('main-window theme tokens', () => {
     const css = tokensCss.replace(/\/\*[\s\S]*?\*\//gu, '')
     expect(css).not.toMatch(/data-accent/u)
     const derived = tokenBlocks.find(block => block.selectors.length === 1 && block.selectors[0] === ':root' && block.declarations.has('--tt-canvas'))!
-    const constants = new Set(['--tt-success', '--tt-provider-codex', '--tt-provider-claude', '--tt-provider-grok', '--tt-provider-devin', '--tt-provider-opencode', '--tt-provider-ink', ...CHART_SERIES.map(name => `--tt-${name}`), '--tt-chart-other', '--tt-backdrop', '--tt-shadow-sm', '--tt-shadow-lg', '--tt-shadow-overlay', '--tt-shadow-color'])
+    const constants = new Set(['--tt-success', '--tt-provider-codex', '--tt-provider-claude', '--tt-provider-grok', '--tt-provider-devin', '--tt-provider-opencode', '--tt-provider-cursor', '--tt-provider-muse', '--tt-provider-opencode-badge', '--tt-provider-cursor-badge', '--tt-provider-deepseek-badge', '--tt-provider-ink', ...CHART_SERIES.map(name => `--tt-${name}`), '--tt-chart-other', '--tt-backdrop', '--tt-shadow-sm', '--tt-shadow-lg', '--tt-shadow-overlay', '--tt-shadow-color'])
     for (const [name, value] of derived.declarations) {
       // A relative colour from a theme role (`oklch(from var(…) …)`) is derived, not a literal.
       if (constants.has(name) || !/^(#|rgb\(|oklch\((?!from (var|color-mix)\())/u.test(value)) continue
@@ -272,8 +282,12 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/features/settings/hostBoot.css',
       'src/renderer/src/features/settings/hostProviders.css',
       'src/renderer/src/features/settings/workerRoles.css',
+      'src/renderer/src/features/settings/workerMachine.css',
+      'src/renderer/src/features/settings/watcherCompaction.css',
       'src/renderer/src/features/settings/dictationShortcuts.css',
+      'src/renderer/src/features/settings/threadShortcuts.css',
       'src/renderer/src/features/settings/menuBarOwl.css',
+      'src/renderer/src/features/settings/languagePicker.css',
       'src/renderer/src/agents/hostBadge.css',
       'src/renderer/src/agents/activityBodies.css',
       'src/renderer/src/agents/requests/requests.css',
@@ -286,11 +300,13 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/skillPill.css',
       'src/renderer/src/agents/threadMonitor.css',
       'src/renderer/src/agents/threadChips.css',
+      'src/renderer/src/agents/nextPrompt.css',
       'src/renderer/src/agents/owlSky.css',
       'src/renderer/src/watcher/watcher.css',
       'src/renderer/src/watcher/watcherPicture.css',
       'src/renderer/src/watcher/nightScene.css',
       'src/renderer/src/agents/workingCopy.css',
+      'src/renderer/src/agents/threadClear.css',
       'src/renderer/src/agents/branchToolbar.css',
       'src/renderer/src/agents/gitActionButton.css',
       'src/renderer/src/agents/newThread.css',
@@ -298,11 +314,14 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/providerRecovery.css',
       'src/renderer/src/agents/providers.css',
       'src/renderer/src/agents/opencodeSources.css',
+      'src/renderer/src/agents/ownServers.css',
       'src/renderer/src/agents/clientUpdates.css',
       'src/renderer/src/agents/hostUpdates.css',
       'src/renderer/src/features/updates/updateAll.css',
       'src/renderer/src/agents/screenshots.css',
       'src/renderer/src/agents/reviewComments.css',
+      'src/renderer/src/agents/replyQuotes.css',
+      'src/renderer/src/agents/runCommand.css',
       'src/renderer/src/agents/visualCard.css',
       'src/renderer/src/agents/delegation.css',
       'src/renderer/src/agents/messageScrubber.css',

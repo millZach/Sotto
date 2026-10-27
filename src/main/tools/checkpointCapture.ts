@@ -1,3 +1,5 @@
+import { i18n } from '@lingui/core'
+import { t } from '@lingui/core/macro'
 import type { BigIntStats } from 'node:fs'
 import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -15,6 +17,32 @@ const COUNT_MESSAGE = `This working copy exceeds the ${FILE_LIMIT.toLocaleString
 const SIZE_MESSAGE = `This working copy exceeds the checkpoint size limit (${TOTAL_BYTE_LIMIT / MIB} MiB total, ${FILE_BYTE_LIMIT / MIB} MiB per file).`
 /** Git refused to list the folder: it is not in a repository, or Git does not trust the repository's owner. */
 const UNLISTED_MESSAGE = 'Git cannot list the files in this working copy, so no checkpoint was taken. Checkpoints need a folder inside a Git repository that Git trusts.'
+const UNSAFE_NAME_MESSAGE = 'This working copy contains a file name that checkpoint storage cannot safely represent.'
+const HARD_LINK_MESSAGE = 'Checkpoint capture requires regular files without hard links.'
+
+/**
+ * A capture's refusal as the Changes panel shows it. The English is what a checkpoint keeps on disk as its reason and
+ * what Watcher reads; this says it in the interface language shown now (ADR-0123). Anything else is shown as written.
+ */
+export function shownCaptureMessage(message: string): string {
+  switch (message) {
+    case COUNT_MESSAGE: {
+      // Grouped by the reader's language, as the English is grouped by en-US.
+      const limit = new Intl.NumberFormat(i18n.locale).format(FILE_LIMIT)
+      return t`This working copy exceeds the ${limit}-file checkpoint limit.`
+    }
+    case SIZE_MESSAGE: {
+      const total = TOTAL_BYTE_LIMIT / MIB, file = FILE_BYTE_LIMIT / MIB
+      return t`This working copy exceeds the checkpoint size limit (${total} MiB total, ${file} MiB per file).`
+    }
+    case UNLISTED_MESSAGE: return t`Git cannot list the files in this working copy, so no checkpoint was taken. Checkpoints need a folder inside a Git repository that Git trusts.`
+    case LINK_MESSAGE: return t`Checkpoint paths cannot follow symbolic links or directory junctions.`
+    case UNSAFE_NAME_MESSAGE: return t`This working copy contains a file name that checkpoint storage cannot safely represent.`
+    case HARD_LINK_MESSAGE: return t`Checkpoint capture requires regular files without hard links.`
+    case INVALID_REQUEST: return t`This tool request is invalid. Refresh the tools panel.`
+  }
+  return message
+}
 /** `lstat` and directory checks are cheap and many; reads hold up to 8 MiB each, so fewer run at once. */
 const STAT_CONCURRENCY = 32
 const READ_CONCURRENCY = 8
@@ -61,6 +89,12 @@ interface Folder {
   checkout?: string
   files?: Map<string, Seen>
   verdict?: Verdict
+  /**
+   * The listed files that put the folder over a size limit when it was last refused for its size: those over the
+   * per-file limit, or the largest that alone exceed the total. Kept after the verdict stops holding, since an agent's
+   * commit or edit turns a verdict around far more often than it shrinks these.
+   */
+  oversized?: readonly string[]
 }
 /** A reason the folder cannot be captured that holds until something it names changes, and the paths that would show it. */
 class Refusal {
@@ -118,7 +152,8 @@ const gitRefusedListing = (error: unknown): boolean => {
  * inode and mode match the folder's last snapshot keeps the hash recorded then, unless its times were too close
  * to that snapshot to trust (`RACY_NS`) or its backup has since been removed. A folder that could not be captured
  * keeps that verdict until its Git state, its top-level listing or a path that decided the verdict moves, so a
- * send into it costs a few `lstat`s.
+ * send into it costs a few `lstat`s. Once a size verdict stops holding, the folder is listed again but sized from the
+ * files that put it over, while Git still lists them and they still do.
  */
 export class CheckpointCapture {
   private readonly folders = new Map<string, Folder>()
@@ -256,6 +291,11 @@ export class CheckpointCapture {
       // A file added or removed anywhere changes the listing of the directory holding it.
       return refuse('too-large', COUNT_MESSAGE, [...new Set(paths.filter(valid).map(parentOf).filter(Boolean))])
     }
+    // While Git still lists the files that last put the folder over a size limit and they still do, a walk of every
+    // file could only refuse it too, so it is refused from them, before Git's state is read or the rest is sized.
+    const oversized = await this.stillOversized(root, folder.oversized, paths)
+    if (oversized) return refuse('too-large', SIZE_MESSAGE, oversized)
+    delete folder.oversized
     const gitState = Promise.all([git(root, ['ls-files', '--stage', '-z']), git(root, ['rev-parse', '--verify', 'HEAD']).then(text => text.trim(), () => '')])
     gitState.catch(() => undefined)
 
@@ -277,7 +317,7 @@ export class CheckpointCapture {
       return check
     }
     const entries = await mapConcurrently<string, BigIntStats | Refusal | null>(paths, STAT_CONCURRENCY, async path => {
-      if (['__proto__', 'constructor', 'prototype'].includes(path)) return refuse('blocked', 'This working copy contains a file name that checkpoint storage cannot safely represent.', [path, ''])
+      if (['__proto__', 'constructor', 'prototype'].includes(path)) return refuse('blocked', UNSAFE_NAME_MESSAGE, [path, ''])
       // The path cannot be watched; the nearest directory that can be changes its listing when the path is renamed or removed.
       if (!valid(path)) {
         let directory = parentOf(path)
@@ -295,10 +335,10 @@ export class CheckpointCapture {
       if (entry instanceof Refusal) return entry
       const path = paths[index]!
       if (entry.isSymbolicLink()) return refuse('blocked', LINK_MESSAGE, [path, parentOf(path)])
-      if (!entry.isFile() || entry.nlink > 1n) return refuse('blocked', 'Checkpoint capture requires regular files without hard links.', [path, parentOf(path)])
-      if (entry.size > BigInt(FILE_BYTE_LIMIT)) return refuse('too-large', SIZE_MESSAGE, [path])
+      if (!entry.isFile() || entry.nlink > 1n) return refuse('blocked', HARD_LINK_MESSAGE, [path, parentOf(path)])
+      if (entry.size > BigInt(FILE_BYTE_LIMIT)) { folder.oversized = [path]; return refuse('too-large', SIZE_MESSAGE, [path]) }
       total += entry.size
-      if (total > BigInt(TOTAL_BYTE_LIMIT)) return refuse('too-large', SIZE_MESSAGE, this.largest(paths, entries))
+      if (total > BigInt(TOTAL_BYTE_LIMIT)) { folder.oversized = this.largest(paths, entries); return refuse('too-large', SIZE_MESSAGE, folder.oversized) }
     }
 
     const blobDirectory = this.options.blobDirectory
@@ -332,8 +372,28 @@ export class CheckpointCapture {
   }
 
   /**
+   * `decided` again when every one of those files is still in `listed` and they still put the folder over a size limit
+   * as regular files, which a walk of every listed file would find too; otherwise nothing. A few `lstat`s, where the
+   * walk takes one for every listed file and directory: on a large checkout, the seconds a send spent waiting.
+   */
+  private async stillOversized(root: string, decided: readonly string[] | undefined, listed: readonly string[]): Promise<readonly string[] | undefined> {
+    if (!decided?.length) return undefined
+    const names = new Set(listed)
+    if (!decided.every(path => names.has(path))) return undefined
+    const sizes = await mapConcurrently(decided, STAT_CONCURRENCY, path => lstat(join(root, path), { bigint: true })
+      .then(info => info.isFile() ? info.size : null, absentAsNull))
+    let total = 0n
+    for (const size of sizes) {
+      if (size === null) return undefined
+      if (size > BigInt(FILE_BYTE_LIMIT)) return decided
+      total += size
+    }
+    return total > BigInt(TOTAL_BYTE_LIMIT) ? decided : undefined
+  }
+
+  /**
    * The largest files that alone exceed the total limit. While they stay as they are the folder stays over it,
-   * whatever else is added or removed, so they are what a too-large verdict watches.
+   * whatever else is added or removed, so they are what a too-large verdict watches, up to `WATCH_LIMIT` of them.
    */
   private largest(paths: readonly string[], entries: readonly (BigIntStats | Refusal | null)[]): string[] {
     const sized = entries.flatMap((entry, index) => entry && !(entry instanceof Refusal) ? [{ path: paths[index]!, size: entry.size }] : [])
@@ -342,7 +402,7 @@ export class CheckpointCapture {
     let total = 0n
     for (const { path, size } of sized) {
       chosen.push(path); total += size
-      if (total > BigInt(TOTAL_BYTE_LIMIT) || chosen.length > WATCH_LIMIT) break
+      if (total > BigInt(TOTAL_BYTE_LIMIT)) break
     }
     return chosen
   }

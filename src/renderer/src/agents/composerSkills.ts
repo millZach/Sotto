@@ -1,3 +1,6 @@
+import type { MessageDescriptor } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+
 import type { AgentSkillCatalog, AgentSkillReference } from '../../../shared/agentSkills'
 import { hasMentionToken } from '../../../shared/mentions'
 import { providerProfile, type SkillSigil } from '../../../shared/providerProfile'
@@ -14,10 +17,16 @@ export interface SkillTrigger {
   readonly end: number
 }
 
-const SCOPE_LABELS: Record<CatalogSkill['scope'], string> = { user: 'Personal', repo: 'Project', system: 'System', admin: 'Admin' }
+const SCOPE_LABELS: Readonly<Record<CatalogSkill['scope'], MessageDescriptor>> = {
+  user: msg({ message: 'Personal', comment: 'Where a skill comes from: skills the user set up for themselves.' }),
+  repo: msg({ message: 'Project', context: 'skill source', comment: 'Where a skill comes from: skills kept in the project.' }),
+  system: msg({ message: 'System', context: 'skill source', comment: 'Where a skill comes from: built into the provider.' }),
+  admin: msg({ message: 'Admin', comment: 'Where a skill comes from: set by an administrator.' }),
+}
 const MAX_SELECTED_SKILLS = 32
 
-export function skillScopeLabel(scope: CatalogSkill['scope']): string { return SCOPE_LABELS[scope] }
+/** Where a skill comes from, as a message the component showing it reads in the interface language. */
+export function skillScopeLabel(scope: CatalogSkill['scope']): MessageDescriptor { return SCOPE_LABELS[scope] }
 
 /** How a written skill mention starts, as the provider's profile says; `$name` alone for a provider this build does not know. */
 export function skillSigils(providerId: string | undefined): readonly SkillSigil[] {

@@ -1,4 +1,6 @@
 import React, { useId, type ReactNode } from 'react'
+import { msg } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 
 import {
   MENU_BAR_OWL_BODIES,
@@ -10,6 +12,7 @@ import {
   type MenuBarOwlBody,
   type MenuBarOwlEyes,
 } from '../../../../shared/menuBarOwl'
+import type { LaterWords } from './laterWords'
 import './menuBarOwl.css'
 
 /**
@@ -19,37 +22,39 @@ import './menuBarOwl.css'
 export function MenuBarOwlSettings({ body, eyes, onChoose }: {
   readonly body: MenuBarOwlBody
   readonly eyes: MenuBarOwlEyes
-  readonly onChoose: (patch: { menuBarOwlBody: MenuBarOwlBody } | { menuBarOwlEyes: MenuBarOwlEyes }, successText: string) => void
+  readonly onChoose: (patch: { menuBarOwlBody: MenuBarOwlBody } | { menuBarOwlEyes: MenuBarOwlEyes }, successText: LaterWords) => void
 }): ReactNode {
+  const { t } = useLingui()
   return (
-    <div className="menu-bar-owl">
-      <h3 className="theme-settings__subheading">Menu bar owl</h3>
-      <p className="theme-settings__assignment-hint">The owl perched on a branch in your menu bar.</p>
+    <div className="menu-bar-owl" data-setting="menu-bar-owl">
+      <h3 className="theme-settings__subheading"><Trans>Menu bar owl</Trans></h3>
+      <p className="theme-settings__assignment-hint tt-paragraph"><Trans>The owl's eyes in the dark side of a crescent moon, in your menu bar. Owl body colors the moon.</Trans></p>
       <SwatchGroup
-        title="Body"
-        part="body"
+        title={t({ message: 'Body', comment: "The menu bar owl's body, whose color the swatches below choose" })}
+        choiceLabel={(label, active) => active ? t`Use ${label} as the owl's body color, currently active` : t`Use ${label} as the owl's body color`}
         ids={MENU_BAR_OWL_BODIES}
         labels={MENU_BAR_OWL_BODY_LABELS}
         swatches={MENU_BAR_OWL_BODY_SWATCHES}
         value={body}
-        onChoose={id => onChoose({ menuBarOwlBody: id }, 'Owl body saved.')}
+        onChoose={id => onChoose({ menuBarOwlBody: id }, msg`Owl body saved.`)}
       />
       <SwatchGroup
-        title="Eyes"
-        part="eye"
+        title={t({ message: 'Eyes', comment: "The menu bar owl's eyes, whose color the swatches below choose" })}
+        choiceLabel={(label, active) => active ? t`Use ${label} as the owl's eye color, currently active` : t`Use ${label} as the owl's eye color`}
         ids={MENU_BAR_OWL_EYES}
         labels={MENU_BAR_OWL_EYES_LABELS}
         swatches={MENU_BAR_OWL_EYES_SWATCHES}
         value={eyes}
-        onChoose={id => onChoose({ menuBarOwlEyes: id }, 'Owl eyes saved.')}
+        onChoose={id => onChoose({ menuBarOwlEyes: id }, msg`Owl eyes saved.`)}
       />
     </div>
   )
 }
 
-function SwatchGroup<Id extends string>({ title, part, ids, labels, swatches, value, onChoose }: {
+function SwatchGroup<Id extends string>({ title, choiceLabel, ids, labels, swatches, value, onChoose }: {
   readonly title: string
-  readonly part: string
+  /** A swatch's name, given its color's name and whether it is the one in use. */
+  readonly choiceLabel: (label: string, active: boolean) => string
   readonly ids: readonly Id[]
   readonly labels: Record<Id, string>
   readonly swatches: Record<Id, string>
@@ -69,7 +74,7 @@ function SwatchGroup<Id extends string>({ title, part, ids, labels, swatches, va
               type="button"
               className="menu-bar-owl__choice tt-focusable"
               aria-pressed={active}
-              aria-label={`Use ${labels[id]} as the owl's ${part} color${active ? ', currently active' : ''}`}
+              aria-label={choiceLabel(labels[id], active)}
               onClick={() => onChoose(id)}
             >
               <span className="menu-bar-owl__swatch" style={{ background: swatches[id] }} aria-hidden="true" />

@@ -112,6 +112,8 @@ describe('failureFix', () => {
     expect(failureFix('archive-missing', context)).toEqual({
       text: 'Download Sotto-host-0.1.21-linux-x64.tar.gz from the Sotto releases page to the SSH host, then unpack it into the host installation folder there:',
       command: 'mkdir -p "$HOME/.local/share/sotto-host" && tar -xzf Sotto-host-0.1.21-linux-x64.tar.gz -C "$HOME/.local/share/sotto-host"',
+      // The archive the sentence names, so the desktop can say the sentence in the interface language (ADR-0123).
+      archive: 'Sotto-host-0.1.21-linux-x64.tar.gz',
     })
   })
   it('reads the journal of the boot unit on the host when the unit would not start the host or keep it running', () => {

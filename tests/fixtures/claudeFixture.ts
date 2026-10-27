@@ -37,12 +37,13 @@ export async function claudeFixture(root?: string, requestTimeoutMs = 2000, envi
     silence: () => writeFile(join(root, 'settings-script.json'), JSON.stringify({ silent: true })),
     answer: () => rm(join(root, 'settings-script.json'), { force: true }),
     effective: async id => {
-      const current = JSON.parse(await readFile(join(root, `settings-${await realId(id)}.json`), 'utf8')) as { model: string; effort: string | null; mode: string; pid: number }
+      const current = JSON.parse(await readFile(join(root, `settings-${await realId(id)}.json`), 'utf8')) as { model: string; effort: string | null; mode: string; fast?: boolean; pid: number }
       const modes: Record<string, string> = { default: 'approval-required', acceptEdits: 'auto-accept-edits', auto: 'auto', bypassPermissions: 'full-access' }
-      return { process: current.pid, modelId: current.model, ...(current.effort ? { reasoningEffort: current.effort } : {}), runtimeMode: modes[current.mode] ?? current.mode }
+      return { process: current.pid, modelId: current.model, ...(current.effort ? { reasoningEffort: current.effort } : {}), runtimeMode: modes[current.mode] ?? current.mode,
+        fastMode: current.fast === true }
     },
   }
-  return { root, adapter, host: adapter, providerId: 'claude' as const, projectId: 'project', modelId: 'fixture-model', realId, action, skips: claudeFixtureSkips,
+  return { root, adapter, host: adapter, providerId: 'claude' as const, projectId: 'project', modelId: 'fixture-model', realId, action, skips: claudeFixtureSkips, nativePdf: true,
     protocol: { promptMethod: 'user', resumeMethod: 'resume', permissionDecision: (record: RecordedRpc) => {
       const frame = record.params?.frame as { response?: { response?: { behavior?: string } } } | undefined
       const behavior = frame?.response?.response?.behavior

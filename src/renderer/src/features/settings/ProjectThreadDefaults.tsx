@@ -1,11 +1,13 @@
 import React, { useId, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
+import { Trans, useLingui } from '@lingui/react/macro'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
 import { projectWorkingCopyDefaultKey } from '../../../../shared/clientIdentity'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { Button } from '../../components/Button'
 import { Field } from '../../components/Field'
 import { Select } from '../../components/Select'
+import { useOwlFeature } from '../../state/owlFeature'
 
 interface ProjectThreadDefaultsProps {
   readonly settings: AppSettings
@@ -13,6 +15,7 @@ interface ProjectThreadDefaultsProps {
 }
 
 export function ProjectThreadDefaults({ settings, onSave }: ProjectThreadDefaultsProps): ReactNode {
+  const { t } = useLingui()
   const agents = useOptionalAgents()
   const projects = agents?.state?.host.projects ?? []
   const [open, setOpen] = useState(false)
@@ -23,21 +26,34 @@ export function ProjectThreadDefaults({ settings, onSave }: ProjectThreadDefault
   const contentId = useId()
   const project = projects.find(item => item.id === selectedId) ?? projects[0]
   const defaultKey = (id: string): string => projectWorkingCopyDefaultKey(agents?.state, id)
+  // Keep main up to date (ADR-0142) acts on this computer's projects alone, so a remote host's project offers no override.
+  const keepMain = useOwlFeature('keep-main-current')
+  const localProject = project !== undefined && (defaultKey(project.id) !== project.id || !agents?.state?.connections?.some(host => host.kind === 'remote'))
 
-  const saveDefault = async (value: string): Promise<void> => {
+  // One save at a time for the chosen project; the controls wait while it runs.
+  const save = async (patch: (key: string) => SettingsPatch): Promise<void> => {
     if (!project || savingRef.current) return
     savingRef.current = true
     setSaving(true)
-    const defaults = { ...settings.projectThreadWorkingCopyDefaults }
-    if (value === 'inherit') delete defaults[defaultKey(project.id)]
-    else if (value === 'shared' || value === 'independent') defaults[defaultKey(project.id)] = value
     try {
-      await onSave({ projectThreadWorkingCopyDefaults: defaults })
+      await onSave(patch(defaultKey(project.id)))
     } finally {
       savingRef.current = false
       setSaving(false)
     }
   }
+  const saveDefault = (value: string): Promise<void> => save(key => {
+    const defaults = { ...settings.projectThreadWorkingCopyDefaults }
+    if (value === 'inherit') delete defaults[key]
+    else if (value === 'shared' || value === 'independent') defaults[key] = value
+    return { projectThreadWorkingCopyDefaults: defaults }
+  })
+  const saveKeepMain = (value: string): Promise<void> => save(key => {
+    const overrides = { ...settings.projectKeepMainCurrent }
+    if (value === 'on' || value === 'off') overrides[key] = value
+    else delete overrides[key]
+    return { projectKeepMainCurrent: overrides }
+  })
 
   return <div onKeyDown={event => {
     if (event.key !== 'Escape' || !open) return
@@ -45,20 +61,25 @@ export function ProjectThreadDefaults({ settings, onSave }: ProjectThreadDefault
     setOpen(false)
     button.current?.focus()
   }}>
-    <Button ref={button} variant="ghost" aria-expanded={open} aria-controls={contentId} onClick={() => setOpen(!open)}>
-      {open ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />} Project defaults
+    <Button ref={button} variant="ghost" data-setting="project-defaults" aria-expanded={open} aria-controls={contentId} onClick={() => setOpen(!open)}>
+      {open ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />} <Trans>Project defaults</Trans>
     </Button>
     <div id={contentId} hidden={!open}>
       {project ? <div className="settings-rows">
-        <Field label="Project"><Select value={project.id} disabled={saving} onChange={event => setSelectedId(event.currentTarget.value)}>
+        <Field label={t({ message: 'Project', comment: 'The project whose default is being chosen' })}><Select value={project.id} disabled={saving} onChange={event => setSelectedId(event.currentTarget.value)}>
           {projects.map(item => <option key={item.id} value={item.id}>{item.title} — {item.path}</option>)}
         </Select></Field>
-        <Field label="New threads in this project work in"><Select value={settings.projectThreadWorkingCopyDefaults[defaultKey(project.id)] ?? 'inherit'} disabled={saving} onChange={event => void saveDefault(event.currentTarget.value)}>
-          <option value="inherit">Use global default ({settings.threadWorkingCopyDefault === 'shared' ? 'Project folder' : 'New worktree'})</option>
-          <option value="shared">Project folder</option>
-          <option value="independent">New worktree</option>
+        <Field label={t`New threads in this project work in`}><Select value={settings.projectThreadWorkingCopyDefaults[defaultKey(project.id)] ?? 'inherit'} disabled={saving} onChange={event => void saveDefault(event.currentTarget.value)}>
+          <option value="inherit">{settings.threadWorkingCopyDefault === 'shared' ? t`Use global default (Project folder)` : t`Use global default (New worktree)`}</option>
+          <option value="shared">{t`Project folder`}</option>
+          <option value="independent">{t`New worktree`}</option>
         </Select></Field>
-      </div> : <p className="tt-field__description">Add a project in Threads to set its default working copy.</p>}
+        {keepMain && localProject ? <Field label={t`Keep this project's main up to date`}><Select value={settings.projectKeepMainCurrent[defaultKey(project.id)] ?? 'inherit'} disabled={saving} onChange={event => void saveKeepMain(event.currentTarget.value)}>
+          <option value="inherit">{settings.keepMainCurrent ? t`Use the Git setting (On)` : t`Use the Git setting (Off)`}</option>
+          <option value="on">{t({ message: 'On', comment: "Keep this project's main up to date: on" })}</option>
+          <option value="off">{t({ message: 'Off', comment: "Keep this project's main up to date: off" })}</option>
+        </Select></Field> : null}
+      </div> : <p className="tt-field__description tt-paragraph"><Trans>Add a project in Threads to set its default working copy.</Trans></p>}
     </div>
   </div>
 }

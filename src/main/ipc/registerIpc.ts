@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
-  WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, WATCHER_START_NEW, WATCHER_READ_MERGE_TURNS, watcherContinueHandoverRequestSchema,
+  WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, WATCHER_START_NEW, WATCHER_READ_MERGE_TURNS, WATCHER_READ_MACHINES, watcherContinueHandoverRequestSchema,
   watcherOpenRequestSchema, watcherStopAllRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, type WatcherBridge } from '../../shared/watcherRoom'
 import { externalLinkSchema } from '../../shared/externalLinks'
 import { questionPageOpenSchema, type QuestionPageOpen, type QuestionPageOpenResult } from '../../shared/questionPageOpen'
@@ -42,6 +42,7 @@ import {
   SPEECH_MODEL_DOWNLOAD,
   SPEECH_MODEL_LIST,
   OPENROUTER_CHECK_KEY,
+  OPENROUTER_LIST_MODELS,
   TRANSCRIPTION_TRANSCRIBE,
   MICROPHONE_ENSURE_ACCESS,
   TRANSCRIPT_POLISH,
@@ -78,6 +79,7 @@ import {
   type OutputDeliveryRequest,
   type OutputResult,
   type OpenRouterKeyCheck,
+  type OpenRouterModelList,
   type TranscriptionRequest,
   type TranscriptionResult,
   type StartupState,
@@ -99,6 +101,8 @@ import {
 import type { RendererRole } from '../security'
 import type { RecoveryNotice } from '../../shared/recoveryNotice'
 import { OMARCHY_THEME_ID } from '../../shared/themes/omarchy'
+import { INTERFACE_LANGUAGE_GET } from '../../shared/interfaceLanguageBridge'
+import type { InterfaceLanguageState } from '../../shared/interfaceLanguages'
 
 const noPayloadSchema = z.undefined()
 const settingKeys = [
@@ -113,11 +117,14 @@ const settingKeys = [
   'menuBarOwlEyes',
   'creature',
   'showCreature',
+  'interfaceLanguage',
   'customThemes',
   'reducedMotion',
   'roomTransition',
   'roomTransitionSpeed',
+  'roomTransitionLook',
   'terminalFontSize',
+  'threadShortcuts',
   'microphoneId',
   'maxRecordingSeconds',
   'soundCues',
@@ -141,12 +148,18 @@ const settingKeys = [
   'llmDictionary',
   'llmTimeoutMs',
   'llmMinWords',
+  'llmModel',
+  'llmMode',
+  'llmOwnModel',
   'threadTitles',
+  'nextPromptSuggestions',
   'threadWorkingCopyDefault',
   'projectThreadWorkingCopyDefaults',
   'worktreeCleanup',
   'gitFetchIntervalSeconds',
   'gitAutoPull',
+  'keepMainCurrent',
+  'projectKeepMainCurrent',
   'defaultMergeMethod',
   'lastMergeMethod',
   'diffLayout',
@@ -156,6 +169,7 @@ const settingKeys = [
   'gitWritingInstructions',
   'followPullRequestTemplates',
   'autoSettleMergedThreads',
+  'clearSettledThreadsAfterDays',
   'proactivePanels',
   'commitMessages',
   'pullRequestText',
@@ -173,6 +187,9 @@ const settingKeys = [
   'resumeThreadsAfterRestart',
   'workerRoles',
   'watcherSettlesFinishedThreads',
+  'newWorkerMachine',
+  'watcherCompactAtTokens',
+  'compactIdleThreads',
   'memoryEnabled',
   'cloudIphoneMonthlyMinutes',
   'cloudIphoneIdleMinutes',
@@ -369,6 +386,8 @@ export interface SpeechModelIpcService {
 
 export interface OpenRouterKeyIpcService {
   check(): Promise<OpenRouterKeyCheck>
+  /** Absent while the cleanup model Owl feature is off (ADR-0122). */
+  models?: () => Promise<OpenRouterModelList>
 }
 
 export interface UpdateIpcService {
@@ -384,7 +403,7 @@ export interface RecoveryNoticeIpcService {
 
 export interface RegisterIpcDependencies {
   /** Supplied only when the immutable Watcher release gate is on. Never served over socket IPC. */
-  readonly watcher?: Required<Omit<WatcherBridge, 'onChanged'>>
+  readonly watcher?: Required<Omit<WatcherBridge, 'onChanged' | 'readMachines'>> & Pick<WatcherBridge, 'readMachines'>
   readonly settings: SettingsIpcService
   readonly history: HistoryIpcService
   readonly startup: StartupIpcService
@@ -409,6 +428,8 @@ export interface RegisterIpcDependencies {
   readonly recoveryNotices?: RecoveryNoticeIpcService
   readonly widget?: WidgetIpcService
   readonly microphoneAccess?: { ensure(): Promise<boolean> }
+  /** Supplied only while the `interface-language` Owl feature is on (ADR-0123); both windows ask it as they start. */
+  readonly interfaceLanguage?: { current(): InterfaceLanguageState }
 }
 
 export interface WidgetIpcService {
@@ -578,6 +599,9 @@ export function registerIpc(
       register(WATCHER_DISMISS_HANDOVER, noPayloadSchema, 0, () => watcher.dismissHandover())
       register(WATCHER_START_NEW, noPayloadSchema, 0, () => watcher.startNew())
       register(WATCHER_READ_MERGE_TURNS, noPayloadSchema, 0, () => watcher.readMergeTurns())
+      // Only while Work across machines is on (#1032): Stable registers no machines read.
+      const readMachines = watcher.readMachines
+      if (readMachines) register(WATCHER_READ_MACHINES, noPayloadSchema, 0, () => readMachines.call(watcher))
     }
     register(RECOVERY_NOTICE_LIST, noPayloadSchema, 0, () =>
       dependencies.recoveryNotices?.list() ?? [],
@@ -587,6 +611,10 @@ export function registerIpc(
       dependencies.settings.update(patch),
     )
     register(SETTINGS_RESET, noPayloadSchema, 0, () => dependencies.settings.reset())
+    if (dependencies.interfaceLanguage) {
+      const interfaceLanguage = dependencies.interfaceLanguage
+      register(INTERFACE_LANGUAGE_GET, noPayloadSchema, 0, () => interfaceLanguage.current(), ['main', 'widget'])
+    }
 
     // Transcripts saved before Keep local history was turned off stay listed, and can be copied and deleted, while it is off.
     register(HISTORY_LIST, noPayloadSchema, 0, async () => {
@@ -788,6 +816,10 @@ export function registerIpc(
     register(OPENROUTER_CHECK_KEY, noPayloadSchema, 0, async (): Promise<OpenRouterKeyCheck> => {
       if (dependencies.openRouterKey === undefined) return { ok: false, reason: 'unconfigured' }
       return dependencies.openRouterKey.check()
+    })
+    register(OPENROUTER_LIST_MODELS, noPayloadSchema, 0, async (): Promise<OpenRouterModelList> => {
+      const models = dependencies.openRouterKey?.models
+      return models === undefined ? { ok: false, reason: 'http' } : models()
     })
     register(MICROPHONE_ENSURE_ACCESS, noPayloadSchema, 0, async (): Promise<boolean> => {
       if (dependencies.microphoneAccess === undefined) return true
