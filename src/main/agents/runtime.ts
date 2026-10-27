@@ -388,6 +388,10 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     bundles: new BranchBundles({ stagingDirectory: join(directory, 'branch-moves'), recordsPath: join(directory, 'branch-moves.json') }),
     folders: foldersOfSnapshot(() => agentControl.watcherSnapshot()), host: hostId => moving.watcher?.branchMoveHost(hostId),
     hostName: hostId => moving.watcher?.machineName(hostId) ?? 'That machine' })
+  // One check queue per machine (#1312): this machine's delegations and Watcher's starts marked as checks wait in the same
+  // one, in the order asked. On the desktop it is This computer's; on a headless host, the host's own, which the desktop's
+  // Watcher starts there share with the host's own delegations. Only while Work across machines is on.
+  const checks = crossMachine ? new CheckQueue(options.runsAs === 'headless-host' ? 'this machine' : 'This computer') : undefined
   const placing = crossMachine && options.runsAs !== 'headless-host'
     ? { workerMachine: () => options.settings().newWorkerMachine, projectOrigins: () => readProjectOrigins(agentControl.watcherSnapshot().projects),
       ...branchMoves ? { branchMoves } : {} } : {}
@@ -395,7 +399,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
       workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts, crossMachine, ...options.clockTime ? { clockTime: options.clockTime } : {},
       settleFinished: () => options.settings().watcherSettlesFinishedThreads, ...babysittingRetired ? { babysittingRetired: true } : {}, compactAt: () => options.settings().watcherCompactAtTokens, ...options.watcherLog ? { log: options.watcherLog } : {},
-      ...roles, ...placing }) : undefined
+      ...roles, ...placing,
+      // The desktop's Watcher queues checks where it moves branches; a host's, for the desktop's starts marked as checks.
+      ...checks && ('branchMoves' in placing || options.runsAs === 'headless-host') ? { checks } : {} }) : undefined
   if (options.delegationEnabled === true && options.runsAs !== 'headless-host') {
     agentHost.enableDelegation()
     // A delegating thread lists and names machines through Watcher's own reads (#1032), so only while Watcher runs too.
@@ -406,7 +412,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
         name: hostId => placingWatcher.machineName(hostId), setting: () => options.settings().newWorkerMachine } } : {},
       // Offered with the machines, as the tool server offers from_my_branch and test_run only with them (#1033). This
       // computer's checks run one at a time, in the order asked (#1312).
-      ...placingWatcher && branchMoves ? { branchMoves, checks: new CheckQueue('This computer'), ...options.clockTime ? { clockTime: options.clockTime } : {} } : {},
+      ...placingWatcher && branchMoves && checks ? { branchMoves, checks, ...options.clockTime ? { clockTime: options.clockTime } : {} } : {},
       // A delegated thread's own worktree is made from the delegating thread's branch, so it can bring changes back (#1030).
       ...crossMachine ? { bringBack: true } : {} })
   } else if (hostDelegation && desktopDefaults) {
@@ -418,6 +424,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       newThreadCeiling: () => defaults.ceiling(clientId => hostDelegation.counts(clientId), clientId => hostDelegation.revoked?.(clientId) === true),
       ...hostDelegation.roles ? { roles: () => defaults.roles(clientId => hostDelegation.counts(clientId)) } : {},
       warning: count => machineWorkingThreadsWarning(count, 'this machine'),
+      // A check here waits in this host's own queue, shared with the desktop's Watcher starts on it (#1312).
+      ...checks ? { checks } : {},
       machines: hostDelegationMachines(() => agentControl.hostId(), facts, () => agentControl.watcherSnapshot().threads) })
   }
   // A cleared thread's finished delegations and links go with it (ADR-0140 decision 4), on the desktop and on a host alike.
@@ -582,7 +590,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       toolReads.dispose()
       // Checks that were waiting let go of the branches they would have started from (#1312), alongside the providers'
       // drain rather than ahead of it, and before the store closes.
-      try { await stopProviders(); await preparingForShutdown } finally { await delegation?.drained(); usage?.close(); await agentHost.close() }
+      try { await stopProviders(); await preparingForShutdown } finally { await delegation?.drained(); await watcher?.drained(); usage?.close(); await agentHost.close() }
     })()
     return closing
   }

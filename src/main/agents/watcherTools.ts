@@ -34,7 +34,7 @@ const START_BY_ROLE = `Start one worker in a known project and send its first pr
 /** With Work across machines on (#1032), a start may name its machine or system, and list_machines says where one that names neither goes. */
 const START_WHERE = 'Name machine, a host ID from list_machines, or os (windows, macos or linux) to say where it runs; leave both out to start it where new workers start, which list_machines gives as newWorkersStart. A system never falls back to another. The placement in the receipt names the machine.'
 /** With Work across machines on (#1033), a start may begin from a thread's branch, and say it is a test run. */
-const START_FROM = 'To start from a thread\'s branch, name fromThread with its hostId and threadId and a new-worktree working copy: Sotto carries that branch to the machine the worker starts on and starts the worker in a new worktree on it. Uncommitted work there refuses the start; ask that thread to commit first. Set testRun when the worker is there to run tests, which the user calls a check: its uncommitted work then goes too, as a snapshot, and nothing in that thread changes. The receipt\'s startedFrom says where it started, from which branch and what the snapshot carried.'
+const START_FROM = 'To start from a thread\'s branch, name fromThread with its hostId and threadId and a new-worktree working copy: Sotto carries that branch to the machine the worker starts on and starts the worker in a new worktree on it. Uncommitted work there refuses the start; ask that thread to commit first. Set testRun for any worker that is there to run tests, from a branch or not, which the user calls a check. From a branch, its uncommitted work then goes too, as a snapshot, and nothing in that thread changes. One check runs at a time on a machine: a later one waits its turn, in the order asked, and its receipt answers at once with check saying how many are ahead; its outcome stays working until its thread is made and has run, and its snapshot is taken when you ask, not when it starts. The user\'s Stop takes a waiting check out of the queue. The receipt\'s startedFrom says where it started, from which branch and what the snapshot carried.'
 const MACHINES_WHERE = ' newWorkersStart says where a start that names no machine goes: This computer, a machine the user chose, or your choice.'
 /** Without worker roles, a start names its model, as it always has, and the offered schema has no role. */
 const startByModel = watcherToolSchemas.start_thread.input.omit({ role: true }).extend({ modelId: z.string().min(1).max(6_144) })
@@ -43,10 +43,10 @@ const ACROSS_MACHINES = { machine: true, os: true, fromThread: true, testRun: tr
 /** The start's schema as offered: no machine, system or branch to start from while Work across machines is off, and never a move. */
 const offeredStart = (roles: boolean, machines: boolean): z.ZodType => {
   if (roles) {
-    const start = watcherToolSchemas.start_thread.input.omit({ fromMove: true, madeFrom: true })
+    const start = watcherToolSchemas.start_thread.input.omit({ fromMove: true, madeFrom: true, check: true })
     return machines ? start : start.omit(ACROSS_MACHINES)
   }
-  const start = startByModel.omit({ fromMove: true, madeFrom: true })
+  const start = startByModel.omit({ fromMove: true, madeFrom: true, check: true })
   return machines ? start : start.omit(ACROSS_MACHINES)
 }
 
@@ -56,7 +56,7 @@ const offeredStart = (roles: boolean, machines: boolean): z.ZodType => {
  * or any machine's live load (#1311), so Stable advertises none of it. Only the answer carries them; the refusal is the same.
  */
 const MACHINELESS_OUTPUTS: Partial<Record<WatcherToolName, z.ZodType>> = {
-  start_thread: z.union([watcherToolSchemas.start_thread.output.options[0].omit({ placement: true, startedFrom: true }), watcherToolSchemas.start_thread.output.options[1]]),
+  start_thread: z.union([watcherToolSchemas.start_thread.output.options[0].omit({ placement: true, startedFrom: true, check: true }), watcherToolSchemas.start_thread.output.options[1]]),
   list_machines: watcherMachinesWithoutLoadOutput,
 }
 const offeredOutput = (name: WatcherToolName, machines: boolean): z.ZodType => (machines ? undefined : MACHINELESS_OUTPUTS[name]) ?? watcherToolSchemas[name].output

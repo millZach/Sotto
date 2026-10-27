@@ -13,7 +13,8 @@ import { PlacementRefusal, placeWorker, type PlacementAsk, type PlacementSources
 import { branchStartWords, systemClockTime, type BranchStartReceipt } from '../../shared/branchMoves'
 import type { DesktopBranchMoves } from './branchMoves'
 import { rebuildReservations } from './watcherRecords'
-import { isWatcherWorkActive, watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
+import { isWatcherWorkActive, WATCHER_QUIET_MS, watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
+import { CHECK_HOLDS_THROUGH_BACKGROUND, checkWaitingWords, WATCHER_CHECK_STOP, type CheckQueue } from './checkQueue'
 import { DELEGATION_LEVELS_MAX, delegatedThreadsBelow } from '../../shared/delegation'
 import { WATCHER_COMPACT_AT } from '../../shared/settings'
 import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, WATCHER_STATE_COMPUTED_MAX, watcherToolSchemas,
@@ -235,6 +236,12 @@ type PlacedStart = { readonly original: WatcherToolInput<'start_thread'>; readon
 /** `base` replaces this computer's new-thread default; `paired` narrows it. */
 type PermissionLimits = { readonly base?: AgentRuntimeMode; readonly paired?: AgentRuntimeMode }
 const ROLE_STARTS_KEPT = 500
+/**
+ * Whether a Watcher check whose first prompt is unconfirmed holds its machine's queue only while its thread is working
+ * (#1312). A delegated check holds until its brief is seen to arrive or proved never started; a Watcher start has no such
+ * proof, so without this an unconfirmed one would hold the machine's checks for good. Needs Zach.
+ */
+const WATCHER_UNCONFIRMED_CHECK_HOLDS_WHILE_RUNNING = true
 const UNSETTLES_KEPT = 500
 /**
  * How long before a client's own limit on one tool call Watcher's tools answer, when the client declares that limit
@@ -501,6 +508,20 @@ export class WatcherService implements WatcherControlHooks {
   private readonly branchStartsPlaced = new Map<string, { readonly from: WatcherThreadTarget; readonly testRun: boolean; readonly name: string }>()
   /** Where each recent start from a branch began, or why its branch could not go, for its receipt. In memory only. */
   private readonly branchStarts = new Map<string, BranchStartReceipt | { readonly refused: string }>()
+  /** What a check's receipt says while it waits its turn (#1312): it "Starts" where it will begin. In memory only, as `branchStarts` is. */
+  private readonly branchStartsWaiting = new Map<string, string>()
+  /**
+   * The starts this machine runs as checks (#1312), by operation, while each holds its place in this machine's queue: from
+   * when it is asked until it is seen to end. Its operation ID is its ticket in the queue. In memory only: a restart empties
+   * the queue.
+   */
+  private readonly checkOperations = new Set<string>()
+  /** The checks waiting their turn, with what each starts with: its start as admitted and the branch landed for it. */
+  private readonly waitingChecks = new Map<string, { readonly input: WatcherToolInput<'start_thread'>; readonly landed: LandedMove | undefined }>()
+  /** When the next check held through background work is released after WATCHER_QUIET_MS (#1312). */
+  private checkTimer: ReturnType<typeof setTimeout> | undefined
+  /** Settles once `close` has let go of the branches its waiting checks would have started from. */
+  private lettingGoChecks: Promise<void> = Promise.resolve()
   private readonly steerFallbacks = new Map<string, string>()
   /**
    * Settle finished threads: the turn each watched thread was last settled or tried at, so one that is refused is not
@@ -544,6 +565,12 @@ export class WatcherService implements WatcherControlHooks {
     crossMachine?: boolean
     /** A time of day as the user's computer writes it in the interface language, for when a check's snapshot was taken (#1312). */
     clockTime?: (at: Date) => string
+    /**
+     * This machine's checks (#1312), the queue its delegation shares, present only while Work across machines is on: a start
+     * marked `check` waits in it until the check ahead has finished, then makes its thread. Without it a start marked
+     * `check` is refused, as a host whose Owl answer is off refuses one.
+     */
+    checks?: CheckQueue
     /** The ordinary news batch's timing (WatcherWakeOptions), for tests on the real clock; the default is #1190's. */
     ordinaryBatch?: WatcherWakeOptions['ordinaryBatch']
     /**
@@ -939,6 +966,7 @@ export class WatcherService implements WatcherControlHooks {
     // to the news timers and catch handlers that publish: the coordinator's publish once the ID is back tells it.
     if (this.closed || !this.options.control.hostId()) return
     this.lookForFinished()
+    this.releaseChecks()
     // A pass put off while threads stream publishes again once it has run, without asking for another.
     if (observe && !this.options.workerHost) this.wakes.observeSoon(() => this.publish(false))
     this.options.control.refreshWatcherObservation()
@@ -1212,9 +1240,9 @@ export class WatcherService implements WatcherControlHooks {
    * its project is, as before. A retry of a recorded start is placed nowhere again: it reads the first call's receipt.
    */
   private async placeStart(input: WatcherToolInput<'start_thread'>): Promise<PlacedStart | undefined> {
-    const { machine, os, fromThread, testRun, fromMove, madeFrom, ...start } = input
-    // A move is Sotto's to name, from the thread a start names, never Watcher's.
-    if (fromMove !== undefined || madeFrom !== undefined || !this.options.workerMachine && (machine !== undefined || os !== undefined || fromThread !== undefined || testRun !== undefined)) {
+    const { machine, os, fromThread, testRun, fromMove, madeFrom, check, ...start } = input
+    // A move and a check's place are Sotto's to name, from the thread and test run a start names, never Watcher's.
+    if (fromMove !== undefined || madeFrom !== undefined || check !== undefined || !this.options.workerMachine && (machine !== undefined || os !== undefined || fromThread !== undefined || testRun !== undefined)) {
       refuse('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema.')
     }
     if (!this.options.workerMachine) return undefined
@@ -1236,7 +1264,11 @@ export class WatcherService implements WatcherControlHooks {
     // The worker's worktree keeps the thread its branch came from, so its commits can be brought back there (#1030).
     // Across machines it also keeps this desktop, the only one that may bring them back.
     const from = moveId && fromThread ? { fromMove: moveId, madeFrom: { thread: fromThread.threadId, ...fromThread.hostId !== placed.hostId ? { host: fromThread.hostId, by: this.hostId() } : {} } } : {}
-    return { original: input, input: { ...start, project: { hostId: placed.hostId, projectId: placed.projectId }, ...from }, placement: placed.receipt }
+    // A test run is a check, which waits its turn in the queue of the machine it starts on (#1312): This computer's, or a
+    // host's own where the host keeps one. On a host that keeps none it starts at once, as before.
+    const queues = placed.hostId === this.hostId() ? this.options.checks !== undefined : this.remote?.hosts().find(host => host.hostId === placed.hostId)?.checks === true
+    const queued = testRun === true && queues ? { check: true as const } : {}
+    return { original: input, input: { ...start, project: { hostId: placed.hostId, projectId: placed.projectId }, ...from, ...queued }, placement: placed.receipt }
   }
   /**
    * A start from a thread's branch names a thread Sotto knows, other than Watcher's own, and asks for a new worktree with
@@ -1272,7 +1304,86 @@ export class WatcherService implements WatcherControlHooks {
     const name = operation.target.hostId === local ? 'This computer' : placed.name
     this.rememberBranchStart(operation.id, { hostId: operation.target.hostId, name, branch: moved.branch, ...moved.snapshot ? { snapshot: moved.snapshot } : {},
       note: branchStartWords(name, moved.branch, moved.snapshot, { takenAt }) })
+    if (create.check) {
+      this.branchStartsWaiting.set(operation.id, branchStartWords(name, moved.branch, moved.snapshot, { takenAt, waiting: true }))
+      for (const kept of this.branchStartsWaiting.keys()) { if (this.branchStartsWaiting.size <= ROLE_STARTS_KEPT) break; this.branchStartsWaiting.delete(kept) }
+    }
     return { hostId: operation.target.hostId, projectId: create.project.projectId, moveId }
+  }
+  /**
+   * What a check that waits its turn answers at once (#1312), so Watcher's call does not last as long as the check ahead of
+   * it: the start's receipt, the choices it will start on, where it starts from and its place in this machine's queue. Its
+   * outcome is working until its thread is made, when its turn comes.
+   */
+  private waitingCheckResult(operation: WatcherOperation, create: WatcherToolInput<'start_thread'>): unknown {
+    const checks = this.options.checks!, ahead = checks.ahead(operation.id) ?? 0
+    return { status: 'ok', receipt: this.receipt(operation), limits: this.limits(operation), target: operation.target,
+      creationReceiptId: operation.creationReceiptId!, firstPromptReceiptId: operation.firstPromptReceiptId!,
+      effectiveChoices: { modelId: create.modelId!, reasoningEffort: create.reasoningEffort ?? null, permission: create.permission ?? { kind: 'runtime', mode: 'approval-required' },
+        workingCopy: create.workingCopy, ...(create.baseRefChoiceId ? { baseRefChoiceId: create.baseRefChoiceId } : {}) },
+      ...this.roleBlock(operation.id), ...this.placementBlock(operation.id), ...this.branchStartBlock(operation.id, true),
+      check: { ahead, note: this.checkNote(operation.id) } }
+  }
+  /** Where a waiting check stands in this machine's queue, for the model (#1312). */
+  private checkNote(operationId: string): string {
+    return checkWaitingWords(this.options.checks!.machine, this.options.checks!.ahead(operationId) ?? 0, WATCHER_CHECK_STOP)
+  }
+  /** A check's turn came (#1312): one still waiting makes its thread and sends its first prompt now, as a start that never waited does. */
+  private checkTurn(operationId: string): void {
+    if (this.waitingChecks.has(operationId)) void this.runCheck(operationId).catch(() => undefined)
+  }
+  private async runCheck(operationId: string): Promise<void> {
+    const waiting = this.waitingChecks.get(operationId)
+    if (!waiting) return
+    this.waitingChecks.delete(operationId)
+    const operation = this.closed ? undefined : this.record().operations.find(item => item.id === operationId)
+    if (!operation || operation.deliveryState !== 'queued') { await this.releaseMove(waiting.landed); this.releaseChecks(); return }
+    const running = this.executeOperation('start_thread', operation, waiting.input, { landed: waiting.landed })
+    this.active.set(operationId, running)
+    try { await running } finally { this.active.delete(operationId); this.publish() }
+  }
+  /**
+   * Takes each check out of this machine's queue once it no longer holds its place (#1312): it ended, failed, was stopped,
+   * or never started. One still waiting lets go of the branch it would have started from, and the next check takes its
+   * turn. Runs on every publish, so it reads only the few checks in the queue, and nothing while there are none.
+   */
+  private releaseChecks(): void {
+    if (!this.checkOperations.size || this.closed) return
+    clearTimeout(this.checkTimer); this.checkTimer = undefined
+    const operations = this.view().operations
+    let soonest = Infinity
+    for (const id of [...this.checkOperations]) {
+      const operation = operations.findLast(item => item.id === id)
+      const hold = operation ? this.checkHold(operation) : false
+      if (hold === true) continue
+      if (typeof hold === 'number') { soonest = Math.min(soonest, hold); continue }
+      this.checkOperations.delete(id)
+      const waiting = this.waitingChecks.get(id)
+      if (waiting) { this.waitingChecks.delete(id); void this.releaseMove(waiting.landed) }
+      this.options.checks?.leave(id)
+    }
+    if (soonest !== Infinity) this.checkTimer = setTimeout(() => this.releaseChecks(), Math.max(0, soonest - Date.now()))
+  }
+  /**
+   * Whether a check still holds its machine's place: waiting, being started, working, sent with its delivery unconfirmed,
+   * or in background work not yet seen to end, which it holds until its thread has sat in it for WATCHER_QUIET_MS, as a
+   * delegated check is released (Zach, October 27, 2026). A number is when that hold ends.
+   */
+  private checkHold(operation: WatcherOperation): boolean | number {
+    if (this.waitingChecks.has(operation.id)) return operation.deliveryState === 'queued'
+    if (this.active.has(operation.id) || operation.deliveryState === 'dispatching') return true
+    // An unconfirmed first prompt may have reached its thread: it holds while that thread is working, and no longer, since
+    // nothing else would ever prove it arrived or never started (WATCHER_UNCONFIRMED_CHECK_HOLDS_WHILE_RUNNING).
+    if (operation.deliveryState === 'uncertain') {
+      const thread = this.localThread(operation.target.threadId)
+      return WATCHER_UNCONFIRMED_CHECK_HOLDS_WHILE_RUNNING ? thread !== undefined && isThreadTurnRunning(thread) : true
+    }
+    if (operation.deliveryState !== 'accepted') return false
+    const outcome = this.outcomeOf(operation)
+    if (outcome === 'working') return true
+    if (!CHECK_HOLDS_THROUGH_BACKGROUND || outcome !== 'background') return false
+    const until = Date.parse(operation.outcomeAt ?? operation.updatedAt) + WATCHER_QUIET_MS
+    return until > Date.now() ? until : false
   }
   /**
    * Lets go of the incoming ref a start's move landed, once it is known the start made no thread to own it: a stop or a
@@ -2089,6 +2200,11 @@ export class WatcherService implements WatcherControlHooks {
           if (!this.options.historyEnabled() && operation.deliveryState === 'queued') {
             operation.deliveryState = 'failed'; operation.refusalCode = 'HISTORY_UNAVAILABLE'
           }
+          // A restart empties the check queue (#1312): a start of this machine's still queued never made its thread, since a
+          // start that did is dispatching by then, and none is started now. Its outcome is unknown, as a waiting check's is.
+          if (this.options.checks && operation.action === 'start' && operation.deliveryState === 'queued' && operation.target.hostId === this.options.control.hostId()) {
+            operation.deliveryState = 'failed'; operation.refusalCode = 'DELIVERY_UNCERTAIN'; operation.outcome = 'unknown'; operation.outcomeAt = now()
+          }
         }
       })
       this.observe(this.options.control.watcherSnapshot(), new Set())
@@ -2891,6 +3007,8 @@ export class WatcherService implements WatcherControlHooks {
    */
   outcomeOf(operation: WatcherOperation, reportsOutcomes = (hostId: string) => this.remoteReportsOutcomes(hostId)): WatcherOutcome | undefined {
     if (operation.action !== 'start' && operation.action !== 'send') return undefined
+    // A check that was waiting its turn when Sotto stopped never started, and nothing proves more (#1312).
+    if (operation.deliveryState === 'failed' && operation.outcome === 'unknown') return 'unknown'
     if (operation.deliveryState === 'failed') return operation.refusalCode === 'THREAD_TAKEN_OVER' ? 'paused'
       : operation.refusalCode === 'REQUEST_NOT_ACTIVE' ? 'stopped' : 'failed'
     if (operation.outcome === 'unknown' || operation.deliveryState === 'uncertain') return 'unknown'
@@ -2913,7 +3031,7 @@ export class WatcherService implements WatcherControlHooks {
     const read: OutcomeRead = { outcome, reference: { target: operation.target, ...(operation.turnMessageId ? { turnMessageId: operation.turnMessageId } : {}),
       ...(operation.nativeTurnId ? { nativeTurnId: operation.nativeTurnId } : {}), ...(operation.replyMessageId ? { replyMessageId: operation.replyMessageId } : {}) },
     outcomeNote: outcome === 'background' && thread && operation.turnMessageId !== undefined && !watcherBriefTurnIsNewest(thread, operation.turnMessageId)
-      ? BACKGROUND_MOVED_ON : held ? queuedSendHeld(held) : OUTCOME_NOTES[outcome],
+      ? BACKGROUND_MOVED_ON : held ? queuedSendHeld(held) : this.waitingChecks.has(operation.id) ? this.checkNote(operation.id) : OUTCOME_NOTES[outcome],
     ...(evidence.length ? { evidence } : {}) }
     if (outcome !== 'answered' || !operation.replyMessageId) return read
     if (!this.options.historyEnabled() && !this.answeredThisRun.has(operation.id)) return { ...read, replyUnavailable: { reason: 'history-off',
@@ -3446,7 +3564,9 @@ export class WatcherService implements WatcherControlHooks {
     this.active.set(admitted.operation.id, running)
     try { return await running } finally { this.active.delete(admitted.operation.id); this.dispatchRefusals.delete(admitted.operation.id); this.pruneRemoteGuards(); if (admitted.operation.target.hostId !== this.hostId() && this.record().operations.find(item => item.id === admitted.operation.id)?.deliveryState === 'uncertain') this.scheduleRemote(admitted.operation.target.hostId, true); this.publish() }
   }
-  private async executeOperation(name: WatcherToolName, operation: WatcherOperation, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>): Promise<unknown> {
+  /** `resumed`: a check whose turn came (#1312), with the branch its call landed for it while it waited. */
+  private async executeOperation(name: WatcherToolName, operation: WatcherOperation, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>,
+    resumed?: { readonly landed: LandedMove | undefined }): Promise<unknown> {
     let dispatchRefusal: Refusal | undefined
     const origin: WatcherCommandOrigin = { operationId: operation.id, guard: () => {
       try { this.guardOperation(operation.id) } catch (error) { if (error instanceof Refusal) dispatchRefusal = error; throw error }
@@ -3460,7 +3580,19 @@ export class WatcherService implements WatcherControlHooks {
         if (!modelId) throw new Error('model-missing')
         // Only with Work across machines on: a move named while it is off, by any path, starts nothing.
         if (create.fromMove && this.options.crossMachine !== true) refuse('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema.')
-        const landed = await this.moveForStart(operation, create)
+        // A check takes its place in this machine's queue before its snapshot is taken, so one whose snapshot takes longer
+        // is never overtaken by one asked after it (#1312). A machine that keeps no queue refuses it.
+        const checks = create.check ? this.options.checks : undefined
+        if (create.check && !checks) refuse('HOST_FEATURE_UNAVAILABLE', 'This machine does not run checks one at a time. Nothing was started.')
+        if (checks && !resumed) { this.checkOperations.add(operation.id); checks.join(operation.id, () => this.checkTurn(operation.id)) }
+        const landed = resumed ? resumed.landed : await this.moveForStart(operation, create)
+        if (checks && !resumed && !checks.running(operation.id)) {
+          const live = this.record().operations.find(item => item.id === operation.id)!
+          // Stopped while its snapshot was taken: it takes no place, makes nothing, and lets its branch go.
+          if (live.deliveryState !== 'queued') { await this.releaseMove(landed); this.releaseChecks(); return this.operationResult(name, live, input, true) }
+          this.waitingChecks.set(operation.id, { input: create, landed })
+          return this.waitingCheckResult(live, create)
+        }
         let created: Awaited<ReturnType<AgentControl['commandFromWatcher']>>
         try {
           // Read inside the try: a permission that no longer fits once the branch has landed lets go of its ref too.
@@ -3675,9 +3807,12 @@ ${operation.draftId}`)
     this.branchStarts.set(operationId, started)
     for (const kept of this.branchStarts.keys()) { if (this.branchStarts.size <= ROLE_STARTS_KEPT) break; this.branchStarts.delete(kept) }
   }
-  private branchStartBlock(operationId: string): { startedFrom: BranchStartReceipt } | Record<string, never> {
+  /** `waiting`: the start is a check still waiting its turn (#1312), which "Starts" where it will begin. */
+  private branchStartBlock(operationId: string, waiting = this.waitingChecks.has(operationId)): { startedFrom: BranchStartReceipt } | Record<string, never> {
     const started = this.branchStarts.get(operationId)
-    return started && !('refused' in started) ? { startedFrom: started } : {}
+    if (!started || 'refused' in started) return {}
+    const note = waiting ? this.branchStartsWaiting.get(operationId) : undefined
+    return { startedFrom: note ? { ...started, note } : started }
   }
   /** `firstRun`: the answer to the call that ran the operation, not to a retry reading its receipt again. */
   private operationResult(name: WatcherToolName, operation: WatcherOperation, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, firstRun = false): unknown {
@@ -3772,6 +3907,8 @@ ${operation.draftId}`)
         call: { name, input } } as WatcherHostControl)
       const parsed = watcherToolSchemas[name].output.parse(result)
       const receipt = 'receipt' in parsed ? parsed.receipt : undefined
+      // A check waiting its turn on the host answers before its thread is made (#1312).
+      const waitingThere = name === 'start_thread' && parsed.status === 'ok' && 'check' in parsed ? parsed.check : undefined
       if (parsed.status === 'refused' && !receipt) {
         // The host refused the start before acting on it, so it made no thread to own the branch.
         await this.releaseMove(landed)
@@ -3783,8 +3920,9 @@ ${operation.draftId}`)
         // Control may already have reached the host; an unverified reply cannot prove that it failed.
         if (!receipt || receipt.operationId !== operation.id || receipt.requestId !== operation.requestId
           || key(receipt.target) !== key(operation.target)) throw new Error('The host returned another operation receipt. Nothing was reconciled.')
-        // The host answers a start with its thread only once it has made it, and only an answer about this start says so.
-        if (name === 'start_thread' && parsed.status === 'ok') this.rememberCreatedRemotely(operation.id)
+        // The host answers a start with its thread only once it has made it, and only an answer about this start says so. A
+        // check waiting its turn there answers first, its thread not yet made.
+        if (name === 'start_thread' && parsed.status === 'ok' && !waitingThere) this.rememberCreatedRemotely(operation.id)
         await this.options.control.updateWatcher(record => this.copyRemoteReceipt(record, record.operations.find(item => item.id === operation.id)!,
           { ...receipt, ...(parsed.status === 'refused' && receipt.deliveryState === 'failed' ? { refusalCode: parsed.code } : {}), updatedAt: now() }))
         await this.reconcileRemote(operation.target.hostId).catch(() => {
@@ -3794,8 +3932,12 @@ ${operation.draftId}`)
         // receipt keeps it: the host may have made the thread. The host's own copy of the start landed nothing to release.
         if (name === 'start_thread' && parsed.status === 'refused' && receipt.deliveryState === 'failed' && !this.madeThread(operation.target)) await this.releaseMove(landed)
       }
+      // A check waiting its turn on the host is named by the host's name here, as its placement is.
+      const waitingOn = waitingThere ? this.machineName(operation.target.hostId) ?? 'that machine' : undefined
       return parsed.status === 'ok' ? { ...parsed, limits: this.limits(this.record().operations.find(item => item.id === operation.id)!),
-        ...(name === 'start_thread' ? { ...this.roleBlock(operation.id), ...this.placementBlock(operation.id), ...this.branchStartBlock(operation.id), ...this.machineWorkingWarning(operation.target) } : {}), ...(name === 'send_to_thread' ? this.fallbackBlock(operation.id) : {}) } : parsed
+        ...(name === 'start_thread' ? { ...this.roleBlock(operation.id), ...this.placementBlock(operation.id), ...this.branchStartBlock(operation.id, waitingThere !== undefined), ...this.machineWorkingWarning(operation.target),
+          ...waitingThere && waitingOn ? { check: { ahead: waitingThere.ahead, note: checkWaitingWords(waitingOn, waitingThere.ahead, WATCHER_CHECK_STOP) } } : {} } : {}),
+        ...(name === 'send_to_thread' ? this.fallbackBlock(operation.id) : {}) } : parsed
     } catch (error) {
       if (!sent) await this.releaseMove(landed)
       // Sent, but the answer was lost: the host may have failed the start, and reconciling finds out.
@@ -4567,5 +4709,16 @@ ${operation.draftId}`)
     }
     this.publish(); return { status: 'ok', state: this.state(), results }
   }
-  close(): void { this.closed = true; clearTimeout(this.settleTimer); this.settleTimer = undefined; this.handoverOffer = null; this.overtakenHandovers.clear(); this.remoteOff?.(); clearTimeout(this.remoteTimer); this.remotePending.clear(); this.remoteFailures.clear(); this.remoteGuards.clear(); this.remoteProgress.clear(); this.pendingPromptTurns.clear(); this.wakes.close(); this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear() }
+  close(): void {
+    // Checks still waiting will never start, and a restart keeps none of them, so each lets go of the branch it would have
+    // started from now, rather than leave its incoming ref behind (#1312). The queue goes with this run, so none starts.
+    const waiting = [...this.waitingChecks]
+    this.waitingChecks.clear(); this.checkOperations.clear(); clearTimeout(this.checkTimer)
+    this.lettingGoChecks = Promise.all(waiting.map(([, check]) => this.releaseMove(check.landed))).then(() => undefined)
+    this.closed = true; clearTimeout(this.settleTimer); this.settleTimer = undefined; this.handoverOffer = null; this.overtakenHandovers.clear(); this.remoteOff?.(); clearTimeout(this.remoteTimer); this.remotePending.clear(); this.remoteFailures.clear(); this.remoteGuards.clear(); this.remoteProgress.clear(); this.pendingPromptTurns.clear(); this.wakes.close(); this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear()
+  }
+  /** Settles once `close` has let go of the branches its waiting checks would have started from. */
+  drained(): Promise<void> { return this.lettingGoChecks }
+  /** Whether this machine runs Watcher's starts marked as checks one at a time (#1312), which a host lists as `watcher-check-queue`. */
+  get takesChecks(): boolean { return this.options.checks !== undefined }
 }

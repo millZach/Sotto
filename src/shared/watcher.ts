@@ -327,7 +327,11 @@ export const watcherToolSchemas = {
       fromThread: watcherThreadTargetSchema.optional(), testRun: z.boolean().optional(), fromMove: z.uuid().optional(),
       // With `fromMove`, the thread whose branch it was, which the worker's worktree keeps so its commits can be brought back
       // there (#1030): `host` only when that thread is on another machine than the worker. Sotto's, like the move.
-      madeFrom: worktreeMadeFromSchema.optional() }).strict(),
+      madeFrom: worktreeMadeFromSchema.optional(),
+      // A check (#1312): the start waits its turn in the queue of the machine it starts on, behind the check running there,
+      // before its thread is made. Sotto's, like the move: main sets it for a `testRun` placed on This computer or on a host
+      // that lists `watcher-check-queue`, and Watcher never names it. A host without a queue refuses it.
+      check: z.literal(true).optional() }).strict(),
     output: result({ ...receiptResult, target: watcherThreadTargetSchema, effectiveChoices: choices, creationReceiptId: id, firstPromptReceiptId: id,
       // Where a start from a thread's branch began and from which branch, with what a test run's snapshot carried (#1033).
       // In memory only, as `placement` is.
@@ -339,7 +343,10 @@ export const watcherToolSchemas = {
       placement: workerPlacementReceiptSchema.optional(),
       // The working threads warning (#1183), when more than ten threads are working on the machine the start went to,
       // counting it. A paired host never sends one: the desktop counts that machine's threads itself (#1032).
-      warning: shortText.min(1).optional() }),
+      warning: shortText.min(1).optional(),
+      // A check still waiting its turn on its machine (#1312): how many checks are ahead of it, the running one included,
+      // and what that means for the model. Its thread is not made yet, so its outcome reads working until it runs.
+      check: z.object({ ahead: counter, note: shortText.min(1) }).strict().optional() }),
   },
   send_to_thread: {
     // `mergeTurn` is the desktop's alone (#1339): it marks the send that gives a thread its merge turn, for Watcher's

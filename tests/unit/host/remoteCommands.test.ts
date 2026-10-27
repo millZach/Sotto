@@ -2,7 +2,8 @@
 import { describe, expect, it } from 'vitest'
 import { REMOTE_COMMANDS, REMOTE_CONFIGURATION_FIELDS, REMOTE_HOST_UPDATE_ACTIONS, REMOTE_OPENCODE_SIGN_IN_OPERATIONS, REMOTE_SIGN_IN_OPERATIONS, REMOTE_USAGE_OPERATIONS, remoteCommandRefusal, remoteHostUpdateRefusal, remoteUsageRefusal } from '../../../src/host/remoteCommands'
 import { agentCommandSchema, type AgentCommand } from '../../../src/shared/agents'
-import { HOST_UPDATE_REQUEST_ACTIONS, hostRequestSchema, commandFromProtocolV1, protocolAgentCommandSchema } from '../../../src/shared/hostProtocol'
+import { HOST_FEATURES, HOST_UPDATE_REQUEST_ACTIONS, hostRequestSchema, commandFromProtocolV1, protocolAgentCommandSchema } from '../../../src/shared/hostProtocol'
+import { watcherToolSchemas } from '../../../src/shared/watcher'
 
 /** Commands that stay on the host machine. A new command type must land here or in REMOTE_COMMANDS. */
 // Clear now and its preview act on the computer whose Settings set them (ADR-0140 decision 7).
@@ -147,6 +148,17 @@ describe('remote command allow-list', () => {
       'branch-move']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
     expect(ops.sort()).toEqual([...decided].sort())
+  })
+
+  it('carries a check on a Watcher start as a flag on watcher-control, no operation of its own, under watcher-check-queue (#1312)', () => {
+    // A host keeps its own check queue only where its Owl answer turns on Work across machines; an older host's strict
+    // start refuses the flag, and a stable desktop never sends it.
+    expect(HOST_FEATURES).toContain('watcher-check-queue')
+    const check = watcherToolSchemas.start_thread.input.shape.check
+    expect(check.safeParse(true).success).toBe(true)
+    for (const value of [false, 'yes', 1]) expect(check.safeParse(value).success).toBe(false)
+    const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
+    expect(ops).not.toContain('check')
   })
   it('lets only a recorded desktop that may answer have its host update itself, naming a version and never a URL or path (ADR-0088)', () => {
     expect([...REMOTE_HOST_UPDATE_ACTIONS]).toEqual([...HOST_UPDATE_REQUEST_ACTIONS])

@@ -731,14 +731,15 @@ export class DelegationService {
    * its own in the delegating thread's project, from which the new thread's worktree is made. Committed work only, as a
    * move; a test run's uncommitted work goes too, as a snapshot, and nothing in the delegating thread changes. Undefined
    * when there is nothing to land: no branch asked for, a send to a thread, a retry, or a caller admission refuses. A
-   * test run with no branch to start from starts as any start does until test runs queue (#1312).
+   * test run with no branch to start from is a check all the same: it queues, and starts where any start does (#1312).
    */
   private async fromBranch(threadId: string, input: DelegateInput): Promise<LandedBranch | DelegationRefusal | undefined> {
     if (input.from_my_branch === undefined && input.test_run === undefined) return undefined
+    // A host's thread may ask for a check, which queues there (#1312), but has no branch to start from.
     const moves = this.options.branchMoves
-    if (!moves) return delegationRefusal('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema. Nothing was started.')
+    if (!moves && !(this.options.checks && input.from_my_branch === undefined)) return delegationRefusal('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema. Nothing was started.')
     if (input.thread !== undefined) return delegationRefusal('INVALID_INPUT', 'from_my_branch and test_run are only for a new thread. Leave them out to send another brief. Nothing was sent.')
-    if (input.from_my_branch !== true) return undefined
+    if (input.from_my_branch !== true || !moves) return undefined
     if (input.working_copy === 'shared') return delegationRefusal('INVALID_INPUT', 'A thread started from your branch gets a worktree of its own. Leave working_copy out. Nothing was started.')
     const caller = this.snapshot().threads.find(thread => thread.id === threadId), local = this.options.control.hostId()
     if (!caller || !local || !this.admits(threadId)) return undefined
