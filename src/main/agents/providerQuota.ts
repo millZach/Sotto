@@ -372,6 +372,21 @@ export function dropExpiredQuotaWindows(quota: UsageQuotaRead, now: string): Usa
   return result
 }
 
+/**
+ * When a usage limit that stopped a turn resets, from the provider's newest quota reading (ADR-0144): the latest reset among
+ * the windows that are used up, at 100% or `limited`, and still ahead of `now`, since the turn can run again only once every
+ * one of them has reset. Undefined when no window in the reading is used up, or none says when it resets.
+ */
+export function exhaustedQuotaReset(quota: UsageQuotaRead | undefined, now: number = Date.now()): string | undefined {
+  let latest: number | undefined
+  for (const window of quota?.windows ?? []) {
+    if (!(window.status === 'limited' || (window.usedPercent ?? 0) >= 100) || !window.resetsAt) continue
+    const at = Date.parse(window.resetsAt)
+    if (Number.isFinite(at) && at > now && (latest === undefined || at > latest)) latest = at
+  }
+  return latest === undefined ? undefined : new Date(latest).toISOString()
+}
+
 /** Only legacy Cent objects establish the same USD-cent dimension; arbitrary amount objects do not. */
 function legacyCents(value: unknown): number | undefined {
   const row = object(value)

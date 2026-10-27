@@ -13,6 +13,7 @@ import { Select } from '../../components/Select'
 import { Toggle } from '../../components/Toggle'
 import { SettingsGroup } from './SettingsGroup'
 import { useOwlFeature } from '../../state/owlFeature'
+import { RESTART_STOPPED_FEATURE } from '../../../../shared/limitRestart'
 import { MAIN_CHECKOUT_INTERVAL_MS } from '../../../../shared/mainCheckout'
 import type { LaterWords } from './laterWords'
 import './gitSettings.css'
@@ -208,6 +209,8 @@ export function GitSettings({ settings, onSave }: GitSettingsProps): ReactNode {
   const { t } = useLingui()
   // Keep main up to date (ADR-0142): an Owl feature, so stable shows no switch for it.
   const keepMain = useOwlFeature('keep-main-current')
+  // Restarting stopped threads (ADR-0144; Owl only) takes babysitting away, and its switch with it.
+  const babysitShown = !useOwlFeature(RESTART_STOPPED_FEATURE)
   const says = gitSettingDescriptions(settings, { keepMainShown: keepMain })
   return <div className="git-settings">
     <SettingsGroup id="settings-worktrees" title={t`Removing worktrees`} icon={FolderMinus}>
@@ -230,10 +233,10 @@ export function GitSettings({ settings, onSave }: GitSettingsProps): ReactNode {
       </Field>
       <Toggle setting="auto-settle-merged" label={t`Auto-settle merged threads`} checked={settings.autoSettleMergedThreads} onCheckedChange={checked => void onSave({ autoSettleMergedThreads: checked })} description={says.settle} />
       {/* ADR-0061 decision 12: the switch governs the agent's tool alone; the user's own Babysit pull request stays either way. */}
-      <Toggle setting="babysit-pull-requests" label={t`Let agents babysit pull requests`} checked={settings.babysitPullRequests} onCheckedChange={checked => void onSave({ babysitPullRequests: checked })}
+      {babysitShown ? <Toggle setting="babysit-pull-requests" label={t`Let agents babysit pull requests`} checked={settings.babysitPullRequests} onCheckedChange={checked => void onSave({ babysitPullRequests: checked })}
         description={settings.babysitPullRequests
           ? t`An agent can hand its pull request to Sotto, which wakes the thread when the pull request needs it.`
-          : t`Agents can’t start babysitting, and Sotto stops any they started. You can still babysit one yourself.`} />
+          : t`Agents can’t start babysitting, and Sotto stops any they started. You can still babysit one yourself.`} /> : null}
     </SettingsGroup>
     <SettingsGroup title={t`When you read Changes`} icon={FileDiff} note={t`How Changes first opens. A choice made in Changes lasts until you change one of these or restart Sotto.`}>
       <Field label={t`Diff layout`} description={says.layout}>

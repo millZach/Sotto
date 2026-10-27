@@ -1,5 +1,7 @@
 # Threads resume after Sotto restarts
 
+October 26, 2026 amendment: on Owl, with `restart-stopped-threads` on, [ADR-0144](0144-stopped-threads-restart-when-their-limit-resets.md) supersedes decision 1. The note runs under "Restart stopped threads", which also restarts threads a usage limit stopped, and shows tagged "Restarted". The record, the note's words and three in a row stand.
+
 ## Status
 
 Accepted October 12, 2026, by the owner's choice, as an Owl feature (ADR-0072). The owner asked for "a setting that

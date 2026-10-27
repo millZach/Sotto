@@ -193,7 +193,29 @@ export interface ThreadWindowOptions {
   readonly beforePosition?: number
 }
 
-const EMPTY_WINDOW: ThreadMessageWindow = { messages: [], earlierAvailable: false, firstPosition: -1, lastPosition: -1 }
+export const EMPTY_WINDOW: ThreadMessageWindow = { messages: [], earlierAvailable: false, firstPosition: -1, lastPosition: -1 }
+
+/** How many messages a thread holds, and its newest user and assistant messages: what its summary is made from. */
+export interface ThreadSummaryMessages {
+  readonly count: number
+  readonly user: AgentMessage | undefined
+  readonly assistant: AgentMessage | undefined
+}
+
+/** The sidebar's facts from the messages they are made from, as `ThreadStore.summary` gives them. */
+export function summaryOf({ count, user, assistant }: ThreadSummaryMessages): AgentThreadSummary {
+  const summary = summarizeThread({ messages: [...(user ? [user] : []), ...(assistant ? [assistant] : [])] })
+  return { ...summary, messageCount: count }
+}
+
+/** The events that make a thread's history exactly these messages: a reset, then each message added. */
+export function replacementEvents(messages: readonly AgentMessage[], historyEpoch?: string): ThreadEvent[] {
+  const at = new Date().toISOString()
+  return [
+    { kind: 'messages-reset', at, ...(historyEpoch === undefined ? {} : { historyEpoch }) },
+    ...messages.map(message => ({ kind: 'message-added' as const, at: message.createdAt || at, message })),
+  ]
+}
 
 function messageOf(row: Record<string, SQLOutputValue>): AgentMessage {
   const attachments = row.attachments === null || row.attachments === undefined ? undefined : JSON.parse(String(row.attachments)) as AgentMessage['attachments']
@@ -869,15 +891,17 @@ export class ThreadStore {
 
   /** The sidebar's facts about a thread, taken from the projection rather than from its history. */
   summary(threadId: string): AgentThreadSummary {
+    return summaryOf(this.summaryMessages(threadId))
+  }
+
+  /** What a summary is made from: how many messages the thread holds, and its newest user and assistant messages. */
+  summaryMessages(threadId: string): ThreadSummaryMessages {
     const count = this.messageCount(threadId)
     const newest = (role: 'user' | 'assistant'): AgentMessage | undefined => {
       const row = this.statement('SELECT * FROM messages WHERE thread_id = ? AND role = ? ORDER BY position DESC LIMIT 1').get(threadId, role)
       return row === undefined ? undefined : messageOf(row)
     }
-    const user = newest('user')
-    const assistant = newest('assistant')
-    const summary = summarizeThread({ messages: [...(user ? [user] : []), ...(assistant ? [assistant] : [])] })
-    return { ...summary, messageCount: count }
+    return { count, user: newest('user'), assistant: newest('assistant') }
   }
 
   /** Everything after `seq`, in the order it was written. */
@@ -1125,11 +1149,7 @@ export class ThreadStore {
    * thread as it was. Its reset waits for the disk (`appendMany`), so a power cut cannot bring back what it replaced.
    */
   replaceThreadMessages(threadId: string, messages: readonly AgentMessage[], historyEpoch?: string): void {
-    const at = new Date().toISOString()
-    this.appendMany(threadId, [
-      { kind: 'messages-reset', at, ...(historyEpoch === undefined ? {} : { historyEpoch }) },
-      ...messages.map(message => ({ kind: 'message-added' as const, at: message.createdAt || at, message })),
-    ])
+    this.appendMany(threadId, replacementEvents(messages, historyEpoch))
   }
 
   /** Runs `work` with its commits waiting for the disk (`flushedCommits`), for a caller outside the store. */

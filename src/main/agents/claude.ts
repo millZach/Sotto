@@ -41,7 +41,7 @@ import { claudeSkillPrompt, discoverClaudeSkills } from './claudeSkills'
 import { verifyFileMentions } from './promptFiles'
 import { ClaudeSubscriptionClient } from './subscriptionClaude'
 import { ClaudeProtocol, ClaudeRejected, ClaudeWritePending, object, type ClaudeFrame } from './claudeProtocol'
-import { claudeTurnAborted, claudeTurnFailure } from './claudeTurnFailure'
+import { claudeLimitStop, claudeTurnAborted, claudeTurnFailure } from './claudeTurnFailure'
 import { authoredClaudeUser, claudeDigest, ClaudeSessionLog, claudeText, claudeUserText } from './claudeSessionLog'
 import { carriesAttachedFiles, deliverAttachments } from './attachedFiles'
 import { claudeAnswer, claudeDenial, claudePending, type ClaudePending } from './claudeRequests'
@@ -189,6 +189,8 @@ function toolAllowance(servers: readonly { server: Pick<ThreadMcpServer, 'name'>
 }
 export interface ClaudeStreamJsonHostOptions {
   usageEnabled?: boolean
+  /** Restart stopped threads (ADR-0144), the Owl answer read once at start: a turn stopped at a usage limit says so on its `lastTurn`. */
+  limitStops?: boolean
   /** Test-only admission override. Production wiring never supplies it. */
   userDataPath: string; executable?: string; args?: string[]; claudeHome?: string; environment?: NodeJS.ProcessEnv; requestTimeoutMs?: number; pollIntervalMs?: number
   /** Desktop supplies its packaged SDK resource; Node resolves the installed development SDK. */
@@ -1788,10 +1790,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
       this.selfTurns.delete(id); this.queries.delete(id)
       this.interrupting.delete(id)
       const failure = frame.is_error === true && !stopped ? claudeTurnFailure(frame, this.assistantErrors.get(id)) : null
+      const limitStop = failure !== null && this.options.limitStops === true ? claudeLimitStop(frame, this.assistantErrors.get(id)) : undefined
       if (origin) {
         this.completedOrigins.add(origin)
         const messageId = !selfTurn ? alias.origins.find(value => value.uuid === origin)?.messageId : undefined
-        thread.lastTurn = { id: origin, status, ...(messageId ? { messageId } : {}) }
+        thread.lastTurn = { id: origin, status, ...(messageId ? { messageId } : {}), ...(limitStop && status === 'failed' ? { limitStop } : {}) }
         // A turn Claude Code gave itself answers no message of Sotto's. The newest message may be a steer whose own
         // turn has not begun, so it has no record to settle here.
         if (!selfTurn) this.markTurn(id, status, messageId, failure ?? undefined, steered)

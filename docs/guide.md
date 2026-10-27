@@ -20,6 +20,7 @@ The [README](../README.md) says what Sotto is and how to install it. This guide 
 - [Usage](#usage)
 - [Update all](#update-all)
 - [Resume threads after a restart](#resume-threads-after-a-restart)
+- [Restart stopped threads](#restart-stopped-threads)
 - [Notifications on a Mac](#notifications-on-a-mac)
 - [When main freezes, and Record a minute](#when-main-freezes-and-record-a-minute)
 - [Delegation between threads](#delegation-between-threads)
@@ -221,6 +222,8 @@ Claude Code, Codex, Grok Build, Devin and Muse can draw visuals; a thread on ano
 A visual is kept with its thread: it is back after a restart, goes when **Keep local history** is turned off or a checkpoint rewinds the turn it was drawn in, and stays when a later turn is rewound. A turn can draw up to 6 visuals and a thread can hold 100. The iPhone app and paired devices show a visual's explanation, with a line saying the visual is in Sotto on your computer. Visuals are drawn on this computer and contact no one. See [ADR-0056](adr/0056-an-agent-can-draw-a-visual-in-its-thread.md).
 
 ### Babysitting a pull request
+
+Sotto Owl has no babysitting ([ADR-0144](adr/0144-stopped-threads-restart-when-their-limit-resets.md)). No thread gets a wake-up for a pull request, the Pull request surface and the iPhone have no **Babysit pull request**, and Settings has no **Let agents babysit pull requests**. Watcher still hears when a watched thread's pull request's checks fail or pass, someone reviews, the branch conflicts or it merges: Sotto reads the pull requests of the threads Watcher watches every two minutes instead. What follows is stable.
 
 An agent that would otherwise wait on a pull request, polling `gh` or sleeping, can ask Sotto to **babysit** it instead and end its turn. Claude Code, Codex, Grok Build, Devin and Muse threads on this computer have the tool for it: the thread's branch's own pull request, or one the agent names by its link or number, which Sotto links to the thread first if the thread does not know it. Starting asks you nothing and changes nothing on GitHub.
 
@@ -1028,7 +1031,7 @@ Press **Usage** at the foot of the sidebar to open the dashboard. It counts all 
 
 **Prompts** and **Tokens** each draw a **Per day** chart. **Show** chooses what it draws: **Total**, **By provider**, one series for each provider with activity in the range, or **By model**, the five models with the most prompts (on Tokens, the most input and output tokens) and **Other** for the rest. **Bars | Lines** chooses how. Bars stack, so a day is as tall as its total; lines are drawn one per series, not stacked, so each can be followed on its own. A list above a split chart names every series with its total for the range; point at a day, or focus the chart and press Left or Right, and it shows that day's values instead, with Home and End for the ends and Escape back to the whole range. A screen reader hears every series' value for the day. On Tokens a value follows the rest of Usage: a dash, read as "Not reported", when no record reported it, and "at least" when some records left it out. Under a chart split by model, **Each model's provider, and what Other holds** opens a list of each drawn model with its provider and the models Other holds; Escape closes it. When a computer has more models than Usage lists, "Ranking is incomplete" beside the chart says the models drawn may not be the ones with the most prompts. A split is drawn only when every computer in the figures answered for it; when one did not, the chart says so, says nothing was lost, and offers **Try again**. Each provider has its own colour, and a model keeps its colour while it stays drawn. Devin reports no tokens, so it is never drawn on Tokens. Sotto remembers Show and Bars | Lines until it quits, on both charts and when you come back to Usage; they are not saved. When a range is longer than a year the chart is not drawn, and neither are its controls.
 
-Use the date range, provider, computer and **Everywhere / In Sotto / Outside Sotto** menus to narrow the figures. Dates and hours use this computer's time zone on every host. A dash means a figure is unavailable; zero means a reported zero, ≥ marks an incomplete lower bound, and a share worked out from incomplete figures says about. Input already includes cache reads and writes, so they are shown as parts of input rather than added to the total. A prompt counts under the model that served it. Prompts outside Sotto are the clients' own user turns, including each `codex exec` run, which an agent may have started; Watcher and wake-ups have their own counts, and subagent work counts in tokens, never as prompts. Sotto's prompts from before Usage began come from its thread store; threads deleted before then, and work a client has deleted from its own records, cannot be counted.
+Use the date range, provider, computer and **Everywhere / In Sotto / Outside Sotto** menus to narrow the figures. Dates and hours use this computer's time zone on every host. A dash means a figure is unavailable; zero means a reported zero, ≥ marks an incomplete lower bound, and a share worked out from incomplete figures says about. Input already includes cache reads and writes, so they are shown as parts of input rather than added to the total. A prompt counts under the model that served it. Prompts outside Sotto are the clients' own user turns, including each `codex exec` run, which an agent may have started; Watcher and wake-ups have their own counts (on Sotto Owl, Watcher's news counts as Watcher's and Sotto's notes are in the total only), and subagent work counts in tokens, never as prompts. Sotto's prompts from before Usage began come from its thread store; threads deleted before then, and work a client has deleted from its own records, cannot be counted.
 
 Usage reads each client's own session files on the computer that ran the work, keeps the numbers, dates, model names and app names, and drops the rest as it reads. The first read of a computer's history takes a few minutes in the background. After that it reads only what was added, five seconds after Sotto starts, every five minutes and when you open Usage, so subagent work can take a few minutes to appear. Grok Build and Devin keep no token counts on the computer, so their work outside Sotto is not counted. Muse and OpenCode are counted from the token counts they report to Sotto's threads as the work happens, each model call once, under the model that served it; Sotto reads nothing from their own folders, so their work outside Sotto is not counted either. Muse tokens from before Sotto counted them are not read back; an OpenCode thread's earlier steps are counted the next time Sotto reads that thread.
 
@@ -1048,11 +1051,30 @@ Once Sotto's download is ready and the rest has finished, the card asks to resta
 
 ## Resume threads after a restart
 
+On Sotto Owl this is part of [Restart stopped threads](#restart-stopped-threads): the same note, tagged **Restarted**, under that setting.
+
 **Settings → Threads → Resume threads after a restart** is on by default. When Sotto closes while a thread on this computer is working, for an update, a quit, a crash or a restart of the computer, the thread carries on when Sotto opens again: once its provider is back, Sotto sends it this note, shown in the thread as Sotto's with a **Resumed** tag:
 
 > Sotto restarted while you were working on this, and your last turn stopped partway. Any command or tool that was running was stopped too, so its result may be missing. Check where things stand, then carry on.
 
 Your own message is never sent again. Follow-ups you queued behind the stopped turn go after the resumed turn finishes. If the provider refuses the note, Sotto drops it and leaves the thread as it was, so nothing you send that thread waits behind it. A thread is resumed at most three times in a row; if Sotto stops a fourth time before a turn finishes, the thread waits for you. A thread settled or archived in the meantime is left alone. A request for permission that was waiting when Sotto closed was declined then; the agent asks again, and you answer it. Sotto keeps which threads were working in `restart-resume.json` in its data folder, thread IDs and times only. Turn the setting off and a stopped thread waits for you to send it a message. Threads on a remote host keep running when Sotto closes. A host resumes its own threads the same way, under its own setting; a stable host from 0.1.40.
+
+
+## Restart stopped threads
+
+On Sotto Owl, **Settings → Threads → Restart stopped threads** is on by default. It carries on a thread that was working when something other than you stopped it: a provider's usage limit, or Sotto closing.
+
+When a provider's usage limit stops a turn, Sotto reads when the limit resets: Claude Code says so in its stop, and Codex, Grok Build and Muse in their usage readings. A band at the top of the Threads sidebar says, for example, "Claude Code's limit resets at 3:00 PM. Sotto restarts 4 threads then.", and lists them; a thread on that provider that had background work running is one of them, since it was working too. Each one's sidebar row reads **Restarts at 3:00 PM**, and a strip over its composer says the same. **Don't restart** on the strip, or **Don't restart them** on the band, drops the restart, and the thread waits for you. Watched or not makes no difference.
+
+A minute after the reset, Sotto sends each thread this note, shown in the thread as Sotto's with a **Restarted** tag, ahead of anything you queued:
+
+> Claude Code's usage limit has reset. Your last turn stopped at the limit partway through, and any command or tool it was running stopped too, so its result may be missing. Check where things stand, then carry on.
+
+Watcher goes first when its own provider stopped it. When Watcher is on, it then hears which threads Sotto restarted. A thread you sent to in the meantime, one that is working again or archived is left alone; one whose provider is not connected waits until it is. Your own message is never sent again, and the note answers no question or permission. A thread that stops at the limit again is scheduled again, up to three times in a row before a turn of its own finishes.
+
+Devin, OpenCode, DeepSeek Harness and Cursor don't say when their limits reset, so Sotto doesn't restart their threads on its own; the band says so, and you send again once the limit resets. A spending limit you set never resets on its own, so it schedules nothing.
+
+When Sotto closes while a thread is working, for an update, a quit, a crash or a restart of the computer, the same setting sends the note in [Resume threads after a restart](#resume-threads-after-a-restart), tagged **Restarted**. Sotto keeps which threads to restart in `limit-restarts.json` and `restart-resume.json` in its data folder, thread IDs, providers and times only. Turn the setting off and a stopped thread waits for your next message. See [ADR-0144](adr/0144-stopped-threads-restart-when-their-limit-resets.md).
 
 ## Notifications on a Mac
 

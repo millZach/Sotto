@@ -14,6 +14,7 @@ import { useTransientFlag, writeClipboard } from '../../agents/richActions'
 import { focusedComposerField } from '../../agents/promptSelection'
 import { useOptionalApp } from '../../state/AppContext'
 import { useOwlFeature } from '../../state/owlFeature'
+import { RESTART_STOPPED_FEATURE } from '../../../../shared/limitRestart'
 import { APP_KEY, clientKey, clientsJoining, hostKey, newlyDropped, newlyInLine, pressUnderWay, updateAllSteps, updateAllView, updateAllWords, type UpdateAllItem, type UpdateAllPass, type UpdateAllPhase, type UpdateAllStep, type UpdateAllStepState } from './updateAll'
 import './updateAll.css'
 
@@ -141,6 +142,8 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
   const agents = useOptionalAgents()
   const hostsState = useHostsState(hostsBridge)
   const resumeFeature = useOwlFeature('resume-after-restart')
+  // Restart stopped threads (ADR-0144; Owl only) reads its own setting in place of Resume threads after a restart's.
+  const restartFeature = useOwlFeature(RESTART_STOPPED_FEATURE)
   const [pass, setPass] = useState<UpdateAllPass | null>(null)
   const [folded, setFolded] = useState(false)
   const [dismissed, setDismissed] = useState<string | null>(null)
@@ -166,7 +169,7 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
   const dropped = newlyDropped(sources, pass).join('|')
   const working = (state?.host.threads ?? []).filter(thread => thread.remoteHost !== true && threadKeepsHostBusy(thread)).length
   const words = updateAllWords(view)
-  const steps = updateAllSteps(view, { working, resumes: resumeFeature && app?.settings?.resumeThreadsAfterRestart === true })
+  const steps = updateAllSteps(view, { working, resumes: restartFeature ? app?.settings?.restartStoppedThreads === true : resumeFeature && app?.settings?.resumeThreadsAfterRestart === true })
   const latest = useRef({ view, sources, app })
   latest.current = { view, sources, app }
   const hidden = view.phase === 'hidden' || (view.phase === 'offer' || view.phase === 'done') && dismissed === view.fingerprint

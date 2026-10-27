@@ -16,6 +16,7 @@ import { ConfirmationDialog } from '../components/ConfirmationDialog'
 import { PaneMenu, type PaneMenuItem } from '../agents/PaneMenu'
 import { babysitEndedOf, babysitLine, babysittingOf, type BabysitLine } from '../agents/babysitting'
 import { useBabysitEndingsDismissed } from './babysitEndingsDismissed'
+import { useRestartStopped } from '../agents/RestartStopped'
 import { LinkPullRequestDialog, pullRequestBridge, sendCommand } from './PullRequestDialogs'
 import {
   canAutoMerge, checklist, checklistCount, checklistHeading, confirmationFor, holdsBack, limitedWords, linesLeft, LINK_SOURCE, MERGE_METHOD_SHORT, mergedWhen, mergeEffect, mergeLabel, mergeReady,
@@ -80,6 +81,8 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
   const [preferred, choosePreferred] = usePullRequestMergeMethod()
   // Worked out for every ending the thread holds, before a read of GitHub says which one shows.
   const endings = useBabysitEndingsDismissed()
+  // Restarting stopped threads (ADR-0144; Owl only) takes babysitting away: no line, no ending, no mark, whatever the thread holds.
+  const babysitShown = !useRestartStopped()
   const generation = useRef(0)
   const surface = useRef<HTMLDivElement>(null)
   const top = useRef<HTMLHeadingElement>(null)
@@ -209,12 +212,12 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
   const StateIcon = stateIcon(detail)
   const confirmation = confirming ? confirmationFor(confirming, detail.number, selected, detail.baseBranch) : null
   // Babysitting is offered on an open pull request this thread knows, where its host can and nothing babysits it yet.
-  const babysat = babysittingOf(thread, detail.url) !== undefined
-  const offerBabysit = Boolean(babysit && command && open && (detail.linked || detail.branch) && !babysat)
+  const babysat = babysitShown && babysittingOf(thread, detail.url) !== undefined
+  const offerBabysit = Boolean(babysitShown && babysit && command && open && (detail.linked || detail.branch) && !babysat)
   // An ending the user dismissed here stays on the record, and away from this surface, until a later one replaces it.
-  const ending = babysitEndedOf(thread, detail.url)
+  const ending = babysitShown ? babysitEndedOf(thread, detail.url) : undefined
   const endingShown = ending ? { threadId: thread.id, url: ending.url, endedAt: ending.endedAt } : null
-  const line = endingShown && endings.dismissed(endingShown) ? null
+  const line = !babysitShown || endingShown && endings.dismissed(endingShown) ? null
     : babysitLine({ thread, pullRequest: detail, agent: babysit?.agent ?? t({ message: 'the agent', comment: 'Stands in for the provider\'s name, as in "Started by the agent".' }), offered: offerBabysit })
   /** Dismiss takes its own line away; focus waits on ··· beside an open pull request, where Babysit pull request is, else on the pull request. */
   const dismissEnding = (): void => {
@@ -414,10 +417,11 @@ function LinkedFold({ thread, open, onToggle, onShow, onLink }: {
   ]
   const linkedLabel = t`Linked pull requests`
   const babysittingWord = t({ message: 'Babysitting', comment: 'Marks a pull request this thread is babysitting.' })
+  const babysitShown = !useRestartStopped()
   return <Fold label={linkedLabel} count={rows.length} open={open} onToggle={onToggle}>
     {rows.length ? <ul className="pr-surface__links" aria-label={linkedLabel}>{rows.map(row => {
       const Icon = stateIcon(row)
-      const babysat = babysittingOf(thread, row.url) !== undefined
+      const babysat = babysitShown && babysittingOf(thread, row.url) !== undefined
       const { number, title, source } = row
       const state = stateLabel(row)
       return <li key={row.url} className="pr-surface__link">
