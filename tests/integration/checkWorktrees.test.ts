@@ -93,14 +93,13 @@ it('moves one check worktree to each check’s snapshot, keeping its packages, a
   expect(f.incoming()).toEqual([])
 }, 60_000)
 
-it('gives a check a worktree of its own, leaving the check worktree as it is, when moving it could lose work or cut off a turn (#1312)', async () => {
+it('gives a check a worktree of its own, with its packages installed first, leaving the check worktree as it is, when moving it could lose work or cut off a turn (#1312)', async () => {
   const packages = installer(false)
-  const f = await fixture(packages.install, false)
+  const f = await fixture(packages.install)
   const first = await f.check()
   await f.running(first.delegation.thread)
   const path = f.worktree(first.delegation.thread)!.path!
-  // A project with no package-lock.json installs nothing.
-  expect(packages.installs).toEqual([])
+  expect(packages.installs).toHaveLength(1)
   await f.endTurn(first.delegation.thread, 'Synthetic verdict: passed')
 
   // An untracked file the first check left is work: the folder stays, and the next check gets a new worktree.
@@ -110,6 +109,11 @@ it('gives a check a worktree of its own, leaving the check worktree as it is, wh
   expect(f.worktree(second.delegation.thread)!.path).not.toBe(path)
   expect(f.worktree(second.delegation.thread)!.path).not.toContain('check-worktrees')
   expect(lf(await readFile(join(path, 'notes.txt'), 'utf8'))).toBe('kept\n')
+  // The worktree of its own has no packages yet, so they are installed there before its brief, as in the check worktree.
+  const own = f.worktree(second.delegation.thread)!.path!
+  expect(packages.installs).toHaveLength(2)
+  expect(lf(await readFile(join(own, 'node_modules', 'installed.txt'), 'utf8'))).toBe('install 2\n')
+  expect(f.worktree(second.delegation.thread)).toMatchObject({ status: 'ready', check: {} })
   await f.endTurn(second.delegation.thread, 'Synthetic verdict: passed')
 
   // A turn running in a thread there holds it too, though the folder is clean.
@@ -119,6 +123,7 @@ it('gives a check a worktree of its own, leaving the check worktree as it is, wh
   const third = await f.check()
   await f.running(third.delegation.thread)
   expect(f.worktree(third.delegation.thread)!.path).not.toBe(path)
+  expect(packages.installs).toHaveLength(3)
   expect(await exists(join(path, 'p.txt'))).toBe(true)
 }, 60_000)
 
@@ -133,7 +138,8 @@ it('makes a check’s new worktree as before while the check worktree is off (#1
 })
 
 it('holds the check worktree’s checkout from before it reads the folder, so a send there that starts meanwhile is refused (#1312)', async () => {
-  const f = await fixture(installer(false).install, false)
+  const packages = installer(false)
+  const f = await fixture(packages.install, false)
   const first = await f.check()
   await f.running(first.delegation.thread)
   const path = f.worktree(first.delegation.thread)!.path!
@@ -165,6 +171,8 @@ it('holds the check worktree’s checkout from before it reads the folder, so a 
     expect(JSON.stringify((await sibling!).error)).toMatch(/setting up the working copy/u)
     expect(f.worktree(second.delegation.thread)!.path).toBe(path)
     expect(f.native(first.delegation.thread).status).toBe('idle')
+    // A project with no package-lock.json installs nothing.
+    expect(packages.installs).toEqual([])
   } finally { reads.mockRestore(); asks.mockRestore() }
 }, 60_000)
 

@@ -2147,32 +2147,36 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       startFromOrigin: selection.startFromOrigin, existingWorktreePath: existing, ...(known?.branch ? { branch: known.branch } : {}), ...existing ? {} : check }
   }
   /**
-   * A check's working copy (#1312): the repository's check worktree on this machine, moved to the check's commit, then
-   * `npm ci` there first when its `package-lock.json` differs from the one its `node_modules` was installed from. The
-   * thread's first message waits for both, as it waits for any setup, and the folder's checkout reservation is held from
-   * before it is read until the install is over, so no send or Git action starts there meanwhile. Undefined when the check
-   * worktree is not taken, and the check gets a worktree of its own as before (CHECK_WORKTREE_PREVIOUS_THREAD).
+   * A check's working copy (#1312): the repository's check worktree on this machine, moved to the check's commit, with the
+   * folder's checkout reservation, held from before it is read until the caller lets it go once the check's packages are
+   * ready, so no send or Git action starts there meanwhile. Undefined when the check worktree is not taken, and the check
+   * gets a worktree of its own as before (CHECK_WORKTREE_PREVIOUS_THREAD).
    */
-  private async takeCheckWorktree(threadId: string, metadata: AgentWorktree): Promise<AgentWorktree | undefined> {
-    const install = this.checkInstaller
-    if (!install || !metadata.check || metadata.reused || metadata.status !== 'pending') return undefined
-    let taken: { readonly worktree: AgentWorktree; readonly release: () => void } | undefined
-    try { taken = await this.worktrees.takeCheckWorktree(metadata, path => this.reserveCheckWorktree(threadId, path)) }
-    catch { console.warn('check-worktree-not-taken'); return undefined }
-    if (!taken) { console.info('check-worktree-held'); return undefined }
+  private async takeCheckWorktree(threadId: string, metadata: AgentWorktree): Promise<{ readonly worktree: AgentWorktree; readonly release: () => void } | undefined> {
+    if (!this.checkInstaller || !metadata.check || metadata.reused || metadata.status !== 'pending') return undefined
     try {
-      let folder: string, needed: Awaited<ReturnType<typeof installNeeded>>
-      try { folder = await this.worktrees.workingDirectory(taken.worktree); needed = await installNeeded(folder) }
-      catch { return taken.worktree }
-      if (!needed) return taken.worktree
-      const running = this.touched(this.threadById(threadId) ?? this.thread(threadId))
-      running.worktree = { ...taken.worktree, status: 'pending', check: { install: 'running' } }
-      this.publish()
-      const outcome = await install(folder).catch(() => 'failed' as const)
-      if (outcome === 'installed') await recordInstalled(folder, needed.hash).catch(() => undefined)
-      else console.warn('check-install-failed')
-      return { ...taken.worktree, check: outcome === 'installed' ? {} : { install: 'failed' } }
-    } finally { taken.release() }
+      const taken = await this.worktrees.takeCheckWorktree(metadata, path => this.reserveCheckWorktree(threadId, path))
+      if (!taken) console.info('check-worktree-held')
+      return taken
+    } catch { console.warn('check-worktree-not-taken'); return undefined }
+  }
+  /**
+   * A check's packages, in whichever worktree it got (#1312), the check worktree or one of its own: `npm ci` first when
+   * its `package-lock.json` differs from the one `node_modules` there was installed from. The thread reads as installing
+   * meanwhile, and its first message waits, as it waits for any setup.
+   */
+  private async checkPackages(threadId: string, metadata: AgentWorktree, folder: string): Promise<AgentWorktree> {
+    const install = this.checkInstaller
+    if (!install || !metadata.check) return metadata
+    let needed: Awaited<ReturnType<typeof installNeeded>>
+    try { needed = await installNeeded(folder) } catch { return metadata }
+    if (!needed) return metadata
+    const running = this.threadById(threadId)
+    if (running) { this.touched(running).worktree = { ...metadata, status: 'pending', check: { install: 'running' } }; this.publish() }
+    const outcome = await install(folder).catch(() => 'failed' as const)
+    if (outcome === 'installed') await recordInstalled(folder, needed.hash).catch(() => undefined)
+    else console.warn('check-install-failed')
+    return { ...metadata, check: outcome === 'installed' ? {} : { install: 'failed' } }
   }
   /**
    * The check worktree's checkout reservation (ADR-0027's checkout guard), taken as a Git action takes it: the mutation
@@ -5029,14 +5033,19 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         this.dirty = true
         await this.flush() // Allocation owns its exact path/branch before Git mutates anything.
       }
-      metadata = await this.takeCheckWorktree(thread.id, metadata) ?? metadata
-      // An install a restart cut off is over: nothing was recorded as installed, so the next check installs again.
-      if (metadata.check?.install === 'running') metadata = { ...metadata, check: { install: 'failed' } }
-      metadata = await this.worktrees.ensure(metadata)
-      const workingDirectory = await this.worktrees.workingDirectory(metadata)
-      const target = this.touched(current())
-      target.worktree = metadata
-      target.workingDirectory = workingDirectory
+      const taken = await this.takeCheckWorktree(thread.id, metadata)
+      try {
+        if (taken) metadata = taken.worktree
+        // An install a restart cut off is over: nothing was recorded as installed, so the next check installs again.
+        if (metadata.check?.install === 'running') metadata = { ...metadata, check: { install: 'failed' } }
+        metadata = await this.worktrees.ensure(metadata)
+        const workingDirectory = await this.worktrees.workingDirectory(metadata)
+        // The check worktree installs only under its reservation; a check's own worktree is its alone.
+        if (taken || !metadata.reused) metadata = await this.checkPackages(thread.id, metadata, workingDirectory)
+        const target = this.touched(current())
+        target.worktree = metadata
+        target.workingDirectory = workingDirectory
+      } finally { taken?.release() }
     } catch (error) {
       const target = this.touched(current())
       target.worktree = { ...(target.worktree ?? thread.worktree), status: 'error', error: error instanceof Error ? error.message : 'Working-copy setup failed. Retry after restoring the folder and Git.' }
