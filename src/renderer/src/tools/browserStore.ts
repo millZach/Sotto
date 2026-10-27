@@ -1,7 +1,7 @@
 import { useCallback, useSyncExternalStore } from 'react'
 import type { MessageDescriptor } from '@lingui/core'
 import { msg, t } from '@lingui/core/macro'
-import { safeBrowserUrl, type BrowserBounds, type BrowserBridge, type BrowserEvent, type BrowserPage, type BrowserGrantView, type BrowserTask } from '../../../shared/browser'
+import { BROWSER_WAITING_TO_OPEN, safeBrowserUrl, type BrowserBounds, type BrowserBridge, type BrowserEvent, type BrowserPage, type BrowserGrantView, type BrowserTask } from '../../../shared/browser'
 import type { FileWorkspace } from '../../../shared/files'
 import type { ToolsError, ToolsResult } from '../../../shared/tools'
 import type { LaterWords } from '../features/settings/laterWords'
@@ -125,6 +125,10 @@ export class BrowserStore {
   }
   private emit(): void { for (const listener of [...this.listeners]) listener() }
   private readonly threads = new Map<string, ThreadBrowser>()
+  /** The addresses each thread's browser opened this session, newest first, held only here (ADR-0154). */
+  private readonly opened = new Map<string, readonly string[]>()
+  /** A page to show in a thread's browser as soon as it is listed: one its agent just opened (ADR-0154). */
+  private readonly wanted = new Map<string, string>()
   private readonly listeners = new Set<() => void>()
   private readonly listTokens = new Map<string, number>()
   private subscribed: BrowserBridge | null = null
@@ -141,6 +145,15 @@ export class BrowserStore {
   }
 
   thread(threadId: string): ThreadBrowser | undefined { return this.threads.get(threadId) }
+  private static readonly NONE: readonly string[] = []
+  /** The addresses this thread's browser opened this session, newest first. Never saved. */
+  openedAddresses = (threadId: string): readonly string[] => this.opened.get(threadId) ?? BrowserStore.NONE
+
+  /** Makes `pageId` the thread's active page now, or as soon as the page is listed. */
+  showPage(threadId: string, pageId: string): void {
+    if (this.threads.get(threadId)?.pages.some(page => page.id === pageId && !page.device)) { this.wanted.delete(threadId); this.select(threadId, pageId); return }
+    this.wanted.set(threadId, pageId)
+  }
 
   async activate(bridge: BrowserBridge | undefined, threadId: string): Promise<void> {
     if (!this.threads.has(threadId)) this.setThread({ threadId, workspace: null, status: 'loading', error: null, pages: [], activePageId: null, busy: false, notice: null, placementProblem: null, grant: null })
@@ -343,8 +356,24 @@ export class BrowserStore {
   }
 
   private setThread(next: ThreadBrowser): void {
+    const wanted = this.wanted.get(next.threadId)
+    if (wanted !== undefined && next.pages.some(page => page.id === wanted && !page.device)) {
+      this.wanted.delete(next.threadId)
+      next = { ...next, activePageId: wanted, notice: null }
+    }
     this.threads.set(next.threadId, next)
+    this.remember(next)
     this.emit()
+  }
+
+  /** Records the addresses a thread's pages are on; a page still waiting to be opened has opened nothing. */
+  private remember(thread: ThreadBrowser): void {
+    let list = this.opened.get(thread.threadId) ?? BrowserStore.NONE
+    for (const page of thread.pages) {
+      if (page.device || page.status === 'unavailable' || page.error === BROWSER_WAITING_TO_OPEN || list[0] === page.url || list.includes(page.url)) continue
+      list = [page.url, ...list].slice(0, 8)
+    }
+    if (list !== (this.opened.get(thread.threadId) ?? BrowserStore.NONE)) this.opened.set(thread.threadId, list)
   }
 }
 
@@ -364,6 +393,11 @@ async function settle<T>(request: Promise<ToolsResult<T>>): Promise<ToolsResult<
 
 export function useThreadBrowser(store: BrowserStore, threadId: string | null): ThreadBrowser | undefined {
   const read = useCallback(() => threadId === null ? undefined : store.thread(threadId), [store, threadId])
+  return useSyncExternalStore(store.subscribe, read)
+}
+
+export function useOpenedAddresses(store: BrowserStore, threadId: string): readonly string[] {
+  const read = useCallback(() => store.openedAddresses(threadId), [store, threadId])
   return useSyncExternalStore(store.subscribe, read)
 }
 

@@ -28,3 +28,13 @@ Tools > Browser stacks a tab row, an address row with a viewport picker, the gra
 - The browser player is unchanged and now shows only while Tools is closed for that thread's page, as it already steps aside while Tools shows the same page.
 - Comment on page's region selection gives way to Point and Screenshot to message on Owl.
 - Nothing new is sent anywhere: feedback is draft content until sent, as before.
+
+## Amendment, October 27, 2026: the pane as built
+
+The first of three pull requests builds the pane, the strip, Screenshot to message and the pane opening on its own; Point at something and the thread's one line follow. Where this record left room:
+
+- **More keeps what the old tab line held.** Besides Open in system browser, the size and Ask before this thread uses the browser, it holds Share with agent or Stop sharing, Float the browser over the thread (while the player can take the page), and, while only one page is open and so no tab line shows, New page and Close page. The sizes are radio items, Fit the pane first.
+- **Opening on its own never takes Tools from the user.** Tools turns to Browser only for a task Tools has not seen before, working, on the focused thread, while Tools is open on that thread and keyboard focus is not inside Tools. Otherwise the player floats, as it does with Tools closed.
+- **The player stays away while Tools shows the thread's browser on any page**, not only the task's own, which is what "only while Tools is closed for that thread's page" asks.
+- **The strip's last step says only what the action carries.** An action is a kind and coordinates, so a click reads "clicked in the page"; "clicked Sign in" waits for a step that records what it hit.
+- **The addresses opened this session** are every address a page of the thread's browser showed, newest first, up to eight, in the renderer's memory only. A page still waiting to be opened has opened nothing.

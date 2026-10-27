@@ -1,21 +1,18 @@
-import React, { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import React, { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { ArrowLeft, ArrowRight, ExternalLink, Globe, MessageSquarePlus, PictureInPicture2, Plus, RotateCw, Share2, X } from 'lucide-react'
-import { i18n } from '@lingui/core'
-import { msg } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
-import { BROWSER_WAITING_TO_OPEN, type BrowserBounds, type BrowserBridge, type BrowserPage, type BrowserCapture } from '../../../shared/browser'
-import type { ToolsError } from '../../../shared/tools'
+import { BROWSER_WAITING_TO_OPEN, type BrowserBridge, type BrowserCapture } from '../../../shared/browser'
 import { threadTakesSottoTools } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { useOptionalAgents } from '../agents/AgentContext'
 import { BrowserTaskDetails } from './BrowserTaskDetails'
 import { appendBrowserFeedback, BrowserFeedback } from './BrowserFeedback'
 import { browserPages, useBrowserTasks, normalizeAddress, pageLabel, useThreadBrowser, type BrowserStore } from './browserStore'
-import { useBrowserPageMount } from './useBrowserPageMount'
-import { useOverlayOpen } from './browserOverlay'
+import { listProblem, PageViewport } from './browserPageView'
+import { BrowserPane } from './BrowserPane'
+import { useOwlFeature } from '../state/owlFeature'
 import { ToolsChrome } from './ToolsChrome'
 import { shownNotice } from './toolsWords'
-import { shownWords, type LaterWords } from '../features/settings/laterWords'
 
 export interface BrowserSurfaceProps {
   readonly threadId: string
@@ -29,20 +26,16 @@ export interface BrowserSurfaceProps {
   readonly onFloat?: (() => void) | undefined
 }
 
-function listProblem(error: ToolsError, bridge: boolean): string {
-  if (!bridge) return i18n._(msg`Browser is not available in this window.`)
-  switch (error.code) {
-    case 'thread-unavailable': return i18n._(msg`This thread is not available to the browser.`)
-    case 'workspace-unavailable': return i18n._(msg`The working folder is not available.`)
-    default: return error.message || i18n._(msg`The browser could not list its pages.`)
-  }
-}
-
 /**
  * Pages the thread opened, each a live page main keeps while it is hidden. One page shows at a time, drawn by
  * main at this surface's viewport; the address bar, history and page tabs stay in the app.
  */
-export function BrowserSurface({ threadId, store, bridge, onStatus, onFloat }: BrowserSurfaceProps): ReactNode {
+export function BrowserSurface(props: BrowserSurfaceProps): ReactNode {
+  // The quiet browser pane (ADR-0154) is an Owl feature; stable keeps this surface as it was.
+  return useOwlFeature('quiet-browser') ? <BrowserPane {...props} /> : <ClassicBrowserSurface {...props} />
+}
+
+function ClassicBrowserSurface({ threadId, store, bridge, onStatus, onFloat }: BrowserSurfaceProps): ReactNode {
   const { t } = useLingui()
   const browserTitle = t({ message: 'Browser', comment: 'The Tools surface that shows a thread\'s browser pages.' })
   const browser = useThreadBrowser(store, threadId)
@@ -241,41 +234,5 @@ export function BrowserSurface({ threadId, store, bridge, onStatus, onFloat }: B
       <p className="tt-paragraph">{t`Enter a website or local server address above. Pages keep their place while you work elsewhere.`}</p>
     </div> : active ? <PageViewport key={active.id} page={active} threadId={threadId} store={store} bridge={bridge} surface={surface}
       refused={browser.placementProblem?.pageId === active.id ? browser.placementProblem.message : null} onOpenExternally={() => openExternally(active.url)} /> : null}
-  </div>
-}
-
-function PageViewport({ page, threadId, store, bridge, surface, refused, onOpenExternally }: {
-  readonly page: BrowserPage; readonly threadId: string; readonly store: BrowserStore; readonly bridge: BrowserBridge | undefined
-  readonly surface: React.RefObject<HTMLDivElement | null>; readonly refused: LaterWords | null; readonly onOpenExternally: () => void
-}): ReactNode {
-  const { t } = useLingui()
-  const host = useRef<HTMLDivElement>(null)
-  const covered = useOverlayOpen(surface, host)
-  const show = page.status !== 'unavailable' && covered === false
-  const openInSystemBrowser = t`Open in system browser`
-  const pageId = page.id
-
-  const mount = useCallback((bounds: BrowserBounds | null) => store.mount(bridge, threadId, pageId, bounds), [store, bridge, threadId, pageId])
-  useBrowserPageMount(host, show, mount)
-
-  return <div className="browser-page" id="browser-page" role="tabpanel" aria-label={pageLabel(page)} data-status={page.status}>
-    {page.status === 'unavailable' ? <div className="files-problem browser-unavailable" role="status">
-      <strong>{t`This page could not load.`}</strong>
-      {page.error ? <p>{page.error}</p> : null}
-      <p className="browser-unavailable__url">{page.url}</p>
-      <div className="browser-unavailable__actions">
-        <button type="button" className="files-link tt-focusable" onClick={() => void store.history(bridge, threadId, pageId, 'reload')}>{t`Try again`}</button>
-        <button type="button" className="files-link tt-focusable" onClick={onOpenExternally}>{openInSystemBrowser}</button>
-      </div>
-    </div> : <div ref={host} className="browser-viewport" data-covered={covered || undefined} data-refused={refused !== null || undefined}>
-      {refused !== null ? <div className="files-problem browser-unavailable" role="alert">
-        <strong>{t`This page could not be shown.`}</strong>{' '}
-        <p className={typeof refused === 'string' ? undefined : 'tt-paragraph'}>{shownWords(refused)}</p>
-        <div className="browser-unavailable__actions">
-          <button type="button" className="files-link tt-focusable" onClick={() => store.retryPlacement(threadId, pageId)}>{t`Try again`}</button>
-          <button type="button" className="files-link tt-focusable" onClick={onOpenExternally}>{openInSystemBrowser}</button>
-        </div>
-      </div> : covered ? <p className="browser-viewport__covered tt-paragraph">{t`The page steps aside while a menu or dialog is open.`}</p> : null}
-    </div>}
   </div>
 }

@@ -31,6 +31,8 @@ import { describeWorkingCopy } from '../agents/ThreadWorkingCopy'
 import { BrowserPlayer } from './BrowserPlayer'
 import { browserPlayerStore, type BrowserPlayerStore } from './browserPlayerStore'
 import { BrowserSurface } from './BrowserSurface'
+import { useBrowserOpensItself } from './browserOpensItself'
+import { useOwlFeature } from '../state/owlFeature'
 import { IPhoneSurface } from './IPhoneSurface'
 import { PhonePlayer } from './PhonePlayer'
 import { phonePlayerStore, type PhonePlayerStore } from './phonePlayerStore'
@@ -294,6 +296,8 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   const subagentsBridge = subagents ?? (window.sotto as { subagents?: SubagentsBridge } | undefined)?.subagents
   // showBrowserPreviews keeps its settings key (ADR-0020); in the player it decides whether a new page opens the player on its own.
   const autoShowBrowser = useOptionalAgents()?.showBrowserPreviews !== false
+  // The quiet browser pane (ADR-0154; Owl) also opens Tools > Browser on its own while Tools is open.
+  const quietBrowser = useOwlFeature('quiet-browser')
   // While delegation is on (ADR-0081), Agents follows the pin like every other surface, so a delegated thread opened
   // from the roster leaves Tools on the thread that delegated it.
   const delegationOn = useDelegationsEnabled()
@@ -413,6 +417,7 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
     wasOpen.current = open
   }, [open, chrome.surface, store])
   useProactiveChanges(state, focusedThreadId, store)
+  useBrowserOpensItself(quietBrowser && autoShowBrowser, focusedThreadId, store, aside)
 
   const changedFiles = workingCopyChanges?.list.status === 'ready' ? { count: workingCopyChanges.list.files.length, truncated: workingCopyChanges.list.truncated } : null
   const agentsThread = delegationOn ? workingCopyThread : selectedThread
