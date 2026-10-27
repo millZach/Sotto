@@ -263,6 +263,17 @@ describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8
     expect(await readdir(staging)).toEqual(['keep.txt'])
   })
 
+  it('clears a snapshot index and the lock a killed git add -A left beside it when the next run starts', async () => {
+    const staging = machines.data('laptop').stagingDirectory
+    await mkdir(staging, { recursive: true })
+    const attempt = randomUUID()
+    await writeFile(join(staging, `${attempt}.snapshot.index`), 'partial')
+    await writeFile(join(staging, `${attempt}.snapshot.index.lock`), 'partial')
+    await writeFile(join(staging, 'keep.snapshot.index.lock'), 'not ours')
+    await new BranchBundles(machines.data('laptop')).start()
+    expect(await readdir(staging)).toEqual(['keep.snapshot.index.lock'])
+  })
+
   it('keeps every move’s record when moves finish together', async () => {
     const commit = await featureBranch()
     const laptop = new BranchBundles(machines.data('laptop'))
