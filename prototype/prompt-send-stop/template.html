@@ -20,7 +20,7 @@
   Kept at prototype/prompt-send-stop/ on branch prototype/prompt-send-stop; docs/prototypes/prompt-send-stop-prototype.html
   is the same page. Both are built from template.html by build.py (inlines Figtree). Open with #3 to show one direction.
 
-  Picked: (waiting for Drake)
+  Picked October 27, 2026: 9, Keys first, with the running motion of 8 (Drake). 9a, 9b and 9c refine that motion.
 -->
 <html lang="en">
 <head>
@@ -193,6 +193,15 @@ svg.sq { width: 11px; height: 11px; fill: currentcolor; stroke: none; }
 @media (prefers-reduced-motion: no-preference) { body:not(.still) .traced::before { animation: trace 1.6s linear infinite; } }
 @keyframes trace { to { --a: 360deg; } }
 
+.traced-out { position: relative; }
+.traced-out::before { content: ''; position: absolute; inset: -3px; border-radius: 8px; padding: 1.5px;
+  background: conic-gradient(from var(--a, 0deg), var(--tt-activity) 0 26%, color-mix(in srgb, var(--tt-activity) 18%, transparent) 26% 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+@media (prefers-reduced-motion: no-preference) { body:not(.still) .traced-out::before { animation: trace 1.6s linear infinite; } }
+.key kbd.run { position: relative; overflow: hidden; }
+.key kbd.run::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--tt-activity), transparent); background-size: 200% 100%; }
+@media (prefers-reduced-motion: no-preference) { body:not(.still) .key kbd.run::after { animation: sweep 1.4s linear infinite; } }
+@keyframes sweep { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 /* 9: keys first. */
 .key { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border-radius: 6px; color: var(--tt-text-muted); font-size: 12.5px; white-space: nowrap; }
 .key kbd { font: 600 11.5px Figtree, sans-serif; min-width: 20px; height: 20px; padding: 0 5px; display: inline-grid; place-items: center; border-radius: 4px; background: color-mix(in oklab, var(--tt-text) 9%, transparent); color: var(--tt-text); }
@@ -322,6 +331,30 @@ const DIRS = [
     acts: s => !s.run ? `<span class="key main ${s.text ? '' : 'off'}">Send<kbd>↵</kbd></span>`
       : !s.text ? `<span class="key">Steer<kbd>⌘↵</kbd></span><span class="key main">Stop<kbd>⌘⇧S</kbd></span>`.replace('class="key"', 'class="key off"')
       : `<span class="key">Stop<kbd>⌘⇧S</kbd></span><span class="key go">Steer<kbd>⌘↵</kbd></span><span class="key main">Queue<kbd>↵</kbd></span>` },
+  { id: '9a', name: 'Keys first, the trace on the plate', refine: true,
+    idea: 'Picked 9 with 8\'s motion. While a turn runs, a trace runs round the filled plate, whichever key it is (Stop, then Queue once you type), so the button Enter presses is also the sign that the turn is running.',
+    keys: '<kbd>Enter</kbd> sends, or queues while a turn runs. <kbd>⌘Enter</kbd> steers. <kbd>⌘⇧S</kbd> stops.',
+    note: 'The trace sits just outside the plate so it reads on a white or a black plate alike. Reduced motion rests it at a quarter.',
+    pair: ['--tt-activity', '--tt-card', 'Trace on the card'],
+    acts: s => !s.run ? `<span class="key main ${s.text ? '' : 'off'}">Send<kbd>↵</kbd></span>`
+      : !s.text ? `<span class="key off">Steer<kbd>⌘↵</kbd></span><span class="key main traced-out">Stop<kbd>⌘⇧S</kbd></span>`
+      : `<span class="key">Stop<kbd>⌘⇧S</kbd></span><span class="key go">Steer<kbd>⌘↵</kbd></span><span class="key main traced-out">Queue<kbd>↵</kbd></span>` },
+  { id: '9b', name: 'Keys first, the trace on Stop', refine: true,
+    idea: 'The trace belongs to Stop, the key that ends the turn, as in 8. When you type, Stop steps back to a flat key but keeps its trace, and the plate becomes Queue.',
+    keys: '<kbd>Enter</kbd> sends, or queues while a turn runs. <kbd>⌘Enter</kbd> steers. <kbd>⌘⇧S</kbd> stops.',
+    note: 'The trace stays on one control the whole turn, so where to look for "is it running" never moves.',
+    pair: ['--tt-activity', '--tt-card', 'Trace on the card'],
+    acts: s => !s.run ? `<span class="key main ${s.text ? '' : 'off'}">Send<kbd>↵</kbd></span>`
+      : !s.text ? `<span class="key off">Steer<kbd>⌘↵</kbd></span><span class="key main traced-out">Stop<kbd>⌘⇧S</kbd></span>`
+      : `<span class="key traced">Stop<kbd>⌘⇧S</kbd></span><span class="key go">Steer<kbd>⌘↵</kbd></span><span class="key main">Queue<kbd>↵</kbd></span>` },
+  { id: '9c', name: 'Keys first, the key cap breathes', refine: true,
+    idea: 'Quieter: no ring. A light sweeps along the bottom of the Stop key\'s cap while the turn runs, so the motion sits on the key itself and the plate stays still.',
+    keys: '<kbd>Enter</kbd> sends, or queues while a turn runs. <kbd>⌘Enter</kbd> steers. <kbd>⌘⇧S</kbd> stops.',
+    note: 'The smallest motion of the three; with reduced motion the sweep is gone and nothing else changes.',
+    pair: ['--tt-activity', '--tt-card', 'Sweep on the card'],
+    acts: s => !s.run ? `<span class="key main ${s.text ? '' : 'off'}">Send<kbd>↵</kbd></span>`
+      : !s.text ? `<span class="key off">Steer<kbd>⌘↵</kbd></span><span class="key main">Stop<kbd class="run">⌘⇧S</kbd></span>`
+      : `<span class="key">Stop<kbd class="run">⌘⇧S</kbd></span><span class="key go">Steer<kbd>⌘↵</kbd></span><span class="key main">Queue<kbd>↵</kbd></span>` },
   { id: 10, name: 'Steer as an icon',
     idea: 'The words Steer now go, in the composer and on every queued row. An arrow turning in carries it; its name stays in the label and the tooltip with its key, drawn here on hover.',
     keys: '<kbd>Enter</kbd> sends, or queues while a turn runs. <kbd>⌘Enter</kbd> steers. <kbd>⌘⇧S</kbd> stops.',
@@ -354,7 +387,7 @@ for (const d of DIRS) {
   const sec = document.createElement('section')
   sec.className = 'dir'; sec.id = 'd' + d.id; sec.dataset.id = d.id
   const cols = d.today ? [['t-t3', 'T3 Chat dark (your crops)'], ['t-dark', 'Sotto dark'], ['t-light', 'Sotto light']]
-    : [['t-dark', 'Dark'], ['t-light', 'Light'], ['t-t3 today-col', 'Today, T3 Chat dark']]
+    : [['t-dark', 'Dark'], ['t-light', 'Light'], ['t-t3 today-col', 'Today, for comparison (the faint glyph you reported)']]
   let grid = `<div class="grid" ${d.today ? 'style="--cols:3"' : ''}><div></div>` + cols.map(c => `<div class="th ${c[0].includes('today-col') ? 'today-col' : ''}">${c[1]}</div>`).join('')
   for (const s of STATES) {
     grid += `<div class="rl">${s.label}<small>${s.sub}</small></div>`
@@ -383,7 +416,7 @@ for (const p of document.querySelectorAll('.ratio')) {
 }
 probe.remove()
 
-const only = location.hash.match(/^#(\d+)$/)
+const only = location.hash.match(/^#(\w+)$/)
 if (only) for (const s of document.querySelectorAll('section.dir')) s.hidden = s.dataset.id !== only[1]
 if (only) document.querySelector('.intro').hidden = document.getElementById('bar').hidden = document.querySelector('h1').hidden = true
 if (/still/.test(location.search)) document.body.classList.add('still')
