@@ -2,6 +2,8 @@
 
 ## Status
 
+Superseded October 27, 2026 by [ADR-0152](0152-watchers-room-is-its-conversation.md): Visualize, Watcher's picture, the merge turns read and the `mergeTurn` mark are removed. What follows records the decision as it was.
+
 Accepted October 22, 2026, for #1339. Zach picked the picture itself (A of `prototype/watcher-picture`, the constellation, as a third tab of Watcher's room, live first). The data choices below were made in building it, with Watcher's confirmation that the picture adds no per-update work while the perf batch (#1326-#1336) is in flight. History and replay are #1340, which will need a record of its own.
 
 ## Context

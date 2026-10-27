@@ -28,6 +28,25 @@ msgstr ""
 msgid ", waiting for your answer"
 msgstr ""
 
+#. {label} is a browser page’s title or host.
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Agent is browsing {label}"
+msgstr ""
+
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Show page"
+msgstr ""
+
+#. {label} is a browser page’s title or host.
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Show page: {label}"
+msgstr ""
+
+#. {label} is a browser page’s title or host.
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Waiting for your answer on {label}"
+msgstr ""
+
 #. {runs} counts how many times this subagent has been given work.
 #: src/renderer/src/tools/AgentsSurface.tsx
 msgid "· Run {runs}"

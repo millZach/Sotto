@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { ArrowLeft, ArrowRight, Check, ExternalLink, Globe, Hand, History, ImagePlus, MoreHorizontal, Pause, PictureInPicture2, Play, Plus, RotateCw, Share2, SquareDashedMousePointer, X } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
-import { BROWSER_WAITING_TO_OPEN, type BrowserBridge, type BrowserPointPick, type BrowserTask } from '../../../shared/browser'
+import { BROWSER_WAITING_TO_OPEN, type BrowserBridge, type BrowserPage, type BrowserPointPick, type BrowserTask } from '../../../shared/browser'
 import { threadTakesSottoTools } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { useOptionalAgents } from '../agents/AgentContext'
@@ -132,6 +132,10 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
   // A request waiting for the user comes first; otherwise the newest task still working or paused speaks.
   const waiting = pageTasks.find(item => item.pendingAction !== null)
   const working = pageTasks.find(item => item.status === 'working' || item.status === 'paused')
+  // The agent working or waiting on another of the thread's pages: the player stays away while Tools shows the
+  // thread's browser, so the strip offers that page here rather than leaving it shown nowhere.
+  const elsewhere = tasks.find(item => item.threadId === threadId && item.pageId !== activeId && !item.device
+    && (item.pendingAction !== null || item.status === 'working' || item.status === 'paused') && pages.some(other => other.id === item.pageId))
   // Share lives in More, so a page the agent cannot see always says so: under the grant one the user made private
   // (ADR-0029), without it one not yet shared. A page an agent asked to open and nobody has opened yet says nothing.
   const madePrivate = Boolean(page && !page.sharedOrigin && !agentToolsUnavailable && !waiting && page.error !== BROWSER_WAITING_TO_OPEN)
@@ -314,7 +318,8 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
   </div>
 
   const strip = page && waiting?.pendingAction ? <RequestStrip key={waiting.id} task={waiting} store={store} bridge={bridge} onAnswered={focusAddress} />
-    : page && working ? <AgentStrip task={working} pageUrl={page.url} store={store} bridge={bridge} onProblem={setProblem} /> : null
+    : page && working ? <AgentStrip task={working} pageUrl={page.url} store={store} bridge={bridge} onProblem={setProblem} />
+      : elsewhere ? <ElsewhereStrip task={elsewhere} page={pages.find(other => other.id === elsewhere.pageId)!} onShow={() => { setCreating(false); setDraft(null); store.select(threadId, elsewhere.pageId) }} /> : null
 
   // Escape leaves point mode once the comment, which answers Escape first, is closed.
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
@@ -367,6 +372,19 @@ function AgentStrip({ task, pageUrl, store, bridge, onProblem }: { readonly task
       {paused ? <Play size={14} aria-hidden="true" /> : <Pause size={14} aria-hidden="true" />}
       {paused ? t({ message: 'Resume', comment: 'Lets a paused browser task carry on.' }) : t({ message: 'Pause', comment: 'Pauses a browser task.' })}
     </button>
+  </div>
+}
+
+/** The agent is on another of the thread's pages: say which, and show it in one press. */
+function ElsewhereStrip({ task, page, onShow }: { readonly task: BrowserTask; readonly page: BrowserPage; readonly onShow: () => void }): ReactNode {
+  const { t } = useLingui()
+  const label = pageLabel(page)
+  return <div className="browser-pane__strip" data-state={task.pendingAction ? 'waiting' : task.status}>
+    <span className="browser-pane__dot" aria-hidden="true" />
+    <span className="browser-pane__strip-text"><span className="browser-pane__lead">{task.pendingAction
+      ? t({ message: `Waiting for your answer on ${label}`, comment: '{label} is a browser page’s title or host.' })
+      : t({ message: `Agent is browsing ${label}`, comment: '{label} is a browser page’s title or host.' })}</span></span>
+    <button type="button" className="tools-chrome__button tt-focusable" aria-label={t({ message: `Show page: ${label}`, comment: '{label} is a browser page’s title or host.' })} onClick={onShow}>{t`Show page`}</button>
   </div>
 }
 

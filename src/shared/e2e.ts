@@ -82,7 +82,7 @@ export const e2eAgentEventSchema = z.object({
   messages: z.array(agentMessageSchema).max(4_000).optional(), messageId: z.string().optional(),
   monitoring: agentMonitoringSchema.optional(),
   backgroundWork: agentBackgroundWorkSchema.optional(),
-  /** A thread's linked pull requests, for the runs that check what shows them, such as Watcher's picture (#1339). */
+  /** A thread's linked pull requests, for the runs that check what shows them. */
   pullRequests: z.array(gitPullRequestLinkSchema).max(GIT_PULL_REQUEST_LINKS_MAX).optional(),
 }).strict()
 

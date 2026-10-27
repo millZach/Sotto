@@ -4,10 +4,10 @@ import { Globe, Minimize2, PanelRight, Pause, Play, X } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
 import type { AgentState } from '../../../shared/agents'
 import type { BrowserBounds, BrowserBridge, BrowserPage } from '../../../shared/browser'
+import { useOwlFeature } from '../state/owlFeature'
 import { pageLabel, useThreadBrowser, useBrowserTasks } from './browserStore'
 import { useBrowserPageMount } from './useBrowserPageMount'
 import { useOverlayOpen } from './browserOverlay'
-import { useOwlFeature } from '../state/owlFeature'
 import { toolsTarget, useToolsPanelChrome, type ToolsPanelStore } from './toolsPanelStore'
 import {
   browserPlayerStore, clampBrowserPlayerRect, BROWSER_PLAYER_MOVE_STEP, BROWSER_PLAYER_MOVE_STEP_LARGE,
@@ -100,9 +100,12 @@ export function BrowserPlayer({ state, focusedThreadId, bridge, store, autoShow 
   const thread = state.host.threads.find(item => item.id === threadId)
   if (!thread) return null
   const browserInTools = chrome.open && chrome.surface === 'browser' && toolsTarget(chrome, focusedThreadId) === threadId
-  // The quiet pane (ADR-0154; Owl) shows the player only while Tools is not showing this thread's browser at all.
+  // The quiet pane (ADR-0154; Owl) keeps the player away while Tools shows this thread's browser on any page: the two
+  // share one place to draw a page, and the pane's strip offers the agent's page when it is not the one shown.
   const dockedSame = browserInTools && (quietBrowser || threadBrowser?.activePageId === task.pageId)
-  if (visibility === 'hidden' || dockedSame) return null
+  // On the quiet pane (ADR-0154; Owl), a task whose page has closed has nothing left to float.
+  const pageClosed = quietBrowser && threadBrowser?.status === 'ready' && !threadBrowser.pages.some(item => item.id === task.pageId)
+  if (visibility === 'hidden' || dockedSame || pageClosed) return null
   // Measure the pane only when drawing the player. `rectFor` remains the one default for drawing, dragging and resizing.
   const rect = rawRect ? clampBrowserPlayerRect(rawRect, size) : playerStore.rectFor(size)
 
