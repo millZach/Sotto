@@ -68,6 +68,8 @@ export class HostDelegationRelay {
   private readonly pending = new Map<string, { readonly desktop: RelayDesktop; readonly resolve: (answer: unknown) => void; readonly reject: (error: Error) => void; readonly timer: ReturnType<typeof setTimeout> }>()
   private deliver: ((threadId: string, news: DelegationNews) => Promise<void>) | undefined
   private reconciling: Promise<void> | undefined
+  /** Starts still waiting for the desktop's answer, by the thread that asked: news may name what they made before they hear. */
+  private readonly starting = new Map<string, Set<Promise<unknown>>>()
   private closed = false
 
   constructor(directory: string, private readonly options: {
@@ -151,7 +153,11 @@ export class HostDelegationRelay {
     this.trim()
     await this.save()
     let answer: Record<string, unknown>
-    try { answer = await this.ask({ type: 'start', relayId, threadId: callerId, ...ask }, ask.waitMs + DELEGATION_RELAY_ANSWER_GRACE_MS) }
+    const asked = this.ask({ type: 'start', relayId, threadId: callerId, ...ask }, ask.waitMs + DELEGATION_RELAY_ANSWER_GRACE_MS)
+    const waiting = this.starting.get(callerId) ?? new Set<Promise<unknown>>()
+    waiting.add(asked); this.starting.set(callerId, waiting)
+    void asked.catch(() => undefined).finally(() => { waiting.delete(asked); if (!waiting.size && this.starting.get(callerId) === waiting) this.starting.delete(callerId) })
+    try { answer = await asked }
     catch (error) {
       if (error instanceof RelayUnanswered && error.stage === 'away') { this.forget(record); await this.persist(); throw error }
       // The counting rule (Zach, October 23): what cannot be told apart from a start counts as one, and is read once the desktop is back.
@@ -215,14 +221,21 @@ export class HostDelegationRelay {
    * hidden wake-up, and only once delivered counts as told. Rejects when it could not be delivered, so the desktop offers it again.
    */
   async news(threadId: string, news: DelegationNews): Promise<void> {
+    if (!this.deliver) throw new Error('This host cannot tell its threads yet.')
+    const recordOf = (delegationId: string) => this.records.find(saved => saved.delegatingThreadId === threadId && (saved.delegation === delegationId || saved.id === delegationId))
+    // News can come before the answer to the start that made it: it waits for that answer, so it is never dropped (#1316 review).
+    if (news.items.some(item => !recordOf(item.delegationId))) await Promise.allSettled([...this.starting.get(threadId) ?? []]).then(async () => { await this.persist() })
+    const unknown = news.items.filter(item => !recordOf(item.delegationId))
     const items = news.items.flatMap(item => {
-      const record = this.records.find(saved => saved.delegatingThreadId === threadId && (saved.delegation === item.delegationId || saved.id === item.delegationId))
+      const record = recordOf(item.delegationId)
       if (!record) return []
       this.update(record, saved => { saved.outcome = item.outcome; delete saved.unread })
       return record.told === item.outcome && item.heldMinutes === undefined ? [] : [{ record, item: { ...item, delegationId: record.id } }]
     })
     await this.persist()
     await this.tell(threadId, items)
+    // What this host holds no record of was not delivered, so it is not taken: the desktop offers it again.
+    if (unknown.length) throw new Error('This host holds no record of that delegation.')
   }
 
   /**

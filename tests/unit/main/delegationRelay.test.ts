@@ -70,7 +70,7 @@ describe('the host side of the relay', () => {
     await relay.news('thread-a', { source: 'delegation', items: [{ delegationId: DELEGATION, threadId: 'child-1', outcome: 'answered' }] })
     expect(told).toEqual([{ threadId: 'thread-a', news: { source: 'delegation', items: [{ delegationId: DELEGATION, threadId: 'child-1', outcome: 'answered' }] } }])
     // News naming a delegation another thread made is not this thread's.
-    await relay.news('thread-b', { source: 'delegation', items: [{ delegationId: DELEGATION, threadId: 'child-1', outcome: 'failed' }] })
+    await expect(relay.news('thread-b', { source: 'delegation', items: [{ delegationId: DELEGATION, threadId: 'child-1', outcome: 'failed' }] })).rejects.toThrow()
     expect(told).toHaveLength(1)
     outcome = 'answered'
     expect(await relay.read('thread-a', DELEGATION)).toMatchObject({ status: 'ok', delegation: { id: DELEGATION, outcome: 'answered' } })
@@ -119,6 +119,27 @@ describe('the host side of the relay', () => {
     await relay.reconcile()
     expect(relay.list('thread-a')[0]).toMatchObject({ outcome: 'unknown' })
     expect(told).toEqual([{ source: 'delegation', items: [{ delegationId: DELEGATION, threadId: 'child-1', outcome: 'unknown' }] }])
+  })
+
+  it('holds news that comes before its start\'s answer until the start is known, and never takes news it did not deliver', async () => {
+    const relay = new HostDelegationRelay(await folder(), { here: () => 'forge' })
+    await relay.load()
+    const told: DelegationNews[] = []
+    relay.useDelivery(async (_threadId, news) => { told.push(news) })
+    const slow = desktop(relay)
+    relay.desktopConnected(slow.handle)
+    const starting = relay.start('thread-a', 'code-review', startAsk)
+    await expect.poll(() => slow.asked.length).toBe(1)
+    // The outcome's news overtakes the start's answer.
+    const news = relay.news('thread-a', { source: 'delegation', items: [{ delegationId: DELEGATION, threadId: 'child-1', outcome: 'answered' }] })
+    relay.answered(slow.handle, slow.asked[0]!.askId, { status: 'ok', delegation: { id: DELEGATION, thread: 'child-1', outcome: 'working' } })
+    await starting; await news
+    expect(told).toEqual([{ source: 'delegation', items: [{ delegationId: DELEGATION, threadId: 'child-1', outcome: 'answered' }] }])
+    // News of a delegation this host never made is refused, so the desktop does not count it as told.
+    await expect(relay.news('thread-a', { source: 'delegation', items: [{ delegationId: '99999999-9999-4999-8999-999999999999', threadId: 'x', outcome: 'answered' }] })).rejects.toThrow()
+    // And news this host cannot deliver is refused too.
+    relay.useDelivery(async () => { throw new Error('busy') })
+    await expect(relay.news('thread-a', { source: 'delegation', items: [{ delegationId: DELEGATION, threadId: 'child-1', outcome: 'failed' }] })).rejects.toThrow()
   })
 
   it('never forgets an open relayed delegation to keep its record small, only settled ones', async () => {
