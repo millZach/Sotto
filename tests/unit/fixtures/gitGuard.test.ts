@@ -11,7 +11,7 @@
 import { exec, execFile, execFileSync, execSync, spawn, spawnSync } from 'node:child_process'
 import { realpathSync, rmdirSync, symlinkSync, unlinkSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
@@ -110,7 +110,10 @@ describe('the Git guard every test file has', () => {
     expect(refusal(['worktree', 'add', '-b', 'x', join(outside, 'tree')])).toMatch(/refused `git worktree`/u)
     expect(refusal(['worktree', 'add', '-b', 'x', join(inside, 'tree')])).toBeNull()
     expect(refusal(['config', '--file', join(outside, '.git', 'config'), 'core.bare', 'true'])).toMatch(/refused `git config`/u)
-    expect(refusal(['config', '--global', 'user.name', 'x'])).toMatch(/refused `git config`/u)
+    // Where the user's global config lives decides the answer, so name it rather than trust HOME to be outside.
+    expect(refusal(['config', '--global', 'user.name', 'x'], { env: { GIT_CONFIG_GLOBAL: join(outside, '.gitconfig') } })).toMatch(/refused `git config`/u)
+    expect(refusal(['config', '--global', 'user.name', 'x'], { env: { GIT_CONFIG_GLOBAL: join(inside, '.gitconfig') } })).toBeNull()
+    expect(refusal(['config', '--global', 'user.name', 'x'])).toEqual(refusal(['config', '--global', 'user.name', 'x'], { env: { GIT_CONFIG_GLOBAL: join(homedir(), '.gitconfig') } }))
     expect(refusal(['config', '--global', 'user.name', 'x'], { env: { GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null' } })).toBeNull()
     expect(refusal(['config', `-f${join(outside, '.git', 'config')}`, 'user.name', 'x'])).toMatch(/refused `git config`/u)
     // A working tree named in configuration, a worktree moved or removed, and a push to a folder rather than a remote.
