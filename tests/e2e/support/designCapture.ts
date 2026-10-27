@@ -85,10 +85,10 @@ export async function pageBoundProblems(page: Page): Promise<string[]> {
 
     // The Threads page owns the whole window, so it has neither strip nor footer. Its own chrome takes their place and
     // has to be there: a missing sidebar or workspace would otherwise leave this check with nothing to measure.
-    // Watcher's room (Sotto Owl) owns the window the same way but has no sidebar; its floating switch stands in for one.
+    // Watcher's room (Sotto Owl) owns the window the same way but has no sidebar; its header's room switch stands in for one.
     if (document.querySelector('.threads-view') !== null) {
       const watcherRoom = document.querySelector('.watcher-room') !== null
-      for (const selector of watcherRoom ? ['.watcher-dock', '.thread-workspace'] : ['.thread-nav', '.thread-workspace']) {
+      for (const selector of watcherRoom ? ['.watcher-head__rooms', '.thread-workspace'] : ['.thread-nav', '.thread-workspace']) {
         if (document.querySelector(selector) === null) problems.push(selector + '-missing')
       }
     }

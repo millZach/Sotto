@@ -55,7 +55,7 @@ async function capture(launched: LaunchedSotto, name: string): Promise<void> {
 /** Starts Watcher from its room's first entry and waits for its first reply. */
 async function startWatcher(page: Page): Promise<void> {
   await page.getByRole('tablist', { name: 'Page' }).getByRole('tab', { name: 'Watcher', exact: true }).click()
-  await expect(page.locator('.watcher-dock')).toBeVisible()
+  await expect(page.locator('.watcher-head__rooms')).toBeVisible()
   await page.getByRole('textbox', { name: 'Watcher message' }).click()
   await page.keyboard.type('Keep an eye on my threads and bring me their questions.')
   await page.getByRole('button', { name: 'Start Watcher and send' }).click()

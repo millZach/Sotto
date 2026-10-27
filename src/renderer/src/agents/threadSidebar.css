@@ -266,6 +266,15 @@
 .thread-nav__rail-thread[aria-current] { background: var(--tt-selected); border-color: var(--tt-focus); }
 .thread-nav__rail-thread .thread-nav__ring { position: absolute; right: -1px; bottom: -1px; }
 .thread-nav__rail-thread .thread-nav__ring[data-background] { width: 12px; height: 12px; right: -2px; bottom: -2px; border-radius: 3px; background: var(--threads-sidebar); }
+/* Owl's rail (ADR-0146): Watcher's tile under Expand, a tray for what waits on you, smaller tiles for resting threads. */
+.thread-nav__rail-mark { font-size: 12.5px; font-weight: 600; }
+.thread-nav__rail-watcher { display: grid; place-items: center; background: var(--tt-surface-elevated); }
+.thread-nav__rail-rule { flex: none; width: 70%; height: 1px; background: var(--tt-hairline); }
+.thread-nav__rail-tray { flex: none; display: flex; flex-direction: column; align-items: center; gap: 7px; width: 46px; padding: 7px 0 8px; border-radius: 12px;
+  background: color-mix(in srgb, var(--tt-attention) 13%, transparent); border: 1px solid color-mix(in srgb, var(--tt-attention) 38%, transparent); }
+.thread-nav__rail-tray-count { color: var(--tt-attention); font-size: 11px; font-weight: 700; }
+.thread-nav__rail-tray .thread-nav__rail-thread { border-color: color-mix(in srgb, var(--tt-attention) 55%, transparent); }
+.thread-nav__rail-thread[data-resting] { width: 26px; height: 26px; border-radius: 6px; font-size: 11px; font-weight: 500; color: var(--tt-text-muted); }
 /* The rail hides the switch, so the foot's hairline lies flat as its first row: it tops the foot, 8px over the page links. */
 .thread-nav__rail .thread-nav__foot { width: 100%; margin-inline: 0; justify-content: center; padding: 0 0 8px; }
 .thread-nav__rail .thread-nav__foot-rule { flex: 1 0 100%; width: auto; height: 1px; margin: 0 0 6px; }

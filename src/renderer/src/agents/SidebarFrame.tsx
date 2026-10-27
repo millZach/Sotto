@@ -16,6 +16,9 @@ import { useMemoryEnabled } from '../state/memoryFeature'
 import { useReleaseTrack } from '../state/useReleaseTrack'
 import { useWatcherEnabled } from '../state/watcherFeature'
 import { useOwlFeature } from '../state/owlFeature'
+import { WatcherOwl } from '../watcher/WatcherOwl'
+import { useRoomWatcherThreadId } from '../watcher/watcherRoom'
+import { useOptionalAgents } from './AgentContext'
 import type { AgentConnection } from './AgentContext'
 import { useAddProject } from './addProject'
 import { OwlSky } from './OwlSky'
@@ -124,6 +127,27 @@ export function SidebarFoot(): ReactNode {
   </div>
 }
 
+/**
+ * Watcher's tile on the collapsed rail, under Expand (ADR-0146): the owl on a raised tile with Watcher's own status
+ * ring, the same press as the room switch's owl. Watcher's thread is not in the sidebar's state, so its ring reads
+ * the window's whole state.
+ */
+function RailWatcher(): ReactNode {
+  const app = useOptionalApp()
+  const threads = useOptionalAgents()?.state?.host.threads
+  const watcherId = useRoomWatcherThreadId()
+  const { t } = useLingui()
+  const thread = watcherId === null ? undefined : threads?.find(item => item.id === watcherId)
+  const ring = thread === undefined ? 'done' : thread.requests.length ? 'needs' : thread.status === 'running' ? 'working' : 'done'
+  return <>
+    <button type="button" className="thread-nav__rail-thread thread-nav__rail-watcher tt-focusable" aria-label={t`Open Watcher`} title={t`Open Watcher`}
+      aria-current={app?.navigation === 'watcher' ? 'page' : undefined} onClick={() => app?.actions.navigate('watcher')}>
+      <WatcherOwl size={18} /><span className="thread-nav__ring" data-state={ring} aria-hidden="true" />
+    </button>
+    <span className="thread-nav__rail-rule" aria-hidden="true" />
+  </>
+}
+
 type SidebarSize = ReturnType<typeof useSidebarSize>
 
 /** The collapse and expand buttons trade places; focus follows the press to whichever one is now shown. */
@@ -209,6 +233,8 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
   const [resizing, setResizing] = useState(false)
   const toggle = useCollapseToggleFocus(size.collapsed)
   const sky = useReleaseTrack() === 'owl' && !size.collapsed
+  const railOn = useOwlFeature('sidebar-rail')
+  const watcherOn = useWatcherEnabled()
   return <aside className={mac ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label={label} data-mode="threads" data-collapsed={size.collapsed || undefined} data-resizing={resizing || undefined}
     data-sky={sky || undefined} style={{ width: size.collapsed ? (mac ? 80 : 52) : size.width }}>
     <div className="thread-nav__expanded" hidden={size.collapsed}>
@@ -235,6 +261,7 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
     {size.collapsed ? <div className="thread-nav__rail">
       {mac ? null : <SottoMark className="thread-nav__glyph" />}
       <button ref={toggle} type="button" className="thread-nav__action tt-focusable" aria-label={t`Expand sidebar`} title={t`Expand sidebar`} onClick={() => size.collapse(false)}><PanelLeftOpen size={16} aria-hidden="true" /></button>
+      {railOn && watcherOn ? <RailWatcher /> : null}
       <div className="thread-nav__rail-list">{collapsedContent ?? <button type="button" className="thread-nav__action tt-focusable" aria-label={newLabel} title={newLabel} onClick={onNew}><NewIcon size={16} aria-hidden="true" /></button>}</div>
       {foot ?? <SidebarFoot />}
     </div> : <SidebarResize size={size} onResizing={setResizing} />}

@@ -169,6 +169,9 @@ export class GitLauncher {
   constructor(private readonly workerPath: string | null) {}
 
   launch(command: string, args: readonly string[], options: LaunchOptions): LaunchedProcess {
+    // Node starts a process given an empty folder in Sotto's own folder, where Git would read or change a repository
+    // nobody chose. Refused where it is asked, so the caller's promise rejects.
+    if (!options.cwd) throw new Error(`Sotto did not start ${command} because it was not given a folder to run in. Nothing was changed. Try again from a thread that has a project folder.`)
     const worker = this.ensureWorker()
     if (!worker) return inThread(command, args, options)
     const id = this.next++
