@@ -5781,6 +5781,10 @@ msgstr ""
 msgid "Question from {ownerTitle}"
 msgstr ""
 
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Question skipped."
+msgstr ""
+
 #. The follow-up queue's heading when it holds nothing yet.
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Queue"
@@ -8694,6 +8698,10 @@ msgstr ""
 #. The context's size before a compaction.
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "was {from} tokens"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "Watched by Watcher"
 msgstr ""
 
 #: src/renderer/src/agents/threadClearWords.ts

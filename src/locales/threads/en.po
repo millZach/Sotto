@@ -5781,6 +5781,10 @@ msgstr "Question"
 msgid "Question from {ownerTitle}"
 msgstr "Question from {ownerTitle}"
 
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Question skipped."
+msgstr "Question skipped."
+
 #. The follow-up queue's heading when it holds nothing yet.
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Queue"
@@ -8695,6 +8699,10 @@ msgstr "Walkthrough"
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "was {from} tokens"
 msgstr "was {from} tokens"
+
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "Watched by Watcher"
+msgstr "Watched by Watcher"
 
 #: src/renderer/src/agents/threadClearWords.ts
 msgid "Watcher is watching it"

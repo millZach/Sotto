@@ -40,6 +40,7 @@ struct WatcherView: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             let away = barAway
             WatcherBar(hostID: hostID, section: $section) { slideBar(false); toTop += 1 }
+                .readingWidth()
                 .visualEffect { content, proxy in content.offset(y: away ? -proxy.frame(in: .global).maxY : 0) }
                 .accessibilityHidden(away)
         }
@@ -667,6 +668,7 @@ private struct WatcherConversationPane: View {
                 .padding(.horizontal, Space.s4)
                 .padding(.top, Space.s4)
                 .padding(.bottom, Space.s4)
+                .readingWidth()
                 .frame(maxWidth: .infinity, minHeight: visible, alignment: .topLeading)
                 .background(reader { frame in
                     // A change of the page's height (new words, a card or a follow-up arriving or leaving, anywhere on
@@ -704,7 +706,7 @@ private struct WatcherConversationPane: View {
                     // A fast send can begin and end before SwiftUI renders its sending state. The press itself
                     // resumes following, before the keyboard and the conversation change their layout.
                     resumeFollowing()
-                }).background(dockReader(proxy, newest: newest))
+                }).readingWidth().background(dockReader(proxy, newest: newest))
             }
             // New words, the user's own or Watcher's, are scrolled to just above the box, for a reader who sees the newest
             // words or the page's end. Cards waiting on the user sit after the whole conversation, where the page opens,
@@ -1882,6 +1884,7 @@ private struct WatchedPane: View {
             }
             .padding(.horizontal, Space.gutter)
             .padding(.bottom, Space.s8)
+            .readingWidth()
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(GeometryReader { content in
                 Color.clear

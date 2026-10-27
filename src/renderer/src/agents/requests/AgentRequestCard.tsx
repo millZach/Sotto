@@ -15,7 +15,7 @@ import { shownCount } from '../../state/interfaceNumbers'
 import { useInterfaceLanguageState } from '../../state/interfaceLanguage'
 import {
   answerProgress, blocksSending, EMPTY_SELECTION, isRequired, isUnavailable, legacyPermissionAnswer, permissionAnswer,
-  permissionSummary, pickOption, pickOther, requestAnswerOwnerKey, requestAnswerStore, requestMode, structuredAnswer, textOnly, useRequestEntry,
+  permissionSummary, pickOption, pickOther, requestAnswerOwnerKey, requestAnswerStore, requestMode, SKIP_ANSWER, structuredAnswer, textOnly, useRequestEntry,
   type RequestAnswer, type RequestAnswerStore, type StructuredQuestion, type SubmitOutcome,
 } from './requestAnswers'
 import './requests.css'
@@ -102,7 +102,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
         {onCheck ? <Button variant="secondary" disabled={checking} onClick={check}>{checking ? t`Checking…` : t`Check again`}</Button> : null}</div>
       : entry.phase === 'failed' ? <p className="agent-request__error tt-paragraph" role="alert">{entry.error}</p>
         : entry.phase === 'sending' ? <p className="agent-request__status tt-paragraph" role="status"><Trans>Sending…</Trans></p>
-          : entry.phase === 'sent' ? <p className="agent-request__status tt-paragraph" role="status"><Trans>Answer sent.</Trans></p>
+          : entry.phase === 'sent' ? <p className="agent-request__status tt-paragraph" role="status">{entry.choice === 'skip' ? t`Question skipped.` : t`Answer sent.`}</p>
             : blocked !== null ? <p className="agent-request__status tt-paragraph">{blocked}</p> : null
 
   const questionCount = questions.length
@@ -161,6 +161,9 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
         <div className="agent-request__footer">
           <span className="agent-request__count" aria-live="polite">{needsProvider ? t`Finish this form in the provider’s app.`
             : skipping ? t`Choose an answer, or skip` : remaining === 0 ? t`Ready to send` : touched ? t`${{ remaining: shownCount(remaining) }} left to answer` : t`Choose an answer`}</span>
+          {/* Any question its provider lets the user decline offers Skip, unless the send button already skips (ADR-0135). */}
+          {request.skippable && !skipping ? <Button variant="secondary" disabled={disabled || entry.save === 'unsaved'} aria-pressed={entry.choice === 'skip' || undefined}
+            onClick={() => send('skip', SKIP_ANSWER)}>{plural(questionCount, { one: 'Skip question', other: 'Skip questions' })}</Button> : null}
           <Button type="submit" variant={skipping ? 'secondary' : 'primary'} disabled={disabled || entry.save === 'unsaved' || answer === null}>{entry.phase === 'sending' ? t`Sending…`
             : skipping ? plural(questionCount, { one: 'Skip question', other: 'Skip questions' }) : plural(questionCount, { one: 'Send answer', other: 'Send answers' })}</Button>
         </div>

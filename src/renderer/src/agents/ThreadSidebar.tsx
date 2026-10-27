@@ -22,8 +22,8 @@ import { useMainCheckoutLines } from './mainCheckoutLine.logic'
 import { projectWorkingCopyDefaultKey } from '../../../shared/clientIdentity'
 import type { ProjectMainCheckout } from '../../../shared/mainCheckout'
 import { useInterfaceLanguageState } from '../state/interfaceLanguage'
-import { useWatchedThread } from '../watcher/watcherRoom'
-import { WATCHED_BY_WATCHER, WatchedBadge } from '../watcher/WatcherOwl'
+import { useWatchedThread, useWatchedThreadIds } from '../watcher/watcherRoom'
+import { WATCHED_BY_WATCHER, WatchedBadge, WatcherOwl } from '../watcher/WatcherOwl'
 import { WatchRowToggle } from '../watcher/WatchControls'
 import { shownCount } from '../state/interfaceNumbers'
 import { NeedsYouQueue } from './NeedsYouQueue'
@@ -103,6 +103,9 @@ export interface PaneActions {
   readonly settleShortcut?: ThreadChordLabel | undefined
   readonly restoreShortcut?: ThreadChordLabel | undefined
 }
+
+/** One tile on Owl's rail: what waits on you and what rests are told apart by position and by look. */
+type RailItem = { readonly row: ThreadRow; readonly status: ReturnType<typeof rowStatus>; readonly waiting: boolean; readonly resting: boolean }
 
 /** A rail tile's two letters: the first letters of the title's first two words, or a one-word title's first two. */
 export function railMark(title: string): string {
@@ -468,6 +471,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const { t, i18n: { locale } } = useLingui()
   const queueOn = useOwlFeature('needs-you-queue')
   const railOn = useOwlFeature('sidebar-rail')
+  const watchedIds = useWatchedThreadIds()
   const [settledOpen, setSettledOpen] = useState(false)
   const settledButton = useRef<HTMLButtonElement>(null)
   const { settle, dialog: settleDialog } = useSettleThread(command, settledButton)
@@ -557,9 +561,11 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const { open, settled } = organization
   // The collapsed rail's threads: every open one, and the focused one even once settled.
   const railRows = [...open.flatMap(folder => folder.rows), ...settled.flatMap(folder => folder.rows).filter(row => row.thread.id === listed)]
-  const railTile = (row: ThreadRow, status: ReturnType<typeof rowStatus>, resting = false): ReactNode => <button key={row.thread.id} type="button"
-    className="thread-nav__rail-thread thread-nav__rail-mark tt-focusable" data-resting={resting || undefined} aria-label={row.thread.title} title={`${row.thread.title} · ${status.text}`}
+  const railTile = ({ row, status, waiting, resting }: RailItem, watched: boolean): ReactNode => <button key={row.thread.id} type="button"
+    className="thread-nav__rail-thread thread-nav__rail-mark tt-focusable" data-resting={resting || undefined} data-waiting={waiting || undefined} aria-label={row.thread.title}
+    title={[row.thread.title, status.text, watched ? t`Watched by Watcher` : ''].filter(Boolean).join(' · ')}
     aria-current={listed === row.thread.id ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
+    {watched ? <span className="thread-nav__rail-watched-mark" aria-hidden="true"><WatcherOwl size={10} /></span> : null}
     <span aria-hidden="true">{railMark(row.thread.title)}</span><StatusRing row={row} {...status} />
   </button>
   const threads = state.host.threads
@@ -571,20 +577,31 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const settledShown = settledOpen || searching
   let owlRail: ReactNode = null
   if (railOn) {
-    // Owl's rail (ADR-0146): what waits on you in a tray, then what is moving, then a hairline and the rest, smaller.
-    const waiting = organization.needsYou.entries.map(entry => entry.row)
-    const waitingIds = new Set(waiting.map(row => row.thread.id))
-    const rest = railRows.filter(row => !waitingIds.has(row.thread.id)).map(row => ({ row, status: rowStatus(row, { restart: restartOn }) }))
-    const moving = rest.filter(({ row, status }) => row.state === 'working' || status.finished || status.prototype || status.background || status.restart)
-    const resting = rest.filter(item => !moving.includes(item))
+    // Owl's rail (ADR-0146): the threads Watcher watches right under its tile, each with the owl at its corner, then a
+    // hairline and the rest. Each part runs what waits on you (the Needs you queue's order, settled threads included,
+    // edged in the attention colour), then what is moving, then the resting ones smaller; the rest keeps a hairline
+    // before its resting ones. A watched thread shows here even once settled.
+    const queued = organization.needsYou.entries.map(entry => entry.row)
+    const waitingIds = new Set(queued.map(row => row.thread.id))
+    const pool = [...new Map([...queued, ...railRows, ...settled.flatMap(folder => folder.rows).filter(row => watchedIds.has(row.thread.id))].map(row => [row.thread.id, row])).values()]
+    const items = pool.map(row => {
+      const status = rowStatus(row, { restart: restartOn })
+      const waiting = waitingIds.has(row.thread.id)
+      const moving = row.state === 'working' || status.finished || status.prototype || status.background || status.restart
+      return { row, status, waiting, resting: !waiting && !moving }
+    })
+    const ordered = (watched: boolean): RailItem[] => {
+      const part = items.filter(item => watchedIds.has(item.row.thread.id) === watched)
+      return [...part.filter(item => item.waiting), ...part.filter(item => !item.waiting && !item.resting), ...part.filter(item => item.resting)]
+    }
+    const watched = ordered(true), rest = ordered(false)
+    const restAwake = rest.filter(item => !item.resting), restResting = rest.filter(item => item.resting)
     owlRail = <>
-      {waiting.length ? <div className="thread-nav__rail-tray" role="group" aria-label={waitingOnYou(waiting.length)}>
-        <span className="thread-nav__rail-tray-count" aria-hidden="true">{shownCount(waiting.length)}</span>
-        {waiting.map(row => railTile(row, rowStatus(row, { restart: restartOn })))}
-      </div> : null}
-      {moving.map(({ row, status }) => railTile(row, status))}
-      {resting.length ? <span className="thread-nav__rail-rule" aria-hidden="true" /> : null}
-      {resting.map(({ row, status }) => railTile(row, status, true))}
+      {watched.length ? <div className="thread-nav__rail-watched" role="group" aria-label={t`Watched by Watcher`}>{watched.map(item => railTile(item, true))}</div> : null}
+      {watched.length && rest.length ? <span className="thread-nav__rail-rule" aria-hidden="true" /> : null}
+      {restAwake.map(item => railTile(item, false))}
+      {restAwake.length && restResting.length ? <span className="thread-nav__rail-rule" aria-hidden="true" /> : null}
+      {restResting.map(item => railTile(item, false))}
     </>
   }
   // The chord opens the chooser (what the top button does) only while no thread is focused; a focused thread

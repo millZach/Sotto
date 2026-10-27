@@ -52,7 +52,7 @@ export const watcherPhonePreviewSchema = z.object({ target: watcherThreadTargetS
 export const watcherPhoneRemoveFollowupSchema = z.object({ target: watcherThreadTargetSchema, itemId: z.uuid() }).strict()
 const id = z.string().min(1).max(512)
 const answer = z.object({ type: z.literal('answer'), threadId: id, requestId: id, answer: z.string().max(20_000),
-  approved: z.boolean().optional(), questionAnswers: agentQuestionAnswersSchema.optional(), permissionChoice: id.optional() }).strict()
+  approved: z.boolean().optional(), questionAnswers: agentQuestionAnswersSchema.optional(), permissionChoice: id.optional(), skipped: z.literal(true).optional() }).strict()
 export const watcherPhoneAnswerSchema = z.object({ target: watcherThreadTargetSchema,
   command: answer }).strict()
 const receipt = z.object({ operationId: z.uuid(), target: watcherThreadTargetSchema, title: z.string(),
