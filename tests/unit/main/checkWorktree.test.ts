@@ -1,9 +1,12 @@
 // #1312, third part: what the check worktree knows of its packages, and the words a model reads while they install.
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { CHECK_INSTALLED_FROM, checkInstallFailedWords, checkInstallWords, installNeeded, preparePackages, recordInstalled } from '../../../src/main/agents/checkWorktree'
+import { CHECK_INSTALLED_FROM, checkInstallFailedWords, checkInstallWords, installNeeded, preparePackages, recordInstalled, runInstall } from '../../../src/main/agents/checkWorktree'
+
+/** A stop that never comes. */
+const never = new AbortController().signal
 
 const folders: string[] = []
 afterEach(async () => { for (const folder of folders.splice(0)) await rm(folder, { recursive: true, force: true }) })
@@ -49,13 +52,13 @@ it('removes the installed-from record before an install changes node_modules, so
     return succeeds ? 'installed' as const : 'failed' as const
   }
   await writeFile(join(folder, 'package-lock.json'), lockA)
-  expect(await preparePackages(folder, install(true), () => undefined)).toBe('installed')
+  expect(await preparePackages(folder, install(true), never, () => undefined)).toBe('installed')
   await writeFile(join(folder, 'package-lock.json'), lockB)
-  expect(await preparePackages(folder, install(false), () => undefined)).toBe('failed')
+  expect(await preparePackages(folder, install(false), never, () => undefined)).toBe('failed')
   // Back to A: node_modules holds the half-finished install, so A installs again rather than trust its old record.
   await writeFile(join(folder, 'package-lock.json'), lockA)
   expect(await installNeeded(folder)).toBeDefined()
-  expect(await preparePackages(folder, install(true), () => undefined)).toBe('installed')
+  expect(await preparePackages(folder, install(true), never, () => undefined)).toBe('installed')
   expect(installs).toHaveLength(3)
   expect(await installNeeded(folder)).toBeUndefined()
 })
@@ -66,6 +69,40 @@ it('installs nothing and counts it failed when the installed-from record cannot 
   // A folder where the record goes cannot be removed as a file is.
   await mkdir(join(folder, 'node_modules', CHECK_INSTALLED_FROM), { recursive: true })
   let installed = false
-  expect(await preparePackages(folder, async () => { installed = true; return 'installed' }, () => undefined)).toBe('failed')
+  expect(await preparePackages(folder, async () => { installed = true; return 'installed' }, never, () => undefined)).toBe('failed')
   expect(installed).toBe(false)
 })
+
+/** Whether a process is still running. */
+function alive(pid: number): boolean {
+  try { process.kill(pid, 0); return true } catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM' }
+}
+/** An install that never ends, with a child of its own that writes its process ID and never ends either. */
+async function endlessInstall(): Promise<{ readonly folder: string; readonly args: string[]; readonly grandchild: () => Promise<number> }> {
+  const folder = await project()
+  const pidFile = join(folder, 'grandchild.pid')
+  const script = `const c = require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' }); require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(c.pid)); setInterval(() => {}, 1000)`
+  const grandchild = async (): Promise<number> => {
+    for (;;) { try { return Number(await readFile(pidFile, 'utf8')) } catch { await new Promise(resolve => setTimeout(resolve, 20)) } }
+  }
+  return { folder, args: ['-e', script], grandchild }
+}
+
+it('stops a timed-out install’s whole process tree before it counts as failed (#1312)', async () => {
+  const run = await endlessInstall()
+  const outcome = runInstall(process.execPath, run.args, { cwd: run.folder, env: process.env, signal: new AbortController().signal, timeoutMs: 1_500 })
+  const grandchild = await run.grandchild()
+  expect(await outcome).toBe('failed')
+  // Settled only once the tree is gone: nothing of the install still writes into the folder.
+  expect(alive(grandchild)).toBe(false)
+}, 30_000)
+
+it('stops an install’s whole process tree when Sotto closes, before it settles (#1312)', async () => {
+  const run = await endlessInstall()
+  const stop = new AbortController()
+  const outcome = runInstall(process.execPath, run.args, { cwd: run.folder, env: process.env, signal: stop.signal, timeoutMs: 60_000 })
+  const grandchild = await run.grandchild()
+  stop.abort()
+  expect(await outcome).toBe('failed')
+  expect(alive(grandchild)).toBe(false)
+}, 30_000)

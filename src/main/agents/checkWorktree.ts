@@ -87,8 +87,11 @@ export async function installNeeded(projectFolder: string): Promise<{ readonly h
   return { hash }
 }
 
-/** Runs `npm ci` in a project folder: `installed`, or `failed` for any reason. Its output is never kept or logged. */
-export type PackageInstaller = (projectFolder: string) => Promise<'installed' | 'failed'>
+/**
+ * Runs `npm ci` in a project folder: `installed`, or `failed` for any reason. Its output is never kept or logged. When
+ * `signal` aborts it stops the install's whole process tree and settles once that is gone.
+ */
+export type PackageInstaller = (projectFolder: string, signal: AbortSignal) => Promise<'installed' | 'failed'>
 
 /** npm's own entry point beside a Node found the way Sotto finds a client (ADR-0036), so npm runs under the user's Node. */
 async function npmUnder(node: string): Promise<string | undefined> {
@@ -99,32 +102,69 @@ async function npmUnder(node: string): Promise<string | undefined> {
   return undefined
 }
 
+/** Stops a process tree, and settles only once it is seen gone. */
+async function stopTree(pid: number): Promise<void> {
+  if (process.platform === 'win32') { await runToExit('taskkill', ['/pid', String(pid), '/T', '/F']); return }
+  const gone = (signal: NodeJS.Signals | 0): boolean => {
+    try { process.kill(-pid, signal); return false } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ESRCH') return true; throw error }
+  }
+  if (gone('SIGKILL')) return
+  // kill only sends the signal: wait until the whole group is gone, as Git's own stop does.
+  const until = Date.now() + 5_000
+  while (!gone(0)) {
+    if (Date.now() > until) throw new Error('The install process group outlived its kill.')
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+}
+
+/**
+ * Runs an install to its end: `installed` when it exits with 0, `failed` otherwise. When `signal` aborts, as when Sotto
+ * closes, or `timeoutMs` passes, the whole process tree is stopped, and this settles only once the tree is stopped and the
+ * process has closed, so nothing of the install is still writing into the folder when a caller goes on. Its output is
+ * read and dropped: a full pipe would stall it, and what it prints is the project's, never Sotto's to keep.
+ */
+export function runInstall(command: string, args: readonly string[], options: { readonly cwd: string; readonly env: NodeJS.ProcessEnv; readonly signal: AbortSignal; readonly timeoutMs: number }): Promise<'installed' | 'failed'> {
+  if (options.signal.aborted) return Promise.resolve('failed')
+  return new Promise(done => {
+    const child = launchProcess(command, args, { cwd: options.cwd, env: options.env, detached: process.platform !== 'win32' })
+    let stopping: Promise<void> | undefined
+    const closed = new Promise<number | null>(resolve => {
+      child.on('close', code => resolve(code))
+      child.on('error', () => resolve(null))
+    })
+    const stop = (event: string): void => {
+      if (stopping) return
+      console.warn(event)
+      stopping = (async () => {
+        // A launch on the worker has its pid once it has started.
+        if (!child.pid) await new Promise<void>(resolve => child.once('spawn', resolve))
+        try { await stopTree(child.pid!) } catch { console.warn('check-install-stop-failed'); child.kill('SIGKILL') }
+      })()
+    }
+    const timer = setTimeout(() => stop('check-install-timed-out'), options.timeoutMs)
+    timer.unref?.()
+    const abort = (): void => stop('check-install-stopped')
+    options.signal.addEventListener('abort', abort, { once: true })
+    child.stdout.on('data', () => undefined); child.stderr.on('data', () => undefined)
+    void closed.then(async code => {
+      clearTimeout(timer)
+      options.signal.removeEventListener('abort', abort)
+      if (stopping) { await stopping.catch(() => undefined); done('failed'); return }
+      done(code === 0 ? 'installed' : 'failed')
+    })
+  })
+}
+
 /**
  * `npm ci` under the user's own Node, not Sotto's: install scripts and native builds see the Node the project's checks run
- * under. No shell, so nothing is quoted. Stopped, with its whole process tree, after CHECK_INSTALL_TIMEOUT_MS.
+ * under. No shell, so nothing is quoted. Stopped, with its whole process tree, after CHECK_INSTALL_TIMEOUT_MS or when
+ * Sotto closes.
  */
-export const npmCi: PackageInstaller = async projectFolder => {
+export const npmCi: PackageInstaller = async (projectFolder, signal) => {
   const node = await findCli({ name: 'node' })
   const npm = node ? await npmUnder(node) : undefined
   if (!node || !npm) { console.warn('check-install-no-npm'); return 'failed' }
-  return await new Promise(done => {
-    let finished = false
-    const finish = (outcome: 'installed' | 'failed'): void => { if (!finished) { finished = true; clearTimeout(timer); done(outcome) } }
-    const child = launchProcess(node, [npm, 'ci', '--no-audit', '--no-fund'], { cwd: projectFolder, env: withCliPath(nativeEnvironment(), node), detached: process.platform !== 'win32' })
-    const timer = setTimeout(() => {
-      console.warn('check-install-timed-out')
-      if (child.pid) {
-        if (process.platform === 'win32') void runToExit('taskkill', ['/pid', String(child.pid), '/T', '/F']).catch(() => undefined)
-        else { try { process.kill(-child.pid, 'SIGKILL') } catch { /* Already gone. */ } }
-      }
-      finish('failed')
-    }, CHECK_INSTALL_TIMEOUT_MS)
-    timer.unref?.()
-    // Read and dropped: a full pipe would stall npm, and what it prints is the project's, never Sotto's to keep.
-    child.stdout.on('data', () => undefined); child.stderr.on('data', () => undefined)
-    child.on('error', () => finish('failed'))
-    child.on('close', code => finish(code === 0 ? 'installed' : 'failed'))
-  })
+  return await runInstall(node, [npm, 'ci', '--no-audit', '--no-fund'], { cwd: projectFolder, env: withCliPath(nativeEnvironment(), node), signal, timeoutMs: CHECK_INSTALL_TIMEOUT_MS })
 }
 
 /**
@@ -134,13 +174,14 @@ export const npmCi: PackageInstaller = async projectFolder => {
  * install runs, and the record is written only when it succeeded. A record that cannot be removed is not trusted to be
  * replaced, so nothing is installed and the install counts as failed. `installing` is told just before the install starts.
  */
-export async function preparePackages(projectFolder: string, install: PackageInstaller, installing: () => void): Promise<'none' | 'installed' | 'failed'> {
+export async function preparePackages(projectFolder: string, install: PackageInstaller, signal: AbortSignal, installing: () => void): Promise<'none' | 'installed' | 'failed'> {
   const needed = await installNeeded(projectFolder)
   if (!needed) return 'none'
+  if (signal.aborted) return 'failed'
   try { await rm(join(projectFolder, 'node_modules', CHECK_INSTALLED_FROM), { force: true }) }
   catch { console.warn('check-install-record-stuck'); return 'failed' }
   installing()
-  const outcome = await install(projectFolder).catch(() => 'failed' as const)
+  const outcome = await install(projectFolder, signal).catch(() => 'failed' as const)
   if (outcome !== 'installed') { console.warn('check-install-failed'); return 'failed' }
   try { await recordInstalled(projectFolder, needed.hash) } catch { return 'failed' }
   return 'installed'

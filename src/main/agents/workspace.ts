@@ -1425,6 +1425,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * once, at start. Absent, a check's new worktree is made as any new worktree is.
    */
   private checkInstaller: PackageInstaller | undefined
+  /** Stops every check's install, with its whole process tree, when Sotto closes. */
+  private readonly checkInstallsStop = new AbortController()
   allowCheckWorktrees(install: PackageInstaller = npmCi): void { this.checkInstaller = install }
   /**
    * The merge-commit question each thread holds, by the press that asked it and the two tips it named. A question about a
@@ -2168,7 +2170,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private async checkPackages(threadId: string, metadata: AgentWorktree, folder: string): Promise<AgentWorktree> {
     const install = this.checkInstaller
     if (!install || !metadata.check) return metadata
-    const outcome = await preparePackages(folder, install, () => {
+    const outcome = await preparePackages(folder, install, this.checkInstallsStop.signal, () => {
       const running = this.threadById(threadId)
       if (running) { this.touched(running).worktree = { ...metadata, status: 'pending', check: { install: 'running' } }; this.publish() }
     }).catch(() => 'failed' as const)
