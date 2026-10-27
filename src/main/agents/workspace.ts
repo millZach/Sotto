@@ -5012,6 +5012,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         await this.flush() // Allocation owns its exact path/branch before Git mutates anything.
       }
       metadata = await this.takeCheckWorktree(thread.id, metadata) ?? metadata
+      // An install a restart cut off is over: nothing was recorded as installed, so the next check installs again.
+      if (metadata.check?.install === 'running') metadata = { ...metadata, check: { install: 'failed' } }
       metadata = await this.worktrees.ensure(metadata)
       const workingDirectory = await this.worktrees.workingDirectory(metadata)
       const target = this.touched(current())
