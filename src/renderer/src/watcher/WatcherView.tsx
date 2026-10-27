@@ -1,7 +1,6 @@
-import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Marked } from '../components/marks'
-import { ArrowUp, BarChart3, Brain, ChevronDown, CircleHelp, Download, Eye, List, MessageSquare, MoreHorizontal, RefreshCw, RotateCw, Settings, Waypoints } from 'lucide-react'
-import { msg, plural } from '@lingui/core/macro'
+import { ArrowUp, ChevronDown, List } from 'lucide-react'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { shownWords } from '../features/settings/laterWords'
 import { PROVIDER_LABELS, type AgentState } from '../../../shared/agents'
@@ -15,11 +14,8 @@ import { claimRoomFocus } from '../components/AppShell'
 import { useOptionalApp } from '../state/AppContext'
 import { useOwlFeature } from '../state/owlFeature'
 import { useAgents } from '../agents/AgentContext'
-import { PaneMenu } from '../agents/PaneMenu'
-import { RoomSwitch } from '../agents/SidebarFrame'
-import { useMemoryEnabled } from '../state/memoryFeature'
-import type { UpdateControlProps } from '../features/updates/UpdateControl'
-import { updateAction, updateIconState, updateTooltip } from '../features/updates/updateControlLogic'
+import { WayOffThePage } from '../agents/SidebarFrame'
+import { UpdateControl, type UpdateControlProps } from '../features/updates/UpdateControl'
 import { EffortPicker } from '../agents/EffortPicker'
 import { EffortTrace } from '../agents/EffortTrace'
 import { ModelPicker } from '../agents/ModelPicker'
@@ -39,14 +35,14 @@ import { rowStatus } from '../agents/threadFacts'
 import { threadAddressIndex, threadForTarget, useWatcherRoom, watchedRows, type WatcherRoom } from './watcherRoom'
 import { placeTakeovers, WatcherConversationContext, type ConversationThread, type WatcherConversation } from './WatcherReceipts'
 import { WatcherStopAll } from './WatcherStopAll'
-import { BESIDE_PANE_ID, BesideDivider, BesidePane, historyDrawn, roomView, shownShare, useKeptReadingPosition, useRoomView, type RoomTab } from './WatcherBeside'
+import { BESIDE_PANE_ID, BesideDivider, BesidePane, historyDrawn, roomView, shownShare, useKeptReadingPosition, useRoomView } from './WatcherBeside'
 import { firstMessage, useFirstMessage } from './watcherFirstMessage'
 import { WatcherGlance } from './WatcherGlance'
 import { WatcherMachines } from './WatcherMachines'
 import { watcherProviderOf } from './watcherProviders'
 import { WatcherHandoverOffer, WatcherSendGateContext, watcherSendGate } from './WatcherHandover'
 import { NewWatcherNote, newWatcherNoteFacts, WatcherStartStopped } from './WatcherNew'
-import { overviewCount, statusWord, threadPress, TONES, useOverview, WatcherOverviewList, type OpenThread, type OverviewEntry } from './WatcherOverview'
+import { overviewCount, statusWord, threadPress, TONES, unlistedStatus, useOverview, WatcherOverviewList, type OpenThread, type OverviewEntry } from './WatcherOverview'
 import { WatcherContextTile } from './WatcherContextTile'
 import { WatcherOwl } from './WatcherOwl'
 import { WatcherNightScene } from './WatcherNightScene'
@@ -55,125 +51,43 @@ import { WatcherOwnChangesContext } from './WatcherOwnChange'
 import { placeAsks, useStablePlacements, WatcherAskAnsweringContext, type WatcherAskAnswering } from './WatcherAsks'
 import { prefersReducedMotion } from '../state/reducedMotion'
 import { WatcherPermissionChip } from './WatcherPermissionChip'
-import { unlistedStatus, WatcherWatchedView, watchedCount } from './WatcherWatched'
-import { WatcherPicture } from './WatcherPicture'
 import { useOrchestratingStart, useSaveOrchestrating } from './orchestratingRole'
 
 const WATCHER_PROMPT_ID = 'watcher-prompt'
 const WATCHER_PANE_ID = 'watcher-pane'
 
-const ROOM_TABS: readonly RoomTab[] = ['conversation', 'watched', 'visualize']
-const TAB_KEYS: Readonly<Record<string, (index: number) => number>> = {
-  ArrowLeft: index => (index + ROOM_TABS.length - 1) % ROOM_TABS.length, ArrowRight: index => (index + 1) % ROOM_TABS.length,
-  Home: () => 0, End: () => ROOM_TABS.length - 1,
-}
-
-/** The tabs' and their panels' IDs, for each panel to be named by its tab. */
-interface TabIds { readonly watchedTab: string; readonly watchedPanel: string; readonly pictureTab: string; readonly picturePanel: string }
-
-/**
- * Conversation, Watched and Visualize, beside All threads, once Watcher runs (Zach's picks on October 13, 2026, watch B,
- * and October 22, the picture as a third tab): what Watcher's pane shows, its conversation, the threads it watches with
- * how many, or its picture of them (#1339). The count replaces "2 of 4 watched", since watching has no limit; the arrow
- * keys move between the tabs, as the room switch's do. Each tab is its icon alone, named on hover and to assistive
- * technology, with the count as a badge on Watched's eye (Drake's pick on October 24, 2026, `watcher-tabs-prototype.html`).
- */
-function RoomTabs({ tab, count, ids }: { readonly tab: RoomTab; readonly count: number; readonly ids: TabIds }): ReactNode {
-  const { t } = useLingui()
-  const list = useRef<HTMLDivElement>(null)
-  const show = (next: RoomTab): void => roomView.set({ tab: next })
-  // The badge stops at 99+, so the name on hover says the exact count.
-  const watchedName = plural(count, { one: 'Watched, # thread', other: 'Watched, # threads' })
-  const conversation = t({ message: 'Conversation', comment: 'The tab that shows Watcher’s own conversation' })
-  const visualize = t({ message: 'Visualize', comment: 'The tab that shows what Watcher is doing as a picture' })
-  return <div ref={list} className="watcher-tabs" role="tablist" aria-label={t`Watcher’s view`}
-    onKeyDown={event => {
-      const move = TAB_KEYS[event.key]
-      if (move === undefined) return
-      event.preventDefault()
-      const next = ROOM_TABS[move(ROOM_TABS.indexOf(tab))]!
-      show(next)
-      list.current?.querySelector<HTMLButtonElement>(`[data-tab="${next}"]`)?.focus()
-    }}>
-    <button type="button" role="tab" data-tab="conversation" className="watcher-tabs__tab tt-focusable" aria-selected={tab === 'conversation'} tabIndex={tab === 'conversation' ? 0 : -1}
-      aria-label={conversation} title={conversation} onClick={() => show('conversation')}>
-      <MessageSquare size={16} className="watcher-tabs__icon" aria-hidden="true" />
-    </button>
-    <button type="button" role="tab" data-tab="watched" id={ids.watchedTab} className="watcher-tabs__tab tt-focusable" aria-selected={tab === 'watched'} tabIndex={tab === 'watched' ? 0 : -1}
-      aria-controls={tab === 'watched' ? ids.watchedPanel : undefined} aria-label={watchedName} title={watchedName} onClick={() => show('watched')}>
-      <Eye size={16} className="watcher-tabs__icon" aria-hidden="true" />
-      {count > 0 ? <span className="watcher-tabs__count" aria-hidden="true">{count > 99 ? '99+' : count}</span> : null}
-    </button>
-    <button type="button" role="tab" data-tab="visualize" id={ids.pictureTab} className="watcher-tabs__tab tt-focusable" aria-selected={tab === 'visualize'} tabIndex={tab === 'visualize' ? 0 : -1}
-      aria-controls={tab === 'visualize' ? ids.picturePanel : undefined} aria-label={visualize} title={visualize} onClick={() => show('visualize')}>
-      <Waypoints size={16} className="watcher-tabs__icon" aria-hidden="true" />
-    </button>
-  </div>
-}
-
-/** What Watcher's header holds besides its name: All threads and its count, and, once Watcher runs, its tabs and Stop all. */
+/** What Watcher's header holds besides its name: All threads and its count, and, once Watcher runs, Stop all. */
 interface HeaderParts {
   readonly room: WatcherRoom | null
   readonly count: number
-  readonly tab: RoomTab
-  readonly tabIds: TabIds
   readonly listOpen: boolean
   readonly listButton: React.RefObject<HTMLButtonElement | null>
   readonly onToggleList: () => void
   /** Stop all, at the header's end, while threads Watcher started are running. */
   readonly stopAll: ReactNode
-  /** The update control's status and press, for the More menu's last row; none where the app does not update itself. */
+  /** The update control's status and press, for the way off the page; none where the app does not update itself. */
   readonly update: UpdateControlProps | null
 }
 
 /**
- * The header's end, Watcher's way off the page (Drake's pick on October 26, 2026, D in
- * docs/prototypes/watcher-head-strip-prototype.html): the room switch as the sidebar foot draws it, then one More menu
- * holding the other pages and, under a rule, the update control's press. While an update is in hand, the states the
- * control marks, the menu's button wears a dot and its name says what is ready.
+ * Watcher's way off the page, right after All threads where its tabs were (Zach's pick on October 27, 2026, drawn by
+ * him): the row the sidebar's foot draws. The room switch, a hairline, the other pages as icon links (Usage behind its
+ * Owl feature, Memory while memory is on, Settings and Help) and the update control, each a press of its own with its
+ * name on hover and to assistive technology. It replaced the More menu that held the pages and the update.
  */
-const PAGES = [
-  { id: 'usage', label: msg({ message: 'Usage', comment: 'The Usage page.' }), Icon: BarChart3 },
-  { id: 'memory', label: msg({ message: 'Memory', comment: 'The Memory page.' }), Icon: Brain },
-  { id: 'settings', label: msg({ message: 'Settings', comment: 'The Settings page.' }), Icon: Settings },
-  { id: 'help', label: msg({ message: 'Help', comment: 'The Help page.' }), Icon: CircleHelp },
-] as const
-
 function WatcherWayOut({ update }: { readonly update: UpdateControlProps | null }): ReactNode {
-  const { t } = useLingui()
-  const app = useOptionalApp()
-  // The pages the sidebar foot links, filtered the same way: Usage behind its Owl feature, Memory behind its gate.
-  const memory = useMemoryEnabled()
-  const usage = useOwlFeature('usage')
-  const pages = PAGES.filter(page => (page.id !== 'memory' || memory) && (page.id !== 'usage' || usage)).map(page => ({ ...page, label: t(page.label) }))
-  const status = update?.status ?? null
-  const action = updateAction(status)
-  const icon = updateIconState(status)
-  const news = update !== null && icon !== 'idle' && icon !== 'checking'
-  const names = pages.map(page => page.label).join(', ')
-  const ready = updateTooltip(status)
-  const label = news ? t`More: ${names}. ${ready}` : t`More: ${names}`
-  const Glyph = icon === 'downloaded' ? RotateCw : icon === 'available' || icon === 'downloading' ? Download : RefreshCw
-  return <>
-    <RoomSwitch className="thread-nav__seg watcher-head__rooms" iconOnly />
-    <PaneMenu className="watcher-head__more" label={label}
-      icon={<><MoreHorizontal size={16} aria-hidden="true" />{news ? <span className="watcher-head__news" aria-hidden="true" /> : null}</>}
-      groups={[
-        pages.map(({ id, label: name, Icon }) => ({ id, label: name, icon: <Icon size={15} aria-hidden="true" />, run: () => app?.actions.navigate(id) })),
-        update === null ? [] : [{ id: 'update', label: ready, icon: <Glyph size={15} aria-hidden="true" />, disabled: update.busy || action === 'none',
-          run: () => { if (action !== 'none') update.onActivate(action) } }],
-      ]} />
-  </>
+  return <WayOffThePage className="watcher-head__way" roomsClassName="thread-nav__seg watcher-head__rooms" pagesClassName="thread-nav__pages watcher-head__pages"
+    updateControl={update === null ? null : <UpdateControl status={update.status} busy={update.busy} onActivate={update.onActivate} />} />
 }
 
 /**
  * Watcher's header: the Sotto tile in the window's corner, named for the running build, then Watcher's name and
- * All threads, which opens the Overview over the room; once Watcher runs, Conversation and Watched, and at its end More
- * Watcher actions, then at its far end the room switch and the More menu. Once Watcher runs the tile is also a button for Watcher's context and state (#1189). On macOS no
+ * All threads, which opens the Overview over the room, then the way off the page; once Watcher runs, Stop all at its
+ * end. Watcher's room is its conversation alone (Zach, October 27, 2026), so the header holds no tabs. Once Watcher runs the tile is also a button for Watcher's context and state (#1189). On macOS no
  * app mark sits beside the traffic lights: before Watcher starts there is no tile, and the button, once it runs,
  * wears Watcher's owl. The night sky spreads behind the corner. The row is the window's drag strip.
  */
-function WatcherHeader({ room, count, tab, tabIds, listOpen, listButton, onToggleList, stopAll, update }: HeaderParts): ReactNode {
+function WatcherHeader({ room, count, listOpen, listButton, onToggleList, stopAll, update }: HeaderParts): ReactNode {
   const { t } = useLingui()
   const started = room?.state?.current != null
   const track = useReleaseTrack()
@@ -189,9 +103,9 @@ function WatcherHeader({ room, count, tab, tabIds, listOpen, listButton, onToggl
         <List size={15} aria-hidden="true" /><span className="watcher-head__list-text">{t`All threads`}</span>
         <span className="watcher-head__count" aria-hidden="true">{count}</span><ChevronDown size={13} aria-hidden="true" />
       </button>
-      {started && room !== null ? <RoomTabs tab={tab} count={watchedCount(room)} ids={tabIds} /> : null}
+      <WatcherWayOut update={update} />
     </div>
-    <div className="thread-workspace__actions">{started && room !== null ? stopAll : null}<WatcherWayOut update={update} /></div>
+    <div className="thread-workspace__actions">{started && room !== null ? stopAll : null}</div>
   </header>
 }
 
@@ -303,7 +217,7 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
  * The current Watcher's real thread pane: its transcript, its request cards and its composer, under Watcher's header
  * and the needs-you line. The first entry's message reaches it from the room provider (`useFirstMessageDelivery`).
  */
-function WatcherPane({ state, row, header, watched, error, focused, now, describe, press, answering }: {
+function WatcherPane({ state, row, header, error, focused, now, describe, press, answering }: {
   readonly state: AgentState
   readonly row: ThreadRow
   readonly header: ReactNode
@@ -312,17 +226,14 @@ function WatcherPane({ state, row, header, watched, error, focused, now, describ
   readonly press: WatcherConversation['press']
   /** What a watched thread's request card under a wake-up answers with (answering in Watcher's conversation). */
   readonly answering: WatcherAskAnswering | null
-  /** The Watched view, when it stands in the conversation's place. */
-  readonly watched: ReactNode
   readonly error: string | null
   readonly focused: boolean
   readonly now: number | undefined
 }): ReactNode {
   const { t } = useLingui()
   const agents = useAgents()
-  // Its reading position is kept for a trip to another room, as a beside thread's is for its next opening, and for a
-  // look at Watched.
-  useKeptReadingPosition(row.thread, WATCHER_PANE_ID, watched === null)
+  // Its reading position is kept for a trip to another room, as a beside thread's is for its next opening.
+  useKeptReadingPosition(row.thread, WATCHER_PANE_ID)
   // The first entry's composer had focus and is gone, the room opened before Watcher's thread arrived, or New Watcher
   // or a provider change took the last Watcher's composer away: focus left with nowhere to be goes to Watcher's own composer.
   const threadId = row.thread.id
@@ -381,7 +292,7 @@ function WatcherPane({ state, row, header, watched, error, focused, now, describ
   return <BrowserPageRouteContext.Provider value={null}><WatcherOwnChangesContext.Provider value={changes}><WatcherSendGateContext.Provider value={gate}>
     <WatcherConversationContext.Provider value={conversation}><WatcherAskAnsweringContext.Provider value={answering}>
       <ThreadPane row={row} state={state} command={agents.command} store={agents.threadDrafts} focused={focused} promptId={WATCHER_PROMPT_ID}
-        error={error} now={now} watcherHeader={header} watcherBody={watched} watcherEmpty={empty}
+        error={error} now={now} watcherHeader={header} watcherEmpty={empty}
         notice={offered && room !== null && offer !== null ? <WatcherHandoverOffer key={offer.source.threadId} room={room} offer={offer} composerId={WATCHER_PROMPT_ID} /> : undefined} />
     </WatcherAskAnsweringContext.Provider></WatcherConversationContext.Provider>
   </WatcherSendGateContext.Provider></WatcherOwnChangesContext.Provider></BrowserPageRouteContext.Provider>
@@ -493,11 +404,6 @@ export function WatcherView({ now: fixedNow, update = null }: {
   const opener = useRef<HTMLElement | null>(null)
   const pendingFocus = useRef<{ readonly threadId: string; readonly atRequest: boolean } | null>(null)
   const [focusedPane, setFocusedPane] = useState<'watcher' | 'beside'>('watcher')
-  const watchedTab = useId()
-  const watchedPanel = useId()
-  const pictureTab = useId()
-  const picturePanel = useId()
-  const tabIds = useMemo(() => ({ watchedTab, watchedPanel, pictureTab, picturePanel }), [watchedTab, watchedPanel, pictureTab, picturePanel])
   const area = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
 
@@ -618,7 +524,7 @@ export function WatcherView({ now: fixedNow, update = null }: {
   const shownMessages = watcherRow?.thread.messages
   const shownIds = useMemo(() => new Set(shownMessages?.map(message => message.id) ?? []), [shownMessages])
   const inline = useMemo<ReadonlySet<string>>(() => {
-    if (placed.size === 0 || view.tab !== 'conversation') return new Set()
+    if (placed.size === 0) return new Set()
     const ids = shownIds
     const found = new Set<string>()
     for (const list of placed.values()) for (const ask of list) {
@@ -626,17 +532,15 @@ export function WatcherView({ now: fixedNow, update = null }: {
       if (row !== undefined && !isThreadClosed(row.thread) && row.thread.requests.some(request => request.id === ask.requestCardId)) found.add(row.thread.id)
     }
     return found
-  }, [placed, shownIds, view.tab, rowFor])
+  }, [placed, shownIds, rowFor])
   const jumpToAsk = useCallback((threadId: string, requestId: string | undefined): boolean => focusInlineAsk(threadId, requestId), [])
 
   // The machines line (#1032) is part of the Owl feature Work across machines: Stable shows none of it.
   const crossMachine = useOwlFeature('cross-machine-work')
   const error = state?.error ?? agents.error ?? null
-  const tab = current === null ? 'conversation' : view.tab
-  const stopAll = room === null ? null : <WatcherStopAll room={room} conversation={{ describe, press }}
-    fallbackFocus={() => document.querySelector<HTMLElement>('.watcher-head .watcher-tabs__tab[aria-selected="true"]')?.focus()} />
+  const stopAll = room === null ? null : <WatcherStopAll room={room} conversation={{ describe, press }} fallbackFocus={() => listButton.current?.focus()} />
   const header = <>
-    <WatcherHeader room={room} count={overviewCount(groups)} tab={tab} tabIds={tabIds} listOpen={listOpen} listButton={listButton} onToggleList={() => toggleList(listButton.current)}
+    <WatcherHeader room={room} count={overviewCount(groups)} listOpen={listOpen} listButton={listButton} onToggleList={() => toggleList(listButton.current)}
       stopAll={stopAll} update={update} />
     <WatcherGlance entries={needs} onOpen={openThread} onShowAll={from => toggleList(from, true)} inline={inline} onJump={jumpToAsk} />
     {crossMachine ? <WatcherMachines state={state} now={fixedNow} /> : null}
@@ -650,18 +554,21 @@ export function WatcherView({ now: fixedNow, update = null }: {
   // A creation that stopped part-way leaves Watcher with no thread; the room says so and offers to finish it.
   else if (watcherRow === undefined) watcherContent = room.state?.creationStopped === true ? <>{header}<WatcherStartStopped room={room} /></> : status(t`Opening Watcher…`)
   else watcherContent = <WatcherPane state={state} row={watcherRow} header={header} describe={describe} press={press} answering={answering} error={focusedPane === 'watcher' || besideRow === undefined ? error : null}
-    watched={tab === 'watched' ? <WatcherWatchedView room={room} state={state} groups={groups} id={watchedPanel} labelledBy={watchedTab} onOpen={openThread}
-      onShowAll={from => toggleList(from, true)} />
-      : tab === 'visualize' ? <WatcherPicture room={room} state={state} entries={entries} id={picturePanel} labelledBy={pictureTab} onOpen={openThread} /> : null}
     focused={focusedPane === 'watcher' || besideRow === undefined} now={fixedNow} />
 
-  // The night scene in the room's margins, with a thread owl for each watched thread. It steps away while Visualize
-  // shows, whose picture takes the pane's whole width (Zach, October 22, 2026), and while the room or Watcher's
-  // conversation cannot be read yet.
+  // The night scene in the room's margins, with a thread owl for each watched thread. It steps away while the room or
+  // Watcher's conversation cannot be read yet.
   const roomOpen = room !== null && room.status === 'ready' && state !== null && !(room.error !== null && room.state === null)
-  const sceneShown = roomOpen && tab !== 'visualize' && (current === null || watcherRow !== undefined)
+  const sceneShown = roomOpen && (current === null || watcherRow !== undefined)
   const owls = useWatchedOwls(room?.state ?? null, state)
-  const showWatched = useCallback((): void => roomView.set({ tab: 'watched' }), [])
+  // Watcher's own owl glows while something waits on the user (Zach, October 27, 2026): a question or permission of
+  // Watcher's own, or a thread in Needs you for a question, a permission or a prototype to review. A failed turn alone
+  // lights it no more than it lights a thread owl.
+  // A thread's request or prototype is read on its own, since the needs-you line's word for a thread puts a failed turn
+  // before a prototype that also waits.
+  const glowing = (watcherRow?.thread.requests.length ?? 0) > 0 || needs.some(({ facts }) =>
+    facts.request !== undefined || facts.thread.requests.length > 0 || facts.thread.prototypeReady !== undefined)
+  const showAll = useCallback((): void => { listOpener.current = null; setListOpen(true) }, [])
 
   const beside = besideRow !== undefined && state !== null
   const share = shownShare(width, view.share)
@@ -670,10 +577,10 @@ export function WatcherView({ now: fixedNow, update = null }: {
       <div className="thread-workspace__body" data-panes>
         <div className="thread-panes">
           <div ref={area} className="thread-panes__area" style={{ '--watcher-share': share } as CSSProperties}>
-            <Marked>{paneMarks => <section id={WATCHER_PANE_ID} className="thread-pane watcher-pane" {...paneMarks} data-thread-id={watcherId ?? undefined} data-view={tab} data-focused={focusedPane === 'watcher' || !beside || undefined}
+            <Marked>{paneMarks => <section id={WATCHER_PANE_ID} className="thread-pane watcher-pane" {...paneMarks} data-thread-id={watcherId ?? undefined} data-focused={focusedPane === 'watcher' || !beside || undefined}
               data-under-controls={!beside || undefined} role="region" aria-label="Watcher"
               onFocusCapture={() => setFocusedPane('watcher')} onPointerDownCapture={() => setFocusedPane('watcher')}>
-              <WatcherNightScene shown={sceneShown} held={fixedNow !== undefined} place={app?.settings?.watcherScene} owls={owls} onOpen={openThread} onShowWatched={showWatched} />
+              <WatcherNightScene shown={sceneShown} held={fixedNow !== undefined} place={app?.settings?.watcherScene} owls={owls} glowing={glowing} onOpen={openThread} onShowAll={showAll} />
               <OwlRoomSky />
               {watcherContent}
             </section>}</Marked>

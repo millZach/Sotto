@@ -264,13 +264,7 @@ test.describe("Watcher's conversation column on the built app", () => {
           await readBack(page, 0)
           await expect(compose(page)).not.toHaveAttribute('data-slim')
         }
-        // Watched keeps the floating glass composer; Visualize keeps its one line until focused, and never slims.
         await resizeContentWindow(launched, 1280, 800)
-        await page.getByRole('tab', { name: /^Watched, / }).click()
-        await expect(compose(page)).not.toHaveAttribute('data-slim')
-        await page.getByRole('tab', { name: 'Visualize' }).click()
-        await expect(compose(page)).not.toHaveAttribute('data-slim')
-        await page.getByRole('tab', { name: 'Conversation' }).click()
         await expect(page.locator('#watcher-pane [data-message-id="column-23"]')).toBeVisible()
         // A key typed in the conversation goes to Watcher's composer, which comes back full.
         await readBack(page, 420)

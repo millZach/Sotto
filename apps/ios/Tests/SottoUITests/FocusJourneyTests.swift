@@ -695,10 +695,11 @@ import XCTest
         XCTAssertTrue(send.isEnabled)
         capture("question-glow-sheet")
         send.tap()
+        // Asked first: "Answer sent." passes five seconds after it shows.
+        XCTAssertTrue(labelled("Answer sent.").waitForExistence(timeout: 10))
         XCTAssertTrue(waitUntilGone(send), "The question closes once it is answered")
         let reply = byID("thread-reply")
         XCTAssertTrue(reply.waitForExistence(timeout: 5), "With nothing waiting, the reply box returns")
-        XCTAssertTrue(labelled("Answer sent.").waitForExistence(timeout: 5))
         waitForEnd(running, last: update, above: reply, "Answering keeps the conversation at its end, not its top")
         XCTAssertLessThanOrEqual(byID("thread-title").frame.maxY, threadTop + 1, "The page never jumps to the title after an answer")
         capture("question-glow-after")
