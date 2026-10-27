@@ -59,6 +59,15 @@ describe('the see-through window (ADR-0149)', () => {
     expect(onSeeThroughChanged).toHaveBeenCalledTimes(2)
   })
 
+  it('turns a window made see-through at start solid when Transparency effects go off, before the room asks', async () => {
+    const { manager, calls } = glassHarness(true)
+    await manager.createMainWindow()
+    manager.setGlassMaterialAvailable(false)
+    expect(calls.splice(0)).toEqual(['room false', 'material none', 'background #000000'])
+    manager.setGlassMaterialAvailable(true)
+    expect(calls.splice(0)).toEqual(['material acrylic', 'background #00000000', 'room true'])
+  })
+
   it('makes a window solid when Transparency effects are off at start', async () => {
     const { manager, options } = glassHarness(true)
     manager.setGlassMaterialAvailable(false)

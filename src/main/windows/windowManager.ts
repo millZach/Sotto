@@ -452,7 +452,8 @@ export class WindowManager {
     const glass = this.dependencies.glassWindow
     if (glass === undefined || glass.material === null || available === this.glassMaterialAvailable) return
     this.glassMaterialAvailable = available
-    if (this.seeThroughWanted !== true) return
+    // A window made see-through at start has the saved look's wish until the room first asks for itself.
+    if ((this.seeThroughWanted ?? glass.seeThroughAtStart()) !== true) return
     if (!available) {
       glass.onSeeThroughChanged?.(false)
       this.applyMaterial(false)
