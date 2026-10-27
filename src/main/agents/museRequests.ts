@@ -161,6 +161,7 @@ export function museUserInputPending(threadId: string, input: MuseUserInput): Mu
       multiSelect: question.selection.mode === 'multiple', allowFreeText: true,
       required: (question.selection.minSelections ?? 1) > 0,
     })),
+    skippable: true,
   }
   return { kind: 'userInput', threadId, request, input }
 }

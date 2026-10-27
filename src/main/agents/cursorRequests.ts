@@ -96,7 +96,7 @@ export function cursorPending(wireId: string | number, method: string, params: u
       const options = permission.options.filter(option => option.optionId !== SKIP_OPTION && option.kind === 'allow_once').map(option => ({ id: option.optionId, label: option.name || option.optionId }))
       const prompt = (said.join('\n') || permission.toolCall.title || 'Cursor has a question.').slice(0, TEXT_LIMIT)
       return { wireId, threadId, kind: 'question', toolCallId: permission.toolCall.toolCallId, permission, request: { id, kind: 'question', text: prompt, options,
-        questions: [{ id: 'question', question: prompt, options, multiSelect: false, allowFreeText: false, required: false }], context: { toolCallId: permission.toolCall.toolCallId } } }
+        questions: [{ id: 'question', question: prompt, options, multiSelect: false, allowFreeText: false, required: false }], skippable: true, context: { toolCallId: permission.toolCall.toolCallId } } }
     }
     const title = permission.toolCall.title ?? 'Cursor asks to use a tool.'
     const command = permission.toolCall.kind === 'execute' ? unquoted(title) : undefined
@@ -121,7 +121,7 @@ export function cursorPending(wireId: string | number, method: string, params: u
     const only = questions.length === 1 ? questions[0]! : undefined
     return { wireId, threadId, kind: 'question', toolCallId: question.toolCallId, question, request: { id, kind: 'question',
       text: (question.title && !only ? question.title : questions.map(entry => entry.question).join('\n')).slice(0, TEXT_LIMIT),
-      options: only ? only.options : [], questions, ...(question.toolCallId ? { context: { toolCallId: question.toolCallId } } : {}) } }
+      options: only ? only.options : [], questions, skippable: true, ...(question.toolCallId ? { context: { toolCallId: question.toolCallId } } : {}) } }
   }
   if (method === CURSOR_PLAN) {
     const parsed = planSchema.safeParse(params)
@@ -142,7 +142,7 @@ export function cursorPending(wireId: string | number, method: string, params: u
  * The answer to send for the user's reply. A permission is allowed once or rejected; a question is answered with the
  * options chosen, or skipped when none was; a plan is accepted or rejected.
  */
-export function cursorAnswer(pending: CursorPending, answer: string, approved?: boolean, questionAnswers?: AgentQuestionAnswers, permissionChoice?: string): unknown {
+export function cursorAnswer(pending: CursorPending, answer: string, approved?: boolean, questionAnswers?: AgentQuestionAnswers, permissionChoice?: string, skipped?: boolean): unknown {
   if (pending.kind === 'plan') {
     const accepted = permissionChoice ? permissionValue(pending.request, permissionChoice, approved) === 'accept-plan' : approved === true
     return { outcome: accepted ? { outcome: 'accepted' } : { outcome: 'rejected' } }
@@ -157,6 +157,7 @@ export function cursorAnswer(pending: CursorPending, answer: string, approved?: 
     if (approved === true && !selected) throw new Error('Cursor did not offer to allow this once. Nothing was approved.')
     return selected ? { outcome: { outcome: 'selected', optionId: selected.optionId } } : { outcome: { outcome: 'cancelled' } }
   }
+  if (skipped) return pending.permission ? { outcome: { outcome: 'selected', optionId: SKIP_OPTION } } : { outcome: { outcome: 'skipped' } }
   const questions = pending.request.questions ?? []
   let supplied = questionAnswers
   if (!supplied) {
