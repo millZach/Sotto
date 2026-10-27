@@ -249,6 +249,8 @@ interface WatcherCheck {
   /** Its operation once admitted, and that operation's last known position in the record. */
   operationId?: string
   at?: number | undefined
+  /** When its thread was last seen running a turn while it held its place through background work. */
+  workedAt?: number | undefined
   /** While it waits its turn: what it starts with, and the branch landed for it. */
   waiting?: { readonly input: WatcherToolInput<'start_thread'>; readonly landed: LandedMove | undefined } | undefined
 }
@@ -1400,8 +1402,8 @@ export class WatcherService implements WatcherControlHooks {
   }
   /**
    * Whether a check still holds its machine's place: waiting, being started, working, sent with its delivery unconfirmed,
-   * or in background work not yet seen to end, which it holds until its thread has sat in it for WATCHER_QUIET_MS, as a
-   * delegated check is released (Zach, October 27, 2026). A number is when that hold ends.
+   * or in background work not yet seen to end, which it holds until its thread has sat idle in it, no turn running, for
+   * WATCHER_QUIET_MS, as a delegated check is released (Zach, October 27, 2026). A number is when that hold ends.
    */
   private checkHold(check: WatcherCheck, operation: WatcherOperation): boolean | number {
     if (check.waiting) return operation.deliveryState === 'queued'
@@ -1416,8 +1418,11 @@ export class WatcherService implements WatcherControlHooks {
     const outcome = this.outcomeOf(operation)
     if (outcome === 'working') return true
     if (!CHECK_HOLDS_THROUGH_BACKGROUND || outcome !== 'background') return false
-    const until = Date.parse(operation.outcomeAt ?? operation.updatedAt) + WATCHER_QUIET_MS
-    return until > Date.now() ? until : false
+    // Twenty idle minutes: a turn running in its thread starts the wait again, as a delegated check's release does.
+    const thread = this.localThread(operation.target.threadId), clock = Date.now()
+    if (thread && isThreadTurnRunning(thread)) { check.workedAt = clock; return true }
+    const until = Math.max(Date.parse(operation.outcomeAt ?? operation.updatedAt), check.workedAt ?? 0) + WATCHER_QUIET_MS
+    return until > clock ? until : false
   }
   /**
    * Lets go of the incoming ref a start's move landed, once it is known the start made no thread to own it: a stop or a
