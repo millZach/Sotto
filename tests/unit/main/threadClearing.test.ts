@@ -58,4 +58,10 @@ describe('what keeps a settled thread back from clearing (ADR-0140 decision 3)',
     expect(hold(thread('a', { babysitting: [{ url: 'https://github.com/o/r/pull/1', number: 1, startedBy: 'user', startedAt: SETTLED }] as AgentThread['babysitting'] }))).toBe('babysitting')
     expect(hold(thread('a'), [], { watched: id => id === 'a' })).toBe('watched')
   })
+
+  it('lets a babysat thread go once Restart stopped threads retired babysitting (ADR-0144)', () => {
+    const babysitting = [{ url: 'https://github.com/o/r/pull/1', number: 1, startedBy: 'user', startedAt: SETTLED }] as AgentThread['babysitting']
+    expect(hold(thread('a', { babysitting }), [], { babysittingRetired: true })).toBeNull()
+    expect(hold(thread('a', { babysitting }), [], { babysittingRetired: true, watched: id => id === 'a' })).toBe('watched')
+  })
 })

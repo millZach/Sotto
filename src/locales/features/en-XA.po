@@ -2124,9 +2124,11 @@ msgstr ""
 msgid "Handover of the last Watcher"
 msgstr ""
 
+#. The Help page.
 #. The page link: the Help page
 #: src/renderer/src/components/AppShell.tsx
 #: src/renderer/src/features/help/HelpView.tsx
+#: src/renderer/src/watcher/WatcherView.tsx
 msgid "Help"
 msgstr ""
 
@@ -2658,9 +2660,11 @@ msgstr ""
 msgid "Measuring {chosenName}. Sotto cleans up a built-in sample on the server, never your dictation."
 msgstr ""
 
+#. The Memory page.
 #. The page link: the Memory page
 #: src/renderer/src/components/AppShell.tsx
 #: src/renderer/src/watcher/WatcherMachines.tsx
+#: src/renderer/src/watcher/WatcherView.tsx
 msgid "Memory"
 msgstr ""
 
@@ -2825,6 +2829,14 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "More usage actions"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "More: {names}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "More: {names}. {ready}"
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
@@ -3688,6 +3700,10 @@ msgid "Prompts"
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Prompts are what you and Watcher sent, and Sotto’s notes when it restarts a thread. Subagents add tokens but no prompts. A prompt counts under the model that served it."
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "Prompts are what you, Watcher and wake-ups sent. Subagents add tokens but no prompts. A prompt counts under the model that served it."
 msgstr ""
 
@@ -4301,10 +4317,12 @@ msgstr ""
 msgid "Setting up"
 msgstr ""
 
+#. The Settings page.
 #. The page link: the Settings page
 #. The page link: the Settings page
 #: src/renderer/src/components/AppShell.tsx
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
+#: src/renderer/src/watcher/WatcherView.tsx
 msgid "Settings"
 msgstr ""
 
@@ -5745,9 +5763,11 @@ msgstr ""
 msgid "Updating…"
 msgstr ""
 
+#. The Usage page.
 #. The page link: the Usage page
 #: src/renderer/src/components/AppShell.tsx
 #: src/renderer/src/features/usage/UsageView.tsx
+#: src/renderer/src/watcher/WatcherView.tsx
 msgid "Usage"
 msgstr ""
 
@@ -6195,6 +6215,10 @@ msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "You chose this in working preferences"
+msgstr ""
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "You sent <0>{sent}</0> and Watcher <1>{watcher}</1>."
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx

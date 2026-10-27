@@ -5,6 +5,7 @@ import { delimiter, join } from 'node:path'
 import { i18n } from '@lingui/core'
 import { compileMessage } from '@lingui/message-utils/compileMessage'
 import { afterEach, vi } from 'vitest'
+import { installGitGuard, scrubRedirectingGitVariables } from './fixtures/gitGuard'
 
 // Tests read English whatever this computer's language is (ADR-0123): nothing here asks the system, and every
 // message shows its English source, extracted or not, compiled the way a catalog would compile it.
@@ -19,6 +20,13 @@ if (process.platform === 'darwin') {
   process.env.TMPDIR = realpathSync(tmpdir())
   putGitFirstOnPath()
 }
+
+// A test may change only repositories it made under the temporary folder (`fixtures/gitGuard.ts`). Variables a Git
+// hook or alias that ran the tests left behind would point every child Git at that repository, so they go first; the
+// guard then refuses a commit, reset, checkout or any other change to a repository outside the temporary folder.
+// It is installed after the macOS TMPDIR above, so it guards the folder the fixtures actually use.
+scrubRedirectingGitVariables()
+installGitGuard()
 
 // macOS: a spawn by bare name tries each PATH folder in turn, and from a test worker every folder that
 // holds no match costs a few milliseconds. npx's node_modules/.bin folders and a developer's own PATH put

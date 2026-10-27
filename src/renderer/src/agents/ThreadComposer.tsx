@@ -48,6 +48,7 @@ import { toolbarApplies } from './branchToolbar.logic'
 import { useDelegationsEnabled } from './delegations'
 import { stopLabel, workingDelegatedThreads } from './delegationWords'
 import { ContinueOptions, ContinueStrip } from './ContinueThread'
+import { RestartStrip } from './RestartStopped'
 import { continueChoiceFor, continueModels, continueStore, unavailableProviders, useContinueChoice, useContinueEnabled, type ContinueChoice } from './continuations'
 import { shownWords, type LaterWords } from './interfaceWords'
 import './composer.css'
@@ -479,6 +480,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   return <>
     <ThreadFollowups row={row} state={state} command={command} store={store}
       onRetryAdmission={draftId => { void sendThreadRevision(store, row, command, performance.now(), 'queue', draftId) }} />
+    {/* When Sotto restarts what a limit stopped (ADR-0144; Owl only), before the prompt; a begun continuation takes its place, and Watcher's own pane has the band. */}
+    {continuing === undefined && !watcher ? <RestartStrip thread={row.thread} command={command} composerId={composerId} /> : null}
     {continuing !== undefined ? <ContinueStrip thread={row.thread} state={state} choice={continuing} composerId={composerId} /> : null}
     <form className="thread-prompt" data-ornament={Boolean(ornament) || undefined} data-thread-id={threadId} data-answering={answering || undefined} data-running={working || undefined} data-picker={menuOpen || undefined}
       onSubmit={event => { event.preventDefault(); send(performance.now()) }}

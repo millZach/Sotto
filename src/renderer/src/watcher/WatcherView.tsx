@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Marked } from '../components/marks'
-import { ArrowUp, ChevronDown, Eye, List, MessageSquare, Waypoints } from 'lucide-react'
-import { plural } from '@lingui/core/macro'
+import { ArrowUp, BarChart3, Brain, ChevronDown, CircleHelp, Download, Eye, List, MessageSquare, MoreHorizontal, RefreshCw, RotateCw, Settings, Waypoints } from 'lucide-react'
+import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { shownWords } from '../features/settings/laterWords'
 import { PROVIDER_LABELS, type AgentState } from '../../../shared/agents'
@@ -15,6 +15,11 @@ import { claimRoomFocus } from '../components/AppShell'
 import { useOptionalApp } from '../state/AppContext'
 import { useOwlFeature } from '../state/owlFeature'
 import { useAgents } from '../agents/AgentContext'
+import { PaneMenu } from '../agents/PaneMenu'
+import { RoomSwitch } from '../agents/SidebarFrame'
+import { useMemoryEnabled } from '../state/memoryFeature'
+import type { UpdateControlProps } from '../features/updates/UpdateControl'
+import { updateAction, updateIconState, updateTooltip } from '../features/updates/updateControlLogic'
 import { EffortPicker } from '../agents/EffortPicker'
 import { ModelPicker } from '../agents/ModelPicker'
 import { OwlRoomSky } from '../agents/OwlSky'
@@ -35,7 +40,6 @@ import { placeTakeovers, WatcherConversationContext, type ConversationThread, ty
 import { WatcherStopAll } from './WatcherStopAll'
 import { BESIDE_PANE_ID, BesideDivider, BesidePane, historyDrawn, roomView, shownShare, useKeptReadingPosition, useRoomView, type RoomTab } from './WatcherBeside'
 import { firstMessage, useFirstMessage } from './watcherFirstMessage'
-import { WatcherDock } from './WatcherDock'
 import { WatcherGlance } from './WatcherGlance'
 import { WatcherMachines } from './WatcherMachines'
 import { watcherProviderOf } from './watcherProviders'
@@ -117,16 +121,58 @@ interface HeaderParts {
   readonly onToggleList: () => void
   /** Stop all, at the header's end, while threads Watcher started are running. */
   readonly stopAll: ReactNode
+  /** The update control's status and press, for the More menu's last row; none where the app does not update itself. */
+  readonly update: UpdateControlProps | null
+}
+
+/**
+ * The header's end, Watcher's way off the page (Drake's pick on October 26, 2026, D in
+ * docs/prototypes/watcher-head-strip-prototype.html): the room switch as the sidebar foot draws it, then one More menu
+ * holding the other pages and, under a rule, the update control's press. While an update is in hand, the states the
+ * control marks, the menu's button wears a dot and its name says what is ready.
+ */
+const PAGES = [
+  { id: 'usage', label: msg({ message: 'Usage', comment: 'The Usage page.' }), Icon: BarChart3 },
+  { id: 'memory', label: msg({ message: 'Memory', comment: 'The Memory page.' }), Icon: Brain },
+  { id: 'settings', label: msg({ message: 'Settings', comment: 'The Settings page.' }), Icon: Settings },
+  { id: 'help', label: msg({ message: 'Help', comment: 'The Help page.' }), Icon: CircleHelp },
+] as const
+
+function WatcherWayOut({ update }: { readonly update: UpdateControlProps | null }): ReactNode {
+  const { t } = useLingui()
+  const app = useOptionalApp()
+  // The pages the sidebar foot links, filtered the same way: Usage behind its Owl feature, Memory behind its gate.
+  const memory = useMemoryEnabled()
+  const usage = useOwlFeature('usage')
+  const pages = PAGES.filter(page => (page.id !== 'memory' || memory) && (page.id !== 'usage' || usage)).map(page => ({ ...page, label: t(page.label) }))
+  const status = update?.status ?? null
+  const action = updateAction(status)
+  const icon = updateIconState(status)
+  const news = update !== null && icon !== 'idle' && icon !== 'checking'
+  const names = pages.map(page => page.label).join(', ')
+  const ready = updateTooltip(status)
+  const label = news ? t`More: ${names}. ${ready}` : t`More: ${names}`
+  const Glyph = icon === 'downloaded' ? RotateCw : icon === 'available' || icon === 'downloading' ? Download : RefreshCw
+  return <>
+    <RoomSwitch className="thread-nav__seg watcher-head__rooms" iconOnly />
+    <PaneMenu className="watcher-head__more" label={label}
+      icon={<><MoreHorizontal size={16} aria-hidden="true" />{news ? <span className="watcher-head__news" aria-hidden="true" /> : null}</>}
+      groups={[
+        pages.map(({ id, label: name, Icon }) => ({ id, label: name, icon: <Icon size={15} aria-hidden="true" />, run: () => app?.actions.navigate(id) })),
+        update === null ? [] : [{ id: 'update', label: ready, icon: <Glyph size={15} aria-hidden="true" />, disabled: update.busy || action === 'none',
+          run: () => { if (action !== 'none') update.onActivate(action) } }],
+      ]} />
+  </>
 }
 
 /**
  * Watcher's header: the Sotto tile in the window's corner, named for the running build, then Watcher's name and
  * All threads, which opens the Overview over the room; once Watcher runs, Conversation and Watched, and at its end More
- * Watcher actions. Once Watcher runs the tile is also a button for Watcher's context and state (#1189). On macOS no
+ * Watcher actions, then at its far end the room switch and the More menu. Once Watcher runs the tile is also a button for Watcher's context and state (#1189). On macOS no
  * app mark sits beside the traffic lights: before Watcher starts there is no tile, and the button, once it runs,
  * wears Watcher's owl. The night sky spreads behind the corner. The row is the window's drag strip.
  */
-function WatcherHeader({ room, count, tab, tabIds, listOpen, listButton, onToggleList, stopAll }: HeaderParts): ReactNode {
+function WatcherHeader({ room, count, tab, tabIds, listOpen, listButton, onToggleList, stopAll, update }: HeaderParts): ReactNode {
   const { t } = useLingui()
   const started = room?.state?.current != null
   const track = useReleaseTrack()
@@ -144,7 +190,7 @@ function WatcherHeader({ room, count, tab, tabIds, listOpen, listButton, onToggl
       </button>
       {started && room !== null ? <RoomTabs tab={tab} count={watchedCount(room)} ids={tabIds} /> : null}
     </div>
-    {started && room !== null ? <div className="thread-workspace__actions">{stopAll}</div> : null}
+    <div className="thread-workspace__actions">{started && room !== null ? stopAll : null}<WatcherWayOut update={update} /></div>
   </header>
 }
 
@@ -409,16 +455,17 @@ function useWatchedOwls(room: WatcherRoomState | null, state: AgentState | null)
 /**
  * Watcher's room (ADR-0073), with no sidebar (Zach's picks on October 11, 2026): the Sotto tile and its night sky
  * in the corner, Watcher's conversation centred under its header and the needs-you line, a thread opened beside it in
- * its own real pane, the Overview over the room on All threads, and the switch and page links floating at the bottom.
+ * its own real pane, the Overview over the room on All threads, and the room switch and a More menu at the header's end.
  * The room keeps its own view: it never selects a thread or a project on the Threads page, except through Open in
  * Threads or Shift with a press, which go there on purpose; Watcher itself is in neither the Overview nor Threads.
  * An ASCII night is drawn in its side margins, with Watcher's owl and a thread owl for each watched thread
  * (`WatcherNightScene`).
  */
-export function WatcherView({ now: fixedNow, updateControl }: {
+export function WatcherView({ now: fixedNow, update = null }: {
   /** A fixed clock for captures; the rows' times then hold still, and so does the night scene, every owl sitting. */
   readonly now?: number | undefined
-  readonly updateControl?: ReactNode
+  /** The update control's status and press for the header's More menu; null on Linux, which has no in-app updater. */
+  readonly update?: UpdateControlProps | null
 }): ReactNode {
   const { t } = useLingui()
   const agents = useAgents()
@@ -474,7 +521,7 @@ export function WatcherView({ now: fixedNow, updateControl }: {
     return () => observer.disconnect()
   }, [])
 
-  // A switch press hands focus to the floating switch's lit owl. Arriving any other way, focus goes to Watcher's composer.
+  // A switch press hands focus to the header switch's lit owl. Arriving any other way, focus goes to Watcher's composer.
   useLayoutEffect(() => {
     if (claimRoomFocus('watcher')) return
     if (document.activeElement === null || document.activeElement === document.body) document.getElementById(WATCHER_PROMPT_ID)?.focus()
@@ -588,7 +635,7 @@ export function WatcherView({ now: fixedNow, updateControl }: {
     fallbackFocus={() => document.querySelector<HTMLElement>('.watcher-head .watcher-tabs__tab[aria-selected="true"]')?.focus()} />
   const header = <>
     <WatcherHeader room={room} count={overviewCount(groups)} tab={tab} tabIds={tabIds} listOpen={listOpen} listButton={listButton} onToggleList={() => toggleList(listButton.current)}
-      stopAll={stopAll} />
+      stopAll={stopAll} update={update} />
     <WatcherGlance entries={needs} onOpen={openThread} onShowAll={from => toggleList(from, true)} inline={inline} onJump={jumpToAsk} />
     {crossMachine ? <WatcherMachines state={state} now={fixedNow} /> : null}
   </>
@@ -638,7 +685,6 @@ export function WatcherView({ now: fixedNow, updateControl }: {
         </div>
       </div>
     </section>
-    <WatcherDock updateControl={updateControl} />
     <PageWindowControls />
     {listOpen ? <WatcherOverviewList groups={groups} watched={room?.watchedThreadIds ?? new Set()} besideId={besideRow?.thread.id ?? null}      liveClock={fixedNow === undefined} anchor={listButton} opener={listOpener} onOpen={openThread} onClose={closeList} /> : null}
   </div>}</Marked>

@@ -117,6 +117,17 @@ describe('the launcher without its worker', () => {
     expect(mainThreadLaunches.count).toBe(1)
   })
 
+  it('refuses a launch with no folder instead of running it in Sotto\'s own folder', async () => {
+    // Node runs a process given an empty folder in the parent's own folder: Git there would change a repository nobody chose.
+    resetMainThreadLaunches()
+    const refusal = 'Sotto did not start git because it was not given a folder to run in. Nothing was changed. Try again from a thread that has a project folder.'
+    expect(() => launcher(null).launch('git', ['status'], { cwd: '', env: process.env })).toThrow(refusal)
+    expect(() => launcher(worker.path).launch('git', ['status'], { cwd: '', env: process.env })).toThrow(refusal)
+    expect(mainThreadLaunches.count).toBe(0)
+    await expect(runGitStatusCommand('', 'git', ['rev-parse', '--show-toplevel'])).rejects.toThrow(refusal)
+    await expect(runWorktreeGitProcess('', ['rev-parse', '--show-toplevel'])).rejects.toThrow(refusal)
+  })
+
   it('starts a launch in this thread when the worker fails before starting it', async () => {
     const broken = join(await folder(), 'broken.cjs')
     await writeFile(broken, 'throw new Error("This worker does not start.")')
@@ -224,6 +235,14 @@ describe('Git through the worker', () => {
       expect((await runWorktreeGitProcess(repository.repo, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()).toBe('main')
       expect(mainThreadLaunches.count).toBe(0)
     } finally { await repository.dispose() }
+  })
+
+  it('carries the test harness\'s Git guard, so a test cannot change a repository outside the temporary folder through it', async () => {
+    resetMainThreadLaunches()
+    // A dry run: a guard that failed to travel would still change nothing.
+    await expect(runGitStatusCommand(process.cwd(), 'git', ['commit', '--dry-run', '--allow-empty', '-m', 'Refused'])).rejects.toThrow(/^The test harness refused `git commit` on .*: a test may change only repositories under the temporary folder/u)
+    await expect(runWorktreeGitProcess(process.cwd(), ['add', '--dry-run', '.'])).rejects.toThrow(/^The test harness refused `git add`/u)
+    expect(mainThreadLaunches.count).toBe(0)
   })
 
   it('keeps the status environment, streams lines, takes input, and says when a command is not there', async () => {

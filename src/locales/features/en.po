@@ -2124,9 +2124,11 @@ msgstr "Handover from the last Watcher"
 msgid "Handover of the last Watcher"
 msgstr "Handover of the last Watcher"
 
+#. The Help page.
 #. The page link: the Help page
 #: src/renderer/src/components/AppShell.tsx
 #: src/renderer/src/features/help/HelpView.tsx
+#: src/renderer/src/watcher/WatcherView.tsx
 msgid "Help"
 msgstr "Help"
 
@@ -2658,9 +2660,11 @@ msgstr "Measure again"
 msgid "Measuring {chosenName}. Sotto cleans up a built-in sample on the server, never your dictation."
 msgstr "Measuring {chosenName}. Sotto cleans up a built-in sample on the server, never your dictation."
 
+#. The Memory page.
 #. The page link: the Memory page
 #: src/renderer/src/components/AppShell.tsx
 #: src/renderer/src/watcher/WatcherMachines.tsx
+#: src/renderer/src/watcher/WatcherView.tsx
 msgid "Memory"
 msgstr "Memory"
 
@@ -2826,6 +2830,14 @@ msgstr "More transcript actions"
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "More usage actions"
 msgstr "More usage actions"
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "More: {names}"
+msgstr "More: {names}"
+
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "More: {names}. {ready}"
+msgstr "More: {names}. {ready}"
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "most on {peakDay}, <0>{peakCount}</0>"
@@ -3688,6 +3700,10 @@ msgid "Prompts"
 msgstr "Prompts"
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "Prompts are what you and Watcher sent, and Sotto’s notes when it restarts a thread. Subagents add tokens but no prompts. A prompt counts under the model that served it."
+msgstr "Prompts are what you and Watcher sent, and Sotto’s notes when it restarts a thread. Subagents add tokens but no prompts. A prompt counts under the model that served it."
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "Prompts are what you, Watcher and wake-ups sent. Subagents add tokens but no prompts. A prompt counts under the model that served it."
 msgstr "Prompts are what you, Watcher and wake-ups sent. Subagents add tokens but no prompts. A prompt counts under the model that served it."
 
@@ -4301,10 +4317,12 @@ msgstr "Set working preferences"
 msgid "Setting up"
 msgstr "Setting up"
 
+#. The Settings page.
 #. The page link: the Settings page
 #. The page link: the Settings page
 #: src/renderer/src/components/AppShell.tsx
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
+#: src/renderer/src/watcher/WatcherView.tsx
 msgid "Settings"
 msgstr "Settings"
 
@@ -5745,9 +5763,11 @@ msgstr "Updating, step {step} of {steps}…"
 msgid "Updating…"
 msgstr "Updating…"
 
+#. The Usage page.
 #. The page link: the Usage page
 #: src/renderer/src/components/AppShell.tsx
 #: src/renderer/src/features/usage/UsageView.tsx
+#: src/renderer/src/watcher/WatcherView.tsx
 msgid "Usage"
 msgstr "Usage"
 
@@ -6196,6 +6216,10 @@ msgstr "You can continue while it downloads. Dictation works as soon as it finis
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "You chose this in working preferences"
 msgstr "You chose this in working preferences"
+
+#: src/renderer/src/features/usage/UsageOverview.tsx
+msgid "You sent <0>{sent}</0> and Watcher <1>{watcher}</1>."
+msgstr "You sent <0>{sent}</0> and Watcher <1>{watcher}</1>."
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "You sent <0>{sent}</0>, Watcher <1>{watcher}</1> and wake-ups <2>{wakeUps}</2>."

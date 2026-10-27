@@ -15,6 +15,8 @@ export interface ThreadClearFacts {
   readonly pending: (threadId: string) => boolean
   /** Watcher is watching the thread. */
   readonly watched: (threadId: string) => boolean
+  /** Restart stopped threads retired babysitting (ADR-0144), so a babysat pull request no longer holds a thread back. */
+  readonly babysittingRetired?: boolean
 }
 
 /** Work the thread is doing now: a turn, a compaction, background work, monitoring or working sub-agents. */
@@ -47,7 +49,7 @@ export function threadClearHold(thread: AgentThread | undefined, facts: ThreadCl
   const below = facts.delegators.has(thread.id) ? delegatedThreadsBelow(facts.threads, thread.id).flatMap(id => facts.threads.find(item => item.id === id) ?? []) : []
   if (openPullRequest(thread) || below.some(openPullRequest)) return 'pull-request'
   if (below.some(item => working(item) || item.requests.length > 0 || facts.pending(item.id) || item.compaction?.status === 'uncertain')) return 'delegated-working'
-  if (thread.babysitting?.length) return 'babysitting'
+  if (facts.babysittingRetired !== true && thread.babysitting?.length) return 'babysitting'
   if (facts.watched(thread.id)) return 'watched'
   return null
 }

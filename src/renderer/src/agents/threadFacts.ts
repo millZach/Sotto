@@ -6,6 +6,7 @@ import { resolveModel } from '../../../shared/modelCatalog'
 import { continuedWordsOf } from '../../../shared/continueThread'
 import { HANDOVER_LEAD } from '../../../shared/handover'
 import { babysittingWord } from './babysitting'
+import { restartRowWords } from './restartWords'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 import { failureUnseen } from '../../../shared/threadFailures'
 import { localeFormatter } from './localeFormat'
@@ -259,22 +260,33 @@ export function unseenFailures(threads: readonly AgentThread[]): { readonly thre
  * `background` is a Done thread something will still wake, babysitting or a monitoring task, which says Monitoring there:
  * the status ring shows an hourglass for it rather than the idle outline.
  */
-export function rowStatus(row: Pick<ThreadRow, 'thread' | 'state' | 'stateLabel' | 'settledBy'>): {
+export function rowStatus(row: Pick<ThreadRow, 'thread' | 'state' | 'stateLabel' | 'settledBy'>, options: {
+  /**
+   * Restarting stopped threads is on (ADR-0144, an Owl feature): a thread with a restart scheduled says when, in place of
+   * its failure line, and nothing says Babysitting, which the feature takes away.
+   */
+  readonly restart?: boolean
+  readonly now?: number
+} = {}): {
   readonly text: string; readonly finished: boolean; readonly babysitting: boolean; readonly prototype: boolean; readonly background: boolean
+  /** The text says when Sotto restarts the thread. */
+  readonly restart: boolean
 } {
+  const restart = options.restart === true && row.state !== 'working' ? restartRowWords(row.thread, options.now) : undefined
+  if (restart !== undefined) return { text: restart, finished: false, babysitting: false, prototype: false, background: false, restart: true }
   const label = row.settledBy === 'provider' ? row.stateLabel
     : row.state === 'done' && row.settledBy !== null ? t({ message: 'Settled', comment: 'A thread row\'s state: the thread or its project was put away.' }) : row.stateLabel
   // A row says Done exactly when it is done and neither settled nor closed: its state says so, whatever language its words are in.
   const done = row.state === 'done' && row.settledBy === null
   const prototype = row.thread.prototypeReady !== undefined && done
   const finished = !prototype && row.thread.finishedUnread === true && done
-  const babysitting = !prototype && !finished && done ? babysittingWord(row.thread) : undefined
+  const babysitting = !prototype && !finished && done && options.restart !== true ? babysittingWord(row.thread) : undefined
   // A monitoring task alone says Monitoring, the creature's readout word for it; babysitting names its pull request.
   const monitoring = !prototype && !finished && done && (row.thread.monitoring?.length ?? 0) > 0
   const background = babysitting !== undefined || monitoring
   return { text: prototype ? t`Prototype ready` : finished ? t`Just finished`
     : babysitting ?? (monitoring ? t({ message: 'Monitoring', comment: 'A thread row\'s state: a task its agent started is being watched.' }) : label),
-  finished, babysitting: babysitting !== undefined, prototype, background }
+  finished, babysitting: babysitting !== undefined, prototype, background, restart: false }
 }
 
 /**

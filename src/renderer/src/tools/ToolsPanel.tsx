@@ -19,6 +19,7 @@ import type { AgentContinueOptions } from './AgentContinue'
 import { useThreadStarts } from '../agents/ThreadStart'
 import { useOptionalAgents, type AgentConnection } from '../agents/AgentContext'
 import { offersBabysitting } from '../agents/babysitting'
+import { useRestartStopped } from '../agents/RestartStopped'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { chordMatches } from '../agents/branchToolbar.logic'
 import { useOptionalApp } from '../state/AppContext'
@@ -296,6 +297,8 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   // While delegation is on (ADR-0081), Agents follows the pin like every other surface, so a delegated thread opened
   // from the roster leaves Tools on the thread that delegated it.
   const delegationOn = useDelegationsEnabled()
+  // Restarting stopped threads (ADR-0144; Owl only) takes babysitting away: the Pull request surface offers none.
+  const babysitShown = !useRestartStopped()
   const target = toolsTarget(chrome, focusedThreadId, delegationOn)
   const thread = target === null ? undefined : state.host.threads.find(item => item.id === target)
   // A thread on a paired host reads its Files and Changes on that host (ADR-0025, October 5 amendment), through bridges
@@ -501,7 +504,7 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   // The pull request is read and acted on by the thread's own host, so it works for a thread on a paired host too.
   // Babysit pull request is offered where the thread's host babysits (ADR-0061 decision 11), naming the agent as the transcript does.
   else if (chrome.surface === 'pull-request') body = <PullRequestSurface key={thread.id} thread={thread} command={command} onStatus={showStatus}
-    babysit={offersBabysitting(state.host.clientHosts, thread) ? { agent: resolveModel(hostForThread(state.host, thread).models, thread.modelId)?.provider
+    babysit={babysitShown && offersBabysitting(state.host.clientHosts, thread) ? { agent: resolveModel(hostForThread(state.host, thread).models, thread.modelId)?.provider
       ?? (thread.providerId ? PROVIDER_LABELS[thread.providerId] : t({ message: 'the agent', comment: 'Stands in for the provider\'s name, as in "Started by the agent".' })) } : undefined} />
   // Files, Changes and Agents are read from a paired host; its terminal, browser and test iPhone are on that machine.
   else if (thread.remoteHost && (chrome.surface === 'terminal' || chrome.surface === 'browser' || chrome.surface === 'iphone')) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{t({ message: `${surfaceLabel} is on the host machine.`, comment: '{surfaceLabel} is a Tools surface\'s name, as in Terminal.' })}</strong><p className="tt-paragraph">{t`Use this tool on the host. Replies and permission answers remain available here.`}</p></div></>
