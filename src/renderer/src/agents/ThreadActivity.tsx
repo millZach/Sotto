@@ -23,7 +23,7 @@ import { focusComposerFrom, TurnFailureReason, useOwnServerTurnActions, type Own
 import { retryingWords, stillWaitingNote, stillWaitingWords, stopName, stopWords } from './ownServerTurnWords'
 import { foldedTurns, setStepsOpen, useStepsOpen } from './stepsOpen'
 import {
-  browserLineName, browserLinesByTurn, browserRunWords, browserStepWords, foldBrowserRuns, linesStartingIn, PLACE, plainWords, sentenceWords, turnBrowserLines,
+  browserLineName, browserLinesByTurn, browserRunWords, browserStepWords, foldBrowserRuns, linesStartingIn, PLACE, plainWords, sentenceWords, stepUnfinished, turnBrowserLines,
   type ActivityItem, type BrowserLinesStore, type BrowserRun, type BrowserVerb, type BrowserWords, type TurnLinesView,
 } from './browserLine'
 import { useOwlFeature } from '../state/owlFeature'
@@ -561,7 +561,7 @@ export function BrowserLine({ run, going, connected, onDisclosure, as: Tag = 'di
   const listId = useId()
   const { headline, detail } = browserRunWords(run, going)
   const Icon = run.kind === 'cloud' ? Smartphone : Globe
-  const lastFailed = going && run.steps.at(-1)!.failed
+  const lastFailed = going ? run.steps.at(-1)!.failed : run.steps.some(step => stepUnfinished(step, true))
   const said = plainWords(headline)
   return <Tag className="thread-browser" data-kind={run.kind} data-going={going || undefined} data-open={open || undefined}
     onKeyDown={foldOnEscape(open, summary => { onDisclosure?.(summary); setOpen(false) })}>
@@ -575,10 +575,11 @@ export function BrowserLine({ run, going, connected, onDisclosure, as: Tag = 'di
     </button>
     {open ? <ol id={listId} className="thread-browser__steps" aria-label={said}>
       {run.steps.map(step => {
-        const StepIcon = step.failed ? CircleAlert : STEP_ICONS[step.verb]
-        return <li key={step.record.id} data-failed={step.failed || undefined}>
+        const unfinished = stepUnfinished(step, !going)
+        const StepIcon = unfinished ? CircleAlert : STEP_ICONS[step.verb]
+        return <li key={step.record.id} data-failed={unfinished || undefined}>
           <StepIcon className="thread-browser__step-icon" size={14} strokeWidth={1.8} aria-hidden="true" />
-          <span className="thread-browser__step"><Words words={sentenceWords(browserStepWords(step))} /></span>
+          <span className="thread-browser__step"><Words words={sentenceWords(browserStepWords(step, !going))} /></span>
         </li>
       })}
     </ol> : null}

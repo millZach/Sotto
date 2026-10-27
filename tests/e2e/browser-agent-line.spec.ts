@@ -152,7 +152,7 @@ test('an agent\'s calls to Sotto\'s browser read as one line that updates in pla
     movedOn.push(record({ id: 'fix', kind: 'file-change', title: 'Edit', status: 'completed', changes: [{ path: 'src/SignInForm.tsx', kind: 'update', diff: '-<form>\n+<form onSubmit={submit}>' }] }))
     movedOn.push(record({ id: 'test', kind: 'command', title: 'Bash', command: 'npm test -- SignInForm', status: 'running' }))
     await event(page, { type: 'stream', threadId: THREAD, messageId: SAID, text: messages[1]!.text, status: 'running', activities: movedOn })
-    const browsed = transcript.getByRole('button', { name: 'Show browser steps: Browsed localhost:5173 · 9 steps' })
+    const browsed = transcript.getByRole('button', { name: 'Show browser steps: Browsed localhost:5173 · 9 steps, 1 did not finish' })
     await expect(browsed).toBeVisible()
     await expect(browsed.locator('.thread-browser__dot')).toHaveCount(0)
     expect(await browsed.locator('.thread-browser__words').evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)

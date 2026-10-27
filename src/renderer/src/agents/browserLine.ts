@@ -1,4 +1,4 @@
-import { t } from '@lingui/core/macro'
+import { plural, t } from '@lingui/core/macro'
 
 import type { AgentActivity } from '../../../shared/agentActivity'
 import type { AgentMessage } from '../../../shared/agents'
@@ -31,7 +31,21 @@ export interface BrowserStep {
   /** The key or hardware button a call pressed, as the tool names it (Enter, Home). */
   readonly key?: string | undefined
   readonly failed: boolean
+  /**
+   * How the call ended, as its record says: a call stopped, or whose outcome is unknown, did not certainly do what its
+   * words say. `running` is a call not answered yet, which counts as stopped once its line has settled.
+   */
+  readonly outcome: BrowserStepOutcome
 }
+export type BrowserStepOutcome = 'done' | 'failed' | 'stopped' | 'unknown' | 'running'
+const OUTCOMES: Readonly<Record<AgentActivity['status'], BrowserStepOutcome>> = { completed: 'done', failed: 'failed', interrupted: 'stopped', unknown: 'unknown', running: 'running' }
+
+/** How a step ended once its line is settled (`settled`) or while it goes on: an unanswered call has stopped once settled. */
+export function stepOutcome(step: BrowserStep, settled: boolean): BrowserStepOutcome {
+  return step.outcome === 'running' && settled ? 'stopped' : step.outcome
+}
+/** Whether a step did not certainly do what it set out to, which marks it in the line and the list. */
+export const stepUnfinished = (step: BrowserStep, settled: boolean): boolean => !['done', 'running'].includes(stepOutcome(step, settled))
 
 type Frame = Record<string, unknown>
 const frame = (value: unknown): Frame => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Frame : {}
@@ -69,6 +83,7 @@ function stepOf(record: AgentActivity): BrowserStep | null {
   if (tool === undefined) return null
   const kind: BrowserRunKind = tool.startsWith('iphone_cloud_') ? 'cloud' : 'browser'
   const failed = record.status === 'failed'
+  const outcome = OUTCOMES[record.status]
   const input = activityInput(record)
   const reported = input === null && (tool === 'browser_open' || tool === 'iphone_open' || tool === 'browser_action') ? answeredStep(record) : undefined
   if (tool === 'browser_action' || tool === 'iphone_cloud_action') {
@@ -77,11 +92,11 @@ function stepOf(record: AgentActivity): BrowserStep | null {
     const verbs = kind === 'cloud' ? CLOUD_ACTIONS : PAGE_ACTIONS
     const verb = Object.hasOwn(verbs, type) ? verbs[type]! : kind === 'cloud' ? 'cloud-work' : 'work'
     const opens = verb === 'navigate' || verb === 'cloud-url'
-    return { record, tool, kind, verb, failed,
+    return { record, tool, kind, verb, failed, outcome,
       ...(opens ? { url: text(action.url) ?? text(reported?.url) } : {}),
       ...(verb === 'key' || verb === 'cloud-key' || verb === 'cloud-button' ? { key: text(action.key) ?? text(action.button) } : {}) }
   }
-  return { record, tool, kind, verb: TOOL_VERBS[tool]!, failed,
+  return { record, tool, kind, verb: TOOL_VERBS[tool]!, failed, outcome,
     ...(tool === 'browser_open' || tool === 'iphone_open' ? { url: text(input?.url) ?? text(reported?.url) } : {}) }
 }
 
@@ -335,10 +350,21 @@ export function sentenceWords(words: BrowserWords): BrowserWords {
 }
 
 /**
- * What one call did, starting lowercase: "clicked in the page", or "could not click in the page" when it failed. The
- * steps list makes the first letter a capital.
+ * What one call did, starting lowercase: "clicked in the page", "could not click in the page" when it failed, and the
+ * same words followed by "stopped" or "outcome unknown" when the call was stopped or its outcome is not known, as an
+ * activity row says beside its name. The steps list makes the first letter a capital.
  */
-export function browserStepWords(step: BrowserStep): BrowserWords {
+export function browserStepWords(step: BrowserStep, settled = false): BrowserWords {
+  const words = actionWords(step)
+  const said = words.text
+  switch (stepOutcome(step, settled)) {
+    case 'stopped': return { ...words, text: t({ message: `${said} · stopped`, comment: 'A browser line step that was stopped before it was answered. {said} is the step, such as took a picture of the page.' }) }
+    case 'unknown': return { ...words, text: t({ message: `${said} · outcome unknown`, comment: 'A browser line step whose outcome is not known. {said} is the step, such as took a picture of the page.' }) }
+    default: return words
+  }
+}
+
+function actionWords(step: BrowserStep): BrowserWords {
   const failed = step.failed
   const url = PLACE, key = PLACE
   const address = step.url === undefined ? undefined : shownAddress(step.url)
@@ -399,7 +425,11 @@ export function browserRunWords(run: BrowserRun, going: boolean): { readonly hea
       ? placed(going ? t({ message: 'Using the browser', comment: 'The browser line while the agent uses Sotto\'s browser and has opened no address.' }) : t({ message: 'Used the browser', comment: 'The browser line once the agent has moved on, when it opened no address.' }))
       : placed(going ? t({ message: `Browsing ${host}`, comment: 'The browser line while the agent uses Sotto\'s browser. {host} is the site, such as localhost:5173.' })
         : t({ message: `Browsed ${host}`, comment: 'The browser line once the agent has moved on. {host} is the site, such as localhost:5173.' }), address)
-  return { headline, detail: going ? browserStepWords(run.steps.at(-1)!) : placed(stepsLabel(run.steps.length)) }
+  if (going) return { headline, detail: browserStepWords(run.steps.at(-1)!) }
+  // Settled, a step that failed, stopped or ended unknown still shows on the line, as the rows' Failed once did.
+  const unfinished = run.steps.filter(step => stepUnfinished(step, true)).length
+  const steps = stepsLabel(run.steps.length)
+  return { headline, detail: placed(unfinished === 0 ? steps : t({ message: `${steps}, ${plural(unfinished, { one: '# did not finish', other: '# did not finish' })}`, comment: 'The settled browser line: how many steps, and how many failed, were stopped or ended unknown. {steps} is such as 9 steps.' })) }
 }
 
 /** What a press on the line does, with the line's own words, for assistive tech. */

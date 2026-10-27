@@ -1085,6 +1085,16 @@ msgstr "{remaining} left to answer"
 msgid "{reviews, plural, one {# review} other {# reviews}}"
 msgstr "{reviews, plural, one {# review} other {# reviews}}"
 
+#. A browser line step whose outcome is not known. {said} is the step, such as took a picture of the page.
+#: src/renderer/src/agents/browserLine.ts
+msgid "{said} · outcome unknown"
+msgstr "{said} · outcome unknown"
+
+#. A browser line step that was stopped before it was answered. {said} is the step, such as took a picture of the page.
+#: src/renderer/src/agents/browserLine.ts
+msgid "{said} · stopped"
+msgstr "{said} · stopped"
+
 #. {scope} is where the skill comes from: Personal, Project, System or Admin.
 #: src/renderer/src/agents/SkillPill.tsx
 msgid "{scope} skill, sent as <0>{token}</0>"
@@ -1134,6 +1144,11 @@ msgstr "{sourceName}, already signed in"
 #: src/renderer/src/agents/FilePicker.tsx
 msgid "{spaced, plural, one {# entry has a space in its name and cannot be mentioned} other {# entries have spaces in their names and cannot be mentioned}}"
 msgstr "{spaced, plural, one {# entry has a space in its name and cannot be mentioned} other {# entries have spaces in their names and cannot be mentioned}}"
+
+#. The settled browser line: how many steps, and how many failed, were stopped or ended unknown. {steps} is such as 9 steps.
+#: src/renderer/src/agents/browserLine.ts
+msgid "{steps}, {unfinished, plural, one {# did not finish} other {# did not finish}}"
+msgstr "{steps}, {unfinished, plural, one {# did not finish} other {# did not finish}}"
 
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "{summaries, plural, one {{summaryCount} reasoning summary} other {{summaryCount} reasoning summaries}}"

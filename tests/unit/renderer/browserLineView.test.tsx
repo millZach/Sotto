@@ -102,7 +102,7 @@ describe('on Owl, a running turn\'s calls to Sotto\'s browser', () => {
 
     // Once the turn moves on to other work, the line says where it browsed and how many steps it took.
     publish({ activities: [...reported, activity({ id: 'test', kind: 'command', title: 'Command', command: 'npm test', status: 'running', startedAt: iso(-1_000) })] })
-    const browsed = within(transcript).getByRole('button', { name: 'Show browser steps: Browsed localhost:5173 · 4 steps' })
+    const browsed = within(transcript).getByRole('button', { name: 'Show browser steps: Browsed localhost:5173 · 4 steps, 1 did not finish' })
     expect(browsed.querySelector('.thread-browser__dot')).toBeNull()
   })
 
@@ -142,7 +142,7 @@ describe('on Owl, a running turn\'s calls to Sotto\'s browser', () => {
     const { transcript, publish, messages } = mount(stateWith({ status: 'running', activities: reported }))
     within(transcript).getByRole('button', { name: 'Show browser steps: Browsing localhost:5173 · clicked in the page' })
     publish({ messages: [...messages(), { id: 'after-browsing', role: 'assistant', text: 'Sign-in works.', createdAt: iso(1_000) }] })
-    const browsed = within(transcript).getByRole('button', { name: 'Show browser steps: Browsed localhost:5173 · 4 steps' })
+    const browsed = within(transcript).getByRole('button', { name: 'Show browser steps: Browsed localhost:5173 · 4 steps, 1 did not finish' })
     expect(browsed.querySelector('.thread-browser__dot')).toBeNull()
   })
 
@@ -209,7 +209,7 @@ describe('on Owl, a running turn\'s calls to Sotto\'s browser', () => {
     const thread = state.host.threads.find(item => item.id === THREAD)!
     thread.messages = [...thread.messages, ask]
     const { transcript, publish } = mount(state)
-    within(transcript).getByRole('button', { name: 'Show browser steps: Browsed localhost:5173 · 4 steps' })
+    within(transcript).getByRole('button', { name: 'Show browser steps: Browsed localhost:5173 · 4 steps, 1 did not finish' })
     within(transcript).getByRole('button', { name: 'Show browser steps: Browsing localhost:5173 · opened localhost:5173' })
     expect(reads.folds).toContain('turn-0')
     reads.folds.length = 0

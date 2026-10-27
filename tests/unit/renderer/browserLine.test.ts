@@ -96,6 +96,21 @@ describe('the steps in plain words, per provider', () => {
     expect(browserStepSentence(browserStep(failed)!)).toBe('Could not scroll the page')
   })
 
+  it('never says a stopped, unknown or unanswered step was done', () => {
+    const shot = { action: { type: 'screenshot' } }
+    const stopped = browserStep(claude('s', 'browser_action', shot, { status: 'interrupted' }))!
+    const unknown = browserStep(claude('u', 'browser_action', shot, { status: 'unknown' }))!
+    const unanswered = browserStep(claude('r', 'browser_action', shot, { status: 'running' }))!
+    expect(browserStepSentence(stopped)).toBe('Took a picture of the page · stopped')
+    expect(browserStepSentence(unknown)).toBe('Took a picture of the page · outcome unknown')
+    // Still going, an unanswered call is the step under way; once the line has settled it was stopped.
+    expect(browserStepSentence(unanswered)).toBe('Took a picture of the page')
+    expect(plainWords(sentenceWords(browserStepWords(unanswered, true)))).toBe('Took a picture of the page · stopped')
+    expect(stopped.failed).toBe(false)
+    const run = runs([claude('o', 'browser_open', { url: 'http://localhost:5173/' }), claude('s2', 'browser_action', shot, { status: 'interrupted' }), claude('r2', 'browser_action', shot, { status: 'running' })])[0]!
+    expect(said(run, false).detail).toBe('3 steps, 2 did not finish')
+  })
+
   it('says the cloud iPhone\'s steps in its own words', () => {
     const steps = [
       claude('a', 'iphone_cloud_open', { buildPath: 'build/App.zip' }),
@@ -185,7 +200,8 @@ describe('the line\'s words', () => {
     const failed = run(claude('pages', 'browser_pages', {}), claude('look', 'browser_action', { action: { type: 'inspect' } }, { status: 'failed' }))
     expect(browserRunHost(failed)).toBeUndefined()
     expect(said(failed, true)).toEqual({ headline: 'Using the browser', detail: 'could not look at the page' })
-    expect(said(failed, false)).toEqual({ headline: 'Used the browser', detail: '2 steps' })
+    // Settled, a failed step still shows on the line, as the rows' Failed once did.
+    expect(said(failed, false)).toEqual({ headline: 'Used the browser', detail: '2 steps, 1 did not finish' })
     expect(said(run(claude('cloud', 'iphone_cloud_open', { buildPath: 'App.zip' })), true).headline).toBe('Using the cloud iPhone')
   })
 
