@@ -1218,7 +1218,7 @@ textarea.tt-input {
   height: 24px;
 }
 
-/* Every room switch (the strip's, the sidebar foot's, Watcher's dock): separate icon tiles with no tray behind them.
+/* Every room switch (the strip's, the sidebar foot's, Watcher's header's): separate icon tiles with no tray behind them.
    The open room's tile takes the accent and widens to show its name (Drake's pick, G in
    docs/prototypes/room-switch-dock-prototype.html). Each place sets only the tile height. */
 .app-switch {

@@ -446,7 +446,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         view = threadWorkspace
         break
       case 'watcher':
-        view = watcherPage ? <WatcherView updateControl={updateControl} now={captureNow} /> : threadWorkspace
+        view = watcherPage ? <WatcherView update={app.platform === 'linux' ? null : { status: app.update, busy: updateFlow.busy, onActivate: updateFlow.activate }} now={captureNow} /> : threadWorkspace
         break
       case 'usage':
         view = usageEnabled ? <UsageView /> : threadWorkspace

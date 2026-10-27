@@ -10,7 +10,7 @@ import './watcher.css'
  * Night falls (Drake's pick on October 23, 2026, variant 9 of `docs/prototypes/watcher-room-transition-prototype.html`):
  * moving between Dictate or Threads and Watcher's room, a band of flickering text characters sweeps across the window. The room
  * being opened shows behind the band and the one being left ahead of it, edged in character cells, and the owl of the
- * room switch rides the band from the sidebar foot to the dock under Watcher's composer (or back). Built on the View
+ * room switch rides the band from the sidebar foot to the switch in Watcher's header (or back). Built on the View
  * Transitions API: the page being left is a still snapshot and the one opened is live, so App keeps rendering one page.
  * Reduced motion, the setting being off, or a browser without view transitions swaps the page in one frame.
  *
@@ -298,7 +298,7 @@ export function playNightFalls(update: () => void, options: NightFallsOptions): 
   root.dataset.roomTransition = options.forward ? 'in' : 'out'
   root.style.setProperty('--room-transition-ms', `${duration}ms`)
 
-  const owlSelector = ':is(.thread-nav__foot, .watcher-dock__pill) .thread-nav__seg button[data-room="watcher"] .watcher-owl'
+  const owlSelector = ':is(.thread-nav__foot, .watcher-head) .thread-nav__seg button[data-room="watcher"] .watcher-owl'
   const centre = (): number | null => { const owl = document.querySelector(owlSelector)?.getBoundingClientRect(); return owl && owl.width > 0 ? owl.left + owl.width / 2 : null }
   const from = centre()
   document.body.append(canvas)
