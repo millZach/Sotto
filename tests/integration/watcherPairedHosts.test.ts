@@ -2253,7 +2253,8 @@ it('starts Watcher’s check in the check worktree, installing packages first an
   expect(worktree()?.path).toContain('check-worktrees')
   const read = watcherToolSchemas.read_operation.output.parse(await f.watcher.invoke(f.id, 'read_operation', { operationId: started.receipt.operationId }))
   expect(read).toMatchObject({ status: 'ok', outcome: 'working',
-    outcomeNote: 'Installing packages first, because package-lock.json changed since the last check on This computer. The checks start when that finishes.' })
+    outcomeNote: 'Installing packages first, because package-lock.json changed since the last check on This computer. The checks start when that finishes. '
+      + "Install scripts do not run, so a package that needs one is ready only once the check's thread runs npm rebuild." })
   finish()
   await call.settled
   expect(worktree()).toMatchObject({ status: 'ready', reused: true, check: {} })

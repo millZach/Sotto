@@ -1,9 +1,9 @@
 // #1312, third part: what the check worktree knows of its packages, and the words a model reads while they install.
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { CHECK_INSTALLED_FROM, checkInstallFailedWords, checkInstallWords, installNeeded, preparePackages, recordInstalled, runInstall } from '../../../src/main/agents/checkWorktree'
+import { CHECK_INSTALLED_FROM, checkInstallFailedWords, checkInstallWords, installNeeded, npmCi, preparePackages, recordInstalled, runInstall } from '../../../src/main/agents/checkWorktree'
 
 /** A stop that never comes. */
 const never = new AbortController().signal
@@ -36,7 +36,8 @@ it('installs first only when package-lock.json differs from the one node_modules
 })
 
 it('says what installing first means in Zach’s words, naming the machine as the queue does (#1312)', () => {
-  expect(checkInstallWords('forge')).toBe('Installing packages first, because package-lock.json changed since the last check on forge. The checks start when that finishes.')
+  expect(checkInstallWords('forge')).toBe('Installing packages first, because package-lock.json changed since the last check on forge. The checks start when that finishes. '
+    + "Install scripts do not run, so a package that needs one is ready only once the check's thread runs npm rebuild.")
   expect(checkInstallFailedWords('forge')).toMatch(/^Installing packages failed on forge, so the check started without them\./u)
 })
 
@@ -115,3 +116,14 @@ it('counts an install of a lockfile with no packages as installed, though npm ma
   expect(await preparePackages(folder, install, never, () => undefined)).toBe('installed')
   expect(await preparePackages(folder, install, never, () => undefined)).toBe('none')
 })
+
+it('runs npm ci without the commit\u2019s install scripts, since nobody has answered a permission for its code yet (#1312)', async () => {
+  const folder = await project()
+  const manifest = { name: 'synthetic-check', version: '1.0.0', private: true, scripts: { postinstall: 'node -e "require(\'fs\').writeFileSync(\'script-ran\', \'\')"' } }
+  await writeFile(join(folder, 'package.json'), JSON.stringify(manifest, null, 2) + '\n')
+  await writeFile(join(folder, 'package-lock.json'), JSON.stringify({ name: 'synthetic-check', version: '1.0.0', lockfileVersion: 3, requires: true,
+    packages: { '': { name: 'synthetic-check', version: '1.0.0' } } }, null, 2) + '\n')
+  expect(await preparePackages(folder, npmCi, never, () => undefined)).toBe('installed')
+  await expect(access(join(folder, 'script-ran'))).rejects.toThrow()
+  expect(await installNeeded(folder)).toBeUndefined()
+}, 120_000)

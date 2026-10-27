@@ -45,6 +45,14 @@ export const CHECK_LOCKFILE = 'package-lock.json'
  */
 export const CHECK_INSTALLED_FROM = '.sotto-check-installed-from'
 
+/**
+ * The arguments Sotto runs npm with in a check worktree. `--ignore-scripts` because Sotto runs the install before the
+ * check's thread exists, so nobody has been asked about any of the commit's code: its packages' and its own install
+ * scripts would run with no permission answered (ADR-0004). A package that needs its script, such as a native build, is
+ * built by the check's thread with `npm rebuild`, under that thread's own approvals.
+ */
+export const NPM_CI_ARGS = ['ci', '--ignore-scripts', '--no-audit', '--no-fund'] as const
+
 /** Where the check worktree records the commit Sotto last moved it to: a file in that worktree's own Git folder. */
 export const CHECK_MOVED_TO = 'sotto-check-moved-to'
 
@@ -53,7 +61,7 @@ export const CHECK_MOVED_TO = 'sotto-check-moved-to'
  * `machine` is named the way the queue's waiting words name it.
  */
 export function checkInstallWords(machine: string): string {
-  return `Installing packages first, because package-lock.json changed since the last check on ${machine}. The checks start when that finishes.`
+  return `Installing packages first, because package-lock.json changed since the last check on ${machine}. The checks start when that finishes. Install scripts do not run, so a package that needs one is ready only once the check's thread runs npm rebuild.`
 }
 /** For the model when `npm ci` failed before a check: what happened and what to expect. English, never shown on screen. */
 export function checkInstallFailedWords(machine: string): string {
@@ -160,15 +168,14 @@ export function runInstall(command: string, args: readonly string[], options: { 
 }
 
 /**
- * `npm ci` under the user's own Node, not Sotto's: install scripts and native builds see the Node the project's checks run
- * under. No shell, so nothing is quoted. Stopped, with its whole process tree, after CHECK_INSTALL_TIMEOUT_MS or when
+ * `npm ci` under the user's own Node, not Sotto's, without install scripts (NPM_CI_ARGS). No shell, so nothing is quoted. Stopped, with its whole process tree, after CHECK_INSTALL_TIMEOUT_MS or when
  * Sotto closes.
  */
 export const npmCi: PackageInstaller = async (projectFolder, signal) => {
   const node = await findCli({ name: 'node' })
   const npm = node ? await npmUnder(node) : undefined
   if (!node || !npm) { console.warn('check-install-no-npm'); return 'failed' }
-  return await runInstall(node, [npm, 'ci', '--no-audit', '--no-fund'], { cwd: projectFolder, env: withCliPath(nativeEnvironment(), node), signal, timeoutMs: CHECK_INSTALL_TIMEOUT_MS })
+  return await runInstall(node, [npm, ...NPM_CI_ARGS], { cwd: projectFolder, env: withCliPath(nativeEnvironment(), node), signal, timeoutMs: CHECK_INSTALL_TIMEOUT_MS })
 }
 
 /**

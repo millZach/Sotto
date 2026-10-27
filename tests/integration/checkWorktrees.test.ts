@@ -58,7 +58,8 @@ it('moves one check worktree to each check’s snapshot, keeping its packages, a
   expect(f.worktree(first.delegation.thread)).toMatchObject({ status: 'pending', check: { install: 'running' } })
   const installing = f.ok(await f.read(f.parent, first.delegation.id)) as CheckResult
   expect(installing.delegation).toMatchObject({ outcome: 'working', check: { ahead: 0,
-    note: 'Installing packages first, because package-lock.json changed since the last check on This computer. The checks start when that finishes.' } })
+    note: 'Installing packages first, because package-lock.json changed since the last check on This computer. The checks start when that finishes. '
+      + "Install scripts do not run, so a package that needs one is ready only once the check's thread runs npm rebuild." } })
   expect(f.workspace.registry.byThread(first.delegation.thread)).toBeUndefined()
   packages.finish()
   await f.running(first.delegation.thread)
