@@ -506,7 +506,7 @@ export class GitActions {
   }
 
   /**
-   * Brings this worktree's commits to the branch of the thread it began from (#1030, ADR-0027's October 17, 2026
+   * Brings this worktree's commits to the branch of the thread it began from (#1030, ADR-0027's October 23, 2026
    * amendment). Git fast-forwards the target when it has nothing the branch lacks. Otherwise the first press only asks:
    * on yes, the merge commit is made from `git merge-tree`'s tree, so no folder is touched until it exists. The target
    * then moves the right way wherever it is: by `git merge --ff-only` in the folder that has it checked out, so that
