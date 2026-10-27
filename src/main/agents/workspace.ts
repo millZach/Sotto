@@ -3832,11 +3832,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Finish command lanes before detaching provider delivery and closing SQLite. */
   async close(): Promise<void> {
     this.stopping = true
+    // A check's install stops with its whole process tree (#1312), and every working copy's setup, a check's included, ends
+    // before the last save below, so nothing of either is still writing once the store closes.
+    this.checkInstallsStop.abort()
     // Closing waits a minute at most, whatever holds it: a store worker that stops answering costs that, and what it did
     // not answer is reported as not saved (ADR-0016, October 26 amendment).
     const deadline = Date.now() + CLOSE_LIMIT_MS
     // A stored thread's records still on their way carry what its provider published meanwhile, which the last save keeps.
-    let inTime = await this.beforeDeadline(Promise.allSettled([...this.branchWrites, ...this.lanes.values(), ...this.interruptLanes.values(), ...this.remoteStatusReads,
+    let inTime = await this.beforeDeadline(Promise.allSettled([...this.branchWrites, ...this.lanes.values(), ...this.interruptLanes.values(), ...this.preparations.values(), ...this.remoteStatusReads,
       ...[...this.activityReads.values()].map(read => read.done)]), deadline)
     this.stopDelivery()
     // Quitting loses no commit: what was posted is confirmed before the store closes.
@@ -3864,6 +3867,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Closes the history store. Called when the app quits, after the last flush. */
   dispose(): void {
     this.stopDelivery()
+    this.checkInstallsStop.abort()
     clearTimeout(this.publishTimer); clearTimeout(this.writeTimer); clearTimeout(this.historyRetryTimer)
     this.historyRetryTimer = undefined
     for (const { timer } of this.worktreeRefreshes.values()) clearTimeout(timer)

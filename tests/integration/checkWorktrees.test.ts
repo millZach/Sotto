@@ -194,3 +194,23 @@ it('leaves an ignored file an earlier check left when the next check’s commit 
   expect(f.worktree(second.delegation.thread)!.path).not.toBe(path)
   expect(lf(await readFile(join(path, 'reports', 'result.json'), 'utf8'))).toBe('{ "left": "by the first check" }\n')
 }, 60_000)
+
+it('stops a check’s install, and waits for its setup to end, when Sotto closes (#1312)', async () => {
+  let stopped = false, ended = false
+  const install: PackageInstaller = async (_folder, signal) => {
+    await new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true }))
+    stopped = true
+    // Its process tree takes a moment to go, and closing waits for it.
+    await new Promise(resolve => setTimeout(resolve, 200))
+    ended = true
+    return 'failed'
+  }
+  const f = await fixture(install)
+  const first = await f.check()
+  await vi.waitFor(() => expect(f.worktree(first.delegation.thread)?.check?.install).toBe('running'), { timeout: 20_000 })
+  await f.workspace.host.close().catch(() => undefined)
+  // Closed: the fixture's own stop would save the history setting again into the store that closing closed.
+  vi.spyOn(f.workspace.host, 'privacyChanged').mockResolvedValue(undefined)
+  expect(stopped).toBe(true)
+  expect(ended).toBe(true)
+}, 60_000)
