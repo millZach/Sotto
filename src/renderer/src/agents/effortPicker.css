@@ -31,6 +31,8 @@
 .effort-card__word > span { display: inline-block; }
 .effort-card__word[data-top='true'] { color: var(--tt-effort-text-fill); background: var(--tt-effort-text-image); -webkit-background-clip: text; background-clip: text; }
 .effort-card__word[data-unknown='true'] { color: var(--tt-text-muted); font-weight: 500; }
+/* Ultracode's mark (ADR-0148): a workflow glyph before the word, in the word's own colour. */
+.effort-card__mark { margin-right: 6px; vertical-align: -2px; }
 .effort-card__default { flex: none; min-height: 24px; padding: 0 4px; border: 0; border-radius: 4px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12.5px; cursor: pointer; }
 .effort-card__default:hover:not(:disabled) { color: var(--tt-text); background: var(--tt-hover); }
 .effort-card__default:disabled { opacity: .5; cursor: default; }
@@ -47,7 +49,7 @@
 .effort-card[data-unknown='true'] .effort-card__fill { opacity: .35; }
 .effort-card__dot { position: absolute; top: 50%; left: calc(13px + var(--effort-stop) * (100% - 26px)); width: 4px; height: 4px; border-radius: 50%; background: var(--tt-effort-dot); transform: translate(-50%, -50%); }
 .effort-card__dot[data-under='true'] { background: color-mix(in srgb, var(--tt-surface-elevated) 55%, var(--tt-effort-b)); }
-.effort-card__thumb { position: absolute; top: 0; left: calc(13px + var(--effort-x) * (100% - 26px)); width: 26px; height: 26px; border-radius: 3px; background: var(--tt-effort-thumb); box-shadow: var(--tt-shadow-sm), 0 0 0 1px var(--tt-effort-thumb-edge); transform: translateX(-50%); pointer-events: none; }
+.effort-card__thumb { position: absolute; top: 0; left: calc(13px + var(--effort-x) * (100% - 26px)); display: grid; place-items: center; width: 26px; height: 26px; border-radius: 3px; background: var(--tt-effort-thumb); color: light-dark(var(--tt-text), var(--tt-surface-elevated)); box-shadow: var(--tt-shadow-sm), 0 0 0 1px var(--tt-effort-thumb-edge); transform: translateX(-50%); pointer-events: none; }
 .effort-card[data-unknown='true'] .effort-card__thumb { opacity: .45; }
 .effort-card__track input {
   position: absolute;
@@ -67,6 +69,10 @@
 .effort-card__track input::-webkit-slider-thumb { appearance: none; width: 26px; height: 26px; background: transparent; border: 0; }
 .effort-card__track input[aria-disabled='true'] { cursor: default; }
 .effort-card__track:has(input:focus-visible) .effort-card__thumb { box-shadow: var(--tt-shadow-sm), 0 0 0 2px var(--tt-surface-elevated), 0 0 0 4px var(--tt-focus-ring); }
+/* The thumb's Ultracode mark takes the ink opposite the thumb: the thumb is the text colour in dark and the surface in light. */
+/* What Ultracode costs, over its stop while the pointer rests there; the line says the same once it is chosen. */
+.effort-card__hint { position: absolute; right: -4px; bottom: calc(100% + 6px); max-width: 220px; padding: 6px 9px; border: 1px solid var(--tt-field-border); border-radius: 7px; background: var(--tt-surface-overlay); color: var(--tt-text); font-size: 12px; line-height: 1.35; box-shadow: var(--tt-shadow-sm); pointer-events: none; opacity: 0; transform: translateY(3px); transition: opacity 120ms ease, transform 120ms ease; z-index: 1; }
+.effort-card__hint[data-shown='true'] { opacity: 1; transform: none; }
 .effort-card__ends { display: flex; justify-content: space-between; margin: 6px 2px 0; color: var(--tt-text-faint); font-size: 11.5px; line-height: 1.2; }
 
 /* Ultrathink: one row that reads as a check, on Claude threads with an editable draft. */
