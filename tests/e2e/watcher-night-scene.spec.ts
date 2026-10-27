@@ -183,6 +183,42 @@ async function sceneHolds(page: Page, key: string, landscape = true): Promise<vo
 }
 
 /**
+ * Watcher's own owl by the ink its glyphs take. The owls' canvas draws Watcher's owl, the thread owls and the pile's
+ * label; away from every thread owl's button and the pile's, which hold their glyphs, only Watcher's owl is left. Of its
+ * pixels painted strongly enough to read their colour, how many are nearer the theme's accent than its text colour, as
+ * the scene's hidden ink probe gives them: at rest only the eyes take the accent, and while the owl glows every glyph does.
+ */
+async function watcherOwlInk(page: Page): Promise<{ readonly accent: number; readonly ink: number; readonly share: number; readonly apart: number }> {
+  return page.evaluate(() => {
+    const pane = document.getElementById('watcher-pane')!
+    const canvas = pane.querySelector<HTMLCanvasElement>(':scope > canvas.watcher-scene--owl')!
+    const pixel = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!
+    const rgb = (css: string): readonly [number, number, number] => {
+      pixel.clearRect(0, 0, 1, 1); pixel.fillStyle = css; pixel.fillRect(0, 0, 1, 1)
+      const [r, g, b] = pixel.getImageData(0, 0, 1, 1).data
+      return [r!, g!, b!]
+    }
+    const probe = getComputedStyle(pane.querySelector('.watcher-scene__ink')!)
+    const ink = rgb(probe.color), accent = rgb(probe.backgroundColor)
+    const distance = (a: readonly number[], b: readonly number[]): number => Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!)
+    const base = canvas.getBoundingClientRect(), scale = canvas.width / canvas.clientWidth
+    const held = [...pane.querySelectorAll(':scope > .watcher-scene--owls > .watcher-scene__owl')].map(button => button.getBoundingClientRect())
+      .map(box => ({ x0: (box.left - base.left) * scale, y0: (box.top - base.top) * scale, x1: (box.right - base.left) * scale, y1: (box.bottom - base.top) * scale }))
+    const data = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data
+    let nearAccent = 0, nearInk = 0
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3]! < 96) continue
+      const p = i / 4, x = p % canvas.width, y = Math.floor(p / canvas.width)
+      if (held.some(box => x >= box.x0 && x <= box.x1 && y >= box.y0 && y <= box.y1)) continue
+      const colour = [data[i]!, data[i + 1]!, data[i + 2]!]
+      if (distance(colour, accent) < distance(colour, ink)) nearAccent++
+      else nearInk++
+    }
+    return { accent: nearAccent, ink: nearInk, share: nearAccent / Math.max(1, nearAccent + nearInk), apart: Math.round(distance(accent, ink)) }
+  })
+}
+
+/**
  * The message scrubber's lane, when a long conversation shows it, paints nothing of its own: the sky and the hills run on
  * under it at the column's share, so its ticks float over them, while no owl is drawn in it and no thread owl's button
  * lies over it (ADR-0109, amended October 24, 2026). Its ticks keep 3:1 against what lies beside them on screen, the
@@ -283,16 +319,6 @@ test.describe("Watcher's night scene on the built app", () => {
           await sceneHolds(page, `owls-${appearance}-${width}x${height}`, width >= 1280)
           await capture(launched, `thread-owls-${appearance}-${width}x${height}.png`)
         }
-        // Watched keeps the scene; Visualize, whose picture takes the pane's whole width, puts it away.
-        await resizeContentWindow(launched, 1280, 800)
-        await page.getByRole('tab', { name: /^Watched, / }).click()
-        await settle(page)
-        await sceneHolds(page, `watched-${appearance}-1280x800`)
-        await capture(launched, `watched-${appearance}-1280x800.png`)
-        await page.getByRole('tab', { name: 'Visualize' }).click()
-        await expect(land(page)).toHaveCount(0, { timeout: 5_000 })
-        await page.getByRole('tab', { name: 'Conversation' }).click()
-        await expect(land(page)).toHaveCount(1)
       }))
     })
   }
@@ -383,6 +409,55 @@ test.describe("Watcher's night scene on the built app", () => {
     }))
   })
 
+  for (const appearance of ['dark', 'light'] as const) {
+    test(`Watcher's own owl glows in the accent while something waits on the user, and not for a failed turn alone, ${appearance}`, async () => {
+      await onReleaseTrack('owl', () => withSotto(launchOptions(appearance), async (launched) => {
+        const { page } = launched
+        await openThreads(page)
+        // The design fixture's Visual gate flake waits on a permission, here watched, and Streaming WAV stall's last turn
+        // failed: both are in Needs you. The stand-in's projection keeps Visual gate flake's own owl waiting throughout;
+        // what lights Watcher's owl is the window's own threads.
+        await seedRoom(page, true, [['visual-gate', 'waiting'], ['footer-links', 'running']])
+        await resizeContentWindow(launched, 1600, 1000)
+        await openRoom(page)
+        await expect(owl(page)).toHaveAttribute('data-owl', 'perched')
+        await expect(owlButtons(page)).toHaveCount(2)
+        await settle(page)
+        const readings: Record<string, unknown> = {}
+        /** Watcher's owl in the accent, nearly every glyph of it, or in the ink with the accent in its eyes alone. */
+        const glows = async (state: string, glowing: boolean): Promise<void> => {
+          const where = `Watcher's owl, ${state}, ${appearance}`
+          if (glowing) await expect.poll(async () => (await watcherOwlInk(page)).share, { message: where }).toBeGreaterThan(0.9)
+          else await expect.poll(async () => (await watcherOwlInk(page)).share, { message: where }).toBeLessThan(0.3)
+          const reading = await watcherOwlInk(page)
+          // Enough of the owl to read, in an accent the eye tells from the ink.
+          expect(reading.accent + reading.ink, `${where}: pixels read`).toBeGreaterThan(200)
+          expect(reading.apart, `${where}: the accent apart from the ink`).toBeGreaterThan(60)
+          readings[state] = reading
+        }
+        await glows('a watched thread waits on a permission', true)
+        await capture(launched, `watcher-owl-glows-${appearance}-1600x1000.png`)
+        // The permission answered elsewhere: only the failed turn is left in Needs you, which does not light it.
+        await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'history', threadId: 'visual-gate', text: '', messages: [], status: 'idle' }))
+        await expect(page.locator('#watcher-pane .watcher-glance')).toContainText('1 needs you')
+        await glows('only a failed turn', false)
+        await capture(launched, `watcher-owl-failed-only-${appearance}-1600x1000.png`)
+        // Nothing waits at all.
+        await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'wav-stall', text: 'The playback test passes now.' }))
+        await glows('nothing waits', false)
+        await capture(launched, `watcher-owl-rests-${appearance}-1600x1000.png`)
+        // Watcher's own question lights it, and it goes out once the question is gone.
+        await page.evaluate(async thread => window.sottoE2E!.agentEvent!({ type: 'question', threadId: thread, requestId: 'watcher-own-question', text: 'Which thread first?' }), CURRENT)
+        await glows('Watcher asks a question of its own', true)
+        await page.evaluate(async ({ thread, asked }) => window.sottoE2E!.agentEvent!({ type: 'history', threadId: thread, text: '', messages: [
+          { id: 'ask', role: 'user', text: 'Keep an eye on the footer links and the visual gate.', createdAt: asked },
+        ], status: 'idle' }), { thread: CURRENT, asked: new Date(E2E_THREADS_NOW - 30_000).toISOString() })
+        await glows('its question gone', false)
+        recorded[`watcher-owl-glow-${appearance}`] = readings
+      }))
+    })
+  }
+
   test('a newcomer comes out of the moon, an owl opens its thread, and a resting scene paints only what changes', async () => {
     await onReleaseTrack('owl', () => withSotto(launchOptions('dark', { live: true }), async (launched) => {
       const { page } = launched
@@ -400,8 +475,9 @@ test.describe("Watcher's night scene on the built app", () => {
       recorded['resting-frames-a-second'] = Number(restingRate.toFixed(1))
       // The third thread is watched: the moon's whirlpool opens, ripples, and its owl flies down to its spot. While they
       // move the scene paints about 30 frames a second.
-      // The room learns of it the moment the stand-in publishes it, and the scene takes it on the same update.
-      await expect(page.getByRole('tab', { name: 'Watched, 3 threads' })).toBeVisible({ timeout: 25_000 })
+      // The room learns of it the moment the stand-in publishes it, and the scene takes it on the same update: its paint
+      // rate leaves the resting one's 8 a second as the whirlpool opens.
+      await expect.poll(async () => (await framesOver(page, 300)).frames, { timeout: 25_000, intervals: [0] }).toBeGreaterThan(5)
       const flight = await framesOver(page, 1_000)
       const flightRate = flight.frames / flight.elapsed * 1000
       expect(flightRate, `frames a second in flight (${flight.frames} in ${Math.round(flight.elapsed)} ms, ${flight.display} display frames)`).toBeGreaterThan(22)

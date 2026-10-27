@@ -22,13 +22,11 @@ const POPUP_OWNS_ESCAPE = '[role="dialog"], [role="menu"], [role="listbox"], [ar
 
 /**
  * Watcher's room keeps its own view, apart from the Threads page's panes and selection (the plan, section 6): the one
- * thread open beside Watcher, how much of the width Watcher's conversation takes, and whether Watcher's pane shows its
- * conversation, the threads it watches, or its picture (#1339). It lasts as long as the window, so a trip to another room
- * comes back to the room as it was left.
+ * thread open beside Watcher, and how much of the width Watcher's conversation takes. It lasts as long as the window, so
+ * a trip to another room comes back to the room as it was left.
  */
-export type RoomTab = 'conversation' | 'watched' | 'visualize'
-export interface RoomView { readonly besideId: string | null; readonly share: number; readonly tab: RoomTab }
-let view: RoomView = { besideId: null, share: 0.5, tab: 'conversation' }
+export interface RoomView { readonly besideId: string | null; readonly share: number }
+let view: RoomView = { besideId: null, share: 0.5 }
 const listeners = new Set<() => void>()
 export const roomView = {
   get: (): RoomView => view,
@@ -61,14 +59,13 @@ const anchors = (transcript: HTMLElement): HTMLElement[] => [...transcript.query
  * (`historyDrawn`): a thread whose history the window let go comes back as an empty transcript first, and that view is
  * not where its reader was. It runs after the transcript's own scroll to its newest message, which comes first because
  * the transcript is deeper in the tree, and tells the transcript at once that its reader is not at the end, so nothing
- * arriving pulls the reader away. While `shown` is false the pane shows something else in the transcript's place
- * (Watcher's Watched view), so nothing is read or kept until the transcript is back.
+ * arriving pulls the reader away.
  */
-export function useKeptReadingPosition(thread: AgentThread, paneId: string, shown = true): void {
+export function useKeptReadingPosition(thread: AgentThread, paneId: string): void {
   const threadId = thread.id
   const drawn = historyDrawn(thread)
   useLayoutEffect(() => {
-    if (!drawn || !shown) return
+    if (!drawn) return
     const transcript = document.getElementById(paneId)?.querySelector<HTMLElement>('.thread-workspace__transcript')
     if (transcript == null) return
     const saved = readPositions.get(threadId)
@@ -87,7 +84,7 @@ export function useKeptReadingPosition(thread: AgentThread, paneId: string, show
     }
     transcript.addEventListener('scroll', remember, { passive: true })
     return () => transcript.removeEventListener('scroll', remember)
-  }, [threadId, paneId, drawn, shown])
+  }, [threadId, paneId, drawn])
 }
 
 /**

@@ -101,12 +101,12 @@ function renderRoom(room: WatcherRoomState, state: AgentState) {
   const view = render(tree())
   return { ...view, command, publish, update: (next: AgentState) => { use(next); view.rerender(tree()) } }
 }
-const paneReady = () => screen.findByRole('tab', { name: /^Watched, / })
+const paneReady = () => waitFor(() => expect(document.querySelector('#watcher-pane .thread-workspace__transcript')).not.toBeNull())
 const askCard = (name: RegExp | string) => screen.findByRole('region', { name })
 
 beforeEach(() => {
   vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset()
-  localStorage.clear(); sessionStorage.clear(); roomView.set({ besideId: null, share: 0.5, tab: 'conversation' }); firstMessage.clear(); answeredChoices.clear()
+  localStorage.clear(); sessionStorage.clear(); roomView.set({ besideId: null, share: 0.5 }); firstMessage.clear(); answeredChoices.clear()
   sequence++
 })
 afterEach(() => { cleanup() })
@@ -214,7 +214,7 @@ describe('a watched thread’s request in Watcher’s conversation', () => {
 
   it('names the choice after an answer given in the thread’s own pane, with Watcher’s card not on screen', async () => {
     const id = `ask-${sequence}`
-    roomView.set({ besideId: 'footer-links', share: 0.5, tab: 'conversation' })
+    roomView.set({ besideId: 'footer-links', share: 0.5 })
     const view = renderRoom(roomState([]), agentState([question(id)]))
     await paneReady()
     const beside = await waitFor(() => { const pane = document.getElementById('watcher-beside-pane'); if (!pane) throw new Error('No beside pane yet.'); return pane })
