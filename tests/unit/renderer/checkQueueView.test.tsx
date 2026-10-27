@@ -51,12 +51,14 @@ function bridge(view: CheckQueuesView): CheckQueuesBridge & { push(next: CheckQu
 }
 function show(crossMachine: boolean, checks: CheckQueuesBridge) {
   const readMachines = vi.fn(async (): Promise<WatcherMachinesRead> => ({ status: 'ok', machines: [local(), forge()], observedAt: new Date(NOW).toISOString() }))
-  vi.mocked(useWatcherRoom).mockReturnValue({ readMachines, state: null } as unknown as ReturnType<typeof useWatcherRoom>)
+  vi.mocked(useWatcherRoom).mockReturnValue({ readMachines, state: PLACED } as unknown as ReturnType<typeof useWatcherRoom>)
   vi.mocked(useOptionalApp).mockReturnValue({ actions: { navigate: vi.fn() }, update: { owlFeatures: { 'cross-machine-work': crossMachine } } } as unknown as ReturnType<typeof useOptionalApp>)
   Object.defineProperty(window, 'sotto', { configurable: true, value: { checks } })
   return render(<WatcherMachines state={{ host: { threads: THREADS, projects: [] } } as unknown as AgentState} now={NOW} />)
 }
 const wide = () => document.querySelector<HTMLElement>('.watcher-machines__wide')!
+/** A start Watcher placed this run, which the line reads the machines for. */
+const PLACED = { requests: [], receiptPlacements: [{ operationId: '5b3c9e1a-7d24-4f6b-8a90-2c1e4d7f6a35', placement: { hostId: FORGE, name: 'forge', awayFromDefault: false } }] }
 
 describe('The machines line counts the checks waiting on a machine (#1312)', () => {
   it('says them after the working count, shorter on the narrow line, and in the count of every machine', () => {
@@ -97,7 +99,7 @@ describe('The machines line counts the checks waiting on a machine (#1312)', () 
   it('says a running check installs its packages first while it does', async () => {
     const installing = [...THREADS, thread(key(FORGE, 'journeys'), 'Linux journeys for the paste fix', FORGE, { worktree: { check: { install: 'running' } } } as Partial<AgentThread>)]
     const checks = bridge({ machines: [{ hostId: FORGE, thisComputer: false, checks: [QUEUES.machines[1]!.checks[1]!] }] })
-    vi.mocked(useWatcherRoom).mockReturnValue({ readMachines: async () => ({ status: 'ok', machines: [local(), forge()], observedAt: new Date(NOW).toISOString() }), state: null } as unknown as ReturnType<typeof useWatcherRoom>)
+    vi.mocked(useWatcherRoom).mockReturnValue({ readMachines: async () => ({ status: 'ok', machines: [local(), forge()], observedAt: new Date(NOW).toISOString() }), state: PLACED } as unknown as ReturnType<typeof useWatcherRoom>)
     vi.mocked(useOptionalApp).mockReturnValue({ actions: { navigate: vi.fn() }, update: { owlFeatures: { 'cross-machine-work': true } } } as unknown as ReturnType<typeof useOptionalApp>)
     Object.defineProperty(window, 'sotto', { configurable: true, value: { checks } })
     render(<WatcherMachines state={{ host: { threads: installing, projects: [] } } as unknown as AgentState} now={NOW} />)
