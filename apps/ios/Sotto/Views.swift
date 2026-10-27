@@ -131,7 +131,7 @@ enum Words {
     }
 }
 
-/// Says what just went wrong, above whatever page is open.
+/// Says what just happened, above whatever page is open: a problem until dismissed, a confirmation for a few seconds.
 struct FeedbackBanner: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
@@ -152,6 +152,9 @@ struct FeedbackBanner: View {
             .padding(.leading, Space.s4)
             .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .accessibilityAddTraits(.updatesFrequently)
+            .transition(.opacity)
+            .task(id: feedback) { if model.feedbackPasses { UIAccessibility.post(notification: .announcement, argument: feedback) } }
+            .onDisappear { model.pageLeft() }
         }
     }
 }
