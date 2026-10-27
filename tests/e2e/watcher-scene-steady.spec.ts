@@ -17,13 +17,19 @@ import { seedWatcherRoom } from './support/watcherRoom'
  * Watcher's night scene never blinks (the user's rule, October 24, 2026). The screen is recorded, frame by frame as the
  * compositor draws it, while the room goes through what changes it: a reply arrives, the room's projection changes (an
  * owl wakes, a newcomer comes out of the moon, a question waits and the needs-you line appears), a fold opens and
- * closes, the composer slims and widens, the Watched tab opens and closes, a draft is typed and the window is resized.
- * In every frame the scene's left margin keeps its glyphs: a frame that loses most of them is a blink. Run after
+ * closes, the composer slims and widens, the Watched tab opens and closes, a draft is typed, the window is resized and
+ * the scene is set in each of its places in turn (ADR-0148). In every frame the scene's left margin keeps its glyphs: a
+ * frame that loses most of the ones its place shows is a blink, and while one place gives way to the next, most of the
+ * fainter one's. Run after
  * `npm run build`. Captures go to disposable run evidence; `SOTTO_E2E_EVIDENCE=publish` writes
  * artifacts/composer-slim-steady.
  */
 const evidence = evidenceDirectory('artifacts/composer-slim-steady')
 const WATCHER = '#watcher-pane'
+/** The places the scene is set in after the room's other changes, ending where it started. */
+const PLACES = ['harbour', 'snowfield', 'desert', 'night-wood'] as const
+/** How long the last place takes to fade over the new one (`PLACE_FADE_MS` in WatcherNightScene.tsx). */
+const PLACE_FADE_MS = 600
 
 /** The room's projection, read from the stand-in's seed so a later step can change a part of it. */
 async function seed(page: Page): Promise<WatcherStandInSeed> {
@@ -136,18 +142,36 @@ test("Watcher's night scene never blinks while the room changes", async () => {
       step('the room changes'); await expect(page.locator(`${WATCHER} .watcher-glance`)).toContainText(/need/i, { timeout: 20_000 }); await page.waitForTimeout(1_500)
       step('the window resizes'); await resizeContentWindow(launched, 1240, 780); await page.waitForTimeout(700)
       await resizeContentWindow(launched, 1280, 800); await page.waitForTimeout(700)
+      // The place changes: the new one is drawn in the frame it is picked, under the last one fading away.
+      for (const place of PLACES) {
+        step(`place: ${place}`)
+        await page.evaluate(async scene => { await window.sotto!.updateSettings({ watcherScene: scene }) }, place)
+        await expect(page.locator(WATCHER)).toHaveAttribute('data-night-scene-place', place)
+        await page.waitForTimeout(1_600)
+      }
     })
 
     const inks: number[] = []
     for (const { shot } of shots) inks.push(await sceneInk(shot, region))
-    const typical = [...inks].sort((a, b) => a - b)[inks.length >> 1]!
+    const median = (values: readonly number[]): number => [...values].sort((a, b) => a - b)[values.length >> 1] ?? 0
     // Each frame that lost most of the scene's glyphs, with the step the room was in when it was drawn.
     const during = (at: number): string => steps.filter(item => item.at <= at - started).at(-1)?.name ?? 'before the first step'
-    const blinks = inks.map((ink, index) => ({ index, ink: Math.round(ink * 1e4) / 1e4, during: during(shots[index]!.at) })).filter(frame => frame.ink < typical * 0.5)
+    // The place each frame shows, the one before it, and how long since it was picked. Each place's glyphs are counted
+    // apart, from its frames after the fade, since a desert's margin holds fewer than a wood's.
+    const placeAt = (at: number): { place: string; before: string; since: number } => {
+      const picks = steps.filter(item => item.name.startsWith('place: ') && item.at <= at - started)
+      const last = picks.at(-1)
+      return { place: last?.name.slice(7) ?? 'night-wood', before: picks.at(-2)?.name.slice(7) ?? 'night-wood', since: last === undefined ? Number.POSITIVE_INFINITY : at - started - last.at }
+    }
+    const frames = shots.map(({ at }, index) => ({ index, ink: inks[index]!, ...placeAt(at) }))
+    const typicalOf = new Map<string, number>()
+    for (const place of ['night-wood', ...PLACES]) typicalOf.set(place, median(frames.filter(frame => frame.place === place && frame.since > PLACE_FADE_MS + 200).map(frame => frame.ink)))
+    const floor = (frame: typeof frames[number]): number => (frame.since <= PLACE_FADE_MS + 200 ? Math.min(typicalOf.get(frame.place)!, typicalOf.get(frame.before)!) : typicalOf.get(frame.place)!) * 0.5
+    const blinks = frames.filter(frame => frame.ink < floor(frame)).map(frame => ({ index: frame.index, ink: Math.round(frame.ink * 1e4) / 1e4, place: frame.place, during: during(shots[frame.index]!.at) }))
     await mkdir(resolve(evidence, 'scene-frames'), { recursive: true })
     await Promise.all(shots.map(({ shot }, index) => writeFile(resolve(evidence, 'scene-frames', `${String(index).padStart(3, '0')}.jpg`), shot)))
-    await writeFile(resolve(evidence, 'scene-ink.json'), `${JSON.stringify({ region, typical, steps, frames: inks.map((ink, index) => ({ ink: Math.round(ink * 1e4) / 1e4, during: during(shots[index]!.at) })), blinks }, null, 1)}\n`, 'utf8')
-    expect(typical, 'the scene shows glyphs in its margin at all').toBeGreaterThan(0.005)
+    await writeFile(resolve(evidence, 'scene-ink.json'), `${JSON.stringify({ region, typical: Object.fromEntries(typicalOf), steps, frames: inks.map((ink, index) => ({ ink: Math.round(ink * 1e4) / 1e4, during: during(shots[index]!.at) })), blinks }, null, 1)}\n`, 'utf8')
+    for (const [place, ink] of typicalOf) expect(ink, `the scene shows glyphs in its margin at all in ${place}`).toBeGreaterThan(0.005)
     expect(shots.length, 'the compositor drew frames to read').toBeGreaterThan(20)
     expect(blinks, `frames where the scene lost most of its glyphs, of ${shots.length}`).toEqual([])
   }))
