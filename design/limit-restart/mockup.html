@@ -1,0 +1,231 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Restart at reset — mock-up (prototype, throwaway)</title>
+<!-- PROTOTYPE, throwaway. Three variants of where the "restart scheduled" note sits, switchable with ?variant=A|B|C or the
+     bar at the bottom, plus what goes (babysitting wake-ups, the resume note, the wake-up counts) and the one Settings
+     switch that replaces two. Answers fixed by Zach (via Watcher, October 26): remove both wake-ups, restart runs on its
+     own at the reset, every thread that was working, any provider, Watcher first when its own provider was cut off. -->
+<style>
+:root{--canvas:#0e0e0e;--bg:#161616;--side:#1b1b1b;--sunk:#202020;--elev:#262626;--hair:#2e2e2e;--text:#ececec;--text2:#c9c9c9;--muted:#9a9a9a;--faint:#6f6f6f;
+  --warn:#e6b45c;--warnwash:#e6b45c1a;--ok:#8fc79a;--acc:#e8dcc4;--accbg:#c9b98f;--hover:#ffffff0a;--gone:#e07b6a}
+body.light{--canvas:#e9e7e2;--bg:#fbfaf7;--side:#f3f1ec;--sunk:#ebe8e2;--elev:#ffffff;--hair:#dcd8d0;--text:#1d1c1a;--text2:#3a3833;--muted:#5f5b53;--faint:#7a756b;
+  --warn:#7a4f00;--warnwash:#b7791f1a;--ok:#2f6b3a;--acc:#5b4a22;--accbg:#8a7340;--hover:#0000000a;--gone:#a8382a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--canvas);color:var(--text);font:14px/1.45 Figtree,"Segoe UI",system-ui,sans-serif;padding:20px 20px 110px}
+h1{font-size:18px;margin:0 0 4px}p.lead{color:var(--muted);margin:0 0 14px;max-width:900px;font-size:13px}
+h2.sec{font-size:14px;margin:30px 0 4px;color:var(--text)}p.sec{color:var(--muted);font-size:12.5px;margin:0 0 10px;max-width:900px}
+.controls{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin:0 0 18px;font-size:12.5px;color:var(--muted)}
+.controls label{display:flex;gap:6px;align-items:center}
+button{font:inherit}
+.stage{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start}
+.cap{font-size:12px;color:var(--muted);margin:0 0 6px}
+.cap.gone{color:var(--gone)}.cap.new{color:var(--ok)}
+/* window */
+.win{display:grid;grid-template-columns:250px 1fr;width:1040px;max-width:100%;height:600px;background:var(--bg);border:1px solid var(--hair);border-radius:10px;overflow:hidden}
+.side{background:var(--side);border-right:1px solid var(--hair);padding:10px 8px;overflow:auto}
+.search{height:30px;border-radius:7px;background:var(--sunk);color:var(--faint);font-size:12.5px;padding:6px 10px;margin:0 2px 12px}
+.proj{font-size:14px;font-weight:500;padding:4px 8px;color:var(--text)}
+.rows{list-style:none;margin:0 0 12px;padding:0}
+.row{display:grid;grid-template-columns:12px 1fr auto;gap:2px 8px;align-items:center;padding:5px 8px 5px 14px;border-radius:7px;color:var(--text2);font-size:13.5px}
+.row.sel{background:var(--elev);color:var(--text)}
+.row .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .sub{grid-column:2/4;font-size:12px;color:var(--muted);line-height:1.3}
+.row .sub.warn{color:var(--warn)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}.dot.fail{background:var(--warn)}.dot.work{background:var(--acc)}
+.age{color:var(--faint);font-size:12px}
+.pane{display:flex;flex-direction:column;min-width:0}
+.strip{height:38px;border-bottom:1px solid var(--hair);display:flex;align-items:center;padding:0 16px;font-size:13.5px;font-weight:500;gap:10px}
+.strip .chip{font-size:12px;color:var(--muted);font-weight:400;margin-left:auto}
+.tx{flex:1;overflow:auto;padding:18px 28px;display:flex;flex-direction:column;gap:14px}
+.msg{max-width:640px;font-size:14px;color:var(--text2)}
+.msg.user{align-self:flex-end;background:var(--elev);border-radius:12px;padding:8px 12px;color:var(--text);max-width:460px}
+.msg .who{font-size:12px;color:var(--muted);margin-bottom:2px;display:flex;gap:6px;align-items:center}
+.tag{font-size:11px;border:1px solid var(--hair);border-radius:5px;padding:0 5px;color:var(--muted)}
+.stop{max-width:640px;border-left:2px solid var(--warn);padding:2px 0 2px 12px;font-size:13.5px;color:var(--text2)}
+.cont{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12.5px;color:var(--muted);margin-top:8px}
+.cchip{border:1px solid var(--hair);background:transparent;color:var(--text2);border-radius:999px;padding:2px 10px;font-size:12.5px}
+.sched{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-top:10px}
+.sched svg{flex:none;color:var(--muted)}
+.lnk{border:0;background:transparent;color:var(--acc);padding:0;font-size:12.5px;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.lnk:focus-visible,.cchip:focus-visible,.arrow:focus-visible{outline:2px solid var(--accbg);outline-offset:2px}
+.composer{margin:0 22px 16px;border:1px solid var(--hair);border-radius:12px;background:var(--sunk);padding:10px 12px;min-height:74px;color:var(--faint);font-size:13.5px;position:relative}
+.cstrip{margin:0 22px -1px;border:1px solid var(--hair);border-bottom:0;border-radius:12px 12px 0 0;background:var(--elev);padding:7px 12px;font-size:12.5px;color:var(--text2);display:flex;gap:8px;align-items:center}
+.cstrip + .composer{border-top-left-radius:0;border-top-right-radius:0}
+.band{margin:0 2px 12px;background:var(--elev);border:1px solid var(--hair);border-radius:9px;padding:9px 10px;font-size:12.5px;color:var(--text2)}
+.band b{color:var(--text);font-weight:600}.band .acts{display:flex;gap:12px;margin-top:5px}
+.band ul{margin:6px 0 0;padding:0 0 0 16px;color:var(--muted)}
+/* small panels */
+.panel{width:500px;max-width:100%;background:var(--bg);border:1px solid var(--hair);border-radius:10px;padding:14px 16px}
+.panel h3{font-size:13px;margin:0 0 8px;color:var(--text2)}
+.q{border:1px solid var(--hair);border-radius:9px;padding:6px 10px;margin:6px 0;font-size:13px;color:var(--text2);display:flex;gap:8px;align-items:center}
+.q .mark{font-size:11.5px;color:var(--muted);white-space:nowrap}
+.strike{opacity:.55;text-decoration:line-through;text-decoration-color:var(--gone)}
+.tg{display:grid;grid-template-columns:38px 1fr;gap:12px;margin:10px 0}
+.track{width:36px;height:20px;border-radius:10px;background:#3a3a3a;position:relative}
+.track:after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#ddd}
+.track.on{background:var(--accbg)}.track.on:after{left:18px;background:#1b1b1b}
+.tg strong{font-size:13px;font-weight:600}.tg span{display:block;color:var(--muted);font-size:12.5px}
+.crumb{font-size:12px;color:var(--muted);margin:0 0 8px}
+.prbtn{display:inline-block;border:1px solid var(--hair);border-radius:7px;padding:3px 10px;font-size:12.5px;color:var(--text2);margin-right:6px}
+.usage{font-size:13px;color:var(--text2)}.usage b{color:var(--text)}
+.wroom{font-size:13px;color:var(--text2)}
+.wroom .newsline{border-left:2px solid var(--hair);padding-left:10px;color:var(--muted);font-size:12.5px;margin:8px 0}
+/* switcher */
+.switch{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:#f5f0e4;color:#111;border-radius:999px;padding:6px 8px;box-shadow:0 8px 30px #0008;font-size:13px;z-index:9}
+.arrow{border:0;background:#111;color:#f5f0e4;width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:15px}
+.switch .lbl{min-width:330px;text-align:center;font-weight:600}
+.vA,.vB,.vC{display:none}body[data-v=A] .vA,body[data-v=B] .vB,body[data-v=C] .vC{display:revert}
+body[data-v=A] .vA.flex,body[data-v=B] .vB.flex,body[data-v=C] .vC.flex{display:flex}
+body[data-v=D] .vB:not(.sub),body[data-v=D] .vC{display:revert}body[data-v=D] .vC.flex{display:flex}
+body.reduced *{transition:none!important;animation:none!important}
+</style></head>
+<body data-v="A">
+<h1>Restart at reset — mock-up</h1>
+<p class="lead">Prototype, throwaway. When a provider's usage limit stops threads, Sotto restarts every thread that was working once the limit resets, Watcher first if its own provider was cut off. The same restart replaces the note sent after Sotto itself restarts. Babysitting wake-ups go; Watcher still gets its pull request news. "Restart at reset" is a working name: "Continue" already means a continued thread on another provider (ADR-0089). Flip the three placements of the "restart scheduled" note with the bar at the bottom, or the ← → keys.</p>
+<div class="controls">
+  <label><input type="checkbox" id="light"> Light</label>
+  <label><input type="checkbox" id="reduced"> Reduced motion</label>
+  <label><input type="checkbox" id="nowatch"> The Watcher's own provider was cut off too</label>
+</div>
+
+<h2 class="sec">1. A limit stops four threads</h2>
+<p class="sec">Claude Code's limit is hit at 11:42 AM. Four Claude Code threads were working (two watched, two not). Sotto read the reset time, 3:00 PM, and schedules the restart. The variants disagree on where you learn that.</p>
+<p class="cap vA">A — In each stopped thread: one quiet line under the stop, and the sidebar row says when.</p>
+<p class="cap vB">B — Once, for the whole provider: a band at the top of the sidebar lists the threads; each thread pane only shows the stop.</p>
+<p class="cap vC">C — Over the composer: a strip where you type, saying a restart is coming and that sending now goes first.</p>
+<p class="cap" id="dcap" hidden>B + C — your pick: the band at the top of the sidebar, the strip over the composer, and rows saying "Restarts at 3:00 PM".</p>
+<div class="win">
+  <aside class="side" aria-label="Threads">
+    <div class="search">Search threads</div>
+    <div class="band vB">
+      <b>Claude Code’s limit resets at 3:00 PM.</b> Sotto restarts 4 threads then<span class="wnote">.</span>
+      <ul><li>Merge-train fixes</li><li>Usage page tidy</li><li>iPhone sheet copy</li><li>Release notes draft</li></ul>
+      <div class="acts"><button class="lnk">Don’t restart them</button></div>
+    </div>
+    <div class="proj">Sotto</div>
+    <ul class="rows">
+      <li class="row sel"><span class="dot fail"></span><span class="t">Merge-train fixes</span><span class="age">11:42</span>
+        <span class="sub vA">Restarts at 3:00 PM</span><span class="sub warn vB">Stopped at Claude Code’s limit</span><span class="sub vC">Restarts at 3:00 PM</span></li>
+      <li class="row"><span class="dot fail"></span><span class="t">Usage page tidy</span><span class="age">11:42</span>
+        <span class="sub vA">Restarts at 3:00 PM</span><span class="sub warn vB">Stopped at Claude Code’s limit</span><span class="sub vC">Restarts at 3:00 PM</span></li>
+      <li class="row"><span class="dot work"></span><span class="t">Android port, protocol core</span><span class="age">now</span><span class="sub">Working · Codex</span></li>
+      <li class="row"><span class="dot"></span><span class="t">Fix focus flake</span><span class="age">10:05</span></li>
+    </ul>
+    <div class="proj">forge-tools</div>
+    <ul class="rows">
+      <li class="row"><span class="dot fail"></span><span class="t">iPhone sheet copy</span><span class="age">11:42</span>
+        <span class="sub vA">Restarts at 3:00 PM</span><span class="sub warn vB">Stopped at Claude Code’s limit</span><span class="sub vC">Restarts at 3:00 PM</span></li>
+      <li class="row"><span class="dot fail"></span><span class="t">Release notes draft</span><span class="age">11:41</span>
+        <span class="sub vA">Restarts at 3:00 PM</span><span class="sub warn vB">Stopped at Claude Code’s limit</span><span class="sub vC">Restarts at 3:00 PM</span></li>
+    </ul>
+  </aside>
+  <section class="pane" aria-label="Merge-train fixes">
+    <div class="strip">Merge-train fixes <span class="chip">Claude Code · Opus 5.5</span></div>
+    <div class="tx">
+      <div class="msg user">Fix the review findings on #1588 and push once tests pass.</div>
+      <div class="msg"><div class="who">Claude Code</div>Two of the three findings are fixed. Running the unit suite for the Watcher files now…</div>
+      <div class="stop">Claude Code has reached your plan’s usage limit, so this turn stopped. Nothing in the thread was lost. Send again after it resets at 3:00 PM.
+        <div class="cont">Or continue now on <button class="cchip">Codex · GPT-6.1-Sol</button><button class="cchip">Grok Build</button><button class="cchip">More ▾</button></div>
+        <div class="sched vA flex" role="status">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          <span>Sotto restarts this thread at 3:00 PM, when the limit resets.</span>
+          <button class="lnk" aria-label="Don’t restart this thread at 3:00 PM">Don’t restart</button>
+        </div>
+      </div>
+    </div>
+    <div class="cstrip vC flex" role="status">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      <span>Restarts at 3:00 PM, when Claude Code’s limit resets. A message you send waits behind the restart.</span>
+      <button class="lnk" style="margin-left:auto">Don’t restart</button>
+    </div>
+    <div class="composer">Ask for follow-up changes</div>
+  </section>
+</div>
+
+
+<h2 class="sec">1b. A provider that doesn't say when its limit resets</h2>
+<p class="sec">Claude Code says when its limit resets. Codex, Grok Build and Muse say so only in their usage readings. Devin, OpenCode, DeepSeek Harness and Cursor never say. Two ways to handle a thread one of those stopped:</p>
+<div class="stage">
+  <div class="panel"><p class="cap">Option 1 — try again each hour</p>
+    <div class="band"><b>Devin didn’t say when its limit resets.</b> Sotto tries again at 1:00 PM, then each hour until 6:00 PM.<div class="acts"><button class="lnk">Don’t restart them</button></div></div>
+    <div class="cstrip" style="margin:0;border-radius:12px;border-bottom:1px solid var(--hair)">Sotto tries again at 1:00 PM. Devin didn’t say when its limit resets.<button class="lnk" style="margin-left:auto">Don’t restart</button></div></div>
+  <div class="panel"><p class="cap">Option 2 — leave it to you</p>
+    <div class="band"><b>Devin didn’t say when its limit resets,</b> so Sotto can’t restart its 2 threads on its own. Send again once it resets.</div>
+    <div class="cstrip" style="margin:0;border-radius:12px;border-bottom:1px solid var(--hair)">Devin didn’t say when its limit resets. Send again once it has.</div></div>
+</div>
+
+<h2 class="sec">2. At 3:00 PM</h2>
+<p class="sec">Sotto checks the limit really reset, then sends each thread one note, the same words on every provider, tagged "Restarted". A thread already carrying on gets nothing. The note never answers a request or approves anything.</p>
+<div class="stage">
+  <div class="panel" style="width:520px">
+    <p class="cap new">In each thread</p>
+    <div class="msg"><div class="who">Sotto <span class="tag">Restarted</span> 3:00 PM</div>Claude Code’s usage limit has reset. Your last turn stopped at the limit partway through, and any command it was running stopped too. Check where things stand and carry on.</div>
+    <p class="cap new" style="margin-top:14px">After Sotto itself restarts (replaces today's "Resumed" note)</p>
+    <div class="msg"><div class="who">Sotto <span class="tag">Restarted</span> 9:14 AM</div>Sotto restarted while this thread was working. Your last turn stopped partway through, and any command it was running stopped too. Check where things stand and carry on.</div>
+  </div>
+  <div class="panel wroom" style="width:460px">
+    <p class="cap new">Watcher's room</p>
+    <div class="wfirst" hidden><div class="newsline">3:00 PM · Claude Code’s limit reset. Sotto restarted Watcher first, then the four threads it stopped.</div></div>
+    <div class="wlater"><div class="newsline">3:00 PM · Sotto restarted 4 threads Claude Code’s limit had stopped: Merge-train fixes, Usage page tidy (watched); iPhone sheet copy, Release notes draft.</div></div>
+    <div class="msg"><div class="who">Watcher · After news</div>Merge-train fixes and Usage page tidy are working again. I’ll pick up the merge train when #1588’s checks finish.</div>
+  </div>
+</div>
+
+<h2 class="sec">3. What goes</h2>
+<p class="sec">No more "Wake-up from Sotto" in a thread's queue, no Babysit pull request button, no hourglass row. Watcher still hears when checks pass or fail, a review comes, a branch conflicts or a pull request merges: Sotto reads GitHub for the pull requests of watched threads instead of babysat ones.</p>
+<div class="stage">
+  <div class="panel">
+    <p class="cap gone">Queue: today → gone</p>
+    <div class="q strike"><span class="mark">Sotto · Wake-up</span> Pull request #1588: 2 checks failed.</div>
+    <div class="q"><span class="mark">1</span> Also bump the version in the notes.</div>
+    <p class="cap gone" style="margin-top:14px">Pull request surface: the button goes</p>
+    <span class="prbtn">Open on GitHub</span><span class="prbtn">Merge</span><span class="prbtn strike">Babysit pull request</span>
+    <p class="cap gone" style="margin-top:14px">Sidebar: the hourglass row goes</p>
+    <div class="row strike" style="padding-left:6px"><span class="dot"></span><span class="t">Babysitting #1588 · checks running</span><span class="age">⧗</span></div>
+  </div>
+  <div class="panel">
+    <p class="cap">Usage → Prompts</p>
+    <p class="usage strike">You sent <b>412</b>, Watcher <b>88</b> and wake-ups <b>57</b>.</p>
+    <p class="usage">You sent <b>412</b> and Watcher <b>88</b>. Sotto’s restart notes: <b>6</b>.</p>
+    <p class="cap" style="margin-top:12px">Where you work</p>
+    <p class="usage strike">Sotto · 506 prompts, 57 of them wake-ups</p>
+    <p class="usage">Sotto · 506 prompts</p>
+    <p class="cap" style="margin-top:12px">About these numbers</p>
+    <p class="usage" style="font-size:12.5px;color:var(--muted)">Prompts are what you and Watcher sent, and Sotto’s notes when it restarts a thread.</p>
+  </div>
+</div>
+
+<h2 class="sec">4. Settings</h2>
+<p class="sec">Two switches become one, on by default, where "Resume threads after a restart" is today.</p>
+<div class="stage">
+  <div class="panel">
+    <p class="crumb">Settings → Git &amp; worktrees → Pull requests</p>
+    <div class="tg strike"><div class="track on"></div><div><strong>Let agents babysit pull requests</strong><span>An agent can hand its pull request to Sotto, which wakes the thread when the pull request needs it.</span></div></div>
+    <p class="cap gone">Removed.</p>
+  </div>
+  <div class="panel">
+    <p class="crumb">Settings → Application → In a thread</p>
+    <div class="tg strike"><div class="track on"></div><div><strong>Resume threads after a restart</strong><span>A thread working when Sotto closes … carries on when Sotto opens again.</span></div></div>
+    <div class="tg"><div class="track on" id="tr"></div><div><strong>Restart stopped threads</strong>
+      <span id="tdesc">When a provider’s usage limit resets, or Sotto opens again after closing, every thread that was working carries on, with a short note from Sotto in the thread.</span>
+      <button class="lnk" id="flip" style="margin-top:4px">Show it off</button></div></div>
+  </div>
+</div>
+
+<div class="switch" role="group" aria-label="Prototype variants">
+  <button class="arrow" id="prev" aria-label="Previous variant">←</button>
+  <span class="lbl" id="vlabel">A — In each stopped thread</span>
+  <button class="arrow" id="next" aria-label="Next variant">→</button>
+</div>
+<script>
+const V={A:'A — In each stopped thread',B:'B — Once, at the top of the sidebar',C:'C — Over the composer',D:'B + C — your pick'},keys=Object.keys(V)
+const set=v=>{document.body.dataset.v=v;document.getElementById('dcap').hidden=v!=='D';document.getElementById('vlabel').textContent=V[v];const u=new URL(location);u.searchParams.set('variant',v);history.replaceState(null,'',u)}
+set(V[new URLSearchParams(location.search).get('variant')]?new URLSearchParams(location.search).get('variant'):'D')
+const step=d=>set(keys[(keys.indexOf(document.body.dataset.v)+d+keys.length)%keys.length])
+prev.onclick=()=>step(-1);next.onclick=()=>step(1)
+addEventListener('keydown',e=>{if(e.target.closest('input,textarea,[contenteditable]'))return;if(e.key==='ArrowLeft')step(-1);if(e.key==='ArrowRight')step(1)})
+light.onchange=()=>document.body.classList.toggle('light',light.checked)
+reduced.onchange=()=>document.body.classList.toggle('reduced',reduced.checked)
+nowatch.onchange=()=>{document.querySelector('.wfirst').hidden=!nowatch.checked;document.querySelector('.wlater').hidden=nowatch.checked;document.querySelector('.wnote').textContent=nowatch.checked?', Watcher first.':'.'}
+let on=true;flip.onclick=()=>{on=!on;tr.classList.toggle('on',on);flip.textContent=on?'Show it off':'Show it on';tdesc.textContent=on?'When a provider’s usage limit resets, or Sotto opens again after closing, every thread that was working carries on, with a short note from Sotto in the thread.':'A thread stopped by a usage limit or by Sotto closing waits for your next message.'}
+</script>
+</body></html>
