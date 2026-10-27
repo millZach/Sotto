@@ -233,6 +233,33 @@ describe('the store worker', () => {
     expect(eventRows(path)).toHaveLength(5)
   })
 
+  it('waits for a gone worker’s write lock without holding main, and finishes its writes once the lock is free', async () => {
+    const { store, writer, path } = await open({ busyTimeoutMs: 30_000 })
+    await new Promise<void>(resolve => { writer.post({ kind: 'events', threadId: 'thread', events: [added('first', 'First')] }, () => resolve()) })
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    // The lock reads as held twice after the worker goes, as when its connection is still ending.
+    const lockFree = vi.spyOn(store as unknown as { writeLockFree: (db: unknown) => boolean }, 'writeLockFree').mockReturnValueOnce(false).mockReturnValueOnce(false)
+    const holder = new DatabaseSync(path, { timeout: 5_000 })
+    holder.exec('BEGIN IMMEDIATE')
+    const outcomes: ThreadStoreWriteOutcome[] = []
+    writer.post({ kind: 'events', threadId: 'thread', events: [added('second', 'Second')] }, outcome => outcomes.push(outcome))
+    while (!internals(store).worker!.started(2)) await delay(5)
+    // Main's own timers keep firing while it waits for the lock: it never blocks on it.
+    let ticks = 0
+    const ticking = setInterval(() => { ticks++ }, 1)
+    const gone = internals(store).worker!.terminate()
+    await delay(50)
+    holder.exec('COMMIT'); holder.close()
+    await gone
+    await writer.confirmed()
+    clearInterval(ticking)
+    expect(lockFree.mock.calls.length).toBeGreaterThanOrEqual(3)
+    expect(ticks).toBeGreaterThan(0)
+    expect(outcomes.map(outcome => outcome.failed.size)).toEqual([0])
+    expect(store.readMessages('thread').messages.map(item => item.text)).toEqual(['First', 'Second'])
+    expect(eventRows(path)).toHaveLength(2)
+  })
+
   it('counts a batch the worker committed and never answered as committed, so nothing is written twice', async () => {
     const { store, writer, path } = await open()
     await new Promise<void>(resolve => { writer.post({ kind: 'events', threadId: 'thread', events: [added('first', 'First')] }, () => resolve()) })

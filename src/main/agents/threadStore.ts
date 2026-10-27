@@ -22,6 +22,11 @@ export const FIRST_WINDOW_TURNS = 10
 export const LATER_WINDOW_TURNS = 20
 export const RECORDED_USER_MESSAGES_MAX = 128
 export interface RecordedUserMessageIdentity { readonly threadId: string; readonly messageId: string }
+/**
+ * How long main looks, without waiting on its own thread, for a gone worker's write lock to come free before it takes
+ * over anyway and waits for the lock as any write on main does.
+ */
+const TAKE_OVER_PATIENCE_MS = 10_000
 
 /**
  * The projection's shape. A change here means the `messages` table is rebuilt from `events` on the next
@@ -271,6 +276,8 @@ export class ThreadStore {
   private inRead = false
   /** Hears every write the worker went without answering, in order, once this connection writes again. */
   private unansweredListener: ((unanswered: readonly UnansweredWrite[]) => void) | undefined
+  /** How long this connection waits for the write lock, as it was opened with. */
+  private busyTimeoutMs = 5_000
 
   /**
    * The main runtime supplies a path under `app.getPath('userData')`. `storeWorker` is the built store worker, or null to
@@ -293,7 +300,8 @@ export class ThreadStore {
       this.open({ onMain: true }); this.redactAll(); redactions = [...this.activityRedactions]; this.close()
     }
     if (!ephemeral) mkdirSync(dirname(this.path), { recursive: true })
-    const db = new DatabaseSync(ephemeral ? ':memory:' : this.path, { timeout: options.busyTimeoutMs ?? 5_000 })
+    this.busyTimeoutMs = options.busyTimeoutMs ?? 5_000
+    const db = new DatabaseSync(ephemeral ? ':memory:' : this.path, { timeout: this.busyTimeoutMs })
     try {
       prepareThreadDatabase(db)
       if (readMeta(db, 'projectionVersion') !== String(PROJECTION_VERSION)) {
@@ -323,9 +331,20 @@ export class ThreadStore {
    */
   private startWorker(db: DatabaseSync): void {
     const worker = StoreWorker.start(this.path, this.storeWorker, unanswered => {
-      if (this.worker !== worker) return
-      this.writeOnMain()
-      this.unansweredListener?.(unanswered)
+      const since = Date.now()
+      // A worker that goes can still hold the write lock while it ends. Main never waits for it on its own thread, where
+      // a busy wait for each write it finishes would hold the window for seconds: it looks without waiting, and while
+      // the lock is held looks again shortly. The writes stay unanswered, so nothing posted after them goes first.
+      const takeOver = (wait: number): void => {
+        if (this.worker !== worker || this.db === undefined) return
+        if (unanswered.length && Date.now() - since < TAKE_OVER_PATIENCE_MS && !this.writeLockFree(this.db)) {
+          setTimeout(() => { takeOver(Math.min(wait * 2, 200)) }, wait).unref?.()
+          return
+        }
+        this.writeOnMain()
+        this.unansweredListener?.(unanswered)
+      }
+      takeOver(5)
     })
     if (worker === undefined) return
     try { db.exec('PRAGMA query_only=ON; PRAGMA wal_autocheckpoint=0') } catch (error) { worker.stop(); throw error }
@@ -337,6 +356,20 @@ export class ThreadStore {
 
   /** Hears the writes the store worker went without answering, once this connection has taken over writing. */
   onUnanswered(listener: ((unanswered: readonly UnansweredWrite[]) => void) | undefined): void { this.unansweredListener = listener }
+
+  /** Whether the write lock is free now, asked without waiting for it and without writing anything. */
+  private writeLockFree(db: DatabaseSync): boolean {
+    db.exec('PRAGMA busy_timeout=0; PRAGMA query_only=OFF')
+    try {
+      db.exec('BEGIN IMMEDIATE')
+      db.exec('ROLLBACK')
+      return true
+    } catch {
+      return false
+    } finally {
+      db.exec(`PRAGMA query_only=ON; PRAGMA busy_timeout=${this.busyTimeoutMs}`)
+    }
+  }
 
   /**
    * The store worker went: this connection writes again, with SQLite's own checkpoints, and forgets what it held, since
