@@ -17,7 +17,8 @@ import { seedWatcherRoom } from './support/watcherRoom'
  * The composer has no edge in any state (ADR-0110, the user's ask on October 24, 2026): no border, outline, shadow or
  * ring on the composer, its card or its field, at rest, pointed at, with focus from a click or from Tab, slim, while a
  * turn runs and at a model's highest effort, in a thread and in Watcher, in every built-in theme, dark and light. The
- * caret alone says where typing goes. Run after `npm run build`. Captures go to disposable run evidence;
+ * caret alone says where typing goes. At the highest effort the effort trace's glow travels round the card (ADR-0019,
+ * October 26), and only there. Run after `npm run build`. Captures go to disposable run evidence;
  * `SOTTO_E2E_EVIDENCE=publish` writes artifacts/composer-slim-steady.
  */
 const evidence = evidenceDirectory('artifacts/composer-slim-steady')
@@ -31,6 +32,19 @@ async function theme(page: Page, appearance: Appearance, id: string): Promise<vo
   await page.evaluate(async ([appearance, id]) => window.sotto!.updateSettings(appearance === 'dark' ? { appearance, darkTheme: id } : { appearance, lightTheme: id }), [appearance, id] as const)
   await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
   await expect(page.locator('html')).toHaveAttribute('data-theme-id', new RegExp(id))
+}
+
+/**
+ * The effort trace round a pane's composer (ADR-0019): whether it is drawn, and the animations turning its halo and its
+ * head. It is the one light the composer carries, drawn apart from the card, so the edge checks above leave it alone. A window the
+ * system reports hidden pauses the lap, so a paused lap counts as turning.
+ */
+async function trace(page: Page, pane: string): Promise<{ shown: boolean; turning: string[] }> {
+  return page.evaluate(pane => {
+    const node = document.querySelector<HTMLElement>(`${pane} > .thread-workspace__compose > .thread-prompt > .effort-trace`)
+    if (node == null) return { shown: false, turning: ['no trace'] }
+    return { shown: getComputedStyle(node).display !== 'none', turning: node.getAnimations({ subtree: true }).filter(animation => animation.playState === 'running' || animation.playState === 'paused').map(animation => 'animationName' in animation ? String(animation.animationName) : animation.id) }
+  }, pane)
 }
 
 /** The composer's card, cut out of the window with a margin, for the evidence. */
@@ -125,6 +139,8 @@ test.describe('The composer has no edge', () => {
         await expect(page.locator(`${pane} [data-effort-arriving='true']`)).toHaveCount(0, { timeout: 6_000 })
         await page.waitForTimeout(400)
         await expect.poll(() => composerEdges(page, pane), { message: `thread ${appearance} at the highest effort` }).toEqual([])
+        // The trace is light outside the card, not an edge on it: shown and turning at the top, the card still edgeless.
+        await expect.poll(() => trace(page, pane), { message: `thread ${appearance} trace at the highest effort` }).toEqual({ shown: true, turning: ['effort-trace-turn', 'effort-trace-turn'] })
         await captureCard(page, pane, `thread-highest-${appearance}`)
         await page.evaluate(async () => { await window.sottoE2E!.agentEvent!({ type: 'stream', threadId: 'workshop', messageId: 'edge-running', text: 'Running the suite.', status: 'running' }) })
         await expect(card).toHaveAttribute('data-running', /.*/)
@@ -134,6 +150,7 @@ test.describe('The composer has no edge', () => {
         await expect(card).not.toHaveAttribute('data-running', /.*/)
         await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'low' }) })
         await expect(chip).toHaveAttribute('data-effort-top', 'false')
+        await expect.poll(() => trace(page, pane), { message: `thread ${appearance} trace below the top` }).toEqual({ shown: false, turning: [] })
       }
     } finally { await closeSotto(launched) }
   })

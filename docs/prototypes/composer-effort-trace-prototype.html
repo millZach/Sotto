@@ -1,0 +1,187 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not shipped, not tested, not wired to anything.
+
+  Picked October 26, 2026: Zach chose a, the comet, after first choosing b, with the 9 second lap, and for Max to keep
+  the trace when Ultracode sits past it. ADR-0019's October 26 amendment records it; effortTrace.css builds it.
+
+  Question: Zach asked for the composer to carry a light tracing round it while a thread sits at its model's highest
+  effort (Max today, Ultracode once it lands as the notch past Max). He chose a slow, steady trace: a soft light keeps
+  travelling round the composer's edge for as long as the top level is set, holds still under reduced motion, and takes
+  the effort colourway. It is the one exception to the composer having no edge in any state, so below the top there is
+  nothing at all, and at the top it has to read as light, not as a border. What should that light look like?
+
+  Why it does not show today: "Take every edge off the composer" (ad5daf3e9, October 24) removed the highest-level
+  outline and its travelling ring from the thread composer and Watcher's composer together. All that is left is the
+  arrival tide, which plays once when the level is reached from below and never when a thread opens already at Max.
+
+  Every variant is built the way the app would build it: one rotating conic gradient, turned by a CSS transform
+  animation (compositor only, no repaint on main), inside a static mask. A static scale stretches the turning square to
+  the card's shape, so the light keeps an even pace along the long edges instead of racing past them. One lap is 9s.
+
+   a  Comet.   One light. A thin bright head where the light touches the edge, with a soft halo spilling outward onto
+               the room. Nothing on the edge where the light is not.
+   b  Glow.    One light, no line at all: only a soft bloom outside the card's edge, travelling round it. The quietest.
+   c  Twins.   Two lights opposite each other, each a short bright head with a faint wash reaching in from the edge
+               inside the card. Busier; the edge is never dark for long.
+
+  Each variant shows Ember, Cyberpunk and Aurora in a dark and a light room, then the reduced-motion still, then the
+  same composer at High, which carries no edge. Pick with the bar at the bottom or the ← → keys; ?variant=a|b|c.
+  Open the file in a browser; nothing to run.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto — composer trace at the top effort</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { font-family: Figtree, system-ui, sans-serif; background: oklch(0.18 0.014 280); color: oklch(0.95 0.005 280); padding: 28px 20px 110px; }
+header { max-width: 1240px; margin: 0 auto 22px; }
+header h1 { margin: 0 0 6px; font-size: 22px; font-weight: 500; letter-spacing: -.3px; }
+header p { margin: 0; max-width: 760px; color: oklch(0.78 0.012 270); font-size: 14px; line-height: 1.55; }
+.grid { max-width: 1240px; margin: 0 auto; display: grid; gap: 26px; }
+.row h2 { margin: 0 0 10px; font-size: 13px; font-weight: 500; letter-spacing: .2px; color: oklch(0.8 0.012 270); }
+.row h2 small { font-weight: 400; color: oklch(0.66 0.012 270); margin-left: 6px; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 860px) { .pair { grid-template-columns: 1fr; } body { padding: 20px 12px 110px; } }
+
+/* A room: dark or light, the Sotto palette through the roles tokens.css derives. */
+.room { --canvas: oklch(0.235 0.018 280); --card: oklch(0.285 0.02 280); --text: oklch(0.985 0.005 280); --muted: oklch(0.72 0.014 265);
+  --hover: oklch(0.33 0.02 280); --activity: oklch(0.72 0.14 265); --on-activity: oklch(0.2 0.02 280); --warning: #fe9a00; --halo-strength: .55; --line-strength: .95;
+  border-radius: 14px; background: var(--canvas); padding: 34px 26px; color: var(--text); }
+.room[data-mode='light'] { --canvas: oklch(0.975 0.004 280); --card: oklch(1 0 0); --text: oklch(0.22 0.02 280); --muted: oklch(0.47 0.016 270);
+  --hover: oklch(0.94 0.006 280); --activity: oklch(0.5 0.16 265); --on-activity: oklch(0.99 0 0); --warning: #fe9a00; --halo-strength: .7; --line-strength: 1; }
+.room__tag { display: block; margin: -18px 0 14px -8px; font-size: 11px; color: var(--muted); letter-spacing: .3px; text-transform: uppercase; }
+
+/* The colourways, as tokens.css keys them (ADR-0019). */
+[data-effort-color='ember'] { --effort-a: var(--warning); --effort-b: var(--warning); --effort-c: color-mix(in srgb, var(--warning) 60%, var(--text)); --effort-ink: color-mix(in oklab, #ffb900 70%, var(--text)); }
+.room[data-mode='light'][data-effort-color='ember'] { --effort-ink: color-mix(in oklab, #bb4d00 80%, var(--text)); }
+[data-effort-color='cyberpunk'] { --effort-a: oklch(0.7 0.3 345); --effort-b: oklch(0.62 0.27 305); --effort-c: oklch(0.86 0.15 200); --effort-ink: oklch(0.86 0.15 200); }
+.room[data-mode='light'][data-effort-color='cyberpunk'] { --effort-ink: oklch(0.44 0.22 335); }
+[data-effort-color='aurora'] { --effort-a: oklch(0.86 0.18 160); --effort-b: oklch(0.82 0.14 200); --effort-c: oklch(0.68 0.22 300); --effort-ink: oklch(0.87 0.16 165); }
+.room[data-mode='light'][data-effort-color='aurora'] { --effort-ink: oklch(0.44 0.12 175); }
+
+/* The composer card: filled, no edge (ADR-0110). */
+.composer { position: relative; max-width: 640px; margin: 0 auto; padding: 14px 16px 10px; border: 1px solid transparent; border-radius: 16px; background: var(--card); }
+.composer__field { min-height: 36px; font-size: 15px; line-height: 1.5; color: color-mix(in srgb, var(--muted) 55%, transparent); }
+.composer__foot { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; gap: 8px; }
+.chips { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+.chip { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 7px; border-radius: 6px; }
+.chip svg { width: 12px; height: 12px; opacity: .7; }
+.composer[data-top] .chip--effort { color: var(--effort-ink); font-weight: 500; }
+.send { width: 28px; height: 28px; border-radius: 6px; background: var(--activity); color: var(--on-activity); display: grid; place-items: center; }
+.send svg { width: 15px; height: 15px; }
+
+/* ——— The trace ———
+   Everything below is the shape the app would ship: a turning square of conic light, scaled to the card's aspect so
+   the pace is even, inside a static mask that keeps it to the edge. Only `transform` animates. */
+.trace { display: none; position: absolute; inset: -1px; border-radius: 17px; pointer-events: none; z-index: 2; }
+.composer[data-top] .trace { display: block; }
+.trace__layer { position: absolute; border-radius: inherit; container-type: size; overflow: hidden; }
+.trace__stretch { position: absolute; left: 50%; top: 50%; width: 100cqh; height: 100cqh; translate: -50% -50%;
+  scale: 5 1; scale: calc(100cqw / 100cqh) 1; }
+.trace__spin { position: absolute; inset: -25%; background: var(--trace-light); animation: trace-turn 9s linear infinite; will-change: transform; }
+@keyframes trace-turn { to { transform: rotate(1turn); } }
+
+/* The light: a long faint tail, a bright head, a quick fall-off. */
+.trace { --trace-light: conic-gradient(from 0turn, transparent 0turn .7turn, color-mix(in srgb, var(--effort-a) 35%, transparent) .84turn, var(--effort-b) .95turn, var(--effort-c) .97turn, transparent 1turn); }
+/* The line: a band 1.5px wide on the card's own edge, lit only where the light is. */
+.trace__line { inset: 0; padding: 1.5px; opacity: var(--line-strength);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); }
+/* The halo: the same light, cut to the card's edge plus 8px and blurred, then kept to a band outside the card so it
+   falls on the room, never on the words. The band is wide enough that the blur fades before its outer edge. */
+.trace__halo { position: absolute; inset: -30px; border-radius: 46px; padding: 30px; opacity: var(--halo-strength);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); }
+.trace__glow { inset: 22px; border-radius: 25px; filter: blur(9px); }
+/* The bloom keeps to the colourway's two bright hues: the third is mixed toward the text, which in a light room is dark. */
+.trace__glow, .trace__wash { --trace-light: conic-gradient(from 0turn, transparent 0turn .7turn, color-mix(in srgb, var(--effort-a) 35%, transparent) .84turn, var(--effort-a) .93turn, var(--effort-b) .97turn, transparent 1turn); }
+body[data-variant='c'] .trace__wash { --trace-light: repeating-conic-gradient(from 0turn, transparent 0turn .3turn, color-mix(in srgb, var(--effort-a) 35%, transparent) .4turn, var(--effort-a) .465turn, var(--effort-b) .482turn, transparent .5turn); }
+/* The inner wash: light reaching a few pixels in from the edge, faint. */
+.trace__wash { inset: 0; padding: 10px; opacity: .22; filter: blur(6px);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); }
+
+/* Variant switches. */
+body[data-variant='a'] .trace__wash { display: none; }
+body[data-variant='b'] .trace__line, body[data-variant='b'] .trace__wash { display: none; }
+body[data-variant='b'] .trace__halo { opacity: calc(var(--halo-strength) + .25); }
+body[data-variant='b'] .trace__glow { filter: blur(11px); }
+body[data-variant='c'] .trace__halo { display: none; }
+body[data-variant='c'] .trace { --trace-light: repeating-conic-gradient(from 0turn, transparent 0turn .3turn, color-mix(in srgb, var(--effort-a) 35%, transparent) .4turn, var(--effort-b) .47turn, var(--effort-c) .482turn, transparent .5turn); }
+
+/* Reduced motion: the light holds where it is, a little past the top-left corner. */
+.composer[data-still] .trace__spin, body[data-still-all] .trace__spin { animation: none; transform: rotate(-.16turn); }
+/* A hidden window pauses it; the app does the same from the window's visibility. */
+body[data-hidden] .trace__spin { animation-play-state: paused; }
+
+/* The prototype bar, plainly not part of the design. */
+.bar { position: fixed; left: 50%; bottom: 18px; translate: -50% 0; z-index: 10; display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 999px;
+  background: #fff; color: #111; box-shadow: 0 10px 30px rgba(0,0,0,.45); font: 500 13px system-ui, sans-serif; }
+.bar button { border: 0; background: #eee; color: #111; height: 34px; min-width: 34px; padding: 0 12px; border-radius: 999px; font: inherit; cursor: pointer; }
+.bar button[aria-pressed='true'] { background: #111; color: #fff; }
+.bar .label { padding: 0 8px; white-space: nowrap; }
+@media (max-width: 520px) { .bar .label { display: none; } }
+</style>
+</head>
+<body data-variant="a">
+<header>
+  <h1>The composer at its highest effort</h1>
+  <p>A soft light travels round the composer while the thread is set to its model's highest level, one lap every nine seconds, in the effort colourway. Below the top level the composer has no edge at all. Under reduced motion the light holds still. Flip the three variants with the bar below.</p>
+</header>
+<main class="grid" id="grid"></main>
+
+<nav class="bar" aria-label="Prototype controls">
+  <button type="button" id="prev" aria-label="Previous variant">←</button>
+  <button type="button" data-v="a">A</button>
+  <button type="button" data-v="b">B</button>
+  <button type="button" data-v="c">C</button>
+  <span class="label" id="label"></span>
+  <button type="button" id="next" aria-label="Next variant">→</button>
+  <button type="button" id="still" aria-pressed="false">Still all</button>
+</nav>
+
+<script>
+const names = { a: 'Comet', b: 'Glow', c: 'Twins' }
+const chev = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>'
+const arrow = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25"><path d="M12 19V5M5 12l7-7 7 7"/></svg>'
+const trace = '<span class="trace" aria-hidden="true"><span class="trace__halo"><span class="trace__layer trace__glow"><span class="trace__stretch"><span class="trace__spin"></span></span></span></span><span class="trace__layer trace__wash"><span class="trace__stretch"><span class="trace__spin"></span></span></span><span class="trace__layer trace__line"><span class="trace__stretch"><span class="trace__spin"></span></span></span></span>'
+const composer = ({ top = true, still = false, level = 'Max', text = 'Ask Claude to change something…' } = {}) => `
+  <div class="composer" ${top ? 'data-top' : ''} ${still ? 'data-still' : ''}>${trace}
+    <div class="composer__field">${text}</div>
+    <div class="composer__foot">
+      <div class="chips"><span class="chip">Opus 5.5 ${chev}</span><span class="chip chip--effort">${level} ${chev}</span><span class="chip">Auto ${chev}</span></div>
+      <span class="send">${arrow}</span>
+    </div>
+  </div>`
+const room = (mode, color, opts) => `<div class="room" data-mode="${mode}" data-effort-color="${color}"><span class="room__tag">${mode}</span>${composer(opts)}</div>`
+const rows = [
+  ['Ember', 'ember', 'the default colourway', {}],
+  ['Cyberpunk', 'cyberpunk', '', {}],
+  ['Aurora', 'aurora', '', {}],
+  ['Reduced motion', 'ember', 'the light holds still', { still: true }],
+  ['High, below the top', 'ember', 'no edge at all', { top: false, level: 'High' }],
+]
+document.getElementById('grid').innerHTML = rows.map(([title, color, note, opts]) =>
+  `<section class="row"><h2>${title}${note ? `<small>${note}</small>` : ''}</h2><div class="pair">${room('dark', color, opts)}${room('light', color, opts)}</div></section>`).join('')
+
+const order = ['a', 'b', 'c']
+const set = v => {
+  document.body.dataset.variant = v
+  document.querySelectorAll('[data-v]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === v)))
+  document.getElementById('label').textContent = `${v.toUpperCase()} — ${names[v]}`
+  const url = new URL(location.href); url.searchParams.set('variant', v); history.replaceState(null, '', url)
+}
+const step = d => set(order[(order.indexOf(document.body.dataset.variant) + d + order.length) % order.length])
+set(order.includes(new URLSearchParams(location.search).get('variant')) ? new URLSearchParams(location.search).get('variant') : 'a')
+document.querySelectorAll('[data-v]').forEach(b => b.onclick = () => set(b.dataset.v))
+document.getElementById('prev').onclick = () => step(-1)
+document.getElementById('next').onclick = () => step(1)
+document.getElementById('still').onclick = e => { const on = e.currentTarget.getAttribute('aria-pressed') !== 'true'; e.currentTarget.setAttribute('aria-pressed', String(on)); document.body.toggleAttribute('data-still-all', on) }
+addEventListener('keydown', e => { if (e.target.closest('input, textarea, [contenteditable]')) return; if (e.key === 'ArrowLeft') step(-1); if (e.key === 'ArrowRight') step(1) })
+document.addEventListener('visibilitychange', () => document.body.toggleAttribute('data-hidden', document.hidden))
+</script>
+</body>
+</html>
