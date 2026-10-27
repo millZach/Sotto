@@ -77,12 +77,12 @@ describe('where the ticks sit', () => {
 
   it('packs a long conversation closer, so the column always fits the transcript', () => {
     const { pitch, places } = tickPlaces(101, 600)
-    expect(pitch).toBeCloseTo(4.8)
-    expect(places[0]).toBeCloseTo(60)
-    expect(places.at(-1)).toBeCloseTo(540)
+    expect(pitch).toBeCloseTo(3)
+    expect(places[0]).toBeCloseTo(150)
+    expect(places.at(-1)).toBeCloseTo(450)
     const packed = tickPlaces(400, 400).places
-    expect(packed[0]).toBeCloseTo(40)
-    expect(packed.at(-1)).toBeCloseTo(360)
+    expect(packed[0]).toBeCloseTo(100)
+    expect(packed.at(-1)).toBeCloseTo(300)
     expect(tickPlaces(1, 600).places).toEqual([300])
     expect(tickPlaces(0, 600).places).toEqual([])
   })
