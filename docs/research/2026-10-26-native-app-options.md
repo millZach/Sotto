@@ -6,9 +6,9 @@ Researched October 26, 2026. Two read-only passes did the outside and inside wor
 
 **Stay on Electron. Fix three measured problems first.** None of the three depends on the framework.
 
-1. **The shell's own memory.** On the owner's live instance the main process alone holds 1.3 GB of private memory. A clean profile's whole shell holds 298 MB. Most of the difference sits in the main process, and what fills it is not known yet.
-2. **Idle CPU.** A clean launch with no threads used 30% to 68% of one core across two 20-second samples. That was one run, so it is a lead, not a result.
-3. **Unused Chromium locales.** 46 MB of the 55 locale packs in the installed app are never used. electron-builder's `electronLanguages` option can drop them.
+1. **The shell's own memory.** On the owner's live instance the main process alone holds 1.3 GB of private memory. A clean profile's whole shell holds 298 MB. Most of the difference sits in the main process, and what fills it is not known yet. Tracked in #1618.
+2. **Idle CPU.** A clean launch with no threads used 30% to 68% of one core across two 20-second samples. That was one run, so it is a lead, not a result. Tracked in #1619.
+3. **Unused Chromium locales.** 46 MB of the 55 locale packs in the installed app are never used. electron-builder's `electronLanguages` option can drop them. Checked against electron-builder 26.15.3's source. Tracked in #1620.
 
 **Tauri 2 is the only candidate worth a spike, and only as a shell.** Keep the React renderer. Move the Electron-coupled shell, about 11,000 lines, to Rust. Run the agent runtime as a Node sidecar, since the headless host already runs that code under plain Node. A native toolkit rewrite is not worth it. It would rebuild about 81,000 lines of renderer, the rich-text editor, the Canvas-drawn Watcher scene and the i18n catalogues. Most toolkits are also not ready on Linux. Swift has an official toolchain on Windows and Linux, but I found no UI toolkit for it that is ready.
 
@@ -221,11 +221,11 @@ Totals from the rows above: about 206,000 lines in the desktop layers. The shell
 
 ## 5. Recommendation
 
-**Stay on Electron. Fix three things first.**
+**Stay on Electron. Fix three things first.** Filed as #1618, #1619 and #1620.
 
-1. **Find what fills the main process.** Take a heap snapshot, or a per-process memory breakdown, of the main process after a representative session. The aim is to tell V8 heap held in state apart from anything else. If it is state, the fix is in how history is kept, which the AGENTS.md performance rules already point toward. A framework change would not fix it.
-2. **Measure idle CPU properly.** Run five minutes idle on a clean profile and on a seeded one. Profile the main and renderer processes. Check timers and animation loops: the menu-bar owl animator (`src/main/tray/owl/animator.ts`), the widget, and the Watcher scene while idle.
-3. **Set `electronLanguages` to keep en-US.** The option is in electron-builder's platform-specific options. It keeps only the listed Chromium locales, which is 46 MB installed. The compressed installer saving is not measured. Check that nothing depends on Chromium's other locales, such as spell-check dictionaries. The option's page was found through search, not fetched, so check it against the installed electron-builder version before use.
+1. **Find what fills the main process** (#1618). Take a heap snapshot, or a per-process memory breakdown, of the main process after a representative session. The aim is to tell V8 heap held in state apart from anything else. If it is state, the fix is in how history is kept, which the AGENTS.md performance rules already point toward. A framework change would not fix it.
+2. **Measure idle CPU properly** (#1619). Run five minutes idle on a clean profile and on a seeded one. Profile the main and renderer processes. Check timers and animation loops: the menu-bar owl animator (`src/main/tray/owl/animator.ts`), the widget, and the Watcher scene while idle.
+3. **Set `electronLanguages`, after deciding which locales to keep** (#1620). The option is in electron-builder 26.15.3's platform options and top-level config. It deletes non-matching Chromium `.pak` files on Windows and Linux, and `.lproj` folders on macOS, which is 46 MB installed here. The compressed installer saving is not measured. Keeping only `en-US` changes Chromium's own strings for non-English users, and Sotto's interface language reads `app.getLocale()` and `app.getPreferredSystemLanguages()` in `src/main/interfaceLanguage.ts`. Check whether removing a pak changes either result before setting it.
 
 **Revisit Tauri only after these three.** Open the Tauri spike if the clean shell is still a large cost, or if a smaller installer matters more than one engine on every OS. The spike is the next step, not the migration.
 
@@ -258,7 +258,7 @@ Totals from the rows above: about 206,000 lines in the desktop layers. The shell
 - Apple's `CGEventTap` permission rules, and Apple's notarization steps. The Apple pages could not be read.
 - Whether `portable-pty` supports ConPTY.
 - Whether `SottoCore` builds on Windows or Linux.
-- `electronLanguages` was found through a search summary. The official page returned 404 when fetched.
+- `electronLanguages` was checked against electron-builder 26.15.3's source (`PlatformSpecificBuildOptions.ts`, `ElectronFramework.ts`), not run. The official docs page returned 404 when fetched. Whether `app.getLocale()` and `app.getPreferredSystemLanguages()` change after a `.pak` is removed is unverified.
 - The Tauri-plus-sidecar installed size: my arithmetic from the file list, not a build.
 - Effort estimates: judgement, not measurement.
 - Battery: not measured.
