@@ -6,12 +6,15 @@ import { E2E_THREADS_NOW as NOW } from '../../../src/shared/e2e'
 import { describeThreads, organizeWorkspace } from '../../../src/renderer/src/agents/threadFacts'
 import { railMark, ThreadSidebar } from '../../../src/renderer/src/agents/ThreadSidebar'
 import { useOptionalApp, type AppContextValue } from '../../../src/renderer/src/state/AppContext'
+import { useWatchedThreadIds } from '../../../src/renderer/src/watcher/watcherRoom'
 import { threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 /**
- * The collapsed rail (ADR-0146): with its Owl feature on, Watcher's tile under Expand, a Needs you tray while
- * something waits, the moving threads, then a hairline and the resting ones smaller. Off, the rail is today's.
+ * The collapsed rail (ADR-0146): with its Owl feature on, Watcher's tile under Expand, the threads Watcher watches
+ * under it with the owl at each tile's corner, then a hairline and the rest: in each part what waits on you first,
+ * edged in the attention colour, then the moving threads, then the resting ones smaller. Off, the rail is today's.
  */
+vi.mock('../../../src/renderer/src/watcher/watcherRoom', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/watcher/watcherRoom')>(), useWatchedThreadIds: vi.fn(() => new Set()) }))
 vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/state/AppContext')>(), useOptionalApp: vi.fn() }))
 
 const navigate = vi.fn()
@@ -19,7 +22,7 @@ function owl(on: boolean): void {
   vi.mocked(useOptionalApp).mockReturnValue({ navigation: 'threads', actions: { navigate },
     update: { currentVersion: '0.1.40', phase: { phase: 'up-to-date' }, checkedAt: null, owlFeatures: { 'sidebar-rail': on, watcher: true } } } as unknown as AppContextValue)
 }
-beforeEach(() => { vi.mocked(useOptionalApp).mockReset(); navigate.mockReset(); localStorage.removeItem('sotto.threadWorkspace.sidebar') })
+beforeEach(() => { vi.mocked(useOptionalApp).mockReset(); vi.mocked(useWatchedThreadIds).mockReturnValue(new Set()); navigate.mockReset(); localStorage.removeItem('sotto.threadWorkspace.sidebar') })
 afterEach(() => { cleanup(); localStorage.removeItem('sotto.threadWorkspace.sidebar') })
 
 /** Nothing waits: every thread's requests answered and failures seen. */
@@ -32,6 +35,8 @@ function mountCollapsed(state: AgentState): HTMLElement {
   act(() => { screen.getByRole('button', { name: 'Collapse sidebar' }).click() })
   return document.querySelector<HTMLElement>('.thread-nav__rail')!
 }
+/** The waiting threads' titles in the Needs you queue's own order. */
+const queueOrder = (state: AgentState): string[] => organizeWorkspace(state, describeThreads(state, NOW), '', state.activeProjectId, false, NOW).needsYou.entries.map(entry => entry.row.thread.title)
 const tile = (rail: HTMLElement, title: string): HTMLElement => within(rail).getByRole('button', { name: title })
 const follows = (first: Element, second: Element): boolean => (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
 
@@ -55,21 +60,24 @@ describe('the collapsed rail (ADR-0146)', () => {
     expect(navigate).toHaveBeenCalledWith('watcher')
   })
 
-  it('holds what waits in a tray first, then the moving threads, then a hairline and the resting ones', () => {
+  it('puts what waits first, edged, then the moving threads, then a hairline and the resting ones', () => {
     owl(true)
     const rail = mountCollapsed(threadsStateFixture())
-    const tray = rail.querySelector<HTMLElement>('.thread-nav__rail-tray')!
-    expect(tray).toHaveAccessibleName('2 waiting on you')
-    expect(tray.querySelector('.thread-nav__rail-tray-count')).toHaveTextContent('2')
-    const inTray = within(tray).getAllByRole('button')
-    expect(inTray.map(button => button.getAttribute('aria-label')).sort()).toEqual(['Streaming WAV stall', 'Visual gate flake'])
-    for (const button of inTray) expect(button.querySelector('.thread-nav__ring')).toHaveAttribute('data-state', 'needs')
+    expect(rail.querySelector('.thread-nav__rail-tray, .thread-nav__rail-watched, .thread-nav__rail-watched-mark')).toBeNull()
+    const waiting = [tile(rail, 'Visual gate flake'), tile(rail, 'Streaming WAV stall')]
+    const queued = [...rail.querySelectorAll('.thread-nav__rail-thread[data-waiting]')].map(button => button.getAttribute('aria-label'))
+    expect(queued).toEqual(queueOrder(threadsStateFixture()))
+    for (const button of waiting) {
+      expect(button).toHaveAttribute('data-waiting')
+      expect(button.querySelector('.thread-nav__ring')).toHaveAttribute('data-state', 'needs')
+    }
     const moving = tile(rail, 'Footer links')
     expect(moving).not.toHaveAttribute('data-resting')
+    expect(moving).not.toHaveAttribute('data-waiting')
     const rule = rail.querySelector('.thread-nav__rail-list .thread-nav__rail-rule')!
     const resting = [...rail.querySelectorAll<HTMLElement>('.thread-nav__rail-thread[data-resting]')]
     expect(resting.length).toBeGreaterThan(0)
-    expect(follows(tray, moving)).toBe(true)
+    for (const button of waiting) expect(follows(button, moving)).toBe(true)
     expect(follows(moving, rule)).toBe(true)
     for (const button of resting) {
       expect(follows(rule, button)).toBe(true)
@@ -77,10 +85,33 @@ describe('the collapsed rail (ADR-0146)', () => {
     }
   })
 
-  it('shows no tray while nothing waits', () => {
+  it('puts the threads Watcher watches under its tile, each with the owl, before a hairline and the rest', () => {
+    owl(true)
+    const state = threadsStateFixture()
+    const id = (title: string): string => state.host.threads.find(thread => thread.title === title)!.id
+    vi.mocked(useWatchedThreadIds).mockReturnValue(new Set([id('Footer links'), id('Visual gate flake')]))
+    const rail = mountCollapsed(state)
+    const group = rail.querySelector<HTMLElement>('.thread-nav__rail-watched')!
+    expect(group).toHaveAccessibleName('Watched by Watcher')
+    expect(within(group).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['Visual gate flake', 'Footer links'])
+    for (const button of within(group).getAllByRole('button')) {
+      expect(button.querySelector('.thread-nav__rail-watched-mark')).not.toBeNull()
+      expect(button).toHaveAttribute('title', expect.stringMatching(/ · Watched by Watcher$/))
+    }
+    expect(tile(rail, 'Visual gate flake')).toHaveAttribute('data-waiting')
+    expect(tile(rail, 'Footer links')).not.toHaveAttribute('data-waiting')
+    const rule = group.nextElementSibling!
+    expect(rule).toHaveClass('thread-nav__rail-rule')
+    const unwatched = tile(rail, 'Streaming WAV stall')
+    expect(unwatched).toHaveAttribute('data-waiting')
+    expect(unwatched.querySelector('.thread-nav__rail-watched-mark')).toBeNull()
+    expect(follows(rule, unwatched)).toBe(true)
+  })
+
+  it('edges nothing in the attention colour while nothing waits', () => {
     owl(true)
     const rail = mountCollapsed(calm(threadsStateFixture()))
-    expect(rail.querySelector('.thread-nav__rail-tray')).toBeNull()
+    expect(rail.querySelector('.thread-nav__rail-thread[data-waiting]')).toBeNull()
     expect(tile(rail, 'Visual gate flake')).toBeInTheDocument()
   })
 
