@@ -2,7 +2,7 @@ import { lstat, mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
-import { BRING_BACK_GIT_SAID_MAX, SNAPSHOT_AUTHOR, type BringBack } from '../../shared/bringChangesBack'
+import { BRING_BACK_GIT_SAID_MAX, MERGE_FALLBACK_AUTHOR, SNAPSHOT_AUTHOR, type BringBack } from '../../shared/bringChangesBack'
 import { gitActionPhases, gitActionStages, type GitActionPhase, type GitActionResult, type GitActionToast, type GitPullResult, type GitStackedAction } from '../../shared/gitActions'
 import type { GitStatus } from '../../shared/gitStatus'
 import { diffExcerpt } from '../llm/diffExcerpt'
@@ -570,7 +570,8 @@ export class GitActions {
         await this.refuseIgnoredCollisions(cwd, checkout, target, targetHead, tree)
         if (!input.mergeCommit) return { kind: 'asks', branch, commits, targetCommits, targetHead, branchHead, checkout }
         const subject = `Merge branch '${branch}' into ${target}`
-        const head = (await this.git(cwd, ['commit-tree', tree, '-p', targetHead, '-p', branchHead, '-F', '-'], { stdin: `${subject}\n` }).catch((error: unknown) => {
+        const identity = await this.hasIdentity(cwd) ? {} : { env: mergeFallbackIdentity() }
+        const head = (await this.git(cwd, ['commit-tree', tree, '-p', targetHead, '-p', branchHead, '-F', '-'], { stdin: `${subject}\n`, ...identity }).catch((error: unknown) => {
           throw new BringBackRefusal('git', 'Git couldn’t make the merge commit.', { gitSaid: gitWords(error) })
         })).trim()
         await this.advance(target, targetHead, head, checkout)
@@ -620,6 +621,10 @@ export class GitActions {
       return authorName === SNAPSHOT_AUTHOR.name && authorEmail === SNAPSHOT_AUTHOR.email
         || committerName === SNAPSHOT_AUTHOR.name && committerEmail === SNAPSHOT_AUTHOR.email
     })
+  }
+  /** Whether Git here has an author and committer of its own, from the repository's or the user's configuration. */
+  private async hasIdentity(cwd: string): Promise<boolean> {
+    try { await this.git(cwd, ['var', 'GIT_AUTHOR_IDENT']); await this.git(cwd, ['var', 'GIT_COMMITTER_IDENT']); return true } catch { return false }
   }
   /** Whether a merge, cherry-pick, revert or rebase is half done in a folder: the user's to finish, never Sotto's to move under. */
   private async operationInProgress(folder: string): Promise<boolean> {
@@ -676,6 +681,9 @@ export class GitActions {
    * name and only from the tip Sotto read (`update-ref` with the old value), never through HEAD, so a branch switched to in
    * that folder meanwhile is never the one that moves. Once it has moved, the folder must still be on it, or the branch is
    * put back; then its index and files follow by a two-tree `read-tree`, which refuses rather than overwrite anything.
+   * The branch moves first, so a folder switched meanwhile is never written to. Should Sotto stop between the two, the
+   * folder is on `next` with `from`'s files, and its status shows `next`'s changes as undone; both commits are kept, and
+   * `git checkout -- .` there puts the files on `next`. Bring changes refuses that folder as dirty until then.
    */
   private async advance(target: string, from: string, next: string, checkout: string): Promise<void> {
     const ref = `refs/heads/${target}`
@@ -869,6 +877,8 @@ function branchHeadOf(output: string): string {
   const head = output.split('\0').find(record => record.startsWith('# branch.head '))?.slice('# branch.head '.length) ?? ''
   return head === '(detached)' ? '' : head
 }
+const mergeFallbackIdentity = (): Record<string, string> => ({ GIT_AUTHOR_NAME: MERGE_FALLBACK_AUTHOR.name, GIT_AUTHOR_EMAIL: MERGE_FALLBACK_AUTHOR.email,
+  GIT_COMMITTER_NAME: MERGE_FALLBACK_AUTHOR.name, GIT_COMMITTER_EMAIL: MERGE_FALLBACK_AUTHOR.email })
 const files = (count: number): string => `${count} ${count === 1 ? 'file' : 'files'}`
 /** Git's last few lines, as Git said them, with any credentials in a remote's address left out. */
 function cutGitWords(text: string): string {

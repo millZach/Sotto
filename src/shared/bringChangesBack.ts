@@ -83,6 +83,11 @@ export const BRING_BACK_GIT_SAID_MAX = 2_000
 
 /** A test-run snapshot's author and committer (#1033): a commit by it holds someone's uncommitted work, never brought back. */
 export const SNAPSHOT_AUTHOR = { name: 'Sotto', email: 'sotto@localhost' } as const
+/**
+ * Who a merge commit is by when the machine's Git has no identity of its own (a headless host with no user.name or
+ * user.email): Sotto, at an address of its own, so the merge is never taken for a check snapshot (`SNAPSHOT_AUTHOR`).
+ */
+export const MERGE_FALLBACK_AUTHOR = { name: 'Sotto', email: 'sotto-merge@localhost' } as const
 
 /** Where a thread's commits would go: the thread it began from, that thread's branch, and this thread's branch. */
 export interface BringBackTarget {

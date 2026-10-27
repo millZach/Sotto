@@ -16,7 +16,7 @@ import { BringBackRefusal, GitActions } from '../../src/main/agents/gitActions'
 import { GitStatusReader } from '../../src/main/agents/gitStatus'
 import type { HostService } from '../../src/main/agents/hostService'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
-import { incomingRefBranch } from '../../src/shared/bringChangesBack'
+import { incomingRefBranch, MERGE_FALLBACK_AUTHOR } from '../../src/shared/bringChangesBack'
 import type { BranchMoved, BranchMoveReceipt } from '../../src/shared/branchMoves'
 import { commitFile, git, twoMachines } from '../fixtures/branchRepositories'
 import { useSocketHostFixture } from '../fixtures/socketHostFixture'
@@ -106,6 +106,34 @@ describe('bringing changes back from a child on another machine (#1030)', () => 
       expect(git(machines.laptop, 'rev-list', '--parents', '-n', '1', 'main').split(' ').slice(1)).toEqual([theirs, ours])
       noIncoming()
     } finally { await server.close() }
+  })
+
+  it('makes the merge commit as Sotto, never as a check snapshot, where Git has no identity of its own', async () => {
+    const { child, server, move, bring } = await across()
+    const saved = { global: process.env.GIT_CONFIG_GLOBAL, system: process.env.GIT_CONFIG_NOSYSTEM }
+    try {
+      const ours = await commitFile(child, 'mid.txt', 'mid-chunk\n', 'Test')
+      const theirs = await commitFile(machines.laptop, 'notes.txt', 'meanwhile\n', 'Meanwhile on the laptop')
+      // A headless host with no user.name or user.email anywhere, and none guessed from the machine's name.
+      const empty = join(machines.root, 'no-identity.gitconfig')
+      await writeFile(empty, '')
+      process.env.GIT_CONFIG_GLOBAL = empty
+      process.env.GIT_CONFIG_NOSYSTEM = '1'
+      git(machines.laptop, 'config', '--unset', 'user.name')
+      git(machines.laptop, 'config', '--unset', 'user.email')
+      git(machines.laptop, 'config', 'user.useConfigOnly', 'true')
+      const asked = await bring(landed(await move()))
+      if (asked.kind !== 'asks') throw new Error('Expected a question')
+      const merged = await bring(landed(await move()), { targetHead: asked.targetHead, branchHead: asked.branchHead })
+      expect(merged).toMatchObject({ kind: 'merge-commit' })
+      expect(git(machines.laptop, 'log', '-1', '--format=%an <%ae>|%cn <%ce>', 'main'))
+        .toBe(`${MERGE_FALLBACK_AUTHOR.name} <${MERGE_FALLBACK_AUTHOR.email}>|${MERGE_FALLBACK_AUTHOR.name} <${MERGE_FALLBACK_AUTHOR.email}>`)
+      expect(git(machines.laptop, 'rev-list', '--parents', '-n', '1', 'main').split(' ').slice(1)).toEqual([theirs, ours])
+    } finally {
+      if (saved.global === undefined) delete process.env.GIT_CONFIG_GLOBAL; else process.env.GIT_CONFIG_GLOBAL = saved.global
+      if (saved.system === undefined) delete process.env.GIT_CONFIG_NOSYSTEM; else process.env.GIT_CONFIG_NOSYSTEM = saved.system
+      await server.close()
+    }
   })
 
   it('makes no merge commit when the child moved on after the question', async () => {
