@@ -1336,7 +1336,7 @@ export class WatcherService implements WatcherControlHooks {
    * outcome is working until its thread is made, when its turn comes.
    */
   private waitingCheckResult(operation: WatcherOperation, create: WatcherToolInput<'start_thread'>): unknown {
-    const checks = this.options.checks!, ahead = checks.ahead(this.checkOf.get(operation.id)?.ticket ?? operation.id) ?? 0
+    const ahead = this.options.checks?.ahead(this.checkOf.get(operation.id)?.ticket ?? operation.id) ?? 0
     return { status: 'ok', receipt: this.receipt(operation), limits: this.limits(operation), target: operation.target,
       creationReceiptId: operation.creationReceiptId!, firstPromptReceiptId: operation.firstPromptReceiptId!,
       effectiveChoices: { modelId: create.modelId!, reasoningEffort: create.reasoningEffort ?? null, permission: create.permission ?? { kind: 'runtime', mode: 'approval-required' },
@@ -1346,7 +1346,8 @@ export class WatcherService implements WatcherControlHooks {
   }
   /** Where a waiting check stands in this machine's queue, for the model (#1312). */
   private checkNote(operationId: string): string {
-    return checkWaitingWords(this.options.checks!.machine, this.options.checks!.ahead(this.checkOf.get(operationId)?.ticket ?? operationId) ?? 0, WATCHER_CHECK_STOP)
+    const checks = this.options.checks
+    return checkWaitingWords(checks?.machine ?? 'This computer', checks?.ahead(this.checkOf.get(operationId)?.ticket ?? operationId) ?? 0, WATCHER_CHECK_STOP)
   }
   /** Whether this operation is a check waiting its turn here (#1312). */
   private checkWaits(operationId: string): boolean { return this.checkOf.get(operationId)?.waiting !== undefined }
@@ -3625,6 +3626,11 @@ export class WatcherService implements WatcherControlHooks {
       // A retry reads its receipt again; only the start's first run says how many threads are working (#1183).
       const active = this.active.get(admitted.operation.id)
       if (active) { const answer = await active; if (typeof answer !== 'object' || answer === null || !('warning' in answer)) return answer; const { warning: _warning, ...rest } = answer; void _warning; return rest }
+      // A check still waiting its turn answers as it first did, with its place now (#1312); one waiting on a paired host
+      // with the place that host last gave.
+      const check = this.checkOf.get(admitted.operation.id), operation = this.record().operations.find(item => item.id === admitted.operation.id) ?? admitted.operation
+      if (check?.waiting && operation.deliveryState === 'queued') return this.waitingCheckResult(operation, check.waiting.input)
+      if (check?.away && operation.deliveryState === 'queued') return { ...this.waitingCheckResult(operation, check.away.input), check: { ahead: check.away.ahead, note: check.away.note } }
       return this.operationResult(name, admitted.operation, input)
     }
     const running = admitted.operation.target.hostId !== this.hostId() ? this.executeRemote(name, admitted.operation, input) : this.executeOperation(name, admitted.operation, input, { ticket })
