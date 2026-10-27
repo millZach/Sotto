@@ -197,7 +197,7 @@ export interface AgentRuntimeOptions {
     log?: (event: GitHubRateLimitEvent | BabysitEvent | WatchedPullRequestEvent) => void }
   /** What the worktree cleanup (ADR-0041) may reach beyond the workspace: GitHub for the merged rule and Auto-settle
    * merged threads, and a log of stable event names. Without `pullRequestMerged` neither fires; the other rules read only the repository. */
-  worktreeCleanup?: Pick<WorktreeCleanupDependencies, 'pullRequestMerged' | 'log'> & {
+  worktreeCleanup?: Pick<WorktreeCleanupDependencies, 'pullRequestMerged' | 'pullRequestState' | 'log'> & {
     /** GitHub's open pull requests' branches, which Clear settled threads after asks before a thread goes (ADR-0140). */
     readonly openPullRequestBranches?: (repositoryRoot: string, github?: SharedGitHub) => Promise<ReadonlySet<string>>
   }
@@ -473,6 +473,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // The merged check spends the same sign-in's points as the status reader, and asks as its timer does (#820).
   const merged = options.worktreeCleanup?.pullRequestMerged
   const openPullRequests = options.worktreeCleanup?.openPullRequestBranches
+  const pullRequestState = options.worktreeCleanup?.pullRequestState
   const github = gitHubRateLimit && gitHubHosts ? { rateLimit: gitHubRateLimit, hosts: gitHubHosts } : undefined
   // Clear settled threads after (ADR-0140) rides the same hour, on the computer whose setting it is, and only on Owl:
   // never a headless host's, which has no Settings to choose it in (clearsOnItsOwn).
@@ -481,6 +482,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...clearsOnItsOwn(options) ? { clearSettledThreads: { afterDays: () => options.settings().clearSettledThreadsAfterDays,
       clear: (days: number, keep?: (thread: AgentThread) => Promise<ThreadClearKeptReason | null>) => agentControl.clearSettledThreads(days, keep) } } : {},
     ...merged && github ? { pullRequestMerged: (repositoryRoot: string, branch: string) => merged(repositoryRoot, branch, github) } : {},
+    ...pullRequestState && github ? { pullRequestState: (url: string) => pullRequestState(url, github) } : {},
     ...openPullRequests && github ? { openPullRequestBranches: (repositoryRoot: string) => openPullRequests(repositoryRoot, github) } : {} })
   // A paired client's Files, Changes and Agents for this host's threads (ADR-0025, October 5 amendment): reads only, over
   // the same working copies the desktop's own tools resolve. The headless host and the desktop's phone listener serve them.

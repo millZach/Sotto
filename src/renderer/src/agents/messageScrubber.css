@@ -4,9 +4,9 @@
    its stars are, so the lane reads as part of the sky rather than as words, and the three ticks at each end of the
    column fade out unless their message is on screen. Reached, the ticks take the text tiers again. The ticks near the
    pointer rise on a normal curve; the card beside them is square, with a clear border. Every colour is a theme role.
-   The lane's width and place come from MessageScrubber.tsx, measured from the column. */
+   The lane's width, length and place come from MessageScrubber.tsx, measured from the column. */
 
-.message-scrubber { position: absolute; z-index: 2; top: 0; bottom: 0; left: var(--scrubber-left); width: var(--scrubber-lane); opacity: .35; }
+.message-scrubber { position: absolute; z-index: 2; top: 0; height: var(--scrubber-height); left: var(--scrubber-left); width: var(--scrubber-lane); opacity: .35; }
 .message-scrubber:hover, .message-scrubber:focus-within, .message-scrubber[data-active] { opacity: 1; }
 .message-scrubber__tick { position: absolute; left: 0; width: 100%; height: var(--scrubber-hit); min-width: 0; min-height: 0; margin: 0; padding: 0; border: 0; background: transparent; cursor: pointer; transform: translateY(-50%);
   --rest: 10px; --peak: 24px; }
@@ -15,14 +15,14 @@
 .message-scrubber__tick:is(:first-child, :last-child) { --fade: .25; }
 .message-scrubber__tick:is(:nth-child(2), :nth-last-child(2)) { --fade: .5; }
 .message-scrubber__tick:is(:nth-child(3), :nth-last-child(3)) { --fade: .75; }
-.message-scrubber__tick[data-in-view] { --fade: 1; }
-.message-scrubber__tick::before { content: ''; position: absolute; top: 50%; right: var(--scrubber-gap); width: calc(var(--rest) + (var(--peak) - var(--rest)) * var(--rise, 0));
+.message-scrubber__tick[data-in-view] { --fade: 1; --seen: 3px; }
+.message-scrubber__tick::before { content: ''; position: absolute; top: 50%; right: var(--scrubber-gap); width: calc(var(--rest) + var(--seen, 0px) * (1 - var(--rise, 0)) + (var(--peak) - var(--rest)) * var(--rise, 0));
   height: 2px; margin-top: -1px; border-radius: 1px; background: color-mix(in srgb, var(--tt-text) 70%, transparent); opacity: calc((.6 + .4 * var(--rise, 0)) * var(--fade, 1)); }
 /* Reached by the pointer or the keyboard, every tick keeps 3:1 against what is under it, the far ones too; the rise
    still shows in their width (the user's ask on October 24, 2026). At rest the lane stays faint. */
 .message-scrubber:is(:hover, :focus-within, [data-active]) .message-scrubber__tick::before { opacity: calc(.8 + .2 * var(--rise, 0)); }
 .message-scrubber:is(:hover, :focus-within, [data-active]) .message-scrubber__tick:not([data-in-view], [data-hot])::before { background: var(--tt-text-muted); }
-/* The messages on screen are a step brighter, so the column says where the reader is. */
+/* The messages on screen are a step brighter and a little longer, so the column says where the reader is. */
 .message-scrubber__tick[data-in-view]::before { background: var(--tt-text-2); }
 .message-scrubber__tick[data-hot]::before { height: 3px; margin-top: -1.5px; background: var(--tt-text); opacity: 1; }
 .message-scrubber__tick:focus-visible { outline: none; }
@@ -46,7 +46,9 @@
 
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .message-scrubber { transition: opacity 200ms ease; }
-  :root:not([data-reduced-motion='on']) .message-scrubber__tick::before { transition: width 90ms ease-out, opacity 120ms ease, background-color 120ms ease; }
+  /* At rest the emphasis on the messages on screen eases along as the transcript scrolls; reached, the swell keeps up with the pointer. */
+  :root:not([data-reduced-motion='on']) .message-scrubber__tick::before { transition: width 200ms ease-out, opacity 200ms ease-out, background-color 200ms ease-out; }
+  :root:not([data-reduced-motion='on']) .message-scrubber:is(:hover, :focus-within, [data-active]) .message-scrubber__tick::before { transition: width 90ms ease-out, opacity 120ms ease, background-color 120ms ease; }
   :root:not([data-reduced-motion='on']) .message-scrubber__card { animation: message-scrubber-card 120ms ease-out; }
 }
 @keyframes message-scrubber-card { from { opacity: 0; transform: translateX(-4px); } }
