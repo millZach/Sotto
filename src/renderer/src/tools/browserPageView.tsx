@@ -3,7 +3,7 @@ import { i18n } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import type { BrowserBounds, BrowserBridge, BrowserPage } from '../../../shared/browser'
-import type { ToolsError } from '../../../shared/tools'
+import type { ToolsError, ToolsResult } from '../../../shared/tools'
 import { pageLabel, type BrowserStore } from './browserStore'
 import { useBrowserPageMount } from './useBrowserPageMount'
 import { useOverlayOpen } from './browserOverlay'
@@ -17,6 +17,18 @@ export function listProblem(error: ToolsError, bridge: boolean): string {
     case 'workspace-unavailable': return i18n._(msg`The working folder is not available.`)
     default: return error.message || i18n._(msg`The browser could not list its pages.`)
   }
+}
+
+/**
+ * Shares a page with the thread's agent or stops sharing it, or sets its size: `size` is `fit` (the pane's own size)
+ * or `<width>x<height>` in CSS pixels. Both Tools > Browser surfaces send these the same way.
+ */
+export function changePage(bridge: BrowserBridge, threadId: string, page: BrowserPage, action: 'share' | 'viewport', size = 'fit'): Promise<ToolsResult<BrowserPage>> {
+  const request = { threadId, workspaceId: page.workspace.workspaceId, pageId: page.id }
+  if (action === 'share') return bridge.share({ ...request, enabled: !page.sharedOrigin })
+  if (size === 'fit') return bridge.viewport({ ...request, reset: true })
+  const [width, height] = size.split('x').map(Number)
+  return bridge.viewport({ ...request, width: width!, height: height! })
 }
 
 /**

@@ -22,6 +22,8 @@ export interface ThreadBrowser {
   readonly placementProblem: { readonly pageId: string; readonly message: LaterWords } | null
   /** The thread's browser grant while it lives: it opens, navigates, clicks and types without asking (ADR-0029). */
   readonly grant: BrowserGrantView | null
+  /** Counts the times the pane was turned to a page an agent just opened (ADR-0154; Owl only), so it can leave New page. */
+  readonly revealed?: number
 }
 
 const unavailable = ownError('unavailable', msg`Browser is not available in this window.`)
@@ -127,6 +129,10 @@ export class BrowserStore {
   private readonly threads = new Map<string, ThreadBrowser>()
   /** The addresses each thread's browser opened this session, newest first, held only here (ADR-0154). */
   private readonly opened = new Map<string, readonly string[]>()
+  /** The address each page was last recorded at, so only a page arriving somewhere new moves its address to the front. */
+  private readonly recordedAt = new Map<string, string>()
+  /** Off until the quiet pane is on (Owl): stable keeps no addresses (ADR-0072). */
+  private remembering = false
   /** A page to show in a thread's browser as soon as it is listed: one its agent just opened (ADR-0154). */
   private readonly wanted = new Map<string, string>()
   private readonly listeners = new Set<() => void>()
@@ -151,8 +157,24 @@ export class BrowserStore {
 
   /** Makes `pageId` the thread's active page now, or as soon as the page is listed. */
   showPage(threadId: string, pageId: string): void {
-    if (this.threads.get(threadId)?.pages.some(page => page.id === pageId && !page.device)) { this.wanted.delete(threadId); this.select(threadId, pageId); return }
+    const thread = this.threads.get(threadId)
+    if (thread?.pages.some(page => page.id === pageId && !page.device)) {
+      this.wanted.delete(threadId)
+      this.patch(threadId, { activePageId: pageId, notice: null, revealed: (thread.revealed ?? 0) + 1 })
+      return
+    }
     this.wanted.set(threadId, pageId)
+  }
+
+  /**
+   * Whether to keep the addresses each thread's browser opens this session: on only while the quiet pane is (ADR-0154,
+   * an Owl feature). Turning it off forgets them.
+   */
+  setRemembering(on: boolean): void {
+    if (this.remembering === on) return
+    this.remembering = on
+    if (on) { for (const thread of this.threads.values()) this.remember(thread) } else { this.opened.clear(); this.recordedAt.clear() }
+    this.emit()
   }
 
   async activate(bridge: BrowserBridge | undefined, threadId: string): Promise<void> {
@@ -359,21 +381,26 @@ export class BrowserStore {
     const wanted = this.wanted.get(next.threadId)
     if (wanted !== undefined && next.pages.some(page => page.id === wanted && !page.device)) {
       this.wanted.delete(next.threadId)
-      next = { ...next, activePageId: wanted, notice: null }
+      next = { ...next, activePageId: wanted, notice: null, revealed: (next.revealed ?? 0) + 1 }
     }
     this.threads.set(next.threadId, next)
-    this.remember(next)
+    if (this.remembering) this.remember(next)
     this.emit()
   }
 
-  /** Records the addresses a thread's pages are on; a page still waiting to be opened has opened nothing. */
+  /**
+   * Records where a thread's pages are, newest first and at most eight: a page that arrives at an address, a revisit
+   * included, moves it to the front. A page still waiting to be opened, or one that could not load, has opened nothing.
+   */
   private remember(thread: ThreadBrowser): void {
-    let list = this.opened.get(thread.threadId) ?? BrowserStore.NONE
+    const before = this.opened.get(thread.threadId) ?? BrowserStore.NONE
+    let list = before
     for (const page of thread.pages) {
-      if (page.device || page.status === 'unavailable' || page.error === BROWSER_WAITING_TO_OPEN || list[0] === page.url || list.includes(page.url)) continue
-      list = [page.url, ...list].slice(0, 8)
+      if (page.device || page.status === 'unavailable' || page.error === BROWSER_WAITING_TO_OPEN || this.recordedAt.get(page.id) === page.url) continue
+      this.recordedAt.set(page.id, page.url)
+      list = [page.url, ...list.filter(url => url !== page.url)].slice(0, 8)
     }
-    if (list !== (this.opened.get(thread.threadId) ?? BrowserStore.NONE)) this.opened.set(thread.threadId, list)
+    if (list !== before) this.opened.set(thread.threadId, list)
   }
 }
 

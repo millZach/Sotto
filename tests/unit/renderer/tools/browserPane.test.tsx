@@ -14,6 +14,7 @@ import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
 import { BrowserPlayerStore } from '../../../../src/renderer/src/tools/browserPlayerStore'
 import { browserStepWords, browsingWords, shortAddress } from '../../../../src/renderer/src/tools/browserSteps'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
+import { BrowserStore } from '../../../../src/renderer/src/tools/browserStore'
 import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
 import { TOKEN_A, fakeFilesBridge, text } from '../../../fixtures/renderer/fakeFilesBridge'
 
@@ -220,6 +221,77 @@ describe('the quiet browser pane on Owl', () => {
     expect(within(tools).getByRole('textbox', { name: 'Address for a new page' })).toHaveValue('')
     fireEvent.click(within(list).getByRole('button', { name: 'Open localhost:5173/sign-in' }))
     await waitFor(() => expect(browser.bridge.create).toHaveBeenCalledWith(expect.objectContaining({ url: 'http://localhost:5173/sign-in' })))
+  })
+})
+
+describe('the quiet pane after review', () => {
+  it('keeps no addresses on stable, and keeps them newest first on Owl, a revisit moving to the front', async () => {
+    owl(false)
+    const { store } = mount(fakeBrowser([page(PAGE_1, { url: 'http://localhost:5173/a' })]))
+    await within(panel()).findByRole('button', { name: 'Comment on page' })
+    expect(store.browser.openedAddresses('visual-gate')).toEqual([])
+    cleanup()
+
+    const browser = new BrowserStore()
+    expect(browser.openedAddresses('visual-gate')).toEqual([])
+    browser.adopt(page(PAGE_1, { url: 'http://localhost:5173/a' }))
+    expect(browser.openedAddresses('visual-gate')).toEqual([])
+    browser.setRemembering(true)
+    browser.adopt(page(PAGE_1, { url: 'http://localhost:5173/b' }))
+    browser.adopt(page(PAGE_1, { url: 'http://localhost:5173/a' }))
+    expect(browser.openedAddresses('visual-gate')).toEqual(['http://localhost:5173/a', 'http://localhost:5173/b'])
+    // A second page somewhere else goes in front once; other pages' updates do not reorder the list.
+    browser.adopt(page(PAGE_2, { url: 'http://localhost:5173/c' }))
+    browser.adopt(page(PAGE_1, { url: 'http://localhost:5173/a', title: 'Again' }))
+    expect(browser.openedAddresses('visual-gate')).toEqual(['http://localhost:5173/c', 'http://localhost:5173/a', 'http://localhost:5173/b'])
+    for (let index = 0; index < 10; index++) browser.adopt(page(PAGE_2, { url: `http://localhost:5173/${index}` }))
+    expect(browser.openedAddresses('visual-gate')).toHaveLength(8)
+    browser.setRemembering(false)
+    expect(browser.openedAddresses('visual-gate')).toEqual([])
+  })
+
+  it('leaves New page for the page an agent just opened when the user is not in the address field', async () => {
+    owl(true)
+    const browser = fakeBrowser([page(PAGE_1)])
+    mount(browser)
+    const tools = panel()
+    await within(tools).findByRole('textbox', { name: 'Address' })
+    fireEvent.click(within(tools).getByRole('button', { name: 'More browser actions' }))
+    fireEvent.click(within(tools).getByRole('menuitem', { name: 'New page' }))
+    const fresh = within(tools).getByRole('textbox', { name: 'Address for a new page' })
+    fireEvent.change(fresh, { target: { value: 'example.com' } })
+    act(() => fresh.blur())
+    act(() => browser.emit({ type: 'page', page: page(PAGE_2, { url: 'http://localhost:5173/agent' }) }))
+    act(() => browser.emit({ type: 'task', task: task({ pageId: PAGE_2 }) }))
+    await waitFor(() => expect(within(tools).getByRole('textbox', { name: 'Address' })).toHaveValue('http://localhost:5173/agent'))
+    expect(within(tools).queryByRole('textbox', { name: 'Address for a new page' })).not.toBeInTheDocument()
+  })
+
+  it('sends focus to the address when Ask before this thread uses the browser takes More away', async () => {
+    owl(true)
+    const browser = fakeBrowser([], { grant: true })
+    mount(browser)
+    const tools = panel()
+    fireEvent.click(await within(tools).findByRole('button', { name: 'More browser actions' }))
+    fireEvent.click(within(tools).getByRole('menuitem', { name: 'Ask before this thread uses the browser' }))
+    await waitFor(() => expect(within(tools).queryByRole('button', { name: 'More browser actions' })).not.toBeInTheDocument())
+    await waitFor(() => expect(within(tools).getByRole('textbox', { name: 'Address for a new page' })).toHaveFocus())
+  })
+
+  it('says a page the agent cannot see is private on Owl with or without a grant, and leaves stable as it was', async () => {
+    for (const [on, grant] of [[true, true], [true, false], [false, false]] as const) {
+      owl(on)
+      const browser = fakeBrowser([page(PAGE_1, { sharedOrigin: null })], { grant })
+      const { view } = mount(browser)
+      await within(panel()).findByRole('textbox', { name: 'Address' })
+      await act(async () => { await Promise.resolve() })
+      const line = within(panel()).queryByText('This page is private. The agent cannot see it')
+      if (!on) { expect(line).not.toBeInTheDocument(); view.unmount(); continue }
+      expect(line).toBeInTheDocument()
+      fireEvent.click(within(panel()).getByRole('button', { name: 'Share with agent' }))
+      await waitFor(() => expect(browser.bridge.share).toHaveBeenCalledWith(expect.objectContaining({ pageId: PAGE_1, enabled: true })))
+      view.unmount()
+    }
   })
 })
 

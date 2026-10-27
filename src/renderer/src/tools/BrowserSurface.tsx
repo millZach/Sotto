@@ -8,7 +8,7 @@ import { useOptionalAgents } from '../agents/AgentContext'
 import { BrowserTaskDetails } from './BrowserTaskDetails'
 import { appendBrowserFeedback, BrowserFeedback } from './BrowserFeedback'
 import { browserPages, useBrowserTasks, normalizeAddress, pageLabel, useThreadBrowser, type BrowserStore } from './browserStore'
-import { listProblem, PageViewport } from './browserPageView'
+import { changePage, listProblem, PageViewport } from './browserPageView'
 import { BrowserPane } from './BrowserPane'
 import { useOwlFeature } from '../state/owlFeature'
 import { ToolsChrome } from './ToolsChrome'
@@ -124,8 +124,7 @@ function ClassicBrowserSurface({ threadId, store, bridge, onStatus, onFloat }: B
         if (result.ok) setFeedback(result.value)
         else setProblem(result.error.message)
       } else {
-        const [width, height] = (size || '1280x800').split('x').map(Number)
-        const result = action === 'share' ? await bridge.share({ ...request, enabled: !active.sharedOrigin }) : await bridge.viewport(size === 'fit' ? { ...request, reset: true } : { ...request, width: width!, height: height! })
+        const result = await changePage(bridge, threadId, active, action, size)
         if (activeIdRef.current !== active.id) return
         if (result.ok) store.adopt(result.value)
         else setProblem(result.error.message)

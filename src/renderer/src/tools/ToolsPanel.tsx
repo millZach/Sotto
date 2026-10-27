@@ -418,6 +418,8 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   }, [open, chrome.surface, store])
   useProactiveChanges(state, focusedThreadId, store)
   useBrowserOpensItself(quietBrowser && autoShowBrowser, focusedThreadId, store, aside)
+  // Only the quiet pane lists the addresses a thread's browser opened this session; stable keeps none.
+  useEffect(() => { store.browser.setRemembering(quietBrowser) }, [quietBrowser, store])
 
   const changedFiles = workingCopyChanges?.list.status === 'ready' ? { count: workingCopyChanges.list.files.length, truncated: workingCopyChanges.list.truncated } : null
   const agentsThread = delegationOn ? workingCopyThread : selectedThread

@@ -137,7 +137,30 @@ test('the quiet browser pane opens on its own, speaks in one strip, and puts a s
             await shot(launched, `agent-${width}x${height}-${mode}`)
           }
         }
-        await size(launched, 1280, 800); await appearance(page, 'dark')
+        // The wide window: the row, the page and the strip at 1600x1000.
+        await size(launched, 1600, 1000); await appearance(page, 'dark')
+        await expect.poll(async () => nativePages(launched)).toEqual([{ url, bounds: await viewportBounds(panel) }])
+        await fits(page, panel)
+        report['agent-1600x1000-dark'] = { viewport: await viewportBounds(panel) }
+        await shot(launched, 'agent-1600x1000-dark')
+        await size(launched, 1280, 800)
+
+        // Reduced motion: nothing in the pane moves. The loading line under the row is shown for the capture, and it
+        // and the strip's dot are steady with motion reduced, as they are without.
+        await page.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'on' }))
+        await page.emulateMedia({ reducedMotion: 'reduce' })
+        const row = panel.locator('.browser-pane__row')
+        await row.evaluate(element => element.setAttribute('data-loading', ''))
+        const motion = await row.evaluate(element => ({
+          line: getComputedStyle(element, '::after').animationName, lineShown: getComputedStyle(element, '::after').content !== 'none',
+          dot: getComputedStyle(element.closest('.browser-pane')!.querySelector('.browser-pane__dot')!).animationName,
+        }))
+        expect(motion).toEqual({ line: 'none', lineShown: true, dot: 'none' })
+        report['reduced-motion'] = motion
+        await shot(launched, 'reduced-motion-1280x800-dark')
+        await row.evaluate(element => element.removeAttribute('data-loading'))
+        await page.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'system' }))
+        await page.emulateMedia({ reducedMotion: 'no-preference' })
 
         // Pause and Resume, from the strip.
         await strip.getByRole('button', { name: 'Pause' }).click()

@@ -8,7 +8,7 @@ import { useOptionalAgents } from '../agents/AgentContext'
 import { PaneMenu, type PaneMenuItem } from '../agents/PaneMenu'
 import { appendBrowserFeedback } from './BrowserFeedback'
 import { browserPages, normalizeAddress, pageLabel, useBrowserTasks, useOpenedAddresses, useThreadBrowser, type BrowserStore } from './browserStore'
-import { listProblem, PageViewport } from './browserPageView'
+import { changePage, listProblem, PageViewport } from './browserPageView'
 import { browsingWords, shortAddress } from './browserSteps'
 import type { BrowserSurfaceProps } from './BrowserSurface'
 import { ToolsChrome } from './ToolsChrome'
@@ -46,6 +46,17 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
 
   // A different page, or a navigation the page made itself, shows its own address unless the reader is typing.
   useEffect(() => { setDraft(current => current !== null && current.pageId === activeId ? current : null); setProblem(null) }, [activeId])
+  // Tools turned to a page the agent just opened (it never does while focus is in Tools, so nothing typed is lost):
+  // New page gives way to that page.
+  const revealed = browser?.revealed ?? 0
+  const seenReveal = useRef(revealed)
+  useEffect(() => {
+    if (seenReveal.current === revealed) return
+    seenReveal.current = revealed
+    if (document.activeElement === address.current) return
+    setCreating(false)
+    setDraft(null)
+  }, [revealed])
 
   if (!browser || browser.status === 'loading' && browserPages(browser.pages).length === 0) return <><ToolsChrome title={browserTitle} /><p className="files-preview__loading" role="status">{t`Loading pages…`}</p></>
   if (browser.status === 'error' && browserPages(browser.pages).length === 0) {
@@ -65,9 +76,9 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
   // A request waiting for the user comes first; otherwise the newest task still working or paused speaks.
   const waiting = pageTasks.find(item => item.pendingAction !== null)
   const working = pageTasks.find(item => item.status === 'working' || item.status === 'paused')
-  // Under the grant every page is shared, so an unshared one is a page the user made private (ADR-0029). A page an
-  // agent asked to open and nobody has opened yet says nothing.
-  const madePrivate = Boolean(browser.grant && page && !page.sharedOrigin && !agentToolsUnavailable && !waiting && page.error !== BROWSER_WAITING_TO_OPEN)
+  // Share lives in More, so a page the agent cannot see always says so: under the grant one the user made private
+  // (ADR-0029), without it one not yet shared. A page an agent asked to open and nobody has opened yet says nothing.
+  const madePrivate = Boolean(page && !page.sharedOrigin && !agentToolsUnavailable && !waiting && page.error !== BROWSER_WAITING_TO_OPEN)
   const shareWithAgent = t`Share with agent`
   const openInSystemBrowser = t`Open in system browser`
   const title = page ? page.title.trim() : ''
@@ -99,18 +110,20 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
   const closePage = (id: string): void => {
     void store.close(bridge, threadId, id).then(() => { const next = store.thread(threadId)?.activePageId; if (next && browserPages(store.thread(threadId)?.pages ?? []).length > 1) focusTab(next); else focusAddress() })
   }
-  // Ends the thread's browser grant (ADR-0029); the menu has already put focus back on its button.
+  // Ends the thread's browser grant (ADR-0029). The menu puts focus back on its button; with no page, More held only
+  // this and goes with the grant, so focus goes on to the address, the next thing the eye reads.
   const stopGrant = (): void => {
     setProblem(null)
-    void store.stopGrant(bridge, threadId).then(error => { if (error) setProblem(error) })
+    void store.stopGrant(bridge, threadId).then(error => {
+      if (error) { setProblem(error); return }
+      requestAnimationFrame(() => { if (!document.activeElement || document.activeElement === document.body) address.current?.focus() })
+    })
   }
   const pageAction = async (action: 'share' | 'viewport', size?: string): Promise<void> => {
     if (!bridge || !active) return
     setBusy(true); setProblem(null)
-    const request = { threadId, workspaceId: active.workspace.workspaceId, pageId: active.id }
     try {
-      const [width, height] = (size || '1280x800').split('x').map(Number)
-      const result = action === 'share' ? await bridge.share({ ...request, enabled: !active.sharedOrigin }) : await bridge.viewport(size === 'fit' ? { ...request, reset: true } : { ...request, width: width!, height: height! })
+      const result = await changePage(bridge, threadId, active, action, size)
       if (activeIdRef.current !== active.id) return
       if (result.ok) store.adopt(result.value)
       else setProblem(result.error.message)
