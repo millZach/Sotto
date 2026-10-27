@@ -16,6 +16,7 @@ import type { DesktopBranchMoves } from './branchMoves'
 import { rebuildReservations } from './watcherRecords'
 import { isWatcherWorkActive, WATCHER_QUIET_MS, watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
 import { CHECK_HOLDS_THROUGH_BACKGROUND, checkWaitingWords, WATCHER_CHECK_STOP, WATCHER_CHECK_STOP_AWAY, type CheckQueue } from './checkQueue'
+import { checkInstallFailedWords, checkInstallWords } from './checkWorktree'
 import { DELEGATION_LEVELS_MAX, delegatedThreadsBelow } from '../../shared/delegation'
 import { WATCHER_COMPACT_AT } from '../../shared/settings'
 import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, WATCHER_STATE_COMPUTED_MAX, watcherToolSchemas,
@@ -1357,6 +1358,16 @@ export class WatcherService implements WatcherControlHooks {
   private checkNote(operationId: string): string {
     const checks = this.options.checks
     return checkWaitingWords(checks?.machine ?? 'This computer', checks?.ahead(this.checkOf.get(operationId)?.ticket ?? operationId) ?? 0, WATCHER_CHECK_STOP)
+  }
+  /**
+   * A check here whose turn came and that installs packages first, or whose install failed (#1312, third part): its first
+   * prompt waits for the install, so its outcome is working until then.
+   */
+  private checkInstallNote(operation: WatcherOperation, outcome: WatcherOutcome, thread: AgentThread | undefined): string | undefined {
+    const checks = this.options.checks, install = thread?.worktree?.check?.install
+    if (!checks || !install || operation.action !== 'start' || operation.target.hostId !== this.hostId()) return undefined
+    if (install === 'running' && outcome === 'working') return checkInstallWords(checks.machine)
+    return install === 'failed' && (outcome === 'working' || outcome === 'background') ? checkInstallFailedWords(checks.machine) : undefined
   }
   /** Whether this operation is a check waiting its turn here (#1312). */
   private checkWaits(operationId: string): boolean { return this.checkOf.get(operationId)?.waiting !== undefined }
@@ -3130,7 +3141,8 @@ export class WatcherService implements WatcherControlHooks {
     const read: OutcomeRead = { outcome, reference: { target: operation.target, ...(operation.turnMessageId ? { turnMessageId: operation.turnMessageId } : {}),
       ...(operation.nativeTurnId ? { nativeTurnId: operation.nativeTurnId } : {}), ...(operation.replyMessageId ? { replyMessageId: operation.replyMessageId } : {}) },
     outcomeNote: outcome === 'background' && thread && operation.turnMessageId !== undefined && !watcherBriefTurnIsNewest(thread, operation.turnMessageId)
-      ? BACKGROUND_MOVED_ON : held ? queuedSendHeld(held) : this.checkWaits(operation.id) ? this.checkNote(operation.id) : OUTCOME_NOTES[outcome],
+      ? BACKGROUND_MOVED_ON : held ? queuedSendHeld(held) : this.checkWaits(operation.id) ? this.checkNote(operation.id)
+        : this.checkInstallNote(operation, outcome, thread) ?? OUTCOME_NOTES[outcome],
     ...(evidence.length ? { evidence } : {}) }
     if (outcome !== 'answered' || !operation.replyMessageId) return read
     if (!this.options.historyEnabled() && !this.answeredThisRun.has(operation.id)) return { ...read, replyUnavailable: { reason: 'history-off',
@@ -3727,8 +3739,10 @@ export class WatcherService implements WatcherControlHooks {
         try {
           // Read inside the try: a permission that no longer fits once the branch has landed lets go of its ref too.
           // A start from a moved branch gets a new worktree made from it, on this machine as on a paired host (#1033).
-          const choices = create.fromMove ? { workingCopy: 'independent' as const, startFromMove: create.fromMove, ...create.madeFrom ? { madeFrom: create.madeFrom } : {} }
+          const copies = create.fromMove ? { workingCopy: 'independent' as const, startFromMove: create.fromMove, ...create.madeFrom ? { madeFrom: create.madeFrom } : {} }
             : await this.resolveCopies(create)
+          // A check this machine queues works in the machine's check worktree when it gets a new worktree (#1312).
+          const choices = checks ? { ...copies, check: true as const } : copies
           const limits = this.permissionLimits(this.record().requests.find(item => item.id === operation.requestId), this.hostId())
           const permission = this.permission(resolveModel(this.options.control.watcherSnapshot().models, modelId), create.permission, limits)
           const createOrigin: WatcherCommandOrigin = { operationId: operation.id, guard: () => {

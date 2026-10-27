@@ -4,6 +4,7 @@ import { lstat, mkdir, opendir, readdir, readFile, readlink, realpath, rm, stat,
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path'
 import { RECLAIM_WORKTREE_NEEDS_CONFIRMATION, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentWorktree } from '../../shared/agents'
 import { movedWorktreeWords } from '../../shared/branchMoves'
+import { CHECK_MOVED_TO, CHECK_WORKTREE_FOLDER } from './checkWorktree'
 import { FolderRemovalStalled, removeFolderContents } from './folderRemoval'
 import { launchProcess, runToExit } from './gitLauncher'
 import { QUIET_GIT_ENV } from './gitStatus'
@@ -221,6 +222,8 @@ export async function checkoutIdentity(folder: string, git: RunGit = runWorktree
 const registryOperations = new Map<string, Promise<void>>()
 /** Moved-branch worktrees being added, by repository: one at a time, so two starts never take the same `<name>-<n>`. */
 const movedBranchPicks = new Map<string, Promise<void>>()
+/** Moves of one check worktree take turns (#1312), so two starts never move the same folder at once. */
+const checkWorktreeMoves = new Map<string, Promise<void>>()
 /** Removals of one reserved folder take turns (#1297), so a second finisher waits instead of deleting beside the first. */
 const removalOperations = new Map<string, Promise<void>>()
 interface RegistryIdentity { readonly common: string; readonly key: string }
@@ -750,6 +753,61 @@ export class ThreadWorktrees {
         }
       }
     })
+  }
+  /**
+   * The repository's one check worktree on this machine (#1312, third part), moved to a check's commit for that check's
+   * thread, which works in it as a reused folder: no thread owns it, so none reclaims it. It is added the first time, on
+   * a detached HEAD, under `check-worktrees/` in Sotto's data folder; after that it is moved, and the packages its
+   * `node_modules` holds stay. Undefined when it is not taken, and the check gets a worktree of its own as before: a thread
+   * working in it is `busy`, or moving it could lose work (CHECK_WORKTREE_PREVIOUS_THREAD), or Git refused.
+   * `metadata` is the check's allocation, whose `baseCommit` it starts from. The incoming ref the commit arrived in goes
+   * once the folder has it checked out, since the folder's HEAD then keeps the commit.
+   */
+  async takeCheckWorktree(metadata: AgentWorktree, busy: (path: string) => boolean): Promise<AgentWorktree | undefined> {
+    const { repositoryRoot, baseCommit } = metadata
+    if (!repositoryRoot || !baseCommit) return undefined
+    const identity = await this.registryIdentity(repositoryRoot)
+    const folder = join(await realpath(this.directory), CHECK_WORKTREE_FOLDER)
+    const path = join(folder, createHash('sha256').update(identity.key).digest('hex').slice(0, 16))
+    return takeTurns(checkWorktreeMoves, pathKey(path), async () => {
+      const entries = registeredWorktrees(await this.registry(repositoryRoot, ['worktree', 'list', '--porcelain', '-z'], identity))
+      const registered = entries.find(entry => pathKey(entry.path) === pathKey(path))
+      if (!registered) {
+        if (await reservedFolder(path) === 'occupied') return undefined
+        await mkdir(folder, { recursive: true })
+        if (pathKey(await realpath(folder)) !== pathKey(folder)) return undefined
+        await coordinateRegistry(identity, () => this.git(repositoryRoot, ['worktree', 'add', '--detach', '--', path, baseCommit]))
+      } else {
+        if (registered.locked || registered.prunable || busy(path)) return undefined
+        if (pathKey(await realpath(path)) !== pathKey(path)) return undefined
+        // Uncommitted changes and untracked files are work; ignored ones, `node_modules` and build output, are what is kept.
+        if ((await this.git(path, ['status', '--porcelain', '--untracked-files=all'])).trim()) return undefined
+        // A branch checked out there keeps its commits when the folder moves; a detached HEAD keeps only the commit Sotto put there.
+        const onBranch = await this.git(path, ['symbolic-ref', '-q', 'HEAD']).then(() => true, () => false)
+        if (!onBranch) {
+          const head = (await this.git(path, ['rev-parse', '--verify', 'HEAD^{commit}'])).trim()
+          if (head !== baseCommit && head !== await this.checkMovedTo(path)) return undefined
+        }
+        await this.git(path, ['checkout', '--detach', '--quiet', baseCommit])
+      }
+      await this.recordCheckMovedTo(path, baseCommit)
+      const ref = metadata.incomingRef
+      if (ref && INCOMING_REF.test(ref)) await this.git(repositoryRoot, ['update-ref', '-d', '--no-deref', ref]).catch(() => undefined)
+      const taken: AgentWorktree = { mode: 'independent', status: 'pending', path, repositoryRoot: await realpath(repositoryRoot), baseCommit, reused: true,
+        ...(metadata.projectRelativePath !== undefined ? { projectRelativePath: metadata.projectRelativePath } : {}), ...(metadata.check ? { check: metadata.check } : {}) }
+      return (await this.inspectWithin(taken, identity)).worktree
+    })
+  }
+  /** The commit Sotto last moved this check worktree to, from the worktree's own Git folder. */
+  private async checkMovedTo(path: string): Promise<string | undefined> {
+    try {
+      const gitFolder = (await this.git(path, ['rev-parse', '--path-format=absolute', '--git-dir'])).trim()
+      return (await readFile(join(gitFolder, CHECK_MOVED_TO), 'utf8')).trim() || undefined
+    } catch { return undefined }
+  }
+  private async recordCheckMovedTo(path: string, commit: string): Promise<void> {
+    const gitFolder = (await this.git(path, ['rev-parse', '--path-format=absolute', '--git-dir'])).trim()
+    await writeFile(join(gitFolder, CHECK_MOVED_TO), `${commit}\n`, 'utf8')
   }
   /** Removes the incoming ref a worktree was made from, once the worktree is gone (ADR-0082 decision 3). */
   private async withoutIncomingRef(record: AgentWorktree): Promise<AgentWorktree> {

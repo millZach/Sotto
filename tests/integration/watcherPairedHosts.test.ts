@@ -2236,6 +2236,29 @@ it('runs Watcher’s checks on This computer one at a time, answers a waiting on
   expect(made(third.target.threadId)).toBe(false)
 })
 
+it('starts Watcher’s check in the check worktree, installing packages first and saying so while they install (#1312)', async () => {
+  const f = await fromBranch()
+  const installs: string[] = []
+  let finish!: () => void
+  f.workspace.host.allowCheckWorktrees(async folder => { installs.push(folder); await new Promise<void>(resolve => { finish = resolve }); return 'installed' })
+  // The snapshot carries an untracked package-lock.json, which node_modules there was never installed from.
+  await writeFile(join(f.local.path, 'package-lock.json'), '{ "lockfileVersion": 3 }\n')
+  const call = f.watcher.startCall(f.id, 'start_thread', { ...f.staysHere(), title: 'Synthetic check', workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread, testRun: true }, { waitMs: 4_000 })
+  // The call answers inside its wait while the start carries on: its first prompt waits for the install, so it reads as still under way.
+  const started = await call.answer as { receipt: { operationId: string; target: { threadId: string } } }
+  expect(started).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN', retryable: true })
+  const worktree = () => f.control.shell().host.threads.find(thread => thread.id === started.receipt.target.threadId)?.worktree
+  await vi.waitFor(() => expect(installs).toHaveLength(1))
+  expect(worktree()).toMatchObject({ status: 'pending', reused: true, check: { install: 'running' } })
+  expect(worktree()?.path).toContain('check-worktrees')
+  const read = watcherToolSchemas.read_operation.output.parse(await f.watcher.invoke(f.id, 'read_operation', { operationId: started.receipt.operationId }))
+  expect(read).toMatchObject({ status: 'ok', outcome: 'working',
+    outcomeNote: 'Installing packages first, because package-lock.json changed since the last check on This computer. The checks start when that finishes.' })
+  finish()
+  await call.settled
+  expect(worktree()).toMatchObject({ status: 'ready', reused: true, check: {} })
+}, 60_000)
+
 it('sends a check to a host that keeps its own queue, which answers a waiting one at once and starts it when the one ahead ends; a stable desktop sends none (#1312)', async () => {
   const f = await master(undefined, false, { setting: () => 'this-computer' })
   expect(f.hello.features).toContain('watcher-check-queue')
