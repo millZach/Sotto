@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
-  addRipple, along, boxDistance, heldRoom, inLane, owlLayer, CELL, COLUMN_BLEND, COLUMN_GAP, COLUMN_QUIET, columnCeiling, columnFactor, frameDelay, frameDue, frameSleep, gridFor, IDLE_CHECK_MS, inMargin, isLightSurface, layoutScene, liveRipples, LIGHT_ACCENT_BOOST,
+  addRipple, airProgress, along, boxDistance, CALM_STEP, calmStepDelay, OWL_CROUCH, OWL_FOLD, wingFrame, WINGBEAT, heldRoom, inLane, owlLayer, CELL, COLUMN_BLEND, COLUMN_GAP, COLUMN_QUIET, columnCeiling, columnFactor, frameDelay, frameDue, frameSleep, gridFor, IDLE_CHECK_MS, inMargin, isLightSurface, layoutScene, liveRipples, LIGHT_ACCENT_BOOST,
   glassOpacity, LIGHT_INK_BOOST, MAX_RIPPLES, MOVING_MS, nextPlace, over, OWL_GAP, OWL_STAY, owlAt, owlRoom, placeStars, planFlight, quietAt, RIPPLE_LIFE, rippleAt, rippleReach, sceneInk, wordContrast, WORD_CONTRAST,
   starStrength, stayAt, STILL_RIPPLE_LIFE, TREES_MIN_MARGIN, twinkleStep, type SceneLayout, type SceneMeasure, type WatcherOwlState,
 } from '../../../src/renderer/src/watcher/nightScene'
@@ -222,6 +222,58 @@ describe('Watcher’s owl', () => {
     near(along(fromTree.route, 1).y, layout.composerPerch.right.y)
     const sitting = owlAt(5, layout, { at: 'composer', side: 'right', flight: null, next: 99 }, { still: false }).pose
     expect([sitting.x, sitting.y]).toEqual([layout.composerPerch.right.x, layout.composerPerch.right.y])
+  })
+
+  it('beats in seven whole frames, down faster than up, and glides nowhere between them', () => {
+    const frames = new Set<number>()
+    for (let k = 0; k < 400; k++) frames.add(wingFrame(k / 400).flap)
+    expect(frames.size).toBe(7)
+    expect([...frames].every(flap => WINGBEAT.some(key => key.flap === flap))).toBe(true)
+    // The downstroke, wings high to the bottom, takes about a third of the beat.
+    const whole = WINGBEAT.reduce((sum, key) => sum + key.hold, 0)
+    const down = WINGBEAT.slice(1, 4).reduce((sum, key) => sum + key.hold, 0)
+    expect(down / whole).toBeLessThan(0.4)
+    expect(airProgress(0)).toBe(0)
+    near(airProgress(1), 1)
+    for (let k = 0.01; k <= 1; k += 0.01) expect(airProgress(k)).toBeGreaterThan(airProgress(k - 0.01))
+  })
+
+  it('crouches, moves in whole cells from the perch it lands on, and lands and folds without passing it', () => {
+    const flight = planFlight(layout, home, 'tree', 10)
+    expect(flight.calm).toBe(false)
+    near(flight.dur, OWL_CROUCH + flight.air + OWL_FOLD)
+    const state = { ...home, flight }
+    const crouch = owlAt(10 + OWL_CROUCH / 2, layout, state, { still: false }).pose
+    expect([crouch.x, crouch.y, crouch.spread]).toEqual([layout.home.x, layout.home.y, 0])
+    expect(crouch.squash).toBeLessThan(1)
+    for (let t = 10 + OWL_CROUCH; t < 10 + OWL_CROUCH + flight.air; t += 1 / 30) {
+      const pose = owlAt(t, layout, state, { still: false }).pose
+      expect(Number.isInteger(Math.round((pose.x - layout.visit.x) / CELL.w * 1e6) / 1e6)).toBe(true)
+      expect(Number.isInteger(Math.round((pose.y - layout.visit.y) / CELL.h * 1e6) / 1e6)).toBe(true)
+      // The other tree is to the right: the owl never goes past it.
+      expect(pose.x).toBeLessThanOrEqual(layout.visit.x + CELL.w / 2)
+    }
+    const fold = owlAt(10 + OWL_CROUCH + flight.air + OWL_FOLD / 2, layout, state, { still: false }).pose
+    expect([fold.x, fold.y]).toEqual([layout.visit.x, layout.visit.y])
+    expect(fold.spread).toBeLessThan(0.95)
+  })
+
+  it('with motion reduced, goes perch to perch in a few still steps, waking only for each', () => {
+    const flight = planFlight(layout, home, 'tree', 10, true)
+    expect(flight.calm).toBe(true)
+    const at = (t: number) => owlAt(t, layout, { ...home, flight }, { still: false, calm: true })
+    const poses = [10.1, 10 + CALM_STEP + 0.1, 10 + 2 * CALM_STEP + 0.1, 10 + 3 * CALM_STEP + 0.01].map(t => at(t))
+    expect(poses.map(p => p.stage)).toEqual(['perched', 'flying', 'flying', 'perched'])
+    expect([poses[0]!.pose.x, poses[3]!.pose.x]).toEqual([layout.home.x, layout.visit.x])
+    for (const { pose } of poses) expect([pose.bank, pose.legs]).toEqual([0, 0])
+    // Within a step nothing changes, so nothing needs drawing.
+    expect(at(10 + CALM_STEP + 0.1).pose).toEqual(at(10 + CALM_STEP + 0.6).pose)
+    expect(calmStepDelay(flight, 10.2)).toBeCloseTo((CALM_STEP - 0.2) * 1000, 3)
+    expect(calmStepDelay(planFlight(layout, home, 'tree', 10), 10.2)).toBeNull()
+    expect(calmStepDelay(null, 10.2)).toBeNull()
+    // Sitting with motion reduced it holds still: no turning, no blinking.
+    const sat = owlAt(4.7 * 3 - 1.3, layout, { at: 'tree', side: 'left', flight: null, next: 99 }, { still: false, calm: true }).pose
+    expect([sat.x, sat.y, sat.turn, sat.blink]).toEqual([layout.visit.x, layout.visit.y, 0, false])
   })
 
   it('turns to watch a newcomer, and to look where the margin was pressed', () => {

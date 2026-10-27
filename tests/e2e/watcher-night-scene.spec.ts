@@ -361,7 +361,7 @@ test.describe("Watcher's night scene on the built app", () => {
     }))
   })
 
-  test('reduced motion: nothing flies, owls sit from the first frame, and the scene holds still', async () => {
+  test('reduced motion: owls sit from the first frame, and the scene holds still', async () => {
     await onReleaseTrack('owl', () => withSotto(launchOptions('dark', { motion: 'reduced', live: true }), async (launched) => {
       const { page } = launched
       await openThreads(page)

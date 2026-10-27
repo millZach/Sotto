@@ -6,7 +6,7 @@ import type { WatcherScene } from '../../../shared/watcherScene'
 import { slimMoving } from '../agents/slimComposer'
 import { useReducedMotion } from '../state/reducedMotion'
 import {
-  addRipple, frameDelay, frameDue, frameSleep, glassOpacity, heldRoom, inMargin, liveRipples, nextPlace, owlAt, planFlight, sceneInk, stayAt,
+  addRipple, calmStepDelay, frameDelay, frameDue, frameSleep, glassOpacity, heldRoom, inMargin, liveRipples, nextPlace, owlAt, planFlight, sceneInk, stayAt,
   type Box, type Look, type OwlStage, type Rgb, type Ripple, type SceneLayout, type SceneMeasure, type WatcherOwlState, type Word,
 } from './nightScene'
 import { toRgb } from './canvasColor'
@@ -149,7 +149,8 @@ interface Target {
  * pointer only: they show the thread's name and open it, as the Watched view does from the keyboard. The scene draws
  * about 30 frames a second while something flies or fades, checks 8 times a second while it only blinks and twinkles and
  * paints only when that changed the picture, and draws nothing when nothing moves, the window is hidden or the scene
- * has gone. With motion reduced, or `held` for a capture, nothing flies: owls appear and fade, and the scene holds still.
+ * has gone. With motion reduced the thread owls appear and fade, the scene holds still, and Watcher's owl goes from perch
+ * to perch in a few calm steps, the scene waking only for each step; `held` for a capture keeps it at home.
  *
  * The scene is set in the place the user picked in Settings → Appearance (ADR-0149). A new place is drawn whole in the
  * frame it is picked, under a copy of the last place's landscape that fades away over it, so the scene never shows a
@@ -172,6 +173,8 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, onO
   const { t: say } = useLingui()
   const reduced = useReducedMotion()
   const still = reduced || held
+  // With motion reduced the owl still goes from perch to perch, in a few calm steps; a capture's clock holds it at home.
+  const calm = reduced && !held
   const [phase, setPhase] = useState<'shown' | 'leaving' | 'gone'>(shown ? 'shown' : 'gone')
   const [targets, setTargets] = useState<readonly Target[]>([])
   const [tip, setTip] = useState<Target | null>(null)
@@ -180,6 +183,7 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, onO
   // owl where it was.
   const kept = useRef<{ family: OwlFamily | null; watcher: WatcherOwlState }>({ family: null, watcher: { at: 'home', side: 'left', flight: null, next: 0 } })
   const stillRef = useRef(still)
+  const calmRef = useRef(calm)
   const owlsRef = useRef(owls)
   const placeRef = useRef(place)
   const movePlaceRef = useRef<() => void>(() => undefined)
@@ -198,7 +202,7 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, onO
     return () => window.clearTimeout(timer)
   }, [shown])
   useEffect(() => { leaving.current = phase === 'leaving' }, [phase])
-  useEffect(() => { stillRef.current = still; settleRef.current(); wakeRef.current() }, [still])
+  useEffect(() => { stillRef.current = still; calmRef.current = calm; settleRef.current(); wakeRef.current() }, [still, calm])
   useEffect(() => { owlsRef.current = owls; takeOwlsRef.current() }, [owls])
   useEffect(() => { placeRef.current = place; movePlaceRef.current() }, [place])
   // A tip goes with its owl when the owl leaves, and takes the owl's new words and place while it stays.
@@ -271,11 +275,11 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, onO
     }
     /** Watcher's owl between frames: a finished flight lands, and a due one sets off. */
     const stepWatcher = (t: number): void => {
-      if (layout?.mode !== 'trees' || stillRef.current) return
+      if (layout?.mode !== 'trees' || (stillRef.current && !calmRef.current)) return
       const flight = watcher.flight
       if (flight !== null && t >= flight.t0 + flight.dur) watcher = { at: flight.to, side: flight.side, flight: null, next: t + stayAt(flight.to, Math.random()) }
       if (watcher.flight === null && t >= watcher.next) {
-        const next = planFlight(layout, watcher, nextPlace(watcher.at, Math.random(), layout.lane === null), t)
+        const next = planFlight(layout, watcher, nextPlace(watcher.at, Math.random(), layout.lane === null), t, calmRef.current)
         watcher = { ...watcher, flight: next }
       }
     }
@@ -305,12 +309,12 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, onO
       // Display frames come at the display's own rate; the scene draws only on the ones that are due.
       if (delay === null || !frameDue(now, last, delay)) { if (delay !== null) request = requestAnimationFrame(frame); return }
       last = now
-      const t = clock(), isStill = stillRef.current
+      const t = clock(), isStill = stillRef.current, isCalm = calmRef.current
       family.step(t)
       stepWatcher(t)
       ripples = liveRipples(ripples, t, isStill)
       const trees = layout.mode === 'trees'
-      const owlNow = trees ? owlAt(t, layout, watcher, { still: isStill, look, watch: family.newcomer(t) }) : null
+      const owlNow = trees ? owlAt(t, layout, watcher, { still: isStill && !isCalm, calm: isCalm, look, watch: family.newcomer(t) }) : null
       const marker = family.marker, count = family.pileCount, poses = family.poses(t)
       const pile = marker !== null && count > 0 ? { spot: marker, count } : null
       const painted = painter.draw({ t, still: isStill, ripples, watcher: owlNow, owls: poses, whirl: family.whirl(t), pile })
@@ -323,7 +327,13 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, onO
       const looking = look !== null && t - look.t < 1.8
       // At rest only the trees' stars and owls, or the rail's waking and glowing eyes, change; with neither, nothing waits.
       const restless = layout.mode === 'trees' || (layout.mode === 'rail' && family.owls.some(item => item.mood !== 'asleep'))
-      delay = frameDelay(family.moving(t) || owlNow?.stage === 'flying' || looking, ripples.length, isStill || !restless)
+      delay = frameDelay(family.moving(t) || (owlNow?.stage === 'flying' && !isCalm) || looking, ripples.length, isStill || !restless)
+      // With motion reduced the scene draws nothing between changes, so it wakes for the owl's next calm step, or for
+      // when it next sets off.
+      if (isCalm && trees) {
+        const wait = calmStepDelay(watcher.flight, t) ?? Math.max(0, (watcher.next - t) * 1000)
+        delay = delay === null ? wait : Math.min(delay, wait)
+      }
       schedule()
     }
     /** Draws the next frame now, rather than when the current pace would. */
