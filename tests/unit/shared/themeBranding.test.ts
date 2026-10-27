@@ -56,7 +56,7 @@ describe('widget palette projection', () => {
     expect(DEFAULT_WIDGET_PALETTE.appIcon).toEqual({ light: true, dark: true })
     expect(widgetPaletteFor({ lightTheme: DEFAULT_THEME_ID, darkTheme: custom.id, customThemes: [custom] }).appIcon)
       .toEqual({ light: true, dark: false })
-    expect(widgetPaletteFor({ lightTheme: 'hush', darkTheme: 'nocturne', customThemes: [] }).appIcon)
+    expect(widgetPaletteFor({ lightTheme: 'hush', darkTheme: 'graphite', customThemes: [] }).appIcon)
       .toEqual({ light: false, dark: false })
     // A half whose theme is gone lands on the default, so the app icon comes back with it.
     expect(widgetPaletteFor({ lightTheme: 'deleted-theme', darkTheme: 'hush', customThemes: [] }).appIcon)
@@ -68,8 +68,8 @@ describe('widget palette projection', () => {
   })
 
   it('projects presentation from settings without leaking unrelated fields', () => {
-    const settings: AppSettings = { ...DEFAULT_SETTINGS, theme: 'light', reducedMotion: 'on', lightTheme: 'tropic', llmApiKey: 'secret' }
-    const presentation = widgetPresentationFor(settings)
+    const settings: AppSettings = { ...DEFAULT_SETTINGS, theme: 'light', reducedMotion: 'on', lightTheme: 'fern', llmApiKey: 'secret' }
+    const presentation = widgetPresentationFor(settings, false)
     expect(Object.keys(presentation).sort()).toEqual(['palette', 'reducedMotion', 'theme'])
     expect(presentation.theme).toBe('light')
     expect(presentation.reducedMotion).toBe('on')
@@ -121,9 +121,9 @@ describe('theme brand', () => {
   })
 
   it('distinguishes contrasting themes', () => {
-    const nocturne = themeBrand(getThemeColorsForMode(BUILT_IN_THEMES.find(theme => theme.id === 'nocturne')!, 'dark')!, 'dark')
-    const tropic = themeBrand(getThemeColorsForMode(BUILT_IN_THEMES.find(theme => theme.id === 'tropic')!, 'dark')!, 'dark')
-    expect(nocturne.tile).not.toBe(tropic.tile)
+    const graphite = themeBrand(getThemeColorsForMode(BUILT_IN_THEMES.find(theme => theme.id === 'graphite')!, 'dark')!, 'dark')
+    const fern = themeBrand(getThemeColorsForMode(BUILT_IN_THEMES.find(theme => theme.id === 'fern')!, 'dark')!, 'dark')
+    expect(graphite.tile).not.toBe(fern.tile)
   })
 
   it('replaces an unreadable accent foreground rather than painting an invisible glyph', () => {

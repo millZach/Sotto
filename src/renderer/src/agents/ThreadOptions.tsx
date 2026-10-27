@@ -5,6 +5,7 @@ import { msg, t } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { hostForThread, capabilitiesForThread, isThreadProviderConnected, PROVIDER_LABELS, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, THREAD_SETTINGS_UNRECONCILED, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../../shared/agents'
 import { catalogEntry, chosenModelId, resolveModel } from '../../../shared/modelCatalog'
+import { ULTRACODE } from '../../../shared/ultracode'
 import type { AgentConnection } from './AgentContext'
 import { shownWords, wordsOf, type LaterWords } from './interfaceWords'
 import { moveListboxFocus } from './listboxKeys'
@@ -12,6 +13,7 @@ import { ModelPicker, type UnavailablePickerProvider } from './ModelPicker'
 import { useOwnServersBridge } from './OwnModelServers'
 import { localHostId } from '../features/onboarding/localAgents'
 import { EffortPicker, effortLabel } from './EffortPicker'
+import { ultracodeLevel } from './ultracodeLevel'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { providerKey } from './threadFacts'
 import { FAST_MODE_NOT_CARRIED, FAST_OFF, FAST_ON, pendingSettingsStore, permissionPatch, settingValues, settingValuesFor, unconfirmedKinds, usePendingSettings, usesProviderModes, type SettingKind, type SettingsPatch } from './pendingSettings'
@@ -83,9 +85,12 @@ export interface ChoiceOption {
   readonly translated?: boolean
 }
 
-/** The effort levels a model offers, led by the current one as unchoosable when the model does not offer it. */
-export function effortChoices(model: AgentModel | undefined, reasoning: string): ChoiceOption[] {
-  const efforts = model?.reasoningEfforts ?? []
+/**
+ * The effort levels a model offers, led by the current one as unchoosable when the model does not offer it. Ultracode
+ * is offered only where a person picks a thread's own effort (`ultracode`), never for Watcher or a worker role (ADR-0148).
+ */
+export function effortChoices(model: AgentModel | undefined, reasoning: string, { ultracode = false }: { readonly ultracode?: boolean } = {}): ChoiceOption[] {
+  const efforts = (model?.reasoningEfforts ?? []).filter(effort => ultracode || effort !== ULTRACODE)
   if (efforts.length === 0) return []
   const lead = efforts.includes(reasoning) ? [] : [{ id: reasoning, label: reasoning ? capitalise(reasoning) : t`Provider default`, disabled: true }]
   return [...lead, ...efforts.map(effort => ({ id: effort, label: capitalise(effort) }))]
@@ -138,7 +143,7 @@ export function ThreadOptionFields({ models, modelId, reasoningEffort, runtimeMo
   useInterfaceLanguage()
   const model = resolveModel(models, modelId)
   const reasoning = reasoningEffort ?? model?.defaultReasoningEffort ?? ''
-  const efforts = effortChoices(model, reasoning)
+  const efforts = effortChoices(model, reasoning, { ultracode: true })
   const own = usesProviderModes(model)
   const modes = modeChoices(model, runtimeMode, providerMode)
   const { t } = useLingui()
@@ -524,7 +529,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const fastOn = (settings.pending.fast?.value ?? unpressed.fast) === FAST_ON
   const fastProvider = model?.providerId ?? thread.providerId
   const showFast = offersFastMode(model, fastProvider)
-  const efforts = effortChoices(model, reasoning)
+  const efforts = effortChoices(model, reasoning, { ultracode: !watcher })
   const modes = modeChoices(model, thread.runtimeMode, thread.providerMode)
   const providers = new Set(models.map(item => item.provider)).size
   const providerName = thread.providerId ? PROVIDER_LABELS[thread.providerId] : model?.provider
@@ -598,7 +603,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
           press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)
           orchestrating?.(modelId, reasoningEffort, state.host.models)
         }}
-        defaultValue={model?.defaultReasoningEffort} modelName={model?.name}
+        defaultValue={model?.defaultReasoningEffort} modelName={model?.name} ultracodeEffort={ultracodeLevel(state, thread, model)}
         hasUltrathink={hasUltrathink} {...(addUltrathink ? { onUltrathink: addUltrathink } : {})} />}
       {watcher
         ? <WatcherPermissionChip model={model} provider={provider} inForce={thread.runtimeMode} noticeSlot={noticeSlot}

@@ -46,7 +46,6 @@ import { Field } from '../../components/Field'
 import { Select } from '../../components/Select'
 import { SegmentedControl } from '../../components/SegmentedControl'
 import { Toggle } from '../../components/Toggle'
-import { NightFallsSettings } from './NightFallsSettings'
 import { WatcherCompactionSetting } from './WatcherCompactionSetting'
 import { SettingsGroup } from './SettingsGroup'
 import { NotificationSettings } from './NotificationSettings'
@@ -786,10 +785,7 @@ export function SettingsView({
                 <CloudIphoneSettings settings={settings} onUpdateSettings={onUpdateSettings} /></Card>
 
               <div id="settings-appearance-panel" className="settings-category" {...panelProps('settings-appearance')}>
-                <AppearanceSettings settings={settings} platform={platform} onSave={save} getSettings={() => settingsRef.current}>
-                  <Field setting="reduced-motion" label={t`Reduced motion`} description={copy.settingsReducedMotionDescription}><Select value={settings.reducedMotion} onChange={(event) => void saveMotion(event.currentTarget.value as ReducedMotion)}><option value="system">{t`Follow system`}</option><option value="on">{t`Reduce motion`}</option></Select></Field>
-                  {nightFallsOn ? <NightFallsSettings settings={settings} onSave={save} /> : null}
-                </AppearanceSettings>
+                <AppearanceSettings settings={settings} platform={platform} onSave={save} getSettings={() => settingsRef.current} onSaveMotion={reducedMotion => void saveMotion(reducedMotion)} />
               </div>
 
               <Card className="settings-section" id="settings-privacy" {...panelProps('settings-privacy')}>

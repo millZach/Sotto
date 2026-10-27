@@ -107,7 +107,9 @@ describe('Claude native subscription client', () => {
     const f = await fixture()
     const account = await f.client.status()
     expect(account).toMatchObject({ installed: true, ready: true, defaultModelId: 'default', allowCustomModel: true })
-    expect(account.models).toEqual(nativeModels.map(model => ({ id: model.value, name: catalogName(model), reasoningEfforts: model.supportedEffortLevels ?? [] })))
+    // Ultracode follows Max on the model with Extra high (ADR-0148); every other list is the CLI's own.
+    expect(account.models).toEqual(nativeModels.map(model => ({ id: model.value, name: catalogName(model),
+      reasoningEfforts: model.supportedEffortLevels?.includes('xhigh') ? [...model.supportedEffortLevels, 'ultracode'] : model.supportedEffortLevels ?? [] })))
     expect(account.models.some(model => model.defaultReasoningEffort !== undefined)).toBe(false)
     expect(JSON.stringify(account)).not.toContain('private-fixture')
     const discovery = (await f.calls()).at(-1)!

@@ -1,4 +1,4 @@
-import { APP_MAXIMIZED, APP_WINDOW_HIDDEN, WIDGET_VISIBILITY } from '../../shared/channels'
+import { APP_MAXIMIZED, APP_WINDOW_HIDDEN, APP_WINDOW_VISIBLE, WIDGET_VISIBILITY } from '../../shared/channels'
 import { APP_NAME } from '../../shared/constants'
 import type {
   WidgetDragPayload,
@@ -6,6 +6,7 @@ import type {
   WidgetPresentationPayload,
   WidgetVisibilityPayload,
 } from '../../shared/contracts'
+import { glassWindowArguments, type GlassWindowMaterial } from '../../shared/glassWindow'
 import { PLATFORM_ARGUMENT_PREFIX, type SottoPlatform } from '../../shared/platform'
 import type {
   MainWindowChrome,
@@ -66,6 +67,11 @@ export interface WindowConstructorOptions {
   readonly show: false
   readonly title?: string
   readonly backgroundColor?: string
+  /** Windows 11: the blurred material behind a see-through Glass window (ADR-0150). */
+  readonly backgroundMaterial?: 'acrylic'
+  /** macOS: the same, as window vibrancy. */
+  readonly vibrancy?: 'under-window'
+  readonly visualEffectState?: 'followWindow'
   readonly autoHideMenuBar: true
   readonly resizable?: false
   readonly maximizable?: false
@@ -108,8 +114,21 @@ function mainWindowChromeOptions(
   }
 }
 
-/** The main window is always solid: black behind the room, with no system material (ADR-0009, ADR-0084). */
+/** A solid main window is black behind the room, with no system material (ADR-0009, ADR-0084). */
 const SOLID_BACKGROUND = '#000000'
+/** A see-through Glass window is clear over its material, so the room's tints sit on the blurred desktop (ADR-0150). */
+const CLEAR_BACKGROUND = '#00000000'
+
+type MainWindowMaterialOptions = Pick<WindowConstructorOptions, 'backgroundColor' | 'backgroundMaterial' | 'vibrancy' | 'visualEffectState'>
+
+/** What the main window is made with: solid, or clear over the material, chosen in this one place. */
+function mainWindowMaterialOptions(material: GlassWindowMaterial | null, seeThrough: boolean): MainWindowMaterialOptions {
+  if (material === null || !seeThrough) return { backgroundColor: SOLID_BACKGROUND }
+  // Under-window is the material macOS draws behind a whole window's content; it follows the window, so an inactive
+  // window turns solid as every other Mac window does.
+  if (material === 'vibrancy') return { backgroundColor: CLEAR_BACKGROUND, vibrancy: 'under-window', visualEffectState: 'followWindow' }
+  return { backgroundColor: CLEAR_BACKGROUND, backgroundMaterial: 'acrylic' }
+}
 
 /** The window icon is absent wherever the platform or the build supplies it. */
 interface WindowIconOptions {
@@ -162,7 +181,7 @@ export interface WebContentsLike {
 }
 
 /** The window events Sotto listens for; `close` and `page-title-updated` can be prevented. */
-export type WindowEventName = 'close' | 'closed' | 'moved' | 'maximize' | 'unmaximize' | 'hide' | 'minimize' | 'page-title-updated'
+export type WindowEventName = 'close' | 'closed' | 'moved' | 'maximize' | 'unmaximize' | 'show' | 'restore' | 'hide' | 'minimize' | 'page-title-updated'
 
 export interface BrowserWindowLike {
   readonly webContents: WebContentsLike
@@ -199,6 +218,10 @@ export interface BrowserWindowLike {
   getPosition(): readonly [number, number]
   setSize(width: number, height: number, animate?: boolean): void
   setIgnoreMouseEvents(ignore: boolean, options?: { readonly forward: boolean }): void
+  /** Absent on window backends that cannot change their native background after creation. */
+  setBackgroundColor?(color: string): void
+  setBackgroundMaterial?(material: 'acrylic' | 'none'): void
+  setVibrancy?(type: 'under-window' | null): void
   destroy(): void
   isDestroyed(): boolean
   loadURL(url: string): Promise<void>
@@ -248,6 +271,17 @@ export interface WindowManagerDependencies {
   readonly onWidgetMoved: (placement: WidgetPlacement) => void
   /** The main window's title: the running build's name ("Sotto Owl" on that track). Defaults to Sotto. */
   readonly title?: string
+  /**
+   * Present only while the Owl feature `glass-theme` is on (ADR-0150): the material this computer can draw behind the
+   * main window (null where it has none and Glass paints its own backdrop), and whether the saved look paints Glass
+   * when the window is made. Absent, the window is always solid and the renderer is told nothing of Glass.
+   */
+  readonly glassWindow?: {
+    readonly material: GlassWindowMaterial | null
+    readonly seeThroughAtStart: () => boolean
+    /** Tells the main window when the system takes the material away or gives it back, so its room follows. */
+    readonly onSeeThroughChanged?: (seeThrough: boolean) => void
+  }
 }
 
 type WindowKind = RendererRole
@@ -311,12 +345,14 @@ function securePreferences(
   preloadPath: string,
   role: RendererRole,
   platform: SottoPlatform,
+  extraArguments: readonly string[] = [],
 ): WindowWebPreferences {
   return {
     preload: preloadPath,
     additionalArguments: [
       `--sotto-renderer-role=${role}`,
       `${PLATFORM_ARGUMENT_PREFIX}${platform}`,
+      ...extraArguments,
     ],
     contextIsolation: true,
     nodeIntegration: false,
@@ -365,6 +401,10 @@ export function parseDevelopmentRendererSources(
 
 export class WindowManager {
   private mainWindow: BrowserWindowLike | null = null
+  /** Whether the renderer last asked for a see-through window; a new main window is made the way it was left. */
+  private seeThroughWanted: boolean | null = null
+  /** False while the system will not draw the material, as with Windows' Transparency effects off (ADR-0150). */
+  private glassMaterialAvailable = true
   private widgetWindow: BrowserWindowLike | null = null
   private widgetFocusable: boolean | null = null
   private mainReady: Promise<BrowserWindowLike> | null = null
@@ -395,6 +435,61 @@ export class WindowManager {
 
   constructor(private readonly dependencies: WindowManagerDependencies) {}
 
+  /** Whether a main window made now is see-through: as the renderer last left it, or as the saved look paints. */
+  private mainSeeThrough(): boolean {
+    const glass = this.dependencies.glassWindow
+    if (glass === undefined || glass.material === null || !this.glassMaterialAvailable) return false
+    return this.seeThroughWanted ?? glass.seeThroughAtStart()
+  }
+
+  /**
+   * Whether the system draws the material now. Electron cannot see whether a material was drawn, only what the system
+   * says it would draw; while it says no, the window stays solid and its room keeps Glass's own backdrop. The room
+   * hears first, so it is opaque before the material goes; when it comes back, the window is see-through again if the
+   * room still asks for it.
+   */
+  setGlassMaterialAvailable(available: boolean): void {
+    const glass = this.dependencies.glassWindow
+    if (glass === undefined || glass.material === null || available === this.glassMaterialAvailable) return
+    this.glassMaterialAvailable = available
+    // A window made see-through at start has the saved look's wish until the room first asks for itself.
+    if ((this.seeThroughWanted ?? glass.seeThroughAtStart()) !== true) return
+    if (!available) {
+      glass.onSeeThroughChanged?.(false)
+      this.applyMaterial(false)
+    } else if (this.applyMaterial(true)) glass.onSeeThroughChanged?.(true)
+  }
+
+  /**
+   * Turns the main window's material on or off in place, with no restart and no new window (ADR-0150). The renderer
+   * asks while it paints Glass and stops asking when it leaves it; it keeps its own backdrop under the room until this
+   * says the window is see-through, so nothing flashes black or white. Returns whether it is see-through now.
+   */
+  setMainWindowSeeThrough(on: boolean): boolean {
+    const glass = this.dependencies.glassWindow
+    if (glass === undefined || glass.material === null) return false
+    this.seeThroughWanted = on
+    const shown = on && this.glassMaterialAvailable
+    return this.applyMaterial(shown) && shown
+  }
+
+  private applyMaterial(on: boolean): boolean {
+    const glass = this.dependencies.glassWindow
+    if (glass === undefined || glass.material === null) return false
+    const window = this.mainWindow
+    if (window === null || window.isDestroyed()) return false
+    const options = mainWindowMaterialOptions(glass.material, on)
+    if (glass.material === 'acrylic') {
+      if (window.setBackgroundMaterial === undefined) return false
+      window.setBackgroundMaterial(options.backgroundMaterial ?? 'none')
+    } else {
+      if (window.setVibrancy === undefined) return false
+      window.setVibrancy(options.vibrancy ?? null)
+    }
+    window.setBackgroundColor?.(options.backgroundColor ?? SOLID_BACKGROUND)
+    return true
+  }
+
   createMainWindow(): Promise<BrowserWindowLike> {
     if (this.isStopped()) {
       return Promise.reject(new WindowManagerStoppedError())
@@ -406,6 +501,7 @@ export class WindowManager {
       return Promise.resolve(this.mainWindow)
     }
 
+    const seeThrough = this.mainSeeThrough()
     const window = this.dependencies.createWindow({
       width: 1_080,
       height: 720,
@@ -417,7 +513,7 @@ export class WindowManager {
       ...(this.dependencies.platform === 'linux' ? { transparent: true as const } : {}),
       show: false,
       title: this.dependencies.title ?? APP_NAME,
-      backgroundColor: SOLID_BACKGROUND,
+      ...mainWindowMaterialOptions(this.dependencies.glassWindow?.material ?? null, seeThrough),
       autoHideMenuBar: true,
       ...windowIconOptions(this.dependencies),
       ...mainWindowChromeOptions(this.dependencies.chrome),
@@ -425,6 +521,7 @@ export class WindowManager {
         this.dependencies.preloadPath,
         'main',
         this.dependencies.platform,
+        this.dependencies.glassWindow === undefined ? [] : glassWindowArguments(this.dependencies.glassWindow.material, seeThrough),
       ),
     })
     this.mainWindow = window
@@ -441,6 +538,8 @@ export class WindowManager {
       () => {
         this.assertLoadedWindow(window, 'main')
         this.loadedRendererUrls.set(window, window.webContents.getURL())
+        // A window made hidden reports its page visible until it is first shown, and Start minimized may never show it.
+        this.sendMainVisibility(window)
         return window
       },
       (error: unknown) => {
@@ -1001,10 +1100,14 @@ export class WindowManager {
     const onUnmaximized = (): void => onMaximized()
     window.on('unmaximize', onUnmaximized)
     // Capture can keep Chromium's page visible after the native window hides.
-    const onHidden = (): void => window.webContents.send(APP_WINDOW_HIDDEN, null)
+    const onHidden = (): void => { window.webContents.send(APP_WINDOW_HIDDEN, null); this.sendMainVisibility(window) }
     const onMinimized = (): void => onHidden()
+    const onShown = (): void => this.sendMainVisibility(window)
+    const onRestored = (): void => onShown()
     window.on('hide', onHidden)
     window.on('minimize', onMinimized)
+    window.on('show', onShown)
+    window.on('restore', onRestored)
     window.on('close', onClose)
     window.on('closed', onClosed)
     this.addCleanup(window, () => {
@@ -1012,6 +1115,8 @@ export class WindowManager {
       window.removeListener('unmaximize', onUnmaximized)
       window.removeListener('hide', onHidden)
       window.removeListener('minimize', onMinimized)
+      window.removeListener('show', onShown)
+      window.removeListener('restore', onRestored)
       window.removeListener('close', onClose)
       window.removeListener('closed', onClosed)
       window.removeListener('page-title-updated', onPageTitle)
@@ -1406,6 +1511,12 @@ export class WindowManager {
       this.disposeWindow(window)
       throw new RendererProcessGoneError(kind)
     }
+  }
+
+  /** Tells the main window's page whether anyone can see the window, so motion that only it draws can stop. */
+  private sendMainVisibility(window: BrowserWindowLike): void {
+    if (window.isDestroyed() || window.webContents.isDestroyed()) return
+    window.webContents.send(APP_WINDOW_VISIBLE, window.isVisible?.() !== false && !window.isMinimized())
   }
 
   private isRendererGone(window: BrowserWindowLike, kind: WindowKind): boolean {

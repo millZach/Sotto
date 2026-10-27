@@ -36,6 +36,7 @@ import { NEXT_PROMPT_CHANGED, NEXT_PROMPT_READ, NEXT_PROMPT_RENDERER_ARGUMENT, n
 import { CONTINUE_READ, CONTINUE_START, CONTINUE_RENDERER_ARGUMENT, continueReadRequestSchema, continueReadSchema, continueStartRequestSchema, continueStartSchema, type ContinueBridge } from '../shared/continueThread'
 import { MAIN_CHECKOUT_CHANGED, MAIN_CHECKOUT_CHANGES, MAIN_CHECKOUT_COMMAND, MAIN_CHECKOUT_READ, MAIN_CHECKOUT_RENDERER_ARGUMENT, mainCheckoutChangesSchema, mainCheckoutCommandSchema,
   mainCheckoutStateSchema, type MainCheckoutBridge } from '../shared/mainCheckout'
+import { GLASS_WINDOW_CHANGED, GLASS_WINDOW_SET, glassWindowRequestSchema, glassWindowResultSchema, parseGlassWindowArguments, type GlassWindowBridge, type GlassWindowState } from '../shared/glassWindow'
 import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_COMMAND, MAIN_ACTIVITY_READ, MAIN_ACTIVITY_RENDERER_ARGUMENT, mainActivityCommandSchema, mainActivityStateSchema, type MainActivityBridge } from '../shared/mainActivity'
 import { INTERFACE_LANGUAGE_CHANGED, INTERFACE_LANGUAGE_GET, interfaceLanguageStateSchema, parseInterfaceLanguageArgument, type InterfaceLanguageBridge } from '../shared/interfaceLanguageBridge'
 import type { InterfaceLanguageState } from '../shared/interfaceLanguages'
@@ -68,6 +69,7 @@ import {
   APP_TOGGLE_MAXIMIZE,
   APP_MAXIMIZED,
   APP_WINDOW_HIDDEN,
+  APP_WINDOW_VISIBLE,
   APP_QUIT,
   APP_SHOW,
   EXTERNAL_LINK_OPEN,
@@ -379,6 +381,8 @@ export function createSottoBridge(
   ownServerCleanupEnabled = false,
   /** Keep main up to date (ADR-0142): only while the `keep-main-current` Owl feature is on and the local host runs. */
   mainCheckoutEnabled = false,
+  /** The see-through window as main made it (ADR-0150): only while the `glass-theme` Owl feature is on. */
+  glassWindow: GlassWindowState | null = null,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -408,6 +412,13 @@ export function createSottoBridge(
     renderer,
     UPDATE_STATUS,
     updateStatusSchema,
+    1,
+  )
+  // Main says so once the page has loaded, before the renderer may be listening, so the last answer is kept for it.
+  const onWindowVisible = createBufferedSubscription(
+    renderer,
+    APP_WINDOW_VISIBLE,
+    z.boolean(),
     1,
   )
   const bridge: SottoBridge = {
@@ -460,6 +471,12 @@ export function createSottoBridge(
       read: () => invokeParsed(renderer, MAIN_ACTIVITY_READ, mainActivityStateSchema),
       command: command => invokeParsed(renderer, MAIN_ACTIVITY_COMMAND, mainActivityStateSchema, mainActivityCommandSchema.parse(command)),
       onChanged: listener => subscribe(renderer, MAIN_ACTIVITY_CHANGED, mainActivityStateSchema, listener),
+    }) } : {}),
+    ...(glassWindow !== null ? { glassWindow: Object.freeze<GlassWindowBridge>({
+      material: glassWindow.material,
+      seeThrough: glassWindow.seeThrough,
+      setSeeThrough: on => invokeParsed(renderer, GLASS_WINDOW_SET, glassWindowResultSchema, glassWindowRequestSchema.parse(on)),
+      onChanged: listener => subscribe(renderer, GLASS_WINDOW_CHANGED, glassWindowResultSchema, listener),
     }) } : {}),
     ...(mainCheckoutEnabled ? { mainCheckout: Object.freeze<MainCheckoutBridge>({
       read: () => invokeParsed(renderer, MAIN_CHECKOUT_READ, mainCheckoutStateSchema),
@@ -632,6 +649,7 @@ export function createSottoBridge(
     getWindowMaximized: () => invokeParsed(renderer, APP_MAXIMIZED, z.boolean()),
     onWindowMaximized: listener => subscribe(renderer, APP_MAXIMIZED, z.boolean(), listener),
     onWindowHidden: listener => subscribe(renderer, APP_WINDOW_HIDDEN, z.null(), () => listener()),
+    onWindowVisible,
     quitApp: () => invokeParsed(renderer, APP_QUIT, voidSchema),
   }
   return hostClientBridge(bridge)
@@ -730,7 +748,8 @@ export function exposeRendererBridge(
       arguments_.includes(OPENCODE_HOSTS_RENDERER_ARGUMENT), arguments_.includes(MAIN_ACTIVITY_RENDERER_ARGUMENT), arguments_.includes(DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT),
       arguments_.includes(WATCHER_MACHINES_RENDERER_ARGUMENT), arguments_.includes(CURSOR_RENDERER_ARGUMENT),
       parseInterfaceLanguageArgument(arguments_), arguments_.includes(OWN_SERVERS_RENDERER_ARGUMENT), arguments_.includes(NEXT_PROMPT_RENDERER_ARGUMENT),
-      arguments_.includes(OWN_SERVER_CLEANUP_RENDERER_ARGUMENT), arguments_.includes(MAIN_CHECKOUT_RENDERER_ARGUMENT)))
+      arguments_.includes(OWN_SERVER_CLEANUP_RENDERER_ARGUMENT), arguments_.includes(MAIN_CHECKOUT_RENDERER_ARGUMENT),
+      parseGlassWindowArguments(arguments_)))
     return true
   }
   if (rendererRole === 'widget') {

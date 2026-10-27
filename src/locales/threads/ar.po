@@ -665,6 +665,11 @@ msgstr ""
 msgid "{museReviews, plural, one {Muse review} other {# Muse reviews}}"
 msgstr ""
 
+#. An option in the Ultracode effort setting. {name} is a reasoning effort level, such as Extra high, marked as the one Claude Code picks on its own.
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "{name} (Claude Code’s choice)"
+msgstr ""
+
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "{name} answered in {ms} ms and asks for its key, which OpenCode keeps, so Sotto could not read its models again."
 msgstr ""
@@ -1819,6 +1824,10 @@ msgstr ""
 #. A permission mode: the agent asks before it acts.
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Ask for approval"
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Asked for {asked}. {machine} can start threads on {machine} or on This computer for now."
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
@@ -5593,6 +5602,16 @@ msgstr ""
 msgid "Plan, {done} of {total} done"
 msgstr ""
 
+#. What the Ultracode effort level does. {level} is the reasoning effort level each agent runs at, such as High.
+#: src/renderer/src/agents/EffortPicker.tsx
+msgid "Plans the work and runs it as a team of agents at {level} effort. Uses many more tokens."
+msgstr ""
+
+#. What the Ultracode effort level does.
+#: src/renderer/src/agents/EffortPicker.tsx
+msgid "Plans the work and runs it as a team of agents. Uses many more tokens."
+msgstr ""
+
 #: src/renderer/src/agents/threadGreeting.logic.ts
 msgid "Point me at a problem."
 msgstr ""
@@ -6308,6 +6327,11 @@ msgstr ""
 #. {name} is a Git hook's name, such as pre-commit.
 #: src/renderer/src/agents/gitActionButton.logic.ts
 msgid "Running {name}..."
+msgstr ""
+
+#. Shown when the pointer rests on the Ultracode effort level, on the reasoning effort slider or its chip.
+#: src/renderer/src/agents/EffortPicker.tsx
+msgid "Runs a multi-agent workflow; uses many more tokens."
 msgstr ""
 
 #. Read before the computer or host the thread runs on.
@@ -7519,6 +7543,11 @@ msgstr ""
 msgid "The draft is deleted and cannot be brought back."
 msgstr ""
 
+#. Describes the Ultracode effort setting. Ultracode and Extra high are the names the effort control shows.
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "The effort each agent runs at while a Claude thread is on Ultracode. Claude Code’s own choice is Extra high. A change takes effect on the thread’s next message."
+msgstr ""
+
 #. Linux: what shows a file in its folder. Read inside "Show in {manager}: {file}".
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "the file manager"
@@ -7738,6 +7767,11 @@ msgstr ""
 msgid "The thread that delegated"
 msgstr ""
 
+#. Shown when saving the Ultracode effort setting fails. Ultracode is Claude Code’s own name; keep it as it is.
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "The Ultracode effort was not saved, so Claude threads keep the one they had. Try again."
+msgstr ""
+
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 msgid "The update ran, but the version did not move"
 msgstr ""
@@ -7825,6 +7859,10 @@ msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "This computer already had as many new threads working as Threads in flight allowed, a limit Sotto no longer has. {nothing}"
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "This computer isn't connected to {machine}, so nothing was started there. Start it on {machine} instead, or try again when this computer is back."
 msgstr ""
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
@@ -8224,6 +8262,16 @@ msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Type your answer…"
+msgstr ""
+
+#. The effort level past Max on Claude models, where Claude Code plans the work and runs it as a team of agents. Ultracode is Claude Code’s own name; keep it as it is.
+#: src/renderer/src/agents/EffortPicker.tsx
+msgid "Ultracode"
+msgstr ""
+
+#. A setting on Settings > Providers > Claude Code. Ultracode is Claude Code’s own name for its multi-agent workflow mode; keep it as it is.
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Ultracode effort"
 msgstr ""
 
 #. Ultrathink is a keyword Claude Code reads in a prompt; keep it as it is.

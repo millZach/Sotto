@@ -12,7 +12,7 @@ describe('Sotto application onboarding integration', () => {
         ...DEFAULT_SETTINGS,
         theme: 'dark' as const,
         appearance: 'light' as const,
-        lightTheme: 'tropic',
+        lightTheme: 'fern',
         reducedMotion: 'on' as const,
       })),
     })
@@ -23,7 +23,7 @@ describe('Sotto application onboarding integration', () => {
     // effect, so the attributes need their own wait.
     await waitFor(() => expect(document.documentElement.dataset.reducedMotion).toBe('on'))
     expect(document.documentElement).toHaveAttribute('data-theme', 'light')
-    expect(document.documentElement).toHaveAttribute('data-theme-id', 'tropic')
+    expect(document.documentElement).toHaveAttribute('data-theme-id', 'fern')
   })
 
   it('removes a forced motion attribute when following system motion', () => {
@@ -80,13 +80,16 @@ describe('Sotto application onboarding integration', () => {
     const root = document.documentElement
 
     await user.click(screen.getByRole('tab', { name: 'Appearance' }))
+    // Each half has its own grid once the switch splits them; the switch is the page's view and saves nothing.
+    await user.click(screen.getByRole('switch', { name: 'A different theme when dark' }))
     const lightHalf = (): HTMLElement => screen.getByRole('radiogroup', { name: 'Light theme' })
-    await user.click(screen.getByRole('radio', { name: 'Light' }))
+    const scheme = (): HTMLElement => screen.getByRole('radiogroup', { name: 'Color scheme' })
+    await user.click(within(scheme()).getByRole('radio', { name: 'Light' }))
     expect(root).toHaveAttribute('data-theme', 'light')
     await user.click(within(lightHalf()).getByRole('radio', { name: 'Citrine' }))
     expect(root).toHaveAttribute('data-theme', 'light')
     expect(root).toHaveAttribute('data-theme-id', 'citrine')
-    expect(screen.getByRole('radio', { name: 'Light' })).toHaveAttribute('aria-checked', 'true')
+    expect(within(scheme()).getByRole('radio', { name: 'Light' })).toHaveAttribute('aria-checked', 'true')
     expect(within(lightHalf()).getByRole('radio', { name: 'Citrine' })).toHaveAttribute('aria-checked', 'true')
     // Only the light half moved: the dark half still belongs to Sotto.
     expect(within(screen.getByRole('radiogroup', { name: 'Dark theme' })).getByRole('radio', { name: 'Sotto' })).toHaveAttribute('aria-checked', 'true')
@@ -103,7 +106,7 @@ describe('Sotto application onboarding integration', () => {
     await act(async () => { saves[1]!.result.resolve(persisted) })
     expect(root).toHaveAttribute('data-theme', 'light')
     expect(root).toHaveAttribute('data-theme-id', 'citrine')
-    expect(screen.getByRole('radio', { name: 'Light' })).toHaveAttribute('aria-checked', 'true')
+    expect(within(scheme()).getByRole('radio', { name: 'Light' })).toHaveAttribute('aria-checked', 'true')
     expect(within(lightHalf()).getByRole('radio', { name: 'Citrine' })).toHaveAttribute('aria-checked', 'true')
   })
 
@@ -125,11 +128,14 @@ describe('Sotto application onboarding integration', () => {
     const root = document.documentElement
 
     await user.click(screen.getByRole('tab', { name: 'Appearance' }))
+    // Each half has its own grid once the switch splits them; the switch is the page's view and saves nothing.
+    await user.click(screen.getByRole('switch', { name: 'A different theme when dark' }))
     const lightHalf = (): HTMLElement => screen.getByRole('radiogroup', { name: 'Light theme' })
-    await user.click(screen.getByRole('radio', { name: 'Light' }))
-    await user.click(within(lightHalf()).getByRole('radio', { name: 'Tropic' }))
+    const scheme = (): HTMLElement => screen.getByRole('radiogroup', { name: 'Color scheme' })
+    await user.click(within(scheme()).getByRole('radio', { name: 'Light' }))
+    await user.click(within(lightHalf()).getByRole('radio', { name: 'Hush' }))
     expect(root).toHaveAttribute('data-theme', 'light')
-    expect(root).toHaveAttribute('data-theme-id', 'tropic')
+    expect(root).toHaveAttribute('data-theme-id', 'hush')
 
     await waitFor(() => expect(saves).toHaveLength(1))
     persisted = { ...persisted, appearance: 'light' }
@@ -144,13 +150,13 @@ describe('Sotto application onboarding integration', () => {
   })
 
   it('paints the next launch from the last applied look before settings answer', async () => {
-    renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'light' as const, lightTheme: 'linen', appearanceContrast: 135 })) }))
-    await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme-id', 'linen'))
+    renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'light' as const, lightTheme: 'clay', appearanceContrast: 135 })) }))
+    await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme-id', 'clay'))
     expect(document.documentElement.style.getPropertyValue('--theme-contrast-boost')).toBe('35%')
     const { readCachedAppearance } = await import('../../../src/renderer/src/state/appearance')
-    expect(readCachedAppearance()).toMatchObject({ appearance: 'light', lightTheme: 'linen', darkTheme: 't3-code', appearanceContrast: 135 })
-    localStorage.setItem('sotto.appearance', '{"appearance":"sepia","lightTheme":"linen","accent":"green"}')
-    expect(readCachedAppearance()).toMatchObject({ appearance: 'dark', lightTheme: 'linen' })
+    expect(readCachedAppearance()).toMatchObject({ appearance: 'light', lightTheme: 'clay', darkTheme: 't3-code', appearanceContrast: 135 })
+    localStorage.setItem('sotto.appearance', '{"appearance":"sepia","lightTheme":"clay","accent":"green"}')
+    expect(readCachedAppearance()).toMatchObject({ appearance: 'dark', lightTheme: 'clay' })
     expect(readCachedAppearance()).not.toHaveProperty('accent')
     localStorage.setItem('sotto.appearance', 'not json')
     expect(readCachedAppearance()).toMatchObject({ appearance: 'dark', lightTheme: 't3-code', darkTheme: 't3-code' })

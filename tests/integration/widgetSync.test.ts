@@ -78,6 +78,7 @@ function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
     getWindowMaximized: vi.fn(async () => false),
     onWindowMaximized: vi.fn(() => () => undefined),
     onWindowHidden: vi.fn(() => () => undefined),
+    onWindowVisible: vi.fn(() => () => undefined),
     quitApp: vi.fn(async () => undefined),
     ...overrides,
   }

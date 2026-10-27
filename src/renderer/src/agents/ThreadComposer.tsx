@@ -49,6 +49,7 @@ import { useDelegationsEnabled } from './delegations'
 import { stopLabel, workingDelegatedThreads } from './delegationWords'
 import { ContinueOptions, ContinueStrip } from './ContinueThread'
 import { RestartStrip } from './RestartStopped'
+import { EffortTrace } from './EffortTrace'
 import { continueChoiceFor, continueModels, continueStore, unavailableProviders, useContinueChoice, useContinueEnabled, type ContinueChoice } from './continuations'
 import { shownWords, type LaterWords } from './interfaceWords'
 import './composer.css'
@@ -486,6 +487,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     <form className="thread-prompt" data-ornament={Boolean(ornament) || undefined} data-thread-id={threadId} data-answering={answering || undefined} data-running={working || undefined} data-picker={menuOpen || undefined}
       onSubmit={event => { event.preventDefault(); send(performance.now()) }}
       onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { leavePickers.current(); setNextList(null) } }}>
+      <EffortTrace />
       {ornament}
       {next !== null && nextList !== null ? <NextList prompt={next} listId={nextListId} activeIndex={nextList.index} sends={!hasContent}
         onHighlight={index => setNextList({ ...nextList, index })} onChoose={chooseNext} /> : null}

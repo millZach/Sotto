@@ -5,6 +5,7 @@ import { defaultHoldShortcuts, defaultHotkey } from '../../../src/shared/platfor
 import { createVividThemeColors } from '../../../src/shared/themes/engine'
 import { parseThemeFile } from '../../../src/shared/themes/library'
 import { MENU_BAR_OWL_BODIES, MENU_BAR_OWL_EYES } from '../../../src/shared/menuBarOwl'
+import { WATCHER_SCENES } from '../../../src/shared/watcherScene'
 import {
   dictationOn,
   APPEARANCES,
@@ -27,12 +28,13 @@ const customSettings = {
   version: 1,
   theme: 'light',
   appearance: 'light',
-  lightTheme: 'tropic',
+  lightTheme: 'fern',
   darkTheme: aurora.id,
   appearanceContrast: 135,
   effortColor: 'aurora',
   menuBarOwlBody: 'ink',
   menuBarOwlEyes: 'amber',
+  watcherScene: 'harbour',
   creature: 'claude',
   showCreature: false,
   interfaceLanguage: 'ja',
@@ -304,7 +306,39 @@ describe('settings', () => {
       expect([saved.lightTheme, saved.darkTheme], retired).toEqual(['t3-code', 't3-code'])
     }
     expect(parseSettings({ ...customSettings, lightTheme: 't3-code', darkTheme: 't3-code' })).toMatchObject({ lightTheme: 't3-code', darkTheme: 't3-code' })
-    expect(parseSettings({ ...customSettings, lightTheme: 'hush', darkTheme: 'tropic' })).toMatchObject({ lightTheme: 'hush', darkTheme: 'tropic' })
+    expect(parseSettings({ ...customSettings, lightTheme: 'hush', darkTheme: 'fern' })).toMatchObject({ lightTheme: 'hush', darkTheme: 'fern' })
+  })
+
+  it('moves a half saved on Linen, Nocturne or Tropic to Clay, Graphite or Fern, and saves the move', () => {
+    for (const [retired, replacement] of [['linen', 'clay'], ['nocturne', 'graphite'], ['tropic', 'fern']] as const) {
+      const saved = parseSettings({ ...customSettings, lightTheme: retired, darkTheme: retired })
+      expect([saved.lightTheme, saved.darkTheme], retired).toEqual([replacement, replacement])
+      // What is written back is the new id, and reading it again changes nothing.
+      expect(settingsSchema.safeParse(saved).success).toBe(true)
+      expect(parseSettings(JSON.parse(JSON.stringify(saved)))).toEqual(saved)
+    }
+    // Each half moves on its own.
+    expect(parseSettings({ lightTheme: 'linen', darkTheme: 'citrine' })).toMatchObject({ lightTheme: 'clay', darkTheme: 'citrine' })
+  })
+
+  it('keeps a theme of the user’s own whose id Graphite, Clay, Fern or Glass took, under a new id its halves follow', () => {
+    for (const claimed of ['graphite', 'clay', 'fern', 'glass']) {
+      const own = { ...aurora, id: claimed, label: 'Mine' }
+      const taken = { ...aurora, id: `${claimed}-2`, label: 'Also mine' }
+      const parsed = parseSettings({ lightTheme: claimed, darkTheme: claimed, customThemes: [own, taken] })
+      // The colours survive under the first free id, and nothing else in the library moves.
+      expect(parsed.customThemes, claimed).toEqual([{ ...own, id: `${claimed}-3` }, taken])
+      expect(parsed[aurora.appearance === 'dark' ? 'darkTheme' : 'lightTheme'], claimed).toBe(`${claimed}-3`)
+      expect(settingsSchema.safeParse(parsed).success, claimed).toBe(true)
+      expect(parseSettings(JSON.parse(JSON.stringify(parsed))), claimed).toEqual(parsed)
+    }
+  })
+
+  it('leaves a half on a theme of the user’s own that took a retired id', () => {
+    const own = { ...aurora, id: 'nocturne', label: 'Nocturne' }
+    const parsed = parseSettings({ lightTheme: 'tropic', darkTheme: 'nocturne', customThemes: [own] })
+    expect(parsed.customThemes).toEqual([own])
+    expect(parsed).toMatchObject({ lightTheme: 'fern', darkTheme: 'nocturne' })
   })
 
   it('keeps every valid appearance and theme choice and recovers an unusable one field by field', () => {
@@ -331,6 +365,15 @@ describe('settings', () => {
     expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, menuBarOwlEyes: 'pink' }).success).toBe(false)
   })
 
+  it('keeps every Watcher scene, starts in the night wood, and recovers an unknown one as the night wood', () => {
+    expect(DEFAULT_SETTINGS.watcherScene).toBe('night-wood')
+    for (const watcherScene of WATCHER_SCENES) expect(parseSettings({ watcherScene }).watcherScene).toBe(watcherScene)
+    expect(parseSettings({}).watcherScene).toBe('night-wood')
+    expect(parseSettings({ watcherScene: 'moon-base' }).watcherScene).toBe('night-wood')
+    expect(parseSettings({ watcherScene: 7 }).watcherScene).toBe('night-wood')
+    expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, watcherScene: 'moon-base' }).success).toBe(false)
+  })
+
   it('keeps either creature and recovers an unknown one as Sotto\'s own', () => {
     expect(DEFAULT_SETTINGS.creature).toBe('sotto')
     for (const creature of CREATURES) expect(parseSettings({ creature }).creature).toBe(creature)
@@ -341,7 +384,7 @@ describe('settings', () => {
 
   it('chooses each half independently and falls back when its theme is gone or cannot paint that half', () => {
     const lightOnly = parseThemeFile({ version: 1, name: 'Paper', appearance: 'light', colors: { canvas: '#fffdf8' } })
-    expect(parseSettings({ lightTheme: 'hush', darkTheme: 'linen' })).toMatchObject({ lightTheme: 'hush', darkTheme: 'linen' })
+    expect(parseSettings({ lightTheme: 'hush', darkTheme: 'clay' })).toMatchObject({ lightTheme: 'hush', darkTheme: 'clay' })
     expect(parseSettings({ lightTheme: lightOnly.id, darkTheme: lightOnly.id, customThemes: [lightOnly] })).toMatchObject({ lightTheme: lightOnly.id, darkTheme: 't3-code' })
     // A custom theme that was removed from the library no longer owns a half.
     expect(parseSettings({ darkTheme: aurora.id, customThemes: [] })).toMatchObject({ darkTheme: 't3-code' })
@@ -349,7 +392,7 @@ describe('settings', () => {
 
   it('keeps valid custom themes one by one and never lets a hostile colour through', () => {
     const hostile = { ...aurora, id: 'hostile', label: 'Hostile', colors: { ...aurora.colors, canvas: 'red;background:url(https://example.com/x)' } }
-    const reserved = { ...aurora, id: 'nocturne' }
+    const reserved = { ...aurora, id: 'hush' }
     const parsed = parseSettings({ customThemes: [aurora, hostile, reserved, 'junk', { ...aurora }], darkTheme: aurora.id })
     // The damaged role is repaired from the theme's defaults; the reserved id, junk and duplicate are dropped.
     expect(parsed.customThemes.map(theme => theme.id)).toEqual([aurora.id, 'hostile'])
@@ -387,6 +430,7 @@ describe('settings', () => {
       effortColor: 'ember',
       menuBarOwlBody: 'slate',
       menuBarOwlEyes: 'teal',
+      watcherScene: 'night-wood',
       creature: 'sotto',
       showCreature: true,
       interfaceLanguage: 'system',

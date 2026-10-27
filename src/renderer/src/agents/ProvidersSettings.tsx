@@ -5,6 +5,7 @@ import { msg, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { defaultThreadModelId, enabledThreadProviders, PROVIDER_LABELS, providerIdSchema, type ProviderClientUpdate, type ProviderId } from '../../../shared/agents'
 import { catalogEntry } from '../../../shared/modelCatalog'
+import { DEFAULT_ULTRACODE_EFFORT, ULTRACODE_EFFORTS, type UltracodeEffort } from '../../../shared/ultracode'
 import { Button } from '../components/Button'
 import { Toggle } from '../components/Toggle'
 import { useOptionalAgents } from './AgentContext'
@@ -19,6 +20,7 @@ import { localHostId, localProviders } from '../features/onboarding/localAgents'
 import { PROVIDER_INSTALL_GUIDES } from '../../../shared/hostProviders'
 import { COMPACT_IDLE_SETTING, onProviderAimed, takeAimedProvider } from '../features/settings/settingsTarget'
 import { shownWords, type LaterWords } from './interfaceWords'
+import { effortLabel } from './EffortPicker'
 import './providers.css'
 
 const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor', deepseek: 'DeepSeek Harness' }
@@ -132,6 +134,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
   const clientUpdates = hasHostConnections ? local?.clientUpdates : state.clientUpdates
   const checkClientUpdates = local?.checkClientUpdates ?? state.configuration.checkClientUpdates
   const museDisableSandbox = local?.museDisableSandbox ?? state.configuration.museDisableSandbox
+  const ultracodeEffort = local?.claudeUltracodeEffort ?? state.configuration.claudeUltracodeEffort ?? DEFAULT_ULTRACODE_EFFORT
   const enabled = local?.enabledProviders ?? enabledThreadProviders(state.configuration)
   const statusFor = (id: ProviderId) => providers.find(provider => provider.id === id)
     ?? { connection: !hasHostConnections && id === state.configuration.provider ? state.connection : 'disconnected', version: '', error: undefined, verifiedVersion: undefined, sandboxDisabled: undefined }
@@ -223,6 +226,14 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
       const result = await command({ type: 'configure', patch: { museDisableSandbox: disable }, ...here })
       if (!result || result.error) setErrors(previous => ({ ...previous, muse: result?.error ?? failed }))
     } catch { setErrors(previous => ({ ...previous, muse: failed })) }
+  }
+  const saveUltracodeEffort = async (claudeUltracodeEffort: UltracodeEffort): Promise<void> => {
+    setErrors(previous => ({ ...previous, claude: undefined }))
+    const failed = msg({ message: 'The Ultracode effort was not saved, so Claude threads keep the one they had. Try again.', comment: 'Shown when saving the Ultracode effort setting fails. Ultracode is Claude Code’s own name; keep it as it is.' })
+    try {
+      const result = await command({ type: 'configure', patch: { claudeUltracodeEffort }, ...here })
+      if (!result || result.error) setErrors(previous => ({ ...previous, claude: result?.error ?? failed }))
+    } catch { setErrors(previous => ({ ...previous, claude: failed })) }
   }
   // The selected host's agent setting is not this computer's, so a joined window reads this computer's from its entry.
   const inheritedModelId = local ? local.agentModelId ?? '' : defaultThreadModelId(state.configuration, hostModels, state.reasoningAccounts)
@@ -337,6 +348,23 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
             <p className="tt-paragraph"><Trans>After 54 minutes idle, Sotto compacts a large Claude thread before its cache expires, so your next message costs less. The thread keeps a summary instead of its full history.</Trans></p>
           </div>
           <div className="provider-client__actions"><Toggle setting={COMPACT_IDLE_SETTING} label={t`Compact idle threads`} checked={compactIdle.checked} onCheckedChange={compactIdle.onChange} /></div>
+        </div>}
+        {provider === 'claude' && <div className="provider-client">
+          <div>
+            <h4 id={`${rowId}-ultracode`}><Trans comment="A setting on Settings > Providers > Claude Code. Ultracode is Claude Code’s own name for its multi-agent workflow mode; keep it as it is.">Ultracode effort</Trans></h4>
+            <p id={`${rowId}-ultracode-line`} className="tt-paragraph"><Trans comment="Describes the Ultracode effort setting. Ultracode and Extra high are the names the effort control shows.">The effort each agent runs at while a Claude thread is on Ultracode. Claude Code’s own choice is Extra high. A change takes effect on the thread’s next message.</Trans></p>
+          </div>
+          <div className="provider-client__actions">
+            <select className="tt-select tt-focusable provider-client__select" data-setting="ultracode-effort" aria-labelledby={`${rowId}-ultracode`} aria-describedby={`${rowId}-ultracode-line`}
+              value={ultracodeEffort} onChange={event => void saveUltracodeEffort(event.target.value as UltracodeEffort)}>
+              {ULTRACODE_EFFORTS.map(level => {
+                const name = effortLabel(level)
+                return <option key={level} value={level}>{level === DEFAULT_ULTRACODE_EFFORT
+                  ? t({ message: `${name} (Claude Code’s choice)`, comment: 'An option in the Ultracode effort setting. {name} is a reasoning effort level, such as Extra high, marked as the one Claude Code picks on its own.' })
+                  : name}</option>
+              })}
+            </select>
+          </div>
         </div>}
         {provider === 'opencode' && (openCodeInstall || byHand) && <details className="provider-client__steps"><summary>{t`Installation steps`}</summary><p className="tt-paragraph">{openCodeInstall ?? (!update?.byHand?.length ? t`Update OpenCode 2 with the installer or package manager you used. Then check again.` : t`Run these commands in a terminal on this computer, then check again.`)}</p>{openCodeInstall ? null : update?.byHand?.map((line, index) => <code key={index}>{line}</code>)}<Button variant="ghost" onClick={() => void openOpenCodeGuide()}>{t`Open OpenCode installation guide`}</Button></details>}
         {provider === 'devin' && <p className="provider-models__empty tt-paragraph">{t`Uses your Devin account and credits. Devin keeps its own history and analytics, outside Sotto's control.`}</p>}

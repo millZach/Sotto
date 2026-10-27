@@ -11,8 +11,11 @@ export function effortKey(id: string): string {
   return id.toLowerCase().replace(/[-_\s]/gu, '')
 }
 
-/** The levels whose place is known. Anything else keeps its place beside the provider's own neighbours. */
-const EFFORT_RANK: Readonly<Record<string, number>> = { none: 0, minimal: 1, low: 2, medium: 3, high: 4, xhigh: 5, extrahigh: 5, max: 6 }
+/**
+ * The levels whose place is known. Anything else keeps its place beside the provider's own neighbours. Ultracode is
+ * above Max (ADR-0148), so a default of Ultracode lands on another provider's highest level.
+ */
+const EFFORT_RANK: Readonly<Record<string, number>> = { none: 0, minimal: 1, low: 2, medium: 3, high: 4, xhigh: 5, extrahigh: 5, max: 6, ultracode: 7 }
 
 /** A level's place among the levels Sotto knows, least thorough first, or undefined for one it does not know. */
 export function effortRank(id: string): number | undefined {
