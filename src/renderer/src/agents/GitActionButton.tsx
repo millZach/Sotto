@@ -2,14 +2,20 @@ import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react
 import { createPortal } from 'react-dom'
 import { msg, ph, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { ArrowDownToLine, ArrowUpFromLine, ChevronDown, FolderGit2, GitBranch, GitCommitHorizontal, GitPullRequestArrow, RefreshCw, Upload, X } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpFromLine, ChevronDown, FolderGit2, GitBranch, GitCommitHorizontal, GitMerge, GitPullRequestArrow, RefreshCw, Upload, X } from 'lucide-react'
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import type { GitStackedAction } from '../../../shared/gitActions'
 import type { GitChangedFile, GitChangedFiles } from '../../../shared/gitChangedFiles'
 import type { GitStatus } from '../../../shared/gitStatus'
 import { Button } from '../components/Button'
+import { Isolated, plainText } from '../components/isolated'
 import { useDialogFocus } from '../components/useDialogFocus'
 import { useOptionalApp } from '../state/AppContext'
+import { useOwlFeature } from '../state/owlFeature'
+import { bringBackTarget } from '../../../shared/bringChangesBack'
+import { parseHostEntityKey } from '../../../shared/clientIdentity'
+import { BringChangesBack } from './BringChangesBack'
+import { bringWords, bringBackView, branchSignature, fileCount as changedFileCount, useBringBackDismissals } from './bringChangesBack.logic'
 import { chordClaimed, chordMatches } from './branchToolbar.logic'
 import type { AgentConnection } from './AgentContext'
 import { PaneMenu, type PaneMenuItem } from './PaneMenu'
@@ -23,6 +29,13 @@ type Command = AgentConnection['command']
 /** The bridge call the dialog reads the changed files through; absent in a window without the preload. */
 function changedFilesBridge(): ((request: { threadId: string }) => Promise<GitChangedFiles>) | undefined {
   return window.sotto?.agents?.gitChangedFiles
+}
+
+const NO_THREADS: readonly AgentThread[] = []
+/** A machine's name as the window lists it: `thisComputer` for the desktop's own. */
+function machineName(connections: AgentState['connections'], hostId: string | undefined, thisComputer: string): string | undefined {
+  const connection = hostId === undefined ? undefined : connections?.find(item => item.hostId === hostId)
+  return connection ? connection.kind === 'local' ? thisComputer : connection.name : undefined
 }
 
 /** The glyph for each action, on the button and in its menu. */
@@ -47,9 +60,13 @@ type Dialog = { readonly kind: 'commit'; readonly action: GitStackedAction } | {
  * and one notice above the composer for the action as it runs and once it is over. Every action goes to
  * the host as a command; the record the host publishes is what the notice shows.
  */
-export function GitActionButton({ thread, command, noticeSlot, onExplainedError }: {
+export function GitActionButton({ thread, command, noticeSlot, onExplainedError, threads: givenThreads, state: windowState }: {
   readonly thread: AgentThread
   readonly command: Command
+  /** Every thread the window shows, for the thread this one began from (#1030); the window state's own list when absent. */
+  readonly threads?: readonly AgentThread[] | undefined
+  /** The window's state, as the pane has it: its threads and its connections, for bringing changes back (#1030). */
+  readonly state?: Pick<AgentState, 'host' | 'connections'> | null | undefined
   /** Where the notice is drawn: above the composer, in the pane's own flow. */
   readonly noticeSlot: HTMLElement | null
   /** The refusal the notice is showing, so the pane's own error line does not say it twice; null when none. */
@@ -73,6 +90,21 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError 
   useEffect(() => () => explained.current?.(null), [])
   const running = progress?.status === 'running' || inFlight
   const quick = quickAction(status)
+  // Bring changes to <branch> (#1030; Owl only): offered from the records alone, run on the host only when pressed.
+  const bringOffered = useOwlFeature('cross-machine-work')
+  const windowThreads = windowState?.host.threads
+  const allThreads = givenThreads ?? windowThreads ?? NO_THREADS
+  const dismissals = useBringBackDismissals()
+  // While this thread's turn runs nothing is offered, so no press is ever refused for it (Zach, October 23).
+  // Only the desktop that started a worker on another machine brings it back, so the window names its own computer.
+  const desktop = windowState?.connections?.find(item => item.kind === 'local')?.hostId
+  const bringTarget = bringOffered && thread.status !== 'running' ? bringBackTarget(thread, allThreads, desktop) : null
+  const bringView = bringOffered ? bringBackView(thread, allThreads, dismissals, desktop) : null
+  const bringParent = bringTarget ? allThreads.find(item => item.id === bringTarget.parentId) : undefined
+  // A parent on another machine is named by that machine, so the strip says where its branch is (#1030).
+  const bringMachine = bringTarget?.away ? machineName(windowState?.connections, parseHostEntityKey(bringTarget.parentId)?.hostId, t`This computer`) : undefined
+  const [bringPressed, setBringPressed] = useState<string | null>(null)
+  useEffect(() => { setBringPressed(null) }, [thread.id])
 
   /** One command at a time from this pane; the answer, or the refusal in the host's words, becomes the notice. */
   const send = async (request: Parameters<Command>[0], onDone: (result: AgentState) => void, onRefused?: (result: AgentState) => boolean): Promise<void> => {
@@ -98,6 +130,13 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError 
     result => result.host.threads.find(item => item.id === thread.id)?.gitAction?.actionId === actionId)
   }
   const openPullRequest = (): void => { const url = status?.pullRequest?.url; if (url) void window.sotto?.openExternalLink?.(url) }
+  /** One press of Bring changes, or the yes to its merge-commit question; what it did arrives on the thread's record. */
+  const bring = (mergeCommit?: string): void => {
+    const actionId = crypto.randomUUID()
+    setBringPressed(actionId)
+    void send({ type: 'bring-changes-back', threadId: thread.id, actionId, ...(mergeCommit ? { mergeCommit } : {}) }, () => undefined)
+  }
+  const commitFirst = (): void => { if (status) setDialog({ kind: 'commit', action: 'commit' }) }
   const press = (kind: GitQuickKind | 'view_pr'): void => {
     switch (kind) {
       case 'view_pr': openPullRequest(); return
@@ -117,10 +156,27 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError 
     const EntryIcon = ICONS[entry.id]
     return { id: entry.id, label: entry.label, disabled: running || entry.hint !== undefined, ...(entry.hint ? { hint: entry.hint } : {}), icon: <EntryIcon size={15} aria-hidden="true" />, run: () => press(entry.id) }
   })
+  // The same press as the strip's, first in the menu, so the Git action stays the one place Git acts (ADR-0027).
+  const changed = changedFileCount(Math.max(1, status?.changedFiles ?? 1))
+  const uncommitted = status?.dirty ? t`Commit the ${changed} changed first.` : undefined
+  const target = bringTarget?.target ?? ''
+  const bringMenu: PaneMenuItem[] = bringTarget ? [{ id: 'bring-changes-back', label: plainText(bringWords(target)), content: <Isolated text={bringWords(target)} />, icon: <GitMerge size={15} aria-hidden="true" />,
+    disabled: running || uncommitted !== undefined, ...(uncommitted ? { hint: uncommitted } : {}), run: () => bring() }] : []
+  const menuGroups = [bringMenu, menu].filter(group => group.length > 0)
 
   const notice = shown ? <GitActionNotice notice={shown} running={running}
     onDismiss={() => { if (local) setLocal(null); else if (progress) setDismissed(progress.actionId) }}
     onRun={action => runAction({ action })} /> : null
+  const record = bringView?.kind === 'asks' || bringView?.kind === 'outcome' ? bringView.record : undefined
+  const strip = bringView ? <BringChangesBack view={bringView} parentTitle={bringParent?.title ?? t`the thread it began from`} machine={bringMachine} busy={inFlight}
+    takeFocus={record !== undefined && record.actionId === bringPressed}
+    onBring={() => bring()} onMergeCommit={() => { if (record) bring(record.actionId) }}
+    onNotNow={() => { if (record) dismissals.dismiss(record.actionId) }}
+    onDismiss={() => { if (record) dismissals.dismiss(record.actionId, record.status === 'done' ? { threadId: thread.id, signature: branchSignature(thread) } : undefined) }}
+    onHide={() => dismissals.hide(thread.id, branchSignature(thread))}
+    onCommit={commitFirst}
+    onOpenParent={() => { if (bringParent) void command({ type: 'select-thread', threadId: bringParent.id }) }} /> : null
+  const above = notice || strip ? <>{notice}{strip}</> : null
   const Icon = quick ? ICONS[quick.kind] : null
   const disabled = running || quick?.hint !== undefined
   return <>
@@ -132,9 +188,9 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError 
         <span className="git-action__label">{quick.label}</span>
         {quick.hint ? <span className="tt-visually-hidden">. {quick.hint}</span> : null}
       </button>
-      {menu.length > 0 ? <PaneMenu groups={[menu]} label={t`More Git actions`} className="git-action__more" icon={<ChevronDown size={14} aria-hidden="true" />} /> : null}
+      {menuGroups.length > 0 ? <PaneMenu groups={menuGroups} label={t`More Git actions`} className="git-action__more" icon={<ChevronDown size={14} aria-hidden="true" />} /> : null}
     </div> : null}
-    {noticeSlot && notice ? createPortal(notice, noticeSlot) : notice}
+    {noticeSlot && above ? createPortal(above, noticeSlot) : above}
     {dialog?.kind === 'commit' && status ? <CommitDialog threadId={thread.id} status={status} action={dialog.action} onCancel={() => setDialog(null)}
       onCommit={(request) => { setDialog(null); runAction(request) }} /> : null}
     {dialog?.kind === 'confirm' && status ? <DefaultBranchDialog status={status} request={dialog.request} onCancel={() => setDialog(null)}

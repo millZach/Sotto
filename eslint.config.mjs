@@ -57,6 +57,7 @@ export default tseslint.config(
       'apps/omarchy/src/**',
       'apps/omarchy/pkg/**',
       'artifacts/e2e-runs/**',
+      'artifacts/bring-changes-back/**',
       'artifacts/watcher-permission-watch/**',
       'artifacts/watcher-header-overlap/**',
       'artifacts/immediate-client-updates/**',

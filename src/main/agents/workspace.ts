@@ -51,7 +51,8 @@ import { claudeSkillFolder, claudeSkillPath } from './claudeSkills'
 import { providerTakesNoSkills } from './providerSwitch'
 import { gitStatusFingerprint, type GitStatus } from '../../shared/gitStatus'
 import type { GitStatusSource } from './gitStatus'
-import { GitActionRefusal, type GitActionEvent, type GitActions } from './gitActions'
+import { BringBackRefusal, GitActionRefusal, type BringBackOutcome, type GitActionEvent, type GitActions } from './gitActions'
+import { BRING_BACK_FROM_DESKTOP, BRING_BACK_NO_TARGET, BRING_BACK_OFF, BRING_BACK_QUESTION_GONE, bringBackTarget, incomingRefBranch, type BringBack, type BringBackAway, type WorktreeMadeFrom } from '../../shared/bringChangesBack'
 import type { GitActionProgress, GitPullResult, GitStackedAction } from '../../shared/gitActions'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
@@ -245,14 +246,20 @@ function expandProviderModes(models: AgentModel[]): void {
 const ROSTER_LACKS_WORDS_ERROR = 'Agent history could not be saved. Thread activity keeps its task words, so nothing was lost. Restore access to local storage and restart Sotto.'
 class RosterLacksWords extends Error { constructor() { super('The agent roster could not keep this thread\u2019s task words.') } }
 
+/** Whether two folders are the same checkout, by Git's own root for each; a folder Git cannot read is no match. */
+const sameCheckout = async (left: string, right: string): Promise<boolean> => {
+  try { return await checkoutIdentity(left) === await checkoutIdentity(right) } catch { return false }
+}
+
 /**
  * The thread as workspace.json keeps it. `keepActivities` keeps its records there, as the fallback when the store
  * cannot take them, text-free for subagents, unless `keepTaskWords`: the roster, the words' only other copy, lacks
  * them or is not on the disk, so the file keeps them as it had them.
  */
 function organizationOnly(thread: AgentThread, keepActivities = false, keepTaskWords = false): AgentThread {
-  const { summary, earlierAvailable, monitoring, backgroundWork, subagentSummary, activities, lastUserMessageId, providerSessionOpen, sottoToolsWithheld, sottoToolsGiven, ...rest } = thread
-  void summary; void earlierAvailable; void monitoring; void backgroundWork; void subagentSummary; void lastUserMessageId; void providerSessionOpen; void sottoToolsWithheld; void sottoToolsGiven
+  // A bring-back outcome and the question it may hold are never saved (#1030): a restart forgets both.
+  const { summary, earlierAvailable, monitoring, backgroundWork, subagentSummary, activities, lastUserMessageId, providerSessionOpen, sottoToolsWithheld, sottoToolsGiven, bringBack, broughtBack, ...rest } = thread
+  void summary; void earlierAvailable; void monitoring; void backgroundWork; void subagentSummary; void lastUserMessageId; void providerSessionOpen; void sottoToolsWithheld; void sottoToolsGiven; void bringBack; void broughtBack
   return { ...rest, messages: [], ...(keepActivities && activities ? { activities: keepTaskWords ? activities : retainedActivities(activities) } : {}) }
 }
 
@@ -1376,6 +1383,168 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       return url
     }), url => ({ snapshot: this.workspaceSnapshot(), url }))
   }
+  /** Bringing changes back (#1030), on only where Work across machines is on, read once at start. */
+  private bringBackAllowed = false
+  allowBringBack(): void { this.bringBackAllowed = true }
+  /**
+   * The merge-commit question each thread holds, by the press that asked it and the two tips it named. A question about a
+   * child on another machine is held by the thread the commits go to, under that child's name too. Never saved.
+   */
+  private readonly bringBackQuestions = new Map<string, { readonly actionId: string; readonly targetHead: string; readonly branchHead: string }>()
+  /**
+   * Bring changes to <branch> (#1030): this thread's commits go to the branch of the thread it began from, which its new
+   * worktree was made from. Run on this thread's lane and its checkout, with the folder that has the target checked out
+   * held too, so no send, turn or Git action changes either meanwhile. The outcome, or the merge-commit question, goes on
+   * this thread's record; nothing is saved. Git runs only here, on the user's press, never on the update path. Nothing in
+   * it touches a remote, so no fetch follows: the folders' local status is read again, and the press answers with it.
+   * With `away`, the desktop already moved a child's branch here from another machine, and `threadId` names the thread
+   * the commits go to (`bringChangesArrived`).
+   */
+  async bringChangesBack(command: { readonly threadId: string; readonly actionId: string; readonly mergeCommit?: string | undefined; readonly away?: BringBackAway | undefined }): Promise<AgentHostSnapshot> {
+    if (command.away) return this.bringChangesArrived({ ...command, away: command.away })
+    await this.onGitLane(command.threadId, async () => {
+      if (!this.bringBackAllowed) throw new GitActionRefusal(BRING_BACK_OFF)
+      const thread = this.thread(command.threadId)
+      // A child of a thread on another machine moves its branch there first, which only the desktop does.
+      if (thread.worktree?.madeFrom?.host !== undefined) throw new GitActionRefusal(BRING_BACK_FROM_DESKTOP)
+      const found = bringBackTarget(thread, this.state.snapshot.threads)
+      if (!found) throw new GitActionRefusal(BRING_BACK_NO_TARGET)
+      const question = this.bringBackQuestions.get(thread.id)
+      if (command.mergeCommit !== undefined && question?.actionId !== command.mergeCommit) throw new GitActionRefusal(BRING_BACK_QUESTION_GONE)
+      const actions = this.gitActionsOrRefuse()
+      const cwd = await this.gitActionFolder(thread.id)
+      const project = this.state.snapshot.projects.find(item => item.id === thread.projectId)
+      const parent = this.thread(found.parentId)
+      const parentFolder = resolveThreadWorkingDirectory(parent, this.state.snapshot.projects.find(item => item.id === parent.projectId))
+      const at = new Date().toISOString()
+      const base = { actionId: command.actionId, target: found.target, branch: found.branch, at }
+      let record: BringBack
+      let checkout: string | null
+      try {
+        const outcome = await actions.bringBack({ cwd, target: found.target,
+          ...(command.mergeCommit !== undefined && question ? { mergeCommit: { targetHead: question.targetHead, branchHead: question.branchHead } } : {}),
+          parentCheckout: folder => sameCheckout(folder, parentFolder),
+          holdCheckout: async folder => {
+            // Every thread that works where the target is checked out, the one it began from first, must be at rest.
+            const release = await this.acquireCheckoutMutationInFolder(thread.id, folder, { kind: 'git-action' })
+            try {
+              if (this.mutationGuard && !await this.mutationGuard(thread.id, folder)) throw new GitActionRefusal(`Wait for the work where ${found.target} is checked out to finish, then try again. Nothing changed.`)
+              return release
+            } catch (error) { release(); throw error }
+          } })
+        checkout = outcome.checkout
+        record = { ...base, branch: outcome.branch, ...this.bringBackRecord(outcome, await this.checkoutPlace(outcome.checkout, project?.path)) }
+        if (outcome.kind === 'asks') this.bringBackQuestions.set(thread.id, { actionId: command.actionId, targetHead: outcome.targetHead, branchHead: outcome.branchHead })
+        else this.bringBackQuestions.delete(thread.id)
+      } catch (error) {
+        this.bringBackQuestions.delete(thread.id)
+        checkout = error instanceof BringBackRefusal ? error.detail.checkout ?? null : null
+        record = await this.bringBackRefused(base, error, project?.path)
+      }
+      this.touched(this.thread(command.threadId)).bringBack = record
+      this.dirty = true
+      await this.followGitChange(command.threadId)
+      // The thread it began from, and every thread in the folder that has the target checked out, read their folders again.
+      if (record.status === 'done' && record.how !== 'nothing') this.followBroughtChanges(found.parentId, checkout)
+    })
+    return this.workspaceSnapshot()
+  }
+  /**
+   * The second half of bringing changes back from a child on another machine (#1030): the desktop moved the child's
+   * branch into this project's incoming ref for `away.moveId`, and the commits now go to the branch of `threadId`, the
+   * thread the child began from, the same way as for a child on this machine. Run on that thread's lane, in its folder,
+   * which must still be on `away.target`. The question or outcome goes on that thread's `broughtBack`, naming the child as
+   * the desktop does; the incoming ref goes once the press is over, whatever it did.
+   */
+  private async bringChangesArrived(command: { readonly threadId: string; readonly actionId: string; readonly mergeCommit?: string | undefined; readonly away: BringBackAway }): Promise<AgentHostSnapshot> {
+    const { away } = command
+    // The desktop landed the branch before asking, so its incoming ref is found first and goes whatever happens next,
+    // a refusal to take the checkout included: no press, and no retry of one, leaves a ref behind.
+    await this.initialize()
+    const named = this.state.snapshot.threads.find(item => item.id === command.threadId)
+    const repository = named ? this.state.snapshot.projects.find(item => item.id === named.projectId)?.path : undefined
+    const arrived = repository ? await movedBranchRef(repository, away.moveId).then(ref => ({ repository, ref }), () => undefined) : undefined
+    try {
+      await this.onGitLane(command.threadId, async () => {
+        if (!this.bringBackAllowed) throw new GitActionRefusal(BRING_BACK_OFF)
+        const parent = this.thread(command.threadId)
+        if (!repository) throw new GitActionRefusal(BRING_BACK_NO_TARGET)
+        if (!arrived) throw new GitActionRefusal('The branch didn’t arrive here, so nothing was brought back. Try again. Nothing changed.')
+        const project = { path: repository }
+        const branch = incomingRefBranch(arrived.ref)
+        if (!branch) throw new GitActionRefusal('The branch didn’t arrive here, so nothing was brought back. Try again. Nothing changed.')
+        const key = `${parent.id}\0${away.from}`
+        const question = this.bringBackQuestions.get(key)
+        if (command.mergeCommit !== undefined && question?.actionId !== command.mergeCommit) throw new GitActionRefusal(BRING_BACK_QUESTION_GONE)
+        const actions = this.gitActionsOrRefuse()
+        const cwd = await this.gitActionFolder(parent.id)
+        const base = { actionId: command.actionId, target: away.target, branch, from: away.from, at: new Date().toISOString() }
+        let record: BringBack
+        let checkout: string | null
+        try {
+          // This thread's own folder holds the target and is held already, on its lane.
+          const outcome = await actions.bringBack({ cwd, target: away.target, arrived: { ref: arrived.ref, branch },
+            ...(command.mergeCommit !== undefined && question ? { mergeCommit: { targetHead: question.targetHead, branchHead: question.branchHead } } : {}),
+            parentCheckout: folder => sameCheckout(folder, cwd) })
+          checkout = outcome.checkout
+          record = { ...base, ...this.bringBackRecord(outcome, await this.checkoutPlace(outcome.checkout, project.path)) }
+          if (outcome.kind === 'asks') this.bringBackQuestions.set(key, { actionId: command.actionId, targetHead: outcome.targetHead, branchHead: outcome.branchHead })
+          else this.bringBackQuestions.delete(key)
+        } catch (error) {
+          this.bringBackQuestions.delete(key)
+          checkout = error instanceof BringBackRefusal ? error.detail.checkout ?? null : null
+          record = await this.bringBackRefused(base, error, project.path)
+        }
+        this.touched(this.thread(parent.id)).broughtBack = record
+        this.dirty = true
+        await this.followGitChange(parent.id)
+        if (record.status === 'done' && record.how !== 'nothing') this.followBroughtChanges(parent.id, checkout)
+      })
+    } finally {
+      // The child's branch is in the target now, or was not wanted: no ref keeps its commits here (ADR-0082 decision 3).
+      if (arrived) await runWorktreeGit(arrived.repository, ['update-ref', '-d', '--no-deref', arrived.ref]).catch(() => undefined)
+    }
+    return this.workspaceSnapshot()
+  }
+  /** A refusal's record: why, how many files, Git's own words, where the target is, and Sotto's sentence where it has no plainer one. */
+  private async bringBackRefused(base: Pick<BringBack, 'actionId' | 'target' | 'branch' | 'at'> & { readonly from?: string }, error: unknown, projectPath: string | undefined): Promise<BringBack> {
+    const refusal = error instanceof BringBackRefusal ? error : undefined
+    return { ...base, status: 'refused', refusal: refusal?.reason ?? 'git',
+      ...(refusal?.detail.files !== undefined ? { files: refusal.detail.files } : {}),
+      ...(refusal?.detail.gitSaid ? { gitSaid: refusal.detail.gitSaid } : {}),
+      ...(refusal?.detail.checkout !== undefined ? { checkedOut: await this.checkoutPlace(refusal.detail.checkout, projectPath) } : {}),
+      ...(!refusal || refusal.reason === 'busy' || refusal.reason === 'git' || refusal.reason === 'ignored' ? { message: (error instanceof Error ? error.message : 'Git did not answer.').slice(0, 1_000) } : {}) }
+  }
+  private bringBackRecord(outcome: BringBackOutcome, checkedOut: NonNullable<BringBack['checkedOut']>): Omit<BringBack, 'actionId' | 'target' | 'branch' | 'at'> {
+    switch (outcome.kind) {
+      case 'nothing': return { status: 'done', how: 'nothing', commits: 0, checkedOut }
+      case 'asks': return { status: 'asks', commits: outcome.commits, targetCommits: outcome.targetCommits, checkedOut }
+      case 'fast-forward': return { status: 'done', how: 'fast-forward', commits: outcome.commits, head: outcome.head, checkedOut }
+      case 'merge-commit': return { status: 'done', how: 'merge-commit', commits: outcome.commits, targetCommits: outcome.targetCommits, head: outcome.head, subject: outcome.subject, checkedOut }
+    }
+  }
+  /** Where a folder Git named sits for the user: the project folder, another worktree, or none at all. */
+  private async checkoutPlace(folder: string | null, projectPath: string | undefined): Promise<NonNullable<BringBack['checkedOut']>> {
+    if (folder === null) return 'none'
+    if (!projectPath) return 'worktree'
+    try { return await checkoutIdentity(folder) === await checkoutIdentity(projectPath) ? 'project' : 'worktree' } catch { return 'worktree' }
+  }
+  /**
+   * After a bring-back moved a branch: the parent thread, and every thread working where it is checked out, read again.
+   * One pass over the threads finds them all, with the projects looked up by ID, so the work grows with the threads and
+   * not with their square; the folder's status is let go once, and each thread then reads it on its own lane.
+   */
+  private followBroughtChanges(parentId: string, checkout: string | null): void {
+    const projects = new Map(this.state.snapshot.projects.map(project => [project.id, project]))
+    const ids: string[] = []
+    for (const thread of this.state.snapshot.threads) {
+      if (thread.id === parentId) { ids.push(thread.id); continue }
+      if (checkout === null) continue
+      try { if (sameFolder(resolveThreadWorkingDirectory(thread, projects.get(thread.projectId)), checkout)) ids.push(thread.id) } catch { /* A thread with no folder reads nothing. */ }
+    }
+    if (checkout !== null) this.gitStatus?.invalidate(checkout)
+    for (const id of ids) void this.onLane(id, () => this.followGitChange(id)).catch(() => undefined)
+  }
   private pullRequestsOrRefuse(): GitPullRequests {
     if (!this.gitPullRequests) throw new Error('Pull requests are unavailable on this host.')
     return this.gitPullRequests
@@ -1918,10 +2087,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (!project) throw new Error('Choose an available project.')
     return this.worktrees.options(project.path)
   }
-  private async selectedWorkingCopy(projectId: string, selection: AgentWorkingCopySelection & { readonly startFromMove?: string | undefined }): Promise<AgentWorktree> {
+  private async selectedWorkingCopy(projectId: string, selection: AgentWorkingCopySelection & { readonly startFromMove?: string | undefined; readonly madeFrom?: WorktreeMadeFrom | undefined }): Promise<AgentWorktree> {
     const project = this.state.snapshot.projects.find(item => item.id === projectId)
     if (!project) throw new Error('Choose an available project.')
-    if (selection.startFromMove) return { mode: 'independent', status: 'pending', incomingRef: await movedBranchRef(project.path, selection.startFromMove) }
+    if (selection.startFromMove) {
+      return { mode: 'independent', status: 'pending', incomingRef: await movedBranchRef(project.path, selection.startFromMove), ...selection.madeFrom ? { madeFrom: selection.madeFrom } : {} }
+    }
     if (selection.workingCopy === 'shared') return this.worktrees.inspect(await this.worktrees.allocate(project.path, 'shared'))
     // A draft pointed at a worktree that exists carries that worktree's branch, so the toolbar can name it.
     const existing = selection.existingWorktreePath
@@ -3977,6 +4148,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       ...(old?.worktree ? { worktree: old.worktree, workingDirectory: old.workingDirectory } : {}),
       // The Git action and the linked pull requests are Sotto's record, not the provider's: a provider update keeps them.
       ...(old?.gitAction ? { gitAction: old.gitAction } : {}),
+      ...(old?.bringBack ? { bringBack: old.bringBack } : {}),
+      ...(old?.broughtBack ? { broughtBack: old.broughtBack } : {}),
       ...(old?.pullRequests ? { pullRequests: old.pullRequests } : {}),
       // The thread that delegated to this one is Sotto's record too (ADR-0081), and so are a continuation's links (ADR-0089) and where it began (#1028).
       ...(old?.delegatedBy ? { delegatedBy: old.delegatedBy } : {}),
@@ -4649,8 +4822,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (!metadata.path) {
         const project = this.state.snapshot.projects.find(project => project.id === thread.projectId)
         if (!project) throw new Error('The original project is unavailable.')
+        // The thread a moved branch came from stays on the record, so the worker can bring its commits back there (#1030).
+        const madeFrom = metadata.madeFrom
         metadata = await this.worktrees.allocate(project.path, metadata.mode, { baseBranch: metadata.baseBranch, startFromOrigin: metadata.startFromOrigin, existingWorktreePath: metadata.existingWorktreePath,
           ...(metadata.checkoutBranch && metadata.branch ? { checkoutBranch: metadata.branch } : {}), ...(metadata.incomingRef ? { incomingRef: metadata.incomingRef } : {}) })
+        if (madeFrom && metadata.incomingRef) metadata = { ...metadata, madeFrom }
         this.touched(current()).worktree = metadata
         this.dirty = true
         await this.flush() // Allocation owns its exact path/branch before Git mutates anything.

@@ -651,6 +651,29 @@ test.describe("Watcher's room on the built app", () => {
     }))
   })
 
+  test('a fork made beside Watcher opens there in place of its source, with the cursor in its composer (#1136)', async () => {
+    // The workspace scenario's threads name their providers, which Fork from here needs.
+    await onReleaseTrack('owl', () => withSotto({ ...launchOptions('t3-code', 'dark'), scenario: 'phase3-workspace' }, async (launched) => {
+      const { page } = launched
+      await openThreads(page)
+      await seedRoom(page, { current: true })
+      await resizeContentWindow(launched, 1280, 800)
+      await openRoom(page)
+      await allThreads(page).click()
+      await threadsList(page).getByRole('button', { name: 'Open Grok voice previews beside Watcher' }).click()
+      await expect(beside(page)).toHaveAttribute('aria-label', 'Grok voice previews')
+      const reply = beside(page).locator('.thread-message[data-role="assistant"]').last()
+      await reply.hover()
+      await reply.getByRole('button', { name: /^Fork from here/u }).click()
+      await beside(page).getByRole('region', { name: 'Fork from here' }).getByRole('button', { name: /^(Fork|Start the .+ thread)$/u }).click()
+      await expect(beside(page)).toHaveAttribute('aria-label', 'Fork of Grok voice previews')
+      const forkId = await beside(page).getAttribute('data-thread-id')
+      expect(forkId).not.toMatch(/grok-previews$/u)
+      await expect(beside(page).getByRole('textbox', { name: 'Prompt' })).toBeFocused()
+      await expect(page.getByRole('region', { name: 'Grok voice previews', exact: true })).toHaveCount(0)
+    }))
+  })
+
   test('in the macOS layout, Watcher’s header keeps its controls apart and clear of the traffic lights in a narrow pane', async () => {
     // A Windows run has no traffic lights; the room's own macOS layout is what moves the header clear of them.
     const read = (page: Page) => page.locator('.watcher-pane .watcher-head').evaluate(head => {

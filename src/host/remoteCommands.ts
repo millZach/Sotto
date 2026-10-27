@@ -59,6 +59,10 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   // a push is never forced, and a pull is fast-forward only (ADR-0027).
   'git-action': ['threadId', 'actionId', 'action', 'commitMessage', 'featureBranch', 'filePaths', 'allowDefaultBranch'],
   'git-pull': ['threadId'], 'git-switch-branch': ['threadId', 'ref', 'create'], 'git-init': ['threadId'],
+  // Bringing changes back (#1030) fast-forwards a branch or, after the user's yes, makes a merge commit on it. It discards
+  // nothing: uncommitted work and conflicts are refused, nothing is forced. Only on a listener that offers `bring-changes-back`.
+  // `away`, the second half for a child on another machine whose branch a desktop moved here, only from a recorded desktop.
+  'bring-changes-back': ['threadId', 'actionId', 'mergeCommit', 'away'],
   'git-publish': ['threadId', 'repository', 'visibility'],
   // The pull request presses are the user's own, through gh on the host's sign-in, and none answers a permission: merging,
   // closing and turning on auto-merge each take the surface's confirmation first, and a checkout never forces (ADR-0027).
@@ -158,13 +162,18 @@ export function remoteCommandRefusal(command: AgentCommand, context: { readonly 
   /** Whether this listener offers `thread-starts`: only a host whose Owl answer turns them on (#1028). */
   readonly threadStarts?: boolean | undefined
   /** Whether this listener offers `thread-delete`: only a host whose Owl answer turns clearing on, to a desktop (ADR-0140). */
-  readonly threadDelete?: boolean | undefined }): 'forbidden' | null {
+  readonly threadDelete?: boolean | undefined
+  /** Whether this listener offers `bring-changes-back`: only a host whose Owl answer turns it on (#1030). */
+  readonly bringBack?: boolean | undefined
+  /** Whether this client is one the launch script recorded as a desktop: only a desktop moves branches (ADR-0105). */
+  readonly desktop?: boolean | undefined }): 'forbidden' | null {
   if (managementCommandRefusal(command)) return 'forbidden'
   if (command.type === 'connect' && command.notice !== undefined && command.notice !== false) return 'forbidden'
   const fields = REMOTE_COMMANDS[command.type] as readonly string[] | undefined
   if (!fields) return 'forbidden'
   if ((command.type === 'queue-client-updates' || command.type === 'cancel-client-updates') && context.clientUpdates !== true) return 'forbidden'
   if (startsThread(command) && context.threadStarts !== true) return 'forbidden'
+  if (command.type === 'bring-changes-back' && (context.bringBack !== true || command.away !== undefined && context.desktop !== true)) return 'forbidden'
   if ((command.type === 'delete-thread' || command.type === 'preview-delete-thread') && context.threadDelete !== true) return 'forbidden'
   if (Object.keys(command).some(key => key !== 'type' && !fields.includes(key))) return 'forbidden'
   if (command.type === 'configure' && Object.keys(command.patch).some(key => !(REMOTE_CONFIGURATION_FIELDS as readonly string[]).includes(key))) return 'forbidden'

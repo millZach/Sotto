@@ -18,8 +18,9 @@ const WINDOW_ONLY: Partial<Record<AgentCommand['type'], string[]>> = { configure
  * desktops show (ADR-0092). A paired client never sends them; one that tries is refused.
  */
 const HOST_INTERNAL: Partial<Record<AgentCommand['type'], string[]>> = { 'observe-threads': ['shownThreadIds'],
-  // A worker started from a moved branch (#1033): only the host's own Watcher or delegation names the move it starts from.
-  'create-thread': ['startFromMove'] }
+  // A worker started from a moved branch (#1033): only the host's own Watcher or delegation names the move it starts from,
+  // and the thread whose branch it was (#1030).
+  'create-thread': ['startFromMove', 'madeFrom'] }
 type Option = { shape: { type: { value?: string; options?: string[] } } & Record<string, unknown> }
 const schemaFields = new Map((agentCommandSchema.options as unknown as Option[]).flatMap(option => {
   const types = option.shape.type.options ?? [option.shape.type.value!]

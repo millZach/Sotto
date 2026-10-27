@@ -1,0 +1,23 @@
+/* Bring changes to <branch> (#1030): the strip above the composer, the merge-commit question and the outcome in its place.
+   It sits in the Git action's slot and reads like its notice. Every colour is a theme role. */
+.bring-back { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 10px; padding: 10px 12px 10px 14px; border: 1px solid var(--tt-hairline);
+  border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); color: var(--tt-text-2); font-size: 14px; line-height: 1.45; }
+.bring-back[data-tone='ask'] { border-color: var(--tt-accent-border); }
+.bring-back[data-tone='error'] { border-color: var(--tt-error-border); background: var(--tt-error-surface); color: var(--tt-error-text); }
+.bring-back:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+.bring-back__icon { flex: none; align-self: flex-start; margin-top: 3px; color: var(--tt-text-muted); }
+.bring-back[data-tone='ask'] .bring-back__icon { color: var(--tt-accent-text); }
+.bring-back[data-tone='error'] .bring-back__icon { color: inherit; }
+.bring-back__text { flex: 1 1 260px; min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.bring-back__text p { margin: 0; }
+.bring-back strong { color: var(--tt-text); font-weight: 600; }
+.bring-back[data-tone='error'] strong { color: inherit; }
+.bring-back__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.bring-back .tt-button { gap: 6px; min-height: 34px; padding: 0 12px; font-size: 14px; }
+.bring-back .tt-button[aria-disabled='true'] { opacity: .6; cursor: not-allowed; }
+.bring-back .tt-button[aria-busy='true'] { cursor: progress; }
+.bring-back__dismiss { display: grid; place-items: center; width: 28px; height: 28px; flex: none; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
+.bring-back__dismiss:hover { background: var(--tt-hover); }
+/* Git's own words, as Git said them. */
+.bring-back__git-said { margin: 6px 0 0; padding: 7px 10px; border: 1px solid var(--tt-error-border); border-radius: 6px; background: var(--tt-canvas); color: var(--tt-text);
+  font: 12.5px/1.5 var(--tt-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9.5em; overflow-y: auto; }

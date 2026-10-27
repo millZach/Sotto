@@ -97,6 +97,8 @@ test('Claude Code forks a thread at a reply into a thread of its own, and leaves
     await page.getByRole('region', { name: 'Fork from here' }).getByRole('button', { name: 'Fork' }).click()
     const forked = await expect.poll(async () => page.evaluate(async () => { const state = await window.sotto!.agents!.get(); return state.host.threads.find(thread => thread.id === state.activeThreadId)?.title })).toBe('Fork of Grok voice previews')
     void forked
+    // The cursor waits in the fork's composer, ready for the message it was made for.
+    await expect(page.locator('.thread-pane[data-focused] .thread-workspace__compose .prompt-editor')).toBeFocused()
     const note = page.getByRole('note').filter({ hasText: 'Forked from' })
     await expect(note).toContainText('Forked from Grok voice previews at Claude Code’s reply')
     await expect(note).toContainText('Files weren’t rewound.')

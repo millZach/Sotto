@@ -3,7 +3,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentCommand, AgentModel, AgentState, AgentThreadStart, HandoverCounts, ProviderId } from '../../../src/shared/agents'
-import { ForkCard, ForkContext, ForkPress, forkModel, type ForkOptions } from '../../../src/renderer/src/agents/ForkFromHere'
+import { ForkCard, ForkContext, ForkLandingContext, ForkPress, forkModel, type ForkOptions } from '../../../src/renderer/src/agents/ForkFromHere'
 import { StartHandoverCard, ThreadStartNote, threadStartView } from '../../../src/renderer/src/agents/ThreadStart'
 
 // Fork from here (#1028, E5b; the continue prototype's variant B, in place): the press under a reply, its card in the
@@ -18,12 +18,13 @@ const models: AgentModel[] = [
   { id: 'native:codex:model:gpt-5.5', provider: 'Codex', providerId: 'codex', name: 'GPT-5.5', ready: true },
 ]
 const AT = '2026-10-16T12:05:00.000Z'
-const answer = (error: string | null): AgentState => ({ error } as AgentState)
+const HOST = '6c0f8f0e-7b1e-4d5a-9a43-1f4f0f3b2a10'
+const answer = (error: string | null): AgentState => ({ error, host: { threads: [] } } as unknown as AgentState)
 
-function Transcript({ provider, command, busy = false, sourceBranch, ready = models }: { readonly provider: ProviderId; readonly command: (command: AgentCommand) => Promise<AgentState | null>; readonly busy?: boolean
-  readonly sourceBranch?: { readonly currentBranch: string | null }; readonly ready?: readonly AgentModel[] }) {
+function Transcript({ provider, command, busy = false, sourceBranch, ready = models, threadId = 'wav' }: { readonly provider: ProviderId; readonly command: (command: AgentCommand) => Promise<AgentState | null>; readonly busy?: boolean
+  readonly sourceBranch?: { readonly currentBranch: string | null }; readonly ready?: readonly AgentModel[]; readonly threadId?: string }) {
   const [openAt, open] = useState<string | null>(null)
-  const options: ForkOptions = { threadId: 'wav', threadTitle: 'WAV preview stall', provider, projectId: 'workshop', where: 'This computer', remote: false, models: ready,
+  const options: ForkOptions = { threadId, threadTitle: 'WAV preview stall', provider, projectId: 'workshop', where: 'This computer', remote: false, models: ready,
     modelId: provider === 'claude' ? 'native:claude:model:sonnet' : provider === 'grok' ? 'native:grok:model:grok-5' : 'native:codex:model:gpt-5.5', command,
     ...(sourceBranch ? { sourceBranch } : {}), openAt, open, after: new Set(openAt ? ['later'] : []), busy }
   return <ForkContext.Provider value={options}>
@@ -104,6 +105,35 @@ describe('Fork from here', () => {
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('region', { name: 'Fork from here' })).toBeNull()
     await vi.waitFor(() => expect(screen.getByTestId('fork').querySelector('[data-fork-at]')).toHaveFocus())
+  })
+
+  it('hands the fork to where it lands and puts the cursor in its composer once its pane is drawn, and hands nothing on a refusal', async () => {
+    const user = userEvent.setup()
+    // A pane showing the fork, drawn once the place it lands takes it, as Watcher's beside pane and Threads' panes are.
+    function Room({ command }: { readonly command: (command: AgentCommand) => Promise<AgentState | null> }) {
+      const [shown, land] = useState<string | null>(null)
+      return <ForkLandingContext.Provider value={land}>
+        {shown === null ? <Transcript provider="claude" command={command} threadId={`host:${HOST}:wav`} />
+          : <section className="thread-pane" data-thread-id={shown}><div className="thread-workspace__compose"><textarea aria-label="Prompt" /></div></section>}
+      </ForkLandingContext.Provider>
+    }
+    const refused = vi.fn(async () => answer('That model or account is unavailable. Choose a ready model; Sotto will not switch your account. Nothing was made.'))
+    const first = render(<Room command={refused} />)
+    await user.click(screen.getByRole('button', { name: /^Fork from here/u }))
+    await user.click(screen.getByRole('button', { name: 'Fork' }))
+    expect(screen.getByRole('alert').textContent).toContain('Nothing was made.')
+    expect(screen.getByRole('region', { name: 'Fork from here' })).toBeTruthy()
+    expect(document.querySelector('.thread-pane')).toBeNull()
+    first.unmount()
+
+    // Main makes the fork on its source's host, and the window lists it under that host's key, as it knows every thread.
+    const command = vi.fn(async (request: AgentCommand) => ({ error: null, host: { threads: [{ id: `host:${HOST}:${request.type === 'fork-thread' ? request.newThreadId : ''}` }] } } as unknown as AgentState))
+    render(<Room command={command} />)
+    await user.click(screen.getByRole('button', { name: /^Fork from here/u }))
+    await user.click(screen.getByRole('button', { name: 'Fork' }))
+    const sent = (command.mock.calls[0] as unknown as [Extract<AgentCommand, { type: 'fork-thread' }>])[0]
+    expect(document.querySelector('.thread-pane')).toHaveAttribute('data-thread-id', `host:${HOST}:${sent.newThreadId}`)
+    await vi.waitFor(() => expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveFocus())
   })
 
   it('offers the new worktree once the thread’s Git status arrives with the card open', async () => {
