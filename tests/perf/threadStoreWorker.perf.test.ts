@@ -78,7 +78,9 @@ describe('thread history saves on the store worker', () => {
   it('writes nothing on main, however far the saves grow the log', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-store-worker-budget-')); roots.push(root)
     const path = join(root, 'threads.sqlite')
-    const store = new ThreadStore(path, undefined, worker.path)
+    // The worker's checkpoints are held off, so the log grows past SQLite's own threshold however fast the disk: on a fast
+    // one a checkpoint every half second keeps it far below, and the case this holds main to never comes (#1626's CI).
+    const store = new ThreadStore(path, undefined, { path: worker.path, timing: { intervalMs: 600_000 } })
     store.open()
     const writer = new ThreadStoreWriterOnWorker(store)
     try {
