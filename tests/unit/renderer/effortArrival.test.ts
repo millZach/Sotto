@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
  * all: Rainbow went blank for the length of every arrival. The letters take the colour; the word is what moves.
  */
 const GLOBAL = 'src/renderer/src/styles/global.css'
-const SURFACES = ['src/renderer/src/agents/effortPicker.css', 'src/renderer/src/features/settings/themes/themes.css']
+const SURFACES = ['src/renderer/src/agents/effortPicker.css', 'src/renderer/src/features/settings/themes/appearanceStudio.css']
 const read = (path: string): string => readFileSync(join(process.cwd(), path), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '')
 const keyframes = (css: string, name: string): string => new RegExp(`@keyframes ${name} \\{(?:[^{}]|\\{[^{}]*\\})*\\}`, 'u').exec(css)?.[0] ?? ''
 

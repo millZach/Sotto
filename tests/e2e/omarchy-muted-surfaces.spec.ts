@@ -67,6 +67,8 @@ test('Omarchy muted text reads on real selected rows, hover rows, bubbles and la
     // Drive the real Appearance choice once before switching the owned file live.
     await openPage(page, 'Settings')
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
+    const split = page.getByRole('switch', { name: 'A different theme when dark' })
+    if (await split.getAttribute('aria-checked') !== 'true') await split.click()
     await page.getByRole('radiogroup', { name: 'Dark theme' }).getByRole('radio', { name: /^Omarchy Tokyo Night$/ }).click()
     await openThreads(page)
     await page.getByRole('button', { name: 'Tools', exact: true }).click()

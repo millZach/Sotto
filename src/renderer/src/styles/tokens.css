@@ -152,8 +152,12 @@
 
 /* Tokens every feature reads. Declared once for both modes: the theme roles
    already differ per mode, and the few constants that do not come from a theme
-   (status green, provider marks, shadows, glass blur) are set per mode below. */
-:root {
+   (status green, provider marks, shadows, glass blur) are set per mode below.
+   A custom property substitutes its var()s where it is declared, so an element
+   that carries `data-theme-scope` with its own --theme-* roles (the preview on
+   Settings → Appearance, showing the other half) re-derives every token from
+   them here without repainting the window. */
+:root, [data-theme-scope] {
   --theme-contrast-target: white;
   --tt-glass-blur: 16px;
   --tt-glass-saturation: 1.08;
@@ -373,7 +377,7 @@
     Consolas, 'Liberation Mono', monospace;
 }
 
-:root[data-theme='light'] {
+:root[data-theme='light'], [data-theme-scope='light'] {
   --theme-contrast-target: black;
   /* By day the raised surface is barely off the canvas, so a card is the canvas with a little of the text in it. */
   --tt-card: color-mix(in oklab, var(--theme-text) 4%, var(--theme-canvas));
@@ -501,7 +505,7 @@
   --tt-effort-fill-image: var(--effort-spectrum);
   --tt-effort-wash-image: var(--effort-spectrum);
 }
-:root[data-theme='light'][data-effort-color='rainbow'] {
+:root[data-theme='light'][data-effort-color='rainbow'], [data-theme-scope='light'][data-effort-color='rainbow'] {
   --tt-effort-text-image: linear-gradient(90deg, oklch(0.55 0.22 20), oklch(0.6 0.16 70), oklch(0.58 0.18 140), oklch(0.55 0.13 210), oklch(0.5 0.22 280), oklch(0.55 0.25 340));
 }
 

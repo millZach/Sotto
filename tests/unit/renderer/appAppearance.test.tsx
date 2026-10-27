@@ -80,13 +80,16 @@ describe('Sotto application onboarding integration', () => {
     const root = document.documentElement
 
     await user.click(screen.getByRole('tab', { name: 'Appearance' }))
+    // Each half has its own grid once the switch splits them; the switch is the page's view and saves nothing.
+    await user.click(screen.getByRole('switch', { name: 'A different theme when dark' }))
     const lightHalf = (): HTMLElement => screen.getByRole('radiogroup', { name: 'Light theme' })
-    await user.click(screen.getByRole('radio', { name: 'Light' }))
+    const scheme = (): HTMLElement => screen.getByRole('radiogroup', { name: 'Color scheme' })
+    await user.click(within(scheme()).getByRole('radio', { name: 'Light' }))
     expect(root).toHaveAttribute('data-theme', 'light')
     await user.click(within(lightHalf()).getByRole('radio', { name: 'Citrine' }))
     expect(root).toHaveAttribute('data-theme', 'light')
     expect(root).toHaveAttribute('data-theme-id', 'citrine')
-    expect(screen.getByRole('radio', { name: 'Light' })).toHaveAttribute('aria-checked', 'true')
+    expect(within(scheme()).getByRole('radio', { name: 'Light' })).toHaveAttribute('aria-checked', 'true')
     expect(within(lightHalf()).getByRole('radio', { name: 'Citrine' })).toHaveAttribute('aria-checked', 'true')
     // Only the light half moved: the dark half still belongs to Sotto.
     expect(within(screen.getByRole('radiogroup', { name: 'Dark theme' })).getByRole('radio', { name: 'Sotto' })).toHaveAttribute('aria-checked', 'true')
@@ -103,7 +106,7 @@ describe('Sotto application onboarding integration', () => {
     await act(async () => { saves[1]!.result.resolve(persisted) })
     expect(root).toHaveAttribute('data-theme', 'light')
     expect(root).toHaveAttribute('data-theme-id', 'citrine')
-    expect(screen.getByRole('radio', { name: 'Light' })).toHaveAttribute('aria-checked', 'true')
+    expect(within(scheme()).getByRole('radio', { name: 'Light' })).toHaveAttribute('aria-checked', 'true')
     expect(within(lightHalf()).getByRole('radio', { name: 'Citrine' })).toHaveAttribute('aria-checked', 'true')
   })
 
@@ -125,11 +128,14 @@ describe('Sotto application onboarding integration', () => {
     const root = document.documentElement
 
     await user.click(screen.getByRole('tab', { name: 'Appearance' }))
+    // Each half has its own grid once the switch splits them; the switch is the page's view and saves nothing.
+    await user.click(screen.getByRole('switch', { name: 'A different theme when dark' }))
     const lightHalf = (): HTMLElement => screen.getByRole('radiogroup', { name: 'Light theme' })
-    await user.click(screen.getByRole('radio', { name: 'Light' }))
-    await user.click(within(lightHalf()).getByRole('radio', { name: 'Fern' }))
+    const scheme = (): HTMLElement => screen.getByRole('radiogroup', { name: 'Color scheme' })
+    await user.click(within(scheme()).getByRole('radio', { name: 'Light' }))
+    await user.click(within(lightHalf()).getByRole('radio', { name: 'Hush' }))
     expect(root).toHaveAttribute('data-theme', 'light')
-    expect(root).toHaveAttribute('data-theme-id', 'fern')
+    expect(root).toHaveAttribute('data-theme-id', 'hush')
 
     await waitFor(() => expect(saves).toHaveLength(1))
     persisted = { ...persisted, appearance: 'light' }

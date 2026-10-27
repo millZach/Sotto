@@ -295,14 +295,18 @@ test('the card holds its height through the levels and keeps a gradient colourwa
     expect(settled, `the word is not painted at rest (${measured})`).toBeGreaterThan(0.08)
     expect(arriving, `the word loses its paint while the arrival plays (${measured})`).toBeGreaterThan(settled * 0.75)
 
-    // The Appearance sample plays the same arrival on the same kind of word, which is where the blank one shows.
+    // The Appearance preview's composer plays the same arrival on the same kind of word, which is where the blank one
+    // shows. Choosing a colourway plays it; Rainbow is chosen again from another, so the word ends on Rainbow.
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
-    const sample = page.locator('#settings-appearance .effort-sample')
+    const sample = page.locator('#settings-appearance .appearance-preview .studio-composer')
     await sample.scrollIntoViewIfNeeded()
-    const sampleWord = sample.locator('.effort-sample__word')
+    const sampleWord = sample.locator('.studio-composer__word')
+    const swatches = page.locator('#settings-appearance').getByRole('group', { name: 'Effort color', exact: true })
     const sampleSettled = await inkCoverage(await page.screenshot({ clip: (await sampleWord.boundingBox())! }))
-    await sample.getByRole('button', { name: 'Play again', exact: true }).click()
+    await swatches.getByRole('button', { name: 'Use Aurora as the effort color', exact: true }).click()
+    await expect(sample).not.toHaveAttribute('data-arriving', { timeout: 6_000 })
+    await swatches.getByRole('button', { name: 'Use Rainbow as the effort color', exact: true }).click()
     await expect(sample).toHaveAttribute('data-arriving', 'true')
     await expect.poll(async () => sampleWord.evaluate(node => node.getAnimations({ subtree: true })
       .filter(animation => 'animationName' in animation && String(animation.animationName) === 'effort-letter')
@@ -342,25 +346,25 @@ test('Settings → Appearance offers the effort colourways, paints the pick at o
     await group.scrollIntoViewIfNeeded()
     await expect(group.getByRole('button')).toHaveCount(6)
     await expect(group.getByRole('button', { name: 'Use Ember as the effort color, currently active' })).toHaveAttribute('aria-pressed', 'true')
-    const sample = section.locator('.effort-sample')
-    await expect(sample).toHaveAttribute('data-arriving', 'false')
+    const sample = section.locator('.appearance-preview .studio-composer')
+    await expect(sample).not.toHaveAttribute('data-arriving')
     await group.getByRole('button', { name: 'Use Cyberpunk as the effort color', exact: true }).click()
     await expect(page.locator('html')).toHaveAttribute('data-effort-color', 'cyberpunk')
     await expect(group.getByRole('button', { name: 'Use Cyberpunk as the effort color, currently active' })).toHaveAttribute('aria-pressed', 'true')
     await expect(sample).toHaveAttribute('data-arriving', 'true')
     await page.screenshot({ path: `${ARTIFACTS}/appearance-cyberpunk.png` })
-    // Play again starts an arrival that is already running over again, which asking for the same attribute twice
-    // never did: wait until the tide is well into its run, then press it and find the tide back at its beginning.
+    // Another colourway mid-arrival starts the arrival over, which asking for the same attribute twice never did: wait
+    // until the tide is well into its run, choose again, and find the tide back at its beginning.
     const washTimes = async (): Promise<number[]> => sample.evaluate(node => node.getAnimations({ subtree: true })
       .filter(animation => 'animationName' in animation && String(animation.animationName) === 'effort-wash')
       .map(animation => Math.round(Number(animation.currentTime ?? 0))))
     await expect.poll(async () => Math.min(...await washTimes(), Number.POSITIVE_INFINITY)).toBeGreaterThan(600)
-    await sample.getByRole('button', { name: 'Play again', exact: true }).click()
-    const restarted = await washTimes()
-    expect(restarted.length, 'the tide runs in the card and in the composer').toBe(2)
-    expect(Math.max(...restarted), 'Play again starts the tide over').toBeLessThan(300)
+    await group.getByRole('button', { name: 'Use Plasma as the effort color', exact: true }).click()
+    await group.getByRole('button', { name: 'Use Cyberpunk as the effort color', exact: true }).click()
+    await expect.poll(async () => (await washTimes()).length, 'the tide runs in the composer').toBe(1)
+    expect(Math.max(...await washTimes()), 'a new colourway starts the tide over').toBeLessThan(400)
     await expect.poll(async () => (await page.evaluate(async () => window.sotto!.getSettings())).effortColor).toBe('cyberpunk')
-    await expect(sample).toHaveAttribute('data-arriving', 'false', { timeout: 6_000 })
+    await expect(sample).not.toHaveAttribute('data-arriving', { timeout: 6_000 })
     // The colourway is a setting, so it survives a reload, and the thread at its highest level wears it.
     await page.reload()
     await expect(page.locator('html')).toHaveAttribute('data-effort-color', 'cyberpunk')

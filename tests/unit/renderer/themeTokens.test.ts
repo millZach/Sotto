@@ -250,7 +250,8 @@ describe('main-window theme tokens', () => {
   it('derives every colour token from theme roles, never from an accent attribute', () => {
     const css = tokensCss.replace(/\/\*[\s\S]*?\*\//gu, '')
     expect(css).not.toMatch(/data-accent/u)
-    const derived = tokenBlocks.find(block => block.selectors.length === 1 && block.selectors[0] === ':root' && block.declarations.has('--tt-canvas'))!
+    // The token block is also declared on a theme scope (the Appearance preview), which re-derives it from its own roles.
+    const derived = tokenBlocks.find(block => block.selectors[0] === ':root' && block.selectors.every(selector => selector === ':root' || selector === '[data-theme-scope]') && block.declarations.has('--tt-canvas'))!
     const constants = new Set(['--tt-success', '--tt-provider-codex', '--tt-provider-claude', '--tt-provider-grok', '--tt-provider-devin', '--tt-provider-opencode', '--tt-provider-cursor', '--tt-provider-muse', '--tt-provider-opencode-badge', '--tt-provider-cursor-badge', '--tt-provider-deepseek-badge', '--tt-provider-ink', ...CHART_SERIES.map(name => `--tt-${name}`), '--tt-chart-other', '--tt-backdrop', '--tt-shadow-sm', '--tt-shadow-lg', '--tt-shadow-overlay', '--tt-shadow-color'])
     for (const [name, value] of derived.declarations) {
       // A relative colour from a theme role (`oklch(from var(…) …)`) is derived, not a literal.
@@ -290,6 +291,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/features/settings/threadShortcuts.css',
       'src/renderer/src/features/settings/menuBarOwl.css',
       'src/renderer/src/features/settings/languagePicker.css',
+      'src/renderer/src/features/settings/themes/appearanceStudio.css',
       'src/renderer/src/agents/hostBadge.css',
       'src/renderer/src/agents/activityBodies.css',
       'src/renderer/src/agents/requests/requests.css',
