@@ -107,7 +107,7 @@ export function pendingRequest(id: string | number, method: string, value: unkno
   })
   return { id, method, sessionId, params, request: { id: requestKey(id), kind: mapping.kind, text, options,
     ...(questions.length ? { questions: questions.map(q => ({ id: q.id, question: q.question, header: q.header, options: (q.options ?? []).map(option => ({ id: option.label, ...option })), multiSelect: false, allowFreeText: q.isOther ?? !q.options?.length })) } : formQuestions ? { questions: formQuestions } : {}),
-    ...(permission ? { permissionChoices } : {}), context: { toolName: method, toolCallId: params.itemId, command: params.command ?? undefined, cwd: params.cwd ?? params.grantRoot ?? undefined,
+    ...(permission ? { permissionChoices } : { skippable: true as const }), context: { toolName: method, toolCallId: params.itemId, command: params.command ?? undefined, cwd: params.cwd ?? params.grantRoot ?? undefined,
       details: JSON.stringify({ ...(params.reason ? { reason: params.reason } : {}), ...(params.permissions ? { permissions: params.permissions } : {}), ...(params.networkApprovalContext ? { networkApprovalContext: params.networkApprovalContext } : {}), ...(fileSummary ? { files: fileSummary } : {}) }).slice(0, 100000) } } }
 }
 
@@ -116,7 +116,9 @@ export function declineRequest(method: string): unknown {
 }
 
 /** This is called only for a user answer. No lifecycle or timeout path can grant permission. */
-export function answerRequest(pending: CodexPendingRequest, answer: string, approved?: boolean, questionAnswers?: AgentQuestionAnswers, permissionChoice?: string): unknown {
+export function answerRequest(pending: CodexPendingRequest, answer: string, approved?: boolean, questionAnswers?: AgentQuestionAnswers, permissionChoice?: string, skipped?: boolean): unknown {
+  // A skipped question is declined: no answers to a question, `decline` to a form. Codex reads either and goes on.
+  if (skipped && requestMethods[pending.method]!.kind === 'question') return declineRequest(pending.method)
   if (requestMethods[pending.method]!.kind === 'permission') {
     if (permissionChoice) {
       const choice = permissionValue(pending.request, permissionChoice, approved)

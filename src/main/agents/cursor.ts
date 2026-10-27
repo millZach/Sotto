@@ -1185,7 +1185,7 @@ export class CursorAcpHost implements AgentHost {
     if (profile) assertWatcherPermissionChoice(pending.request, command.permissionChoice)
     if (pending.connection !== connection) return { accepted: false, uncertain: true }
     if (pending.answering) return { accepted: false, uncertain: true }
-    const result = cursorAnswer(pending, command.answer, command.approved, command.questionAnswers, command.permissionChoice)
+    const result = cursorAnswer(pending, command.answer, command.approved, command.questionAnswers, command.permissionChoice, command.skipped)
     pending.answering = true
     const index = this.indexOf(command.threadId, alias)
     index.answer(pending.request.id)

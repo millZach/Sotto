@@ -5798,6 +5798,10 @@ msgstr "You sent <0>{sent}</0>, Watcher <1>{watcher}</1> and wake-ups <2>{wakeUp
 msgid "You set this policy"
 msgstr "You set this policy"
 
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "You skipped {title}’s question."
+msgstr "You skipped {title}’s question."
+
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "You told Sotto"
 msgstr "You told Sotto"

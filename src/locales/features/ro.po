@@ -5798,6 +5798,10 @@ msgstr ""
 msgid "You set this policy"
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherAsks.tsx
+msgid "You skipped {title}’s question."
+msgstr ""
+
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "You told Sotto"
 msgstr ""
