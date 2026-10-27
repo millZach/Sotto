@@ -224,6 +224,12 @@ test('the effort card previews a drag, saves on release, plays the arrival at th
     expect(await card.evaluate(node => node.getAnimations({ subtree: true }).filter(animation => animation.playState === 'running')
       .map(animation => `${(animation.effect as KeyframeEffect | null)?.target?.tagName ?? '?'}${(animation.effect as KeyframeEffect | null)?.pseudoElement ?? ''}:${'animationName' in animation ? String(animation.animationName) : 'transitionProperty' in animation ? String(animation.transitionProperty) : animation.id}`))).toEqual([])
     expect(await composer.evaluate(node => getComputedStyle(node, '::after').animationName)).toBe('none')
+    // The effort trace holds still at the top: drawn, with nothing turning it. The emulated preference reaches the
+    // stylesheet a moment after the press, so the still state is polled for rather than read from one sample.
+    await expect.poll(() => composer.evaluate(node => {
+      const light = node.querySelector<HTMLElement>(':scope > .effort-trace')
+      return { shown: light !== null && getComputedStyle(light).display !== 'none', turning: light?.getAnimations({ subtree: true }).length ?? -1 }
+    })).toEqual({ shown: true, turning: 0 })
     expect(errors).toEqual([])
   } finally { await closeSotto(launched) }
 })
