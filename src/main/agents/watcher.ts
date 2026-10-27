@@ -540,6 +540,8 @@ export class WatcherService implements WatcherControlHooks {
   private checkTimer: ReturnType<typeof setTimeout> | undefined
   /** Settles once `close` has let go of the branches its waiting checks would have started from. */
   private lettingGoChecks: Promise<void> = Promise.resolve()
+  /** Checks whose snapshot is still being taken: one that finishes after `close` lets go of its own branch (#1312). */
+  private readonly snapshotting = new Set<Promise<void>>()
   private readonly steerFallbacks = new Map<string, string>()
   /**
    * Settle finished threads: the turn each watched thread was last settled or tried at, so one that is refused is not
@@ -3654,7 +3656,17 @@ export class WatcherService implements WatcherControlHooks {
         if (create.check && !checks) refuse('HOST_FEATURE_UNAVAILABLE', 'This machine does not run checks one at a time. Nothing was started.')
         const check = checks && !resumed ? this.joinChecks(ticket ?? operation.id) : undefined
         if (check) this.adoptCheck(check, operation.id)
-        const landed = resumed ? resumed.landed : await this.moveForStart(operation, create)
+        let landed: LandedMove | undefined
+        if (resumed) landed = resumed.landed
+        else if (check) {
+          // Sotto may close while the snapshot is taken: the check then starts nothing and lets go of its own branch, and
+          // `drained` waits for that.
+          const moving = this.moveForStart(operation, create)
+          const settled = moving.then(moved => this.closed ? this.releaseMove(moved) : undefined, () => undefined)
+          this.snapshotting.add(settled); void settled.finally(() => this.snapshotting.delete(settled))
+          landed = await moving
+          if (this.closed) refuse('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was started. Reopen Sotto.')
+        } else landed = await this.moveForStart(operation, create)
         if (check && !checks!.running(check.ticket)) {
           const live = this.record().operations.find(item => item.id === operation.id)!
           // Stopped while its snapshot was taken: it takes no place, makes nothing, and lets its branch go.
@@ -4792,8 +4804,8 @@ ${operation.draftId}`)
     this.lettingGoChecks = Promise.all(waiting.map(check => this.releaseMove(check.landed))).then(() => undefined)
     this.closed = true; clearTimeout(this.settleTimer); this.settleTimer = undefined; this.handoverOffer = null; this.overtakenHandovers.clear(); this.remoteOff?.(); clearTimeout(this.remoteTimer); this.remotePending.clear(); this.remoteFailures.clear(); this.remoteGuards.clear(); this.remoteProgress.clear(); this.pendingPromptTurns.clear(); this.wakes.close(); this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear()
   }
-  /** Settles once `close` has let go of the branches its waiting checks would have started from. */
-  drained(): Promise<void> { return this.lettingGoChecks }
+  /** Settles once `close` has let go of the branches its waiting checks would have started from, those still taking their snapshot included. */
+  drained(): Promise<void> { return Promise.all([this.lettingGoChecks, ...this.snapshotting]).then(() => undefined) }
   /** Whether this machine runs Watcher's starts marked as checks one at a time (#1312), which a host lists as `watcher-check-queue`. */
   get takesChecks(): boolean { return this.options.checks !== undefined }
 }
