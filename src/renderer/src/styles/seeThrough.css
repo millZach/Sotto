@@ -1,0 +1,33 @@
+/* The see-through window (ADR-0149). appearance.ts marks the root data-glass only while the Glass theme paints:
+   `see-through` once main draws the system's material behind the room (Acrylic on Windows 11, vibrancy on macOS),
+   `in-app` until then and wherever it cannot (Linux, Windows 10, a system asking for less transparency), where the
+   room sits on Glass's own backdrop instead of the desktop. Nothing here applies to any other theme.
+
+   The room is painted once, by the page, and the layers that would paint the canvas again over it stand clear, so
+   the tint never stacks. The sidebar, its rows, the cards and the user's messages take their translucent tokens
+   from tokens.css; menus, dialogs, fields, code and the terminal keep their solid roles. No backdrop-filter is added:
+   the blur is the operating system's. Colours come from tokens.css only. */
+
+:root[data-glass] {
+  background: transparent;
+}
+
+:root[data-glass] body {
+  background: var(--tt-glass-room);
+}
+
+/* In-app glass: the same tint over a quiet gradient in the theme's hues, which stays where it is as the page scrolls. */
+:root[data-glass='in-app'] body {
+  background: linear-gradient(var(--tt-glass-room), var(--tt-glass-room)) fixed, var(--tt-glass-backdrop) fixed;
+}
+
+/* The room's own layers, which paint the canvas over the page on a solid window. */
+:root[data-glass] :is(.app-shell, .thread-workspace__compose > .thread-pane__meta) {
+  background: transparent;
+}
+
+/* Watcher's glass composer works out how thick it must be from the solid card (watcher.css), so in Watcher's pane the
+   card keeps its solid colour; the composer's own glass then shows the room through it. */
+:root[data-glass] .watcher-pane {
+  --tt-card: var(--tt-card-solid);
+}

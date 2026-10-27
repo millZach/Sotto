@@ -4,7 +4,8 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
 import { themeBrand, wearsAppIcon } from '../../../../shared/themeBranding'
-import { BUILT_IN_THEMES, resolveThemeFor } from '../../../../shared/themes/library'
+import { builtInThemesFor, resolveThemeFor } from '../../../../shared/themes/library'
+import { useOwlFeature } from '../../state/owlFeature'
 import { SottoMark } from '../../components/SottoMark'
 import { appearancePreview, resolveAppearance, useAppearancePreviewVersion, useSystemPrefersDark, type AppearanceChoice } from '../../state/appearance'
 
@@ -35,6 +36,8 @@ function onRadioKey(event: KeyboardEvent<HTMLElement>): void {
  */
 export function LookStep({ settings, platform, onUpdateSettings, heading }: LookStepProps): ReactNode {
   useAppearancePreviewVersion()
+  // Glass is offered only where its Owl feature is on (ADR-0149).
+  const glass = useOwlFeature('glass-theme')
   const systemDark = useSystemPrefersDark()
   const shown = appearancePreview.effective(settings)
   const resolved = resolveAppearance(shown.appearance, systemDark, shown)
@@ -75,8 +78,8 @@ export function LookStep({ settings, platform, onUpdateSettings, heading }: Look
         ))}
       </div>
       <div className="onboarding-look__themes" role="radiogroup" aria-label={t`Theme`} onKeyDown={onRadioKey}>
-        {BUILT_IN_THEMES.map(theme => {
-          const { colors } = resolveThemeFor({ lightTheme: theme.id, darkTheme: theme.id, customThemes: [] }, resolved)
+        {builtInThemesFor(glass).map(theme => {
+          const { colors } = resolveThemeFor({ lightTheme: theme.id, darkTheme: theme.id, customThemes: [], glass }, resolved)
           const brand = themeBrand(colors, resolved, { appIcon: wearsAppIcon(theme.id) })
           const checked = shownTheme === theme.id
           return (

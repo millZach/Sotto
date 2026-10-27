@@ -4,8 +4,10 @@ import { DEFAULT_SETTINGS, EFFORT_COLORS, type AppSettings, type Appearance, typ
 import { APP_ICON_BRAND_ATTRIBUTE, wearsAppIcon } from '../../../shared/themeBranding'
 import { OMARCHY_THEME_ID, guardOmarchyColors, omarchySuccessText, omarchyThemeSchema, type OmarchyTheme } from '../../../shared/themes/omarchy'
 import { isCanonicalThemeColor } from '../../../shared/themes/color'
+import { GLASS_BACKDROP_VARIABLES, GLASS_THEME_ID, GLASS_TINT_VARIABLES, glassTintDeclarations } from '../../../shared/themes/glass'
 import {
   APPEARANCE_CONTRAST,
+  DEFAULT_THEME_ID,
   THEME_COLOR_ROLES,
   parseCustomThemes,
   resolveThemeFor,
@@ -23,6 +25,8 @@ export type ResolvedAppearance = ThemeAppearance
 export type AppearanceChoice = Pick<AppSettings, 'appearance' | 'lightTheme' | 'darkTheme' | 'appearanceContrast' | 'effortColor'> & {
   readonly customThemes: readonly ThemeDefinition[]
   readonly omarchyTheme?: OmarchyTheme | null | undefined
+  /** Whether this run has the Glass theme (ADR-0149); filled in from the window's bridge when unsaid. */
+  readonly glass?: boolean | undefined
 }
 
 type ChoiceKey = keyof AppearanceChoice
@@ -64,6 +68,74 @@ export function isTransientPaintMutation(record: MutationRecord): boolean {
 }
 
 const SYSTEM_DARK_QUERY = '(prefers-color-scheme: dark)'
+const REDUCED_TRANSPARENCY_QUERY = '(prefers-reduced-transparency: reduce)'
+
+type GlassTarget = (Pick<Window, 'matchMedia'> & { readonly sotto?: Pick<NonNullable<Window['sotto']>, 'glassWindow'> | undefined }) | undefined
+const currentWindow = (): GlassTarget => (typeof window === 'undefined' ? undefined : window)
+
+/**
+ * Whether this run has the Glass theme (ADR-0149). Main gives the window its Glass bridge only while the Owl feature
+ * `glass-theme` is on, and the bridge is there before the first frame, so a saved Glass never paints Sotto first.
+ * What the window offers asks useOwlFeature('glass-theme'), the same startup answer.
+ */
+export function glassThemeOffered(target: GlassTarget = currentWindow()): boolean {
+  return target?.sotto?.glassWindow !== undefined
+}
+
+/**
+ * What the window has asked main for, and what main has said. The room shows the desktop only once main says the
+ * material is drawn; until then, and whenever Glass stops, the page is opaque, so the window never flashes black.
+ */
+const glassWindowSync: { confirmed: boolean; requested: boolean | null } = (() => {
+  const bridge = currentWindow()?.sotto?.glassWindow
+  return { confirmed: bridge?.seeThrough === true, requested: bridge === undefined ? null : bridge.seeThrough }
+})()
+
+function systemReducesTransparency(target: GlassTarget): boolean {
+  return target !== undefined && typeof target.matchMedia === 'function' && target.matchMedia(REDUCED_TRANSPARENCY_QUERY).matches
+}
+
+/** Glass shows the desktop where main can draw a material and the system has not asked for less transparency. */
+function glassWantsSeeThrough(target: GlassTarget): boolean {
+  const bridge = target?.sotto?.glassWindow
+  return bridge !== undefined && bridge.material !== null && !systemReducesTransparency(target)
+}
+
+function requestSeeThrough(on: boolean, root: HTMLElement, target: GlassTarget): void {
+  const bridge = target?.sotto?.glassWindow
+  if (bridge === undefined || bridge.material === null) return
+  // Leaving Glass, the room is already opaque: the material can go after it.
+  if (!on) glassWindowSync.confirmed = false
+  if (glassWindowSync.requested === on) return
+  glassWindowSync.requested = on
+  void bridge.setSeeThrough(on).then(result => {
+    if (glassWindowSync.requested !== on) return
+    glassWindowSync.confirmed = on && result
+    // The backdrop gives way to the desktop only now that the material is under it.
+    if (glassWindowSync.confirmed && root.dataset.glass === 'in-app' && glassWantsSeeThrough(target)) root.dataset.glass = 'see-through'
+  }, () => {
+    if (glassWindowSync.requested !== on) return
+    glassWindowSync.requested = null
+    glassWindowSync.confirmed = false
+  })
+}
+
+/**
+ * Paint or stop painting Glass's tints on the root, and keep the window's material in step: `see-through` once main
+ * draws the material behind the room, `in-app` (Glass's own backdrop) until then and wherever it cannot.
+ */
+function applyGlass(root: HTMLElement, appearance: ThemeAppearance | null, target: GlassTarget): void {
+  if (appearance === null) {
+    delete root.dataset.glass
+    for (const variable of [...Object.values(GLASS_TINT_VARIABLES), ...GLASS_BACKDROP_VARIABLES]) root.style.removeProperty(variable)
+    requestSeeThrough(false, root, target)
+    return
+  }
+  for (const [variable, value] of glassTintDeclarations(appearance)) root.style.setProperty(variable, value)
+  const seeThrough = glassWantsSeeThrough(target)
+  root.dataset.glass = seeThrough && glassWindowSync.confirmed ? 'see-through' : 'in-app'
+  requestSeeThrough(seeThrough, root, target)
+}
 
 /**
  * The last applied look, kept in renderer storage so the next launch paints
@@ -113,7 +185,8 @@ export function applyAppearance(
   draft: ThemeDraft | null = null,
 ): ResolvedAppearance {
   const resolved = draft?.appearance ?? resolveAppearance(choice.appearance, systemDark, choice)
-  const { theme, colors } = resolveThemeFor(choice, resolved)
+  const target = currentWindow()
+  const { theme, colors } = resolveThemeFor({ ...choice, glass: choice.glass ?? glassThemeOffered(target) }, resolved)
   const themeId = draft === null ? theme.id : THEME_PREVIEW_ID
   const changed = root.dataset.theme !== undefined && (root.dataset.theme !== resolved || root.dataset.themeId !== themeId)
   if (changed && draft === null) suppressTransitions(root)
@@ -133,6 +206,8 @@ export function applyAppearance(
   // Remove the override when leaving it, so stock and user themes retain their tokens.
   if (draft === null && theme.id === OMARCHY_THEME_ID) root.style.setProperty('--tt-success', omarchySuccessText(colors, resolved))
   else root.style.removeProperty('--tt-success')
+  // An editor draft is a palette of solid roles, so the window is solid while one paints.
+  applyGlass(root, draft === null && theme.id === GLASS_THEME_ID ? resolved : null, target)
   const contrast = clampStep(choice.appearanceContrast, APPEARANCE_CONTRAST)
   root.style.setProperty('--theme-contrast-base', `${Math.min(contrast, 100)}%`)
   root.style.setProperty('--theme-contrast-boost', `${Math.max(contrast - 100, 0)}%`)
@@ -180,7 +255,8 @@ export function readCachedAppearance(storage: Pick<Storage, 'getItem'> | undefin
     // below if it cannot read. Fresh settings remain the source of truth.
     const cachedTheme = runtimeTheme?.success ? runtimeTheme.data : null
     const omarchyTheme = cachedTheme ? { ...cachedTheme, colors: guardOmarchyColors(cachedTheme.colors, cachedTheme.appearance) } : null
-    const half = (id: string, mode: ThemeAppearance): string => onLinux && id === OMARCHY_THEME_ID ? id : resolveThemeHalfId(id, mode, customThemes)
+    const glass = glassThemeOffered()
+    const half = (id: string, mode: ThemeAppearance): string => onLinux && id === OMARCHY_THEME_ID ? id : resolveThemeHalfId(id, mode, customThemes, glass)
     const text = (value: unknown, otherwise: string): string => (typeof value === 'string' ? value : otherwise)
     const number = (value: unknown, otherwise: number): number => (typeof value === 'number' ? value : otherwise)
     return {
@@ -297,14 +373,18 @@ export class AppearancePreview {
     if (pruned) this.fields = next as PreviewFields
     const fields = next as PreviewFields
     const customThemes = fields.customThemes?.value ?? persisted.customThemes
+    const glass = persisted.glass ?? glassThemeOffered()
+    // A half saved on Glass by an Owl run shows as Sotto where Glass is not offered; the saved choice stays whole.
+    const shownHalf = (id: string): string => (!glass && id === GLASS_THEME_ID ? DEFAULT_THEME_ID : id)
     return {
       appearance: fields.appearance?.value ?? persisted.appearance,
-      lightTheme: fields.lightTheme?.value ?? persisted.lightTheme,
-      darkTheme: fields.darkTheme?.value ?? persisted.darkTheme,
+      lightTheme: shownHalf(fields.lightTheme?.value ?? persisted.lightTheme),
+      darkTheme: shownHalf(fields.darkTheme?.value ?? persisted.darkTheme),
       appearanceContrast: fields.appearanceContrast?.value ?? persisted.appearanceContrast,
       effortColor: fields.effortColor?.value ?? persisted.effortColor,
       customThemes,
       ...(persisted.omarchyTheme === undefined ? {} : { omarchyTheme: persisted.omarchyTheme }),
+      glass,
     }
   }
 
@@ -343,6 +423,20 @@ export const appearancePreview = new AppearancePreview()
 /** Re-render when a pending appearance edit or editor draft starts or settles. */
 export function useAppearancePreviewVersion(preview: AppearancePreview = appearancePreview): number {
   return useSyncExternalStore(preview.subscribe, preview.snapshot, preview.snapshot)
+}
+
+/** Whether the system asks for less transparency, kept current, so a see-through Glass room turns solid and back at once. */
+export function useSystemReducesTransparency(): boolean {
+  const [reduced, setReduced] = useState(() => systemReducesTransparency(currentWindow()))
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    const query = window.matchMedia(REDUCED_TRANSPARENCY_QUERY)
+    const update = (): void => setReduced(query.matches)
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+  return reduced
 }
 
 /** Whether the operating system currently prefers a dark scheme, updated live. */

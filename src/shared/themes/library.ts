@@ -14,6 +14,7 @@ import { OMARCHY_THEME_ID, type OmarchyTheme } from './omarchy'
 
 import { isCanonicalThemeColor, toCanonicalThemeColor } from './color'
 import { getDefaultThemeColors } from './engine'
+import { GLASS_DARK_THEME_COLORS, GLASS_LIGHT_THEME_COLORS, GLASS_THEME_ID } from './glass'
 import {
   CITRINE_THEME,
   HUSH_THEME,
@@ -82,6 +83,27 @@ export const BUILT_IN_THEMES: readonly ThemeDefinition[] = [
 ]
 
 /**
+ * Glass, the see-through theme (ADR-0149): an Owl feature, `glass-theme`. It is not in BUILT_IN_THEMES, which is what
+ * stable offers, the iPhone generates its palettes from and the design captures paint. A run that has the feature asks
+ * builtInThemesFor(true), and resolution finds Glass only when the selection says the run has it.
+ */
+export const GLASS_THEME: ThemeDefinition = {
+  id: GLASS_THEME_ID,
+  label: 'Glass',
+  appearance: 'light',
+  colors: decodeThemeColors(GLASS_LIGHT_THEME_COLORS),
+  variants: { dark: decodeThemeColors(GLASS_DARK_THEME_COLORS) },
+}
+
+/** Every built-in Sotto has, held ones included: the ids no saved theme may take, whichever build saved it. */
+export const EVERY_BUILT_IN_THEME: readonly ThemeDefinition[] = [...BUILT_IN_THEMES, GLASS_THEME]
+
+/** The built-ins a run offers: Glass joins the six only where its Owl feature is on. */
+export function builtInThemesFor(glass: boolean): readonly ThemeDefinition[] {
+  return glass ? EVERY_BUILT_IN_THEME : BUILT_IN_THEMES
+}
+
+/**
  * Ids a saved theme may not take: appearance keywords, every built-in, T3's
  * legacy aliases and the editor's draft marker. Taking one would be shadowed
  * by the built-in or collide with the root's data attributes.
@@ -92,7 +114,7 @@ const RESERVED_THEME_IDS: ReadonlySet<string> = new Set([
   'dark',
   'default',
   '__preview',
-  ...BUILT_IN_THEMES.map(theme => theme.id),
+  ...EVERY_BUILT_IN_THEME.map(theme => theme.id),
   't3-chat-dark',
   't3-grove',
   't3-ocean',
@@ -218,14 +240,23 @@ export function getThemeModes(theme: ThemeDefinition): ThemeAppearance[] {
   return (['light', 'dark'] as const).filter(mode => getThemeColorsForMode(theme, mode) !== null)
 }
 
-export function findTheme(id: string, customThemes: readonly ThemeDefinition[]): ThemeDefinition | null {
-  return BUILT_IN_THEMES.find(theme => theme.id === id) ?? customThemes.find(theme => theme.id === id) ?? null
+/** `glass` says whether this run has the Glass theme (ADR-0149); without it, Glass is a theme that is not there. */
+export function findTheme(id: string, customThemes: readonly ThemeDefinition[], glass = false): ThemeDefinition | null {
+  return builtInThemesFor(glass).find(theme => theme.id === id) ?? customThemes.find(theme => theme.id === id) ?? null
 }
 
 /** The id that really paints an appearance: a theme that can render it, else the default. */
-export function resolveThemeHalfId(id: string, appearance: ThemeAppearance, customThemes: readonly ThemeDefinition[]): string {
-  const theme = findTheme(id, customThemes)
+export function resolveThemeHalfId(id: string, appearance: ThemeAppearance, customThemes: readonly ThemeDefinition[], glass = false): string {
+  const theme = findTheme(id, customThemes, glass)
   return theme && getThemeColorsForMode(theme, appearance) ? theme.id : DEFAULT_THEME_ID
+}
+
+/**
+ * The id a saved half keeps: Glass is kept on every build, so a stable run that reads a selection an Owl install
+ * saved paints Sotto and leaves the choice whole for the next Owl run (ADR-0149). Any other id is resolved.
+ */
+export function savedThemeHalfId(id: string, appearance: ThemeAppearance, customThemes: readonly ThemeDefinition[]): string {
+  return id === GLASS_THEME_ID ? id : resolveThemeHalfId(id, appearance, customThemes)
 }
 
 export interface ThemeSelection {
@@ -233,6 +264,8 @@ export interface ThemeSelection {
   readonly darkTheme: string
   readonly customThemes: readonly ThemeDefinition[]
   readonly omarchyTheme?: OmarchyTheme | null | undefined
+  /** Whether this run has the Glass theme, the Owl feature `glass-theme`; absent, a half saved on Glass paints Sotto. */
+  readonly glass?: boolean | undefined
 }
 
 export function resolveThemeFor(selection: ThemeSelection, appearance: ThemeAppearance): { theme: ThemeDefinition; colors: ThemeColors } {
@@ -241,8 +274,9 @@ export function resolveThemeFor(selection: ThemeSelection, appearance: ThemeAppe
       ? { theme: selection.omarchyTheme, colors: selection.omarchyTheme.colors }
       : { theme: T3_CODE_THEME, colors: getThemeColorsForMode(T3_CODE_THEME, appearance)! }
   }
-  const id = resolveThemeHalfId(appearance === 'dark' ? selection.darkTheme : selection.lightTheme, appearance, selection.customThemes)
-  const theme = findTheme(id, selection.customThemes) ?? T3_CODE_THEME
+  const glass = selection.glass === true
+  const id = resolveThemeHalfId(appearance === 'dark' ? selection.darkTheme : selection.lightTheme, appearance, selection.customThemes, glass)
+  const theme = findTheme(id, selection.customThemes, glass) ?? T3_CODE_THEME
   return { theme, colors: getThemeColorsForMode(theme, appearance) ?? getThemeColorsForMode(T3_CODE_THEME, appearance)! }
 }
 

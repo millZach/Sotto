@@ -379,6 +379,8 @@ export interface SottoBridge {
   readonly mainActivity?: import('./mainActivity').MainActivityBridge
   /** Keep main up to date (ADR-0142): only while the `keep-main-current` Owl feature is on and the local host runs. */
   readonly mainCheckout?: import('./mainCheckout').MainCheckoutBridge
+  /** The see-through window (ADR-0149): only while the Owl feature `glass-theme` is on. */
+  readonly glassWindow?: import('./glassWindow').GlassWindowBridge
   /** Notifications when a thread has finished or needs the user (ADR-0117), present only while the Owl feature is on, on a Mac that can show them. */
   readonly notifications?: import('./desktopNotifications').NotificationsBridge
   /** The interface language (ADR-0123), present only while the `interface-language` Owl feature is on. */

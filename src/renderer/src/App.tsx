@@ -53,7 +53,7 @@ import { WatcherView } from './watcher/WatcherView'
 import type { WatcherBridge } from '../../shared/watcherRoom'
 import { ThemeEditorHost } from './features/settings/themes/ThemeEditor'
 import { StartingScreenGate } from './features/starting/StartingScreen'
-import { appearancePreview, applyAppearance, systemPrefersDark, useAppearancePreviewVersion, useSystemPrefersDark } from './state/appearance'
+import { appearancePreview, applyAppearance, systemPrefersDark, useAppearancePreviewVersion, useSystemPrefersDark, useSystemReducesTransparency } from './state/appearance'
 
 const recoveryMessages = {
   DESKTOP_CLIPBOARD_UNAVAILABLE: msg`Sotto could not use wl-clipboard. It used its own clipboard instead, so other apps may not see the text. Install wl-clipboard, then copy again.`,
@@ -176,6 +176,8 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
   const microphoneReleaseTailRef = useRef<Promise<void>>(Promise.resolve())
   const microphoneReleasesRef = useRef(new WeakMap<MicrophoneTestController, Promise<void>>())
   const systemDark = useSystemPrefersDark()
+  // Glass turns solid at once when the system asks for less transparency (ADR-0149).
+  const reducesTransparency = useSystemReducesTransparency()
   const appearanceEdits = useAppearancePreviewVersion()
   const [settingsNotice, setSettingsNotice] = useState<string | null>(null)
   const [themeNotice, setThemeNotice] = useState<ToastMessage | null>(null)
@@ -236,7 +238,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
   useLayoutEffect(() => {
     applyDocumentPreferences(app.settings, document.documentElement, systemDark)
     if (app.settings) setTerminalPreferences(app.settings, app.actions.updateSettings)
-  }, [app.settings, app.actions, systemDark, appearanceEdits])
+  }, [app.settings, app.actions, systemDark, reducesTransparency, appearanceEdits])
 
   useEffect(() => {
     const search = (event: KeyboardEvent): void => {

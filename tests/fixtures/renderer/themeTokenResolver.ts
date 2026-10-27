@@ -1,7 +1,8 @@
 import { join } from 'node:path'
 
 import { oklchToRgb, parseThemeColor, rgbToOklch } from '../../../src/shared/themes/color'
-import { BUILT_IN_THEMES, DEFAULT_THEME_ID, THEME_COLOR_ROLES, type ThemeColors } from '../../../src/shared/themes/library'
+import { DEFAULT_THEME_ID, EVERY_BUILT_IN_THEME, THEME_COLOR_ROLES, type ThemeColors } from '../../../src/shared/themes/library'
+import { glassTintDeclarations } from '../../../src/shared/themes/glass'
 import { themeColorVariable } from '../../../src/renderer/src/state/appearance'
 
 /**
@@ -22,7 +23,8 @@ export interface Rgba {
 
 export const TOKENS_PATH = join(process.cwd(), 'src/renderer/src/styles/tokens.css')
 export const MODES: readonly Mode[] = ['dark', 'light']
-export const THEME_IDS: readonly string[] = BUILT_IN_THEMES.map(theme => theme.id)
+/** Every built-in, Glass included: its roles are solid, so it is held to every check the others are (ADR-0149). */
+export const THEME_IDS: readonly string[] = EVERY_BUILT_IN_THEME.map(theme => theme.id)
 
 interface Block {
   readonly selectors: readonly string[]
@@ -52,7 +54,7 @@ export function parseTokenBlocks(css: string): Block[] {
  * The root carries `data-theme` and `data-effort-color`; a bare attribute selector (the effort colourway blocks,
  * which a Settings swatch also wears) matches the root too, at the same specificity as `:root`.
  */
-function selectorApplies(selector: string, mode: Mode, effortColor: string): number | null {
+function selectorApplies(selector: string, mode: Mode, effortColor: string, glass = false): number | null {
   const attributes = [...selector.matchAll(/\[data-([a-z-]+)(?:='([a-z]+)')?\]/gu)]
   const rest = selector.replace(/\[data-[a-z-]+(?:='[a-z]+')?\]/gu, '')
   if (rest !== ':root' && rest !== '') return null
@@ -60,6 +62,7 @@ function selectorApplies(selector: string, mode: Mode, effortColor: string): num
   for (const [, name, value] of attributes) {
     if (name === 'theme') { if (value !== mode) return null }
     else if (name === 'effort-color') { if (value !== undefined && value !== effortColor) return null }
+    else if (name === 'glass') { if (!glass) return null }
     else return null
   }
   return (rest === ':root' ? 1 : 0) + attributes.length
@@ -70,21 +73,24 @@ export interface PaintOptions {
   readonly contrast?: number
   /** The effort colourway on the root; Ember, the default, when unsaid. */
   readonly effortColor?: string
+  /** Paint as Glass's see-through room does: the root marked data-glass, with its tints written inline. */
+  readonly glass?: boolean
 }
 
 /** The custom properties on the root for one mode, with a palette and strengths written inline as applyAppearance does. */
 export function rootDeclarations(mode: Mode, themeId: string = DEFAULT_THEME_ID, options: PaintOptions = {}, blocks: readonly Block[]): Map<string, string> {
   const effortColor = options.effortColor ?? 'ember'
   const applicable = blocks
-    .map(block => ({ block, specificity: Math.max(-1, ...block.selectors.map(selector => selectorApplies(selector, mode, effortColor) ?? -1)) }))
+    .map(block => ({ block, specificity: Math.max(-1, ...block.selectors.map(selector => selectorApplies(selector, mode, effortColor, options.glass === true) ?? -1)) }))
     .filter(({ specificity }) => specificity > 0)
     .sort((first, second) => first.specificity - second.specificity || first.block.index - second.block.index)
   const result = new Map<string, string>()
   for (const { block } of applicable) for (const [name, value] of block.declarations) result.set(name, value)
-  const theme = BUILT_IN_THEMES.find(candidate => candidate.id === themeId)
+  const theme = EVERY_BUILT_IN_THEME.find(candidate => candidate.id === themeId)
   const colors = options.colors ?? (theme && (mode === theme.appearance ? theme.colors : theme.variants?.[mode]))
   if (!colors) throw new Error(`No ${mode} palette for ${themeId}`)
   for (const role of THEME_COLOR_ROLES) result.set(themeColorVariable(role), colors[role])
+  if (options.glass === true) for (const [name, value] of glassTintDeclarations(mode)) result.set(name, value)
   const contrast = options.contrast ?? 100
   result.set('--theme-contrast-base', `${Math.min(contrast, 100)}%`)
   result.set('--theme-contrast-boost', `${Math.max(contrast - 100, 0)}%`)

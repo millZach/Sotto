@@ -51,6 +51,7 @@ export const OWL_FEATURES = [
   { id: 'run-command', name: 'Run a command from a reply', owlSince: '2026-10-25', owner: 'docs/adr/0139-a-command-in-a-reply-runs-in-the-terminal-drawer.md', sentToStable: false },
   { id: 'model-favorites', name: 'Favorite models in the model menu', owlSince: '2026-10-26', owner: 'docs/adr/0147-favorite-models-lead-the-model-menu.md', sentToStable: false },
   { id: 'keep-main-current', name: 'Keep main up to date', owlSince: '2026-10-23', owner: 'docs/adr/0142-sotto-keeps-each-projects-main-up-to-date.md', sentToStable: false },
+  { id: 'glass-theme', name: 'Glass theme', owlSince: '2026-10-26', owner: 'docs/adr/0149-glass-is-a-see-through-theme-held-in-owl.md', sentToStable: false },
   { id: 'sidebar-rail', name: 'Watcher and Needs you on the collapsed sidebar', owlSince: '2026-10-26', owner: 'docs/adr/0146-the-collapsed-rail-keeps-watcher-and-a-needs-you-tray.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
