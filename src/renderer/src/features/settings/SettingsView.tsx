@@ -36,6 +36,7 @@ import { UPDATES_UNSUPPORTED_MESSAGE } from '../updates/updateControlLogic'
 import { releaseTrackName } from '../../../../shared/releaseTrack'
 import { releaseTrackOf } from '../../state/useReleaseTrack'
 import { useHeldProviders, useOwlFeature } from '../../state/owlFeature'
+import { RESTART_STOPPED_FEATURE } from '../../../../shared/limitRestart'
 import { requestUpdateAll } from '../updates/UpdateAllCard'
 import { Button } from '../../components/Button'
 import { OpenSystemSettingsButton } from '../../components/OpenSystemSettingsButton'
@@ -265,6 +266,8 @@ export function SettingsView({
   const llmDictionaryDraft = useRevisionDraft(settings.llmDictionary, settings.llmDictionary)
   const [updateBusy, setUpdateBusy] = useState(false)
   const resumeAfterRestart = useOwlFeature('resume-after-restart')
+  // Restart stopped threads (ADR-0144; Owl only) stands where Resume threads after a restart was, and reads its own setting.
+  const restartStopped = useOwlFeature(RESTART_STOPPED_FEATURE)
   const nextPromptOn = useOwlFeature('next-prompt')
   const updateAll = useOwlFeature('update-all')
   const [clearFailure, setClearFailure] = useState<LaterWords | null>(null)
@@ -462,7 +465,7 @@ export function SettingsView({
   const ownCleanup = ownServerCleanupOn && ownServersBridge ? window.sotto?.ownServerCleanup : undefined
   const keepMainCurrent = useOwlFeature('keep-main-current')
   const notificationsShown = useDesktopNotifications() !== undefined
-  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart, 'next-prompt': nextPromptOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'own-model-servers': ownServersOn, 'keep-main-current': keepMainCurrent, 'clear-threads': clearThreadsOn }
+  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart && !restartStopped, 'restart-stopped-threads': restartStopped, babysitting: !restartStopped, 'next-prompt': nextPromptOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'own-model-servers': ownServersOn, 'keep-main-current': keepMainCurrent, 'clear-threads': clearThreadsOn }
   // Find a setting reaches only what the page shows now. While it holds text it reads the mounted pages: a setting
   // whose page is not showing it (Providers with the local host off, say) is left out, and what the page says about
   // each one is matched as well as its name.
@@ -718,8 +721,13 @@ export function SettingsView({
                   {/* ADR-0132: an Owl feature; the switch is read for every turn. */}
                   {nextPromptOn ? <Toggle setting="next-prompt" label={t`Suggest a next prompt after each turn`} checked={settings.nextPromptSuggestions} onCheckedChange={checked => void save({ nextPromptSuggestions: checked })}
                     description={t`When a turn ends, the thread's own model suggests what to ask next. Each suggestion is one short request to the thread's provider. Press Tab or Up in an empty prompt to use one.`} /> : null}
-                  {/* ADR-0076: an Owl feature, read when Sotto next starts. */}
-                  {resumeAfterRestart ? <Toggle setting="resume-after-restart" label={t`Resume threads after a restart`} checked={settings.resumeThreadsAfterRestart} onCheckedChange={checked => void save({ resumeThreadsAfterRestart: checked })}
+                  {/* ADR-0144: an Owl feature, read when Sotto next starts; in Resume threads after a restart's place. */}
+                  {restartStopped ? <Toggle setting="restart-stopped-threads" label={t`Restart stopped threads`} checked={settings.restartStoppedThreads} onCheckedChange={checked => void save({ restartStoppedThreads: checked })}
+                    description={settings.restartStoppedThreads
+                      ? t`When a provider’s usage limit resets, or Sotto opens again after closing, every thread that was working carries on, with a short note from Sotto in the thread.`
+                      : t`A thread stopped by a usage limit or by Sotto closing waits for your next message.`} />
+                  /* ADR-0076: an Owl feature, read when Sotto next starts. */
+                  : resumeAfterRestart ? <Toggle setting="resume-after-restart" label={t`Resume threads after a restart`} checked={settings.resumeThreadsAfterRestart} onCheckedChange={checked => void save({ resumeThreadsAfterRestart: checked })}
                     description={settings.resumeThreadsAfterRestart
                       ? t`A thread working when Sotto closes, for an update, a quit, a crash or a restart, carries on when Sotto opens again, with a short note from Sotto in the thread.`
                       : t`A thread working when Sotto closes waits for your next message.`} /> : null}

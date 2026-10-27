@@ -1,3 +1,4 @@
+import { scheduledRestartSchema, turnLimitStopSchema } from './limitRestart'
 import { watcherOwnChangeSchema, watcherObservedChangesSchema } from './watcherChanges'
 import { watcherAsksSchema } from './watcherAsks'
 import { z } from 'zod'
@@ -586,6 +587,9 @@ export const agentThreadSchema = z.object({
   /** Which of those wake-ups carried only delegation news, which no window or phone shows (ADR-0081, October 19, 2026),
    * from the same record. A row never quotes one. Absent when there are none, and from older hosts. */
   hiddenWakeUpMessageIds: z.array(id).max(WAKE_UP_MESSAGE_IDS_MAX).optional(),
+  /** A restart Sotto has scheduled for this thread, which a usage limit stopped while it worked (ADR-0144). The host's
+   * coordinator sets and clears it; absent otherwise, on stable, and from older hosts. Read, never sent by a client. */
+  scheduledRestart: scheduledRestartSchema.optional().catch(undefined),
   /** Sotto organization only: does not close native work or suppress attention. */
   workspaceSettledAt: z.string().datetime().nullable().optional(),
   /** False only before Sotto dispatches native creation. Unknown is conservatively locked. */
@@ -647,7 +651,10 @@ export const agentThreadSchema = z.object({
   /** Native outcome evidence for queue admission; never an authority to replay work. */
   lastTurn: z.object({ id: z.string(), status: z.enum(['running', 'completed', 'interrupted', 'failed']),
     /** Exact Sotto user anchor when an adapter's native turn ID differs from its activity ID, as Claude's does. */
-    messageId: z.string().optional() }).optional(),
+    messageId: z.string().optional(),
+    /** A failed turn its provider stopped at a usage limit, with the reset when it said (ADR-0144). Its adapter sets it, only
+     * while that Owl feature is on, and the host's coordinator reads it; absent otherwise and from older hosts. */
+    limitStop: turnLimitStopSchema.optional().catch(undefined) }).optional(),
   /** Omitted by providers that already supply history; absence means ready. */
   historyStatus: z.enum(['loading', 'ready', 'error']).optional(), historyError: z.string().optional(),
   historySaveNotice: z.string().max(600).optional(),
@@ -1353,6 +1360,8 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   /** The user's Babysit pull request and Stop babysitting, on a pull request the thread knows (ADR-0061 decision 3). */
   z.object({ type: z.literal('babysit-pull-request'), threadId: id, url: gitPullRequestUrlSchema }).strict(),
   z.object({ type: z.literal('stop-babysitting'), threadId: id, url: gitPullRequestUrlSchema }).strict(),
+  /** The user's Don't restart on a thread's scheduled restart (ADR-0144): Sotto drops it and the thread waits for them. */
+  z.object({ type: z.literal('cancel-restart'), threadId: id }).strict(),
   /** T3's Checkout pull request: `local` checks it out in the thread's folder with `gh pr checkout`; `worktree` fetches its
    * head as a branch a draft's new worktree takes on first send. */
   z.object({ type: z.literal('git-checkout-pull-request'), threadId: id, reference: z.string().min(1).max(2_048), mode: z.enum(['local', 'worktree']) }).strict(),

@@ -13,6 +13,7 @@ export const OWL_FEATURES = [
   { id: 'watcher', name: 'Watcher', owlSince: '2026-10-10', owner: 'docs/adr/0073-watcher-coordinates-threads-with-its-providers-own-tools.md', sentToStable: true },
   { id: 'muse', name: 'Muse provider', owlSince: '2026-10-12', owner: 'docs/adr/0079-muse-is-a-thread-provider.md', sentToStable: true },
   { id: 'usage', name: 'Usage', owlSince: '2026-10-12', owner: 'docs/adr/0078-usage-keeps-numeric-history-on-its-own-host.md', sentToStable: true },
+  { id: 'restart-stopped-threads', name: 'Restart stopped threads', owlSince: '2026-10-26', owner: 'docs/adr/0144-stopped-threads-restart-when-their-limit-resets.md', sentToStable: false },
   { id: 'resume-after-restart', name: 'Resume threads after a restart', owlSince: '2026-10-12', owner: 'docs/adr/0076-threads-resume-after-sotto-restarts.md', sentToStable: true },
   { id: 'update-all', name: 'Update all', owlSince: '2026-10-12', owner: 'docs/adr/0077-update-all-updates-sotto-its-clients-and-hosts-together.md', sentToStable: true },
   { id: 'streaming-publish-cost', name: 'Cheaper publish windows while streaming', owlSince: '2026-10-13', owner: 'docs/adr/0016-sotto-owned-history-on-an-event-store.md', sentToStable: true },

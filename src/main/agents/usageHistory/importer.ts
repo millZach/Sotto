@@ -18,7 +18,7 @@ export interface UsageHistoryStore {
 export interface UsageHistorySource {
   scanUsageHistory?: UsageHistoryScan
   /** Answers false when the thread store could not be read yet, so the import is tried again on a later pass. */
-  visitRecordedUserMessages?(visitor: (message: UsageRecordedUserMessage) => void, before?: string): boolean
+  visitRecordedUserMessages?(visitor: (message: UsageRecordedUserMessage) => void, before?: string): boolean | Promise<boolean>
 }
 
 /** First pass after start: late enough that startup and the first snapshot go first. */
@@ -142,7 +142,7 @@ export class UsageHistoryImporter {
   private async importSottoPrompts(source: UsageHistorySource, sink: UsageHistorySink, startedAt: string): Promise<void> {
     if (sink.cursor(SOTTO_PROMPTS_CURSOR)) return
     const prompts: UsageHistoryPrompt[] = []
-    const read = source.visitRecordedUserMessages!(message => {
+    const read = await source.visitRecordedUserMessages!(message => {
       prompts.push({ providerId: message.providerId, threadId: message.threadId, messageId: message.messageId, modelId: message.modelId || 'unknown',
         at: message.at, kind: message.wakeUp ? 'wake-up' : 'user', source: 'sotto', client: 'sotto' })
     }, startedAt)

@@ -5,7 +5,7 @@ import { EMPTY_AGENT_HOST, isThreadProviderConnected, type AgentCapabilities, ty
 import { isThreadArchived, isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { WATCHER_QUIET_MS, isWatcherWorkActive, watcherObservationKey, type WatcherObservation } from '../../shared/watcherOverview'
 import type { WatcherEvidence, WatcherRecord, WatcherThreadTarget } from '../../shared/watcher'
-import { WATCHER_BATCH_MS, WATCHER_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MS, WATCHER_URGENT_KINDS,
+import { WATCHER_BATCH_MS, WATCHER_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MS, WATCHER_UNWATCHED_REQUEST_ID, WATCHER_URGENT_KINDS,
   type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { WatcherEvidenceStore, observationDigest, targetKey, type CheckpointObservation, type PullRequestObservation, type WatcherAttentionKind } from './watcherEvidence'
@@ -661,6 +661,9 @@ export class WatcherWakeUp {
       if (event.kind === 'request-closed' && this.due(event)) this.event('request-closed', event.target, [requestCardId, delegatedThreadId ?? null], fields)
       if (event.kind === 'prototype-closed' && this.due(event)) this.event('prototype-closed', event.target, [watcherPrototypeSource(event)], fields)
     }
+    // A restart is news of a change too: one whose send may not have gone is told again while its thread is still there.
+    const restarted = events.filter(event => event.kind === 'threads-restarted' && this.due(event))
+    if (restarted.length) this.tell(restarted)
   }
   /**
    * The events still due. Work-settled news whose work started again before delivery is not sent; its turn is owed it
@@ -675,6 +678,32 @@ export class WatcherWakeUp {
       if (event.kind === 'work-settled') this.oweWorkSettled(workSettledScope(event.target, event.turnId))
       return false
     })
+  }
+  /**
+   * Sotto restarted these threads, Watcher's own among them or not, when the usage limit of `provider` that had stopped
+   * them reset (ADR-0144). Watcher hears of each, watched or not, since unwatched threads carry on too: a watched one under
+   * the request that watches it, as its other news goes, and one no request watches under none.
+   */
+  threadsRestarted(provider: string, targets: readonly WatcherThreadTarget[]): void {
+    if (!this.started || this.closed || !targets.length) return
+    const observedAt = new Date(this.now()).toISOString()
+    const events = this.withPassReads(() => targets.map((target): WatcherEvent => {
+      const eligible = (this.workerIndex(false).byTarget.get(targetKey(target)) ?? []).filter(({ participant }) => participant.state === 'participating' && !participant.automationStopped)
+      const one = eligible.find(item => item.request.standingWatchId !== undefined) ?? eligible.at(-1)
+      return { kind: 'threads-restarted', target, requestId: one?.request.id ?? WATCHER_UNWATCHED_REQUEST_ID, generation: one?.participant.generation ?? 0,
+        observedAt, restartedBy: provider, id: observationDigest(['threads-restarted', target, observedAt]) }
+    }))
+    this.tell(events)
+  }
+  /** News made outside a pass, which needs Watcher by itself: it waits in the ordinary batch with whatever else came. */
+  private tell(events: readonly WatcherEvent[]): void {
+    for (const event of events) this.seen.add(event.id)
+    while (this.seen.size > 2_000) this.seen.delete(this.seen.values().next().value!)
+    this.retries++; this.lastNewsAt = this.now()
+    if (this.retryFailures >= RETRY_LIMIT) { this.retryFailures = 0; this.retryAt = 0 }
+    this.recent = foldWatcherEvents(this.recent, events).slice(-400)
+    this.pending = this.stillDue(foldWatcherEvents(this.pending, events))
+    this.batch()
   }
   /** `key` is the target's key, when the caller has it already. */
   private event(kind: WatcherEvent['kind'], target: WatcherThreadTarget, identity: unknown, extra: Partial<WatcherEvent> = {}, key = targetKey(target)): void {
@@ -1402,6 +1431,14 @@ export class WatcherWakeUp {
   dueAll(events: readonly WatcherEvent[]): boolean[] { return this.withPassReads(() => events.map(event => this.due(event))) }
   due(event: WatcherEvent): boolean {
     if (!this.started || this.closed) return false
+    // A restart is news while Watcher is there and its thread still is, whether or not a request watches it (ADR-0144).
+    if (event.kind === 'threads-restarted') {
+      if (!this.record().current) return false
+      const snapshot = this.snapshot()
+      if (!snapshot.hostId) return true
+      const thread = this.thread(snapshot, event.target)
+      return !!thread && !isThreadArchived(thread)
+    }
     // A delegated thread's own news is not Watcher's while a watched thread answers for it, even news made before then.
     if (this.delegatedOwner.has(targetKey(event.target))) return false
     const record = this.record(), standing = this.workerIndex(false).byStandingWatch.get(event.requestId)

@@ -11,7 +11,8 @@ import { NativeUsage } from './nativeUsage'
 import { scanCodexHistory } from './usageHistory/codexHistory'
 import type { UsageHistorySink } from './usageHistory/sink'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
-import { mergeCodexQuota, parseCodexQuota, unavailableProviderQuota } from './providerQuota'
+import { exhaustedQuotaReset, mergeCodexQuota, parseCodexQuota, unavailableProviderQuota } from './providerQuota'
+import type { TurnLimitStop } from '../../shared/limitRestart'
 import { bracketCompaction } from './compactionActivity'
 import { compactionPending, compactionSchema } from '../../shared/compaction'
 import { stat } from 'node:fs/promises'
@@ -114,8 +115,18 @@ const userContent = z.array(z.object({ type: z.string(), text: z.string().option
 const itemSchema = codexItemSchema.refine(item => item.type !== 'userMessage' || userContent.safeParse(item.content).success)
 const turnSchema = z.object({ id: z.string(), status: z.enum(['inProgress', 'completed', 'interrupted', 'failed']), items: z.array(itemSchema).default([]), startedAt: z.number().nullish(),
   itemsView: z.enum(['notLoaded', 'summary', 'full']).default('full'),
-  completedAt: z.number().nullish(), durationMs: z.number().nonnegative().nullish(), error: z.object({ message: z.string() }).nullish() })
+  completedAt: z.number().nullish(), durationMs: z.number().nonnegative().nullish(), error: z.object({ message: z.string(), codexErrorInfo: z.unknown().optional() }).nullish() })
 type Turn = z.infer<typeof turnSchema>
+/**
+ * Whether a turn's final error is a usage limit (ADR-0144): the app-server's own `usageLimitExceeded`, or an HTTP 429 that
+ * Codex does not retry. Read from Codex's classification alone, never from its words.
+ */
+function codexUsageLimit(error: { readonly codexErrorInfo?: unknown } | null | undefined): boolean {
+  const info = error?.codexErrorInfo
+  if (info === 'usageLimitExceeded') return true
+  return info !== null && typeof info === 'object' && Object.values(info).some(value => value !== null && typeof value === 'object'
+    && (value as { readonly httpStatusCode?: unknown }).httpStatusCode === 429)
+}
 /** When a turn began, or when its thread did when Codex does not say. */
 const turnCreatedAt = (alias: { readonly createdAt: string }, turn: Turn): string => turn.startedAt ? new Date(turn.startedAt * 1000).toISOString() : alias.createdAt
 const threadSchema = z.object({ id: z.string(), historyMode: z.enum(['legacy', 'paginated']).optional(), turns: z.array(turnSchema).default([]), status: z.object({ type: z.string() }).optional() })
@@ -145,7 +156,7 @@ function fastModeOf(tiers: readonly { readonly id: string; readonly description?
 }
 const notificationSchema = z.object({ threadId: z.string(), turnId: z.string().optional(), turn: turnSchema.optional(), item: itemSchema.optional(), itemId: z.string().optional(), delta: z.string().optional(), requestId: z.union([z.string(), z.number()]).optional(),
   startedAtMs: z.number().optional(), completedAtMs: z.number().optional(), summaryIndex: z.number().optional(), message: z.string().optional(),
-  error: z.object({ message: z.string() }).optional(), willRetry: z.boolean().optional(), status: z.object({ type: z.string() }).optional(),
+  error: z.object({ message: z.string(), codexErrorInfo: z.unknown().optional() }).optional(), willRetry: z.boolean().optional(), status: z.object({ type: z.string() }).optional(),
   explanation: z.string().nullish(), plan: z.array(z.object({ step: z.string(), status: z.string() })).optional() })
 /** A thread's own app-server would not start. */
 class SessionUnavailable extends Error {
@@ -214,6 +225,11 @@ export type CodexAdapterEvent = 'codex-role-malformed' | 'codex-notification-unr
 export interface CodexAppServerHostOptions {
   /** Immutable startup Owl answer; stable never installs a collector or reads account limits. */
   usageEnabled?: boolean
+  /**
+   * Restart stopped threads (ADR-0144), the Owl answer read once at start: a turn stopped at a usage limit says so on its
+   * `lastTurn`, with the reset from the newest limits Codex reported, which are kept for that even while Usage is off.
+   */
+  limitStops?: boolean
   logEvent?: (event: CodexAdapterEvent) => void
   userDataPath: string; executable?: string; args?: string[]; codexHome?: string; requestTimeoutMs?: number; pollIntervalMs?: number
   /** Session reaper cadence and idle threshold; see `sessionReaper.ts`. */
@@ -1442,6 +1458,15 @@ export class CodexAppServerHost implements AgentHost {
       origins, turnCreatedAt(alias, turn), this.watcher?.identities(alias.codexThreadId, turn.id), turn.status !== 'inProgress')
   }
   /**
+   * A failed turn's usage-limit stop (ADR-0144), as `lastTurn` carries it, while restarting stopped threads is on: when Codex
+   * classified the error as its usage limit, with the reset of the window its newest limits reading shows used up.
+   */
+  private limitStopOf(error: { readonly codexErrorInfo?: unknown } | null | undefined): { limitStop?: TurnLimitStop } {
+    if (this.options.limitStops !== true || !codexUsageLimit(error)) return {}
+    const resetsAt = exhaustedQuotaReset(this.quota)
+    return { limitStop: resetsAt ? { resetsAt } : {} }
+  }
+  /**
    * Apply one turn and put the message window in order. `applyThread` passes false for `order` and orders once
    * after its last turn: nothing while applying a turn reads the window's order, and ordering after every turn
    * sorted the whole window once a turn, so a whole read grew with the square of the thread (#352).
@@ -1477,7 +1502,10 @@ export class CodexAppServerHost implements AgentHost {
     this.activity.turn(thread, turn, live)
     if (order) this.reconcileMessages(id)
     if (!this.runningTurns.has(id) || this.runningTurns.get(id) === turn.id || turn.status === 'inProgress') {
-      thread.lastTurn = { id: turn.id, status: turn.status === 'inProgress' ? 'running' : turn.status }
+      // A live failure keeps the limit stop its error notification already said, or says it now from the turn's own error.
+      const said = turn.status === 'failed' && thread.lastTurn?.id === turn.id ? thread.lastTurn.limitStop : undefined
+      const limitStop = turn.status === 'failed' && live ? said ?? this.limitStopOf(turn.error).limitStop : undefined
+      thread.lastTurn = { id: turn.id, status: turn.status === 'inProgress' ? 'running' : turn.status, ...(limitStop ? { limitStop } : {}) }
     }
     if (turn.status === 'inProgress') { this.runningTurns.set(id, turn.id); thread.status = 'running' }
     else {
@@ -2016,11 +2044,11 @@ export class CodexAppServerHost implements AgentHost {
   private async frame(server: CodexProcess, frame: RpcFrame): Promise<void> {
     // Codex dropped one of Sotto's role files (#1042). The message names a path, so only the event is logged.
     if (malformedCodexRole(frame.method, frame.params)) { this.options.logEvent?.('codex-role-malformed'); return }
-    if (this.usageEnabled && frame.method === 'account/rateLimits/updated') {
+    if ((this.usageEnabled || this.options.limitStops === true) && frame.method === 'account/rateLimits/updated') {
       this.quota = mergeCodexQuota(this.quota, frame.params, new Date().toISOString()); return
     }
     if (frame.method === 'skills/changed' || frame.method === 'account/updated') {
-      if (frame.method === 'account/updated' && this.usageEnabled) this.quota = undefined
+      if (frame.method === 'account/updated' && (this.usageEnabled || this.options.limitStops === true)) this.quota = undefined
       this.skillsRevision++; this.loadedSkillCwds.clear(); return
     }
     if (frame.method === 'thread/settings/updated') {
@@ -2142,7 +2170,7 @@ export class CodexAppServerHost implements AgentHost {
         this.ensureThread(id).status = 'error'
         if (params.turnId) {
           this.terminalTurns.add(turnKey(id, params.turnId)); this.runningTurns.delete(id)
-          this.ensureThread(id).lastTurn = { id: params.turnId, status: 'failed' }
+          this.ensureThread(id).lastTurn = { id: params.turnId, status: 'failed', ...this.limitStopOf(params.error) }
           this.activity.turn(this.ensureThread(id), { id: params.turnId, status: 'failed', error: params.error }, true)
         }
       }

@@ -21,6 +21,7 @@ import { threadRequestBlocked, threadRequestCheck, threadRequestOwner, threadReq
 export { checkedOnConnectedHost } from './requests/threadRequests'
 import { useWatcherEnabled } from '../state/watcherFeature'
 import { ThreadComposer } from './ThreadComposer'
+import { useRestartStopped } from './RestartStopped'
 import { FailedTurnNotice, failedTurnExplanation } from './FailedTurnNotice'
 import { isThreadFailureText } from '../../../shared/threadFailures'
 import { usePendingSettings } from './pendingSettings'
@@ -265,8 +266,10 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   // action already holds the glass. Babysitting is Sotto's own claim, the weakest, and steps aside while a turn runs.
   const confirmed = liveMonitors.length > 0 || liveWork.length > liveCommands.length
   const held = useHeldAction(thread, ornamentAllowed && !confirmed, now)
+  // Restarting stopped threads (ADR-0144; Owl only) takes babysitting away, and its pose with it.
+  const babysitShown = !useRestartStopped()
   const pose = ornamentPose({ monitoring: liveMonitors.length > 0, agents: liveWork.length > liveCommands.length, held: held !== undefined,
-    commands: liveCommands.length > 0, babysitting: ornamentAllowed && (thread.babysitting?.length ?? 0) > 0, running: thread.status === 'running' })
+    commands: liveCommands.length > 0, babysitting: babysitShown && ornamentAllowed && (thread.babysitting?.length ?? 0) > 0, running: thread.status === 'running' })
   const ornament = pose === 'monitoring' ? <ThreadMonitor key={`monitor:${thread.id}`} tasks={liveMonitors} />
     : pose === 'working' ? <ThreadWorking key={`working:${thread.id}`} work={liveWork} />
     : pose === 'held' && held !== undefined ? <ThreadHeld key={`held:${thread.id}`} action={held} now={now} />

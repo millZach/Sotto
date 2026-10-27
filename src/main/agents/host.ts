@@ -277,7 +277,7 @@ export interface AgentHost {
    * Owl-only: Sotto's own stored user messages created before `before`, by identity and instant alone, with whether
    * each was a wake-up. Answers false when the store could not be read yet. Never reads message text.
    */
-  visitRecordedUserMessages?(visitor: (message: UsageRecordedUserMessage) => void, before?: string): boolean
+  visitRecordedUserMessages?(visitor: (message: UsageRecordedUserMessage) => void, before?: string): boolean | Promise<boolean>
   /** Private main capability; never a serialized AgentCommand field. */
   executeFromWatcher?(command: AgentHostCommand, guard: () => void): Promise<AgentHostResult>
   /** Main-only launch capabilities. Wrappers translate identity before handing them to an adapter. */
@@ -381,7 +381,7 @@ export interface AgentHost {
    * Every message the user sent before `beforeMessageId`, from the thread's store, for the message scrubber (ADR-0109).
    * Read when a pane asks, never published. Null when the store cannot answer. Absent on hosts that keep no store.
    */
-  threadPrompts?(threadId: string, beforeMessageId: string): AgentThreadPrompts | null
+  threadPrompts?(threadId: string, beforeMessageId: string): AgentThreadPrompts | null | Promise<AgentThreadPrompts | null>
   /**
    * The records of `activities` a pane is given beside the thread's loaded history window: the work of a
    * turn above the window waits there with its messages. A view for the thread detail alone; the records

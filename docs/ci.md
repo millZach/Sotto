@@ -46,7 +46,7 @@ A job that is not needed reports as skipped, not failed. A change that should ha
 | --- | --- | --- |
 | Install dependencies | `npm ci` | Exact `package-lock.json` install, including the native modules (node-pty and sharp). The npm cache is keyed on the lockfile by `actions/setup-node`. |
 | Verify release assets | `npm run assets:verify` | Checks the installed Claude SDK history helper and terminal files used by desktop packaging. No network access. |
-| Typecheck | `npm run typecheck` | `tsc --noEmit` over the node, web and test projects. Runs in the Windows checks job and once in Linux shard 1 when the full suite is needed. |
+| Typecheck | `npm run typecheck` | TypeScript 7's `tsc --noEmit` over the node, web and test projects (ADR-0145); lint and the code that imports `typescript` stay on 6.0.3. Runs in the Windows checks job and once in Linux shard 1 when the full suite is needed. |
 | Lint | `npm run lint` | `eslint .`. |
 | Unit and integration tests | `npm test -- --maxWorkers=2 --shard=N/6` on six Windows and six Linux runners | `vitest run` — test files under `tests/` only, excluding `tests/e2e/`. Ignored cache and backup suites outside `tests/` are never collected. The worker cap keeps the jsdom and child-process heavy files inside a small runner's memory; unpinned parallelism has produced "Worker exited unexpectedly" crashes on a loaded machine. Main-process and integration files run under node rather than jsdom, declared by a `@vitest-environment node` header on each file; a file in those folders that needs a DOM says `jsdom` instead. |
 | Third-party notices | `npm run notices:verify` | Checks `THIRD_PARTY_NOTICES.md` against the installed dependency tree. |
@@ -441,7 +441,7 @@ is still releasing a just-exited child's handles.
 
 1. Open the pull request, find the failed **Gates (Windows)** check, and click **Details**.
 2. The failed step is the collapsed red one. Expand it; the command's own output is the whole story:
-   - *Typecheck* — `tsc` prints `file(line,col): error TS….`
+   - *Typecheck* — `tsc` prints `file(line,col): error TS….` To run one project by hand, use `node node_modules/@typescript/native/bin/tsc --noEmit -p tsconfig.<project>.json`; `npx tsc` may run either version.
    - *Lint* — eslint prints file, line and rule name.
    - *Unit and integration tests* — vitest prints the failing test file and name, then the diff. The summary line at the end counts passed/failed/skipped; skipped perf and live tests are expected.
    - *Third-party notices* — the verifier names the component that drifted; regenerate or update `THIRD_PARTY_NOTICES.md` to match the lockfile.
