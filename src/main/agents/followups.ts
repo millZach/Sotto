@@ -9,9 +9,10 @@ import type { StageInline } from './attachmentStore'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { watcherPhoneOriginSchema } from '../../shared/watcher'
 import { isResumeNoteText } from '../../shared/restartResume'
+import { isLimitRestartNoteText } from '../../shared/limitRestart'
 import { hiddenEvents } from './hiddenWakeUp'
 import type { WatcherEvent } from '../../shared/watcherNews'
-import { wakeUpNewsSchema, foldWakeUpNews, isBabysitNews, isDelegationNews, isDelegationOnlyWakeUp, isHiddenWakeUp, isRestartNews, isWatcherNews, isWatcherOnlyWakeUp,
+import { wakeUpNewsSchema, foldWakeUpNews, isAnyRestartNews, isBabysitNews, isDelegationNews, isDelegationOnlyWakeUp, isHiddenWakeUp, isWatcherNews, isWatcherOnlyWakeUp,
   WAKE_UP_NEWS_MAX, type WakeUpNews } from './wakeUp'
 
 /** Why a follow-up came back from a restart without an image it had, whatever the reason the image was not kept. */
@@ -57,10 +58,10 @@ export const isWaitingWakeUp = (item: Pick<QueuedFollowup, 'wakeUp' | 'status'>)
 /** Sotto's wake-up waiting in this thread's queue. */
 const waitingWakeUp = (item: QueuedFollowup, threadId: string): boolean => item.threadId === threadId && isWaitingWakeUp(item)
 /**
- * A waiting wake-up that resumes a turn a restart stopped (ADR-0076) goes ahead of the user's follow-ups, which were
- * waiting on that turn; every other wake-up goes after them.
+ * A waiting wake-up that resumes a turn a restart stopped (ADR-0076), or that a usage limit stopped (ADR-0144), goes ahead
+ * of the user's follow-ups, which were waiting on that turn; every other wake-up goes after them.
  */
-const leadsQueue = (item: QueuedFollowup, threadId: string): boolean => waitingWakeUp(item, threadId) && (item.news ?? []).some(isRestartNews)
+const leadsQueue = (item: QueuedFollowup, threadId: string): boolean => waitingWakeUp(item, threadId) && (item.news ?? []).some(isAnyRestartNews)
 const WAKE_UP_NOT_EDITABLE = "A wake-up is Sotto's own message and cannot be edited. Remove it if the thread should not get it."
 
 type Stored = z.infer<typeof storedSchema>
@@ -260,7 +261,7 @@ export class FollowupStore {
         const folded = foldWakeUpNews(waiting.news ?? [], wakeUpNewsSchema.parse(news))
         // Checked before it is saved: a queue file its own schema refuses would be set aside whole on the next start.
         // A resume note is the review a paused queue waits for: the turn it follows did not finish, and it says so.
-        const resumes = isRestartNews(news) ? { status: 'queued' as const, error: undefined, pausedBy: undefined } : {}
+        const resumes = isAnyRestartNews(news) ? { status: 'queued' as const, error: undefined, pausedBy: undefined } : {}
         const next = queuedSchema.parse({ ...waiting, news: folded, text: word(folded), updatedAt: now, ...resumeAfterTurnId ? { resumeAfterTurnId } : {}, ...resumes })
         state.items = state.items.map(item => item === waiting ? next : item)
       } else {
@@ -454,7 +455,8 @@ export class FollowupStore {
   bindResumeNote(id: string, turnId: string): Promise<void> {
     return this.change(state => {
       const item = state.items.find(candidate => candidate.id === id)
-      if (!item?.wakeUp || item.resumeAfterTurnId !== UNKNOWN_TURN || !(item.news ?? []).some(isRestartNews) || !isResumeNoteText(item.text)) return false
+      if (!item?.wakeUp || item.resumeAfterTurnId !== UNKNOWN_TURN || !(item.news ?? []).some(isAnyRestartNews)
+        || !isResumeNoteText(item.text) && !isLimitRestartNoteText(item.text)) return false
       Object.assign(item, { resumeAfterTurnId: turnId, updatedAt: new Date().toISOString() })
     })
   }
@@ -476,7 +478,7 @@ export class FollowupStore {
     return this.change(state => {
       const item = state.items.find(item => item.id === id)
       if (!item) return false
-      const kept = (item.news ?? []).filter(news => !isRestartNews(news))
+      const kept = (item.news ?? []).filter(news => !isAnyRestartNews(news))
       state.items = state.items.filter(candidate => candidate !== item)
       if (!kept.length) return
       Object.assign(item, { news: kept, text: word(kept), status: 'failed', error, updatedAt: new Date().toISOString() })

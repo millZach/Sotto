@@ -1,4 +1,5 @@
 import { claudeUsageLimitSentence, CLAUDE_SPENDING_LIMIT_SENTENCE } from '../../shared/limitStops'
+import type { TurnLimitStop } from '../../shared/limitRestart'
 import type { ClaudeFrame } from './claudeProtocol'
 
 /**
@@ -59,7 +60,7 @@ function reasonOf(frame: ClaudeFrame, assistantError: string | undefined, text: 
 function resetTime(text: string): string | undefined {
   const epoch = /\|(\d{10})\b/u.exec(text)?.[1]
   if (epoch) return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date(Number(epoch) * 1000))
-  const said = /\bresets?\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s?[ap]m)(?:\s*\(([A-Za-z_]+(?:\/[A-Za-z_+-]+)+)\))?/iu.exec(text)
+  const said = /\bresets?\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s?[ap]m)(?:\s*\(([A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)*)\))?/iu.exec(text)
   return said ? [said[1]!.replace(/\s+/gu, ''), said[2] ? `(${said[2]})` : undefined].filter(Boolean).join(' ') : undefined
 }
 
@@ -76,10 +77,64 @@ export function claudeTurnAborted(frame: ClaudeFrame): boolean {
  */
 export function claudeTurnFailure(frame: ClaudeFrame, assistantError?: string): string | null {
   if (claudeTurnAborted(frame)) return null
-  const said = frame.subtype === 'success' ? [frame.result] : Array.isArray(frame.errors) ? frame.errors : []
-  const text = said.filter((item): item is string => typeof item === 'string').join('\n')
+  const text = errorText(frame)
   const reason = reasonOf(frame, assistantError, text)
   if (reason === undefined) return CLAUDE_TURN_FAILED
   if (reason !== 'usage-limit') return SENTENCES.get(reason)!
   return claudeUsageLimitSentence(resetTime(text))
+}
+
+/** How far one zone's wall clock is ahead of UTC at an instant, in milliseconds; throws for a zone this computer does not know. */
+function zoneOffsetMs(zone: string | undefined, at: number): number {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: zone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric',
+    hour: 'numeric', minute: 'numeric', second: 'numeric' }).formatToParts(new Date(at))
+  const part = (type: Intl.DateTimeFormatPartTypes): number => Number(parts.find(item => item.type === type)?.value)
+  return Date.UTC(part('year'), part('month') - 1, part('day'), part('hour'), part('minute'), part('second')) - Math.floor(at / 1000) * 1000
+}
+/** The next instant after `now` at which a zone's clock reads `hour:minute`, or undefined when the zone cannot be read. */
+function nextWallTime(hour: number, minute: number, zone: string | undefined, now: number): number | undefined {
+  try {
+    const offset = zoneOffsetMs(zone, now), today = new Date(now + offset)
+    for (let day = 0; day <= 1; day++) {
+      const wall = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() + day, hour, minute)
+      // The offset where the wall time falls, which a change of clocks overnight can move.
+      const at = wall - zoneOffsetMs(zone, wall - offset)
+      if (Number.isFinite(at) && at > now) return at
+    }
+  } catch { /* A zone this computer does not know says no time. */ }
+  return undefined
+}
+/**
+ * When a usage limit resets, as an instant, if Claude Code's text says (ADR-0144): the epoch seconds it appends after a `|`,
+ * or a spoken time ("resets 3pm (America/Chicago)", "resets 11pm (UTC)") as the next such time in that zone, or on this
+ * computer's clock when it names none. Undefined when it says neither, or names a zone this computer cannot read.
+ */
+function resetInstant(text: string, now: number): string | undefined {
+  const epoch = /\|(\d{10})\b/u.exec(text)?.[1]
+  if (epoch) return new Date(Number(epoch) * 1000).toISOString()
+  const said = /\bresets?\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s?([ap])m(?:\s*\(([A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)*)\))?/iu.exec(text)
+  if (!said) return undefined
+  const clock = Number(said[1]), minute = said[2] === undefined ? 0 : Number(said[2])
+  if (clock < 1 || clock > 12 || minute > 59) return undefined
+  const hour = clock % 12 + (said[3]!.toLowerCase() === 'p' ? 12 : 0)
+  const at = nextWallTime(hour, minute, said[4], now)
+  return at === undefined ? undefined : new Date(at).toISOString()
+}
+/** The text a result frame's error is read from: a `success` result's `result`, or the `errors` an early stop lists. */
+function errorText(frame: ClaudeFrame): string {
+  const said = frame.subtype === 'success' ? [frame.result] : Array.isArray(frame.errors) ? frame.errors : []
+  return said.filter((item): item is string => typeof item === 'string').join('\n')
+}
+
+/**
+ * The usage-limit stop a failed result stands for (ADR-0144), with when the limit resets as an instant when Claude Code
+ * said, or undefined for any other ending, a spending limit included: that one never resets on its own. Read from the same
+ * frame `claudeTurnFailure` words, and never shown.
+ */
+export function claudeLimitStop(frame: ClaudeFrame, assistantError?: string, now: number = Date.now()): TurnLimitStop | undefined {
+  if (claudeTurnAborted(frame)) return undefined
+  const text = errorText(frame)
+  if (reasonOf(frame, assistantError, text) !== 'usage-limit') return undefined
+  const resetsAt = resetInstant(text, now)
+  return resetsAt ? { resetsAt } : {}
 }

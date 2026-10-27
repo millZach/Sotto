@@ -2,7 +2,7 @@ import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, u
 import { plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { AppWindow, Archive, ArchiveRestore, ChevronRight, Columns2, Folder, FolderGit2, Gauge, GitBranch, Hourglass, Pencil, Sparkles, SquarePen } from 'lucide-react'
-import { AGENT_DISMISS_FAILURES_MAX, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
+import { AGENT_DISMISS_FAILURES_MAX, isThreadBusy, providerWritesShortText, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
 import { useOptionalApp } from '../state/AppContext'
 import { claimedThreadChord, openBesidePressed, threadChordLabel, threadChordPressed, type ThreadChordLabel } from './threadShortcuts'
@@ -28,6 +28,7 @@ import { WatchRowToggle } from '../watcher/WatchControls'
 import { shownCount } from '../state/interfaceNumbers'
 import { NeedsYouQueue } from './NeedsYouQueue'
 import { useOwlFeature } from '../state/owlFeature'
+import { RestartBands, useRestartStopped } from './RestartStopped'
 import './workingThreadsLine.css'
 
 export { useAddProject } from './addProject'
@@ -126,8 +127,10 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
 }): ReactNode {
   const { t } = useLingui()
   const title = row.thread.title
-  // Prototype ready (ADR-0108), Just finished (ADR-0046) and Babysitting #74 (ADR-0061) stand where the row would say Done.
-  const { text: status, finished, babysitting, prototype, background } = rowStatus(row)
+  // Prototype ready (ADR-0108), Just finished (ADR-0046) and Babysitting #74 (ADR-0061) stand where the row would say Done;
+  // Restarts at 3:00 pm (ADR-0144; Owl only) stands where a stopped thread's failure line would be.
+  const restartOn = useRestartStopped()
+  const { text: status, finished, babysitting, prototype, background, restart } = rowStatus(row, { restart: restartOn })
   // Beside the focused pane's own thread, which a row marked current only for a delegated thread in the pane is not.
   const besideAvailable = panes.currentThreadId !== null && panes.currentThreadId !== row.thread.id
   const [renaming, setRenaming] = useState(false)
@@ -176,7 +179,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
           {watched ? <WatchedBadge size={14} /> : null}
           <span className="thread-nav__model">{row.model?.name ?? ''}</span>
         </span>
-        <span id={statusId} className="thread-nav__status" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined} data-babysitting={babysitting || undefined} data-prototype={prototype || undefined} data-disconnected={row.connected ? undefined : true} title={status + disconnected}><span className="tt-visually-hidden">{row.provider}, </span>{prototype ? <AppWindow size={12} aria-hidden="true" /> : null}{status}{disconnected}</span>
+        <span id={statusId} className="thread-nav__status" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined} data-babysitting={babysitting || undefined} data-prototype={prototype || undefined} data-restart={restart || undefined} data-disconnected={row.connected ? undefined : true} title={status + disconnected}><span className="tt-visually-hidden">{row.provider}, </span>{prototype ? <AppWindow size={12} aria-hidden="true" /> : null}{status}{disconnected}</span>
       </span>
       <span className="thread-nav__branch" data-working-copy-state={copy.status} title={branchName !== copyLabel ? `${branchName} · ${copyLabel}` : copyLabel}>
         <WorkingCopyIcon size={12} aria-hidden="true" />{row.thread.hostLabel ? <span>{row.thread.hostLabel} · </span> : null}
@@ -429,8 +432,13 @@ function NeedsAttentionLine({ failures, command }: { readonly failures: ReturnTy
 
 /** The Threads sidebar: project folders of open work, then the Settled shelf. */
 export function ThreadSidebar({ state, command, organization, query, liveClock = true, onQuery, onOpen, onNewThread,
-  currentThreadId, listedThreadId, openThreadIds, onOpenBeside, onDragThread, title, newThreadError, onDismissNewThreadError, newThreadShortcut, shortcutsLive = false }: PaneActions & {
+  currentThreadId, listedThreadId, openThreadIds, onOpenBeside, onDragThread, title, newThreadError, onDismissNewThreadError, newThreadShortcut, shortcutsLive = false, restartThreads }: PaneActions & {
   readonly state: AgentState
+  /**
+   * Every thread the host publishes, Watcher's own included, which the page's own list leaves out: the restart band
+   * (ADR-0144; Owl only) names Watcher's thread among the ones a limit stopped. The listed threads where absent.
+   */
+  readonly restartThreads?: readonly AgentThread[] | undefined
   readonly command: Command
   readonly organization: WorkspaceOrganization
   readonly query: string
@@ -541,6 +549,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   }
   const { open, settled } = organization
   const threads = state.host.threads
+  const restartOn = useRestartStopped()
   const failures = useMemo(() => unseenFailures(threads), [threads])
   const settledThreads = settled.reduce((count, folder) => count + folder.rows.length, 0)
   const settledWorking = settled.reduce((count, folder) => count + folder.working, 0)
@@ -553,9 +562,13 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   return <SidebarFrame state={state} command={command} label={t`Thread sidebar`} query={query} searchPlaceholder={t`Search threads`} onQuery={onQuery}
     onNew={() => onNewThread()} newLabel={t`New thread`} NewIcon={SquarePen} newShortcut={topShortcut} title={title}
     extraError={newThreadError} onDismissExtraError={onDismissNewThreadError} onProjectAdded={onNewThread} notice={<WorkingThreadsLine threads={state.host.threads} />}
-    afterSearch={queueOn ? <NeedsYouQueue queue={organization.needsYou} state={state} command={command} failures={failures} panes={panes} onOpen={onOpen} /> : <NeedsAttentionLine failures={failures} command={command} />}
-    collapsedContent={<nav aria-label={t`Threads`}>{[...open.flatMap(folder => folder.rows), ...settled.flatMap(folder => folder.rows).filter(row => row.thread.id === listed)].map(row => <button key={row.thread.id} type="button" className="thread-nav__rail-thread tt-focusable" aria-label={row.thread.title} title={`${row.thread.title} · ${rowStatus(row).text}`} aria-current={listed === row.thread.id ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
-      <span aria-hidden="true">{row.thread.title.slice(0, 1)}</span><StatusRing row={row} {...rowStatus(row)} />
+    afterSearch={<>
+      {/* When Sotto restarts what a limit stopped, under the search and before what waits on you (ADR-0144; Owl only). */}
+      <RestartBands threads={restartThreads ?? threads} command={command} onOpen={onOpen} />
+      {queueOn ? <NeedsYouQueue queue={organization.needsYou} state={state} command={command} failures={failures} panes={panes} onOpen={onOpen} /> : <NeedsAttentionLine failures={failures} command={command} />}
+    </>}
+    collapsedContent={<nav aria-label={t`Threads`}>{[...open.flatMap(folder => folder.rows), ...settled.flatMap(folder => folder.rows).filter(row => row.thread.id === listed)].map(row => <button key={row.thread.id} type="button" className="thread-nav__rail-thread tt-focusable" aria-label={row.thread.title} title={`${row.thread.title} · ${rowStatus(row, { restart: restartOn }).text}`} aria-current={listed === row.thread.id ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
+      <span aria-hidden="true">{row.thread.title.slice(0, 1)}</span><StatusRing row={row} {...rowStatus(row, { restart: restartOn })} />
     </button>)}</nav>}>
       <section aria-label={t`Projects`}>
         {open.map(folderView('open'))}

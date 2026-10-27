@@ -114,6 +114,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   // Its Owl answers, and every provider hosts do not take yet (none since #1107 added OpenCode to HOST_PROVIDERS).
   const heldProviders = heldOnHost(heldProvidersOf(owlFeatures))
   const resumeAfterRestart = owlFeatures['resume-after-restart']
+  // Restarting its own threads a usage limit stopped (ADR-0144), on the host's own Owl answer.
+  const restartStoppedThreads = owlFeatures['restart-stopped-threads']
   const streamingPublishCost = owlFeatures['streaming-publish-cost']
   const threadStartsEnabled = owlFeatures['continue-agent-thread']
   // Deleting settled threads (ADR-0140): a desktop deletes this host's threads only where this answer turns it on.
@@ -151,7 +153,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     let peersConnected = (): boolean => false
     const pairing = new PairedClients(directory)
     const runtime = await createAgentRuntime({
-      observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, attachAnyFile, clearThreadsEnabled,
+      observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, attachAnyFile, clearThreadsEnabled,
       clearLog: (event, detail) => options.log?.(`${event} ${detail}`), settings: () => startup, writingSettings: () => settings.get(),
       // This host's own threads delegate on this machine (#1310) where its Owl answer turns on Work across machines, held to
       // the desktop defaults the last desktop still paired here with an answers grant sent, read at every start, so a desktop
@@ -163,6 +165,9 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         revoked: clientId => policy?.remoteAnswersRevoked(clientId) ?? false },
       historyEnabled: () => startup.historyEnabled,
       gitStatus: { fetchIntervalMs: () => startup.gitFetchIntervalSeconds * 1000, foreground: () => peersConnected(), log: event => options.log?.(event) },
+      // Restart stopped threads retires babysitting here too (ADR-0144): the host lists no `pull-request-babysit`, so the
+      // iPhone hides its Babysit control, and Watcher's reads follow the pull requests of the threads it watches.
+      ...owlFeatures['restart-stopped-threads'] ? { babysitting: { retired: true } } : {},
       ...(policy ? { authority: policy } : {}),
       ...(options.providers ? { providers: options.providers } : {}),
       ...(options.reasoner ? { reasoner: options.reasoner } : {}),

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import {
-  dropExpiredQuotaWindows, mergeClaudeQuota, mergeCodexQuota, parseClaudeQuota, parseClaudeUsage, parseCodexQuota, parseGrokQuota, parseMuseQuota,
+  dropExpiredQuotaWindows, exhaustedQuotaReset, mergeClaudeQuota, mergeCodexQuota, parseClaudeQuota, parseClaudeUsage, parseCodexQuota, parseGrokQuota, parseMuseQuota,
   quotaDurationLabel, unavailableProviderQuota,
 } from '../../../src/main/agents/providerQuota'
 import { usageQuotaReadSchema } from '../../../src/shared/usageDashboard'
@@ -531,5 +531,23 @@ describe('Muse quota from MSP usage/read', () => {
   it('keeps use past the allowance and leaves out a window that had already reset when Muse saw it', () => {
     const result = parseMuseQuota(answer({ window: { resetsAtMs: observedMs - 1, usedPercent: 100, windowDurationMins: 300 }, weekly: { resetsAtMs: observedMs + 1, usedPercent: 140 } }))!
     expect(result.windows).toMatchObject([{ id: 'muse-weekly', usedPercent: 140 }])
+  })
+})
+
+describe('the reset of a used-up limit (ADR-0144)', () => {
+  const read = (windows: object[]) => usageQuotaReadSchema.parse({ providerId: 'codex', status: 'available', windows, refreshable: true })
+  const now = Date.parse(observedAt)
+  it('is the latest reset among the windows at 100% or limited, still ahead', () => {
+    expect(exhaustedQuotaReset(read([
+      { id: 'a', label: '5 hours', kind: 'primary', usedPercent: 100, resetsAt: '2026-10-12T20:00:00.000Z' },
+      { id: 'b', label: 'Week', kind: 'weekly', status: 'limited', resetsAt: '2026-10-14T00:00:00.000Z' },
+      { id: 'c', label: 'Other', kind: 'other', usedPercent: 99, resetsAt: '2026-10-20T00:00:00.000Z' },
+    ]), now)).toBe('2026-10-14T00:00:00.000Z')
+  })
+  it('is unknown when nothing is used up, a used-up window says no reset, or its reset has passed', () => {
+    expect(exhaustedQuotaReset(read([{ id: 'a', label: '5 hours', kind: 'primary', usedPercent: 40, resetsAt: '2026-10-12T20:00:00.000Z' }]), now)).toBeUndefined()
+    expect(exhaustedQuotaReset(read([{ id: 'a', label: '5 hours', kind: 'primary', usedPercent: 100 }]), now)).toBeUndefined()
+    expect(exhaustedQuotaReset(read([{ id: 'a', label: '5 hours', kind: 'primary', usedPercent: 100, resetsAt: '2026-10-12T17:00:00.000Z' }]), now)).toBeUndefined()
+    expect(exhaustedQuotaReset(undefined, now)).toBeUndefined()
   })
 })

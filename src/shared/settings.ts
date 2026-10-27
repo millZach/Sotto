@@ -174,6 +174,9 @@ export interface AppSettings {
    * restart of the computer, is sent a resume note when Sotto opens again. Asked once at start.
    */
   resumeThreadsAfterRestart: boolean
+  /** Restart stopped threads (ADR-0144, an Owl feature): a thread a usage limit or Sotto closing stopped while it worked
+   * carries on when the limit resets or Sotto opens again. Read in place of `resumeThreadsAfterRestart` while the feature is on. */
+  restartStoppedThreads: boolean
   /**
    * Worker roles (#1041, an Owl feature): the rows the user chose under Settings, Watcher, by role. A role left out follows
    * its defaults over the providers connected now (`workerRoles.ts`), so nothing here changes when a provider comes or goes.
@@ -427,6 +430,7 @@ const fieldSchemas = {
   visualsInThreads: z.boolean(),
   babysitPullRequests: z.boolean(),
   resumeThreadsAfterRestart: z.boolean(),
+  restartStoppedThreads: z.boolean(),
   workerRoles: workerRoleChoicesSchema,
   watcherSettlesFinishedThreads: z.boolean(),
   newWorkerMachine: workerMachineSettingSchema,
@@ -535,6 +539,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   visualsInThreads: true,
   babysitPullRequests: true,
   resumeThreadsAfterRestart: true,
+  restartStoppedThreads: true,
   workerRoles: {},
   watcherSettlesFinishedThreads: true,
   newWorkerMachine: DEFAULT_WORKER_MACHINE,
@@ -706,6 +711,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     visualsInThreads: parseField(persisted, 'visualsInThreads', defaults),
     babysitPullRequests: parseField(persisted, 'babysitPullRequests', defaults),
     resumeThreadsAfterRestart: parseField(persisted, 'resumeThreadsAfterRestart', defaults),
+    restartStoppedThreads: parseField(persisted, 'restartStoppedThreads', defaults),
     // Row by row, so one damaged row costs only that row.
     workerRoles: persisted.workerRoles === undefined ? { ...defaults.workerRoles } : parseWorkerRoleChoices(persisted.workerRoles),
     watcherSettlesFinishedThreads: parseField(persisted, 'watcherSettlesFinishedThreads', defaults),
