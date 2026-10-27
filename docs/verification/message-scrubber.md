@@ -85,3 +85,21 @@ behind the room above the column, as it always has, and is not checked against t
 A remote host's store answering the scrubber is checked over the socket in `tests/integration/socketThreadPrompts.test.ts`,
 not with a real host.
 The design captures run on stable, where the column does not show, so no baseline changes.
+
+## October 27, 2026: half the length, and the scroll emphasis
+
+Checked on macOS with headless Chromium, not in the app: a page draws a transcript of 90 messages sent at 1280x800 and
+the scrubber's real stylesheet over it, with Citrine's dark and light text roles, placing the ticks as `tickPlaces` does
+and marking the messages on screen as `readInView` does. Before is `origin/main`'s stylesheet at a share of 0.8, after is
+this change's at 0.5. On that transcript the column went from 640 to 400 pixels and the pitch from 7.2 to 4.5. The
+messages on screen read as a short, slightly longer and brighter run of ticks in the column. A 900-pixel scroll over 900 ms,
+shot every 33 ms in the lane alone, shows that run sliding down the column a tick at a time, with nothing else moving.
+The night scene, the card and the reached states were not drawn; nothing in them changed.
+
+| Screenshot | What it shows |
+| --- | --- |
+| `artifacts/message-scrubber-half/before-dark-middle.png` | Before, dark, halfway down: the column runs four fifths of the height. |
+| `artifacts/message-scrubber-half/after-dark-middle.png` | After, dark, same scroll: half the height, the messages on screen a little longer. |
+| `artifacts/message-scrubber-half/before-light-top.png` | Before, light, at the top. |
+| `artifacts/message-scrubber-half/after-light-top.png` | After, light, at the top. |
+| `artifacts/message-scrubber-half/scroll-frames-dark.png` | Twenty frames of a scroll, left to right, in the lane: the brighter run moves down the column. |
