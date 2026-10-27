@@ -120,9 +120,10 @@ const NO_LINES: TurnBrowserLines = { runs: [], folded: new Map() }
  * Every turn's browser lines, in one pass over the records (ADR-0154): a turn's calls to Sotto's browser make one line,
  * wherever other work falls between them, and its calls to the cloud iPhone another. A call that holds work of its own, or
  * that sits under another record (a subagent's call), keeps its row where it is, so nothing reported is hidden. The caller
- * keeps the answer for as long as the records are the same array.
+ * keeps the answer for as long as the records are the same array. Given the answer before, a turn whose lines read the
+ * same records keeps the very same object, so whatever draws it can tell nothing changed without looking inside.
  */
-export function browserLinesByTurn(activities: readonly AgentActivity[] | undefined): ReadonlyMap<string, TurnBrowserLines> {
+export function browserLinesByTurn(activities: readonly AgentActivity[] | undefined, previous?: ReadonlyMap<string, TurnBrowserLines>): ReadonlyMap<string, TurnBrowserLines> {
   const turns = new Map<string, { runs: Map<BrowserRunKind, BrowserStep[]>; newest?: AgentActivity }>()
   if (activities === undefined || activities.length === 0) return new Map()
   const ids = new Set<string>(), parents = new Set<string>()
@@ -154,7 +155,82 @@ export function browserLinesByTurn(activities: readonly AgentActivity[] | undefi
     })
     lines.set(turnId, { runs, folded, newest: turn.newest })
   }
+  if (previous !== undefined) for (const [turnId, turn] of lines) {
+    const before = previous.get(turnId)
+    if (before !== undefined && sameLines(before, turn)) lines.set(turnId, before)
+  }
   return lines
+}
+
+/** Two answers for one turn that read the same records, in the same order. */
+function sameLines(a: TurnBrowserLines, b: TurnBrowserLines): boolean {
+  if (a.newest !== b.newest || a.runs.length !== b.runs.length) return false
+  return a.runs.every((run, index) => {
+    const other = b.runs[index]!
+    return run.kind === other.kind && run.steps.length === other.steps.length && run.steps.every((step, at) => step.record === other.steps[at]!.record)
+  })
+}
+
+/** The lines a group draws: each line whose first call is one of the group's records, in the group's order. */
+export function linesStartingIn(records: readonly AgentActivity[], lines: TurnBrowserLines): readonly BrowserRun[] {
+  if (lines.folded.size === 0) return []
+  const runs: BrowserRun[] = []
+  for (const record of records) {
+    const run = lines.folded.get(record.id)
+    if (run?.key === record.id) runs.push(run)
+  }
+  return runs
+}
+
+/** One turn's lines as a group draws them, with the line still going when the turn is the running one. */
+export interface TurnLinesView {
+  readonly lines: TurnBrowserLines
+  readonly goingKey: string | null
+}
+const NO_VIEW: TurnLinesView = { lines: NO_LINES, goingKey: null }
+
+/**
+ * Every turn's browser lines for one transcript, read a turn at a time. Each turn's view keeps its identity until its own
+ * lines or its going line change, so a group subscribed to its turn is not drawn again when another turn's records change
+ * (AGENTS.md: update work does not grow with the history on screen). The records are read again only when they are a new
+ * array; a message alone moves only the running turn's going line.
+ */
+export class BrowserLinesStore {
+  private activities: readonly AgentActivity[] | undefined
+  private byTurn: ReadonlyMap<string, TurnBrowserLines> = new Map()
+  private readonly views = new Map<string, TurnLinesView>()
+  private live: string | null = null
+  private readonly listeners = new Set<() => void>()
+
+  readonly subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener)
+    return () => { this.listeners.delete(listener) }
+  }
+
+  readonly view = (turnId: string): TurnLinesView => this.views.get(turnId) ?? NO_VIEW
+
+  /** Takes the transcript's records, its running turn and its messages, and tells only if any turn's view changed. */
+  update(activities: readonly AgentActivity[] | undefined, liveTurn: string | null, messages: readonly AgentMessage[]): void {
+    let changed = false
+    const put = (turnId: string, lines: TurnBrowserLines, goingKey: string | null): void => {
+      const before = this.views.get(turnId)
+      if (before !== undefined && before.lines === lines && before.goingKey === goingKey) return
+      this.views.set(turnId, { lines, goingKey })
+      changed = true
+    }
+    if (activities !== this.activities) {
+      this.activities = activities
+      this.byTurn = browserLinesByTurn(activities, this.byTurn)
+      for (const turnId of [...this.views.keys()]) if (!this.byTurn.has(turnId)) { this.views.delete(turnId); changed = true }
+      for (const [turnId, lines] of this.byTurn) put(turnId, lines, turnId === liveTurn ? goingRunKey(lines, messages) : null)
+    } else {
+      // Only the running turn's going line can have moved: the turn that was running, and the one that is.
+      if (this.live !== null && this.live !== liveTurn) { const lines = this.byTurn.get(this.live); if (lines) put(this.live, lines, null) }
+      if (liveTurn !== null) { const lines = this.byTurn.get(liveTurn); if (lines) put(liveTurn, lines, goingRunKey(lines, messages)) }
+    }
+    this.live = liveTurn
+    if (changed) for (const listener of [...this.listeners]) listener()
+  }
 }
 
 export const turnBrowserLines = (lines: ReadonlyMap<string, TurnBrowserLines> | undefined, turnId: string): TurnBrowserLines => lines?.get(turnId) ?? NO_LINES

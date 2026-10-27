@@ -18,10 +18,15 @@ vi.mock('../../../src/renderer/src/state/owlFeature', async importOriginal => ({
   useOwlFeature: (id: string) => id === 'quiet-browser' && gate.on,
 }))
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
-const indexed = vi.hoisted(() => ({ count: 0 }))
+// How often the transcript's parts work through their records: a group folding its rows, a live line finding its lines.
+const reads = vi.hoisted(() => ({ folds: [] as string[], live: 0 }))
 vi.mock('../../../src/renderer/src/agents/browserLine', async importOriginal => {
   const actual = await importOriginal<typeof import('../../../src/renderer/src/agents/browserLine')>()
-  return { ...actual, browserLinesByTurn: (...args: Parameters<typeof actual.browserLinesByTurn>) => { indexed.count++; return actual.browserLinesByTurn(...args) } }
+  return {
+    ...actual,
+    foldBrowserRuns: (...args: Parameters<typeof actual.foldBrowserRuns>) => { reads.folds.push(args[0][0]?.record.turnId ?? ''); return actual.foldBrowserRuns(...args) },
+    linesStartingIn: (...args: Parameters<typeof actual.linesStartingIn>) => { reads.live++; return actual.linesStartingIn(...args) },
+  }
 })
 
 const NOW = E2E_THREADS_NOW
@@ -66,7 +71,7 @@ function mount(state: AgentState) {
   return { publish, messages, transcript: screen.getByRole('log', { name: 'Thread transcript' }) }
 }
 
-beforeEach(() => { sequence = 0; gate.on = true; localStorage.clear(); vi.mocked(useAgents).mockReset() })
+beforeEach(() => { sequence = 0; gate.on = true; reads.folds.length = 0; reads.live = 0; localStorage.clear(); vi.mocked(useAgents).mockReset() })
 afterEach(() => {
   cleanup()
   for (const editor of mountedEditors) if (!editor.isDestroyed) editor.destroy()
@@ -178,24 +183,40 @@ describe('on Owl, a running turn\'s calls to Sotto\'s browser', () => {
     expect(within(steps).getByRole('list', { name: 'Steps in Check the sign-in page' }).querySelectorAll('.thread-activity__row[data-kind="tool"]')).toHaveLength(1)
   })
 
-  it('work out the turn\'s lines once for each set of records, not on every draw', () => {
+  it('find a live line\'s calls again only when its records change, not for each word of a reply', () => {
     const reported = [lifecycle('running'), ...run()]
     const { publish, messages } = mount(stateWith({ status: 'running', activities: reported }))
-    const before = indexed.count
-    // A reply streaming in changes the messages, not the records.
-    for (const text of ['Sign', 'Sign-in', 'Sign-in works']) publish({ messages: [...messages().filter(message => message.id !== 'streaming'), { id: 'streaming', role: 'assistant', text, createdAt: iso(1_000) }] })
-    expect(indexed.count).toBe(before)
+    // The first words of a reply end the run once; the words after it change nothing the line reads.
+    publish({ messages: [...messages(), { id: 'streaming', role: 'assistant', text: 'Sign', createdAt: iso(1_000) }] })
+    const before = reads.live
+    for (const text of ['Sign-in', 'Sign-in works', 'Sign-in works now.']) publish({ messages: [...messages().filter(message => message.id !== 'streaming'), { id: 'streaming', role: 'assistant', text, createdAt: iso(1_000) }] })
+    expect(reads.live).toBe(before)
     publish({ activities: [...reported, browser('more', 'browser_action', { action: { type: 'inspect' } })] })
-    expect(indexed.count).toBe(before + 1)
+    expect(reads.live).toBeGreaterThan(before)
   })
 
-  it('fold into one line among a finished turn\'s rows', async () => {
+  it('do not draw a finished turn\'s group again when the running turn\'s records change', () => {
     localStorage.setItem('sotto.threads.stepsOpen', 'true')
-    const { transcript } = mount(stateWith({ status: 'idle', activities: [lifecycle('completed'), ...run()] }))
-    const line = within(transcript).getByRole('button', { name: 'Show browser steps: Browsed localhost:5173 · 4 steps' })
-    expect(line.closest('ul')).toHaveClass('thread-activity__rows')
-    expect(within(transcript).getByRole('button', { name: 'npm run dev, completed in 2.0s' })).toBeVisible()
-    expect(transcript.querySelectorAll('.thread-activity__row[data-kind="tool"]')).toHaveLength(0)
+    // A finished turn that browsed, after the fixture's first exchange, then a running one after a second message.
+    const earlier = [activity({ id: 'old-turn', turnId: 'turn-0', kind: 'turn', title: 'Turn', status: 'completed', startedAt: iso(-90_000), completedAt: iso(-80_000) }),
+      ...run().map(item => ({ ...item, id: `old-${item.id}`, turnId: 'turn-0' }))]
+    const ask = { id: 'ask-2', role: 'user' as const, text: 'Now check sign-out.', createdAt: iso(-1_000) }
+    const live = (status: AgentActivity['status']): AgentActivity[] => [
+      activity({ id: 'new-turn', kind: 'turn', title: 'Turn', status: 'running', startedAt: iso(-1_000), afterMessageId: 'ask-2' }),
+      browser('new-open', 'browser_open', { url: 'http://localhost:5173/' }, { afterMessageId: 'ask-2', status }),
+    ]
+    const state = stateWith({ status: 'running', activities: [...earlier, ...live('running')] })
+    const thread = state.host.threads.find(item => item.id === THREAD)!
+    thread.messages = [...thread.messages, ask]
+    const { transcript, publish } = mount(state)
+    within(transcript).getByRole('button', { name: 'Show browser steps: Browsed localhost:5173 · 4 steps' })
+    within(transcript).getByRole('button', { name: 'Show browser steps: Browsing localhost:5173 · opened localhost:5173' })
+    expect(reads.folds).toContain('turn-0')
+    reads.folds.length = 0
+    // Only the running turn's call changes: the finished turn's group keeps what it drew.
+    publish({ activities: [...earlier, ...live('completed')] })
+    within(transcript).getByRole('button', { name: 'Show browser steps: Browsing localhost:5173 · opened localhost:5173' })
+    expect(reads.folds).not.toContain('turn-0')
   })
 })
 

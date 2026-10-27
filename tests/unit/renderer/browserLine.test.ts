@@ -4,7 +4,7 @@ import type { AgentActivity } from '../../../src/shared/agentActivity'
 import { sottoBrowserToolOfTitle } from '../../../src/shared/sottoBrowserTools'
 import type { AgentMessage } from '../../../src/shared/agents'
 import {
-  browserLineName, browserLinesByTurn, browserRunHost, browserRunWords, browserStep, browserStepWords, foldBrowserRuns, goingRunKey, PLACE,
+  BrowserLinesStore, browserLineName, browserLinesByTurn, browserRunHost, browserRunWords, browserStep, browserStepWords, foldBrowserRuns, goingRunKey, PLACE,
   plainWords, sentenceWords, turnBrowserLines, type BrowserRun, type BrowserStep,
 } from '../../../src/renderer/src/agents/browserLine'
 import { nestActivities } from '../../../src/renderer/src/agents/threadActivityView'
@@ -230,5 +230,47 @@ describe('the line still going', () => {
     expect(goingRunKey(lines([open]), [...messages, message('reply', 'assistant')])).toBeNull()
     // The user's own message after it is not the agent moving on.
     expect(goingRunKey(lines([open]), [...messages, message('queued', 'user')])).toBe('open')
+  })
+})
+
+describe('the transcript\'s store of lines', () => {
+  /** The records as a list that counts how often one of them is read. */
+  const counted = (records: AgentActivity[]): { list: AgentActivity[]; reads: () => number } => {
+    let count = 0
+    const list = new Proxy(records, { get: (target, key, receiver) => { if (typeof key === 'string' && /^\d+$/u.test(key)) count++; return Reflect.get(target, key, receiver) } })
+    return { list, reads: () => count }
+  }
+  const message = (id: string, role: AgentMessage['role']): AgentMessage => ({ id, role, text: 'words', createdAt: '2026-10-27T09:00:00.000Z' })
+
+  it('reads the records once for each list of them, and a message only moves the running turn\'s line', () => {
+    const records = counted([
+      claude('old', 'browser_open', { url: 'http://localhost:5173' }, { turnId: 'turn-0', afterMessageId: 'said' }),
+      claude('open', 'browser_open', { url: 'http://localhost:5173' }, { afterMessageId: 'said' }),
+    ])
+    const store = new BrowserLinesStore()
+    let told = 0
+    store.subscribe(() => { told++ })
+    store.update(records.list, 'turn-1', [message('said', 'assistant')])
+    const read = records.reads()
+    const older = store.view('turn-0')
+    expect(store.view('turn-1').goingKey).toBe('open')
+    // Words streaming into a reply: the records are not read again, and only the running turn's view moves.
+    store.update(records.list, 'turn-1', [message('said', 'assistant'), message('reply', 'assistant')])
+    store.update(records.list, 'turn-1', [message('said', 'assistant'), { ...message('reply', 'assistant'), text: 'more words' }])
+    expect(records.reads()).toBe(read)
+    expect(store.view('turn-1').goingKey).toBeNull()
+    expect(store.view('turn-0')).toBe(older)
+    expect(told).toBe(2)
+  })
+
+  it('keeps a turn\'s view while its own records stay the same, as another turn\'s change', () => {
+    const old = claude('old', 'browser_open', { url: 'http://localhost:5173' }, { turnId: 'turn-0' })
+    const open = claude('open', 'browser_open', { url: 'http://localhost:5173' }, { status: 'running' })
+    const store = new BrowserLinesStore()
+    store.update([old, open], 'turn-1', [])
+    const older = store.view('turn-0'), newer = store.view('turn-1')
+    store.update([old, { ...open, status: 'completed' }], 'turn-1', [])
+    expect(store.view('turn-0')).toBe(older)
+    expect(store.view('turn-1')).not.toBe(newer)
   })
 })

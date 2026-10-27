@@ -20,8 +20,8 @@ import { foldedTurns, setStepsOpen, useStepsOpen } from './stepsOpen'
 import { MessageContent, AttachmentPreviews } from './MessageContent'
 import { renderedPlainText, useTransientFlag, writeClipboard } from './richActions'
 import { LinkMenu, type LinkMenuItem } from '../tools/webLinks'
-import { ActivityGroupView, BrowserLinesContext, CompactionLine, foldOnEscape, LiveActivity, LiveBrowserLines, TurnChangedFiles, type BrowserLinesIndex } from './ThreadActivity'
-import { browserLinesByTurn, goingRunKey, turnBrowserLines } from './browserLine'
+import { ActivityGroupView, BrowserLinesContext, CompactionLine, foldOnEscape, LiveActivity, LiveBrowserLines, TurnChangedFiles } from './ThreadActivity'
+import { BrowserLinesStore } from './browserLine'
 import { OwnServerTurnContext, TurnFailureReason, useOwnServerTurns } from './OwnServerTurn'
 import { ActivityBodyContext, type ActivityBodyHost } from './activityBodies'
 import { threadHostName } from './HostBadge'
@@ -194,10 +194,20 @@ function asked(message: AgentMessage): readonly string[] {
   return questions
 }
 
+/**
+ * A group without its lifecycle record, kept for as long as the group is the same object, so the memoised group view under a
+ * folded turn is not drawn again each time the turn is.
+ */
+const withoutTurn = new WeakMap<ActivityGroup, ActivityGroup>()
+const foldedGroup = (group: ActivityGroup): ActivityGroup => {
+  if (!group.turn) return group
+  let shown = withoutTurn.get(group)
+  if (shown === undefined) withoutTurn.set(group, shown = { key: group.key, turnId: group.turnId, anchorMessageId: group.anchorMessageId, records: group.records })
+  return shown
+}
 /** Inside a folded turn the turn line already says how it ended, so its groups carry only their counts, and the boundaries it crossed are drawn outside the fold. */
 const folded = (groups: readonly ActivityGroup[] | undefined): ActivityGroup[] =>
-  (groups ?? []).filter(group => group.records.length > 0 && !compactionOf(group))
-    .map(group => group.turn ? { key: group.key, turnId: group.turnId, anchorMessageId: group.anchorMessageId, records: group.records } : group)
+  (groups ?? []).filter(group => group.records.length > 0 && !compactionOf(group)).map(foldedGroup)
 
 /**
  * Rendered history, turn by turn. A finished turn shows the user's message and its final reply, with everything in
@@ -1003,13 +1013,11 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     if (thread.messages.some(message => message.id === target.messageId)) jumpTo(target.messageId, target.focus)
   }, [thread.messages, thread.id, jumpTo])
   const ownServerTurns = useOwnServerTurns(row, state, command, store)
-  // Browser lines (ADR-0154; Owl only): every turn's, read once for each set of records rather than on every draw, and the
-  // running turn's line that is still going, read again only when its records or the messages change.
+  // Browser lines (ADR-0154; Owl only): one store a thread, which reads the records again only when they are a new array and
+  // tells a group only when its own turn's lines change. It is brought up to date before the window paints.
   const quietBrowser = useOwlFeature('quiet-browser')
-  const browserLines = useMemo(() => quietBrowser ? browserLinesByTurn(thread.activities) : null, [quietBrowser, thread.activities])
-  const goingKey = useMemo(() => browserLines === null || liveTurn === null ? null : goingRunKey(turnBrowserLines(browserLines, liveTurn), thread.messages),
-    [browserLines, liveTurn, thread.messages])
-  const browserIndex = useMemo<BrowserLinesIndex | null>(() => browserLines === null ? null : { byTurn: browserLines, goingKey }, [browserLines, goingKey])
+  const browserStore = useMemo(() => quietBrowser ? new BrowserLinesStore() : null, [quietBrowser, thread.id])
+  useLayoutEffect(() => { browserStore?.update(thread.activities, liveTurn, thread.messages) }, [browserStore, thread.activities, liveTurn, thread.messages])
   const activity = useMemo<ActivityContext>(() => ({ liveTurn, running: thread.status === 'running', connected: row.connected, provider: row.provider, onDisclosure, onSeek }),
     [liveTurn, thread.status, row.connected, row.provider, onDisclosure, onSeek])
   // A remote thread's rows read a body its host kept back from that host, by the name the window shows (ADR-0025, October
@@ -1053,7 +1061,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     <div className="thread-workspace__transcript" ref={scroller} onScroll={onScroll} onWheel={onReaderInput} onTouchStart={onReaderInput}
       onPointerDown={onReaderInput} onKeyDown={onTranscriptKey} tabIndex={0} role="log" aria-live="off"
       aria-label={t`Thread transcript`} aria-busy={thread.historyStatus === 'loading'}>
-      <div className="thread-transcript__content" ref={content}><OwnServerTurnContext.Provider value={ownServerTurns}><BrowserLinesContext.Provider value={browserIndex}>
+      <div className="thread-transcript__content" ref={content}><OwnServerTurnContext.Provider value={ownServerTurns}><BrowserLinesContext.Provider value={browserStore}>
         {thread.historyStatus === 'loading' && <div className="thread-history-status" role="status">{t`Loading messages…`}</div>}
         {thread.historyStatus === 'error' && <div className="thread-history-status" role="alert"><span>{thread.historyError || t`Could not load this thread’s messages.`}</span><Button variant="ghost" disabled={state.globalLaneBusy || !row.connected} onClick={() => void command({ type: 'refresh' })}>{t`Retry loading messages`}</Button></div>}
         {hidden > 0
