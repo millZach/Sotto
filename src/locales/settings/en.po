@@ -2687,6 +2687,10 @@ msgid "In the composer"
 msgstr "In the composer"
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "In the composer while a turn runs, where the agent can take it. Otherwise it does what Enter does."
+msgstr "In the composer while a turn runs, where the agent can take it. Otherwise it does what Enter does."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "In the focused thread’s project, or the chooser when none is focused."
 msgstr "In the focused thread’s project, or the chooser when none is focused."
 
@@ -5083,6 +5087,10 @@ msgstr "Startup, history, updates & reset"
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Status"
 msgstr "Status"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Steer now"
+msgstr "Steer now"
 
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "Step {step} of {steps}"

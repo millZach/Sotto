@@ -496,6 +496,14 @@ describe('Steer now', () => {
     await waitFor(() => expect(promptText(prompt())).toBe(''))
   })
 
+  it('steers from Ctrl+Enter while a turn runs', () => {
+    const { live, prompt } = mount(manualState({ running: true, capabilities: { steer: true } }))
+    type(prompt(), 'Use the staging database instead')
+    fireEvent.keyDown(prompt(), { key: 'Enter', ctrlKey: true })
+    expect(requests(live, 'steer')).toEqual([{ type: 'steer', threadId: THREAD, draftId: expect.any(String), text: 'Use the staging database instead' }])
+    expect(requests(live, 'queue-followup')).toHaveLength(0)
+  })
+
   it('offers only queueing when the provider cannot steer', () => {
     const state = manualState({ running: true })
     state.host.providers = [{ id: 'claude', name: 'Claude', version: 'fixture', connection: 'connected', capabilities: { ...BASE, steer: false } }]

@@ -83,7 +83,7 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   // Early start: typing in a thread's composer starts its provider session. It grants and sends nothing.
   'start-thread-session': ['threadId'],
   interrupt: ['threadId'], 'compact-thread': ['threadId'],
-  answer: ['threadId', 'requestId', 'answer', 'approved', 'questionAnswers', 'permissionChoice'],
+  answer: ['threadId', 'requestId', 'answer', 'approved', 'questionAnswers', 'permissionChoice', 'skipped'],
 }
 /**
  * The requests besides commands that change something on the host and that a paired client may send: a provider's own
