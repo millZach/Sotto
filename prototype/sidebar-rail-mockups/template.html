@@ -20,6 +20,12 @@
   how done threads fold, and the tray with nothing and with five waiting.
   Tray picked October 26, 2026: D, Owl apart (Watcher its own tile under Expand; the tray holds a count and the
   waiting threads, and goes when nothing waits). Not B, C or E; F and G judged not applicable.
+
+  watched.html (PAGE = 'watched', branch prototype/sidebar-rail-watched) takes A, As picked, with Drake's two changes
+  of October 27, 2026: the owl stays its own button under Expand, and the group holds the threads Watcher watches,
+  not the threads that need him. Four variants (A-D), each in dark, light, nothing watched and eight watched.
+  Light tokens are Citrine light through tokens.css's light block (attention = warningForeground, activity =
+  update foreground), not the raw palette: Citrine's warning is the same amber in both modes and fails 3:1 by day.
 -->
 <html lang="en">
 <head>
@@ -204,6 +210,63 @@ svg.owl .pupil { fill: currentcolor; }
 @keyframes blink { 50% { opacity: .25; } }
 .v10 .owlpx { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 4px; background: var(--tt-raised); }
 .v10 .owlpx svg { width: 24px; height: 24px; shape-rendering: crispEdges; }
+
+/* Watcher's threads (PAGE = 'watched') */
+.stage.lt {
+  color-scheme: light;
+  --tt-canvas: oklch(0.9723 0.008 98.9);
+  --tt-sidebar: oklch(0.9273 0.0087 91.9);
+  --tt-raised: oklch(0.9223 0.0062 91.9);
+  --tt-card: color-mix(in oklab, oklch(0.2016 0.0296 92.8) 7%, oklch(0.9273 0.0087 91.9));
+  --tt-text: oklch(0.2016 0.0296 92.8);
+  --tt-text-muted: color-mix(in oklab, oklch(0.5147 0.0328 92) 85%, oklch(0.2016 0.0296 92.8));
+  --tt-hairline: oklch(0.8523 0.0099 91.9);
+  --tt-hover: color-mix(in srgb, oklch(0.8923 0.0373 91.9) 70%, transparent);
+  --tt-selected: oklch(0.8723 0.0406 91.9);
+  --tt-focus: oklch(0.552 0.1129 91.9);
+  --tt-accent: oklch(0.552 0.1129 91.9);
+  --tt-activity: oklch(0.2 0.0282 91.9);
+  --tt-attention: oklch(0.508 0.155 45.4);
+  --tt-success: oklch(0.445 0.11 158);
+  --tt-on-attention: oklch(0.99 0.008 80);
+}
+:root { --tt-card: oklch(0.2768 0 0); --tt-on-attention: oklch(0.2 0.03 65); }
+.wrow { display: flex; gap: 22px; align-items: flex-start; margin-bottom: 34px; }
+.wrow > header { flex: none; width: 300px; }
+.wrow h2 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+.wrow h2 b { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-right: 6px; border-radius: 6px; background: var(--tt-accent); color: oklch(0.222 0.035 329); font-size: 12px; }
+.wrow.ref h2 b { background: var(--tt-hairline); color: var(--tt-text); }
+.wrow dl { margin: 0; display: grid; grid-template-columns: 62px 1fr; gap: 6px 8px; font-size: 11.5px; line-height: 1.4; }
+.wrow dt { color: var(--tt-text-muted); }
+.wrow dd { margin: 0; }
+.wcol { flex: none; width: 136px; }
+.wcol h3 { margin: 0 0 6px; height: 16px; font-size: 11.5px; font-weight: 500; color: var(--tt-text-muted); }
+.wcol .stage { position: relative; }
+.wcol .pane::before { width: 50%; }
+.w .list { overflow: visible; }
+.w .tile { font-size: 12.5px; font-weight: 600; }
+.w .tile.rest { width: 26px; height: 26px; font-size: 11px; font-weight: 500; color: var(--tt-text-muted); border-radius: 6px; }
+.w .tile.need { border-color: var(--tt-attention); }
+.w .owl-tile { background: var(--tt-raised); }
+.stage.lt .w .owl-tile { background: var(--tt-card); }
+.w .owl-tile .n { position: absolute; top: -6px; right: -8px; min-width: 14px; height: 14px; padding: 0 2px; display: grid; place-items: center; border-radius: 3px; background: var(--tt-sidebar); font-size: 11px; font-weight: 700; line-height: 1; }
+.w .grp { flex: none; display: flex; flex-direction: column; align-items: center; gap: 7px; width: 46px; padding: 7px 0 8px; border-radius: 12px; }
+.w .grp .head { font-size: 11px; font-weight: 700; line-height: 14px; }
+/* A neutral card */
+.wA .grp { background: var(--tt-card); }
+.wA .grp .head { color: var(--tt-text-muted); }
+/* B amber kept */
+.wB .grp { background: color-mix(in srgb, var(--tt-attention) 13%, transparent); border: 1px solid color-mix(in srgb, var(--tt-attention) 38%, transparent); }
+.wB .grp .head { color: var(--tt-attention); }
+.wB .grp .tile { border-color: color-mix(in srgb, var(--tt-attention) 55%, transparent); }
+.wB .grp .tile.need { background: var(--tt-attention); border-color: var(--tt-attention); color: var(--tt-on-attention); }
+.wB .owl-tile .n { color: var(--tt-attention); }
+/* C Watcher's ink: the accent the owl takes while Watcher's room is open */
+.wC .grp { background: color-mix(in srgb, var(--tt-accent) 14%, var(--tt-sidebar)); margin-top: -2px; }
+.wC .owl-tile .n { color: var(--tt-text); }
+/* D no container: an owl on each watched tile */
+.wD .tile .wb { position: absolute; left: -5px; top: -5px; display: grid; place-items: center; width: 13px; height: 13px; border-radius: 4px; background: var(--tt-sidebar); color: var(--tt-text-muted); }
+.wD .tile .wb svg { width: 10px; height: 10px; }
 </style>
 </head>
 <body>
@@ -363,10 +426,74 @@ document.getElementById('legend').innerHTML = ['working', 'needs', 'deleg', 'fre
   + `<span style="margin-left:auto">12 threads in Sotto, Site and Ledger · Citrine dark · macOS inset</span>`
 const range = location.hash.slice(1).split('-').map(Number)
 const PAGE = '__PAGE__'
+
+// Watcher's threads (PAGE = 'watched').
+const W8 = [...watched, 'dictation hotkey drift', 'Needs-you queue order', 'Update banner timing', 'RSS feed dates']
+const WSETS = { base: watched, zero: [], eight: W8 }
+const moving = th => ['working', 'deleg', 'fresh'].includes(th.s)
+function watchedRail(k, set) {
+  const isW = th => WSETS[set].includes(th.t)
+  const order = ts => [...ts.filter(th => th.s === 'needs'), ...ts.filter(moving), ...ts.filter(th => th.s === 'done')]
+  const w = order(T.filter(isW)), u = order(T.filter(th => !isW(th)))
+  const needs = T.filter(th => th.s === 'needs').length
+  const tile = th => `<div class="tile${th.s === 'done' ? ' rest' : ''}${th.s === 'needs' ? ' need' : ''}"${sel(th)} ${tip(th)}>${k === 'D' && isW(th) ? `<span class="wb">${owl(10)}</span>` : ''}${th.m}${th.s === 'done' ? '' : ring(th.s)}</div>`
+  const n = k === 'B' ? `<span class="n" title="${needs} waiting on you">${needs}</span>` : k === 'C' && w.length ? `<span class="n">${w.length}</span>` : ''
+  const owlBtn = `<div class="tile owl-tile" title="Open Watcher · watching ${w.length}">${owl(18)}${ring('working')}${n}</div>`
+  const group = !w.length ? '' : k === 'D' ? w.map(tile).join('') + '<div class="rule"></div>'
+    : `<div class="grp" title="Watched by Watcher · ${w.length}">${k === 'C' ? '' : `<div class="head">${w.length}</div>`}${w.map(tile).join('')}</div>`
+  const um = u.filter(th => th.s !== 'done'), ud = u.filter(th => th.s === 'done')
+  const rest = um.map(tile).join('') + (um.length && ud.length ? '<div class="rule"></div>' : '') + ud.map(tile).join('')
+  return rail('v3 w w' + k, 60, group + rest, '', owlBtn + (k === 'C' && w.length ? '' : '<div class="rule"></div>'))
+}
+const WV = [
+  { k: 'A', n: 'Neutral card', a: {
+    watched: 'The group is a filled card in the raised surface, no edge (ADR-0110), with the count of watched at its head in muted text. Amber means only needs you.',
+    needs: 'First in the card, its tile edged in amber with the amber ring; the only amber inside the card.',
+    unwatched: 'Under the card: waiting first (amber-edged), then running, a hairline, then done small and muted. The hairline stays.',
+    edges: 'None watched: no card, the rail is today\'s minus the tray. Eight: the card grows and done ones inside it go small; fits 900px.',
+    owl: 'Nothing but Watcher\'s own ring, as today.',
+    c: 'Amber 6.9 dark, 4.3 light on the card; muted letters 4.0 and 4.8. The card\'s fill is 1.15 on the rail, so the count heads it.' } },
+  { k: 'B', n: 'Amber kept, owl counts', a: {
+    watched: 'The group keeps the amber panel Drake drew, now meaning watched; needs you moves to a solid amber tile and the owl\'s count.',
+    needs: 'First in the panel as a solid amber tile with dark letters, so it outshouts the amber panel around it.',
+    unwatched: 'Under the panel: waiting first (amber-edged), running, hairline, done. Outside the panel a waiting tile is edged, not filled.',
+    edges: 'None watched: no panel, the owl still counts 2. Eight: Dh joins the panel as a second solid tile.',
+    owl: 'How many wait on you across every thread, a bare amber digit at its corner.',
+    c: 'Solid tile 6.3 dark, 4.2 light on the panel, letters on it 8.5 and 6.0; muted letters 3.7 dark. Amber now means two things.' } },
+  { k: 'C', n: 'Watcher\'s ink', a: {
+    watched: 'The card is tinted in the accent, the owl\'s own colour while its room is open, and hangs right under the owl with no hairline. In Citrine the accent is also the working arc.',
+    needs: 'First in the card, amber-edged with the amber ring, as in A.',
+    unwatched: 'Under the card: waiting first, running, hairline, done.',
+    edges: 'None watched: no card and no count, the owl gets its hairline back. Eight: the card grows; fits 900px.',
+    owl: 'How many it watches, a bare digit; the card has no head of its own.',
+    c: 'Amber 5.8 dark, 4.2 light on the tint; muted letters 3.3 dark, the closest to the line. In Citrine the tint and the working arc share a hue.' } },
+  { k: 'D', n: 'No box, owl marks', a: {
+    watched: 'No container: watched threads sit under the owl, each with a small owl at its corner, like the badge a watched row wears today.',
+    needs: 'First under the owl, amber-edged with the amber ring.',
+    unwatched: 'After a second hairline: waiting first, running, hairline, done. Three hairlines in all.',
+    edges: 'None watched: the section and its hairline go. Eight: eight owl marks, busy but fits 900px.',
+    owl: 'Nothing; the owls on the tiles do the counting.',
+    c: 'Everything sits on the rail itself: amber 8.0 and 5.0, owl marks in muted 4.6 and 5.5. Nothing to lose contrast against.' } },
+]
+const STAGES = [['Dark', 'base', ''], ['Light', 'base', 'lt'], ['None watched', 'zero', ''], ['Eight watched', 'eight', ''], ['Eight, light', 'eight', 'lt']]
+const LBL = { watched: 'Watched', needs: 'Needs you', unwatched: 'Unwatched', edges: '0 and 8', owl: 'Owl button', c: '3:1' }
+function renderWatched() {
+  document.querySelector('h1').textContent = 'Watcher\'s threads: refinements of A'
+  document.getElementById('legend').innerHTML += ' <span>Watched: Bp, Fm, Ic, At · Eight adds Dh, Nq, Ub, Rf</span>'
+  const stage = (lbl, set, lt, html) => `<div class="wcol"><h3>${lbl}</h3><div class="stage ${lt}">${html(set)}<div class="pane"></div></div></div>`
+  const ref = `<section class="wrow ref" data-k="0"><header><h2><b>·</b>Today on Owl (D, Owl apart)</h2><dl><dt>Group</dt><dd>The amber tray holds what needs you: Dh and At. Nothing says which threads Watcher watches.</dd></dl></header>${stage('Dark', 'base', '', () => trayRail({ owlApart: true }))}${stage('Light', 'base', 'lt', () => trayRail({ owlApart: true }))}</section>`
+  const rows = WV.map(v => `<section class="wrow" data-k="${v.k}"><header><h2><b>${v.k}</b>${v.n}</h2><dl>${Object.keys(LBL).map(q => `<dt>${LBL[q]}</dt><dd>${v.a[q]}</dd>`).join('')}</dl></header>${STAGES.map(([l, set, lt]) => stage(l, set, lt, s => watchedRail(v.k, s))).join('')}</section>`).join('')
+  document.getElementById('cols').outerHTML = `<div id="rows">${ref}${rows}</div>`
+  const only = location.hash.slice(1)
+  if (only) document.querySelectorAll('.wrow').forEach(r => { if (!only.split(',').includes(r.dataset.k)) r.remove() })
+}
+
+if (PAGE !== 'watched') {
 const COLS = PAGE === 'tray' ? [V[0], V[3], ...TRAY.map(v => ({ ...v, sub: true }))] : V
 if (PAGE === 'tray') document.querySelector('h1').textContent = 'Needs-you tray: refinements'
 const show = i => !location.hash || (i >= range[0] && i <= (range[1] ?? range[0]))
 document.getElementById('cols').innerHTML = COLS.map((v, i) => show(i) ? `<section class="col${i === 0 ? ' today' : ''}${v.wide ? ' wide' : ''}"><header><h2><b>${i === 0 ? '·' : PAGE === 'tray' ? (i === 1 ? '3' : String.fromCharCode(64 + i - 1)) : i}</b>${v.n}</h2><p>${v.why}</p></header><div class="stage" style="position:relative">${v.html()}<div class="pane"></div></div></section>` : '').join('')
+} else renderWatched()
 </script>
 </body>
 </html>
