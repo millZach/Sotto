@@ -78,7 +78,7 @@ it('offers the choice on the desktop when the Owl answer is on, and a headless h
     expect(movers(headless)[0]).toBeUndefined()
     expect(headless.hostService.supportsProjectOrigins).toBe(true)
     // A host keeps its own queue, shared by its own threads' checks and the desktop's Watcher starts on it (#1312).
-    expect(watcherChecks(headless)?.machine).toBe('this machine')
+    expect(watcherChecks(headless)?.machine).toBe('This machine')
     expect(headless.hostService.supportsWatcherCheckQueue).toBe(true)
   } finally { await headless.close() }
 })
