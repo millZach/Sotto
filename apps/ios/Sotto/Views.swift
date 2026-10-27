@@ -48,6 +48,10 @@ struct MainTabs: View {
         .onChange(of: model.alertOpened) { _, ref in openAlerted(ref) }
         .onChange(of: model.watcherAlertOpened) { _, hostID in openWatcher(hostID) }
         .onAppear { openAlerted(model.alertOpened); openWatcher(model.watcherAlertOpened) }
+        // A confirmation belongs to the page that showed it (ADR-0051): another tab or page clears it.
+        .onChange(of: tab) { model.pageLeft() }
+        .onChange(of: threadPath) { model.pageLeft() }
+        .onChange(of: watcherPath) { model.pageLeft() }
         // A computer that stops offering Watcher takes its tab with it.
         .onChange(of: model.watcherHostID) { _, hostID in
             if hostID == nil, tab == .watcher { tab = .threads; watcherPath = NavigationPath() }
@@ -153,8 +157,9 @@ struct FeedbackBanner: View {
             .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .accessibilityAddTraits(.updatesFrequently)
             .transition(.opacity)
-            .task(id: feedback) { if model.feedbackPasses { UIAccessibility.post(notification: .announcement, argument: feedback) } }
-            .onDisappear { model.pageLeft() }
+            .task(id: model.passing) {
+                if let id = model.passing, model.confirmationShown(id) { UIAccessibility.post(notification: .announcement, argument: feedback) }
+            }
         }
     }
 }

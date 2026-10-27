@@ -1102,9 +1102,10 @@ struct HeldDetail {
     /// The computer being removed, while its pairing is revoked.
     @Published private(set) var removing: String?
     /// What just happened on the tabs. A problem stays until the user dismisses it; a confirmation passes (`confirm`).
-    @Published var feedback: String? { didSet { feedbackOperations = []; feedbackPasses = false; feedbackExpiry?.cancel() } }
-    /// Whether `feedback` only says a thing worked, so it leaves by itself and with the page that showed it.
-    @Published private(set) var feedbackPasses = false
+    @Published var feedback: String? { didSet { feedbackOperations = []; passing = nil; feedbackExpiry?.cancel() } }
+    /// Set while `feedback` only says a thing worked, so it leaves by itself and with the page; new for each confirmation.
+    @Published private(set) var passing: UUID?
+    private var passingShown: UUID?
     private var feedbackExpiry: Task<Void, Never>?
     /// Answers whose own receipt the computer confirmed, as `host/thread/request`, so a Threads card can say Answered
     /// only for those. An answer whose request left without that receipt is not in here.
@@ -2431,7 +2432,7 @@ struct HeldDetail {
         gone.forEach { dispatchingOperations[$0] = nil; receiptFollowers[$0] = nil }
         largeRequests[hostID] = nil
         let words = outcome.words(name: saved.name, clientID: saved.pairing.clientId)
-        feedback = words
+        if case .confirmed = outcome { confirm(words) } else { feedback = words }
         // With nothing left paired the app goes back to the pairing steps, which show this instead.
         if rest.isEmpty { pairFeedback = words }
     }
@@ -3061,17 +3062,24 @@ struct HeldDetail {
     private func operationFeedback(_ words: String, operations: Set<String>) {
         feedback = words; feedbackOperations = operations
     }
-    /// Says a thing worked for five seconds, as the desktop's toasts do; leaving the page or a newer message ends it sooner.
+    /// Says a thing worked, as the desktop's toasts do: for five seconds once a page shows it (`confirmationShown`), or
+    /// until the user leaves the page or a newer message replaces it.
     private func confirm(_ words: String) {
-        feedback = words; feedbackPasses = true
+        feedback = words; passing = UUID()
+    }
+    /// A banner shows confirmation `id`: the first one starts its five seconds and is told to announce it.
+    func confirmationShown(_ id: UUID) -> Bool {
+        guard passing == id, passingShown != id else { return false }
+        passingShown = id
         feedbackExpiry = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 5_000_000_000)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, self?.passing == id else { return }
             withAnimation(.easeOut(duration: 0.25)) { self?.feedback = nil }
         }
+        return true
     }
-    /// The page that showed a confirmation closed: it does not follow the user to the next one.
-    func pageLeft() { if feedbackPasses { feedback = nil } }
+    /// The user moved to another tab or page: a confirmation does not follow them there.
+    func pageLeft() { if passing != nil { feedback = nil } }
     /// What Stop all did: a confirmation when every thread stopped, otherwise what still needs a look.
     private func sayStopped(_ results: [WatcherStopResult.StoppedTarget], titles: [String: String]) {
         let words = WatcherWords.stopped(results, titles: titles)
