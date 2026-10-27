@@ -1,0 +1,136 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway: the setting for the effort Ultracode runs at, in Settings > Providers > Claude Code.
+     Two ways to pick it, switchable with ?variant=A|B and the bar at the bottom. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PROTOTYPE · Ultracode effort setting</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root, [data-mode='dark'] {
+  --tt-canvas: oklch(0.115 0.008 265); --tt-surface: oklch(0.145 0.008 265); --tt-surface-elevated: oklch(0.185 0.008 265);
+  --tt-text: oklch(0.975 0.005 280); --tt-text-2: oklch(0.86 0.01 270); --tt-text-muted: oklch(0.74 0.014 265); --tt-text-faint: oklch(0.6 0.014 265);
+  --tt-border-faint: oklch(0.28 0.015 265); --tt-border: oklch(0.42 0.02 265); --tt-field: oklch(0.145 0.008 265);
+  --tt-accent: oklch(0.714 0.104 183); --tt-on-accent: oklch(0.16 0.012 190); --tt-focus-ring: oklch(0.714 0.104 183);
+  --tt-warning: oklch(0.829 0.171 81);
+}
+[data-mode='light'] {
+  --tt-canvas: oklch(0.978 0.004 85); --tt-surface: oklch(0.99 0.003 85); --tt-surface-elevated: oklch(0.995 0.003 85);
+  --tt-text: oklch(0.2 0.01 265); --tt-text-2: oklch(0.33 0.012 265); --tt-text-muted: oklch(0.45 0.014 265); --tt-text-faint: oklch(0.55 0.014 265);
+  --tt-border-faint: oklch(0.9 0.006 85); --tt-border: oklch(0.72 0.01 265); --tt-field: oklch(0.99 0.003 85);
+  --tt-accent: oklch(0.55 0.1 183); --tt-on-accent: #fff; --tt-focus-ring: oklch(0.55 0.1 183);
+  --tt-warning: oklch(0.53 0.156 45.4);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--tt-canvas); color: var(--tt-text); font-family: Figtree, ui-sans-serif, system-ui, sans-serif; font-size: 14px; }
+.stage { max-width: 860px; margin: 0 auto; padding: 20px 16px 120px; display: grid; gap: 16px; }
+.proto-note { margin: 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
+.proto-note b { color: var(--tt-text); }
+.proto-note a { color: var(--tt-accent); }
+.seg { display: inline-flex; border-radius: 7px; background: var(--tt-surface); padding: 2px; gap: 2px; }
+.seg button { border: 0; background: transparent; color: var(--tt-text-muted); padding: 4px 9px; border-radius: 5px; cursor: pointer; font: inherit; font-size: 12.5px; }
+.seg button[aria-pressed='true'] { background: var(--tt-surface-elevated); color: var(--tt-text); }
+
+/* Settings > Providers, the Claude Code row opened. */
+.section { background: var(--tt-surface); border-radius: 14px; padding: 18px 0 4px; }
+.section h2 { margin: 0 22px 2px; font-size: 18px; }
+.section > p { margin: 0 22px 14px; color: var(--tt-text-muted); }
+.row-head { display: flex; align-items: center; gap: 14px; padding: 12px 22px; border-top: 1px solid var(--tt-border-faint); }
+.row-head .logo { width: 40px; height: 40px; border-radius: 10px; background: oklch(0.65 0.13 45); display: grid; place-items: center; color: #fff; font-weight: 700; }
+.row-head b { font-size: 15px; }
+.row-head small { display: block; color: var(--tt-text-muted); font-size: 13px; }
+.panel { display: grid; gap: 22px; padding: 4px 22px 22px 76px; }
+@media (max-width: 560px) { .panel { padding-left: 22px; } }
+.client { display: grid; gap: 12px; }
+.client h4 { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
+.client p { margin: 0; max-width: 36em; color: var(--tt-text-muted); font-size: 14px; line-height: 1.6; }
+.client[data-new='true'] { position: relative; }
+.client[data-new='true']::before { content: 'NEW'; position: absolute; left: -54px; top: 2px; font-size: 10px; font-weight: 700; letter-spacing: .06em; color: var(--tt-warning); }
+@media (max-width: 560px) { .client[data-new='true']::before { position: static; display: block; margin-bottom: -6px; } }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.toggle { width: 36px; height: 20px; border-radius: 999px; background: var(--tt-accent); position: relative; }
+.toggle::after { content: ''; position: absolute; right: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--tt-on-accent); }
+.tt-select { appearance: none; min-height: 30px; min-width: 170px; padding: 4px 26px 4px 10px; border: 1px solid var(--tt-border-faint); border-radius: 7px; background: var(--tt-field) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 8px center; color: var(--tt-text); font: inherit; font-size: 13.5px; }
+.tt-select:hover { border-color: var(--tt-border); }
+.tt-select:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+.levels { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; border-radius: 8px; background: var(--tt-canvas); }
+.levels button { border: 0; background: transparent; color: var(--tt-text-muted); padding: 5px 10px; border-radius: 6px; cursor: pointer; font: inherit; font-size: 13px; }
+.levels button[aria-pressed='true'] { background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 1px 2px rgb(0 0 0 / 30%); }
+.levels button:focus-visible { outline: 2px solid var(--tt-focus-ring); }
+
+/* What the effort card's line says with this setting. */
+.preview { display: grid; gap: 6px; padding: 12px 14px; max-width: 292px; border-radius: 14px; background: var(--tt-surface-elevated); border: 1px solid var(--tt-border-faint); }
+.preview b { color: var(--tt-warning); font-size: 15px; }
+.preview span { color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.45; }
+.caption { margin: 0 0 6px; color: var(--tt-text-faint); font-size: 12px; }
+.readout { font: 12px/1.5 ui-monospace, Consolas, monospace; color: var(--tt-text-muted); background: var(--tt-surface); border-radius: 10px; padding: 10px 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.switcher { position: fixed; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; align-items: center; gap: 4px; padding: 5px; border-radius: 999px; background: #f4f1ea; color: #111; box-shadow: 0 10px 30px rgb(0 0 0 / 45%); font-size: 13px; z-index: 20; }
+.switcher button { border: 0; background: #111; color: #f4f1ea; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 15px; }
+.switcher span { padding: 0 10px; font-weight: 600; white-space: nowrap; }
+</style>
+</head>
+<body data-mode="dark">
+<div class="stage">
+  <p class="proto-note"><b>Prototype.</b> Settings, under Providers, Claude Code: the effort a thread runs at while it is on Ultracode. Change it and watch the effort card's line below. <a href="./?variant=A">Back to the effort card</a>.</p>
+  <div><span class="seg" id="modes"></span></div>
+  <section class="section">
+    <h2>Providers</h2>
+    <p>Accounts &amp; connections</p>
+    <div class="row-head"><span class="logo">C</span><div><b>Claude Code</b><small>Connected · 2.1.311</small></div></div>
+    <div class="panel">
+      <div class="client"><div><h4>Installed client</h4><p>Claude Code 2.1.311 is the newest version.</p></div></div>
+      <div class="client"><div><h4>Compact idle threads</h4><p>After 54 minutes idle, Sotto compacts a large Claude thread before its cache expires, so your next message costs less. The thread keeps a summary instead of its full history.</p></div><div class="actions"><span class="toggle" aria-hidden="true"></span></div></div>
+      <div class="client" data-new="true">
+        <div><h4 id="ucHeading">Ultracode effort</h4><p id="ucLine"></p></div>
+        <div class="actions" id="ucControl"></div>
+      </div>
+    </div>
+  </section>
+  <div>
+    <p class="caption">The effort card on a Claude thread at Ultracode, with this setting:</p>
+    <div class="preview"><b>Ultracode</b><span id="cardLine"></span></div>
+  </div>
+  <div class="readout" id="readout"></div>
+</div>
+<div class="switcher" role="group" aria-label="Prototype variants">
+  <button type="button" id="prev" aria-label="Previous variant">‹</button><span id="variantName"></span><button type="button" id="next" aria-label="Next variant">›</button>
+</div>
+<script>
+const LEVELS = [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high'], ['max', 'Max']]
+const VARIANTS = { A: 'A · A list', B: 'B · Every level in a row' }
+const p = new URLSearchParams(location.search)
+let variant = VARIANTS[p.get('variant')] ? p.get('variant') : 'A'
+let mode = p.get('mode') === 'light' ? 'light' : 'dark'
+let level = 'xhigh'
+const name = id => LEVELS.find(([k]) => k === id)[1]
+const $ = id => document.getElementById(id)
+function render() {
+  document.body.dataset.mode = mode
+  $('variantName').textContent = VARIANTS[variant]
+  $('modes').innerHTML = ''
+  for (const [k, l] of [['dark', 'Dark'], ['light', 'Light']]) { const b = document.createElement('button'); b.textContent = l; b.setAttribute('aria-pressed', String(k === mode)); b.onclick = () => { mode = k; render() }; $('modes').append(b) }
+  $('ucLine').textContent = `The effort each agent runs at while a Claude thread is on Ultracode. Claude Code's own choice is Extra high. A change takes effect on the thread's next message.`
+  const control = $('ucControl')
+  control.innerHTML = ''
+  if (variant === 'A') {
+    const s = document.createElement('select'); s.className = 'tt-select'; s.setAttribute('aria-labelledby', 'ucHeading')
+    for (const [k, l] of LEVELS) { const o = document.createElement('option'); o.value = k; o.textContent = k === 'xhigh' ? `${l} (Claude Code's choice)` : l; o.selected = k === level; s.append(o) }
+    s.onchange = () => { level = s.value; render() }
+    control.append(s)
+  } else {
+    const g = document.createElement('div'); g.className = 'levels'; g.setAttribute('role', 'radiogroup'); g.setAttribute('aria-labelledby', 'ucHeading')
+    for (const [k, l] of LEVELS) { const b = document.createElement('button'); b.type = 'button'; b.textContent = l; b.setAttribute('aria-pressed', String(k === level)); b.onclick = () => { level = k; render() }; g.append(b) }
+    control.append(g)
+  }
+  $('cardLine').textContent = `Plans the work and runs it as a team of agents at ${name(level)} effort. Uses many more tokens.`
+  $('readout').textContent = `${VARIANTS[variant]}\nsetting: claudeUltracodeEffort = "${level}"${level === 'xhigh' ? '  (default)' : ''}\nnext message on an Ultracode thread sends:\n  apply_flag_settings {"effortLevel":"${level}","ultracode":true}   (only if the CLI runs something else)\na model that lacks ${name(level)} runs at the nearest level below it that it offers.`
+  history.replaceState(null, '', `?variant=${variant}${mode === 'light' ? '&mode=light' : ''}`)
+}
+const keys = Object.keys(VARIANTS)
+$('prev').onclick = () => { variant = keys[(keys.indexOf(variant) + keys.length - 1) % keys.length]; render() }
+$('next').onclick = () => { variant = keys[(keys.indexOf(variant) + 1) % keys.length]; render() }
+render()
+</script>
+</body>
+</html>
