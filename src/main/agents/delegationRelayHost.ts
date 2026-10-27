@@ -37,7 +37,9 @@ const recordSchema = z.object({
 }).strict()
 type RelayedRecord = z.infer<typeof recordSchema>
 /** The record's bound on disk: settled ones go past `DELEGATION_RELAY_RECORDS_MAX`, open ones never do, so this is far above it. */
-const fileSchema = z.object({ version: z.literal(1), delegations: z.array(recordSchema).max(100_000) }).strict()
+const fileSchema = z.object({ version: z.literal(1), delegations: z.array(recordSchema).max(100_000),
+  /** The name a desktop that relays last saved for this machine, which the away refusal says (Zach, October 27, 2026). */
+  name: z.string().min(1).max(64).optional() }).strict()
 type RelayFile = z.infer<typeof fileSchema>
 
 /** Outcomes after which a relayed delegation is read no more, unless its read was lost. */
@@ -67,6 +69,7 @@ const isObject = (value: unknown): value is Record<string, unknown> => value !==
 export class HostDelegationRelay {
   private readonly store: AtomicJsonStore<RelayFile>
   private records: RelayedRecord[] = []
+  private savedName: string | undefined
   private readonly desktops: RelayDesktop[] = []
   private readonly pending = new Map<string, { readonly desktop: RelayDesktop; readonly resolve: (answer: unknown) => void; readonly reject: (error: Error) => void; readonly timer: ReturnType<typeof setTimeout> }>()
   private deliver: ((threadId: string, news: DelegationNews) => Promise<void>) | undefined
@@ -81,8 +84,13 @@ export class HostDelegationRelay {
   private closed = false
 
   constructor(directory: string, private readonly options: {
-    /** This machine's own name, as the away refusal says it. Its host name by default. */
+    /** This machine's own name, said when no desktop has told it one. Its host name by default. */
     readonly here?: () => string
+    /**
+     * Whether a desktop may relay: still paired here with an answers grant, read at every ask (Zach, October 27, 2026). The
+     * start goes through the one connected last of those. Absent, every desktop whose hello accepted the feature may.
+     */
+    readonly counts?: (clientId: string) => boolean
     /** Stable event names only, never a brief, a reply or a thread. */
     readonly log?: (event: 'delegation-relay-answer-lost' | 'delegation-relay-reconciled') => void
   } = {}) {
@@ -92,6 +100,15 @@ export class HostDelegationRelay {
   async load(): Promise<void> {
     const file = await this.store.read().catch((): RelayFile => ({ version: 1, delegations: [] }))
     this.records = file.delegations
+    this.savedName = file.name
+  }
+  /** A relaying desktop's name for this machine: the away refusal says it from now on, after a restart too. */
+  async named(desktop: RelayDesktop, name: string): Promise<void> {
+    if (!this.desktops.includes(desktop)) return
+    const trimmed = name.trim().slice(0, 64)
+    if (!trimmed || trimmed === this.savedName) return
+    this.savedName = trimmed
+    await this.persist()
   }
   close(): void {
     this.closed = true
@@ -101,9 +118,11 @@ export class HostDelegationRelay {
   useDelivery(deliver: (threadId: string, news: DelegationNews) => Promise<void>): void { this.deliver = deliver }
 
   /** This machine's name in the words a thread here is told. */
-  hereName(): string { return (this.options.here?.() ?? hostname()).trim().slice(0, 64) || 'this machine' }
+  hereName(): string { return this.savedName ?? ((this.options.here?.() ?? hostname()).trim().slice(0, 64) || 'this machine') }
+  /** The desktop that relays now: the one connected last that may, or none. */
+  private relaying(): RelayDesktop | undefined { return this.desktops.findLast(desktop => this.options.counts?.(desktop.clientId) ?? true) }
   /** Whether a desktop that relays is connected now. */
-  reachable(): boolean { return this.desktops.length > 0 }
+  reachable(): boolean { return this.relaying() !== undefined }
   /** The words for a start elsewhere while no desktop that relays is connected (Zach, October 23, 2026). */
   awayWords(): string { return relayAwayWords(this.hereName()) }
 
@@ -135,7 +154,7 @@ export class HostDelegationRelay {
 
   /** Asks the desktop that relays and waits for its answer, at most `timeoutMs`. Nothing is ever asked twice. */
   private ask(ask: DelegationRelayAsk, timeoutMs: number): Promise<Record<string, unknown>> {
-    const desktop = this.desktops.at(-1)
+    const desktop = this.relaying()
     if (!desktop || this.closed) return Promise.reject(new RelayUnanswered('away'))
     const askId = randomUUID()
     return new Promise((resolve, reject) => {
@@ -342,6 +361,6 @@ export class HostDelegationRelay {
     if (excess <= 0) return
     this.records = this.records.filter(record => excess <= 0 || !SETTLED.has(record.outcome) || record.unread === true || excess-- <= 0)
   }
-  private save(): Promise<void> { return this.store.writeLatest(() => ({ version: 1, delegations: this.records })) }
+  private save(): Promise<void> { return this.store.writeLatest(() => ({ version: 1, delegations: this.records, ...this.savedName ? { name: this.savedName } : {} })) }
   private persist(): Promise<void> { return this.save().catch(() => undefined) }
 }

@@ -147,7 +147,9 @@ describe('remote command allow-list', () => {
       'branch-move',
       // The desktop relay's answer to an ask the host pushed, and news of a relayed delegation's outcome (#1316): only on a
       // listener that offers delegation-relay, from a recorded desktop whose hello accepted it. Neither answers or grants anything.
-      'delegation-relay-answer', 'delegation-relay-news']
+      'delegation-relay-answer', 'delegation-relay-news',
+      // The name the relaying desktop saved for this host, kept as words for the away refusal (Zach, October 27, 2026).
+      'delegation-relay-name']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
     expect(ops.sort()).toEqual([...decided].sort())
   })

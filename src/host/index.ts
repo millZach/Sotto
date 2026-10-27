@@ -155,7 +155,9 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     const pairing = new PairedClients(directory)
     // The desktop relay (#1316): a thread here delegates to other machines through a desktop that relays, only where the
     // Owl answer turns on Work across machines. Its record of relayed delegations is read before the threads start.
-    const delegationRelay = crossMachineEnabled ? new HostDelegationRelay(directory, { ...(options.log ? { log: event => options.log?.(event) } : {}) }) : undefined
+    // The start goes through the desktop connected last that is still paired here with an answers grant (Zach, October 27, 2026).
+    const desktopCounts = (clientId: string): boolean => pairing.isPaired(clientId) && (policy?.mayGrant({ clientId, user: 'Paired desktop', transport: 'socket' }).allowed ?? false)
+    const delegationRelay = crossMachineEnabled ? new HostDelegationRelay(directory, { counts: desktopCounts, ...(options.log ? { log: event => options.log?.(event) } : {}) }) : undefined
     await delegationRelay?.load()
     const runtime = await createAgentRuntime({
       observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, attachAnyFile, clearThreadsEnabled,

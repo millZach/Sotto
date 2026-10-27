@@ -156,6 +156,26 @@ describe('the host side of the relay', () => {
     expect(relay.holds('thread-a', '00000000-0000-4000-8000-000000000002')).toBe(false)
   })
 
+  it('names itself as the desktop saved it, after a restart too, and relays only through a desktop that may answer here', async () => {
+    const root = await folder()
+    const allowed = new Set(['desktop-a'])
+    const relay = new HostDelegationRelay(root, { here: () => 'forge-box', counts: clientId => allowed.has(clientId) })
+    await relay.load()
+    expect(relay.awayWords()).toContain('connected to forge-box,')
+    const a = desktop(relay)
+    relay.desktopConnected(a.handle)
+    await relay.named(a.handle, 'forge')
+    expect(relay.awayWords()).toBe('This computer isn\'t connected to forge, so nothing was started there. Start it on forge instead, or try again when this computer is back.')
+    const again = new HostDelegationRelay(root, { here: () => 'forge-box' }); await again.load()
+    expect(again.hereName()).toBe('forge')
+    // A desktop whose answers grant was taken away does not relay, even connected last.
+    const b: RelayDesktop = { clientId: 'desktop-b', push: () => true }
+    relay.desktopConnected(b)
+    expect(relay.reachable()).toBe(true)
+    allowed.delete('desktop-a')
+    expect(relay.reachable()).toBe(false)
+  })
+
   it('says Stop could not reach a delegation while the desktop is away', async () => {
     const relay = new HostDelegationRelay(await folder(), { here: () => 'forge' })
     await relay.load()

@@ -144,6 +144,7 @@ export interface HostService {
   readonly supportsDelegationRelay?: boolean
   subscribeDelegationRelay?(listener: (askId: string, ask: DelegationRelayAsk) => void): () => void
   answerDelegationRelay?(askId: string, answer: unknown): Promise<void>
+  delegationRelayName?(name: string): Promise<void>
   delegationRelayNews?(threadId: string, news: DelegationNews, replies?: readonly RelayedReply[]): Promise<void>
   /** The host continues agents as threads and forks at a reply (#1028): it takes `continue-agent` and reads `startHandover`. */
   readonly supportsThreadStarts?: boolean

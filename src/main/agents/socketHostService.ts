@@ -1338,6 +1338,12 @@ export class SocketHostService implements HostService {
     this.offers('delegation-relay')
     await this.call({ op: 'delegation-relay-answer', askId, result: answer }, undefined, undefined, 10000)
   }
+  /** Tells the host the name this desktop saved for it, which its refusal says while no desktop is connected. */
+  async delegationRelayName(name: string): Promise<void> {
+    if (!this.relays) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    this.offers('delegation-relay')
+    await this.call({ op: 'delegation-relay-name', name }, undefined, undefined, 10000)
+  }
   async delegationRelayNews(threadId: string, news: DelegationNews, replies?: readonly RelayedReply[]): Promise<void> {
     if (!this.relays) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
     this.offers('delegation-relay')

@@ -197,7 +197,7 @@ export interface SocketServerOptions {
    * Owl answer turns on Work across machines. Offered on either listener, to a client the launch script recorded as a
    * desktop, and to no other: such a desktop relays a thread here's delegations to other machines once its hello accepts it.
    */
-  delegationRelay?: Pick<HostDelegationRelay, 'desktopConnected' | 'desktopGone' | 'answered' | 'news'>
+  delegationRelay?: Pick<HostDelegationRelay, 'desktopConnected' | 'desktopGone' | 'answered' | 'news' | 'named'>
 }
 /**
  * Which paired clients a tailnet listener admits, and as what. `desktops` is read again before a session and a hello,
@@ -1256,6 +1256,12 @@ export async function startSocketServer(options: SocketServerOptions) {
         // The relaying desktop's answer to an ask this host pushed it (#1316). An answer nobody waits for is dropped.
         if (!options.delegationRelay || !peer.delegationRelay) throw new Refusal('invalid_request')
         return { taken: options.delegationRelay.answered(peer.delegationRelay, request.askId, request.result) }
+      }
+      case 'delegation-relay-name': {
+        // The name the relaying desktop saved for this host (#1316): words only, kept for the away refusal.
+        if (!options.delegationRelay || !peer.delegationRelay) throw new Refusal('invalid_request')
+        await options.delegationRelay.named(peer.delegationRelay, request.name)
+        return { named: true }
       }
       case 'delegation-relay-news': {
         // A relayed delegation's outcome changed (#1316): the thread here that made it is told, as its hidden wake-up.

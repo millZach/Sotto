@@ -13,10 +13,13 @@ import type { PlacementAsk, WorkerPlacement } from './workerPlacement'
 /** A host connection as the relay uses it: the asks it pushes, the answers and news it takes. */
 export interface RelayHostConnection {
   readonly hostId: string
+  /** The name this computer saved for the host, which the host's away sentence uses (Zach, October 27, 2026). */
+  readonly name?: string
   readonly kind: 'local' | 'remote'
   readonly service: {
     /** The host's threads as this computer last read them, with each one's `delegatedBy`: what proves a relayed caller's depth. */
     shell?(): { readonly host: { readonly threads: readonly { readonly id: string; readonly delegatedBy?: string | undefined }[] } }
+    delegationRelayName?(name: string): Promise<void>
     readonly supportsDelegationRelay?: boolean | undefined
     subscribeDelegationRelay?(listener: (askId: string, ask: DelegationRelayAsk) => void): () => void
     answerDelegationRelay?(askId: string, answer: unknown): Promise<void>
@@ -113,6 +116,9 @@ export class DesktopDelegationRelay {
     if (connection.kind !== 'remote' || this.followed.has(service) || !service.subscribeDelegationRelay) return
     this.followed.add(service)
     const hostId = connection.hostId
+    // The host says this computer's name for it when this computer is away, so it is told the name once it relays.
+    const name = connection.name?.trim()
+    if (name && service.supportsDelegationRelay) void service.delegationRelayName?.(name.slice(0, 64)).catch(() => undefined)
     service.subscribeDelegationRelay((askId, ask) => {
       void (async () => {
         let answer: unknown
