@@ -343,15 +343,15 @@ describe('the browser pane opening on its own', () => {
     expect(screen.queryByRole('complementary', { name: /Browser for/ })).not.toBeInTheDocument()
   })
 
-  it('keeps the player away while Tools shows the thread’s browser, even on another page', async () => {
+  it('floats the agent’s page while Tools shows another of the thread’s pages, and steps aside on the same page', async () => {
     owl(true)
     const browser = fakeBrowser([page(PAGE_1), page(PAGE_2, { url: 'http://localhost:5173/other' })], { tasks: [task({ pageId: PAGE_1, status: 'completed' })] })
     const { store } = mount(browser)
     await waitFor(() => expect(store.browser.thread('visual-gate')?.activePageId).toBe(PAGE_2))
-    await act(async () => { await Promise.resolve() })
-    expect(screen.queryByRole('complementary', { name: /Browser for/ })).not.toBeInTheDocument()
-    act(() => store.setOpen(false))
+    // Tools is on the user's page, so the agent's page would otherwise show nowhere.
     expect(await screen.findByRole('complementary', { name: /Browser for/ })).toBeInTheDocument()
+    act(() => store.browser.select('visual-gate', PAGE_1))
+    await waitFor(() => expect(screen.queryByRole('complementary', { name: /Browser for/ })).not.toBeInTheDocument())
   })
 
   it('leaves Tools alone while it is closed, and the player floats instead', async () => {

@@ -7,7 +7,6 @@ import type { BrowserBounds, BrowserBridge, BrowserPage } from '../../../shared/
 import { pageLabel, useThreadBrowser, useBrowserTasks } from './browserStore'
 import { useBrowserPageMount } from './useBrowserPageMount'
 import { useOverlayOpen } from './browserOverlay'
-import { useOwlFeature } from '../state/owlFeature'
 import { toolsTarget, useToolsPanelChrome, type ToolsPanelStore } from './toolsPanelStore'
 import {
   browserPlayerStore, clampBrowserPlayerRect, BROWSER_PLAYER_MOVE_STEP, BROWSER_PLAYER_MOVE_STEP_LARGE,
@@ -65,7 +64,6 @@ export interface BrowserPlayerProps {
 export function BrowserPlayer({ state, focusedThreadId, bridge, store, autoShow = true, playerStore = browserPlayerStore }: BrowserPlayerProps): ReactNode {
   const { t } = useLingui()
   const chrome = useToolsPanelChrome(store)
-  const quietBrowser = useOwlFeature('quiet-browser')
   const tasks = useBrowserTasks(store.browser)
   // Sotto's browser is this computer's, so a remote host's threads have no tasks here to watch.
   const ids = state.host.threads.filter(thread => !thread.remoteHost).map(thread => thread.id).join('\n')
@@ -100,8 +98,8 @@ export function BrowserPlayer({ state, focusedThreadId, bridge, store, autoShow 
   const thread = state.host.threads.find(item => item.id === threadId)
   if (!thread) return null
   const browserInTools = chrome.open && chrome.surface === 'browser' && toolsTarget(chrome, focusedThreadId) === threadId
-  // The quiet pane (ADR-0154; Owl) shows the player only while Tools is not showing this thread's browser at all.
-  const dockedSame = browserInTools && (quietBrowser || threadBrowser?.activePageId === task.pageId)
+  // It steps aside only for the same page: with Tools on another of the thread's pages, the agent's page would show nowhere.
+  const dockedSame = browserInTools && threadBrowser?.activePageId === task.pageId
   if (visibility === 'hidden' || dockedSame) return null
   // Measure the pane only when drawing the player. `rectFor` remains the one default for drawing, dragging and resizing.
   const rect = rawRect ? clampBrowserPlayerRect(rawRect, size) : playerStore.rectFor(size)
