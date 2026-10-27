@@ -76,7 +76,7 @@ import XCTest
             }
             let window = app.windows.firstMatch
             var visible = scroll.frame.intersection(window.frame)
-            let tab = app.tabs
+            let tab = app.tabsBar
             if tab.exists && tab.frame.minY > visible.minY {
                 visible.size.height = min(visible.maxY, tab.frame.minY) - visible.minY
             }
@@ -317,9 +317,9 @@ import XCTest
     }
 
     private func browseANewFolder() {
-        app.tabs.buttons["Settings"].tap()
+        app.tabsBar.buttons["Settings"].tap()
         app.buttons["setting-light"].tap()
-        app.tabs.buttons["Threads"].tap()
+        app.tabsBar.buttons["Threads"].tap()
         app.buttons["new-thread"].tap()
         app.buttons["new-thread-computer-\(laptop)"].tap()
         let browse = app.buttons["browse-project-folder"]
@@ -366,10 +366,10 @@ import XCTest
 
     func testFocusSearchAndNavigation() {
         launch(Self.fixture)
-        XCTAssertTrue(app.tabs.buttons["Threads"].isSelected)
-        XCTAssertFalse(app.tabs.buttons["Needs you"].exists)
-        XCTAssertTrue(app.tabs.buttons["Computers"].exists)
-        XCTAssertTrue(app.tabs.buttons["Settings"].exists)
+        XCTAssertTrue(app.tabsBar.buttons["Threads"].isSelected)
+        XCTAssertFalse(app.tabsBar.buttons["Needs you"].exists)
+        XCTAssertTrue(app.tabsBar.buttons["Computers"].exists)
+        XCTAssertTrue(app.tabsBar.buttons["Settings"].exists)
         XCTAssertTrue(row("release").exists)
         let search = app.textFields["thread-search"]
         let restingTop = search.frame.minY
@@ -477,7 +477,7 @@ import XCTest
         reveal(app.buttons["Not now"])
         app.buttons["Not now"].tap()
         back()
-        let computers = app.tabs.buttons["Computers"]
+        let computers = app.tabsBar.buttons["Computers"]
         XCTAssertTrue(computers.waitForExistence(timeout: 5), "Back restores the main tabs")
         computers.tap()
         XCTAssertTrue(app.buttons["Try reaching Studio Mac again"].waitForExistence(timeout: 5))
@@ -728,7 +728,7 @@ import XCTest
 
     /// Opens the Watcher tab, which only a computer that runs Watcher gives this iPhone.
     @discardableResult private func openWatcher() -> XCUIElement {
-        let tab = app.tabs.buttons["Watcher"]
+        let tab = app.tabsBar.buttons["Watcher"]
         XCTAssertTrue(tab.waitForExistence(timeout: 10), "A computer that runs Watcher gives it a tab")
         tab.tap()
         XCTAssertTrue(byID("watcher-state").waitForExistence(timeout: 10), "Watcher's page opens with its state")
@@ -759,7 +759,7 @@ import XCTest
     }
     /// Turns this iPhone to light in Settings and comes back to the Watcher tab.
     private func watcherInLight() {
-        app.tabs.buttons["Settings"].tap()
+        app.tabsBar.buttons["Settings"].tap()
         let light = app.buttons["setting-light"]
         XCTAssertTrue(light.waitForExistence(timeout: 5))
         reveal(light, swipingDown: true)
@@ -993,7 +993,7 @@ import XCTest
     /// user writes goes to Watcher and its answer arrives under it.
     func testTheWatcherTabOpensAndTakesAMessage() {
         launch(Self.watcher)
-        let labels = app.tabs.buttons.allElementsBoundByIndex.map(\.label)
+        let labels = app.tabsBar.buttons.allElementsBoundByIndex.map(\.label)
         XCTAssertEqual(labels, ["Threads", "Watcher", "Computers", "Settings"], "Watcher's tab sits between Threads and Computers")
         let tab = openWatcher()
         XCTAssertEqual(byID("watcher-state").label, "Watcher, Working")
@@ -1146,7 +1146,7 @@ import XCTest
         dragWatcherKeepingThePage(down: true, by: 160, away: true, marker: "The first message", first,
                                   "Reading down the conversation slides the bar away")
         XCTAssertTrue(reply.isHittable, "The box stays")
-        XCTAssertTrue(app.tabs.buttons["Watcher"].isHittable, "The tab bar stays")
+        XCTAssertTrue(app.tabsBar.buttons["Watcher"].isHittable, "The tab bar stays")
         capture("watcher-bar-away-dark")
         // Going back up a little brings it back, and it works.
         dragWatcherKeepingThePage(down: false, by: 80, away: false, marker: "The first message", first,
@@ -1158,7 +1158,7 @@ import XCTest
         let lead: (any XCUIElementSnapshot) -> Bool = { $0.identifier == "watcher-watched-lead" }
         dragWatcherKeepingThePage(down: true, by: 160, away: true, marker: "Watched's lead", lead,
                                   "Reading down Watched slides the bar away")
-        XCTAssertTrue(app.tabs.buttons["Watcher"].isHittable, "The tab bar stays on Watched")
+        XCTAssertTrue(app.tabsBar.buttons["Watcher"].isHittable, "The tab bar stays on Watched")
         capture("watcher-bar-away-watched-dark")
         dragWatcherKeepingThePage(down: false, by: 80, away: false, marker: "Watched's lead", lead,
                                   "Going back up Watched brings the bar back")
@@ -1700,7 +1700,7 @@ import XCTest
     /// Settings on this iPhone: the look, alerts off until turned on, another theme, light, compact and larger text.
     func testSettingsThemeAppearanceDensityAndAlerts() {
         launch(Self.fixture)
-        app.tabs.buttons["Settings"].tap()
+        app.tabsBar.buttons["Settings"].tap()
         let dark = app.buttons["setting-dark"]
         XCTAssertTrue(dark.waitForExistence(timeout: 5))
         XCTAssertEqual(dark.value as? String, "Selected", "Dark is the default")
@@ -1721,20 +1721,20 @@ import XCTest
         reveal(sotto, swipingDown: true)
         XCTAssertTrue(sotto.exists, "The other themes stay listed after a new one paints")
         XCTAssertEqual(sotto.value as? String, "Not selected")
-        app.tabs.buttons["Threads"].tap()
+        app.tabsBar.buttons["Threads"].tap()
         XCTAssertTrue(app.textFields["thread-search"].waitForExistence(timeout: 5))
         capture("threads-glow-fern")
 
-        app.tabs.buttons["Settings"].tap()
+        app.tabsBar.buttons["Settings"].tap()
         let light = app.buttons["setting-light"]
         reveal(light, swipingDown: true)
         light.tap()
         XCTAssertEqual(light.value as? String, "Selected")
-        app.tabs.buttons["Threads"].tap()
+        app.tabsBar.buttons["Threads"].tap()
         XCTAssertTrue(app.textFields["thread-search"].waitForExistence(timeout: 5))
         capture("threads-glow-fern-light")
 
-        app.tabs.buttons["Settings"].tap()
+        app.tabsBar.buttons["Settings"].tap()
         let compact = app.buttons["setting-density-compact"]
         reveal(compact)
         compact.tap()
@@ -1743,7 +1743,7 @@ import XCTest
         reveal(larger)
         larger.tap()
         XCTAssertEqual(larger.value as? String, "Selected")
-        app.tabs.buttons["Threads"].tap()
+        app.tabsBar.buttons["Threads"].tap()
         let thread = row("iphone")
         reveal(thread)
         thread.tap()
@@ -1882,21 +1882,21 @@ import XCTest
         XCTAssertTrue(counts.exists)
         XCTAssertTrue(counts.label.contains("2 working"), "The summary counts the threads at work")
         XCTAssertTrue(app.buttons["Try reaching Studio Mac again"].exists, "A computer that can't be reached offers Try again")
-        XCTAssertFalse(app.tabs.buttons["Watcher"].exists, "A computer that doesn't run Watcher gives it no tab")
+        XCTAssertFalse(app.tabsBar.buttons["Watcher"].exists, "A computer that doesn't run Watcher gives it no tab")
         capture("threads-glow-dark")
-        app.tabs.buttons["Computers"].tap()
+        app.tabsBar.buttons["Computers"].tap()
         XCTAssertTrue(app.buttons["Add computer"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Try reaching Studio Mac again"].waitForExistence(timeout: 5))
         capture("computers-glow")
-        app.tabs.buttons["Settings"].tap()
+        app.tabsBar.buttons["Settings"].tap()
         let light = app.buttons["setting-light"]
         XCTAssertTrue(light.waitForExistence(timeout: 5))
         light.tap()
         XCTAssertEqual(light.value as? String, "Selected")
-        app.tabs.buttons["Threads"].tap()
+        app.tabsBar.buttons["Threads"].tap()
         XCTAssertTrue(app.textFields["thread-search"].waitForExistence(timeout: 5))
         capture("threads-glow-light")
-        app.tabs.buttons["Computers"].tap()
+        app.tabsBar.buttons["Computers"].tap()
         XCTAssertTrue(app.buttons["Add computer"].waitForExistence(timeout: 5))
         capture("computers-glow-light")
     }
@@ -1914,13 +1914,13 @@ import XCTest
             reveal(message)
             XCTAssertFalse(app.staticTexts["Answer sent."].exists)
             capture("feedback-" + scenario + "-dark")
-            app.tabs.buttons["Settings"].tap()
+            app.tabsBar.buttons["Settings"].tap()
             XCTAssertTrue(app.buttons["setting-light"].waitForExistence(timeout: 5))
             app.buttons["setting-light"].tap()
             let larger = app.buttons["setting-larger-text"]
             reveal(larger)
             larger.tap()
-            app.tabs.buttons["Threads"].tap()
+            app.tabsBar.buttons["Threads"].tap()
             reveal(message, swipingDown: true)
             capture("feedback-" + scenario + "-light-larger-text")
             let dismiss = app.buttons["Dismiss message"]
@@ -1949,11 +1949,11 @@ import XCTest
         launch(Self.fixture + ["--ui-folder-timeout"])
         for appearance in ["dark", "light"] {
             if appearance == "light" {
-                app.tabs.buttons["Settings"].tap()
+                app.tabsBar.buttons["Settings"].tap()
                 app.buttons["setting-light"].tap()
                 let larger = app.buttons["setting-larger-text"]
                 reveal(larger); larger.tap()
-                app.tabs.buttons["Threads"].tap()
+                app.tabsBar.buttons["Threads"].tap()
             }
             app.buttons["new-thread"].tap()
             app.buttons["new-thread-computer-\(laptop)"].tap()
@@ -1973,7 +1973,7 @@ import XCTest
 
     func testAppearanceAndLargerTextPersist() {
         launch(Self.fixture)
-        app.tabs.buttons["Settings"].tap()
+        app.tabsBar.buttons["Settings"].tap()
         let light = app.buttons["setting-light"]
         XCTAssertTrue(light.waitForExistence(timeout: 5))
         light.tap()
@@ -1987,7 +1987,7 @@ import XCTest
 
         launch(["--ui-fixture"])
         capture("focus-light-larger-text")
-        app.tabs.buttons["Settings"].tap()
+        app.tabsBar.buttons["Settings"].tap()
         XCTAssertTrue(light.waitForExistence(timeout: 5))
         XCTAssertEqual(light.value as? String, "Selected", "Appearance persists across launch")
         reveal(larger)
@@ -1995,7 +1995,7 @@ import XCTest
         reveal(app.buttons["setting-dark"], swipingDown: true)
         app.buttons["setting-dark"].tap()
         XCTAssertEqual(app.buttons["setting-dark"].value as? String, "Selected")
-        app.tabs.buttons["Threads"].tap()
+        app.tabsBar.buttons["Threads"].tap()
         capture("focus-dark-larger-text")
     }
 
@@ -2079,7 +2079,7 @@ import XCTest
         XCUIDevice.shared.orientation = .landscapeLeft
         waitForRenderedOrientation(landscape: true)
         capture("focus-landscape")
-        XCTAssertTrue(app.tabs.buttons["Settings"].isHittable)
+        XCTAssertTrue(app.tabsBar.buttons["Settings"].isHittable)
         XCUIDevice.shared.orientation = .portrait
         waitForRenderedOrientation(landscape: false)
     }
@@ -2087,5 +2087,5 @@ import XCTest
 
 extension XCUIApplication {
     /// The tabs' bar, by its identifier: it is Sotto's own bar, so the accessibility tree may not call it a tab bar.
-    var tabs: XCUIElement { descendants(matching: .any).matching(identifier: "tabs").firstMatch }
+    var tabsBar: XCUIElement { descendants(matching: .any).matching(identifier: "tabs").firstMatch }
 }
