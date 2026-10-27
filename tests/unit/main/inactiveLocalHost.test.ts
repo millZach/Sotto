@@ -29,6 +29,8 @@ it('leaves saved workspace data intact and constructs no provider or thread stor
     // Main offers the host setup's tools and requests whichever host runs; with none here, they do nothing (ADR-0035).
     expect(() => runtime.agentHost.useThreadTools([{ name: 'sotto_host_setup', definitions: [], mcpServer: async () => undefined }])).not.toThrow()
     expect(() => runtime.agentControl.useSottoRequests({ requests: () => new Map(), answer: () => undefined, subscribe: () => () => undefined })).not.toThrow()
+    // Main listens for deleted threads at start to drop their answer drafts (ADR-0140).
+    expect(() => runtime.agentControl.onThreadsDeleted(() => undefined)()).not.toThrow()
     await expect(runtime.agentHost.gitActionFinished('thread')).resolves.toBeUndefined()
     await expect(runtime.worktreeCleanup.close()).resolves.toBeUndefined()
     await runtime.close()
