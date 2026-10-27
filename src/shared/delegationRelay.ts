@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { agentRuntimeModeSchema } from './agents'
-import { DELEGATION_LEVELS_MAX, DELEGATION_WAIT_MAX_SECONDS, delegationNewsSchema } from './delegation'
+import { DELEGATION_LEVELS_MAX, DELEGATION_NEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, delegationNewsSchema } from './delegation'
+import { WATCHER_REPLY_BYTES_MAX } from './watcher'
 import { workerSystemSchema } from './workerMachine'
 
 /**
@@ -50,6 +51,13 @@ export const delegationRelayAskSchema = z.discriminatedUnion('type', [
 ])
 export type DelegationRelayAsk = z.infer<typeof delegationRelayAskSchema>
 export const delegationRelayNewsSchema = delegationNewsSchema
+/**
+ * An answered relayed delegation's reply, sent with its news (ADR-0105 decision 6), cut as `read_delegation` cuts it:
+ * the delegated thread's own words, which the host labels as such in the wake-up and never keeps on disk.
+ */
+export const relayedReplySchema = z.object({ delegationId: z.uuid(), messageId: id, text: z.string().max(WATCHER_REPLY_BYTES_MAX), truncated: z.boolean() }).strict()
+export type RelayedReply = z.infer<typeof relayedReplySchema>
+export const relayedRepliesSchema = z.array(relayedReplySchema).max(DELEGATION_NEWS_MAX)
 
 /**
  * The words a thread on a host is told when the desktop is not connected, so nothing can start there (Zach, October 23,

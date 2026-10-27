@@ -3,8 +3,9 @@ import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { delegationWorkSchema, type DelegationNews, type DelegationWork } from '../../shared/delegation'
+import type { DelegationNewsDetail } from './delegationNews'
 import { DELEGATION_RELAY_ANSWER_BYTES_MAX, DELEGATION_RELAY_ANSWER_GRACE_MS, DELEGATION_RELAY_READ_MS, DELEGATION_RELAY_RECORDS_MAX,
-  relayAwayWords, type DelegationRelayAsk } from '../../shared/delegationRelay'
+  relayAwayWords, type DelegationRelayAsk, type RelayedReply } from '../../shared/delegationRelay'
 import { watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 
@@ -47,6 +48,8 @@ const LAST_READ = 'This computer is not connected now, so this is the outcome So
 const LOST_START = 'Sotto asked This computer to start this delegation, but its answer was lost, so Sotto cannot tell whether it started. Nothing will be sent again. Call read_delegation with this delegation once this computer is back to see what happened.'
 const LOST_CANCEL = 'This computer did not answer, so Sotto cannot tell whether it was stopped. Call read_delegation with this delegation to see where it stands.'
 const now = (): string => new Date().toISOString()
+/** How many replies wait in memory for their wake-up to be worded. */
+const REPLIES_KEPT = 200
 const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 
 /**
@@ -68,6 +71,11 @@ export class HostDelegationRelay {
   private readonly pending = new Map<string, { readonly desktop: RelayDesktop; readonly resolve: (answer: unknown) => void; readonly reject: (error: Error) => void; readonly timer: ReturnType<typeof setTimeout> }>()
   private deliver: ((threadId: string, news: DelegationNews) => Promise<void>) | undefined
   private reconciling: Promise<void> | undefined
+  /**
+   * Answered relayed delegations' replies, by the ID the thread knows, newest last: held in memory only until the wake-up
+   * that carries them is worded, as delegation keeps none on disk (ADR-0105 decision 6).
+   */
+  private readonly replies = new Map<string, NonNullable<DelegationNewsDetail['reply']>>()
   /** Starts still waiting for the desktop's answer, by the thread that asked: news may name what they made before they hear. */
   private readonly starting = new Map<string, Set<Promise<unknown>>>()
   private closed = false
@@ -174,6 +182,15 @@ export class HostDelegationRelay {
     await this.persist()
     return answer
   }
+  /** An answered relayed delegation's reply for the wake-up that tells it, as the desktop sent it; none once worded or never sent. */
+  detail(delegationId: string): DelegationNewsDetail | undefined {
+    const reply = this.replies.get(delegationId)
+    return reply ? { reply } : undefined
+  }
+  private keepReply(delegationId: string, reply: NonNullable<DelegationNewsDetail['reply']>): void {
+    this.replies.delete(delegationId); this.replies.set(delegationId, reply)
+    if (this.replies.size > REPLIES_KEPT) this.replies.delete(this.replies.keys().next().value!)
+  }
   /** Whether `delegationId` is one of `callerId`'s relayed delegations. */
   holds(callerId: string, delegationId: string): boolean { return this.find(callerId, delegationId) !== undefined }
   /** Whether `threadId` is a thread on another machine that `callerId` delegated to through the relay. */
@@ -220,7 +237,7 @@ export class HostDelegationRelay {
    * The desktop's news of relayed delegations `threadId` made: each moved outcome is kept and told to the thread as its
    * hidden wake-up, and only once delivered counts as told. Rejects when it could not be delivered, so the desktop offers it again.
    */
-  async news(threadId: string, news: DelegationNews): Promise<void> {
+  async news(threadId: string, news: DelegationNews, replies: readonly RelayedReply[] = []): Promise<void> {
     if (!this.deliver) throw new Error('This host cannot tell its threads yet.')
     const recordOf = (delegationId: string) => this.records.find(saved => saved.delegatingThreadId === threadId && (saved.delegation === delegationId || saved.id === delegationId))
     // News can come before the answer to the start that made it: it waits for that answer, so it is never dropped (#1316 review).
@@ -230,6 +247,8 @@ export class HostDelegationRelay {
       const record = recordOf(item.delegationId)
       if (!record) return []
       this.update(record, saved => { saved.outcome = item.outcome; delete saved.unread })
+      const reply = replies.find(saved => saved.delegationId === item.delegationId)
+      if (reply && item.outcome === 'answered') this.keepReply(record.id, { messageId: reply.messageId, text: reply.text, truncated: reply.truncated })
       return record.told === item.outcome && item.heldMinutes === undefined ? [] : [{ record, item: { ...item, delegationId: record.id } }]
     })
     await this.persist()
@@ -277,7 +296,13 @@ export class HostDelegationRelay {
   private fromRead(record: RelayedRecord, answer: Record<string, unknown>, tells = true): void {
     const delegation = isObject(answer.delegation) ? answer.delegation : undefined
     const outcome = watcherOutcomeSchema.safeParse(delegation?.outcome)
-    if (answer.status === 'ok' && delegation && outcome.success) this.adopt(record, delegation, answer, tells)
+    if (answer.status === 'ok' && delegation && outcome.success) {
+      this.adopt(record, delegation, answer, tells)
+      // A read after a reconnect carries the reply, which the wake-up it leads to then carries too.
+      const reply = isObject(delegation.reply) ? delegation.reply : undefined
+      if (!tells && outcome.data === 'answered' && reply && typeof reply.messageId === 'string' && typeof reply.text === 'string')
+        this.keepReply(record.id, { messageId: reply.messageId, text: reply.text, truncated: reply.truncated === true })
+    }
     else if (answer.status === 'refused' || (answer.status === 'ok' && !outcome.success)) this.update(record, saved => { saved.outcome = 'unknown'; if (tells) saved.told = 'unknown'; delete saved.unread })
   }
   /** Keeps what a desktop's answer names of a delegation: its ID there, its thread, its outcome, and where it started. */

@@ -69,6 +69,7 @@ import { DesktopDefaultsStore, hostDelegationMachines } from './hostDelegation'
 import type { HostDelegationRelay } from './delegationRelayHost'
 import { DesktopDelegationRelay } from './delegationRelayDesktop'
 import type { DelegationNews } from '../../shared/delegation'
+import type { RelayedReply } from '../../shared/delegationRelay'
 import { machineWorkingThreadsWarning } from '../../shared/workingThreads'
 
 type ControlDependencies = ConstructorParameters<typeof AgentControl>[0]
@@ -421,7 +422,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       ...placingWatcher && branchMoves ? { branchMoves, checks: new CheckQueue('This computer'), ...options.clockTime ? { clockTime: options.clockTime } : {} } : {},
       // A delegated thread's own worktree is made from the delegating thread's branch, so it can bring changes back (#1030).
       ...crossMachine ? { bringBack: true } : {},
-      ...relaying ? { relayedCallers: { caller: (threadId: string) => relaying.caller(threadId), tell: (threadId: string, news: DelegationNews) => relaying.tell(threadId, news) } } : {} })
+      ...relaying ? { relayedCallers: { caller: (threadId: string) => relaying.caller(threadId), tell: (threadId: string, news: DelegationNews, replies: readonly RelayedReply[]) => relaying.tell(threadId, news, replies) } } : {} })
     relaying?.useDelegation(delegation)
   } else if (hostDelegation && desktopDefaults) {
     agentHost.enableDelegation()

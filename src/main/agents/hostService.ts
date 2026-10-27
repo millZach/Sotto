@@ -26,7 +26,7 @@ import type { HostMachineReport } from '../../shared/hostFacts'
 import type { ProjectOrigins } from '../../shared/workerMachine'
 import type { HostBranchMoveRequest } from '../../shared/branchMoves'
 import type { DesktopDefaultsInput, DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
-import type { DelegationRelayAsk } from '../../shared/delegationRelay'
+import type { DelegationRelayAsk, RelayedReply } from '../../shared/delegationRelay'
 import type { DelegationNews } from '../../shared/delegation'
 import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
 import type { DelegationViews } from './delegationIpc'
@@ -144,7 +144,7 @@ export interface HostService {
   readonly supportsDelegationRelay?: boolean
   subscribeDelegationRelay?(listener: (askId: string, ask: DelegationRelayAsk) => void): () => void
   answerDelegationRelay?(askId: string, answer: unknown): Promise<void>
-  delegationRelayNews?(threadId: string, news: DelegationNews): Promise<void>
+  delegationRelayNews?(threadId: string, news: DelegationNews, replies?: readonly RelayedReply[]): Promise<void>
   /** The host continues agents as threads and forks at a reply (#1028): it takes `continue-agent` and reads `startHandover`. */
   readonly supportsThreadStarts?: boolean
   /** The host keeps which failed threads have been seen and takes `dismiss-failures` (ADR-0092); without it its failed

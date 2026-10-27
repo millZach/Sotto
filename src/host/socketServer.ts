@@ -1260,7 +1260,7 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'delegation-relay-news': {
         // A relayed delegation's outcome changed (#1316): the thread here that made it is told, as its hidden wake-up.
         if (!options.delegationRelay || !peer.delegationRelay) throw new Refusal('invalid_request')
-        try { await options.delegationRelay.news(request.threadId, request.news) } catch { throw new Refusal('unavailable') }
+        try { await options.delegationRelay.news(request.threadId, request.news, request.replies) } catch { throw new Refusal('unavailable') }
         return { told: true }
       }
       case 'host-update': {

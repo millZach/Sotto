@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { agentRuntimeModeSchema } from '../../shared/agents'
 import { hostEntityKey, parseHostEntityKey } from '../../shared/clientIdentity'
 import { DELEGATION_LEVELS_MAX, type DelegationNews } from '../../shared/delegation'
-import { delegationRelayAskSchema, type DelegationRelayAsk } from '../../shared/delegationRelay'
+import { delegationRelayAskSchema, type DelegationRelayAsk, type RelayedReply } from '../../shared/delegationRelay'
 import type { WatcherRefusal } from '../../shared/watcher'
 import type { WorkerMachineSetting } from '../../shared/workerMachine'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -20,7 +20,7 @@ export interface RelayHostConnection {
     readonly supportsDelegationRelay?: boolean | undefined
     subscribeDelegationRelay?(listener: (askId: string, ask: DelegationRelayAsk) => void): () => void
     answerDelegationRelay?(askId: string, answer: unknown): Promise<void>
-    delegationRelayNews?(threadId: string, news: DelegationNews): Promise<void>
+    delegationRelayNews?(threadId: string, news: DelegationNews, replies?: readonly RelayedReply[]): Promise<void>
   }
 }
 /** The host router as the relay follows it: each connection it takes, and the remote ones connected now. */
@@ -101,11 +101,11 @@ export class DesktopDelegationRelay {
   /** What `DelegationService` asks of a relayed caller: the thread as its machine last said it, or none. */
   caller(threadId: string): RelayedCaller | undefined { return this.callers.get(threadId) }
   /** A relayed delegation's news goes back to its host, which tells the asking thread; rejects when it could not go. */
-  async tell(threadId: string, news: DelegationNews): Promise<void> {
+  async tell(threadId: string, news: DelegationNews, replies: readonly RelayedReply[] = []): Promise<void> {
     const key = parseHostEntityKey(threadId)
     const connection = key ? [...this.source?.remoteConnections() ?? []].find(item => item.hostId === key.hostId) : undefined
     if (!key || !connection?.service.supportsDelegationRelay || !connection.service.delegationRelayNews) throw new Error('That machine is not connected.')
-    try { await connection.service.delegationRelayNews(key.id, news) } catch (error) { this.options.log?.('delegation-relay-news-failed'); throw error }
+    try { await connection.service.delegationRelayNews(key.id, news, replies) } catch (error) { this.options.log?.('delegation-relay-news-failed'); throw error }
   }
 
   private follow(connection: RelayHostConnection): void {

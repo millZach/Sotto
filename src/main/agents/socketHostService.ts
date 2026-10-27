@@ -43,7 +43,7 @@ import { HOST_UPDATE_ANSWER_DEADLINES_MS, hostUpdateAnswerSchema, type HostUpdat
 import type { HostUpdateStep } from '../../shared/hostUpdates'
 import { projectOriginsSchema, type ProjectOrigins } from '../../shared/workerMachine'
 import { desktopDefaultsReceiptSchema, type DesktopDefaultsInput, type DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
-import type { DelegationRelayAsk } from '../../shared/delegationRelay'
+import type { DelegationRelayAsk, RelayedReply } from '../../shared/delegationRelay'
 import type { DelegationNews } from '../../shared/delegation'
 import { delegationBriefSchema, delegationsReadSchema, type DelegationBrief, type DelegationsRead } from '../../shared/delegation'
 import { usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, usageProvidersBeforeMuse, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
@@ -1338,10 +1338,10 @@ export class SocketHostService implements HostService {
     this.offers('delegation-relay')
     await this.call({ op: 'delegation-relay-answer', askId, result: answer }, undefined, undefined, 10000)
   }
-  async delegationRelayNews(threadId: string, news: DelegationNews): Promise<void> {
+  async delegationRelayNews(threadId: string, news: DelegationNews, replies?: readonly RelayedReply[]): Promise<void> {
     if (!this.relays) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
     this.offers('delegation-relay')
-    await this.call({ op: 'delegation-relay-news', threadId, news }, undefined, undefined, 30000)
+    await this.call({ op: 'delegation-relay-news', threadId, news, ...replies?.length ? { replies: [...replies] } : {} }, undefined, undefined, 30000)
   }
   /** Hears the host name threads whose delegations changed, and this connection closing. Returns the way to stop. */
   subscribeDelegationViews(listener: (change: DelegationViewsChange) => void): () => void {

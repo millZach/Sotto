@@ -26,7 +26,7 @@ import { WATCHER_QUIET_MS } from '../../shared/watcherOverview'
 import type { AgentState } from '../../shared/agents'
 import type { HostThreadsView } from './control'
 import { RelayUnanswered, type HostDelegationRelay } from './delegationRelayHost'
-import { DELEGATION_RELAY_ANSWER_GRACE_MS, DELEGATION_RELAY_WAIT_MAX_MS } from '../../shared/delegationRelay'
+import { DELEGATION_RELAY_ANSWER_GRACE_MS, DELEGATION_RELAY_WAIT_MAX_MS, type RelayedReply } from '../../shared/delegationRelay'
 
 /** The commands delegation sends on a thread's behalf: create the delegated thread, send it a brief, stop it. */
 export type DelegationCommand = Extract<AgentCommand, { type: 'create-thread' | 'manual-send' | 'interrupt' }>
@@ -143,13 +143,14 @@ export interface DelegationServiceOptions {
    */
   readonly relayedCallers?: {
     caller(threadId: string): RelayedCaller | undefined
-    tell(threadId: string, news: DelegationNews): Promise<void>
+    /** With each answered delegation's reply, cut as `read_delegation` cuts it, so the wake-up there carries it (ADR-0105 decision 6). */
+    tell(threadId: string, news: DelegationNews, replies: readonly RelayedReply[]): Promise<void>
   }
   /**
    * A headless host's side of the relay (#1316, Owl `cross-machine-work`): a thread here delegates to a thread on another
    * machine through the desktop that relays, while one is connected.
    */
-  readonly relay?: Pick<HostDelegationRelay, 'start' | 'holds' | 'holdsThread' | 'read' | 'cancel' | 'list' | 'useDelivery' | 'awayWords'>
+  readonly relay?: Pick<HostDelegationRelay, 'start' | 'holds' | 'holdsThread' | 'read' | 'cancel' | 'list' | 'useDelivery' | 'awayWords' | 'detail'>
   /** The clock a held background outcome's release reads, and how it waits for it; tests give their own. */
   readonly now?: () => number
   readonly schedule?: (callback: () => void, delay: number) => () => void
@@ -1584,7 +1585,15 @@ export class DelegationService {
       this.telling.add(threadId); pending.attempts++
       try {
         // A thread on another machine is told on its machine, through the desktop's connection to it (#1316).
-        if (elsewhere) await relayed!.tell(threadId, news)
+        if (elsewhere) {
+          const snapshot = this.snapshot()
+          const replies = told.flatMap(({ record, outcome }) => {
+            if (outcome !== 'answered') return []
+            const reply = this.replyOf(record, snapshot.threads.find(thread => thread.id === record.delegatedThreadId)).reply
+            return reply ? [{ delegationId: record.id, ...reply }] : []
+          })
+          await relayed!.tell(threadId, news, replies)
+        }
         else await this.options.control.deliverWakeUp(threadId, news, { tool: this.options.tool?.(threadId) ?? false })
         for (const { record, outcome, held } of told) { record.told = outcome; if (held !== undefined) record.releaseTold = true; pending.ids.delete(record.id) }
         // News that came while this was being told goes next, rather than wait for another snapshot.
@@ -1675,7 +1684,9 @@ export class DelegationService {
     const details = new Map<string, DelegationNewsDetail>()
     for (const item of folded.items) {
       const record = this.record(item.delegationId)
-      if (!record || record.delegatingThreadId !== threadId) continue
+      // A delegation relayed to another machine (#1316) carries its reply as that machine sent it with the news.
+      if (!record) { const relayed = this.options.relay?.detail(item.delegationId); if (relayed && item.outcome === 'answered') details.set(item.delegationId, relayed); continue }
+      if (record.delegatingThreadId !== threadId) continue
       if (record.deliveryState === 'failed') details.set(record.id, { notSent: FAILURE_NOTES[record.failure ?? 'provider'] })
       else if (item.outcome === 'answered' && this.outcomeOf(record) === 'answered') details.set(record.id, this.replyOf(record, threads.get(record.delegatedThreadId)))
       else if (item.heldMinutes !== undefined) {

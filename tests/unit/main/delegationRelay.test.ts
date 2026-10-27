@@ -66,8 +66,11 @@ describe('the host side of the relay', () => {
     expect(relay.holdsThread('thread-a', 'child-1')).toBe(true)
     expect(relay.list('thread-a')).toEqual([expect.objectContaining({ id: DELEGATION, thread: 'child-1', outcome: 'working', machine: 'This computer' })])
     // The desktop's news of an answer reaches the thread once, as its wake-up.
+    await relay.news('thread-a', { source: 'delegation', items: [{ delegationId: DELEGATION, threadId: 'child-1', outcome: 'answered' }] },
+      [{ delegationId: DELEGATION, messageId: 'reply-1', text: 'Synthetic finding', truncated: false }])
     await relay.news('thread-a', { source: 'delegation', items: [{ delegationId: DELEGATION, threadId: 'child-1', outcome: 'answered' }] })
-    await relay.news('thread-a', { source: 'delegation', items: [{ delegationId: DELEGATION, threadId: 'child-1', outcome: 'answered' }] })
+    // The reply waits, in memory only, for the wake-up to be worded (ADR-0105 decision 6).
+    expect(relay.detail(DELEGATION)).toEqual({ reply: { messageId: 'reply-1', text: 'Synthetic finding', truncated: false } })
     expect(told).toEqual([{ threadId: 'thread-a', news: { source: 'delegation', items: [{ delegationId: DELEGATION, threadId: 'child-1', outcome: 'answered' }] } }])
     // News naming a delegation another thread made is not this thread's.
     await expect(relay.news('thread-b', { source: 'delegation', items: [{ delegationId: DELEGATION, threadId: 'child-1', outcome: 'failed' }] })).rejects.toThrow()
@@ -280,14 +283,15 @@ describe('the desktop side of the relay', () => {
     const connection: RelayHostConnection = { hostId: HOST, kind: 'remote', service: { supportsDelegationRelay: true,
       subscribeDelegationRelay: listener => { push = listener; return () => undefined },
       answerDelegationRelay: async (askId, answer) => { answers.push({ askId, answer }) },
-      delegationRelayNews: async (threadId, items) => { news.push({ threadId, items }) } } }
+      delegationRelayNews: async (threadId, items, replies) => { news.push({ threadId, items, ...replies?.length ? { replies } : {} }) } } }
     relay.useHosts({ subscribeConnected: () => () => undefined, remoteConnections: () => [connection] })
     push!('77777777-7777-4777-8777-777777777777', { type: 'machines' })
     await flush(); await flush()
     expect(answers).toEqual([{ askId: '77777777-7777-4777-8777-777777777777', answer: { status: 'ok', machines: [{ hostId: DESKTOP, name: 'This computer' }] } }])
     const items: DelegationNews = { source: 'delegation', items: [{ delegationId: DELEGATION, threadId: 'child-1', outcome: 'answered' }] }
-    await relay.tell(`host:${HOST}:thread-a`, items)
-    expect(news).toEqual([{ threadId: 'thread-a', items }])
+    const replies = [{ delegationId: DELEGATION, messageId: 'reply-1', text: 'Synthetic finding', truncated: false }]
+    await relay.tell(`host:${HOST}:thread-a`, items, replies)
+    expect(news).toEqual([{ threadId: 'thread-a', items, replies }])
     await expect(relay.tell(`host:${MAC}:thread-a`, items)).rejects.toThrow()
   })
 })

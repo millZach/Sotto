@@ -1,5 +1,5 @@
 import { agentThreadPromptsSchema } from './threadPrompts'
-import { delegationRelayAskSchema, delegationRelayNewsSchema, type DelegationRelayAsk } from './delegationRelay'
+import { delegationRelayAskSchema, delegationRelayNewsSchema, relayedRepliesSchema, type DelegationRelayAsk } from './delegationRelay'
 import { z } from 'zod'
 import { watcherPhoneStateSchema, watcherPhoneSendSchema, watcherPhonePreviewSchema, watcherPhoneRemoveFollowupSchema, watcherPhoneAnswerSchema, watcherPhoneStopOutcomeSchema, watcherPhoneManageOutcomeSchema, type WatcherPhoneManageOutcome, watcherPhoneSetPermissionSchema, watcherPhoneWatchSchema, type WatcherPhoneStopOutcome, type WatcherPhoneState } from './watcherPhone'
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema } from './watcherHost'
@@ -543,7 +543,7 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   /** The desktop's answer to an ask the host pushed (`delegation-relay`, #1316): a `delegate`, read or cancel result, or a machine list. */
   z.object({ ...base, op: z.literal('delegation-relay-answer'), askId: z.uuid(), result: z.unknown() }).strict(),
   /** A relayed delegation's outcome changed (`delegation-relay`): the host tells the thread that delegated, as a hidden wake-up. */
-  z.object({ ...base, op: z.literal('delegation-relay-news'), threadId: id, news: delegationRelayNewsSchema }).strict(),
+  z.object({ ...base, op: z.literal('delegation-relay-news'), threadId: id, news: delegationRelayNewsSchema, replies: relayedRepliesSchema.optional() }).strict(),
 ])
 export type HostRequest = z.infer<typeof hostRequestSchema>
 export type HostOperation = HostRequest extends infer R ? R extends HostRequest ? Omit<R, 'v' | 'id' | 'session'> : never : never

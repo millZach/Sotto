@@ -7,7 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { DelegationService, type DelegationCoordinator, type DelegationServiceOptions, type RelayedCaller } from '../../../src/main/agents/delegation'
+import { DelegationService, type DelegationControlHooks, type DelegationCoordinator, type DelegationServiceOptions, type RelayedCaller } from '../../../src/main/agents/delegation'
 import { RelayUnanswered } from '../../../src/main/agents/delegationRelayHost'
 import { EMPTY_AGENT_HOST, type AgentCommand, type AgentHostSnapshot, type AgentModel, type AgentThread } from '../../../src/shared/agents'
 import { relayAwayWords } from '../../../src/shared/delegationRelay'
@@ -19,7 +19,7 @@ afterEach(async () => {
     await rm(root, { recursive: true, force: true })
   }
 })
-const HOST = '11111111-1111-4111-8111-111111111111', DESKTOP = '22222222-2222-4222-8222-222222222222'
+const HOST = '11111111-1111-4111-8111-111111111111', DESKTOP = '22222222-2222-4222-8222-222222222222', RELAYED = '44444444-4444-4444-8444-444444444444'
 const model = { id: 'model', name: 'Model', providerId: 'codex', ready: true, reasoningEfforts: [], runtimeModes: ['approval-required', 'auto-accept-edits', 'auto', 'full-access'] } as unknown as AgentModel
 const thread = (id: string, patch: Partial<AgentThread> = {}): AgentThread =>
   ({ id, projectId: 'project', providerId: 'codex', title: id, modelId: 'model', status: 'idle', runtimeMode: 'full-access', messages: [{ id: `${id}-ask`, role: 'user', text: 'Do it.' }], requests: [], ...patch }) as AgentThread
@@ -29,9 +29,10 @@ async function service(options: Partial<DelegationServiceOptions>, configured: '
   const snapshot: AgentHostSnapshot = { ...EMPTY_AGENT_HOST, connected: true, models: [model], projects: [{ id: 'project', title: 'Project', path: join(root, 'project') }] as never,
     threads: [thread('parent')] }
   const commands: AgentCommand[] = []
+  let hooks: DelegationControlHooks | undefined
   const control: DelegationCoordinator = {
     hostId: () => HOST, watcherSnapshot: () => snapshot, configuration: () => ({ newThreadRuntimeMode: configured }),
-    useDelegation: () => () => undefined,
+    useDelegation: given => { hooks = given; return () => undefined },
     // The coordinator's own last guard runs before anything is created, as the real one runs it at the writer.
     commandFromDelegation: async (command, guard) => { guard(); commands.push(command); return { host: snapshot } as never },
     hasPendingThreadWork: () => false, hasUserDraft: () => false, refreshDelegationObservation: () => undefined,
@@ -40,7 +41,7 @@ async function service(options: Partial<DelegationServiceOptions>, configured: '
   const delegation = new DelegationService({ directory: root, control, host: { setDelegatedBy: async () => undefined, threadMessage: () => undefined },
     historyEnabled: () => true, ...options })
   await delegation.recover()
-  return { delegation, commands }
+  return { delegation, commands, hooks: () => hooks! }
 }
 const start = { work: 'code-review', brief: 'Review it.', provider: 'codex', model: 'model', permission: 'full-access', wait_seconds: 0 }
 
@@ -79,7 +80,8 @@ describe('a thread on a host delegating elsewhere', () => {
   const relay = (answer: () => Promise<Record<string, unknown>>) => {
     const asked: unknown[] = []
     return { asked, relay: { start: async (callerId: string, work: string, ask: unknown) => { asked.push({ callerId, work, ask }); return answer() },
-      holds: () => false, holdsThread: () => false, read: async () => ({}), cancel: async () => ({}), list: () => [], useDelivery: () => undefined, awayWords: () => relayAwayWords('forge') } as never as NonNullable<DelegationServiceOptions['relay']> & { start: unknown } }
+      holds: () => false, holdsThread: () => false, read: async () => ({}), cancel: async () => ({}), list: () => [], useDelivery: () => undefined, awayWords: () => relayAwayWords('forge'),
+      detail: (delegationId: string) => delegationId === RELAYED ? { reply: { messageId: 'reply-1', text: 'Synthetic finding from This computer', truncated: false } } : undefined } as never as NonNullable<DelegationServiceOptions['relay']> & { start: unknown } }
   }
 
   it('asks the desktop for a start on another machine, with what its admission found here', async () => {
@@ -93,6 +95,14 @@ describe('a thread on a host delegating elsewhere', () => {
     // A branch to start from is not carried yet, and is refused before anything is asked.
     expect(await f.delegation.delegate('parent', { ...start, machine: DESKTOP, from_my_branch: true })).toMatchObject({ status: 'refused', code: 'BRANCH_UNAVAILABLE' })
     expect(r.asked).toHaveLength(1)
+  })
+
+  it('words an answered relayed delegation\'s wake-up with its reply, labelled as the delegated thread\'s words', async () => {
+    const r = relay(async () => ({ status: 'ok' }))
+    const f = await service({ machines: machines(true), relay: r.relay })
+    const text = f.hooks().newsText?.('parent', [{ source: 'delegation', items: [{ delegationId: RELAYED, threadId: 'child-there', outcome: 'answered' }] }])
+    expect(text).toContain('Synthetic finding from This computer')
+    expect(text).toContain('in the delegated thread\'s own words')
   })
 
   it('records the away refusal by name, with nothing queued, and the desktop\'s own refusals as its own', async () => {
