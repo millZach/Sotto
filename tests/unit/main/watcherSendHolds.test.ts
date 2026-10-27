@@ -23,7 +23,7 @@ describe('what a refused Watcher send says it waits on (#1203)', () => {
 
 describe('a prompt that starts with a slash command (#1222)', () => {
   it('is one whose first word is a slash and a name, with or without more words after it', () => {
-    for (const text of ['/compact', '/compact now', '  /compact', '/review-pr_2 please', '/compact\nkeep the plan']) expect(startsWithSlashCommand(text), text).toBe(true)
+    for (const text of ['/compact', '/compact now', '  /compact', '/review-pr_2 please', '/compact\nkeep the plan', '/my-plugin:review', '/my-plugin:review this branch']) expect(startsWithSlashCommand(text), text).toBe(true)
   })
 
   it('is not a path, a slash later in the prompt, or a slash alone', () => {

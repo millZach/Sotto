@@ -42,10 +42,10 @@ export const WATCH_PAUSED_HOLD = 'This watch is paused until the thread’s earl
 /**
  * A prompt whose first word is a slash command, such as `/compact` (#1222). A provider runs one as a command of its own
  * rather than a message, so Sotto could never confirm it and the thread would hold every later send. A path such as
- * `/home/x` is not one: its first word has a second slash.
+ * `/home/x` is not one: its first word has a second slash. A plugin's command, such as `/my-plugin:review`, is one.
  */
 export function startsWithSlashCommand(text: string): boolean {
-  return /^\s*\/[\p{L}\p{N}_-]+(?:\s|$)/u.test(text)
+  return /^\s*\/[\p{L}\p{N}_:-]+(?:\s|$)/u.test(text)
 }
 
 export const SLASH_COMMAND_REFUSAL = 'This prompt starts with a slash command, which Watcher cannot send as a message. Ask the user to run it in the thread themselves. Nothing was sent.'
