@@ -1,10 +1,11 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
-import { Check, ChevronDown } from 'lucide-react'
+import { Check, ChevronDown, Workflow } from 'lucide-react'
 import { msg, t } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { wordsOf } from './interfaceWords'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { useReducedMotion } from '../state/reducedMotion'
+import { ULTRACODE } from '../../../shared/ultracode'
 import './effortPicker.css'
 
 interface EffortOption { readonly id: string; readonly label: string; readonly disabled?: boolean }
@@ -16,8 +17,12 @@ const EFFORT_NAMES: Readonly<Record<string, string>> = wordsOf({
   high: msg({ message: 'High', comment: 'A reasoning effort level.' }),
   xhigh: msg({ message: 'Extra high', comment: 'A reasoning effort level.' }),
   max: msg({ message: 'Max', comment: 'A reasoning effort level, the highest some models offer.' }),
+  ultracode: msg({ message: 'Ultracode', comment: 'The effort level past Max on Claude models, where Claude Code plans the work and runs it as a team of agents. Ultracode is Claude Code’s own name; keep it as it is.' }),
 })
 export const effortLabel = (value: string): string => Object.hasOwn(EFFORT_NAMES, value) ? EFFORT_NAMES[value]! : value.charAt(0).toUpperCase() + value.slice(1)
+
+/** What Ultracode costs, said over its stop while the pointer rests there and in the chip's tooltip at that level (ADR-0148). */
+const ultracodeHint = (): string => t({ message: 'Runs a multi-agent workflow; uses many more tokens.', comment: 'Shown when the pointer rests on the Ultracode effort level, on the reasoning effort slider or its chip.' })
 
 /** One line per level: what it does and what it costs. The top of any list gets the top line, whatever its name. */
 const EFFORT_LINES: Readonly<Record<string, string>> = wordsOf({
@@ -28,7 +33,12 @@ const EFFORT_LINES: Readonly<Record<string, string>> = wordsOf({
   xhigh: msg`Much longer. For stubborn problems.`,
   max: msg`Near the model's limit. Slow and costly.`,
 })
-export function effortLine(id: string, index: number, count: number): string {
+export function effortLine(id: string, index: number, count: number, ultracodeEffort?: string): string {
+  if (id === ULTRACODE) {
+    if (ultracodeEffort === undefined) return t({ message: 'Plans the work and runs it as a team of agents. Uses many more tokens.', comment: 'What the Ultracode effort level does.' })
+    const level = effortLabel(ultracodeEffort)
+    return t({ message: `Plans the work and runs it as a team of agents at ${level} effort. Uses many more tokens.`, comment: 'What the Ultracode effort level does. {level} is the reasoning effort level each agent runs at, such as High.' })
+  }
   if (count > 1 && index === count - 1) return t`Everything the model has. Slowest, costliest.`
   return (Object.hasOwn(EFFORT_LINES, id) ? EFFORT_LINES[id] : undefined) ?? (index === 0 ? EFFORT_LINES.low! : t`More time for difficult problems.`)
 }
@@ -95,9 +105,10 @@ function useArrival(top: boolean, still: boolean): boolean {
  * every press lands here in the frame it happens; the wrapper owns the save and hands back the saved level
  * if the provider refuses.
  */
-function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUltrathink, defaultValue, modelName, id, trigger, arriving, still }: {
+function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUltrathink, defaultValue, modelName, ultracodeEffort, id, trigger, arriving, still }: {
   value: string; options: readonly EffortOption[]; disabled: boolean; onChange: (id: string) => void
   onUltrathink?: (() => void) | undefined; hasUltrathink?: boolean | undefined; defaultValue?: string | undefined; modelName?: string | undefined
+  ultracodeEffort?: string | undefined
   id: string; trigger: RefObject<HTMLButtonElement | null>; arriving: boolean; still: boolean
 }): ReactNode {
   const { t } = useLingui()
@@ -107,6 +118,8 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
   /** Where the hand is, while the hand is on the thumb; null the rest of the time, which is most of it. */
   const [held, setHeld] = useState<number | null>(null)
   const [dragging, setDragging] = useState(false)
+  /** Whether the pointer rests over the Ultracode stop, which shows what Ultracode costs before it is chosen. */
+  const [hinting, setHinting] = useState(false)
   const drag = useRef(false)
   const panel = useRef<HTMLDivElement>(null)
   const range = useRef<HTMLInputElement>(null)
@@ -184,15 +197,25 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
   })
   const magnet = (raw: number): number => { const near = Math.round(raw), d = raw - near; return Math.abs(d) < MAGNET ? near + d * Math.pow(Math.abs(d) / MAGNET, 2) : raw }
   const setLevel = value ? effortLabel(value) : t`Provider default`
-  const word = !known ? setLevel : effortLabel((dragging ? shown?.id : value) ?? value)
+  /** The level the word and line speak for: the stop under a dragging hand, else the level set. */
+  const showing = (dragging ? shown?.id : value) ?? value
+  const word = !known ? setLevel : effortLabel(showing)
   const line = !known ? t({ message: `${setLevel} is set. Choose a level this model offers.`, comment: '{setLevel} is a reasoning effort level, or "Provider default".' })
-    : effortLine((dragging ? shown?.id : value) ?? value, dragging ? selected : actual, count)
+    : effortLine(showing, dragging ? selected : actual, count, ultracodeEffort)
   // The slider announces where the thumb is, so a drag is heard as it moves; the word above follows the same rule.
   const valueText = known ? effortLabel(shown?.id ?? value) : setLevel
   const defaultLevel = defaultValue === undefined ? '' : effortLabel(defaultValue)
   const defaultTitle = modelName !== undefined
     ? t({ message: `Use ${modelName}'s default, ${defaultLevel}`, comment: '{modelName} is a model\'s name; {defaultLevel} is a reasoning effort level.' })
     : t({ message: `Use the model's default, ${defaultLevel}`, comment: '{defaultLevel} is a reasoning effort level.' })
+  const wordUltracode = known && showing === ULTRACODE
+  /** The stop under the pointer, from where it is along the track, so the hint shows over the Ultracode stop only. */
+  const hover = (event: React.PointerEvent<HTMLDivElement>): void => {
+    if (count < 2) return
+    const box = event.currentTarget.getBoundingClientRect()
+    const at = Math.round(Math.max(0, Math.min(1, (event.clientX - box.left - 13) / Math.max(1, box.width - 26))) * (count - 1))
+    setHinting(choices[at]?.id === ULTRACODE)
+  }
   const ultrathinkWords = hasUltrathink
     ? t({ message: 'Ultrathink is in this prompt', comment: 'Ultrathink is a keyword Claude Code reads in a prompt; keep it as it is.' })
     : t({ message: 'Add Ultrathink to prompt', comment: 'Ultrathink is a keyword Claude Code reads in a prompt; keep it as it is.' })
@@ -200,18 +223,20 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
     className="effort-card" data-still={still} data-top={top} data-arriving={arriving} data-unknown={!known} data-dragging={dragging}>
     <div className="effort-card__head">
       <p className="effort-card__word" data-top={top && !dragging} data-unknown={!known}>
+        {wordUltracode ? <Workflow className="effort-card__mark" size={15} aria-hidden="true" /> : null}
         {Array.from(word, (letter, index) => <span key={`${word}-${index}`} style={{ '--effort-letter': index } as CSSProperties}>{letter === ' ' ? '\u00a0' : letter}</span>)}
       </p>
       {defaultIndex >= 0 && <button type="button" className="effort-card__default tt-focusable" disabled={disabled || value === defaultValue}
         title={defaultTitle} onClick={() => choose(defaultIndex)}>{t({ message: 'Default', comment: 'A button that sets the model\'s own default reasoning effort.' })}</button>}
     </div>
     <p id={`${id}-description`} className="effort-card__line tt-paragraph">{line}</p>
-    <div className="effort-card__track">
+    <div className="effort-card__track" onPointerMove={hover} onPointerLeave={() => setHinting(false)}>
       <div className="effort-card__pill" aria-hidden="true">
         <div className="effort-card__fill" />
         {choices.map((option, index) => <span key={option.id} className="effort-card__dot" data-under={index <= selected} style={{ '--effort-stop': count > 1 ? index / (count - 1) : 0 } as CSSProperties} />)}
       </div>
-      <span className="effort-card__thumb" aria-hidden="true" />
+      <span className="effort-card__thumb" aria-hidden="true">{shown?.id === ULTRACODE ? <Workflow size={14} /> : null}</span>
+      {choices.some(option => option.id === ULTRACODE) ? <span className="effort-card__hint tt-paragraph" data-shown={hinting} aria-hidden="true">{ultracodeHint()}</span> : null}
       <input ref={range} type="range" aria-label={t`Thread reasoning effort`} aria-valuetext={valueText} aria-valuenow={selected}
         aria-describedby={`${id}-description`} aria-disabled={disabled || count === 0} min={0} max={Math.max(0, count - 1)} step={.001} value={position}
         onPointerDown={event => { if (disabled) { event.preventDefault(); return } drag.current = true; setHeld(set); setDragging(true); event.currentTarget.setPointerCapture?.(event.pointerId) }}
@@ -245,7 +270,7 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
  * takes the press back (ADR-0019). The chip wears the colourway at the model's highest level, and the composer
  * around it reads this wrapper's trace mark for its travelling light and its arrival mark for its tide.
  */
-export function EffortPicker({ value, options, disabled, onChange, onUltrathink, hasUltrathink, defaultValue, modelName, label = OPTION_CHIP_NAMES.effort, pending = false, describedBy }: {
+export function EffortPicker({ value, options, disabled, onChange, onUltrathink, hasUltrathink, defaultValue, modelName, ultracodeEffort, label = OPTION_CHIP_NAMES.effort, pending = false, describedBy }: {
   readonly value: string; readonly options: readonly EffortOption[]; readonly disabled: boolean; readonly onChange: (id: string) => void
   /** An effort the provider gave no result for: marked as the permission chip's is, and described by the line that says so. */
   readonly pending?: boolean | undefined; readonly describedBy?: string | undefined
@@ -255,6 +280,8 @@ export function EffortPicker({ value, options, disabled, onChange, onUltrathink,
   /** The model's own default level, offered as the card's Default button when the model reports one. */
   readonly defaultValue?: string | undefined
   readonly modelName?: string | undefined
+  /** The level Ultracode runs at for this thread (ADR-0148), named on the card's line; unnamed when unknown. */
+  readonly ultracodeEffort?: string | undefined
 }): ReactNode {
   const { t } = useLingui()
   const [open, setOpen] = useState(false)
@@ -287,13 +314,14 @@ export function EffortPicker({ value, options, disabled, onChange, onUltrathink,
   return <div ref={wrapper} className="thread-chip-menu effort-picker-anchor" data-effort-arriving={arriving} data-effort-trace={trace}
     onBlur={event => { if (open && !event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false) }}
     onKeyDown={event => { if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() } }}>
-    <button ref={trigger} type="button" role="combobox" aria-label={label} title={label} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
+    <button ref={trigger} type="button" role="combobox" aria-label={label} title={level === ULTRACODE ? `${label}. ${ultracodeHint()}` : label} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined}
       className="thread-chip tt-focusable" data-effort-top={top} aria-describedby={pending ? describedBy : undefined} data-pending={pending ? 'true' : undefined}
       disabled={disabled} onClick={() => setOpen(current => !current)}>
       {pending ? <i className="thread-chip__pending" aria-hidden="true" /> : null}
+      {level === ULTRACODE ? <Workflow className="thread-chip__ultracode" size={13} aria-hidden="true" /> : null}
       <span>{level ? effortLabel(level) : t({ message: 'Effort', comment: 'The reasoning effort chip, when no level is set.' })}</span><ChevronDown size={12} aria-hidden="true" />
     </button>
     {open && <EffortSurface value={level} options={options} disabled={disabled} onChange={onChange} onUltrathink={onUltrathink} hasUltrathink={hasUltrathink}
-      defaultValue={defaultValue} modelName={modelName} id={id} trigger={trigger} arriving={arriving} still={still} />}
+      defaultValue={defaultValue} modelName={modelName} ultracodeEffort={ultracodeEffort} id={id} trigger={trigger} arriving={arriving} still={still} />}
   </div>
 }
