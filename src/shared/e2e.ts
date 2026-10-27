@@ -56,6 +56,8 @@ export const e2eScenarioSchema = z.enum([
   'design-threads-empty',
   'phase3-workspace',
   'queued-steering',
+  /** The test Claude model offers Ultracode past Max, as Claude Code's catalog does on a model with Extra high (ADR-0148). */
+  'ultracode',
 ])
 
 export const e2eSnapshotSchema = z.object({

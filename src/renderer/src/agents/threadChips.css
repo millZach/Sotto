@@ -13,6 +13,8 @@
 .thread-chip.watch-on-send[aria-pressed='true']:hover:not(:disabled) { border-color: var(--tt-accent-border); color: var(--tt-accent-text); }
 /* At the model's highest level the effort chip's word wears the colourway; the composer reads the same mark for its outline (ADR-0019). */
 .thread-chip[data-effort-top='true'] > span { color: var(--tt-effort-text-fill); background: var(--tt-effort-text-image); -webkit-background-clip: text; background-clip: text; font-weight: 500; }
+/* Ultracode's workflow mark (ADR-0148) in the colourway's ink, which stays opaque where the word's fill is a clipped gradient. */
+.thread-chip[data-effort-top='true'] > .thread-chip__ultracode { color: var(--tt-effort-text); }
 
 /* In a composer the chips are text buttons (ADR-0113, Zach's pick A of docs/prototypes/quiet-composer-prototype.html): no
    edge and no fill at rest, the value and a small chevron, still 28px tall so the hit area stays, with the hover wash while
