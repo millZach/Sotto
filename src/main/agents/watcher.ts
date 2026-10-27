@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path'
 import { capabilitiesForThread, isThreadProviderConnected, lastUserMessageIdOf, PROVIDER_LABELS,
   type AgentCommand, type AgentDelivery, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentThread, type HandoverCounts } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
-import { ULTRACODE } from '../../shared/ultracode'
+import { withoutUltracode } from '../../shared/ultracode'
 import { capRuntimeMode, roleStartNote, startFromRole, type HeldPermission, type RoleField, type WorkerKind, type WorkerRoleChoices } from '../../shared/workerRoles'
 import { nearestReasoningEffort, RUNTIME_MODE_ORDER, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { isThreadClosed, isThreadTurnRunning, isWorkspaceThreadSettled } from '../../shared/threadActivity'
@@ -62,7 +62,7 @@ const WATCHER_READ_BOUND = WATCHER_READ_BYTES_MAX - 64
 /** Whether two targets name the same thread: what equal keys say, without building either key. */
 const sameTarget = (left: WatcherThreadTarget, right: WatcherThreadTarget) => left.hostId === right.hostId && left.threadId === right.threadId
 /** The levels Watcher may start a worker on: Ultracode is the user's own choice in a thread, never Watcher's (ADR-0148). */
-const workerEfforts = (model: AgentModel): string[] => (model.reasoningEfforts ?? []).filter(level => level !== ULTRACODE)
+const workerEfforts = (model: AgentModel): string[] => withoutUltracode(model.reasoningEfforts ?? [])
 /** A read of every machine, as list_machines lists them before it adds where new workers start (#1032). */
 type MachinesListed = { readonly status: 'ok'; readonly machines: readonly WatcherMachine[]; readonly observedAt: string }
 type Participant = WatcherRecord['requests'][number]['participants'][number]

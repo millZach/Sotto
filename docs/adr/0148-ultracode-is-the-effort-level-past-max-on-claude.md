@@ -24,7 +24,7 @@ Zach asked to pick Ultracode in the effort control "similar to using any reasoni
 
 **5. Sotto offers it where Claude Code says the model can run it, and says what it cannot see.** The success Claude Code answers does not say whether the workflow will run, and no frame Sotto reads says so either. Where an organisation or Claude Code's `/config` has dynamic workflows off, the thread runs the level without workflows; the guide says so rather than Sotto guessing.
 
-**6. A person picks it.** It is offered in a thread's composer, New thread and Continue in a new thread. Watcher's own composer, worker roles and the agent setting do not offer it, and Watcher can neither list it among a worker model's levels nor start a worker on it: it spends many times the tokens, so it is the user's choice for a thread. A new-thread default of Ultracode lands on another provider's highest level, since it ranks above Max.
+**6. A person picks it.** It is offered in a thread's composer, New thread and Continue in a new thread. Watcher's own composer, worker roles and the agent setting do not offer it, and neither Watcher nor a thread's delegate tool lists it among a worker model's levels or starts a worker on it: it spends many times the tokens, so it is the user's choice for a thread. A new-thread default of Ultracode lands on another provider's highest level, since it ranks above Max, and no other default lands on it by its place, so a default at the top of another provider's list, such as Muse's Ultra, starts a Claude thread on Max.
 
 ## Consequences
 

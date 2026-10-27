@@ -5,6 +5,7 @@ import { agentConfigurationSchema, defaultAgentConfiguration, type AgentModel } 
 import { effortRank } from '../../../src/shared/reasoningEfforts'
 import { DEFAULT_ULTRACODE_EFFORT, ultracodeRunsAt, withUltracode } from '../../../src/shared/ultracode'
 import { fitEffort } from '../../../src/shared/workerRoles'
+import { nearestReasoningEffort } from '../../../src/shared/newThreadDefaults'
 
 describe('withUltracode', () => {
   it('puts Ultracode after Max on a model with Extra high, the models Claude Code runs it on', () => {
@@ -58,5 +59,22 @@ describe('Ultracode among other levels', () => {
     expect(effortRank('ultracode')).toBeGreaterThan(effortRank('max')!)
     const codex: AgentModel = { id: 'gpt', name: 'GPT-6.1 Sol', provider: 'Codex', providerId: 'codex', ready: true, reasoningEfforts: ['low', 'medium', 'high', 'xhigh'] }
     expect(fitEffort('ultracode', codex)).toBe('xhigh')
+  })
+})
+
+describe('a new-thread default fitted by its place', () => {
+  const muse = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']
+  const claude = ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode']
+  const codex = ['low', 'medium', 'high', 'xhigh']
+
+  it('never lands on Ultracode: the top of another provider\'s list starts a Claude thread on Max', () => {
+    expect(nearestReasoningEffort('ultra', muse, claude)).toBe('max')
+    // Measured against a Claude list, Max is still the top, not one short of it.
+    expect(nearestReasoningEffort('max', claude, codex)).toBe('xhigh')
+  })
+
+  it('keeps a default of Ultracode itself, on Claude and at another provider\'s highest level', () => {
+    expect(nearestReasoningEffort('ultracode', claude, claude)).toBe('ultracode')
+    expect(nearestReasoningEffort('ultracode', claude, codex)).toBe('xhigh')
   })
 })

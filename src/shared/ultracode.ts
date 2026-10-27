@@ -18,6 +18,11 @@ export function withUltracode(levels: readonly string[]): string[] {
   return levels.includes('xhigh') && !levels.includes(ULTRACODE) ? [...levels, ULTRACODE] : [...levels]
 }
 
+/** The levels with Ultracode left out: what an agent may start a thread on, and what a default may land on by position. */
+export function withoutUltracode(levels: readonly string[]): string[] {
+  return levels.filter(level => level !== ULTRACODE)
+}
+
 /**
  * The level Ultracode runs at on a model that offers these levels: the chosen one, else the nearest below it that the
  * model offers, else the lowest the model offers. Undefined only for a model with no levels at all.
