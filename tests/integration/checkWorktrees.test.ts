@@ -167,3 +167,22 @@ it('holds the check worktree’s checkout from before it reads the folder, so a 
     expect(f.native(first.delegation.thread).status).toBe('idle')
   } finally { reads.mockRestore(); asks.mockRestore() }
 }, 60_000)
+
+it('leaves an ignored file an earlier check left when the next check’s commit tracks that path, and gives that check a worktree of its own (#1312)', async () => {
+  const f = await fixture(installer(false).install, false)
+  await commitFile(f.folder, '.gitignore', 'node_modules/\nreports/\n', 'Ignore reports')
+  const first = await f.check()
+  await f.running(first.delegation.thread)
+  const path = f.worktree(first.delegation.thread)!.path!
+  await mkdir(join(path, 'reports'))
+  await writeFile(join(path, 'reports', 'result.json'), '{ "left": "by the first check" }\n')
+  await f.endTurn(first.delegation.thread, 'Synthetic verdict: passed')
+  // The project starts tracking that path, so the next check's commit would overwrite the ignored file.
+  await commitFile(f.folder, '.gitignore', 'node_modules/\n', 'Track reports')
+  await mkdir(join(f.folder, 'reports'))
+  await commitFile(f.folder, 'reports/result.json', '{ "tracked": true }\n')
+  const second = await f.check()
+  await f.running(second.delegation.thread)
+  expect(f.worktree(second.delegation.thread)!.path).not.toBe(path)
+  expect(lf(await readFile(join(path, 'reports', 'result.json'), 'utf8'))).toBe('{ "left": "by the first check" }\n')
+}, 60_000)

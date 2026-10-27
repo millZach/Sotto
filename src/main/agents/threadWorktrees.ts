@@ -800,7 +800,8 @@ export class ThreadWorktrees {
             const head = (await this.git(path, ['rev-parse', '--verify', 'HEAD^{commit}'])).trim()
             if (head !== baseCommit && head !== await this.checkMovedTo(path)) return this.leave(release)
           }
-          const moved = await this.git(path, ['checkout', '--detach', '--quiet', baseCommit]).then(() => true, () => false)
+          // An ignored file the commit tracks, such as a report an earlier check left, stays: Git refuses rather than overwrite it.
+          const moved = await this.git(path, ['checkout', '--no-overwrite-ignore', '--detach', '--quiet', baseCommit]).then(() => true, () => false)
           if (!moved) return this.leave(release)
         }
         await this.recordCheckMovedTo(path, baseCommit)
