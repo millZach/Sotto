@@ -179,6 +179,36 @@ describe('the walkthrough on an interactive page (#793)', () => {
     expect(stepMessages(guest.send)).toEqual([{ step: 2, total: 2, highlight: [] }])
   })
 
+  it('steps the expanded page from the card\'s bar and with Left and Right, on the card\'s step, and leaves the card where it closed', async () => {
+    HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) { this.setAttribute('open', '') }
+    render(<VisualCard visual={stepped('w4')} threadId="thread-1" />)
+    const card = screen.getByRole('region', { name: 'Visual: Walk w4' })
+    act(() => { within(card).getByRole('button', { name: 'Expand Walk w4' }).click() })
+    const viewer = await screen.findByRole('dialog', { name: 'Interactive page: Walk w4' })
+    // The expanded page may start again while its slot settles, so the page made ready is whichever is there now.
+    const guest = { send: vi.fn(async () => undefined) }
+    await vi.waitFor(() => {
+      const element = viewer.querySelector('webview') as (HTMLElement & { send?: unknown }) | null
+      if (!element) throw new Error('no guest')
+      element.send = guest.send
+      act(() => { element.dispatchEvent(new Event('dom-ready')) })
+      expect(stepMessages(guest.send)).toEqual([{ step: 1, total: 2, highlight: ['queue', 'A->B'] }])
+    })
+    const bar = within(viewer).getByRole('group', { name: 'Walkthrough' })
+    expect(bar).toHaveTextContent('Step 1 of 2')
+    act(() => { within(bar).getByRole('button', { name: 'Next' }).click() })
+    await vi.waitFor(() => expect(stepMessages(guest.send).at(-1)).toEqual({ step: 2, total: 2, highlight: [] }))
+    // Left on Close, outside the page, steps back.
+    const close = within(viewer).getByRole('button', { name: 'Close page' })
+    act(() => { close.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })) })
+    await vi.waitFor(() => expect(stepMessages(guest.send).at(-1)).toEqual({ step: 1, total: 2, highlight: ['queue', 'A->B'] }))
+    act(() => { close.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })) })
+    expect(bar).toHaveTextContent('Step 2 of 2')
+    act(() => { close.click() })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(within(card).getByText('Step 2 of 2')).toBeInTheDocument()
+  })
+
   it('keeps the place per visual when the card is drawn again', async () => {
     const first = render(<VisualCard visual={stepped('w3')} threadId="thread-1" />)
     act(() => { within(screen.getByRole('region', { name: 'Visual: Walk w3' })).getByRole('button', { name: 'Next' }).click() })
