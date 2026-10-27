@@ -67,19 +67,19 @@ async function hostViews(app: ElectronApplication): Promise<Electron.Rectangle[]
 // ---------------------------------------------------------------------------------------------------------------------
 // 1 and 2: the gallery
 
-const nocturne = BUILT_IN_THEMES.find(theme => theme.id === 'nocturne')!
-const tropic = BUILT_IN_THEMES.find(theme => theme.id === 'tropic')!
+const graphite = BUILT_IN_THEMES.find(theme => theme.id === 'graphite')!
+const fern = BUILT_IN_THEMES.find(theme => theme.id === 'fern')!
 const dark = (id: string, label: string, from: ThemeDefinition, extra: Partial<ThemeDefinition> = {}): ThemeDefinition => ({ id, label, appearance: 'dark', colors: getThemeColorsForMode(from, 'dark')!, ...extra })
 const LONGEST = 'Solarized Evening Harbor for Late Review Sessions'.slice(0, 48)
 const CUSTOM: ThemeDefinition[] = [
-  { id: 'harbor-review', label: 'Harbor Review', appearance: 'light', colors: getThemeColorsForMode(nocturne, 'light')!, variants: { dark: getThemeColorsForMode(tropic, 'dark')! } },
-  dark('morning-harbor', 'Morning Harbor', nocturne),
-  dark('catppuccin-macchiato', 'Catppuccin Macchiato', tropic),
-  dark('longest-name', LONGEST, nocturne),
-  dark('community-frappe', 'Frappé', tropic, { collection: { id: 'community.catppuccin-vsc', label: 'Catppuccin Community' } }),
-  dark('community-mocha', 'Mocha', nocturne, { collection: { id: 'community.catppuccin-vsc', label: 'Catppuccin Community' } }),
+  { id: 'harbor-review', label: 'Harbor Review', appearance: 'light', colors: getThemeColorsForMode(graphite, 'light')!, variants: { dark: getThemeColorsForMode(fern, 'dark')! } },
+  dark('morning-harbor', 'Morning Harbor', graphite),
+  dark('catppuccin-macchiato', 'Catppuccin Macchiato', fern),
+  dark('longest-name', LONGEST, graphite),
+  dark('community-frappe', 'Frappé', fern, { collection: { id: 'community.catppuccin-vsc', label: 'Catppuccin Community' } }),
+  dark('community-mocha', 'Mocha', graphite, { collection: { id: 'community.catppuccin-vsc', label: 'Catppuccin Community' } }),
 ]
-const BUILT_IN_NAMES = ['Sotto', 'Hush', 'Linen', 'Nocturne', 'Tropic', 'Citrine']
+const BUILT_IN_NAMES = ['Sotto', 'Hush', 'Citrine', 'Graphite', 'Clay', 'Fern']
 
 /** Every option in one half's column, measured where it is drawn. */
 const columnLayout = (column: Locator) => column.evaluate(element => {
@@ -182,10 +182,10 @@ test('custom names read in full in their own rows, and each half lists the theme
       await halves.scrollIntoViewIfNeeded()
       await page.mouse.move(1, 1)
       await shot(page, 'columns-harbor-review-both-halves-1600-dark', halves)
-      for (const half of ['light', 'dark'] as const) await column(half).getByRole('radio', { name: 'Nocturne', exact: true }).click()
-      for (const half of ['light', 'dark'] as const) await expect(column(half).getByRole('radio', { name: 'Nocturne', exact: true })).toHaveAttribute('aria-checked', 'true')
+      for (const half of ['light', 'dark'] as const) await column(half).getByRole('radio', { name: 'Graphite', exact: true }).click()
+      for (const half of ['light', 'dark'] as const) await expect(column(half).getByRole('radio', { name: 'Graphite', exact: true })).toHaveAttribute('aria-checked', 'true')
       await page.mouse.move(1, 1)
-      await shot(page, 'columns-nocturne-both-halves-1600-dark', halves)
+      await shot(page, 'columns-graphite-both-halves-1600-dark', halves)
 
       // Keyboard: from a long name's first action along the rest of its row.
       const long = row('catppuccin-macchiato')

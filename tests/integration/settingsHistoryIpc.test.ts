@@ -111,7 +111,7 @@ describe('IPC validation and lifecycle', () => {
     ['darwin', 'lightTheme'], ['darwin', 'darkTheme'],
   ] as const)('%s rejects a reserved %s just like an unknown ID', async (platform, half) => {
     await onPlatform(platform, async () => {
-      const snapshot = { ...DEFAULT_SETTINGS, lightTheme: 'nocturne', darkTheme: 'nocturne' }
+      const snapshot = { ...DEFAULT_SETTINGS, lightTheme: 'graphite', darkTheme: 'graphite' }
       const { ipc, repository, changed, coordinator, dispose } = settingsMutationHarness(snapshot)
       try {
         for (const id of [OMARCHY_THEME_ID, '__unknown']) {

@@ -7,6 +7,7 @@ import {
   BUILT_IN_THEMES,
   DEFAULT_THEME_ID,
   MAX_CUSTOM_THEMES,
+  RETIRED_BUILT_IN_THEMES,
   T3_CODE_THEME,
   THEME_COLOR_ROLES,
   canonicalizeTheme,
@@ -68,7 +69,7 @@ describe('theme colours', () => {
 
 describe('built-in themes', () => {
   it('ships Sotto and its five companions in picker order, each with every role in both halves', () => {
-    expect(BUILT_IN_THEMES.map(theme => theme.id)).toEqual(['t3-code', 'hush', 'linen', 'nocturne', 'tropic', 'citrine'])
+    expect(BUILT_IN_THEMES.map(theme => theme.id)).toEqual(['t3-code', 'hush', 'citrine', 'graphite', 'clay', 'fern'])
     expect(DEFAULT_THEME_ID).toBe('t3-code')
     for (const theme of BUILT_IN_THEMES) {
       for (const mode of ['light', 'dark'] as const) {
@@ -81,7 +82,7 @@ describe('built-in themes', () => {
 
   it('gives the built-ins Sotto names, once each, and carries no T3 name', () => {
     expect(BUILT_IN_THEMES.map(theme => [theme.id, theme.label])).toEqual([
-      ['t3-code', 'Sotto'], ['hush', 'Hush'], ['linen', 'Linen'], ['nocturne', 'Nocturne'], ['tropic', 'Tropic'], ['citrine', 'Citrine'],
+      ['t3-code', 'Sotto'], ['hush', 'Hush'], ['citrine', 'Citrine'], ['graphite', 'Graphite'], ['clay', 'Clay'], ['fern', 'Fern'],
     ])
     const labels = BUILT_IN_THEMES.map(theme => theme.label.toLowerCase())
     expect(new Set(labels).size).toBe(labels.length)
@@ -142,6 +143,29 @@ describe('built-in themes', () => {
       expect(uniqueThemeId(alias, new Set()), alias).toBe(`${alias}-2`)
     }
   })
+
+  it('moves a half saved on Linen, Nocturne or Tropic to Clay, Graphite or Fern, and frees the old ids', () => {
+    expect([...RETIRED_BUILT_IN_THEMES]).toEqual([['linen', 'clay'], ['nocturne', 'graphite'], ['tropic', 'fern']])
+    for (const [retired, replacement] of RETIRED_BUILT_IN_THEMES) {
+      expect(findTheme(retired, []), retired).toBeNull()
+      for (const mode of ['light', 'dark'] as const) {
+        expect(resolveThemeHalfId(retired, mode, []), `${retired} ${mode}`).toBe(replacement)
+        const selection = { lightTheme: retired, darkTheme: retired, customThemes: [] }
+        expect(resolveThemeFor(selection, mode).theme.id, `${retired} ${mode}`).toBe(replacement)
+      }
+      expect(uniqueThemeId(retired, new Set()), retired).toBe(retired)
+    }
+  })
+
+  it('leaves a theme of the user’s own that took a retired id alone', () => {
+    const own = canonicalizeTheme({ ...parseThemeFile({ version: 1, name: 'Linen', appearance: 'light', colors: { canvas: '#faf6ee' } }), id: 'linen' })
+    expect(customThemeSchema.safeParse(own).success).toBe(true)
+    expect(parseCustomThemes([own]).map(theme => theme.id)).toEqual(['linen'])
+    expect(resolveThemeHalfId('linen', 'light', [own])).toBe('linen')
+    expect(resolveThemeFor({ lightTheme: 'linen', darkTheme: 'linen', customThemes: [own] }, 'light').theme).toBe(own)
+    // It paints only light, so its dark half lands on the default rather than on Clay.
+    expect(resolveThemeHalfId('linen', 'dark', [own])).toBe(DEFAULT_THEME_ID)
+  })
 })
 
 describe('theme files', () => {
@@ -171,7 +195,7 @@ describe('theme files', () => {
       [{ ...valid, colors: { canvas: 'url(x)' } }, /literal CSS color/u],
       [{ ...valid, colors: { 'background-image': '#fff' } }, /not a supported theme color role/u],
       [{ ...valid, id: 'Bad Id' }, /lowercase/u],
-      [{ ...valid, id: 'nocturne' }, /reserved/u],
+      [{ ...valid, id: 'graphite' }, /reserved/u],
       [{ ...valid, id: 't3-ocean' }, /reserved/u],
       [{ ...valid, name: 'Light' }, /reserved/u],
       [{ ...valid, variants: { dark: { canvas: '#000' } } }, /repeat the base appearance/u],
@@ -183,7 +207,7 @@ describe('theme files', () => {
 
   it('reads a saved library leniently but stores it strictly, without duplicates or overflow', () => {
     const theme = canonicalizeTheme(parseThemeFile({ version: 1, name: 'Harbor', appearance: 'dark', colors: { canvas: '#102a33' } }))
-    const parsed = parseCustomThemes([theme, { ...theme }, { id: 'nocturne', label: 'Nocturne', appearance: 'dark', colors: {} }, 'junk', { ...theme, id: 'other', colors: { ...theme.colors, canvas: 'url(x)', extra: '#fff' } }])
+    const parsed = parseCustomThemes([theme, { ...theme }, { id: 'hush', label: 'Hush', appearance: 'dark', colors: {} }, 'junk', { ...theme, id: 'other', colors: { ...theme.colors, canvas: 'url(x)', extra: '#fff' } }])
     expect(parsed.map(entry => entry.id)).toEqual([theme.id, 'other'])
     expect(parsed[1]!.colors.canvas).toBe(getDefaultThemeColors('dark').canvas)
     expect(customThemesSchema.safeParse([theme, theme]).success).toBe(false)
@@ -196,7 +220,7 @@ describe('theme files', () => {
   it('numbers ids that are taken or reserved', () => {
     expect(uniqueThemeId('harbor', new Set())).toBe('harbor')
     expect(uniqueThemeId('harbor', new Set(['harbor', 'harbor-2']))).toBe('harbor-3')
-    expect(uniqueThemeId('nocturne', new Set())).toBe('nocturne-2')
+    expect(uniqueThemeId('graphite', new Set())).toBe('graphite-2')
   })
 })
 

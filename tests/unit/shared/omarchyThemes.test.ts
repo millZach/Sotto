@@ -166,17 +166,19 @@ describe('Omarchy M3 and readability check', () => {
     expect(BUILT_IN_THEMES).toHaveLength(6)
     // Pin all twelve shipped halves and their token projection; the Linux repair
     // must never change Windows/macOS palettes. They last changed on purpose for
-    // #936, which needed new design baselines on Windows. The token file last changed when glass turned solid and
+    // #936, which needed new design baselines on Windows, and then when Graphite, Clay and Fern replaced Linen,
+    // Nocturne and Tropic (ADR-0024, October 26, 2026 amendment). The token file last changed when glass turned solid and
     // the frost tokens went (ADR-0084), then when OpenCode's mark got its own token (ADR-0087), and then when Usage's
     // split chart got its series colours (ADR-0083), when the Owl night sky's switch colours went with Terminal mode's
     // switch (ADR-0111), and then when containers became cards, the segmented controls got their raised segment, the
     // pill radius went and three chart series moved a step (ADR-0110), and then when Settings → Providers put each
     // mark on a badge, which gave Muse and OpenCode's badge a colour of their own, and when Cursor's mark and badge got
     // theirs (ADR-0128), and when the light crossing a running turn's working words got a colour of its own (ADR-0134,
-    // October 25 amendment), and when DeepSeek's mark got its badge colour; none of them changes a palette.
-    expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('18defa9e80c06093d4ffb6fbc1f5f3984bc3bd437e06b9aa9d5028548c5c4e08')
+    // October 25 amendment), and when DeepSeek's mark got its badge colour, and when the Appearance preview could paint a half of its own
+    // (`[data-theme-scope]`); none of them changes a palette.
+    expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('5e43d8dae0a93190f59afd80f75f3400076c21aa2cb023b1aec0f8348ca8aac1')
     const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
-    expect(createHash('sha256').update(tokenText).digest('hex')).toBe('3a5e64eb2308b1cbb2cc092591f09a027c3e726e0134fff30370d38c560e76ba')
+    expect(createHash('sha256').update(tokenText).digest('hex')).toBe('19f94c65d5d8575ea9f19a69df0ea5e448512b16eeb6e261ab411ffe765d02d1')
     // Existing Windows and macOS imports named Omarchy remain user themes.
     expect(parseCustomThemes([{ ...parseOmarchyTheme(fixtures.themes.hackerman.rendered), id: 'omarchy' }])[0]?.id).toBe('omarchy')
   })

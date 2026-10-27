@@ -36,7 +36,7 @@ function theme(name: string, appearance: 'light' | 'dark', extra: Record<string,
   return canonicalizeTheme(parseThemeFile({ version: 1, name, appearance, colors: createVividThemeColors(appearance, appearance === 'dark' ? '#101820' : '#fbf8f2', '#e0a040'), ...extra }))
 }
 
-const empty: LibraryState = { lightTheme: 'nocturne', darkTheme: 'nocturne', customThemes: [] }
+const empty: LibraryState = { lightTheme: 'graphite', darkTheme: 'graphite', customThemes: [] }
 const both = { light: createVividThemeColors('light', '#fbf8f2', '#3060c0'), dark: createVividThemeColors('dark', '#101820', '#3060c0') }
 
 describe('theme library changes', () => {
@@ -51,7 +51,7 @@ describe('theme library changes', () => {
     expect(installThemesPatch(empty, [night]).customThemes!.map(entry => entry.id)).toEqual(['night'])
     const withNight = { ...empty, customThemes: [night] }
     expect(() => installThemesPatch(withNight, [night])).toThrow(ThemeLibraryError)
-    expect(() => installThemesPatch(empty, [{ ...night, id: 'nocturne' }])).toThrow(/reserved/u)
+    expect(() => installThemesPatch(empty, [{ ...night, id: 'graphite' }])).toThrow(/reserved/u)
     const full = { ...empty, customThemes: Array.from({ length: MAX_CUSTOM_THEMES }, (_, index) => ({ ...night, id: `t-${index}` })) }
     expect(() => installThemesPatch(full, [night])).toThrow(/up to 64/u)
   })
@@ -66,7 +66,7 @@ describe('theme library changes', () => {
 
     expect(removeThemesPatch(state, ['night'])).toEqual({ customThemes: [], darkTheme: 't3-code' })
     // Removing a theme no half uses leaves both halves alone.
-    expect(removeThemesPatch({ ...state, darkTheme: 'linen', customThemes: [night, copy] }, ['night-1'])).toEqual({ customThemes: [night] })
+    expect(removeThemesPatch({ ...state, darkTheme: 'clay', customThemes: [night, copy] }, ['night-1'])).toEqual({ customThemes: [night] })
   })
 
   it('replaces an updated collection in place and releases halves on variants it no longer ships', () => {
@@ -104,7 +104,7 @@ describe('theme editor saves', () => {
 
   it('keeps an edited theme id, and reports a theme removed while it was being edited', () => {
     const aurora = theme('Aurora', 'dark')
-    const state: LibraryState = { lightTheme: 'nocturne', darkTheme: 'aurora', customThemes: [aurora] }
+    const state: LibraryState = { lightTheme: 'graphite', darkTheme: 'aurora', customThemes: [aurora] }
     const saved = editorSavePatch(state, { name: 'Aurora Deep', editingTheme: aurora, activeAppearance: 'dark', colorsByAppearance: both, advanced: true })
     expect(saved.theme).toMatchObject({ id: 'aurora', label: 'Aurora Deep' })
     expect(saved.patch.customThemes).toHaveLength(1)
@@ -112,7 +112,7 @@ describe('theme editor saves', () => {
     expect(() => editorSavePatch(empty, { name: '  ', editingTheme: null, activeAppearance: 'dark', colorsByAppearance: both, advanced: true })).toThrow(/Name your theme/u)
     expect(() => editorSavePatch(empty, { name: 'Default', editingTheme: null, activeAppearance: 'dark', colorsByAppearance: both, advanced: true })).toThrow(/reserved/u)
     // A built-in's own name is taken too, whatever its id; a custom theme that already carries one keeps it.
-    expect(() => editorSavePatch(empty, { name: 'linen', editingTheme: null, activeAppearance: 'dark', colorsByAppearance: both, advanced: true })).toThrow('“Linen” is a built-in theme. Pick another name.')
+    expect(() => editorSavePatch(empty, { name: 'clay', editingTheme: null, activeAppearance: 'dark', colorsByAppearance: both, advanced: true })).toThrow('“Clay” is a built-in theme. Pick another name.')
     expect(() => editorSavePatch({ ...empty, customThemes: [aurora] }, { name: 'Citrine', editingTheme: aurora, activeAppearance: 'dark', colorsByAppearance: both, advanced: true })).toThrow(/built-in theme/u)
     const sotto = theme('Sotto', 'dark')
     expect(editorSavePatch({ ...empty, customThemes: [sotto] }, { name: 'Sotto', editingTheme: sotto, activeAppearance: 'dark', colorsByAppearance: both, advanced: true }).theme).toMatchObject({ id: 'sotto', label: 'Sotto' })
@@ -141,10 +141,10 @@ describe('theme library writer', () => {
   })
 
   it('reports a failed save and leaves the saved library in force', async () => {
-    const settings: AppSettings = { ...DEFAULT_SETTINGS, darkTheme: 'linen' }
+    const settings: AppSettings = { ...DEFAULT_SETTINGS, darkTheme: 'clay' }
     const writer = new ThemeLibraryWriter(async () => { throw new Error('disk full') }, () => settings)
     await expect(writer.run(() => ({ patch: { darkTheme: BUILT_IN_THEMES.at(-1)!.id } }))).resolves.toMatchObject({ saved: false })
-    expect(writer.current().darkTheme).toBe('linen')
+    expect(writer.current().darkTheme).toBe('clay')
   })
 })
 
@@ -176,7 +176,7 @@ describe('theme import text', () => {
 describe('theme editor panel', () => {
   it.each([{ isComposing: true }, { keyCode: 229 }])('leaves theme saving for Enter after composition (%j)', async composition => {
     const { save } = host(async () => true)
-    act(() => openThemeEditor({ editingThemeId: null, seedThemeId: 'nocturne', seedName: null, initialAppearance: 'dark' }))
+    act(() => openThemeEditor({ editingThemeId: null, seedThemeId: 'graphite', seedName: null, initialAppearance: 'dark' }))
     const field = await screen.findByLabelText('Theme name')
     fireEvent.change(field, { target: { value: 'Aurora' } })
     fireEvent.keyDown(field, { key: 'Enter', ...composition })
@@ -200,7 +200,7 @@ describe('theme editor panel', () => {
   it('paints a draft while open, and Cancel discards it without saving', async () => {
     const user = userEvent.setup()
     const { save } = host(async () => true)
-    act(() => openThemeEditor({ editingThemeId: null, seedThemeId: 'nocturne', seedName: null, initialAppearance: 'dark' }))
+    act(() => openThemeEditor({ editingThemeId: null, seedThemeId: 'graphite', seedName: null, initialAppearance: 'dark' }))
     expect(await screen.findByRole('dialog', { name: 'Create theme' })).toHaveAttribute('data-covers-native-view')
     await user.type(screen.getByLabelText('Theme name'), 'Aurora')
     fireEvent.change(screen.getByLabelText('Background hex value'), { target: { value: '#203040' } })
@@ -211,13 +211,13 @@ describe('theme editor panel', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(appearancePreview.draft).toBeNull()
     expect(save).not.toHaveBeenCalled()
-    expect(drafted).not.toBe(BUILT_IN_THEMES.find(entry => entry.id === 'nocturne')!.colors.canvas)
+    expect(drafted).not.toBe(BUILT_IN_THEMES.find(entry => entry.id === 'graphite')!.colors.canvas)
   })
 
   it('saves the draft as a new theme and closes', async () => {
     const user = userEvent.setup()
     const { save } = host(async () => true)
-    act(() => openThemeEditor({ editingThemeId: null, seedThemeId: 'nocturne', seedName: null, initialAppearance: 'dark' }))
+    act(() => openThemeEditor({ editingThemeId: null, seedThemeId: 'graphite', seedName: null, initialAppearance: 'dark' }))
     await user.type(await screen.findByLabelText('Theme name'), 'Aurora')
     await user.click(screen.getByRole('button', { name: 'Create theme' }))
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
@@ -230,7 +230,7 @@ describe('theme editor panel', () => {
   it('keeps the editor open with an alert when the save fails', async () => {
     const user = userEvent.setup()
     host(async () => false)
-    act(() => openThemeEditor({ editingThemeId: null, seedThemeId: 'nocturne', seedName: null, initialAppearance: 'dark' }))
+    act(() => openThemeEditor({ editingThemeId: null, seedThemeId: 'graphite', seedName: null, initialAppearance: 'dark' }))
     await user.type(await screen.findByLabelText('Theme name'), 'Aurora')
     await user.click(screen.getByRole('button', { name: 'Create theme' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('could not be saved')
@@ -304,7 +304,7 @@ describe('appearance settings', () => {
     expect(within(dark).getByRole('radio', { name: 'Hush' })).toHaveFocus()
     await waitFor(() => expect(save).toHaveBeenCalledWith({ darkTheme: 'hush' }, expect.anything()))
     await user.keyboard('{End}')
-    await waitFor(() => expect(save).toHaveBeenCalledWith({ darkTheme: 'citrine' }, expect.anything()))
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ darkTheme: 'fern' }, expect.anything()))
     await user.keyboard('{ArrowDown}')
     expect(within(dark).getByRole('radio', { name: 'Sotto' })).toHaveFocus()
   })

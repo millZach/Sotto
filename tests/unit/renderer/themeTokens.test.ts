@@ -201,13 +201,14 @@ describe('main-window theme tokens', () => {
     }
     expect(hue('t3-code')).toBeCloseTo(265, -1)
     expect(hue('citrine')).toBeCloseTo(265, -1)
-    // Tropic's night is green, Nocturne's blue.
-    expect(hue('tropic')).toBeCloseTo(158, -1)
-    expect(hue('nocturne')).toBeCloseTo(254, -1)
+    expect(hue('graphite')).toBeCloseTo(265, -1)
+    // Fern's night is green, Clay's the colour of fired earth.
+    expect(hue('fern')).toBeCloseTo(160, -1)
+    expect(hue('clay')).toBeCloseTo(40, -1)
   })
 
   it.each(MODES)('%s mode: the contrast slider strengthens and softens text and borders around 100', (mode) => {
-    const at = (value: number) => palette(mode, 'nocturne', { contrast: value })
+    const at = (value: number) => palette(mode, 'graphite', { contrast: value })
     const [soft, standard, strong] = [at(50), at(100), at(200)]
     const measure = (color: (name: string) => Rgba, ink: string) => contrast(color(ink), color('canvas'))
     for (const ink of ['text', 'text-muted', 'border']) {
@@ -220,7 +221,7 @@ describe('main-window theme tokens', () => {
 
   it('paints glass solid: the overlay surface, and the field under the composer (ADR-0084)', () => {
     for (const mode of MODES) {
-      const declarations = rootDeclarations(mode, 'nocturne', {}, tokenBlocks)
+      const declarations = rootDeclarations(mode, 'graphite', {}, tokenBlocks)
       expect(resolveColor('--tt-glass', declarations), `${mode} glass`).toEqual(resolveColor('--tt-surface-overlay', declarations))
       expect(resolveColor('--tt-glass-field', declarations), `${mode} glass field`).toEqual(resolveColor('--tt-field', declarations))
       for (const surface of ['--tt-glass', '--tt-glass-field']) {
@@ -229,8 +230,8 @@ describe('main-window theme tokens', () => {
         expect(contrast(resolveColor('--tt-text', declarations), painted), `${mode} text on ${surface}`).toBeGreaterThanOrEqual(4.5)
       }
     }
-    const dark = rootDeclarations('dark', 'nocturne', {}, tokenBlocks)
-    const light = rootDeclarations('light', 'nocturne', {}, tokenBlocks)
+    const dark = rootDeclarations('dark', 'graphite', {}, tokenBlocks)
+    const light = rootDeclarations('light', 'graphite', {}, tokenBlocks)
     expect(dark.get('--tt-glass-filter')).toBe('blur(var(--tt-glass-blur)) saturate(var(--tt-glass-saturation))')
     expect([dark.get('--tt-glass-blur'), dark.get('--tt-glass-saturation')]).toEqual(['16px', '1.08'])
     expect([light.get('--tt-glass-blur'), light.get('--tt-glass-saturation')]).toEqual(['12px', '1.14'])

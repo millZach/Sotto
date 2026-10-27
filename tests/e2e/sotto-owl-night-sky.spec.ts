@@ -14,14 +14,14 @@ import { holdOwlSky, releaseOwlSky } from './support/sottoOwl'
 import { resizeContentWindow } from './support/sottoWindow'
 
 /**
- * Sotto Owl's night sky behind the sidebar header, on the built app: in the Sotto, Tropic and Citrine themes, dark
+ * Sotto Owl's night sky behind the sidebar header, on the built app: in the Sotto, Fern and Citrine themes, dark
  * and light, at 1600x1000, 1280x800 and the 820x560 minimum; with reduced motion from the system and from Sotto's
  * own setting; in the macOS header layout; and absent on stable. Run after `npm run build`. Captures go to disposable
  * run evidence; `SOTTO_E2E_EVIDENCE=publish` writes artifacts/sotto-owl-night-sky.
  */
 const evidenceRoot = evidenceDirectory('artifacts/sotto-owl-night-sky')
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
-const THEMES = [['t3-code', 'sotto'], ['tropic', 'tropic'], ['citrine', 'citrine']] as const
+const THEMES = [['t3-code', 'sotto'], ['fern', 'fern'], ['citrine', 'citrine']] as const
 const APPEARANCES = ['dark', 'light'] as const
 const BLACK = { r: 0, g: 0, b: 0 }
 const recorded = new Map<string, unknown>()
@@ -255,7 +255,7 @@ test.describe('Sotto Owl night sky on the built app', () => {
   }
 
   // Zach's own screen runs at 150%, where his screenshots of the look were taken: the stars at the size he sees them.
-  for (const [theme, label, appearance] of [['t3-code', 'sotto', 'dark'], ['t3-code', 'sotto', 'light'], ['tropic', 'tropic', 'dark'], ['citrine', 'citrine', 'dark']] as const) {
+  for (const [theme, label, appearance] of [['t3-code', 'sotto', 'dark'], ['t3-code', 'sotto', 'light'], ['fern', 'fern', 'dark'], ['citrine', 'citrine', 'dark']] as const) {
     test(`owl build at 150%, ${label}, ${appearance}`, async () => {
       await onReleaseTrack('owl', () => withSotto({ ...launchOptions(theme, appearance), scalePercent: 150 }, async (launched) => {
         await onThreads(launched)
