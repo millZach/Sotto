@@ -444,9 +444,10 @@ actions test commit the user's untracked files there. Playwright runs the same c
 `tests/setup.ts` then drops the variables that point Git at another repository (`GIT_DIR`, `GIT_WORK_TREE`,
 `GIT_INDEX_FILE` and their kin) and refuses, by throwing, any Git command started through `node:child_process`,
 directly or in a shell line, that would commit, reset, check out or otherwise change a repository outside the
-temporary folder. A command it does not know as a read counts as a change. Links out of the temporary folder, a
-linked worktree's Git folder, new worktrees, separate Git folders and written configuration files are all checked.
-Git that a test's own child Node process starts is covered only by the first check. To move the temporary folder off
+temporary folder. A command it does not know as a read counts as a change. Links out of the temporary folder, a `.git`
+that links out, a linked worktree's Git folder, `-c core.worktree`, worktrees made, moved or removed, a push to a
+folder, separate Git folders, written configuration files and variables set on a shell line are all checked. Git that
+a test's own child Node process starts, and a push to a named remote, are covered only by the first check. To move the temporary folder off
 a full drive, point TEMP and TMP at a folder outside every checkout, such as `D:\sotto-test-tmp`, never one under
 `.worktrees/`.
 

@@ -81,8 +81,12 @@ export function assertTemporaryFolderOutsideRepositories(folder: string = tmpdir
 
 /** Git's own options that come before the command, with the ones that take the next argument as their value. */
 const GLOBAL_WITH_VALUE = new Set(['-c', '--config-env', '--namespace', '--super-prefix', '--list-cmds'])
-/** Commands that never change a repository. Anything else counts as a change unless a read form below says not. */
-const READS = new Set(['annotate', 'archive', 'blame', 'cat-file', 'check-attr', 'check-ignore', 'check-mailmap', 'check-ref-format', 'cherry', 'commit-tree', 'count-objects', 'describe', 'diff', 'diff-files', 'diff-index', 'diff-tree', 'for-each-ref', 'fsck', 'get-tar-commit-id', 'grep', 'help', 'interpret-trailers', 'log', 'ls-files', 'ls-remote', 'ls-tree', 'merge-base', 'merge-tree', 'mktree', 'name-rev', 'patch-id', 'range-diff', 'rev-list', 'rev-parse', 'shortlog', 'show', 'show-branch', 'show-ref', 'status', 'stripspace', 'var', 'verify-commit', 'verify-pack', 'verify-tag', 'version', 'whatchanged', 'write-tree'])
+/**
+ * Commands that never change a repository. Anything else counts as a change unless a read form below says not.
+ * `commit-tree`, `mktree`, `write-tree` and `merge-tree` write objects nothing points at yet, which change no branch,
+ * index or working file and which Git's own cleanup removes; Sotto's commit and snapshot code runs them as reads.
+ */
+const READS = new Set(['annotate', 'archive', 'blame', 'cat-file', 'check-attr', 'check-ignore', 'check-mailmap', 'check-ref-format', 'cherry', 'commit-tree', 'count-objects', 'describe', 'diff', 'diff-files', 'diff-index', 'diff-tree', 'for-each-ref', 'get-tar-commit-id', 'grep', 'help', 'interpret-trailers', 'log', 'ls-files', 'ls-remote', 'ls-tree', 'merge-base', 'merge-tree', 'mktree', 'name-rev', 'patch-id', 'range-diff', 'rev-list', 'rev-parse', 'shortlog', 'show', 'show-branch', 'show-ref', 'status', 'stripspace', 'var', 'verify-commit', 'verify-pack', 'verify-tag', 'version', 'whatchanged', 'write-tree'])
 /** The subcommands of a mixed command that only read; none at all is listed as '' where it reads. */
 const READ_SUBCOMMANDS: Readonly<Record<string, readonly string[]>> = {
   bundle: ['verify', 'list-heads'], lfs: ['ls-files', 'env', 'version', 'status', 'logs'], notes: ['', 'list', 'show', 'get-ref'],
@@ -112,9 +116,10 @@ export function gitCommandChanges(command: string, args: readonly string[]): boo
   if (reads) return !reads.includes(positionals(args)[0] ?? '')
   switch (command) {
     case 'hash-object': return has(args, '-w')
+    case 'fsck': return has(args, '--lost-found')
     case 'apply': return !has(args, '--check', '--stat', '--numstat', '--summary') || has(args, '--apply', '--index', '--cached')
     case 'branch': return namesOrLists(args, ['-d', '-D', '--delete', '-m', '-M', '--move', '-c', '-C', '--copy', '-f', '--force', '-u', '--set-upstream-to', '--unset-upstream', '--edit-description'],
-      ['-l', '--list', '--show-current', '-a', '--all', '-r', '--remotes', '-v', '-vv', '--verbose', '--contains', '--no-contains', '--merged', '--no-merged', '--points-at'])
+      ['-l', '--list', '--show-current', '-a', '--all', '-r', '--remotes', '--contains', '--no-contains', '--merged', '--no-merged', '--points-at'])
     case 'tag': return namesOrLists(args, ['-d', '--delete', '-a', '--annotate', '-s', '--sign', '-u', '-f', '--force', '-m', '--message', '-F', '--file'],
       ['-l', '--list', '--contains', '--no-contains', '--merged', '--no-merged', '--points-at', '-n'])
     case 'config': {
@@ -137,26 +142,28 @@ export interface GitCall {
 }
 const unquoted = (word: string): string => word.replace(/^["']|["']$/gu, '')
 const isGit = (file: string): boolean => /(^|[\\/])git(\.exe|\.cmd)?$/iu.test(unquoted(file))
-/** Where the value of `flag` (`--flag value` or `--flag=value`) points, for each time it is given. */
+/** The value of `flag` (`--flag value`, `--flag=value`, or `-fvalue` for a short one), for each time it is given. */
 function valuesOf(args: readonly string[], ...flags: string[]): string[] {
   const values: string[] = []
   args.forEach((arg, i) => {
     for (const flag of flags) {
       if (arg === flag && args[i + 1] !== undefined) values.push(args[i + 1]!)
       else if (arg.startsWith(`${flag}=`)) values.push(arg.slice(flag.length + 1))
+      else if (/^-\w$/u.test(flag) && arg.startsWith(flag) && arg.length > flag.length) values.push(arg.slice(flag.length))
     }
   })
   return values
 }
 /**
- * The Git folders a working folder under the temporary folder leads to: a linked worktree's or submodule's `.git` file
- * names its Git folder, and that folder's `commondir` the repository's own. Looked for only as far up as `roots`.
+ * The Git folders a working folder under the temporary folder leads to: its `.git` folder, checked where it really is
+ * since a link or junction there may lead out, or the Git folder a linked worktree's or submodule's `.git` file names
+ * and that folder's `commondir`. Looked for only as far up as `roots`.
  */
 function linkedGitFolders(folder: string, roots: readonly string[]): string[] {
   for (let current = folder; insideTemporaryFolder(current, roots); current = dirname(current)) {
     const dotGit = join(current, '.git')
     try {
-      if (statSync(dotGit).isDirectory()) return []
+      if (statSync(dotGit).isDirectory()) return [dotGit]
       const gitFolder = resolve(current, readFileSync(dotGit, 'utf8').replace(/^gitdir:\s*/u, '').trim())
       let common: string | undefined
       try { common = resolve(gitFolder, readFileSync(join(gitFolder, 'commondir'), 'utf8').trim()) } catch { /* A submodule's Git folder has none. */ }
@@ -169,9 +176,9 @@ function linkedGitFolders(folder: string, roots: readonly string[]): string[] {
 
 /**
  * The Git command `call` would change a repository with, and everything it would change: its working folder after any
- * `-C` and the Git folder a linked worktree there leads to, any `--git-dir`, `--work-tree` or variable that redirects
- * it, an init, clone or new worktree's folder, a `--separate-git-dir`, and a configuration file it writes. Null for
- * anything that is not Git or changes nothing.
+ * `-C` and the Git folder there, any `--git-dir`, `--work-tree`, `-c core.worktree` or variable that redirects it, an
+ * init or clone target, the folders a worktree command makes, moves or deletes, a folder pushed to, a
+ * `--separate-git-dir`, and a configuration file it writes. Null for anything that is not Git or changes nothing.
  */
 export function gitChange(call: GitCall, roots: readonly string[]): { readonly command: string; readonly targets: readonly string[] } | null {
   if (!isGit(call.file)) return null
@@ -179,13 +186,21 @@ export function gitChange(call: GitCall, roots: readonly string[]): { readonly c
   // An empty folder is no folder: spawn runs the command in the test process's own folder then.
   let folder = cwd ? resolve(cwd) : process.cwd()
   const redirected: string[] = []
+  let gitDir = false
+  let workTree = false
   let at = 0
   for (; at < call.args.length; at++) {
     const arg = call.args[at]!
     if (arg === '-C') folder = resolve(folder, call.args[++at] ?? '.')
-    else if (arg === '--git-dir' || arg === '--work-tree') redirected.push(call.args[++at] ?? '.')
-    else if (arg.startsWith('--git-dir=') || arg.startsWith('--work-tree=')) redirected.push(arg.slice(arg.indexOf('=') + 1))
-    else if (GLOBAL_WITH_VALUE.has(arg)) at++
+    else if (arg === '--git-dir' || arg === '--work-tree' || arg.startsWith('--git-dir=') || arg.startsWith('--work-tree=')) {
+      if (arg.startsWith('--git-dir')) gitDir = true
+      else workTree = true
+      redirected.push(arg.includes('=') ? arg.slice(arg.indexOf('=') + 1) : call.args[++at] ?? '.')
+    } else if (arg === '-c') {
+      // `-c core.worktree=<folder>` moves the working tree as `--work-tree` does.
+      const worktree = /^core\.worktree=(.*)$/iu.exec(call.args[++at] ?? '')
+      if (worktree) { redirected.push(worktree[1]!); workTree = true }
+    } else if (GLOBAL_WITH_VALUE.has(arg)) at++
     else if (!arg.startsWith('-')) break
   }
   const command = call.args[at]
@@ -194,15 +209,27 @@ export function gitChange(call: GitCall, roots: readonly string[]): { readonly c
   if (!gitCommandChanges(command, args)) return null
   const env = call.env ?? process.env
   for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_OBJECT_DIRECTORY'] as const) if (env[key]) redirected.push(env[key])
+  if (env.GIT_DIR) gitDir = true
+  if (env.GIT_WORK_TREE) workTree = true
   redirected.push(...valuesOf(args, '--separate-git-dir'))
   const targets = redirected.map(path => resolve(folder, path))
   if (command === 'init') targets.push(resolve(folder, positionals(args, new Set(['-b', '--initial-branch', '--separate-git-dir', '--object-format', '--ref-format', '--template']))[0] ?? '.'))
   else if (command === 'clone') targets.push(resolve(folder, positionals(args, new Set(['-b', '--branch', '-o', '--origin', '-c', '--config', '--depth', '--reference', '--reference-if-able', '-u', '--upload-pack', '--separate-git-dir', '--filter', '-j', '--jobs', '--server-option', '--template', '--shallow-since', '--shallow-exclude', '--bundle-uri', '--ref-format']))[1] ?? '.'))
   else {
-    targets.push(folder, ...linkedGitFolders(folder, roots))
-    if (command === 'worktree' && positionals(args)[0] === 'add') {
-      const path = positionals(args.slice(args.indexOf('add') + 1), new Set(['-b', '-B', '--reason']))[0]
-      if (path !== undefined) targets.push(resolve(folder, path))
+    // A Git folder and a working tree both named leave the working folder out of it; otherwise Git finds one there.
+    if (!(gitDir && workTree)) targets.push(folder, ...linkedGitFolders(folder, roots))
+    if (command === 'worktree') {
+      // add, move and remove make, move or delete folders: every one they name is checked, the subcommand's own word aside.
+      const named = positionals(args, new Set(['-b', '-B', '--reason']))
+      targets.push(...named.slice(1).map(path => resolve(folder, path)))
+    }
+    if (command === 'push') {
+      // A push to a folder rather than a named remote or a URL changes the repository there.
+      const remote = positionals(args, new Set(['--repo', '--receive-pack', '--exec', '-o', '--push-option']))[0] ?? valuesOf(args, '--repo')[0]
+      const local = remote?.startsWith('file://') ? fileURLToPath(remote) : remote
+      // A URL (`scheme://`) or an scp-style address (`host:path`, a colon after two or more characters) is not a folder.
+      const address = local !== undefined && (/^[\w+.-]+:\/\//u.test(local) || /^[^\\/:]{2,}:/u.test(local))
+      if (local !== undefined && !address && (isAbsolute(local) || /[\\/]/u.test(local) || local.startsWith('.'))) targets.push(resolve(folder, local))
     }
     if (command === 'config') {
       targets.push(...valuesOf(args, '-f', '--file').map(path => resolve(folder, path)))
@@ -227,25 +254,39 @@ const SHELL = /(^|[\\/])(cmd|sh|bash|zsh|dash|powershell|pwsh)(\.exe)?$/iu
 const SHELL_LINE_FLAGS = new Set(['/c', '/C', '/k', '/K', '-c', '-Command', '-command'])
 /**
  * Every Git command a command line runs, each in the folder the line has moved to by then with `cd`. Separators
- * (`&&`, `||`, `;`, `|`, `&`, line breaks) start a new command; quotes keep their contents one word.
+ * (`&&`, `||`, `;`, `|`, `&`, parentheses, line breaks) start a new command; quotes keep their contents one word.
  */
 export function gitCallsInLine(line: string, cwd: string | URL | undefined, env: NodeJS.ProcessEnv | undefined): GitCall[] {
   const calls: GitCall[] = []
   let folder = (cwd instanceof URL ? fileURLToPath(cwd) : cwd) || process.cwd()
   let words: string[] = []
   const finish = (): void => {
-    // Leading `NAME=value` words set the command's environment; the first other word is what runs.
-    const start = words.findIndex(word => !/^[A-Za-z_]\w*=/u.test(word))
-    const [file, ...args] = start < 0 ? [] : words.slice(start)
+    // Leading `NAME=value` words, and words that run what follows them (`env`, `exec`, `call`, `command`), come before
+    // what runs; the assignments join that command's environment, so `GIT_DIR=... git commit` is checked where it goes.
+    const assigned: Record<string, string> = {}
+    let start = 0
+    for (; start < words.length; start++) {
+      const assignment = /^([A-Za-z_]\w*)=(.*)$/su.exec(words[start]!)
+      if (assignment) assigned[assignment[1]!] = assignment[2]!
+      else if (!/^(env|exec|call|command|nohup|time)$/iu.test(words[start]!)) break
+    }
+    const [file, ...args] = words.slice(start)
     words = []
     if (file === undefined) return
+    const commandEnv = Object.keys(assigned).length > 0 ? { ...(env ?? process.env), ...assigned } : env
     if (/^(cd|pushd|chdir|set-location)$/iu.test(file)) folder = resolve(folder, args.find(arg => !/^\/[a-z]$/iu.test(arg)) ?? homedir())
-    else if (isGit(file)) calls.push({ file, args, cwd: folder, env })
-    else if (SHELL.test(file)) calls.push(...gitCallsOf(file, args, { cwd: folder, env }))
+    else if (isGit(file)) calls.push({ file, args, cwd: folder, env: commandEnv })
+    else if (SHELL.test(file)) calls.push(...gitCallsOf(file, args, { cwd: folder, env: commandEnv }))
   }
-  for (const match of line.matchAll(/"([^"]*)"|'([^']*)'|(&&|\|\||[;&|\r\n])|([^\s"';&|]+)/gu)) {
-    if (match[3] !== undefined) finish()
-    else words.push(match[1] ?? match[2] ?? match[4]!)
+  // A group's parentheses separate commands as `;` does: `(git reset --hard)` runs Git in the same folder.
+  let end = -1
+  for (const match of line.matchAll(/"([^"]*)"|'([^']*)'|(&&|\|\||[;&|()\r\n])|([^\s"';&|()]+)/gu)) {
+    if (match[3] !== undefined) { finish(); end = -1; continue }
+    const piece = match[1] ?? match[2] ?? match[4]!
+    // Pieces with nothing between them are one word, as in a shell: `GIT_DIR="C:/a b"` or `"C:/a b"/.git`.
+    if (match.index === end && words.length > 0) words[words.length - 1] += piece
+    else words.push(piece)
+    end = match.index + match[0].length
   }
   finish()
   return calls
