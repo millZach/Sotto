@@ -2257,13 +2257,14 @@ export class WatcherService implements WatcherControlHooks {
             for (const field of REFERENCE_FIELDS) delete operation[field]
           }
           if (operation.deliveryState === 'dispatching') operation.deliveryState = 'uncertain'
-          if (!this.options.historyEnabled() && operation.deliveryState === 'queued') {
-            operation.deliveryState = 'failed'; operation.refusalCode = 'HISTORY_UNAVAILABLE'
-          }
           // A restart empties the check queue (#1312): a start of this machine's still queued never made its thread, since a
-          // start that did is dispatching by then, and none is started now. Its outcome is unknown, as a waiting check's is.
+          // start that did is dispatching by then, and none is started now. Its outcome is unknown, as a waiting check's is,
+          // whether or not history is kept.
           if (this.options.checks && operation.action === 'start' && operation.deliveryState === 'queued' && operation.target.hostId === this.options.control.hostId()) {
             operation.deliveryState = 'failed'; operation.refusalCode = 'DELIVERY_UNCERTAIN'; operation.outcome = 'unknown'; operation.outcomeAt = now()
+          }
+          if (!this.options.historyEnabled() && operation.deliveryState === 'queued') {
+            operation.deliveryState = 'failed'; operation.refusalCode = 'HISTORY_UNAVAILABLE'
           }
         }
       })
