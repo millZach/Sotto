@@ -22,18 +22,18 @@ struct MainTabs: View {
     enum Tab: Hashable { case threads, watcher, computers, settings }
     var body: some View {
         TabView(selection: $tab) {
-            tabbed(NavigationStack(path: $threadPath) {
+            tabbed(.threads, NavigationStack(path: $threadPath) {
                 ThreadsView(openCreated: { ref in threadPath.append(ThreadRoute(ref: ref)) }).threadDestination()
             })
                 .tag(Tab.threads)
             // Watcher's tab (1B), only for a computer that runs Watcher and shows it to this iPhone.
             if let hostID = model.watcherHostID {
-                tabbed(NavigationStack(path: $watcherPath) { WatcherView(hostID: hostID).threadDestination() })
+                tabbed(.watcher, NavigationStack(path: $watcherPath) { WatcherView(hostID: hostID).threadDestination() })
                     .tag(Tab.watcher)
             }
-            tabbed(NavigationStack { ComputersView() })
+            tabbed(.computers, NavigationStack { ComputersView() })
                 .tag(Tab.computers)
-            tabbed(NavigationStack { SettingsView() })
+            tabbed(.settings, NavigationStack { SettingsView() })
                 .tag(Tab.settings)
         }
         .environment(\.tabsCovered, $covered)
@@ -57,12 +57,13 @@ struct MainTabs: View {
             if hostID == nil, tab == .watcher { tab = .threads; watcherPath = NavigationPath() }
         }
     }
-    /// A tab's stack with the bar under it, until a thread or the keyboard covers it.
-    private func tabbed(_ stack: some View) -> some View {
+    /// A tab's stack with the bar under it, until a thread or the keyboard covers it. Only the chosen tab draws the
+    /// bar: the system keeps the others' pages in the accessibility tree, and one bar is what VoiceOver should find.
+    private func tabbed(_ id: Tab, _ stack: some View) -> some View {
         stack
             .toolbar(.hidden, for: .tabBar)
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if covered.isEmpty && !keyboard {
+                if tab == id && covered.isEmpty && !keyboard {
                     TabsBar(tab: $tab, threadsBadge: model.threadsBadge, watcher: model.watcherHostID == nil ? nil : model.watcherTab)
                 }
             }
@@ -111,9 +112,11 @@ struct TabsBar: View {
             item(.settings, Image(systemName: "slider.horizontal.3"), Text("Settings"), badge: 0, spoken: "")
         }
         .padding(.horizontal, Space.s2)
-        .padding(.top, Space.s3)
+        .padding(.top, Space.s5)
         .background {
-            LinearGradient(colors: [theme.color(.canvas).opacity(0), theme.color(.canvas).opacity(0.92), theme.color(.canvas)],
+            LinearGradient(stops: [Gradient.Stop(color: theme.color(.canvas).opacity(0), location: 0),
+                                   Gradient.Stop(color: theme.color(.canvas).opacity(0.94), location: 0.45),
+                                   Gradient.Stop(color: theme.color(.canvas), location: 1)],
                            startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea(edges: .bottom)
                 .allowsHitTesting(false)
@@ -148,6 +151,7 @@ struct TabsBar: View {
         .accessibilityLabel(title)
         .accessibilityValue(Text(verbatim: spoken))
         .accessibilityAddTraits(chosen ? [.isButton, .isSelected] : .isButton)
+        .accessibilityIdentifier("tab-\(id)")
     }
 }
 
