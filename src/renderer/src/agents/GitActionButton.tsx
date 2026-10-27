@@ -17,7 +17,7 @@ import { parseHostEntityKey } from '../../../shared/clientIdentity'
 import { BringChangesBack } from './BringChangesBack'
 import { bringWords, bringBackView, branchSignature, fileCount as changedFileCount, useBringBackDismissals } from './bringChangesBack.logic'
 import { chordClaimed, chordMatches } from './branchToolbar.logic'
-import { useOptionalAgents, type AgentConnection } from './AgentContext'
+import type { AgentConnection } from './AgentContext'
 import { PaneMenu, type PaneMenuItem } from './PaneMenu'
 import { commitLabel, commits, defaultBranchQuestion, fileCount, lineCounts, menuEntries, needsDefaultBranchConfirmation, noticeFor, quickAction, stackedFor, STATUS_LETTER, type GitNotice, type GitQuickKind } from './gitActionButton.logic'
 import { leftToRight, shownWords, type LaterWords } from './interfaceWords'
@@ -60,11 +60,13 @@ type Dialog = { readonly kind: 'commit'; readonly action: GitStackedAction } | {
  * and one notice above the composer for the action as it runs and once it is over. Every action goes to
  * the host as a command; the record the host publishes is what the notice shows.
  */
-export function GitActionButton({ thread, command, noticeSlot, onExplainedError, threads: givenThreads }: {
+export function GitActionButton({ thread, command, noticeSlot, onExplainedError, threads: givenThreads, state: windowState }: {
   readonly thread: AgentThread
   readonly command: Command
-  /** Every thread the window shows, for the thread this one began from (#1030); the window's own list when absent. */
+  /** Every thread the window shows, for the thread this one began from (#1030); the window state's own list when absent. */
   readonly threads?: readonly AgentThread[] | undefined
+  /** The window's state, as the pane has it: its threads and its connections, for bringing changes back (#1030). */
+  readonly state?: Pick<AgentState, 'host' | 'connections'> | null | undefined
   /** Where the notice is drawn: above the composer, in the pane's own flow. */
   readonly noticeSlot: HTMLElement | null
   /** The refusal the notice is showing, so the pane's own error line does not say it twice; null when none. */
@@ -90,7 +92,6 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError,
   const quick = quickAction(status)
   // Bring changes to <branch> (#1030; Owl only): offered from the records alone, run on the host only when pressed.
   const bringOffered = useOwlFeature('cross-machine-work')
-  const windowState = useOptionalAgents()?.state
   const windowThreads = windowState?.host.threads
   const allThreads = givenThreads ?? windowThreads ?? NO_THREADS
   const dismissals = useBringBackDismissals()
