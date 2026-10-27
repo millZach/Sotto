@@ -250,6 +250,41 @@ describe('the quiet pane after review', () => {
     expect(browser.openedAddresses('visual-gate')).toEqual([])
   })
 
+  it('counts a reload or the same address submitted again as a visit, and a title or sharing update as none', async () => {
+    const A = 'http://localhost:5173/a', B = 'http://localhost:5173/b'
+    const browser = fakeBrowser([page(PAGE_1, { url: A }), page(PAGE_2, { url: B })])
+    const store = new BrowserStore()
+    store.setRemembering(true)
+    await store.activate(browser.bridge, 'visual-gate')
+    expect(store.openedAddresses('visual-gate')).toEqual([B, A])
+    // Main reports a reload of A as loading again: a visit.
+    act(() => browser.emit({ type: 'page', page: page(PAGE_1, { url: A, status: 'loading' }) }))
+    expect(store.openedAddresses('visual-gate')).toEqual([A, B])
+    // Its title arriving, its finishing and the other page's sharing changing are not visits.
+    act(() => browser.emit({ type: 'page', page: page(PAGE_1, { url: A, status: 'loading', title: 'A' }) }))
+    act(() => browser.emit({ type: 'page', page: page(PAGE_1, { url: A, status: 'ready', title: 'A' }) }))
+    act(() => browser.emit({ type: 'page', page: page(PAGE_2, { url: B, sharedOrigin: null }) }))
+    expect(store.openedAddresses('visual-gate')).toEqual([A, B])
+    // B's own address submitted again is a visit even when main answers with the page already loaded.
+    await act(async () => { await store.navigate(browser.bridge, 'visual-gate', PAGE_2, B) })
+    expect(store.openedAddresses('visual-gate')).toEqual([B, A])
+  })
+
+  it('keeps nothing about pages once they are closed', async () => {
+    const browser = fakeBrowser([page(PAGE_1)])
+    const store = new BrowserStore()
+    store.setRemembering(true)
+    await store.activate(browser.bridge, 'visual-gate')
+    for (let index = 0; index < 20; index++) {
+      const pageId = `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`
+      act(() => browser.emit({ type: 'page', page: page(pageId, { url: `http://localhost:5173/${index}` }) }))
+      act(() => browser.emit({ type: 'closed', threadId: 'visual-gate', workspaceId: TOKEN_A, pageId }))
+    }
+    const held = (store as unknown as { lastSeen: Map<string, ReadonlyMap<string, unknown>> }).lastSeen
+    expect([...held.values()].reduce((sum, pages) => sum + pages.size, 0)).toBe(1)
+    expect(store.openedAddresses('visual-gate')).toHaveLength(8)
+  })
+
   it('leaves New page for the page an agent just opened when the user is not in the address field', async () => {
     owl(true)
     const browser = fakeBrowser([page(PAGE_1)])

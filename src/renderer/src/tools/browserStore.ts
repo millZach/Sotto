@@ -129,8 +129,13 @@ export class BrowserStore {
   private readonly threads = new Map<string, ThreadBrowser>()
   /** The addresses each thread's browser opened this session, newest first, held only here (ADR-0154). */
   private readonly opened = new Map<string, readonly string[]>()
-  /** The address each page was last recorded at, so only a page arriving somewhere new moves its address to the front. */
-  private readonly recordedAt = new Map<string, string>()
+  /**
+   * Per thread, where each of its open pages was last seen and whether it was loading, so only a visit moves an
+   * address to the front: a page arriving somewhere new, or starting to load again (a reload, or the same address
+   * submitted again), but not a title or sharing update. Rebuilt from the thread's pages each time, so a closed page
+   * keeps nothing here.
+   */
+  private readonly lastSeen = new Map<string, ReadonlyMap<string, { readonly url: string; readonly loading: boolean }>>()
   /** Off until the quiet pane is on (Owl): stable keeps no addresses (ADR-0072). */
   private remembering = false
   /** A page to show in a thread's browser as soon as it is listed: one its agent just opened (ADR-0154). */
@@ -173,7 +178,7 @@ export class BrowserStore {
   setRemembering(on: boolean): void {
     if (this.remembering === on) return
     this.remembering = on
-    if (on) { for (const thread of this.threads.values()) this.remember(thread) } else { this.opened.clear(); this.recordedAt.clear() }
+    if (on) { for (const thread of this.threads.values()) this.remember(thread) } else { this.opened.clear(); this.lastSeen.clear() }
     this.emit()
   }
 
@@ -316,9 +321,18 @@ export class BrowserStore {
     this.patch(threadId, { busy: true, notice: null })
     const result = await settle(run({ threadId, workspaceId: workspace.workspaceId }))
     if (!result.ok) { this.fail(bridge, threadId, result.error, words); return false }
+    // A navigation the user asked for is a visit even to the same address, whether or not main reports it loading.
+    this.forgetSeen(threadId, pageId)
     this.upsert(result.value)
     this.patch(threadId, { busy: false })
     return true
+  }
+  private forgetSeen(threadId: string, pageId: string): void {
+    const seen = this.lastSeen.get(threadId)
+    if (!seen?.has(pageId)) return
+    const next = new Map(seen)
+    next.delete(pageId)
+    this.lastSeen.set(threadId, next)
   }
 
   private listen(bridge: BrowserBridge): void {
@@ -394,12 +408,19 @@ export class BrowserStore {
    */
   private remember(thread: ThreadBrowser): void {
     const before = this.opened.get(thread.threadId) ?? BrowserStore.NONE
+    const seen = this.lastSeen.get(thread.threadId)
+    const next = new Map<string, { readonly url: string; readonly loading: boolean }>()
     let list = before
     for (const page of thread.pages) {
-      if (page.device || page.status === 'unavailable' || page.error === BROWSER_WAITING_TO_OPEN || this.recordedAt.get(page.id) === page.url) continue
-      this.recordedAt.set(page.id, page.url)
+      if (page.device || page.status === 'unavailable' || page.error === BROWSER_WAITING_TO_OPEN) continue
+      const last = seen?.get(page.id)
+      const loading = page.status === 'loading'
+      next.set(page.id, { url: page.url, loading })
+      if (last !== undefined && last.url === page.url && (last.loading || !loading)) continue
       list = [page.url, ...list.filter(url => url !== page.url)].slice(0, 8)
     }
+    if (next.size > 0) this.lastSeen.set(thread.threadId, next)
+    else this.lastSeen.delete(thread.threadId)
     if (list !== before) this.opened.set(thread.threadId, list)
   }
 }
