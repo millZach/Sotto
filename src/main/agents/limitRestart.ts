@@ -14,8 +14,11 @@ const RECORDS_MAX = 500
 const shownAt = (at: string): string => new Date(Date.parse(at) - LIMIT_RESTART_GRACE_MS).toISOString()
 /** How long a restart that is due waits for its provider to connect before it looks again. */
 export const LIMIT_RESTART_RETRY_MS = 60_000
-/** The longest a timer can be set for; a reset further off is looked at again then. */
-const TIMER_MAX_MS = 2_147_000_000
+/**
+ * The longest one wait lasts before the wall clock is read again. A timer's wait does not count time the computer slept,
+ * so a Mac asleep past a reset would otherwise restart late by however long it slept; this bounds that to a minute.
+ */
+export const LIMIT_RESTART_CHECK_MS = 60_000
 
 const recordSchema = z.object({
   threadId: z.string().min(1).max(512),
@@ -57,6 +60,8 @@ export interface LimitRestartOptions {
   readonly preservesDormantThread?: (threadId: string) => boolean
   readonly now?: () => number
   readonly schedule?: (callback: () => void, delay: number) => () => void
+  /** The longest one wait lasts before the clock is read again; `LIMIT_RESTART_CHECK_MS` unless a test sets it. */
+  readonly checkEveryMs?: number
 }
 
 /**
@@ -239,7 +244,7 @@ export class LimitRestart {
       soonest = Math.min(soonest, Date.parse(record.at))
     }
     if (!Number.isFinite(soonest)) return
-    const wait = delay ?? Math.min(Math.max(0, soonest - this.now()), TIMER_MAX_MS)
+    const wait = delay ?? Math.min(Math.max(0, soonest - this.now()), this.options.checkEveryMs ?? LIMIT_RESTART_CHECK_MS)
     this.cancelTimer = this.schedule(() => { this.cancelTimer = undefined; this.fire() }, wait)
   }
 

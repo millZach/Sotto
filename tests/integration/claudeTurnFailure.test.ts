@@ -82,6 +82,19 @@ describe('the error a failed Claude turn leaves', () => {
     expect(claudeLimitStop({ type: 'result', subtype: 'success', is_error: true, api_error_status: 429 }, undefined, now)).toEqual({})
   })
 
+  it('reads a zone named on its own, such as UTC or GMT, in that zone and not on this computer’s clock', () => {
+    const now = Date.parse('2026-10-26T18:30:00.000Z'), zone = process.env.TZ
+    // A computer a long way from UTC, so reading the time on its own clock would give another instant.
+    process.env.TZ = 'America/Los_Angeles'
+    try {
+      expect(claudeLimitStop(failed({ result: 'You’ve hit your limit · resets 11pm (UTC)' }), undefined, now)).toEqual({ resetsAt: '2026-10-26T23:00:00.000Z' })
+      expect(claudeLimitStop(failed({ result: 'You’ve hit your limit · resets 7:15pm (GMT)' }), undefined, now)).toEqual({ resetsAt: '2026-10-26T19:15:00.000Z' })
+      expect(claudeTurnFailure(failed({ result: 'You’ve hit your limit · resets 11pm (UTC)' }))).toBe(`${USAGE} Send again after it resets at 11pm (UTC).`)
+    } finally {
+      if (zone === undefined) delete process.env.TZ; else process.env.TZ = zone
+    }
+  })
+
   it('is no limit stop for a spending limit, any other failure, or a turn the user stopped', () => {
     expect(claudeLimitStop({ type: 'result', subtype: 'error_max_budget_usd', is_error: true, errors: [] })).toBeUndefined()
     expect(claudeLimitStop(failed({ result: 'API Error: 500 Internal server error' }))).toBeUndefined()

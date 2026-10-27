@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { LIMIT_RESTART_RETRY_MS, LimitRestart, type LimitRestartControl } from '../../../src/main/agents/limitRestart'
+import { LIMIT_RESTART_CHECK_MS, LIMIT_RESTART_RETRY_MS, LimitRestart, type LimitRestartControl } from '../../../src/main/agents/limitRestart'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread } from '../../../src/shared/agents'
 import { LIMIT_RESTART_GRACE_MS, LIMIT_RESTART_HORIZON_MS, LIMIT_RESTARTS_IN_A_ROW_MAX, limitRestartNote, type LimitRestartNews } from '../../../src/shared/limitRestart'
 import type { AgentControl } from '../../../src/main/agents/control'
@@ -33,7 +33,7 @@ const thread = (id: string, patch: Partial<AgentThread> = {}): AgentThread => ({
 const limitStop = (id: string, resetsAt?: string, turn = `${id}-1`): Partial<AgentThread> =>
   ({ status: 'error', lastTurn: { id: turn, status: 'failed', limitStop: resetsAt ? { resetsAt } : {} } })
 
-async function fixture(options: { threads?: AgentThread[]; enabled?: () => boolean; watcher?: string; saved?: unknown; deliver?: (id: string) => Promise<void> } = {}) {
+async function fixture(options: { threads?: AgentThread[]; enabled?: () => boolean; watcher?: string; saved?: unknown; deliver?: (id: string) => Promise<void>; checkEveryMs?: number } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-limit-restart-')); roots.push(root)
   if (options.saved) await writeFile(join(root, 'limit-restarts.json'), JSON.stringify(options.saved))
   let now = START
@@ -47,7 +47,7 @@ async function fixture(options: { threads?: AgentThread[]; enabled?: () => boole
     deliverWakeUp: async (threadId, news) => { await options.deliver?.(threadId); delivered.push({ threadId, news }) },
   }
   const restart = new LimitRestart({ directory: root, control, enabled: options.enabled ?? (() => true), watcherThreadId: () => options.watcher,
-    restarted: (provider, threadIds) => told.push({ provider, threadIds }), now: () => now,
+    restarted: (provider, threadIds) => told.push({ provider, threadIds }), now: () => now, checkEveryMs: options.checkEveryMs ?? 2_147_000_000,
     schedule: (callback, delay) => { const timer = { callback, delay, cancelled: false }; timers.push(timer); return () => { timer.cancelled = true } } })
   restarts.push(restart)
   await restart.start()
@@ -178,6 +178,17 @@ describe('restarting threads a usage limit stopped', () => {
     await expect.poll(async () => (await f.saved() as { threadId: string; sent?: boolean }[]).find(item => item.threadId === 'a')?.sent).toBe(true)
     release(); await f.restart.settled()
     expect(f.delivered.map(item => item.threadId)).toEqual(['a', 'b'])
+  })
+
+  it('reads the clock again each minute, so a computer asleep past the reset restarts within a minute of waking', async () => {
+    const f = await fixture({ checkEveryMs: LIMIT_RESTART_CHECK_MS })
+    f.update('workshop', limitStop('workshop', new Date(START + 3 * 60 * 60_000).toISOString()))
+    // The wait is a minute, however far off the reset is.
+    expect(f.live()).toEqual([expect.objectContaining({ delay: LIMIT_RESTART_CHECK_MS })])
+    // A minute of the timer's own time passes, but the computer slept for four hours of the clock's.
+    const timer = f.live().at(-1)!
+    f.advance(4 * 60 * 60_000); timer.cancelled = true; timer.callback(); await f.restart.settled()
+    expect(f.delivered.map(item => item.threadId)).toEqual(['workshop'])
   })
 
   it('records the provider’s threads working in the background at its first stop, and only that provider’s', async () => {

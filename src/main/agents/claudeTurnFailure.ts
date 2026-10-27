@@ -60,7 +60,7 @@ function reasonOf(frame: ClaudeFrame, assistantError: string | undefined, text: 
 function resetTime(text: string): string | undefined {
   const epoch = /\|(\d{10})\b/u.exec(text)?.[1]
   if (epoch) return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date(Number(epoch) * 1000))
-  const said = /\bresets?\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s?[ap]m)(?:\s*\(([A-Za-z_]+(?:\/[A-Za-z_+-]+)+)\))?/iu.exec(text)
+  const said = /\bresets?\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s?[ap]m)(?:\s*\(([A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)*)\))?/iu.exec(text)
   return said ? [said[1]!.replace(/\s+/gu, ''), said[2] ? `(${said[2]})` : undefined].filter(Boolean).join(' ') : undefined
 }
 
@@ -106,13 +106,13 @@ function nextWallTime(hour: number, minute: number, zone: string | undefined, no
 }
 /**
  * When a usage limit resets, as an instant, if Claude Code's text says (ADR-0144): the epoch seconds it appends after a `|`,
- * or a spoken time ("resets 3pm (America/Chicago)") as the next such time in that zone, or on this computer's clock when it
- * names none. Undefined when it says neither, or names a zone this computer cannot read.
+ * or a spoken time ("resets 3pm (America/Chicago)", "resets 11pm (UTC)") as the next such time in that zone, or on this
+ * computer's clock when it names none. Undefined when it says neither, or names a zone this computer cannot read.
  */
 function resetInstant(text: string, now: number): string | undefined {
   const epoch = /\|(\d{10})\b/u.exec(text)?.[1]
   if (epoch) return new Date(Number(epoch) * 1000).toISOString()
-  const said = /\bresets?\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s?([ap])m(?:\s*\(([A-Za-z_]+(?:\/[A-Za-z_+-]+)+)\))?/iu.exec(text)
+  const said = /\bresets?\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s?([ap])m(?:\s*\(([A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)*)\))?/iu.exec(text)
   if (!said) return undefined
   const clock = Number(said[1]), minute = said[2] === undefined ? 0 : Number(said[2])
   if (clock < 1 || clock > 12 || minute > 59) return undefined
