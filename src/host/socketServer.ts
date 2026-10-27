@@ -1098,7 +1098,9 @@ export async function startSocketServer(options: SocketServerOptions) {
           const relayPeer = peer
           peer.delegationRelay ??= { clientId: peer.client.clientId,
             push: (askId, ask) => !relayPeer.frames.isClosed && authenticated(relayPeer) && push(relayPeer, { v: 1, event: 'delegation-relay-ask', askId, ask }) }
-          options.delegationRelay.desktopConnected(peer.delegationRelay)
+          // Told once this hello's answer has gone, so the asks a reconnect reads again reach a desktop that knows the feature.
+          const relay = options.delegationRelay, handle = peer.delegationRelay
+          setImmediate(() => { if (!relayPeer.frames.isClosed) relay.desktopConnected(handle) })
         }
         // A provider is sent to this client only once its hello says it knows the provider (#1107).
         peer.unknownProviders = providersUnknownTo(request.accepts)

@@ -201,6 +201,8 @@ export class SocketHostService implements HostService {
   private readonly watcherListeners = new Set<(projection: WatcherHostProjection) => void>()
   private readonly delegationListeners = new Set<(change: DelegationViewsChange) => void>()
   private readonly relayListeners = new Set<(askId: string, ask: DelegationRelayAsk) => void>()
+  /** Asks that came before anything listened, as when a host reads its relayed delegations again during this hello (#1316). */
+  private readonly heldAsks: { readonly askId: string; readonly ask: DelegationRelayAsk }[] = []
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
   private readonly pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; command: boolean }>()
@@ -391,6 +393,7 @@ export class SocketHostService implements HostService {
       clearTimeout(item.timer)
       item.reject(new HostRequestUnanswered(item.command ? CONNECT_FAILURES.closedCommand() : CONNECT_FAILURES.closedRefresh(), 'closed', item.command ? id : undefined))
     }
+    this.heldAsks.length = 0
     this.pending.clear(); this.lateDetails.clear(); this.behind.clear(); this.confirmedObserved = new Set()
     if (this.cached) this.publish({ ...this.cached, stale: true })
     this.options.onConnectionChange?.(false)
@@ -431,7 +434,11 @@ export class SocketHostService implements HostService {
         else if (message.event === 'host-update-step') { for (const listener of this.updateSteps) listener(message.step) }
         else if (message.event === 'delegations-changed') { if (this.supportsDelegationViews) this.delegationsChanged({ threadIds: message.threadIds }) }
         else if (message.event === 'delegation-relay-ask') {
-          if (this.supportsDelegationRelay) for (const listener of [...this.relayListeners]) { try { listener(message.askId, message.ask) } catch { /* A listener's failure is its own. */ } }
+          // A host pushes asks only to a desktop whose hello accepted the feature, so one may come before that hello's answer.
+          if (this.relays) {
+            if (!this.relayListeners.size) { if (this.heldAsks.length < 64) this.heldAsks.push({ askId: message.askId, ask: message.ask }) }
+            else for (const listener of [...this.relayListeners]) { try { listener(message.askId, message.ask) } catch { /* A listener's failure is its own. */ } }
+          }
         }
         else { this.pushErrorThread = message.threadId ?? null; if (message.threadId) this.tooLarge.add(message.threadId); this.options.onPushError?.(message.error.message) }
       } else {
@@ -1323,6 +1330,7 @@ export class SocketHostService implements HostService {
   get supportsDelegationRelay(): boolean { return this.relays && this.features.includes('delegation-relay') }
   subscribeDelegationRelay(listener: (askId: string, ask: DelegationRelayAsk) => void): () => void {
     this.relayListeners.add(listener)
+    for (const held of this.heldAsks.splice(0)) { try { listener(held.askId, held.ask) } catch { /* A listener's failure is its own. */ } }
     return () => { this.relayListeners.delete(listener) }
   }
   async answerDelegationRelay(askId: string, answer: unknown): Promise<void> {
