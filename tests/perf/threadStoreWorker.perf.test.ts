@@ -85,17 +85,23 @@ describe('thread history saves on the store worker', () => {
     const writer = new ThreadStoreWriterOnWorker(store)
     try {
       const saves = freshSaves(), live = freshLive()
-      for (let step = 0; step < 300; step++) {
-        streamStep(store, writer, path, step, live, saves)
+      // Steps go on until the log the worker committed is past SQLite's own threshold of 1,000 pages, where it would have
+      // checkpointed inside a save: counted, not timed, since main posts faster than a runner's disk commits.
+      let steps = 0
+      while (steps < 300 || walIndex(path).frames <= 1_000) {
+        if (steps >= 3_000) break
+        streamStep(store, writer, path, steps, live, saves)
+        steps++
         // Main's connection cannot write while the worker does, so every commit above was the worker's.
         expect(queryOnly(store)).toBe(1)
-        if (step % 20 === 0) await delay(1)
+        if (steps % 20 === 0) await writer.confirmed()
       }
       await writer.confirmed()
+      expect(queryOnly(store)).toBe(1)
+      saves.mostFrames = Math.max(saves.mostFrames, walIndex(path).frames)
       expect(saves.failed).toBe(0)
-      // Well past SQLite's own threshold of 1,000 pages, where it would have checkpointed inside a save.
       expect(saves.mostFrames).toBeGreaterThan(1_000)
-      expect(store.messageCount('thread-0')).toBe(300)
+      expect(store.messageCount('thread-0')).toBe(steps)
     } finally { writer.close() }
   }, 120_000)
 
