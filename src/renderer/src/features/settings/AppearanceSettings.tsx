@@ -11,6 +11,7 @@ import { APPEARANCE_CONTRAST, type ThemeDefinition } from '../../../../shared/th
 import { Button } from '../../components/Button'
 import { Card } from '../../components/Card'
 import { Field } from '../../components/Field'
+import { Toggle } from '../../components/Toggle'
 import { Select } from '../../components/Select'
 import { platformCopy } from '../../platformCopy'
 import { appearancePreview, glassPaints, resolveAppearance, useAppearancePreviewVersion, useSystemPrefersDark, type AppearanceChoice } from '../../state/appearance'
@@ -78,6 +79,7 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, on
   const systemDark = useSystemPrefersDark()
   const menuBarOwl = useOwlFeature('menu-bar-owl') && platform === 'darwin'
   const creatureToggle = useOwlFeature('creature-toggle')
+  const clickEffect = useOwlFeature('click-effect')
   const interfaceLanguage = useOwlFeature('interface-language')
   const watcherOn = useOwlFeature('watcher')
   const nightFalls = useOwlFeature('night-falls') && watcherOn
@@ -194,6 +196,8 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, on
               <option value="on">{t`Reduce motion`}</option>
             </Select>
           </Field>
+          {clickEffect ? <Toggle setting="click-effect" label={t`Click effect`} checked={settings.clickEffect} onCheckedChange={checked => void onSave({ clickEffect: checked }, checked ? msg`Click effect on.` : msg`Click effect off.`).catch(() => false)}
+            description={t`A press anywhere sends waves of 0s and 1s in the accent through the room behind it. They never cover what you pressed. Reduced motion turns them off.`} /> : null}
           {nightFalls ? <NightFallsSettings settings={settings} onSave={patch => onSave(patch).catch(() => false)} /> : null}
         </div>
       </section>

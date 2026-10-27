@@ -1,0 +1,44 @@
+# A press sends waves of 0s and 1s through the room: verification
+
+October 27, 2026. On Windows 11 with the built app (`npm run build`), an Owl build through the end-to-end harness, on its own throwaway profile. It covers [ADR-0154](../adr/0154-a-press-sends-waves-of-0s-and-1s-through-the-room.md): Zach's pick N, **Both, ragged**, from round four of `docs/prototypes/click-binary-prototype.html`.
+
+## How it was run
+
+```sh
+npm run typecheck
+npm run lint
+npx vitest run tests/unit/renderer/clickWater.test.ts tests/unit/renderer/clickEffect.test.tsx tests/unit/shared/settings.test.ts tests/unit/shared/owlFeatures.test.ts tests/unit/shared/interfaceCatalogs.test.ts tests/unit/renderer/themeTokens.test.ts tests/unit/renderer/watcherNightScene.test.ts tests/unit/renderer/features/settings/settingsReachable.test.tsx
+npm run build
+SOTTO_E2E_EVIDENCE=publish npx playwright test tests/e2e/click-effect.spec.ts
+```
+
+The full suite runs in CI on the pull request, not on this machine.
+
+## The waves in the running app
+
+`spreading-dark.png` and `spreading-light.png` hold the Threads page at 1280 by 800 about half a second after three presses in the conversation, and `crossing-dark.png` and `crossing-light.png` hold it about half a second later. The 0s and 1s are the default theme's accent in its monospace face. The waves spread in uneven blobs with speckled edges and cross where two presses meet. They lie under the page: the user's message bubbles, the composer and the sidebar sit over them, and the conversation's words read over them.
+
+`click-effect-dark.mp4` is about eight seconds of the window at nine frames a second, captured from the window itself: four presses, the waves spreading, crossing, bouncing off the edges and fading to nothing.
+
+The spec also checks, in dark and light:
+
+- nothing runs before a press, and opening a thread, itself a press, calms and stops on its own;
+- while waves run, a press still reaches its target: the composer takes focus and another thread opens;
+- the water calms, the canvas is cleared, and no frame is drawn after that;
+- the canvas is hidden from assistive technology.
+
+In one Owl run, turning `clickEffect` off through the settings bridge takes the canvas away and the saved setting reads back off, so the switch is on the patch allow-list. A stable run and an Owl run with reduced motion have no canvas at all.
+
+## Watcher's margin
+
+`watcher-margin-press-dark.png` holds Watcher's room just after a press in the open left margin with the click effect on. The waves run under the night scene, which draws over them unchanged, and the scene's own ripple is not sent: the night scene drew 0 ripple cells behind the column. The same press with the click effect off sent the ripple as before, with 1,157 cells behind the column. That was a one-off run, not a kept spec. The existing column spec (`tests/e2e/watcher-column.spec.ts`) keeps the ripple's contrast check, since the design profile leaves the click effect off.
+
+## Cost
+
+In Node, on this laptop, one step of the water at 1280 by 800 took about 0.1 ms and walking the glyph grid about 1 ms with eight presses' waves crossing; at 1600 by 1000, 0.14 ms and 0.14 ms. Many presses add drops to the same water, so the work per frame does not grow with them. A single press's waves leave nothing to draw after about nine to ten seconds, and the loop stops then.
+
+## Not checked here
+
+- macOS and Linux were not run; the canvas and the shell's stacking are the same code there.
+- The Glass theme was not captured. The canvas lies over the shell's own translucent background, under the panes.
+- Words over a passing wave can read below 4.5:1 for a moment, which ADR-0154 accepts for a transient effect that can be turned off; no contrast was measured over the waves.

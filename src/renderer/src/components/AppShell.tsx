@@ -16,6 +16,7 @@ import { WatcherOwl } from '../watcher/WatcherOwl'
 import { SottoMark } from './SottoMark'
 import { WindowControls } from './WindowControls'
 import { MainFreezeNotice } from '../features/performance/MainFreezeNotice'
+import { ClickEffect } from './ClickEffect'
 
 type ManagementNavigation = Exclude<AppNavigation, 'onboarding'>
 
@@ -235,6 +236,7 @@ export function AppShell({
   const shellClass = page ? 'app-shell app-shell--page' : beside ? 'app-shell app-shell--sidebar' : management ? 'app-shell' : 'app-shell app-shell--bare'
   return (
     <div className={shellClass} data-platform={platform}>
+      <ClickEffect />
       {page || beside ? null : (
         <header className={nativeWindowControls ? 'app-strip app-strip--mac' : 'app-strip'}>
           {nativeWindowControls ? <span /> : owl ? (

@@ -121,6 +121,7 @@ const settingKeys = [
   'interfaceLanguage',
   'customThemes',
   'reducedMotion',
+  'clickEffect',
   'roomTransition',
   'roomTransitionSpeed',
   'roomTransitionLook',
