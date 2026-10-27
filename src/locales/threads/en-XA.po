@@ -5115,6 +5115,10 @@ msgstr ""
 msgid "Open to answer"
 msgstr ""
 
+#: src/renderer/src/agents/SidebarFrame.tsx
+msgid "Open Watcher"
+msgstr ""
+
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "OpenCode 2 is not installed on this computer. Install it with its install script or npm’s @opencode/cli, then connect again."
 msgstr ""
