@@ -605,6 +605,29 @@ describe('Thread transcript scrolling', () => {
     expect(screen.queryByRole('button', { name: /Jump to latest|New messages/ })).not.toBeInTheDocument()
   })
 
+  it('keeps a reader above the end where they are when they send, and follows a send from the end', async () => {
+    const state = manualState()
+    const at = new Date(NOW).toISOString()
+    state.host.threads.find(item => item.id === 'grok-previews')!.messages = Array.from({ length: 100 }, (_, index) => ({ id: `m${index}`, role: 'assistant' as const, text: `History ${index}`, createdAt: at }))
+    const { live, prompt } = mount(state)
+    const transcript = screen.getByRole('log', { name: 'Thread transcript' })
+    transcript.scrollTop = 1_000
+    fireEvent.scroll(transcript)
+    setPromptText(prompt(), 'Sent from above')
+    fireEvent.keyDown(prompt(), { key: 'Enter' })
+    expect(transcript.scrollTop).toBe(1_000)
+    act(() => live.deliver('grok-previews', 'accepted', 'Sent from above'))
+    await waitFor(() => expect(screen.queryByLabelText('Pending message')).not.toBeInTheDocument())
+    expect(transcript.scrollTop).toBe(1_000)
+    expect(screen.getByRole('button', { name: 'New messages' })).toBeVisible()
+
+    fireEvent.click(screen.getByRole('button', { name: 'New messages' }))
+    setPromptText(prompt(), 'Sent from the end')
+    fireEvent.keyDown(prompt(), { key: 'Enter' })
+    expect(transcript.scrollTop).toBe(transcript.scrollHeight - VIEW)
+    expect(screen.queryByRole('button', { name: /Jump to latest|New messages/ })).not.toBeInTheDocument()
+  })
+
   describe('a reader above the end (#1452)', () => {
     // Lays each message out one row for each paragraph of an answer, so an answer can be read from its middle, and counts
     // each message the transcript reads: its box, its ID, or its place in a list of every message drawn.

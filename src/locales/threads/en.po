@@ -5185,6 +5185,10 @@ msgstr "Open thread"
 msgid "Open to answer"
 msgstr "Open to answer"
 
+#: src/renderer/src/agents/SidebarFrame.tsx
+msgid "Open Watcher"
+msgstr "Open Watcher"
+
 #: src/renderer/src/agents/RestartStopped.tsx
 msgid "Open Watcher’s room"
 msgstr "Open Watcher’s room"

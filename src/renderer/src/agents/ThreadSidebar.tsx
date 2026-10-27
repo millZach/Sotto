@@ -104,6 +104,12 @@ export interface PaneActions {
   readonly restoreShortcut?: ThreadChordLabel | undefined
 }
 
+/** A rail tile's two letters: the first letters of the title's first two words, or a one-word title's first two. */
+export function railMark(title: string): string {
+  const [first = '', second] = title.trim().split(/\s+/)
+  return first.slice(0, 1).toUpperCase() + (second === undefined ? first.slice(1, 2) : second.slice(0, 1)).toLowerCase()
+}
+
 /** The status ring a row and its rail tile share; a Done thread something will still wake shows an hourglass (variant d). */
 function StatusRing({ row, finished, background }: { readonly row: ThreadRow; readonly finished: boolean; readonly background: boolean }): ReactNode {
   return <span className="thread-nav__ring" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined}
@@ -461,6 +467,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
 }): ReactNode {
   const { t, i18n: { locale } } = useLingui()
   const queueOn = useOwlFeature('needs-you-queue')
+  const railOn = useOwlFeature('sidebar-rail')
   const [settledOpen, setSettledOpen] = useState(false)
   const settledButton = useRef<HTMLButtonElement>(null)
   const { settle, dialog: settleDialog } = useSettleThread(command, settledButton)
@@ -548,6 +555,13 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
       expanded={searching || isFolderOpen(key)} onToggle={toggle} onOpen={onOpen} onNewThread={onNewThread} command={command} settle={settle} globalLaneBusy={state.globalLaneBusy} busyThreadIds={state.busyThreadIds} indicatorsHidden={queueOn} />
   }
   const { open, settled } = organization
+  // The collapsed rail's threads: every open one, and the focused one even once settled.
+  const railRows = [...open.flatMap(folder => folder.rows), ...settled.flatMap(folder => folder.rows).filter(row => row.thread.id === listed)]
+  const railTile = (row: ThreadRow, status: ReturnType<typeof rowStatus>, resting = false): ReactNode => <button key={row.thread.id} type="button"
+    className="thread-nav__rail-thread thread-nav__rail-mark tt-focusable" data-resting={resting || undefined} aria-label={row.thread.title} title={`${row.thread.title} · ${status.text}`}
+    aria-current={listed === row.thread.id ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
+    <span aria-hidden="true">{railMark(row.thread.title)}</span><StatusRing row={row} {...status} />
+  </button>
   const threads = state.host.threads
   const restartOn = useRestartStopped()
   const failures = useMemo(() => unseenFailures(threads), [threads])
@@ -555,6 +569,24 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const settledWorking = settled.reduce((count, folder) => count + folder.working, 0)
   const settledNeeds = settled.reduce((count, folder) => count + folder.needs, 0)
   const settledShown = settledOpen || searching
+  let owlRail: ReactNode = null
+  if (railOn) {
+    // Owl's rail (ADR-0146): what waits on you in a tray, then what is moving, then a hairline and the rest, smaller.
+    const waiting = organization.needsYou.entries.map(entry => entry.row)
+    const waitingIds = new Set(waiting.map(row => row.thread.id))
+    const rest = railRows.filter(row => !waitingIds.has(row.thread.id)).map(row => ({ row, status: rowStatus(row, { restart: restartOn }) }))
+    const moving = rest.filter(({ row, status }) => row.state === 'working' || status.finished || status.prototype || status.background || status.restart)
+    const resting = rest.filter(item => !moving.includes(item))
+    owlRail = <>
+      {waiting.length ? <div className="thread-nav__rail-tray" role="group" aria-label={waitingOnYou(waiting.length)}>
+        <span className="thread-nav__rail-tray-count" aria-hidden="true">{shownCount(waiting.length)}</span>
+        {waiting.map(row => railTile(row, rowStatus(row, { restart: restartOn })))}
+      </div> : null}
+      {moving.map(({ row, status }) => railTile(row, status))}
+      {resting.length ? <span className="thread-nav__rail-rule" aria-hidden="true" /> : null}
+      {resting.map(({ row, status }) => railTile(row, status, true))}
+    </>
+  }
   // The chord opens the chooser (what the top button does) only while no thread is focused; a focused thread
   // answers it from its own project's pen instead, so the top button's aria-keyshortcuts stands down then.
   const suffix = newThreadShortcut?.suffix
@@ -567,7 +599,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
       <RestartBands threads={restartThreads ?? threads} command={command} onOpen={onOpen} />
       {queueOn ? <NeedsYouQueue queue={organization.needsYou} state={state} command={command} failures={failures} panes={panes} onOpen={onOpen} /> : <NeedsAttentionLine failures={failures} command={command} />}
     </>}
-    collapsedContent={<nav aria-label={t`Threads`}>{[...open.flatMap(folder => folder.rows), ...settled.flatMap(folder => folder.rows).filter(row => row.thread.id === listed)].map(row => <button key={row.thread.id} type="button" className="thread-nav__rail-thread tt-focusable" aria-label={row.thread.title} title={`${row.thread.title} · ${rowStatus(row, { restart: restartOn }).text}`} aria-current={listed === row.thread.id ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
+    collapsedContent={<nav aria-label={t`Threads`}>{owlRail ?? railRows.map(row => <button key={row.thread.id} type="button" className="thread-nav__rail-thread tt-focusable" aria-label={row.thread.title} title={`${row.thread.title} · ${rowStatus(row, { restart: restartOn }).text}`} aria-current={listed === row.thread.id ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
       <span aria-hidden="true">{row.thread.title.slice(0, 1)}</span><StatusRing row={row} {...rowStatus(row, { restart: restartOn })} />
     </button>)}</nav>}>
       <section aria-label={t`Projects`}>

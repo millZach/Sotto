@@ -89,7 +89,7 @@ test("Watcher's night scene never blinks while the room changes", async () => {
     await page.mouse.move(0, 0)
     await page.waitForTimeout(600)
 
-    // The left margin below the header, clear of the composer's column and the floating switch, in CSS pixels.
+    // The left margin below the header, clear of the composer's column, in CSS pixels.
     const region = await page.evaluate(pane => {
       const element = document.querySelector<HTMLElement>(pane)!, base = element.getBoundingClientRect()
       const card = element.querySelector(':scope > .thread-workspace__compose > .thread-prompt')!.getBoundingClientRect()
