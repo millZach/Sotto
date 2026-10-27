@@ -3,14 +3,14 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ThemeEditorHost } from '../../../src/renderer/src/features/settings/themes/ThemeEditor'
 import { closeThemeEditor } from '../../../src/renderer/src/features/settings/themes/themeEditorSession'
-import { resolveThemeFor } from '../../../src/shared/themes/library'
+import { BUILT_IN_THEMES, resolveThemeFor } from '../../../src/shared/themes/library'
 import { ThemeGallery } from '../../../src/renderer/src/features/settings/themes/ThemeGallery'
 import { APPEARANCE_CACHE_KEY, applyAppearance, appearancePreview, readCachedAppearance, resolveAppearance } from '../../../src/renderer/src/state/appearance'
 import { DEFAULT_SETTINGS, type SettingsPatch, type AppSettings } from '../../../src/shared/settings'
 import { OMARCHY_THEME_ID, guardOmarchyColors, omarchySuccessText, omarchyThemeSchema, parseOmarchyTheme } from '../../../src/shared/themes/omarchy'
 import fixtures from '../../fixtures/omarchy-themes.json'
 import legacyCache from '../../fixtures/omarchy-theme-cache-v0070.json'
-import { ThemeLivePreview } from '../../../src/renderer/src/features/settings/themes/ThemeLivePreview'
+import { AppearancePreview } from '../../../src/renderer/src/features/settings/themes/AppearancePreview'
 
 afterEach(() => { cleanup(); act(() => closeThemeEditor()); appearancePreview.reset(); vi.unstubAllGlobals(); localStorage.clear() })
 function gallery(system: string, light = false) {
@@ -18,6 +18,8 @@ function gallery(system: string, light = false) {
  const shown = { ...DEFAULT_SETTINGS, appearance: 'system' as const, lightTheme: OMARCHY_THEME_ID, darkTheme: OMARCHY_THEME_ID, omarchyTheme: theme }
  const onSelect = vi.fn()
  const result = render(<ThemeGallery shown={shown} resolved={theme.appearance} system={system} onChooseMode={vi.fn()} onSelect={onSelect} onRemove={vi.fn()} onExport={vi.fn()} onAddTheme={vi.fn()} />)
+ // Both halves on one theme show one grid; these tests look at each half's own grid.
+ fireEvent.click(screen.getByRole('switch', {name:'A different theme when dark'}))
  return { shown, theme, onSelect, result }
 }
 
@@ -76,7 +78,7 @@ describe('Omarchy Appearance', () => {
   gallery(system)
   for (const mode of ['Light', 'Dark']) {
    const group = within(screen.getByRole('radiogroup', {name:`${mode} theme`}))
-   expect(group.getAllByRole('radio')).toHaveLength(6)
+   expect(group.getAllByRole('radio')).toHaveLength(BUILT_IN_THEMES.length)
    expect(group.queryByText('Omarchy')).toBeNull()
   }
  })
@@ -84,10 +86,11 @@ describe('Omarchy Appearance', () => {
   const custom = { ...parseOmarchyTheme(fixtures.themes['tokyo-night'].rendered), id: 'omarchy' }
   const shown = { ...DEFAULT_SETTINGS, customThemes: [custom] }
   render(<ThemeGallery shown={shown} resolved="dark" system={system} onChooseMode={vi.fn()} onSelect={vi.fn()} onRemove={vi.fn()} onExport={vi.fn()} onAddTheme={vi.fn()} />)
-  expect(within(screen.getByRole('radiogroup', {name:'Light theme'})).getAllByRole('radio')).toHaveLength(6)
+  fireEvent.click(screen.getByRole('switch', {name:'A different theme when dark'}))
+  expect(within(screen.getByRole('radiogroup', {name:'Light theme'})).getAllByRole('radio')).toHaveLength(BUILT_IN_THEMES.length)
   const dark = within(screen.getByRole('radiogroup', {name:'Dark theme'}))
-  expect(dark.getAllByRole('radio')).toHaveLength(7)
-  expect(dark.getByRole('radio', {name:'Omarchy'})).not.toHaveClass('theme-option--omarchy')
+  expect(dark.getAllByRole('radio')).toHaveLength(BUILT_IN_THEMES.length + 1)
+  expect(dark.getByRole('radio', {name:'Omarchy'})).toBeInTheDocument()
   expect(screen.queryByText(/Waits for/)).toBeNull()
  })
  it.each([true, false])('Linux keeps a custom omarchy choice distinct from the runtime entry with a file: %s', present => {
@@ -97,7 +100,7 @@ describe('Omarchy Appearance', () => {
   const onSelect = vi.fn()
   render(<ThemeGallery shown={shown} resolved="dark" system="Linux" onChooseMode={vi.fn()} onSelect={onSelect} onRemove={vi.fn()} onExport={vi.fn()} onAddTheme={vi.fn()} />)
   const dark = within(screen.getByRole('radiogroup', {name:'Dark theme'}))
-  expect(dark.getAllByRole('radio')).toHaveLength(8)
+  expect(dark.getAllByRole('radio')).toHaveLength(BUILT_IN_THEMES.length + 2)
   expect(dark.getByRole('radio', {name:'My Omarchy'})).toHaveAttribute('aria-checked', 'true')
   const entry = dark.getByRole('radio', {name: present ? 'Omarchy Tokyo Night' : 'Omarchy Waits for a dark Omarchy theme'})
   expect(entry).toHaveAttribute('aria-checked', 'false')
@@ -139,7 +142,7 @@ describe('Omarchy Appearance', () => {
  it('explains the same Omarchy mode that the live widget preview wears', () => {
   const theme = parseOmarchyTheme(fixtures.themes['catppuccin-latte'].rendered)
   const shown = { ...DEFAULT_SETTINGS, lightTheme:OMARCHY_THEME_ID, darkTheme:OMARCHY_THEME_ID, omarchyTheme:theme }
-  render(<ThemeLivePreview shown={shown} systemDark={true} system="Linux" />)
+  render(<AppearancePreview shown={shown} systemDark={true} system="Linux" creature="sotto" showCreature={false} watcher={false} />)
   expect(screen.getByText('The widget follows the Omarchy theme’s mode.')).toBeVisible()
   expect(document.querySelector('[data-widget-mode]')).toHaveAttribute('data-widget-mode','light')
  })

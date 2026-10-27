@@ -23,7 +23,7 @@ import {
 import { appearancePreview } from '../../../src/renderer/src/state/appearance'
 import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '../../../src/shared/settings'
 import { createVividThemeColors } from '../../../src/shared/themes/engine'
-import { BUILT_IN_THEMES, MAX_CUSTOM_THEMES, canonicalizeTheme, parseThemeFile, serializeThemeFile, type ThemeDefinition } from '../../../src/shared/themes/library'
+import { BUILT_IN_THEMES, MAX_CUSTOM_THEMES, canonicalizeTheme, getThemeColorsForMode, parseThemeFile, serializeThemeFile, type ThemeDefinition } from '../../../src/shared/themes/library'
 
 afterEach(() => {
   cleanup()
@@ -142,7 +142,7 @@ describe('theme library writer', () => {
   it('reports a failed save and leaves the saved library in force', async () => {
     const settings: AppSettings = { ...DEFAULT_SETTINGS, darkTheme: 'linen' }
     const writer = new ThemeLibraryWriter(async () => { throw new Error('disk full') }, () => settings)
-    await expect(writer.run(() => ({ patch: { darkTheme: 'citrine' } }))).resolves.toMatchObject({ saved: false })
+    await expect(writer.run(() => ({ patch: { darkTheme: BUILT_IN_THEMES.at(-1)!.id } }))).resolves.toMatchObject({ saved: false })
     expect(writer.current().darkTheme).toBe('linen')
   })
 })
@@ -247,13 +247,17 @@ describe('appearance settings', () => {
     render(<AppearanceSettings settings={settings} platform="win32" onSave={save} getSettings={() => settings} />)
     return { save }
   }
+  /** One grid for both halves until the switch splits it into a Light grid and a Dark grid. */
+  const splitHalves = (user: ReturnType<typeof userEvent.setup>): Promise<void> => user.click(screen.getByRole('switch', { name: 'A different theme when dark' }))
+  const openYourThemes = (user: ReturnType<typeof userEvent.setup>): Promise<void> => user.click(screen.getByRole('button', { name: /^Your themes \(\d+\)$/u }))
+  const names = BUILT_IN_THEMES.map(entry => entry.label)
 
   it('chooses each half in its own column, and says which column paints the window now', async () => {
     const user = userEvent.setup()
     const { save } = renderSettings({ appearance: 'dark' })
+    await splitHalves(user)
     const light = screen.getByRole('radiogroup', { name: 'Light theme' })
     const dark = screen.getByRole('radiogroup', { name: 'Dark theme' })
-    const names = ['Sotto', 'Hush', 'Linen', 'Nocturne', 'Tropic', 'Citrine']
     expect(within(light).getAllByRole('radio').map(option => option.textContent)).toEqual(names)
     expect(within(dark).getAllByRole('radio').map(option => option.textContent)).toEqual(names)
     expect(within(dark).getByRole('radio', { name: 'Sotto' })).toHaveAttribute('aria-checked', 'true')
@@ -265,9 +269,14 @@ describe('appearance settings', () => {
     expect(save).not.toHaveBeenCalledWith(expect.objectContaining({ darkTheme: expect.anything() }), expect.anything())
   })
 
-  it('lists a one-appearance theme only under the half it can paint, and manages it under Your themes', () => {
+  it('lists a one-appearance theme only under the half it can paint, and manages it under Your themes', async () => {
+    const user = userEvent.setup()
     const night = theme('Night', 'dark')
     renderSettings({ customThemes: [night] })
+    expect(within(screen.getByRole('radiogroup', { name: 'Theme' })).getByRole('radio', { name: 'Night' })).toHaveAccessibleDescription('Dark only')
+    expect(screen.queryByRole('list', { name: 'Your themes' })).not.toBeInTheDocument()
+    await splitHalves(user)
+    await openYourThemes(user)
     expect(within(screen.getByRole('radiogroup', { name: 'Dark theme' })).getByRole('radio', { name: 'Night' })).toBeInTheDocument()
     expect(within(screen.getByRole('radiogroup', { name: 'Light theme' })).queryByRole('radio', { name: 'Night' })).not.toBeInTheDocument()
     const own = screen.getByRole('list', { name: 'Your themes' })
@@ -286,6 +295,7 @@ describe('appearance settings', () => {
     expect(within(scheme).getByRole('radio', { name: 'Match Windows' })).toHaveFocus()
     await waitFor(() => expect(save).toHaveBeenCalledWith({ appearance: 'system' }, saying('Color scheme saved.')))
 
+    await splitHalves(user)
     const dark = screen.getByRole('radiogroup', { name: 'Dark theme' })
     expect(within(dark).getAllByRole('radio').filter(option => option.tabIndex === 0).map(option => option.textContent)).toEqual(['Sotto'])
     within(dark).getByRole('radio', { name: 'Sotto' }).focus()
@@ -302,6 +312,7 @@ describe('appearance settings', () => {
     const user = userEvent.setup()
     const night = theme('Night', 'dark')
     const { save } = renderSettings({ appearance: 'dark', darkTheme: 'night', customThemes: [night] })
+    await openYourThemes(user)
 
     await user.click(screen.getByRole('button', { name: 'Remove Night' }))
     const dialog = await screen.findByRole('dialog', { name: 'Remove “Night”?' })
@@ -316,13 +327,14 @@ describe('appearance settings', () => {
   it('creates a theme from the one painting the window, and duplicates a theme of your own under a copy name', async () => {
     const user = userEvent.setup()
     const night = theme('Night', 'dark')
-    const settings: AppSettings = { ...DEFAULT_SETTINGS, appearance: 'dark', darkTheme: 'linen', customThemes: [night] }
+    const settings: AppSettings = { ...DEFAULT_SETTINGS, appearance: 'dark', darkTheme: 'hush', customThemes: [night] }
     renderSettings(settings)
     render(<ThemeEditorHost settings={settings} onSave={async () => true} getSettings={() => settings} />)
     // Built-ins have no duplicate of their own: Create theme starts from whichever one is in use.
     await user.click(screen.getByRole('button', { name: 'Create theme' }))
-    await waitFor(() => expect(appearancePreview.draft?.colors.canvas).toBe(BUILT_IN_THEMES.find(entry => entry.id === 'linen')!.variants!.dark!.canvas))
+    await waitFor(() => expect(appearancePreview.draft?.colors.canvas).toBe(getThemeColorsForMode(BUILT_IN_THEMES.find(entry => entry.id === 'hush')!, 'dark')!.canvas))
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await openYourThemes(user)
 
     await user.click(screen.getByRole('button', { name: 'Duplicate Night' }))
     expect(await screen.findByLabelText('Theme name')).toHaveValue('Night copy')
@@ -334,6 +346,7 @@ describe('appearance settings', () => {
     const settings: AppSettings = { ...DEFAULT_SETTINGS, appearance: 'dark', darkTheme: 'night', customThemes: [night] }
     renderSettings(settings)
     render(<ThemeEditorHost settings={settings} onSave={async () => true} getSettings={() => settings} />)
+    await openYourThemes(user)
     const openWithKeyboard = async (label: string): Promise<HTMLElement> => {
       const opener = screen.getByRole('button', { name: label })
       opener.focus()
@@ -363,6 +376,7 @@ describe('appearance settings', () => {
     const settings: AppSettings = { ...DEFAULT_SETTINGS, customThemes: [theme('Night', 'dark')] }
     const page = render(<AppearanceSettings settings={settings} platform="win32" onSave={async () => true} getSettings={() => settings} />)
     render(<ThemeEditorHost settings={settings} onSave={async () => true} getSettings={() => settings} />)
+    await openYourThemes(user)
     screen.getByRole('button', { name: 'Create theme' }).focus()
     await user.keyboard('{Enter}')
     await waitFor(() => expect(screen.getByLabelText('Theme name')).toHaveFocus())
@@ -408,35 +422,30 @@ describe('appearance settings', () => {
     expect(screen.queryByRole('checkbox', { name: /frost/iu })).not.toBeInTheDocument()
   })
 
-  it('offers the six effort colourways as swatches, previews the pick at once and saves it, and the sample plays the arrival', async () => {
+  it('offers the six effort colourways as swatches, previews the pick at once and saves it, and the preview’s composer plays the arrival', async () => {
     const { save } = renderSettings({})
     const group = screen.getByRole('group', { name: 'Effort color' })
     const swatches = within(group).getAllByRole('button')
     expect(swatches.map(swatch => swatch.getAttribute('data-effort-color'))).toEqual(['ember', 'cyberpunk', 'rainbow', 'aurora', 'plasma', 'accent'])
     expect(within(group).getByRole('button', { name: 'Use Ember as the effort color, currently active' })).toHaveAttribute('aria-pressed', 'true')
-    const sample = screen.getByText('Effort at its highest level').closest('.effort-sample')!
-    expect(sample).toHaveAttribute('data-arriving', 'false')
+    expect(document.querySelector('.studio-composer')).not.toHaveAttribute('data-arriving')
     fireEvent.click(within(group).getByRole('button', { name: 'Use Cyberpunk as the effort color' }))
     // The pick paints before the save answers: the swatch, the preview and the root all say Cyberpunk at once.
     expect(within(group).getByRole('button', { name: 'Use Cyberpunk as the effort color, currently active' })).toHaveAttribute('aria-pressed', 'true')
     expect(appearancePreview.effective(DEFAULT_SETTINGS).effortColor).toBe('cyberpunk')
-    await waitFor(() => expect(sample).toHaveAttribute('data-arriving', 'true'))
+    await waitFor(() => expect(document.querySelector('.studio-composer')).toHaveAttribute('data-arriving', 'true'))
     await waitFor(() => expect(save).toHaveBeenCalledWith({ effortColor: 'cyberpunk' }, saying('Effort color saved.')))
   })
 
-  it('mounts the sample scene fresh on every play, so an arrival already running starts again', () => {
+  it('starts the arrival again on each new colourway, with a fresh wash, so one already running restarts', async () => {
     renderSettings({})
-    const sample = screen.getByText('Effort at its highest level').closest('.effort-sample')!
-    const scene = (): Element => sample.querySelector('.effort-sample__scene')!
-    const settled = scene()
-    fireEvent.click(screen.getByRole('button', { name: 'Play again' }))
-    expect(sample).toHaveAttribute('data-arriving', 'true')
-    const playing = scene()
-    expect(playing).not.toBe(settled)
-    // Pressing again mid-arrival is the case the restart has to survive: nothing about the sample changes, so a
-    // fresh scene is the only thing that hands the browser an animation to play.
-    fireEvent.click(screen.getByRole('button', { name: 'Play again' }))
-    expect(sample).toHaveAttribute('data-arriving', 'true')
-    expect(scene()).not.toBe(playing)
+    const wash = (): Element => document.querySelector('.studio-composer__wash')!
+    const settled = wash()
+    fireEvent.click(screen.getByRole('button', { name: 'Use Aurora as the effort color' }))
+    await waitFor(() => expect(wash()).not.toBe(settled))
+    const playing = wash()
+    fireEvent.click(screen.getByRole('button', { name: 'Use Plasma as the effort color' }))
+    await waitFor(() => expect(wash()).not.toBe(playing))
+    expect(document.querySelector('.studio-composer')).toHaveAttribute('data-arriving', 'true')
   })
 })

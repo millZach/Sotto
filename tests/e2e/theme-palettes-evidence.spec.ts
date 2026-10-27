@@ -52,7 +52,7 @@ async function shot(page: Page, name: string): Promise<void> {
 async function openAppearance(page: Page): Promise<void> {
   await openPage(page, 'Settings')
   await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
-  await expect(page.getByRole('radiogroup', { name: 'Dark theme' })).toBeVisible()
+  await expect(page.getByRole('radiogroup', { name: 'Theme', exact: true })).toBeVisible()
 }
 
 async function paint(page: Page, id: string): Promise<void> {
@@ -74,7 +74,7 @@ test.describe('Sotto palettes rendered evidence', () => {
         for (const [width, height] of SIZES) {
           await resizeWindow(launched, width, height)
           // Nothing in the columns may be wider than the page lets it be.
-          const overflow = await page.evaluate(() => [...document.querySelectorAll('.theme-half, .theme-scheme-track, .theme-settings__bar')]
+          const overflow = await page.evaluate(() => [...document.querySelectorAll('.appearance-card, .appearance-preview, .appearance-tiles, .appearance-themes__foot')]
             .filter(element => element.scrollWidth > element.clientWidth + 1).map(element => element.className))
           expect(overflow).toEqual([])
           await page.locator('#settings-appearance').evaluate(element => element.scrollIntoView({ block: 'start' }))
@@ -102,7 +102,7 @@ test.describe('Sotto palettes rendered evidence', () => {
   test('the mark is the app icon on the default theme and follows the accent on another', async () => {
     await withProfile({ appearance: 'dark' }, async ({ page }) => {
       await openAppearance(page)
-      const mark = page.locator('.theme-live-preview__app-icon')
+      const mark = page.locator('.appearance-preview__app-icon')
       for (const appearance of ['dark', 'light'] as const) {
         await page.evaluate(async mode => { await window.sotto!.updateSettings({ appearance: mode }) }, appearance)
         await expect(page.locator('html')).toHaveAttribute('data-brand', 'app-icon')

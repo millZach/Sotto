@@ -87,7 +87,7 @@ test.describe('appearance rendered evidence', () => {
       await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
       // Time from activating Light to the root attribute and the painted canvas changing.
       const elapsed = await page.evaluate(() => new Promise<{ attribute: number; painted: number }>((done) => {
-        const light = [...document.querySelectorAll<HTMLButtonElement>('#settings-appearance .theme-scheme-track__stop')].find(stop => stop.textContent?.trim() === 'Light')!
+        const light = [...document.querySelectorAll<HTMLButtonElement>('#settings-appearance [data-setting="color-scheme"] [role="radio"]')].find(stop => stop.textContent?.trim() === 'Light')!
         const darkCanvas = getComputedStyle(document.body).backgroundColor
         const start = performance.now()
         let attribute = -1
@@ -105,6 +105,8 @@ test.describe('appearance rendered evidence', () => {
       expect(elapsed.attribute).toBeLessThan(50)
       expect(elapsed.painted).toBeGreaterThanOrEqual(0)
       await writeFile(resolve(evidenceRoot, 'switch-timing.json'), `${JSON.stringify(elapsed, null, 2)}\n`, 'utf8')
+      const split = page.getByRole('switch', { name: 'A different theme when dark' })
+      if (await split.getAttribute('aria-checked') !== 'true') await split.click()
       const citrine = page.getByRole('radiogroup', { name: 'Light theme', exact: true }).getByRole('radio', { name: 'Citrine', exact: true })
       await citrine.focus()
       await page.keyboard.press('Enter')
