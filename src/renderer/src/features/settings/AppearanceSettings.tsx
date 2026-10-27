@@ -10,7 +10,7 @@ import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
 import { APPEARANCE_CONTRAST, type ThemeDefinition } from '../../../../shared/themes/library'
 import { Button } from '../../components/Button'
 import { Card } from '../../components/Card'
-import { appearancePreview, resolveAppearance, useAppearancePreviewVersion, useSystemPrefersDark, type AppearanceChoice } from '../../state/appearance'
+import { appearancePreview, glassPaints, resolveAppearance, useAppearancePreviewVersion, useSystemPrefersDark, type AppearanceChoice } from '../../state/appearance'
 import { messageIn, useInterfaceLanguageState } from '../../state/interfaceLanguage'
 import { useOwlFeature } from '../../state/owlFeature'
 import { LanguagePicker } from './LanguagePicker'
@@ -132,7 +132,7 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, ch
             <AppearanceSlider
               label={t`Contrast`}
               resetLabel={amount => t`Reset contrast to ${amount}`}
-              description={t`Color and border intensity.`}
+              description={glassPaints(shown, resolved) ? t`Color and border intensity. Glass keeps text at 100% or stronger, so it stays readable over any desktop.` : t`Color and border intensity.`}
               bounds={APPEARANCE_CONTRAST}
               value={shown.appearanceContrast}
               onPreview={value => appearancePreview.choose({ appearanceContrast: value })}

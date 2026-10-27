@@ -4,7 +4,7 @@ import { DEFAULT_SETTINGS, EFFORT_COLORS, type AppSettings, type Appearance, typ
 import { APP_ICON_BRAND_ATTRIBUTE, wearsAppIcon } from '../../../shared/themeBranding'
 import { OMARCHY_THEME_ID, guardOmarchyColors, omarchySuccessText, omarchyThemeSchema, type OmarchyTheme } from '../../../shared/themes/omarchy'
 import { isCanonicalThemeColor } from '../../../shared/themes/color'
-import { GLASS_BACKDROP_VARIABLES, GLASS_THEME_ID, GLASS_TINT_VARIABLES, glassTintDeclarations } from '../../../shared/themes/glass'
+import { GLASS_BACKDROP_VARIABLES, GLASS_CONTRAST_FLOOR, GLASS_THEME_ID, GLASS_TINT_VARIABLES, glassTintDeclarations } from '../../../shared/themes/glass'
 import {
   APPEARANCE_CONTRAST,
   DEFAULT_THEME_ID,
@@ -90,6 +90,15 @@ const glassWindowSync: { confirmed: boolean; requested: boolean | null } = (() =
   const bridge = currentWindow()?.sotto?.glassWindow
   return { confirmed: bridge?.seeThrough === true, requested: bridge === undefined ? null : bridge.seeThrough }
 })()
+
+// When the system takes the material away (Windows' Transparency effects turned off) or gives it back, main says so,
+// and the room follows: its own backdrop first, the desktop again only once the material is back (ADR-0149).
+currentWindow()?.sotto?.glassWindow?.onChanged(seeThrough => {
+  glassWindowSync.confirmed = seeThrough && glassWindowSync.requested === true
+  const root = typeof document === 'undefined' ? null : document.documentElement
+  if (root?.dataset.glass === undefined) return
+  root.dataset.glass = glassWindowSync.confirmed && glassWantsSeeThrough(currentWindow()) ? 'see-through' : 'in-app'
+})
 
 function systemReducesTransparency(target: GlassTarget): boolean {
   return target !== undefined && typeof target.matchMedia === 'function' && target.matchMedia(REDUCED_TRANSPARENCY_QUERY).matches
@@ -207,8 +216,11 @@ export function applyAppearance(
   if (draft === null && theme.id === OMARCHY_THEME_ID) root.style.setProperty('--tt-success', omarchySuccessText(colors, resolved))
   else root.style.removeProperty('--tt-success')
   // An editor draft is a palette of solid roles, so the window is solid while one paints.
-  applyGlass(root, draft === null && theme.id === GLASS_THEME_ID ? resolved : null, target)
-  const contrast = clampStep(choice.appearanceContrast, APPEARANCE_CONTRAST)
+  const glassPaints = draft === null && theme.id === GLASS_THEME_ID
+  applyGlass(root, glassPaints ? resolved : null, target)
+  // Glass never softens its words below full strength: they must read over whatever desktop is behind (ADR-0149).
+  const chosenContrast = clampStep(choice.appearanceContrast, APPEARANCE_CONTRAST)
+  const contrast = glassPaints ? Math.max(chosenContrast, GLASS_CONTRAST_FLOOR) : chosenContrast
   root.style.setProperty('--theme-contrast-base', `${Math.min(contrast, 100)}%`)
   root.style.setProperty('--theme-contrast-boost', `${Math.max(contrast - 100, 0)}%`)
   root.style.setProperty('--theme-contrast-border-boost', `${Math.max(contrast - 100, 0) / 4}%`)
@@ -425,30 +437,38 @@ export function useAppearancePreviewVersion(preview: AppearancePreview = appeara
   return useSyncExternalStore(preview.subscribe, preview.snapshot, preview.snapshot)
 }
 
-/** Whether the system asks for less transparency, kept current, so a see-through Glass room turns solid and back at once. */
-export function useSystemReducesTransparency(): boolean {
-  const [reduced, setReduced] = useState(() => systemReducesTransparency(currentWindow()))
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
-    const query = window.matchMedia(REDUCED_TRANSPARENCY_QUERY)
-    const update = (): void => setReduced(query.matches)
-    update()
-    query.addEventListener('change', update)
-    return () => query.removeEventListener('change', update)
-  }, [])
-  return reduced
+/** Whether the half the window paints now is Glass, which holds Contrast at GLASS_CONTRAST_FLOOR or above. */
+export function glassPaints(choice: AppearanceChoice, resolved: ThemeAppearance): boolean {
+  return resolveThemeFor({ ...choice, glass: choice.glass ?? glassThemeOffered() }, resolved).theme.id === GLASS_THEME_ID
 }
 
-/** Whether the operating system currently prefers a dark scheme, updated live. */
-export function useSystemPrefersDark(): boolean {
-  const [dark, setDark] = useState(() => systemPrefersDark())
+/**
+ * A media query's answer, kept current. `unknown` is the answer where the window cannot ask. With `enabled` false
+ * nothing is read or subscribed, and the answer is false: a part an Owl feature holds starts no listener.
+ */
+function useMediaQuery(query: string, unknown: boolean, enabled = true): boolean {
+  const read = (): boolean => (typeof window === 'undefined' || typeof window.matchMedia !== 'function' ? unknown : window.matchMedia(query).matches)
+  const [matches, setMatches] = useState(() => enabled && read())
   useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
-    const query = window.matchMedia(SYSTEM_DARK_QUERY)
-    const update = (): void => setDark(query.matches)
+    if (!enabled || typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    const list = window.matchMedia(query)
+    const update = (): void => setMatches(list.matches)
     update()
-    query.addEventListener('change', update)
-    return () => query.removeEventListener('change', update)
-  }, [])
-  return dark
+    list.addEventListener('change', update)
+    return () => list.removeEventListener('change', update)
+  }, [query, enabled])
+  return enabled && matches
+}
+
+/**
+ * Whether the system asks for less transparency, kept current, so a see-through Glass room turns solid and back at
+ * once. Only Glass reads it: pass whether the run has Glass (`useOwlFeature('glass-theme')`), and without it nothing listens.
+ */
+export function useSystemReducesTransparency(glass: boolean): boolean {
+  return useMediaQuery(REDUCED_TRANSPARENCY_QUERY, false, glass)
+}
+
+/** Whether the operating system currently prefers a dark scheme, updated live. Unknown is dark, the default mode. */
+export function useSystemPrefersDark(): boolean {
+  return useMediaQuery(SYSTEM_DARK_QUERY, true)
 }

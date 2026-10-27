@@ -154,7 +154,7 @@ describe('Omarchy M3 and readability check', () => {
     expect(resolveThemeFor(settings, 'light').theme.id).toBe(OMARCHY_THEME_ID)
     expect(resolveThemeFor(settings, 'dark').theme.id).toBe(DEFAULT_THEME_ID)
     expect(widgetPaletteFor(settings).light.canvas).toBe(theme.colors.canvas)
-    expect(widgetPresentationFor(settings).theme).toBe('light')
+    expect(widgetPresentationFor(settings, false).theme).toBe('light')
     expect(resolveThemeFor({ ...settings, omarchyTheme: null }, 'light').theme.id).toBe(DEFAULT_THEME_ID)
   })
   it.each(['Windows', 'macOS'])('%s keeps its defaults and six palettes, ignoring any persisted Omarchy state', () => {

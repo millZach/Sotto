@@ -1,13 +1,17 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { describe, expect, it } from 'vitest'
+import { renderHook } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { OWL_FEATURES, isOwlFeatureEnabled } from '../../../src/shared/owlFeatures'
 import { DEFAULT_SETTINGS, parseSettings } from '../../../src/shared/settings'
 import { formatOklch, parseThemeColor, rgbToOklch } from '../../../src/shared/themes/color'
-import { GLASS_THEME_ID, GLASS_TINTS } from '../../../src/shared/themes/glass'
+import { GLASS_CONTRAST_FLOOR, GLASS_DARK_THEME_COLORS, GLASS_LIGHT_THEME_COLORS, GLASS_THEME_ID, GLASS_TINTS } from '../../../src/shared/themes/glass'
+import { widgetPresentationFor } from '../../../src/shared/themeBranding'
+import { applyAppearance, useSystemReducesTransparency, type AppearanceChoice } from '../../../src/renderer/src/state/appearance'
 import {
+  APPEARANCE_CONTRAST,
   BUILT_IN_THEMES,
   DEFAULT_THEME_ID,
   GLASS_THEME,
@@ -30,8 +34,10 @@ const DESKS: ReadonlyArray<readonly [string, Rgba]> = [['white', { r: 255, g: 25
  * and stands in for the canvas every painted pair is composited on, so the sidebar, the cards, the user's messages and
  * the selected rows, which are translucent, are judged as they show over that desktop; the solid surfaces cover it.
  */
-function glassRoom(mode: Mode, desk: Rgba): Map<string, string> {
-  const declarations = withPaintedLayers(rootDeclarations(mode, GLASS_THEME_ID, { glass: true }, tokenBlocks))
+function glassRoom(mode: Mode, desk: Rgba, contrast = 100): Map<string, string> {
+  // Glass paints at the Contrast chosen, but never under its floor (appearance.ts).
+  const painted = Math.max(contrast, GLASS_CONTRAST_FLOOR)
+  const declarations = withPaintedLayers(rootDeclarations(mode, GLASS_THEME_ID, { glass: true, contrast: painted }, tokenBlocks))
   const room = over(resolveColor('--tt-glass-room', declarations), desk)
   declarations.set('--tt-canvas', formatOklch(rgbToOklch(room)))
   return declarations
@@ -73,13 +79,19 @@ describe('Glass, the see-through theme (ADR-0149)', () => {
     }
   })
 
+  const CONTRASTS: number[] = []
+  for (let contrast = APPEARANCE_CONTRAST.min; contrast <= APPEARANCE_CONTRAST.max; contrast += APPEARANCE_CONTRAST.step) CONTRASTS.push(contrast)
+
   it.each(MODES.flatMap(mode => DESKS.map(([name, desk]) => [mode, name, desk] as const)))(
-    '%s half keeps every line of words at 4.5:1 with pure %s behind the window',
+    '%s half keeps every line of words at 4.5:1 with pure %s behind the window, at every Contrast',
     (mode, _name, desk) => {
-      const declarations = glassRoom(mode, desk)
-      for (const pair of PAINTED_TEXT_PAIRS) {
-        expect(paintedContrast(declarations, pair), `${pair.ink} on ${pair.surface.join(' + ')} (${pair.where})`).toBeGreaterThanOrEqual(4.5)
+      for (const contrast of CONTRASTS) {
+        const declarations = glassRoom(mode, desk, contrast)
+        for (const pair of PAINTED_TEXT_PAIRS) {
+          expect(paintedContrast(declarations, pair), `${pair.ink} on ${pair.surface.join(' + ')} (${pair.where}) at ${contrast}%`).toBeGreaterThanOrEqual(4.5)
+        }
       }
+      const declarations = glassRoom(mode, desk)
       const color = (name: string): Rgba => over(resolveColor(`--tt-${name}`, declarations), resolveColor('--tt-canvas', declarations))
       // The accent as a fill and the focus ring are not words: 3:1 is their bar, on the room and on the sidebar.
       for (const surface of ['canvas', 'sidebar', 'card'] as const) {
@@ -88,4 +100,46 @@ describe('Glass, the see-through theme (ADR-0149)', () => {
       }
     },
   )
+
+  it('holds Contrast at its floor while Glass paints, and leaves it alone on every other theme', () => {
+    const choice: AppearanceChoice = { appearance: 'light', lightTheme: GLASS_THEME_ID, darkTheme: GLASS_THEME_ID, appearanceContrast: 50, effortColor: 'ember', customThemes: [], glass: true }
+    const root = document.createElement('html')
+    applyAppearance(choice, root, false)
+    expect(root.dataset.themeId).toBe(GLASS_THEME_ID)
+    expect(root.style.getPropertyValue('--theme-contrast-base')).toBe(`${GLASS_CONTRAST_FLOOR}%`)
+    applyAppearance({ ...choice, appearanceContrast: 150 }, root, false)
+    expect(root.style.getPropertyValue('--theme-contrast-boost')).toBe('50%')
+    applyAppearance({ ...choice, lightTheme: DEFAULT_THEME_ID }, root, false)
+    expect(root.dataset.glass).toBeUndefined()
+    expect(root.style.getPropertyValue('--theme-contrast-base')).toBe('50%')
+  })
+
+  it('dresses the widget in Glass\u2019s solid roles only where the run has Glass', () => {
+    const settings = { ...DEFAULT_SETTINGS, lightTheme: GLASS_THEME_ID, darkTheme: GLASS_THEME_ID }
+    const owl = widgetPresentationFor(settings, true).palette
+    expect([owl.light.canvas, owl.dark.canvas]).toEqual([GLASS_LIGHT_THEME_COLORS.canvas, GLASS_DARK_THEME_COLORS.canvas])
+    const stable = widgetPresentationFor(settings, false).palette
+    expect([stable.light.canvas, stable.dark.canvas]).toEqual([BUILT_IN_THEMES[0]!.colors.canvas, BUILT_IN_THEMES[0]!.variants!.dark!.canvas])
+  })
 })
+
+describe('the reduced-transparency listener (ADR-0149)', () => {
+  const original = window.matchMedia
+  afterEach(() => { window.matchMedia = original })
+
+  it('starts nothing where the run has no Glass, and follows the system where it does', () => {
+    const queries: string[] = []
+    window.matchMedia = vi.fn((query: string) => {
+      queries.push(query)
+      return { matches: true, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() } as unknown as MediaQueryList
+    })
+    const held = renderHook(() => useSystemReducesTransparency(false))
+    expect(held.result.current).toBe(false)
+    expect(queries).toEqual([])
+    const offered = renderHook(() => useSystemReducesTransparency(true))
+    expect(offered.result.current).toBe(true)
+    expect(queries).toContain('(prefers-reduced-transparency: reduce)')
+  })
+})
+
+afterEach(() => { localStorage.clear() })

@@ -16,9 +16,12 @@
   background: var(--tt-glass-room);
 }
 
-/* In-app glass: the same tint over a quiet gradient in the theme's hues, which stays where it is as the page scrolls. */
+/* In-app glass: the same tint over a quiet gradient in the theme's hues, which stays where it is as the page scrolls.
+   The tint is the background colour too, hidden under the opaque gradient, so the room measures the same as when the
+   desktop shows through: Watcher's night scene reads it to set its ink (WatcherNightScene.tsx, ADR-0149). */
 :root[data-glass='in-app'] body {
   background: linear-gradient(var(--tt-glass-room), var(--tt-glass-room)) fixed, var(--tt-glass-backdrop) fixed;
+  background-color: var(--tt-glass-room);
 }
 
 /* The room's own layers, which paint the canvas over the page on a solid window. */

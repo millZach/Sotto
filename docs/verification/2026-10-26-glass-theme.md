@@ -14,9 +14,14 @@ Checked October 26, 2026 on the Windows 11 development laptop (build 26200, 1920
 - `in-app-watcher-light.png` and `in-app-watcher-dark.png`: Watcher's room on the same backdrop. Watcher was not started in this profile, so the room shows Start Watcher and the night scene was not drawn; its reading of a translucent room is covered by `tests/unit/renderer/nightSceneSurface.test.ts` only.
 - `threads-dark-left-glass.png`: after choosing Sotto for the dark half, the root lost `data-glass` and the window is Sotto's solid near-black room, with no flash seen between.
 
+## After review
+
+The review that followed added what this run showed was missing. Windows' Transparency effects switch is now read from the registry, so with it off the room keeps Glass's own backdrop; it was on here, so this laptop's flat material is still not detectable (ADR-0149, known limitation). Glass holds Contrast at 100% or above, since lower values took words under 4.5:1 over a black desktop. In-app glass keeps its tint measurable, so Watcher's night scene starts on it. These were checked by unit tests, not captured again.
+
 ## Not verified
 
 - The blurred desktop through the window on Windows 11, for the reason above. It needs a Windows machine whose compositor draws Acrylic; the spec runs unchanged there.
 - macOS vibrancy and the Linux in-app look on a real Omarchy desktop.
 - Watcher's night scene over Glass in the running app.
 - Switching the system between light and dark while Glass paints one half only.
+- Turning Transparency effects off and on while Glass paints; it was not toggled on this machine.

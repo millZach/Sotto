@@ -7,6 +7,8 @@ import { z } from 'zod'
  * so on stable the window has no way to ask for the material and is never see-through.
  */
 export const GLASS_WINDOW_SET = 'sotto:glass-window:set'
+/** Main to the main window: the system took the material away (false) or gave it back (true). */
+export const GLASS_WINDOW_CHANGED = 'sotto:glass-window:changed'
 
 /** The material main can draw behind the main window here, decided once at start. */
 export type GlassWindowMaterial = 'acrylic' | 'vibrancy'
@@ -30,6 +32,8 @@ export interface GlassWindowState {
 export interface GlassWindowBridge extends GlassWindowState {
   /** Ask main to turn the material on or off; resolves whether the window is see-through now. */
   readonly setSeeThrough: (on: boolean) => Promise<boolean>
+  /** Hear when the system takes the material away or gives it back while Glass paints; returns the unsubscribe. */
+  readonly onChanged: (listener: (seeThrough: boolean) => void) => () => void
 }
 
 export function glassWindowArguments(material: GlassWindowMaterial | null, seeThrough: boolean): string[] {

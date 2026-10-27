@@ -185,6 +185,13 @@ export const GLASS_DARK_THEME_COLORS: ThemeColors = {
   terminalScrollbarHover: 'oklch(0.43 0.01 255)',
 }
 
+/**
+ * The lowest Contrast Glass paints at. Below 100% the words mix toward the solid room colour, which is not what is
+ * behind them when the desktop shows through, and over pure black by day a link on the selected row falls to 1.4:1 at
+ * 50%. So Glass holds its words at full strength or stronger; the slider's higher values still apply.
+ */
+export const GLASS_CONTRAST_FLOOR = 100
+
 /** The custom properties appearance.ts writes on the root while Glass paints, and removes when it stops. */
 export const GLASS_TINT_VARIABLES = {
   room: '--theme-glass-room',

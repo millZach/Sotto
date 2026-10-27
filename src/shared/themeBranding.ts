@@ -142,8 +142,11 @@ export interface WidgetPresentationSettings extends ThemeSelection {
   readonly reducedMotion: 'system' | 'on'
 }
 
-/** Every presentation field a widget snapshot carries, from settings. */
-export function widgetPresentationFor(settings: WidgetPresentationSettings): {
+/**
+ * Every presentation field a widget snapshot carries, from settings. `glass` is the run's answer for the Glass theme's
+ * Owl feature (ADR-0149): with it, a half saved on Glass dresses the widget in Glass's solid roles; without it, Sotto's.
+ */
+export function widgetPresentationFor(settings: WidgetPresentationSettings, glass: boolean): {
   readonly theme: WidgetPresentationSettings['theme']
   readonly palette: WidgetPalette
   readonly reducedMotion: WidgetPresentationSettings['reducedMotion']
@@ -152,7 +155,7 @@ export function widgetPresentationFor(settings: WidgetPresentationSettings): {
     theme: settings.theme === 'system' && settings.omarchyTheme &&
       (settings.omarchyTheme.appearance === 'dark' ? settings.darkTheme : settings.lightTheme) === OMARCHY_THEME_ID
       ? settings.omarchyTheme.appearance : settings.theme,
-    palette: widgetPaletteFor(settings),
+    palette: widgetPaletteFor({ ...settings, glass }),
     reducedMotion: settings.reducedMotion,
   }
 }

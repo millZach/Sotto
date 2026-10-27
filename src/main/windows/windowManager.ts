@@ -276,7 +276,12 @@ export interface WindowManagerDependencies {
    * main window (null where it has none and Glass paints its own backdrop), and whether the saved look paints Glass
    * when the window is made. Absent, the window is always solid and the renderer is told nothing of Glass.
    */
-  readonly glassWindow?: { readonly material: GlassWindowMaterial | null; readonly seeThroughAtStart: () => boolean }
+  readonly glassWindow?: {
+    readonly material: GlassWindowMaterial | null
+    readonly seeThroughAtStart: () => boolean
+    /** Tells the main window when the system takes the material away or gives it back, so its room follows. */
+    readonly onSeeThroughChanged?: (seeThrough: boolean) => void
+  }
 }
 
 type WindowKind = RendererRole
@@ -398,6 +403,8 @@ export class WindowManager {
   private mainWindow: BrowserWindowLike | null = null
   /** Whether the renderer last asked for a see-through window; a new main window is made the way it was left. */
   private seeThroughWanted: boolean | null = null
+  /** False while the system will not draw the material, as with Windows' Transparency effects off (ADR-0149). */
+  private glassMaterialAvailable = true
   private widgetWindow: BrowserWindowLike | null = null
   private widgetFocusable: boolean | null = null
   private mainReady: Promise<BrowserWindowLike> | null = null
@@ -431,8 +438,25 @@ export class WindowManager {
   /** Whether a main window made now is see-through: as the renderer last left it, or as the saved look paints. */
   private mainSeeThrough(): boolean {
     const glass = this.dependencies.glassWindow
-    if (glass === undefined || glass.material === null) return false
+    if (glass === undefined || glass.material === null || !this.glassMaterialAvailable) return false
     return this.seeThroughWanted ?? glass.seeThroughAtStart()
+  }
+
+  /**
+   * Whether the system draws the material now. Electron cannot see whether a material was drawn, only what the system
+   * says it would draw; while it says no, the window stays solid and its room keeps Glass's own backdrop. The room
+   * hears first, so it is opaque before the material goes; when it comes back, the window is see-through again if the
+   * room still asks for it.
+   */
+  setGlassMaterialAvailable(available: boolean): void {
+    const glass = this.dependencies.glassWindow
+    if (glass === undefined || glass.material === null || available === this.glassMaterialAvailable) return
+    this.glassMaterialAvailable = available
+    if (this.seeThroughWanted !== true) return
+    if (!available) {
+      glass.onSeeThroughChanged?.(false)
+      this.applyMaterial(false)
+    } else if (this.applyMaterial(true)) glass.onSeeThroughChanged?.(true)
   }
 
   /**
@@ -444,6 +468,13 @@ export class WindowManager {
     const glass = this.dependencies.glassWindow
     if (glass === undefined || glass.material === null) return false
     this.seeThroughWanted = on
+    const shown = on && this.glassMaterialAvailable
+    return this.applyMaterial(shown) && shown
+  }
+
+  private applyMaterial(on: boolean): boolean {
+    const glass = this.dependencies.glassWindow
+    if (glass === undefined || glass.material === null) return false
     const window = this.mainWindow
     if (window === null || window.isDestroyed()) return false
     const options = mainWindowMaterialOptions(glass.material, on)
@@ -455,7 +486,7 @@ export class WindowManager {
       window.setVibrancy(options.vibrancy ?? null)
     }
     window.setBackgroundColor?.(options.backgroundColor ?? SOLID_BACKGROUND)
-    return on
+    return true
   }
 
   createMainWindow(): Promise<BrowserWindowLike> {
