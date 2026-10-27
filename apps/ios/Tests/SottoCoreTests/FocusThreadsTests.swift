@@ -31,6 +31,22 @@ final class FocusThreadsTests: XCTestCase {
         XCTAssertTrue(rows.recent[0].failed)
         XCTAssertEqual(rows.unreadFinishedCount, 0)
     }
+    func testAThreadNeverSentToIsListedOnlyWhileOpenOrHeld() throws {
+        let unsent = #", "titleSource":"default", "summary":{"messageCount":0}"#
+        let empty = try thread("empty", unsent)
+        let sent = try thread("sent", #", "titleSource":"default", "summary":{"messageCount":2}"#)
+        let renamed = try thread("renamed", #", "titleSource":"user", "summary":{"messageCount":0}"#)
+        let older = try thread("older", #", "titleSource":"default""#)
+        let settled = try thread("settled", unsent + #", "settledAt":"2026-10-21""#)
+        let computer = ComputerThreads(hostID: "h", name: "Laptop", status: .online, threads: [empty, sent, renamed, older, settled])
+        XCTAssertTrue(ThreadGroups.isUnsent(empty))
+        XCTAssertFalse(ThreadGroups.isUnsent(older), "A computer that doesn't count messages never hides a thread")
+        XCTAssertEqual(Set(FocusThreads([computer]).recent.map(\.id)), ["h/sent", "h/renamed", "h/older"])
+        XCTAssertEqual(FocusThreads([computer]).settled.map(\.id), ["h/settled"])
+        let open = ThreadRef(hostID: "h", threadID: "empty")
+        XCTAssertTrue(FocusThreads([computer], opened: open).recent.contains { $0.id == "h/empty" })
+        XCTAssertTrue(FocusThreads([computer], holding: ["h/empty"]).recent.contains { $0.id == "h/empty" })
+    }
     func testOfflineSnapshotsDoNotClaimLiveWork() throws {
         let work = try thread("work", #", "backgroundWork":[{"type":"command"}]"#)
         for status in [ComputerStatus.connecting, .unreachable] {

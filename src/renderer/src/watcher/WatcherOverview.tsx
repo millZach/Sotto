@@ -5,6 +5,7 @@ import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentState } from '../../../shared/agents'
 import { WATCHER_GROUPS, watcherOverview, type WatcherGroup, type WatcherOverviewRow } from '../../../shared/watcherOverview'
+import type { WatcherRoomState } from '../../../shared/watcherRoom'
 import { ProviderMark } from '../agents/ProviderMark'
 import { RowTime } from '../agents/ThreadSidebar'
 import { rowStatus, type ThreadRow } from '../agents/threadFacts'
@@ -34,6 +35,12 @@ export const groupName = (group: WatcherGroup): string => i18n._(GROUP_NAMES[gro
 export const groupLabel = (group: WatcherGroup, count: number): string => {
   const name = groupName(group)
   return plural(count, { one: `${name}, # thread`, other: `${name}, # threads` })
+}
+
+/** A watched thread this window does not list (its host is out of reach): its status as the room last saw it. */
+export function unlistedStatus(row: WatcherRoomState['watchedThreads'][number]): string {
+  if (!row.connected || row.status === 'unavailable') return i18n._(msg`Can’t reach it`)
+  return row.status === 'running' ? groupName('Working') : row.status === 'error' ? i18n._(msg`Last turn failed`) : groupName('Idle')
 }
 
 export interface OverviewEntry { readonly overview: WatcherOverviewRow; readonly facts: ThreadRow }

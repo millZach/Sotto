@@ -283,3 +283,21 @@ export function launchProcess(command: string, args: readonly string[], options:
 export function runToExit(command: string, args: readonly string[]): Promise<void> {
   return gitLauncher().run(command, args)
 }
+/**
+ * Stops a process and everything it started, and settles only once that is seen gone: `taskkill /T` on Windows, where
+ * a child such as git-remote-https outlives git; elsewhere the process group a `detached` launch leads. Rejects when the
+ * group outlives its kill.
+ */
+export async function stopProcessTree(pid: number): Promise<void> {
+  if (process.platform === 'win32') { await runToExit('taskkill', ['/pid', String(pid), '/T', '/F']); return }
+  const gone = (signal: NodeJS.Signals | 0): boolean => {
+    try { process.kill(-pid, signal); return false } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ESRCH') return true; throw error }
+  }
+  if (gone('SIGKILL')) return
+  // kill only sends the signal: wait until the whole group is gone.
+  const until = Date.now() + 5_000
+  while (!gone(0)) {
+    if (Date.now() > until) throw new Error('The process group outlived its kill.')
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+}

@@ -15,6 +15,12 @@ export interface VisualStepperProps {
 /** The step to show for `index` out of `count` steps: a whole number from 0 to the last step. */
 export const clampStep = (index: number, count: number): number => Math.min(Math.max(Math.trunc(index) || 0, 0), Math.max(count - 1, 0))
 
+/** Which way a key steps a walkthrough: Left back, Right on, each without a modifier; anything else does not step. */
+export function stepDirection(event: Pick<KeyboardEvent, 'key' | 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey'>): -1 | 1 | null {
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return null
+  return event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : null
+}
+
 /**
  * A visual's walkthrough (ADR-0056, #793): "Step n of N", a dot for each step, Back and Next ("Start over" on the last
  * step), and the step's words in larger type, read out as they change. Left and Right step while focus is anywhere in
@@ -36,10 +42,10 @@ export function VisualStepper({ steps, index, onStep }: VisualStepperProps): Rea
   </div>
   const go = (next: number): void => { if (next >= 0 && next < count && next !== current) onStep(next) }
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
-    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+    const direction = stepDirection(event)
+    if (direction === null) return
     event.preventDefault()
-    const next = clampStep(current + (event.key === 'ArrowRight' ? 1 : -1), count)
+    const next = clampStep(current + direction, count)
     go(next)
     // On the dots, the focus goes with the step, so the one Tab stop stays the current step's dot.
     if (dots.current.includes(event.target as HTMLButtonElement)) dots.current[next]?.focus()

@@ -1,5 +1,7 @@
 # Sotto owns browser tasks and their page access
 
+October 27, 2026 amendment: an agent's scroll, tap or swipe on a page that was not on screen never returned, because Chromium answers wheel and touch input only once the page draws a frame (`docs/research/2026-10-27-built-in-browser.md`). The off-screen capture host described below now also holds a hidden page while an agent's input runs, not only while it is captured, and is gone as soon as the input ends. Every debugger command Sotto sends a page has a 20-second deadline; past it the action fails in words, the debugger is detached, and the page is free for its next action. Nothing else about the capture host, its occlusion switch or what agents may do changes.
+
 October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. Supervision described below has been removed and cannot answer browser requests. The browser grant and user-answer rules, as amended by ADR-0029, remain.
 
 October 16, 2026 amendment (#1040): Devin CLI 3000.11.1 attaches the servers a client passes on `session/new` and `session/load`, and Devin's floor is now 3000.11.92 (ADR-0017's amendment of this date), so a Devin thread gets the browser server. The owned profile (version 3) lets the thread's own Sotto servers through without Devin's question, as the other providers' are; any other MCP tool still asks. Discovery was checked without a turn, and the actual call verification this decision asks for passed in the live check that amendment records, in a new session and in a loaded one.

@@ -9,7 +9,7 @@ import { useFrameControls, type FrameControls } from './diagrams/DiagramFrame'
 import { ViewerDialog } from './diagrams/ViewerDialog'
 import { InteractiveVisualPage } from './InteractiveVisual'
 import { VisualCardShell } from './VisualCardShell'
-import { pageStepFor, useWalkthroughPlace } from './VisualWalkthrough'
+import { pageStepFor, useWalkthroughPlace, type ExpandedWalkthrough } from './VisualWalkthrough'
 
 /** Where a reader can turn when the page is not shown, by what the visual has besides it. */
 export function pageFallbackHint(visual: Pick<AgentVisual, 'intro' | 'steps'>): string {
@@ -49,18 +49,23 @@ export function InteractiveVisualCard({ visual, threadId }: { readonly visual: A
       // The page stops while Expand shows it, so one visual never runs twice.
       : frame.expanded ? <div className="interactive-visual" data-state="expanded" aria-hidden="true" />
         : <InteractiveVisualPage threadId={threadId} visualId={visual.id} title={visual.title} step={step} fallbackHint={fallbackHint} onEscape={returnFocus} />}
-    expandedView={frame.expanded && <InteractiveVisualViewer visual={visual} threadId={threadId} step={step} fallbackHint={fallbackHint} frame={frame} />} />
+    expandedView={walkthrough => frame.expanded && <InteractiveVisualViewer visual={visual} threadId={threadId} step={step} fallbackHint={fallbackHint} frame={frame} walkthrough={walkthrough} />} />
 }
 
-/** An interactive visual expanded over the window: the same sealed page with the room to fill, Copy source and Close. */
-function InteractiveVisualViewer({ visual, threadId, step, fallbackHint, frame }: {
+/**
+ * An interactive visual expanded over the window: the same sealed page with the room to fill, Copy source and Close,
+ * and the card's walkthrough under it. Left and Right step it while focus is outside the page; inside, they are the
+ * page's own.
+ */
+function InteractiveVisualViewer({ visual, threadId, step, fallbackHint, frame, walkthrough }: {
   readonly visual: AgentVisual; readonly threadId: string | undefined; readonly step: VisualStepPlace; readonly fallbackHint: string; readonly frame: FrameControls
+  readonly walkthrough: ExpandedWalkthrough | undefined
 }): ReactNode {
   const { t } = useLingui()
   const closeButton = useRef<HTMLButtonElement>(null)
   const { feedback, copied, copy, close } = frame
   const title = visual.title
-  return <ViewerDialog title={t({ message: `Interactive page: ${title}`, comment: '{title} is the title of a page an agent made.' })} className="interactive-visual-viewer" status={feedback} focusOnOpen={closeButton} onClose={close}
+  return <ViewerDialog title={t({ message: `Interactive page: ${title}`, comment: '{title} is the title of a page an agent made.' })} className="interactive-visual-viewer" status={feedback} focusOnOpen={closeButton} walkthrough={walkthrough} onClose={close}
     controls={<>
       <button type="button" className="rich-code__copy tt-focusable" data-copied={copied || undefined} aria-label={t`Copy page source`} title={t`Copy source`} onClick={copy}>
         {copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
