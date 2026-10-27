@@ -54,7 +54,7 @@ export function threadClearHold(thread: AgentThread | undefined, facts: ThreadCl
   return null
 }
 
-/** What the unsent sweep needs besides the clearing facts (ADR-0152). */
+/** What the unsent sweep needs besides the clearing facts (ADR-0155). */
 export interface UnsentThreadFacts extends ThreadClearFacts {
   /**
    * A client may hold words for the thread: a connected client has it open, a composer draft or a delivery record names
@@ -65,7 +65,7 @@ export interface UnsentThreadFacts extends ThreadClearFacts {
   readonly old: (threadId: string) => boolean
 }
 /**
- * Whether the host removes an unsent thread (ADR-0152): one opened and never sent to, whose provider session never
+ * Whether the host removes an unsent thread (ADR-0155): one opened and never sent to, whose provider session never
  * started, that nothing is doing or waiting on, that no client holds words for, and that has been unsent a while. Any
  * doubt keeps it. Its own worktree, if any, goes only under ADR-0041's guards, which the workspace checks as it deletes.
  */

@@ -19,6 +19,11 @@ import { resizeContentWindow } from './support/sottoWindow'
 const evidence = evidenceDirectory('artifacts/watcher-recovery')
 const switchTab = (page: Page, name: 'Watcher' | 'Threads') => page.getByRole('tablist', { name: 'Page' }).getByRole('tab', { name, exact: true })
 const pane = (page: Page) => page.getByRole('region', { name: 'Watcher', exact: true })
+/** Opens a thread beside Watcher from All threads, the room's list of every thread. */
+async function openBeside(page: Page, title: string): Promise<void> {
+  await page.getByRole('button', { name: /^All threads, \d+\. Show the list$/ }).click()
+  await page.getByRole('dialog', { name: 'All threads' }).getByRole('button', { name: `Open ${title} beside Watcher` }).click()
+}
 
 async function mainRoom(page: Page): Promise<WatcherRoomState> {
   const read = await page.evaluate(() => window.sotto!.watcher!.get())
@@ -161,8 +166,7 @@ test('a fresh Watcher request resumes a watched worker after the user takes over
       const workerNative = records.find(frame => frame.method === 'turn/start' && frame.params?.input?.some(item => item.text === 'Run the first recovery check.'))!.params!.threadId!
       await complete(codex, workerNative, 'The first check is ready for your instruction.')
       await expect.poll(async () => (await row()).status).toBe('idle')
-      await pane(page).getByRole('tab', { name: 'Watched, 1 thread' }).click()
-      await pane(page).getByRole('button', { name: 'Open Recovery worker beside Watcher' }).click()
+      await openBeside(page, 'Recovery worker')
       const worker = page.getByRole('region', { name: 'Recovery worker', exact: true })
       await expect(worker.getByRole('button', { name: 'Watch Recovery worker', exact: true })).toHaveAttribute('aria-pressed', 'true')
       const direct = 'Use my revised check before continuing.'
@@ -191,7 +195,6 @@ test('a fresh Watcher request resumes a watched worker after the user takes over
         await drainNews()
         return (await mainRoom(page)).currentOptions?.status
       }).toBe('idle')
-      await pane(page).getByRole('tab', { name: 'Conversation' }).click()
       const fresh = 'Continue watching the recovery worker with my revised check.'
       await fillPrompt(pane(page).getByRole('textbox', { name: 'Watcher message' }), fresh)
       await pane(page).getByRole('textbox', { name: 'Watcher message' }).press('Enter')
@@ -213,8 +216,7 @@ test('a fresh Watcher request resumes a watched worker after the user takes over
       await expect(pane(page).locator('[data-role="user"] .rich-message')).toContainText([fresh])
       expect(await participationA()).toEqual(fenced)
       expect(await row()).toMatchObject({ watched: true, paused: false })
-      await pane(page).getByRole('tab', { name: 'Watched, 1 thread' }).click()
-      await pane(page).getByRole('button', { name: 'Open Recovery worker beside Watcher' }).click()
+      await openBeside(page, 'Recovery worker')
       await expect(page.getByRole('region', { name: 'Recovery worker', exact: true }).locator('[data-role="assistant"]')).toContainText(['The next check passed.'])
       expect((await page.evaluate(id => window.sotto!.agents!.threadDetail!(id), workerId))?.messages.some(message => message.role === 'user' && message.text === continuation)).toBe(true)
       await capture(launched, 'recovered-after-reload.png')

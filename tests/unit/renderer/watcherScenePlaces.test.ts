@@ -151,6 +151,23 @@ describe('the painter in each place', () => {
     expect(drawn, 'the scene drew glyphs to judge').toBeGreaterThan(0)
   })
 
+  it('paints again when Watcher’s owl starts or stops glowing, steps with the glow while it glows, and holds still otherwise', () => {
+    const back = document.createElement('canvas'), front = document.createElement('canvas')
+    const painter = new NightScenePainter(back, front)
+    const layout = painter.resize(room(1280, 800), 1)!
+    painter.setInk(sceneInk({ r: 20, g: 20, b: 24 }, { r: 230, g: 230, b: 235 }, { r: 80, g: 200, b: 180 }), 'monospace')
+    const watcher = owlAt(0, layout, { at: 'home', side: 'left', flight: null, next: 1e9 }, { still: true })
+    const frame = (t: number, watcherGlows: boolean) => ({ t, still: false, ripples: [], watcher, watcherGlows, owls: [], whirl: 0, pile: null })
+    expect(painter.draw(frame(0, false))).toBe(true)
+    expect(painter.draw(frame(0, false))).toBe(false)
+    expect(painter.draw(frame(0, true)), 'the glow comes on').toBe(true)
+    expect(painter.draw(frame(0, true))).toBe(false)
+    // The glow's pulse takes the thread owls' steps, so a glowing owl paints again as the step changes.
+    expect(painter.draw(frame(0.45, true)), 'the next step of the pulse').toBe(true)
+    expect(painter.draw(frame(0.45, false)), 'the glow goes').toBe(true)
+    expect(painter.draw(frame(0.49, false)), 'nothing else changed').toBe(false)
+  })
+
   it('changes place only when it is another, and holds the layout', () => {
     const back = document.createElement('canvas'), front = document.createElement('canvas')
     const painter = new NightScenePainter(back, front)

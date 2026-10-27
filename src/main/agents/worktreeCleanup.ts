@@ -48,7 +48,7 @@ export interface WorktreeCleanupDependencies {
     /** `keep` is asked of each thread the coordinator would otherwise clear. */
     readonly clear: (days: number, keep?: (thread: AgentThread) => Promise<ThreadClearKeptReason | null>) => Promise<void>
   }
-  /** Removes unsent threads no client holds (ADR-0152), on every host and track. It runs before the folders. */
+  /** Removes unsent threads no client holds (ADR-0155), on every host and track. It runs before the folders. */
   readonly removeUnsentThreads?: () => Promise<void>
   readonly git?: RunGit
   /** Whether GitHub reports this branch's pull request merged. Absent, neither the merged rule nor auto-settle fires. */

@@ -37,7 +37,7 @@ export function threadOrnamentAllowed(thread: ThreadLifecycle & Pick<AgentThread
 /**
  * A thread opened and never sent to: on its default title, at rest, with nothing in its transcript, open, and not a
  * delegated thread, which lives under the thread that delegated to it. The desktop's sidebar and the iPhone list it only
- * while their composer holds something for it, and the host removes one no client holds (ADR-0152).
+ * while their composer holds something for it, and the host removes one no client holds (ADR-0155).
  */
 export function isUnsentThread(thread: AgentThread, project?: Pick<AgentProject, 'workspaceSettledAt'>): boolean {
   return thread.titleSource === 'default' && thread.status === 'idle' && thread.delegatedBy === undefined

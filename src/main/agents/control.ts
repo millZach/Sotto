@@ -363,7 +363,7 @@ function freezeSaved(value: unknown): void {
 }
 /** How long a delegation's hidden news waits after a send that surely did not go before it is tried again (ADR-0081). */
 const DELEGATION_NEWS_RETRY_MS = 10_000
-/** How long a thread made in this run stays unsent before the unsent sweep may remove it (ADR-0152). */
+/** How long a thread made in this run stays unsent before the unsent sweep may remove it (ADR-0155). */
 const UNSENT_THREAD_GRACE_MS = 3_600_000
 /** How long closing waits for a thread title still being written, so it is saved (#980). Quit never waits longer for one. */
 export const TITLE_WRITE_CLOSING_WAIT_MS = 2_000
@@ -870,7 +870,7 @@ export class AgentControl {
   private answeredRequests: Saved['answeredRequests'] = []
   /** Ephemeral view interest; never persisted, selected or granted assignment authority. */
   private viewedThreadIds: readonly string[] = []
-  /** When each thread made in this run was made, until it is sent to or goes, for the unsent sweep's hour (ADR-0152). */
+  /** When each thread made in this run was made, until it is sent to or goes, for the unsent sweep's hour (ADR-0155). */
   private readonly madeThisRun = new Map<string, number>()
   /** Threads that finished while no client showed them; what a client shows is what it observes (ADR-0046). */
   private readonly finishedUnread: FinishedUnread
@@ -1487,7 +1487,7 @@ export class AgentControl {
     }).catch(() => { this.logClear('threads-cleared', 'failed') })
   }
   /**
-   * Removes unsent threads no client holds (ADR-0152), through the deletion Clear settled threads uses (ADR-0140), so
+   * Removes unsent threads no client holds (ADR-0155), through the deletion Clear settled threads uses (ADR-0140), so
    * opening New thread anywhere and walking away leaves nothing behind. It rides the worktree sweep, at start and every
    * hour, on every host, Owl or stable, and says nothing on screen. An unsent thread from before this run goes at its
    * first sweep; one made in this run goes once it has stayed unsent for an hour.

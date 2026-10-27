@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted October 27, 2026, at Drake's report that four empty "New thread" rows sat among real threads on the iPhone and on no desktop list. It extends to the iPhone the rule the desktop's sidebar already follows (`listedRows` in `src/renderer/src/agents/unsentThreads.ts`), and touches [ADR-0033](0033-the-desktop-lets-paired-phones-reach-its-threads.md), under which a paired iPhone opens threads. It changes nothing in the host protocol. 0151 is claimed by an open pull request, so this takes 0152.
+Accepted October 27, 2026, at Drake's report that four empty "New thread" rows sat among real threads on the iPhone and on no desktop list. It extends to the iPhone the rule the desktop's sidebar already follows (`listedRows` in `src/renderer/src/agents/unsentThreads.ts`), and touches [ADR-0033](0033-the-desktop-lets-paired-phones-reach-its-threads.md), under which a paired iPhone opens threads. It changes nothing in the host protocol. 0151 to 0153 went to pull requests that merged first and 0154 is claimed by two open ones, so this takes 0155.
 
 Amended October 27, 2026, at Drake's word that the empty records should not be there at all: the host now removes an unsent thread no client holds. Decisions 2 and 4 are replaced; see decisions 5 to 8. It gives [ADR-0140](0140-settled-threads-can-be-cleared.md)'s deletion a second caller, outside its Owl gate, and touches [ADR-0041](0041-a-worktree-has-an-end.md) only through that deletion's worktree guards.
 

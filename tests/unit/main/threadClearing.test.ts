@@ -66,7 +66,7 @@ describe('what keeps a settled thread back from clearing (ADR-0140 decision 3)',
   })
 })
 
-describe('which unsent threads the host removes (ADR-0152)', () => {
+describe('which unsent threads the host removes (ADR-0155)', () => {
   const unsent = (extra: Partial<AgentThread> = {}): AgentThread => thread('new', { title: 'New thread', titleSource: 'default', workspaceSettledAt: null,
     nativeSessionStarted: false, summary: { messageCount: 0, activityCount: 0 }, ...extra })
   const removable = (subject: AgentThread, extra: Partial<UnsentThreadFacts> = {}) => unsentThreadRemovable(subject,

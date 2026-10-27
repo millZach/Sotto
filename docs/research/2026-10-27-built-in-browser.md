@@ -1,0 +1,34 @@
+# The built-in browser: what Codex and T3 Code do, and why Sotto's fails
+
+October 27, 2026. Zach asked for the built-in browser to look as good as the in-app browsers in Codex and T3 Code, and to stop failing in ways that make him try again. This note is the study behind that work. The prototype and the fixes follow from it.
+
+## How Codex and T3 Code do it
+
+Codex's app is closed source, so what follows comes from its docs (`learn.chatgpt.com/docs/browser.md?surface=app`) and the `openai/codex` repository. T3 Code was read at `pingdotgg/t3code@dc84b096`.
+
+**Placement.** Both put the browser beside the chat. Codex calls it split view, with a full view for one tab and Ctrl+Shift+B to show or hide it. T3 Code puts it in the right panel, which has a resize handle, and can float it as a mini player (320 by 320) over the chat. An agent opening a page shows it on its own. In T3 Code that is a setting, on by default.
+
+**Chrome.** T3 Code's row holds Back, Forward, Reload, the address, Open in system browser, Annotate and a screenshot button (`PreviewChromeRow.tsx`). With no page open it says "No preview yet. Type a URL above, or run a dev script", and lists recently used addresses and the local servers it found (`PreviewEmptyState.tsx`, `PortScanner.ts`, which polls listening ports every 3 seconds). Codex's address bar offers history matches and searches when the entry is not an address.
+
+**Agent activity.** T3 Code gives each browser call a one-line verb row ("Clicking in the preview browser") and folds a run of them into "Used browser N times", with the rows shown only when it is opened (`t3McpToolPresentation.ts`, `work-log/presentation.ts`). On the page, an agent cursor shows for 700 ms at each action with a ping on click (`AgentBrowserCursor.tsx`). A strip says who has control ("Agent has control", "You have control") with Take control. Screenshots are off by default: the agent gets a text snapshot unless it asks for an image. Codex's docs describe no transcript shape or cursor.
+
+**Pointing at an element.** Both have an Annotate mode. Codex: "Click an element, or drag to select an area," then a comment, then ask in chat. T3 Code outlines the hovered element with a 2-pixel accent border, a 10% fill and a `tag#id.class` chip, lets a drag select up to 20 elements, attaches with Enter and sends with Ctrl+Enter, and Escape cancels (`PickPreload.ts`). What it sends: the address and title, tag, a CSS selector, the React component and source location where it can find them, up to 500 characters of HTML, styles, the comment and a cropped screenshot.
+
+**Engine.** T3 Code's desktop hosts pages as Electron `webview` guests with one debugger attachment, and its server can run Playwright's headless Chromium and stream it. Codex's embedding is not documented. Both have open launch failures in their trackers: Codex #55367, #53425, #54007, #55173 and #56928; T3 Code #22626 (a Linux sandbox blocked by AppArmor), #17009 and #24159 (tabs never closed, so opening fails at the limit).
+
+## What Sotto does today
+
+The browser shows in two places. Tools > Browser stacks the tab row, an address row with a viewport picker, the grant line, the task line with Pause, a steps fold and any request above the page. The browser player floats over the composer with its own title bar, task line and grant line. In the thread, every browser call is its own activity row, and a running turn keeps them all open, so an agent that takes 40 steps shows 40 rows. Zach's word for it is "way too much information".
+
+## Why it fails
+
+The evidence is the 842 `browser_action` and 63 `browser_open` calls in this computer's Claude Code sessions (Codex threads made 4), read for the errors they returned, and a bare Electron 43.8.3 reproduction of each suspected cause on Windows.
+
+1. **Scroll, tap and swipe hang on a page that is not on screen.** Fifteen calls were cut off by Claude Code after 300 seconds with no answer: 9 scrolls, 4 taps and 2 swipes, and never a click. The reproduction shows why. Chromium waits for a frame before it answers a wheel or touch event. A page that is not drawn makes no frames, so `Input.dispatchMouseEvent` (wheel) and `Input.dispatchTouchEvent` never return, and neither does a screenshot. A click, typing and key presses return. A page is off screen whenever the player is hidden or shrunk, Tools shows something else, or the page is another tab. Screenshots already borrow an off-screen window for exactly this reason (ADR-0020), and with the page parked there the same wheel, tap and swipe return in 11 to 370 ms. Input never borrowed it.
+2. **One hang locks the page for good.** The page stays marked as running an action, so every later call on it says "A browser action is still running" (24 calls) and `browser_finish` says "Finish the pending browser action first" (6). Nothing ends the hung call, because no debugger command has a deadline except the screenshot's; it finishes only when someone shows that page again. In the reproduction a scroll held for 5 seconds returned 33 ms after its page went back on screen, which is why opening the browser to look and trying again sometimes works.
+3. **Eight hangs lock the whole browser.** The service runs at most eight operations at once, and a hung action keeps its place. After eight, every operation in every thread answers "This tool is busy": listing pages, opening one, and placing a page on screen, which Tools shows as "This page could not be shown. The browser is busy" with Try again. Try again cannot help while the hung pages stay off screen, and they hung because nobody was looking at them. No transcript shows this yet; it follows from the code and the hangs above.
+4. **Local files are refused without saying why.** Eleven of the 63 opens were `file://` addresses: prototypes in a thread's folder. The tool answered "This browser request is invalid. Use the tool's documented arguments," and in 10 of the 11 the agent went to the shell instead.
+5. **The real reason is replaced by a generic one.** When typing has no plain text field to go to, or a page has not drawn yet, the reason is an ordinary error, and the tool answers "This tool is unavailable. Refresh and try again" (9 calls: 7 typing, 2 screenshots). Nothing needs refreshing, so the agent retries.
+6. **Smaller ones.** "The page changed" on in-page navigation while an action runs (5), sharing checks during a cross-site move (4), and a page that opens before its dev server is listening, which fails once and waits for Reload (2 sessions). An agent's `browser_open` returns before the page loads, so it cannot tell a refused connection from a slow one.
+
+A related cost is #997: every action takes a full-page capture for a thumbnail nobody looks at while the page is on screen, and pages are never closed. That is performance, not reliability, and stays in #997.
