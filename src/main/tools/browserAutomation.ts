@@ -14,11 +14,12 @@ const POINT_DEADLINE = 5_000
 
 /** What point mode reports: the element under the pointer, by its tag and accessible name, and the one clicked. */
 export interface PointHandlers {
-  hover(label: string): void
-  pick(backendNodeId: number): void
+  hover(element: { tag: string; name: string }): void
+  pick(target: PointTarget): void
 }
-export interface PointedElement { readonly element: NonNullable<BrowserCapture['element']>; readonly label: string; readonly box: BrowserBounds | null }
-type Described = Omit<PointedElement, 'box'>
+/** What was picked: the node the overlay reported for a click, or the page's focused element for Enter. */
+export type PointTarget = { backendNodeId: number } | 'focused'
+export interface PointedElement { readonly element: NonNullable<BrowserCapture['element']>; readonly box: BrowserBounds | null }
 
 /** An id as a CSS identifier, escaped as `CSS.escape` would, so it becomes a selector without running script in the page. */
 export function cssIdentifier(value: string): string {
@@ -44,6 +45,8 @@ export class BrowserAutomation {
   private pointing: PointHandlers | null = null
   private hovered: number | null = null
   private hoverRequest = 0
+  /** Counts point starts and stops, so a start that finishes after a stop knows it is stale. */
+  private pointSession = 0
   private readonly errors: { kind: string; message: string }[] = []
   /** `touch` is the test iPhone's (ADR-0045): while attached, the page sees a touch screen and the mouse taps it. */
   constructor(private readonly contents: WebContents, private readonly prepareCapture: () => () => void = () => () => undefined, private readonly touch = false) {}
@@ -87,7 +90,7 @@ export class BrowserAutomation {
     if (method === 'Overlay.inspectNodeRequested' && this.pointing && typeof params.backendNodeId === 'number') {
       const handlers = this.pointing
       this.pointing = null; this.hovered = null; this.hoverRequest++
-      handlers.pick(params.backendNodeId)
+      handlers.pick({ backendNodeId: params.backendNodeId })
     }
     if (message) {
       this.errors.push({ kind: method.startsWith('Network.') ? 'network' : 'console', message: message.slice(0, 2000) })
@@ -102,46 +105,75 @@ export class BrowserAutomation {
     return Promise.race([this.contents.debugger.sendCommand(method, params) as Promise<T>, deadline]).finally(() => { if (timer) clearTimeout(timer) })
   }
   /**
-   * Point at something (ADR-0154): Chromium's own inspect overlay outlines the element under the pointer in `color`
-   * and reports it, and a click reports that element instead of reaching the page. No script goes into the page.
-   * The first click ends it, so `handlers.pick` is called at most once.
+   * Point at something (ADR-0154): Chromium's own inspect overlay tints the element under the pointer in `color` and
+   * labels it, and a click reports that element instead of reaching the page. No script goes into the page. The first
+   * click ends it, so `handlers.pick` is called at most once. An `unpoint` while this is still setting up wins: the
+   * session it started is stale, and a stale start turns the overlay back off.
    */
   async point(color: { r: number; g: number; b: number }, handlers: PointHandlers): Promise<void> {
-    await this.ready()
+    const session = ++this.pointSession
     this.pointing = handlers; this.hovered = null
+    const stale = (): boolean => session !== this.pointSession
     const fill = (a: number) => ({ ...color, a })
     try {
+      await this.ready()
+      if (stale()) return
       await this.bounded('DOM.enable')
       // The overlay names a hovered node by its DOM id, which needs the document given to this client first.
       await this.bounded('DOM.getDocument', { depth: 0 })
       await this.bounded('Overlay.enable')
-      if (this.pointing !== handlers) return
+      if (stale()) return
       await this.bounded('Overlay.setInspectMode', { mode: 'searchForNode', highlightConfig: {
-        showInfo: false, showAccessibilityInfo: false, showExtensionLines: false, showStyles: false, showRulers: false,
+        showInfo: true, showAccessibilityInfo: true, showExtensionLines: false, showStyles: false, showRulers: false,
         contentColor: fill(0.3), paddingColor: fill(0.4), borderColor: fill(0.7), marginColor: fill(0.15),
       } })
+      // Stopped while the overlay was being turned on: it is turned off again, after the command that turned it on.
+      if (stale()) await this.bounded('Overlay.setInspectMode', { mode: 'none', highlightConfig: {} }).catch(() => undefined)
     } catch (error) {
-      if (this.pointing === handlers) this.pointing = null
+      if (!stale()) this.pointing = null
       throw error
     }
   }
-  /** Point mode off: the overlay stops outlining and clicks reach the page again. */
+  /** Point mode off: the overlay stops, clicks reach the page again, and a start still setting up is stale. */
   async unpoint(): Promise<void> {
+    this.pointSession++
     this.pointing = null; this.hovered = null; this.hoverRequest++
     if (this.contents.isDestroyed() || !this.contents.debugger.isAttached()) return
     await this.bounded('Overlay.setInspectMode', { mode: 'none', highlightConfig: {} }).catch(() => undefined)
     await this.bounded('Overlay.hideHighlight').catch(() => undefined)
+  }
+  /**
+   * Enter pressed in the page while pointing: the element the keyboard is on is picked, as a click picks the one
+   * under the pointer. False when point mode is off, so the page keeps its Enter.
+   */
+  pickFocused(): boolean {
+    const handlers = this.pointing
+    if (!handlers) return false
+    this.pointing = null; this.hovered = null; this.hoverRequest++
+    handlers.pick('focused')
+    return true
   }
   private hover(nodeId: number): void {
     if (nodeId === this.hovered) return
     this.hovered = nodeId
     const request = ++this.hoverRequest, handlers = this.pointing
     void this.describe({ nodeId }).then(described => {
-      if (request === this.hoverRequest && handlers && this.pointing === handlers && described) handlers.hover(described.label)
+      if (request === this.hoverRequest && handlers && this.pointing === handlers && described) handlers.hover({ tag: described.element.tag, name: described.element.name })
     }, () => undefined)
   }
-  /** The element the overlay picked: its tag, role, accessible name, words, a selector and where it sits on screen. */
-  async pointed(backendNodeId: number): Promise<PointedElement | null> {
+  /** The node the keyboard is on: the page's focused element, found through the protocol. */
+  private async focusedNode(): Promise<number | null> {
+    const focused = await this.bounded<{ result?: { objectId?: string; subtype?: string } }>('Runtime.evaluate', { expression: 'document.activeElement', objectGroup: 'sotto-browser-point' })
+    if (!focused.result?.objectId || focused.result.subtype === 'null') return null
+    try {
+      const described = await this.bounded<{ node?: { backendNodeId?: number } }>('DOM.describeNode', { objectId: focused.result.objectId })
+      return described.node?.backendNodeId ?? null
+    } finally { await this.bounded('Runtime.releaseObjectGroup', { objectGroup: 'sotto-browser-point' }).catch(() => undefined) }
+  }
+  /** The element picked: its tag, role, accessible name, words, a selector and where it sits on screen. */
+  async pointed(target: PointTarget): Promise<PointedElement | null> {
+    const backendNodeId = target === 'focused' ? await this.focusedNode() : target.backendNodeId
+    if (backendNodeId === null) return null
     const described = await this.describe({ backendNodeId })
     if (!described) return null
     const box = await this.bounded<{ model?: { border?: number[] } }>('DOM.getBoxModel', { backendNodeId }).then(result => {
@@ -152,9 +184,9 @@ export class BrowserAutomation {
       return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y }
     }, () => null)
     const html = await this.bounded<{ outerHTML?: string }>('DOM.getOuterHTML', { backendNodeId }).then(result => result.outerHTML ?? '', () => '')
-    return { label: described.label, element: { ...described.element, text: markupText(html.slice(0, 200_000)).slice(0, 1000) }, box }
+    return { element: { ...described.element, text: markupText(html.slice(0, 200_000)).slice(0, 1000) }, box }
   }
-  private async describe(node: { nodeId: number } | { backendNodeId: number }): Promise<Described | null> {
+  private async describe(node: { nodeId: number } | { backendNodeId: number }): Promise<Omit<PointedElement, 'box'> | null> {
     const described = await this.bounded<{ node?: { nodeName?: string; localName?: string; nodeType?: number; attributes?: string[] } }>('DOM.describeNode', node)
     const found = described.node
     if (!found || found.nodeType !== 1) return null
@@ -167,7 +199,7 @@ export class BrowserAutomation {
     // eslint-disable-next-line no-control-regex -- Untrusted page words shown in Sotto's own chrome.
     const name = String(accessible?.name?.value || attributes.get('aria-label') || attributes.get('alt') || '').replace(/[\x00-\x1f\x7f‪-‮⁦-⁩]/gu, ' ').replace(/\s+/gu, ' ').trim().slice(0, 500)
     const id = attributes.get('id')
-    return { element: { tag, role: ['generic', 'none', 'presentation'].includes(role) ? '' : role, name, text: '', selector: id ? `#${cssIdentifier(id)}` : tag }, label: name ? `${tag} · ${name}` : tag }
+    return { element: { tag, role: ['generic', 'none', 'presentation'].includes(role) ? '' : role, name, text: '', selector: id ? `#${cssIdentifier(id)}` : tag } }
   }
   async inspect(): Promise<string> {
     await this.ready()
@@ -301,6 +333,7 @@ export class BrowserAutomation {
   clear(): void { this.errors.length = 0 }
   dispose(): void {
     this.clear()
+    this.pointSession++
     this.pointing = null; this.hovered = null; this.hoverRequest++
     if (this.contents.isDestroyed()) return
     this.contents.debugger?.removeListener('message', this.onMessage)

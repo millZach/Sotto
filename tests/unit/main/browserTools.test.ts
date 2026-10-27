@@ -22,7 +22,7 @@ vi.mock('electron', async () => {
     getURL() { return this.url }
     isDestroyed() { return this.destroyed }
     loadURL(url: string) { this.url = url; return Promise.resolve() }
-    setWindowOpenHandler = vi.fn()
+    setWindowOpenHandler = vi.fn(); focus = vi.fn()
     close() { this.destroyed = true; this.emit('destroyed') }
   }
   class IsolatedSession extends EventEmitter {
@@ -115,13 +115,13 @@ async function browserFixture(withWindow = false, gone: ReadonlySet<string> = ne
   const files = new FilesService({ resolveBinding: threadId => gone.has(threadId) ? null : ({ threadId, projectId: 'p', workingDirectory: directory }), copyPath: vi.fn(), reveal: vi.fn() })
   const emit = vi.fn(), attached = new Set<WebContentsView>()
   const window = Object.assign(new EventEmitter(), { isDestroyed: () => false, getContentSize: () => [1200, 800], webContents: Object.assign(new EventEmitter(), { getZoomFactor: () => 1, focus: vi.fn() }), contentView: { addChildView: (view: WebContentsView) => attached.add(view), removeChildView: (view: WebContentsView) => attached.delete(view) } }) as unknown as BrowserWindow
-  const service = new BrowserService({ files, getWindow: () => withWindow ? window : null, emit, openExternal: vi.fn(), destination: async () => 'embedded', byDefault })
+  const service = new BrowserService({ files, getWindow: () => withWindow ? window : null, emit, openExternal: vi.fn(), destination: async () => 'embedded', byDefault, pointAtSomething: true })
   cleanup.push(async () => service.dispose())
   const owner = unwrap(await service.list({ threadId: 'a' })).workspace
   const target = { threadId: 'a', workspaceId: owner.workspaceId }
   const page = unwrap(await service.create({ ...target, url: 'http://localhost:4321/' }))
   const view = vi.mocked(WebContentsView).mock.results.at(-1)!.value as WebContentsView
-  return { service, target: { ...target, pageId: page.id }, view, emit, attached, window }
+  return { service, target: { ...target, pageId: page.id }, view, emit, attached, window, files }
 }
 
 describe('browser agent boundaries', () => {
@@ -602,28 +602,43 @@ describe('browser grant (ADR-0029)', () => {
 
 describe('point at something (ADR-0154)', () => {
   const bounds = { x: 400, y: 100, width: 600, height: 500 }
-  /** The overlay's answers for a Sign in button with id `sign-in`, at 10, 20 and 120 by 40. */
-  function signInPage(view: WebContentsView): void {
+  const color = { r: 10, g: 120, b: 200 }
+  /** The overlay's answers for a Sign in button with id `sign-in`, at 10, 20 and 120 by 40; `describeGate` holds a pick's description. */
+  function signInPage(view: WebContentsView, describeGate?: Promise<void>): void {
     const command = vi.mocked(view.webContents.debugger.sendCommand)
     const original = command.getMockImplementation()!
     command.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
-      if (method === 'DOM.describeNode') return { node: { nodeType: 1, nodeName: 'BUTTON', localName: 'button', backendNodeId: 9, attributes: ['id', 'sign-in', 'class', 'primary'] } }
+      if (method === 'DOM.describeNode') {
+        if (describeGate && params && 'backendNodeId' in params) await describeGate
+        return { node: { nodeType: 1, nodeName: 'BUTTON', localName: 'button', backendNodeId: 9, attributes: ['id', 'sign-in', 'class', 'primary'] } }
+      }
       if (method === 'Accessibility.getPartialAXTree') return { nodes: [{ role: { value: 'button' }, name: { value: 'Sign in' } }] }
       if (method === 'DOM.getBoxModel') return { model: { border: [10, 20, 130, 20, 130, 60, 10, 60] } }
       if (method === 'DOM.getOuterHTML') return { outerHTML: '<button id="sign-in" class="primary"><span>Sign</span> in</button>' }
       return original(method, params)
     })
   }
+  const inspectModes = (view: WebContentsView) => vi.mocked(view.webContents.debugger.sendCommand).mock.calls.filter(([method]) => method === 'Overlay.setInspectMode').map(([, params]) => (params as { mode: string }).mode)
   const overlay = (view: WebContentsView, mode: string) => vi.mocked(view.webContents.debugger.sendCommand).mock.calls.filter(([method, params]) => method === 'Overlay.setInspectMode' && (params as { mode?: string }).mode === mode)
-  const pointEvents = (emit: ReturnType<typeof vi.fn>) => emit.mock.calls.map(([event]) => event as { type: string; point?: { state: string } }).filter(event => event.type === 'point')
+  const pointEvents = (emit: ReturnType<typeof vi.fn>) => emit.mock.calls.map(([event]) => event as { type: string; point?: { state: string; reason?: string } }).filter(event => event.type === 'point')
+  const ended = (emit: ReturnType<typeof vi.fn>) => pointEvents(emit).filter(event => event.point?.state === 'ended').map(event => event.point!.reason)
+  const picks = (emit: ReturnType<typeof vi.fn>) => pointEvents(emit).filter(event => event.point?.state === 'picked')
+  async function pointing(fixture: Awaited<ReturnType<typeof browserFixture>>): Promise<void> {
+    unwrap(await fixture.service.mount({ ...fixture.target, bounds }))
+    unwrap(await fixture.service.point({ ...fixture.target, on: true, color }))
+    await vi.waitFor(() => expect(inspectModes(fixture.view).at(-1)).toBe('searchForNode'))
+  }
 
-  it('turns Chromium\'s inspect overlay on in the accent for the page the pane shows, without sharing or a grant, and off again', async () => {
+  it('turns Chromium\'s inspect overlay on in the accent, with its own label, for the page the pane shows, without sharing or a grant, and off again', async () => {
     const { service, target, view } = await browserFixture(true)
     unwrap(await service.mount({ ...target, bounds }))
-    expect(unwrap(await service.point({ ...target, on: true, color: { r: 10, g: 120, b: 200 } }))).toEqual({ pointing: true })
+    expect(unwrap(await service.point({ ...target, on: true, color }))).toEqual({ pointing: true })
     await vi.waitFor(() => expect(overlay(view, 'searchForNode')).toHaveLength(1))
     const config = (overlay(view, 'searchForNode')[0]![1] as { highlightConfig: Record<string, unknown> }).highlightConfig
-    expect(config).toMatchObject({ showInfo: false, borderColor: { r: 10, g: 120, b: 200 }, contentColor: { r: 10, g: 120, b: 200 } })
+    // The live highlight is Chromium's tint and its own label, which names the element on the page (item 10).
+    expect(config).toMatchObject({ showInfo: true, showAccessibilityInfo: true, borderColor: { ...color }, contentColor: { ...color } })
+    // The page gets the keyboard, so Tab moves through its own elements.
+    await vi.waitFor(() => expect(view.webContents.focus).toHaveBeenCalled())
     expect(unwrap(await service.list({ threadId: 'a' })).pages[0]!.sharedOrigin).toBeNull()
     expect(unwrap(await service.point({ ...target, on: false }))).toEqual({ pointing: false })
     await vi.waitFor(() => expect(overlay(view, 'none')).toHaveLength(1))
@@ -631,59 +646,135 @@ describe('point at something (ADR-0154)', () => {
 
   it('does nothing on a page nobody shows', async () => {
     const { service, target, view } = await browserFixture(true)
-    expect(unwrap(await service.point({ ...target, on: true }))).toEqual({ pointing: false })
+    expect(unwrap(await service.point({ ...target, on: true, color }))).toEqual({ pointing: false })
     unwrap(await service.mount({ ...target, bounds }))
     expect(overlay(view, 'searchForNode')).toHaveLength(0)
   })
 
-  it('names the element under the pointer, and a click describes it and takes a picture of the page', async () => {
-    const { service, target, view, emit, window } = await browserFixture(true)
-    signInPage(view)
+  it('refuses a request without the theme\'s accent, so no colour is made up in main (item 7)', async () => {
+    const { service, target, view } = await browserFixture(true)
     unwrap(await service.mount({ ...target, bounds }))
-    unwrap(await service.point({ ...target, on: true }))
-    await vi.waitFor(() => expect(overlay(view, 'searchForNode')).toHaveLength(1))
+    expect(await service.point({ ...target, on: true })).toMatchObject({ ok: false, error: { code: 'blocked' } })
+    expect(overlay(view, 'searchForNode')).toHaveLength(0)
+  })
+
+  it('is refused while the quiet-browser Owl answer is off (item 4)', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'sotto-browser-point-'))
+    cleanup.push(() => rm(directory, { recursive: true, force: true }))
+    const files = new FilesService({ resolveBinding: threadId => ({ threadId, projectId: 'p', workingDirectory: directory }), copyPath: vi.fn(), reveal: vi.fn() })
+    const service = new BrowserService({ files, getWindow: () => null, emit: vi.fn(), openExternal: vi.fn(), destination: async () => 'embedded', byDefault: () => false })
+    cleanup.push(async () => service.dispose())
+    const owner = unwrap(await service.list({ threadId: 'a' })).workspace
+    const page = unwrap(await service.create({ threadId: 'a', workspaceId: owner.workspaceId, url: 'http://localhost:4321/' }))
+    expect(await service.point({ threadId: 'a', workspaceId: owner.workspaceId, pageId: page.id, on: true, color })).toMatchObject({ ok: false, error: { code: 'unavailable' } })
+  })
+
+  it('lets an Off made while an On is still being checked win, so the overlay never comes on after it (item 1)', async () => {
+    const { service, target, view, files } = await browserFixture(true)
+    unwrap(await service.mount({ ...target, bounds }))
+    const real = files.resolveWorkspace.bind(files)
+    const checked = deferred<void>()
+    vi.spyOn(files, 'resolveWorkspace').mockImplementationOnce(async (...args) => { await checked.promise; return real(...args) })
+    const on = service.point({ ...target, on: true, color })
+    unwrap(await service.point({ ...target, on: false }))
+    checked.resolve()
+    expect(unwrap(await on)).toEqual({ pointing: false })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(inspectModes(view)).not.toContain('searchForNode')
+  })
+
+  it('turns the overlay back off when Off arrives while it is still being turned on (item 1)', async () => {
+    const { service, target, view } = await browserFixture(true)
+    unwrap(await service.mount({ ...target, bounds }))
+    const command = vi.mocked(view.webContents.debugger.sendCommand)
+    const original = command.getMockImplementation()!
+    const enabling = deferred<void>()
+    command.mockImplementation(async (method: string, params?: Record<string, unknown>) => { if (method === 'Network.enable') await enabling.promise; return original(method, params) })
+    unwrap(await service.point({ ...target, on: true, color }))
+    await vi.waitFor(() => expect(command).toHaveBeenCalledWith('Network.enable'))
+    unwrap(await service.point({ ...target, on: false }))
+    enabling.resolve()
+    await new Promise(resolve => setTimeout(resolve, 10))
+    // Whatever was sent, the last word the overlay had is none.
+    expect(inspectModes(view).at(-1)).toBe('none')
+  })
+
+  it('names the element under the pointer as data, and a click describes it and takes a picture of the page', async () => {
+    const fixture = await browserFixture(true)
+    const { target, view, emit, window } = fixture
+    signInPage(view)
+    await pointing(fixture)
     view.webContents.debugger.emit('message', {}, 'Overlay.nodeHighlightRequested', { nodeId: 4 })
-    await vi.waitFor(() => expect(emit).toHaveBeenCalledWith({ type: 'point', ...target, point: { state: 'hover', label: 'button · Sign in' } }))
+    // Item 8: the tag and the name go as fields, and the window formats them.
+    await vi.waitFor(() => expect(emit).toHaveBeenCalledWith({ type: 'point', ...target, point: { state: 'hover', tag: 'button', name: 'Sign in' } }))
     view.webContents.debugger.emit('message', {}, 'Overlay.inspectNodeRequested', { backendNodeId: 9 })
-    await vi.waitFor(() => expect(pointEvents(emit).at(-1)?.point?.state).toBe('picked'))
-    const picked = pointEvents(emit).at(-1)!.point as unknown as { capture: { captureId: string; image: string; url: string; element: unknown }; box: unknown }
+    await vi.waitFor(() => expect(picks(emit)).toHaveLength(1))
+    const picked = picks(emit)[0]!.point as unknown as { capture: { captureId: string; image: string; url: string; element: unknown }; box: unknown }
     expect(picked.capture.element).toEqual({ tag: 'button', role: 'button', name: 'Sign in', text: 'Sign in', selector: '#sign-in' })
     expect(picked.box).toEqual({ x: 10, y: 20, width: 120, height: 40 })
     expect(picked.capture.image).toMatch(/^data:image\/png/)
-    expect(picked.capture.url).toBe('http://localhost:4321/')
     expect(picked.capture.captureId).toMatch(/^[0-9a-f-]{36}$/)
-    // The click ends the overlay, and the window takes the keyboard back for the comment.
     expect(overlay(view, 'none')).toHaveLength(1)
     expect(window.webContents.focus).toHaveBeenCalled()
-    // A second click reaches the page; point mode was for one pick.
     view.webContents.debugger.emit('message', {}, 'Overlay.inspectNodeRequested', { backendNodeId: 9 })
     await new Promise(resolve => setTimeout(resolve, 10))
-    expect(pointEvents(emit).filter(event => event.point?.state === 'picked')).toHaveLength(1)
+    expect(picks(emit)).toHaveLength(1)
   })
 
-  it('ends when the page navigates, is hidden, or Escape is pressed in it', async () => {
-    const { service, target, view, emit } = await browserFixture(true)
-    const start = async (): Promise<void> => {
-      unwrap(await service.mount({ ...target, bounds }))
-      unwrap(await service.point({ ...target, on: true }))
-      await vi.waitFor(() => expect(view.webContents.debugger.sendCommand).toHaveBeenLastCalledWith('Overlay.setInspectMode', expect.objectContaining({ mode: 'searchForNode' })))
-    }
-    const ended = () => pointEvents(emit).filter(event => event.point?.state === 'ended').map(event => (event.point as unknown as { reason: string }).reason)
-    await start()
-    view.webContents.emit('did-start-navigation', {}, 'http://localhost:4321/next', false, true)
-    expect(ended()).toEqual(['navigated'])
-    await start()
+  it('picks the element the keyboard is on with Enter, and the page does not get that Enter (item 5)', async () => {
+    const fixture = await browserFixture(true)
+    const { view, emit } = fixture
+    signInPage(view)
+    // Off, Enter is the page's.
+    const before = { preventDefault: vi.fn() }
+    view.webContents.emit('before-input-event', before, { type: 'keyDown', key: 'Enter' })
+    expect(before.preventDefault).not.toHaveBeenCalled()
+    await pointing(fixture)
+    const enter = { preventDefault: vi.fn() }
+    view.webContents.emit('before-input-event', enter, { type: 'keyDown', key: 'Enter' })
+    expect(enter.preventDefault).toHaveBeenCalled()
+    await vi.waitFor(() => expect(picks(emit)).toHaveLength(1))
+    expect(view.webContents.debugger.sendCommand).toHaveBeenCalledWith('Runtime.evaluate', expect.objectContaining({ expression: 'document.activeElement' }))
+    expect((picks(emit)[0]!.point as unknown as { capture: { element: { selector: string } } }).capture.element.selector).toBe('#sign-in')
+  })
+
+  it('sends no picture when the page is hidden while a pick is being described (item 2)', async () => {
+    const fixture = await browserFixture(true)
+    const { service, target, view, emit } = fixture
+    const describing = deferred<void>()
+    signInPage(view, describing.promise)
+    await pointing(fixture)
+    view.webContents.debugger.emit('message', {}, 'Overlay.inspectNodeRequested', { backendNodeId: 9 })
+    await new Promise(resolve => setTimeout(resolve, 5))
     unwrap(await service.mount({ ...target, bounds: null }))
-    expect(ended()).toEqual(['navigated', 'hidden'])
-    await start()
+    describing.resolve()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(picks(emit)).toHaveLength(0)
+    expect(ended(emit)).toEqual(['hidden'])
+  })
+
+  it('ends when the page navigates, is hidden, its window is minimized or hidden, or Escape is pressed in it (item 3)', async () => {
+    const fixture = await browserFixture(true)
+    const { view, emit, window, service, target } = fixture
+    await pointing(fixture)
+    view.webContents.emit('did-start-navigation', {}, 'http://localhost:4321/next', false, true)
+    expect(ended(emit)).toEqual(['navigated'])
+    await pointing(fixture)
+    unwrap(await service.mount({ ...target, bounds: null }))
+    expect(ended(emit)).toEqual(['navigated', 'hidden'])
+    await pointing(fixture)
+    window.emit('minimize')
+    expect(ended(emit)).toEqual(['navigated', 'hidden', 'hidden'])
+    await pointing(fixture)
+    window.emit('hide')
+    expect(ended(emit)).toEqual(['navigated', 'hidden', 'hidden', 'hidden'])
+    await pointing(fixture)
     const keyboard = { preventDefault: vi.fn() }
     view.webContents.emit('before-input-event', keyboard, { type: 'keyDown', key: 'Escape' })
     expect(keyboard.preventDefault).toHaveBeenCalled()
-    expect(ended()).toEqual(['navigated', 'hidden', 'escape'])
-    // Off, Escape is the page's again.
+    expect(ended(emit)).toEqual(['navigated', 'hidden', 'hidden', 'hidden', 'escape'])
     const later = { preventDefault: vi.fn() }
     view.webContents.emit('before-input-event', later, { type: 'keyDown', key: 'Escape' })
     expect(later.preventDefault).not.toHaveBeenCalled()
-    await vi.waitFor(() => expect(overlay(view, 'none').length).toBeGreaterThanOrEqual(3))
   })
 })

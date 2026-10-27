@@ -808,13 +808,13 @@ msgstr ""
 msgid "Click an element, or use arrow keys and Enter."
 msgstr ""
 
-#. Shown over a browser page while the user points at something on it. Esc is the Escape key.
-#: src/renderer/src/tools/BrowserPoint.tsx
-msgid "Click something on the page to point at it · <0>Esc</0> to stop"
-msgstr ""
-
 #: src/renderer/src/tools/BrowserPane.tsx
 msgid "Click something on the page to tell the agent about it"
+msgstr ""
+
+#. Shown over a browser page while the user points at something on it. Enter and Esc are keys.
+#: src/renderer/src/tools/BrowserPoint.tsx
+msgid "Click something, or Tab to it and press <0>Enter</0> · <1>Esc</1> to stop"
 msgstr ""
 
 #: src/renderer/src/tools/browserSteps.ts
@@ -2339,6 +2339,10 @@ msgstr ""
 #. Lets the user click an element on the browser page to tell the agent about it.
 #: src/renderer/src/tools/BrowserPane.tsx
 msgid "Point at something"
+msgstr ""
+
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Point at something could not read the theme's colours. Try again."
 msgstr ""
 
 #: src/renderer/src/tools/BrowserPane.tsx

@@ -40,6 +40,19 @@ describe('screenshot attachment input', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove shot.png' }))
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
   })
+  it('shows the picture from Point at something as one item, named after the element with the comment under it, and removes all of it (ADR-0154)', () => {
+    const pointed: AgentAttachmentHandle = { ...attached('pointed', 100), name: 'button · Sign in', browserFeedback: { label: 'button · Sign in', comment: 'Match the header', context: 'Selector: #sign-in' } }
+    function Pointed() {
+      const [images, setImages] = useState<AgentAttachmentHandle[]>([pointed])
+      return <ScreenshotInput target="workshop" attachments={images} onChange={setImages} disabled={false} supported><textarea aria-label="Prompt" /></ScreenshotInput>
+    }
+    render(<Pointed />)
+    const chip = screen.getByText('button · Sign in').closest('figure')!
+    expect(chip).toHaveTextContent('Match the header')
+    expect(chip.textContent).not.toContain('#sign-in')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove button · Sign in' }))
+    expect(screen.queryByText('Match the header')).not.toBeInTheDocument()
+  })
   it('accepts pasted screenshot files without inserting clipboard text', async () => {
     render(<Harness />)
     fireEvent.paste(screen.getByRole('textbox'), { clipboardData: { items: [{ kind: 'file', getAsFile: file }] } })

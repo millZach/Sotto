@@ -394,6 +394,12 @@ describe('browser steps in plain words', () => {
 })
 
 describe('point at something on Owl (ADR-0154)', () => {
+  // The overlay is tinted in the theme's accent, read from the theme role through a canvas, which jsdom does not draw.
+  beforeEach(() => {
+    document.documentElement.style.setProperty('--tt-accent', 'rgb(10, 120, 200)')
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => ({ fillStyle: '', fillRect() {}, getImageData: () => ({ data: [10, 120, 200, 255] }) })) as never)
+  })
+  afterEach(() => { document.documentElement.style.removeProperty('--tt-accent') })
   const CAPTURE_ID = '55555555-5555-4555-8555-555555555555'
   const box = { x: 1000, y: 20, width: 120, height: 40 }
   const pick = { image: 'data:image/png;base64,YWJj', url: 'http://localhost:5173/sign-in', width: 1280, height: 800, captureId: CAPTURE_ID,
@@ -409,7 +415,7 @@ describe('point at something on Owl (ADR-0154)', () => {
     const button = await within(tools).findByRole('button', { name: 'Point at something' })
     await waitFor(() => expect(browser.bridge.mount).toHaveBeenCalledWith(expect.objectContaining({ pageId: PAGE_1, bounds: expect.objectContaining({ width: 400 }) })))
     fireEvent.click(button)
-    await waitFor(() => expect(browser.bridge.point).toHaveBeenCalledWith(expect.objectContaining({ ...target, on: true })))
+    await waitFor(() => expect(browser.bridge.point).toHaveBeenCalledWith({ ...target, on: true, color: { r: 10, g: 120, b: 200 } }))
     return { browser, tools, button }
   }
 
@@ -421,14 +427,14 @@ describe('point at something on Owl (ADR-0154)', () => {
     const row = [...tools.querySelector('.browser-pane__row')!.querySelectorAll('button, input')].map(item => item.getAttribute('aria-label'))
     expect(row.slice(row.indexOf('Address'), row.indexOf('Address') + 3)).toEqual(['Address', 'Point at something', 'Screenshot to message'])
     expect(button).toHaveAttribute('aria-pressed', 'false')
-    expect(within(tools).queryByText(/Click something on the page to point at it/)).not.toBeInTheDocument()
+    expect(within(tools).queryByText(/Click something, or Tab to it/)).not.toBeInTheDocument()
   })
 
   it('turns the overlay on, names what is under the pointer, and turns it off again from the button', async () => {
     const { browser, tools, button } = await pointing()
     expect(button).toHaveAttribute('aria-pressed', 'true')
-    expect(tools.querySelector('.browser-point__line')).toHaveTextContent('Click something on the page to point at it · Esc to stop')
-    point(browser, { state: 'hover', label: 'button · Sign in' })
+    expect(tools.querySelector('.browser-point__line')).toHaveTextContent('Click something, or Tab to it and press Enter · Esc to stop')
+    point(browser, { state: 'hover', tag: 'button', name: 'Sign in' })
     expect(tools.querySelector('.browser-point__hovered')).toHaveTextContent('button · Sign in')
     fireEvent.click(button)
     await waitFor(() => expect(browser.bridge.point).toHaveBeenLastCalledWith({ ...target, on: false }))
@@ -450,7 +456,7 @@ describe('point at something on Owl (ADR-0154)', () => {
     expect(within(comment).getAllByRole('button').map(item => item.textContent)).toEqual(['Cancel Esc', 'Add to message'])
     fireEvent.change(field, { target: { value: 'Make this match the header' } })
     fireEvent.click(within(comment).getByRole('button', { name: 'Add to message' }))
-    await waitFor(() => expect(appendBrowserFeedback).toHaveBeenCalledWith(drafts, 'visual-gate', pick, 'Make this match the header', expect.any(Boolean), expect.objectContaining({ name: 'button · Sign in', box })))
+    await waitFor(() => expect(appendBrowserFeedback).toHaveBeenCalledWith(drafts, 'visual-gate', pick, 'Make this match the header', expect.any(Boolean), expect.objectContaining({ pointed: { label: 'button · Sign in', box } })))
     await waitFor(() => expect(within(tools).queryByRole('dialog')).not.toBeInTheDocument())
     expect(button).toHaveAttribute('aria-pressed', 'false')
     await waitFor(() => expect(button).toHaveFocus())
@@ -477,6 +483,42 @@ describe('point at something on Owl (ADR-0154)', () => {
     expect(tools.querySelector('.browser-point__line')).toBeNull()
     await waitFor(() => expect(browser.bridge.point).toHaveBeenLastCalledWith({ ...target, on: false }))
     expect(button).toHaveFocus()
+  })
+
+  it('does not point when the theme\'s accent cannot be read, and says so (item 7)', async () => {
+    owl(true)
+    vi.mocked(HTMLCanvasElement.prototype.getContext).mockImplementation((() => null) as never)
+    const browser = fakeBrowser([page(PAGE_1)])
+    mount(browser)
+    const tools = panel()
+    const button = await within(tools).findByRole('button', { name: 'Point at something' })
+    await waitFor(() => expect(browser.bridge.mount).toHaveBeenCalledWith(expect.objectContaining({ pageId: PAGE_1, bounds: expect.objectContaining({ width: 400 }) })))
+    fireEvent.click(button)
+    await waitFor(() => expect(within(tools).getByRole('alert')).toHaveTextContent('Point at something could not read the theme\'s colours. Try again.'))
+    expect(button).toHaveAttribute('aria-pressed', 'false')
+    expect(browser.bridge.point).not.toHaveBeenCalledWith(expect.objectContaining({ on: true }))
+  })
+
+  it('places the comment again when the comment itself changes size, as a problem line makes it taller (item 6)', async () => {
+    const observed: Element[] = []
+    const callbacks: (() => void)[] = []
+    vi.stubGlobal('ResizeObserver', class { constructor(callback: () => void) { callbacks.push(callback) } observe(element: Element) { observed.push(element) } disconnect() {} })
+    try {
+      const { browser, tools } = await pointing()
+      point(browser, { state: 'picked', capture: pick, box })
+      const comment = within(tools).getByRole('dialog', { name: 'Point at button · Sign in' })
+      expect(observed).toContain(comment)
+      // jsdom lays nothing out; the page's place is 400 by 300 and the comment grows to 280 tall.
+      const area = tools.querySelector<HTMLElement>('.browser-point')!
+      Object.defineProperty(area, 'clientWidth', { configurable: true, value: 400 }); Object.defineProperty(area, 'clientHeight', { configurable: true, value: 300 })
+      const frame = tools.querySelector<HTMLElement>('.browser-point__frame')!
+      Object.defineProperty(frame, 'clientWidth', { configurable: true, value: 400 }); Object.defineProperty(frame, 'clientHeight', { configurable: true, value: 250 })
+      Object.defineProperty(comment, 'offsetWidth', { configurable: true, value: 300 }); Object.defineProperty(comment, 'offsetHeight', { configurable: true, value: 280 })
+      act(() => { for (const callback of callbacks) callback() })
+      const top = parseFloat(comment.style.top), left = parseFloat(comment.style.left)
+      expect(top + 280).toBeLessThanOrEqual(300 - 8)
+      expect(left + 300).toBeLessThanOrEqual(400 - 8)
+    } finally { vi.unstubAllGlobals() }
   })
 
   it('leaves Point when main ends it, as when the page navigates', async () => {

@@ -54,24 +54,24 @@ export async function outlinedCapture(capture: BrowserCapture, box: BrowserPoint
   } catch { return capture }
 }
 
+/** An element as main names it: its tag and its accessible name. */
+export interface PointedName { readonly tag: string; readonly name: string }
 /** How an element is named while pointing: its tag set as code, then its accessible name. */
-export function PointLabel({ tag, name }: { readonly tag: string; readonly name: string }): ReactNode {
+export function PointLabel({ tag, name }: PointedName): ReactNode {
   return <><code>{tag}</code>{name ? <> · {name}</> : null}</>
 }
-/** `button · Sign in` back into its tag and name. */
-export function splitLabel(label: string): { tag: string; name: string } {
-  const at = label.indexOf(' · ')
-  return at < 0 ? { tag: label, name: '' } : { tag: label.slice(0, at), name: label.slice(at + 3) }
+/** The same name as plain words, `button · Sign in`, for a label or the composer's chip. */
+export function pointedWords({ tag, name }: PointedName): string {
+  return name ? `${tag} · ${name}` : tag
 }
 
 /** The line over the page while pointing: what to do, and the element under the pointer once there is one. */
-export function PointLine({ hover }: { readonly hover: string | null }): ReactNode {
-  const named = hover ? splitLabel(hover) : null
+export function PointLine({ hover }: { readonly hover: PointedName | null }): ReactNode {
   return <div className="browser-point__line">
     <SquareDashedMousePointer size={14} aria-hidden="true" />
     {/* The element under the pointer changes as it moves, so only the instruction is announced. */}
-    {named ? <span className="browser-point__hovered" aria-hidden="true"><PointLabel {...named} /></span> : null}
-    <span role="status"><Trans comment="Shown over a browser page while the user points at something on it. Esc is the Escape key.">Click something on the page to point at it · <kbd>Esc</kbd> to stop</Trans></span>
+    {hover ? <span className="browser-point__hovered" aria-hidden="true"><PointLabel {...hover} /></span> : null}
+    <span role="status"><Trans comment="Shown over a browser page while the user points at something on it. Enter and Esc are keys.">Click something, or Tab to it and press <kbd>Enter</kbd> · <kbd>Esc</kbd> to stop</Trans></span>
   </div>
 }
 
@@ -89,7 +89,7 @@ export function PointComment({ pick, onAdd, onCancel }: {
   const { capture, box } = pick
   const element = capture.element
   const named = { tag: element?.tag ?? '', name: element?.name ?? '' }
-  const label = named.name ? `${named.tag} · ${named.name}` : named.tag
+  const label = pointedWords(named)
   const [comment, setComment] = useState('')
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
@@ -102,33 +102,40 @@ export function PointComment({ pick, onAdd, onCancel }: {
   useEffect(() => { field.current?.focus() }, [])
   useEffect(() => () => adding.current?.abort(), [])
 
-  // The picture is drawn to fit the page's place; the outline, its name and the comment follow it in pixels, the
-  // comment under the element, or over it when there is no room below, and never past the picture's edges.
+  // The picture is drawn to fit the page's place; the outline and its name follow it in pixels. The comment goes under
+  // the element, or over it when there is no room below, and always inside the page's place, measured again whenever
+  // the picture or the comment itself changes size (a problem line makes it taller).
   useLayoutEffect(() => {
-    const element = frame.current
+    const element = frame.current, pop = popover.current
     if (!element) return
     const measure = (): void => {
-      const width = element.clientWidth, height = element.clientHeight
+      const width = element.clientWidth
+      const area = element.parentElement
+      // The page's place, in the picture's own coordinates: the picture sits at its top, centred across it.
+      const areaWidth = area?.clientWidth || width, areaHeight = area?.clientHeight || element.clientHeight
+      const areaLeft = -Math.max(0, (areaWidth - width) / 2)
       const scale = capture.width > 0 ? width / capture.width : 1
-      if (!box) { setPlace({ outline: { display: 'none' }, chip: { display: 'none' }, popover: { left: Math.max(8, (width - (popover.current?.offsetWidth ?? 0)) / 2), top: 8 } }); return }
+      const popWidth = pop?.offsetWidth ?? 0, popHeight = pop?.offsetHeight ?? 0
+      const inside = (x: number, size: number): number => Math.max(areaLeft + 8, Math.min(x, areaLeft + areaWidth - size - 8))
+      const insideY = (y: number): number => Math.max(8, Math.min(y, areaHeight - popHeight - 8))
+      if (!box) { setPlace({ outline: { display: 'none' }, chip: { display: 'none' }, popover: { left: inside((width - popWidth) / 2, popWidth), top: 8 } }); return }
       const pad = 3
       const left = box.x * scale - pad, top = box.y * scale - pad, right = (box.x + box.width) * scale + pad, bottom = (box.y + box.height) * scale + pad
       const chipWidth = chip.current?.offsetWidth ?? 0, chipHeight = chip.current?.offsetHeight ?? 0
-      const popWidth = popover.current?.offsetWidth ?? 0, popHeight = popover.current?.offsetHeight ?? 0
-      const clampX = (x: number, size: number): number => Math.max(8, Math.min(x, width - size - 8))
-      const below = bottom + 6 + chipHeight + 6 + popHeight <= height - 8 || top < height / 2
-      const chipTop = below ? Math.min(bottom + 6, height - chipHeight - 8) : Math.max(8, top - 6 - chipHeight)
-      const popTop = below ? Math.min(chipTop + chipHeight + 6, height - popHeight - 8) : Math.max(8, chipTop - 6 - popHeight)
+      const below = bottom + 6 + chipHeight + 6 + popHeight <= areaHeight - 8 || top < areaHeight / 2
+      const chipTop = below ? Math.min(bottom + 6, areaHeight - chipHeight - 8) : Math.max(8, top - 6 - chipHeight)
+      const popTop = below ? chipTop + chipHeight + 6 : chipTop - 6 - popHeight
       setPlace({
         outline: { left, top, width: right - left, height: bottom - top },
-        chip: { left: clampX(right - chipWidth, chipWidth), top: chipTop },
-        popover: { left: clampX(right - popWidth, popWidth), top: Math.max(8, popTop) },
+        chip: { left: inside(right - chipWidth, chipWidth), top: chipTop },
+        popover: { left: inside(right - popWidth, popWidth), top: insideY(popTop) },
       })
     }
     measure()
     if (typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(measure)
     observer.observe(element)
+    if (pop) observer.observe(pop)
     return () => observer.disconnect()
   }, [box, capture.width])
 

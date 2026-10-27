@@ -7,7 +7,7 @@ import {
   ATTACHED_FILE_CLASH, ATTACHED_FILES_FOLDER_IS_LINK, ATTACHED_FILES_NOT_IGNORED, ATTACHED_FILES_NOT_SAVED, attachedFileRelativePath, attachedFileSafeName, attachedFilesNote,
   carriesAttachedFiles, deliverAttachments, isAttachedFilesNote, readBackUserText, stripAttachedFilesNote, withAttachedFilesNote,
 } from '../../../src/main/agents/attachedFiles'
-import { ATTACHED_FILES_NEED_A_FOLDER } from '../../../src/shared/agents'
+import { ATTACHED_FILES_NEED_A_FOLDER, attachmentReferences } from '../../../src/shared/agents'
 import { PIXEL_PNG, promptImageOf } from '../../fixtures/stagedImages'
 import { tinyPdf } from '../../fixtures/tinyPdfs'
 
@@ -215,5 +215,38 @@ describe('reading a user message back (ADR-0131)', () => {
     const byText = (text: string) => text === 'Typed by hand' ? undefined : text === typed ? plain : undefined
     expect(readBackUserText(typed, byText)).toEqual({ text: typed, origin: plain })
     expect(readBackUserText('No note', text => text === 'No note' ? withFile : undefined)).toEqual({ text: 'No note', origin: withFile })
+  })
+})
+
+describe('Point at something feedback travelling with its picture (ADR-0154)', () => {
+  const pointed = () => ({ ...promptImageOf(PIXEL_PNG, 'pointed', 'button · Sign in'), browserFeedback: { label: 'button · Sign in', comment: 'Match the <header>.\nAnd the footer.', context: 'Browser feedback: http://localhost:5173/\nSelector: #sign-in' } })
+  it('goes to the provider as a block apart from the user\'s words, and writes nothing to the folder', async () => {
+    const { work } = await folders()
+    const delivered = await deliverAttachments(work, [pointed()])
+    expect(delivered.images).toHaveLength(1)
+    expect(delivered.note).toBe([
+      '<sotto-browser-feedback>',
+      'The user pointed at this element on a page in Sotto\'s browser. Its picture is attached, with the element outlined.',
+      'Picture: button · Sign in', 'Browser feedback: http://localhost:5173/', 'Selector: #sign-in',
+      'The user\'s comment:', 'Match the ‹header›.', 'And the footer.', '</sotto-browser-feedback>',
+    ].join('\n'))
+    expect(await readdir(work)).toEqual([])
+  })
+  it('comes off a message read back, as an attached file\'s note does, for an origin that recorded the picture', async () => {
+    const { work } = await folders()
+    const { note } = await deliverAttachments(work, [pointed()])
+    const sent = withAttachedFilesNote('Look at this', note)
+    expect(stripAttachedFilesNote(sent)).toBe('Look at this')
+    expect(isAttachedFilesNote(note)).toBe(true)
+    expect(carriesAttachedFiles([{ mimeType: 'image/png', pointed: true }])).toBe(true)
+    expect(carriesAttachedFiles([{ mimeType: 'image/png' }])).toBe(false)
+  })
+})
+
+describe('a message\'s record of Point at something\'s picture (ADR-0154)', () => {
+  it('marks the reference as pointed, so its note comes off when read back, and keeps nothing else of the feedback', () => {
+    const handle = { ...promptImageOf(PIXEL_PNG, 'pointed', 'button · Sign in'), browserFeedback: { label: 'button · Sign in', comment: 'Hi', context: 'Selector: #x' } }
+    expect(attachmentReferences([handle])).toEqual([{ id: 'pointed', name: 'button · Sign in', mimeType: 'image/png', sizeBytes: PIXEL_PNG.byteLength, pointed: true }])
+    expect(attachmentReferences([promptImageOf(PIXEL_PNG)])[0]).not.toHaveProperty('pointed')
   })
 })

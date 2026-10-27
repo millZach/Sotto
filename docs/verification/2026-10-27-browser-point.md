@@ -4,7 +4,15 @@ October 27, 2026, on `feat/browser-point`, from `feat/browser-pane` at e568aae14
 
 Playwright's mouse reaches Sotto's own window, never the native page main draws over it. The spec moves and clicks on the page with `webContents.sendInputEvent`, which is real input through Chromium: the inspect overlay reads it as it reads the user's mouse, and the hover name, the pick and the picture below all came through main's own overlay path, not a scripted event.
 
-## What the captures show
+**These captures predate the review fixes** (the commit after d21bc2767) **and all of them need a local run.** The fixes change what several of them show, and they were not retaken: Zach asked that nothing more run on the development laptop, and the captures from the half-done run were thrown away rather than committed. What is now out of date:
+
+- `hover-1280x800-dark.png`, `hover-1280x800-light.png`: Chromium's own label now shows beside the hovered element, and the line now reads "Click something, or Tab to it and press Enter · Esc to stop".
+- `comment-1280x800-*.png`, `comment-820x560-*.png`: the comment is now kept inside the page's place rather than the picture, and placed again when it changes size; the line's words changed as above.
+- `added-1280x800-*.png`, `added-820x560-*.png`: the composer now holds one item, the picture named after the element with the comment under it, and its text stays empty; the feedback lines no longer appear in the composer.
+
+The spec has been changed to match (the keyboard round, the one draft item, the line's words) and has not been run since. Retake with `npm run build`, then `SOTTO_E2E_EVIDENCE=publish npx playwright test tests/e2e/browser-point.spec.ts`, look at each capture and rewrite the list below.
+
+## What the captures show (before the review fixes)
 
 1. **Pointing** (`hover-1280x800-dark.png`, `hover-1280x800-light.png`): Point at something is pressed, between the address and Screenshot to message, in the accent surface. A line over the page reads "button · Sign in · Click something on the page to point at it · Esc to stop": the name came from Chromium's `Overlay.nodeHighlightRequested` as the pointer reached Sign in. The button is tinted by Chromium's overlay in the theme's accent. The tint is light: Chromium fills an element's boxes and draws no outline, so on a dark button it reads as a lighter green rather than a ring (ADR-0154 amendment).
 2. **The comment** (`comment-1280x800-dark.png`, `comment-1280x800-light.png`): a click on Sign in took a picture of the page and put it in the page's place, at the same position, with a 2px accent outline round Sign in, a "button · Sign in" chip under it and the comment beside it: "What should the agent know about this?", Cancel with its Esc key, and Add to message. The field had focus. Main drew no native view while it was open. The outline's centre was within 12 pixels of the button's centre on the page.
@@ -13,9 +21,14 @@ Playwright's mouse reaches Sotto's own window, never the native page main draws 
 
 Between the rounds, Escape in the comment closed it and went back to pointing on the live page with focus on Point at something, and Escape again ended pointing.
 
-The unit tests cover the rest: in `tests/unit/main/browserTools.test.ts`, the overlay going on in the accent for a shown page without sharing or a grant and off again, a page nobody shows doing nothing, the hover name, the pick's description, box and picture, one pick per turn, and navigating, hiding and Escape in the page each ending it; in `tests/unit/renderer/tools/browserPane.test.tsx`, the button's place and state, the line, the comment and Add to message, Escape twice, main ending it, and stable keeping Comment on page; in `tests/unit/renderer/tools/browserReview.test.tsx`, the picture's name and the outline line in the draft.
+The unit tests cover the rest: in `tests/unit/main/browserTools.test.ts`, the overlay going on in the accent with Chromium's label for a shown page without sharing or a grant and off again, a page nobody shows doing nothing, a request without the accent refused, the Owl answer off refusing it, an Off that overtakes an On or arrives during setup leaving the overlay off, the hover name as data, the pick's description, box and picture, Enter picking the focused element, a hide during a pick sending no picture, one pick per turn, and navigating, hiding the page, minimizing or hiding the window and Escape in the page each ending it; in `tests/unit/main/attachedFiles.test.ts`, the feedback block written for the provider at send and read back off; in `tests/unit/renderer/tools/browserPane.test.tsx`, the button's place and state, the line, the comment and Add to message, the comment placed again when it changes size, an unreadable accent, Escape twice, main ending it, and stable keeping Comment on page; in `tests/unit/renderer/tools/browserReview.test.tsx`, the one draft item and the text left alone; in `tests/unit/renderer/screenshotInput.test.tsx`, the chip showing the name and comment and removing all of it.
+
+Before Zach's rule, each test for a review fix was run with its fix undone and failed, and passed with it in; the unit tests and the spec were not run again after the last edits (the e2e's re-arm after a window capture, the documents).
 
 ## Not checked here
+
+- The spec after the review fixes. Of seven runs with the fixes in, one passed end to end. In at least one, logged, pointing ended as `hidden` during the hover shots, before the click (the capture shows and raises the window, and a window hidden or minimized now ends pointing); two more failed the same way unlogged, one native capture was refused, one click timed out, and one failed without a recorded reason. The laptop was in use meanwhile. The spec now points again if a capture ended it. Whether the `hidden` end came from a minimize, a hide or something else was not found.
+- Sending: the `<sotto-browser-feedback>` block is checked in unit tests of `deliverAttachments` only, not through a provider in the running app.
 
 - The outline drawn into the picture the agent receives. The renderer draws it on a canvas with the accent; the composer's thumbnail is too small to show it, and no capture opened the full picture.
 - A screen reader's reading of the line and the comment.

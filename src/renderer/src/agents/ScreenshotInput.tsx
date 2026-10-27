@@ -66,9 +66,12 @@ function Chip({ target, attachment, disabled, onRemove, removeLabel }: { readonl
   const from = dimensions === undefined ? '' : shownSize(dimensions.original)
   const to = dimensions === undefined ? '' : shownSize(dimensions.sent)
   const remove = removeLabel ?? t`Remove ${name}`
-  return <figure>
+  // Point at something's picture is one item (ADR-0154): its name is the element, and the comment shows under it.
+  const comment = attachment.browserFeedback?.comment ?? ''
+  return <figure data-pointed={attachment.browserFeedback ? '' : undefined}>
     {thumbnail ? <img src={thumbnail} alt={attachment.name} /> : <span className="screenshot-previews__placeholder" role="img" aria-label={attachment.name} />}
     <figcaption title={attachment.name}>{attachment.name}</figcaption>
+    {comment ? <small className="screenshot-previews__note" title={comment}>{comment}</small> : null}
     {dimensions !== undefined && <small className="screenshot-previews__resized">
       <span aria-hidden="true"><Trans>Resized from {from} to&nbsp;{to}</Trans></span>
       <span className="tt-visually-hidden">{resizedDescription(dimensions)}</span></small>}

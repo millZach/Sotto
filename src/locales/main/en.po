@@ -914,6 +914,14 @@ msgstr "Phone access on the host could not be reached. Nothing was changed. Chec
 msgid "Phone access on the host could not be reached. Nothing was saved. Nothing was changed. Check that the host is running, then try again."
 msgstr "Phone access on the host could not be reached. Nothing was saved. Nothing was changed. Check that the host is running, then try again."
 
+#: src/main/tools/browser.ts
+msgid "Point at something is not available in this version of Sotto."
+msgstr "Point at something is not available in this version of Sotto."
+
+#: src/main/tools/browser.ts
+msgid "Point at something needs the theme's accent colour from the window."
+msgstr "Point at something needs the theme's accent colour from the window."
+
 #: src/main/hosts/desktopHostRouter.ts
 msgid "Pull requests are unavailable on this host."
 msgstr "Pull requests are unavailable on this host."

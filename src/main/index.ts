@@ -2070,6 +2070,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         destination: async () => (await settingsCoordinator.getSettings()).webLinkDestination,
         openExternal: url => shell.openExternal(url),
         byDefault: () => workingCopySettings.browserWithoutAsking,
+        pointAtSomething: owlFeatures['quiet-browser'],
       })
       cloudIphoneService = new CloudIphoneService({
         files, credentials,

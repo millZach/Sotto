@@ -5,6 +5,10 @@
 .screenshot-previews__placeholder { background: var(--tt-hover-strong); }
 .screenshot-previews figcaption { margin-top: 5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--tt-text-muted); font-size: 10px; }
 .screenshot-previews__resized { display: block; margin-top: 2px; color: var(--tt-text-muted); font-size: 10px; }
+/* Point at something's picture (ADR-0154) is wider, so the element's name and the comment under it can be read. */
+.screenshot-previews figure[data-pointed] { width: 168px; }
+.screenshot-previews figure[data-pointed] img, .screenshot-previews figure[data-pointed] .screenshot-previews__placeholder { width: 158px; }
+.screenshot-previews__note { display: block; margin-top: 2px; overflow: hidden; color: var(--tt-text-2); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .screenshot-previews button { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 1px solid var(--tt-border-faint); border-radius: 4px; background: var(--tt-hover-strong); color: var(--tt-text); cursor: pointer; }
 /* Attached files that are not images (ADR-0131): one-line pills under the image tiles, the name cut in the middle. */
 .attached-files { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }

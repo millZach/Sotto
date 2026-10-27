@@ -14,9 +14,9 @@ import { evidenceDirectory } from '../fixtures/evidence'
  * element, and Add to message puts the element, its picture and the comment in the thread's draft. Escape closes the
  * comment, and again leaves Point.
  *
- * Playwright's mouse drives Sotto's own window, never the native page main draws over it, so the pointer is moved and
- * clicked on the page with `webContents.sendInputEvent`: real input through Chromium, which the overlay reads exactly
- * as it reads the user's mouse.
+ * Playwright's mouse and keyboard drive Sotto's own window, never the native page main draws over it, so the pointer
+ * and the keys reach the page through `webContents.sendInputEvent`: real input through Chromium, which the overlay and
+ * main read exactly as they read the user's mouse and keyboard.
  */
 const SHOTS = evidenceDirectory('artifacts/browser-point')
 const CONTENT = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fieldnotes</title><style>*{box-sizing:border-box}body{margin:0;background:#f3f1e8;color:#273e34;font:16px system-ui}header{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid #ced8c9}main{padding:24px;max-width:660px}h1{font-size:36px;font-weight:500;letter-spacing:-.04em;margin:10px 0}p{line-height:1.6;color:#546850}button{background:#304f3d;color:white;border:0;border-radius:5px;padding:10px 16px;font:inherit}#saved{min-height:28px}</style></head><body><header><b>Fieldnotes</b><button id="sign-in">Sign in</button></header><main><h1>Take the long way home.</h1><p>A place to save the trails you want to return to.</p><button id="save" onclick="document.querySelector('#saved').textContent='Trail saved'">Save trail</button><p id="saved" role="status"></p></main></body></html>`
@@ -56,6 +56,15 @@ async function pointer(launched: LaunchedSotto, url: string, at: { x: number; y:
       contents.sendInputEvent({ type: 'mouseUp', x: at.x, y: at.y, button: 'left', clickCount: 1 })
     }
   }, { url, at, click })
+}
+/** A key pressed in the native page, through Chromium's own input, as a keyboard would. */
+async function key(launched: LaunchedSotto, url: string, keyCode: 'Tab' | 'Enter' | 'Escape'): Promise<void> {
+  await launched.app.evaluate(({ webContents }, { url, keyCode }) => {
+    const contents = webContents.getAllWebContents().find(item => item.getURL() === url)!
+    contents.sendInputEvent({ type: 'keyDown', keyCode })
+    if (keyCode === 'Enter') contents.sendInputEvent({ type: 'char', keyCode: '\r' })
+    contents.sendInputEvent({ type: 'keyUp', keyCode })
+  }, { url, keyCode })
 }
 async function pageText(launched: LaunchedSotto, url: string, selector: string): Promise<string> {
   return launched.app.evaluate(async ({ webContents }, { url, selector }) => {
@@ -99,7 +108,7 @@ test('point at something names the element, takes its picture and puts it in the
         await point.click()
         await expect(point).toHaveAttribute('aria-pressed', 'true')
         const line = panel.locator('.browser-point__line')
-        await expect(line).toHaveText(/Click something on the page to point at it · Esc to stop/)
+        await expect(line).toHaveText(/Click something, or Tab to it and press Enter · Esc to stop/)
 
         // The pointer over Sign in: Chromium's overlay outlines it and the line names it.
         const signIn = await centre(launched, url, '#sign-in')
@@ -108,6 +117,13 @@ test('point at something names the element, takes its picture and puts it in the
         await appearance(page, 'dark')
 
         // A click picks it, takes a picture and opens the comment beside it; the page itself is not clicked.
+        // A window capture can minimize and restore the window, which ends pointing as hiding the window should (item 3
+        // of the review). Point again if it did, so the click below is a pick.
+        if (await point.getAttribute('aria-pressed') !== 'true') {
+          await point.click()
+          await expect(point).toHaveAttribute('aria-pressed', 'true')
+          await expect.poll(async () => { await pointer(launched, url, { x: signIn.x + 1, y: signIn.y }); await pointer(launched, url, signIn); return (await line.textContent()) ?? '' }, { timeout: 30_000 }).toContain('button · Sign in')
+        }
         await pointer(launched, url, signIn, true)
         const comment = panel.getByRole('dialog', { name: 'Point at button · Sign in' })
         await expect(comment).toBeVisible()
@@ -139,24 +155,26 @@ test('point at something names the element, takes its picture and puts it in the
         await size(launched, 1280, 800); await appearance(page, 'dark')
         expect(await pageText(launched, url, '#saved')).toBe('')
 
-        // Escape closes the comment and goes back to pointing; Escape again leaves Point.
+        // Escape closes the comment and goes back to pointing on the live page, which has the keyboard again; Escape
+        // pressed in the page then leaves Point, and the Point button has the keyboard.
         await field.press('Escape')
         await expect(comment).toBeHidden()
         await expect(point).toHaveAttribute('aria-pressed', 'true')
-        await expect(point).toBeFocused()
         await expect(line).toBeVisible()
-        await page.keyboard.press('Escape')
+        await expect.poll(() => launched.app.evaluate(({ webContents }, url) => webContents.getAllWebContents().find(item => item.getURL() === url)!.isFocused(), url)).toBe(true)
+        await key(launched, url, 'Escape')
         await expect(point).toHaveAttribute('aria-pressed', 'false')
         await expect(line).toBeHidden()
         await expect(point).toBeFocused()
         await expect(panel).toBeVisible()
 
-        // Point again, at Save trail this time, and add it to the message.
-        await point.click()
+        // Point again from the keyboard: Enter on Point, Tab through the page to Save trail, and Enter picks it.
+        await point.press('Enter')
         await expect(line).toBeVisible()
-        const save = await centre(launched, url, '#save')
-        await expect.poll(async () => { await pointer(launched, url, { x: save.x + 1, y: save.y }); await pointer(launched, url, save); return (await line.textContent()) ?? '' }, { timeout: 30_000 }).toContain('button · Save trail')
-        await pointer(launched, url, save, true)
+        await expect.poll(() => launched.app.evaluate(({ webContents }, url) => webContents.getAllWebContents().find(item => item.getURL() === url)!.isFocused(), url)).toBe(true)
+        await key(launched, url, 'Tab'); await key(launched, url, 'Tab')
+        await expect.poll(() => pageText(launched, url, '#save').then(() => launched.app.evaluate(async ({ webContents }, url) => webContents.getAllWebContents().find(item => item.getURL() === url)!.executeJavaScript('document.activeElement.id') as Promise<string>, url))).toBe('save')
+        await key(launched, url, 'Enter')
         const saveComment = panel.getByRole('dialog', { name: 'Point at button · Save trail' })
         await expect(saveComment).toBeVisible()
         await saveComment.getByRole('textbox').fill('This should say Save, to match the header.')
@@ -167,15 +185,20 @@ test('point at something names the element, takes its picture and puts it in the
         await expect(point).toBeFocused()
         expect(await pageText(launched, url, '#saved')).toBe('')
         const readDraft = () => page.evaluate(async () => { const state = await window.sotto!.agents!.get(); const id = state.hostId === undefined ? 'workshop' : `host:${state.hostId}:workshop`; return state.threadDrafts?.find(item => item.threadId === id) })
-        // The draft reaches main a moment after the composer has it.
+        // The draft reaches main a moment after the composer has it. It is one item: the picture, named after the
+        // element, carrying the comment and the context; the composer's text stays the user's own, empty here.
         await expect.poll(async () => (await readDraft())?.attachments.map(item => item.name)).toEqual(['button · Save trail'])
         const draft = await readDraft()
-        expect(draft?.text).toContain('Selected element: button (button) - Save trail')
-        expect(draft?.text).toContain('Selector: #save')
-        expect(draft?.text).toContain('This should say Save, to match the header.')
-        report.draft = draft?.text
-        const chip = page.locator('.thread-pane[data-focused]').getByRole('button', { name: /Remove button · Save trail/ })
-        await expect(chip).toBeVisible()
+        expect(draft?.text).toBe('')
+        const feedback = draft?.attachments[0]?.browserFeedback
+        expect(feedback).toMatchObject({ label: 'button · Save trail', comment: 'This should say Save, to match the header.' })
+        expect(feedback?.context).toContain('Selected element: button (button) - Save trail')
+        expect(feedback?.context).toContain('Selector: #save')
+        report.draft = draft
+        const composer = page.locator('.thread-pane[data-focused]')
+        await expect(composer.getByRole('button', { name: /Remove button · Save trail/ })).toBeVisible()
+        await expect(composer.locator('.screenshot-previews__note')).toHaveText('This should say Save, to match the header.')
+        await expect(composer.getByRole('textbox').first()).not.toContainText('Selector')
         for (const mode of ['dark', 'light'] as const) { await appearance(page, mode); await shot(launched, `added-1280x800-${mode}`) }
         await size(launched, 820, 560)
         for (const mode of ['dark', 'light'] as const) { await appearance(page, mode); await shot(launched, `added-820x560-${mode}`) }

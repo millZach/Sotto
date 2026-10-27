@@ -5,7 +5,7 @@ import { browserCreateSchema, browserRequestSchema, browserNavigateSchema, brows
 import { toolListRequestSchema, toolTargetSchema } from '../../shared/tools'
 import type { FileWorkspace } from '../../shared/files'
 import type { FilesService } from '../files/service'
-import { BrowserAutomation } from './browserAutomation'
+import { BrowserAutomation, type PointTarget } from './browserAutomation'
 import { BrowserGrants, grantCovers } from './browserGrants'
 import { ToolOperations, fail, parse, workspace } from './common'
 import { blockSpellcheckDictionaryDownloads } from '../security'
@@ -13,14 +13,13 @@ import { blockSpellcheckDictionaryDownloads } from '../security'
 interface CaptureLease { count: number; window: BaseWindow; bounds: BrowserBounds; throttling: boolean; temporary: boolean }
 /** `madePrivate`: the user pressed Stop sharing, so the thread's browser grant leaves the page private until the user shares it again. */
 /**
- * `point`: the user turned on Point at something for this page (ADR-0154). It is `live` once Chromium's inspect
- * overlay is on, which waits until the pane shows the page.
+ * `point`: the user turned on Point at something for this page (ADR-0154), one session per turn on. It is `live`
+ * once Chromium's inspect overlay is on, which waits until the pane shows the page, and it lasts through a pick until
+ * the picture is sent to the window, so hiding the page or a navigation meanwhile ends the pick with it.
  */
-interface PageRecord { page: BrowserPage; view: WebContentsView; generation: number; automation: BrowserAutomation; initial: boolean; selection: { id: string; generation: number; capture: BrowserCapture; expiresAt: number } | null; zoom: number; madePrivate: boolean; point: { color: PointColor; live: boolean } | null }
-interface PointColor { r: number; g: number; b: number }
+interface PageRecord { page: BrowserPage; view: WebContentsView; generation: number; automation: BrowserAutomation; initial: boolean; selection: { id: string; generation: number; capture: BrowserCapture; expiresAt: number } | null; zoom: number; madePrivate: boolean; point: PointSession | null }
+interface PointSession { readonly session: number; readonly color: { r: number; g: number; b: number }; live: boolean; picking: boolean }
 type PointEnd = Extract<BrowserPointState, { state: 'ended' }>['reason']
-/** The outline's colour when the window sends none: a quiet blue-green that reads on light and dark pages. */
-const POINT_COLOR: PointColor = { r: 47, g: 128, b: 112 }
 /** Where a page is drawn: the Tools pane or the Browser player for an ordinary page, the phone player for the test iPhone. One of each can show at once. */
 type MountSlot = 'pane' | 'phone'
 const slotOf = (record: PageRecord): MountSlot => record.page.device ? 'phone' : 'pane'
@@ -42,6 +41,8 @@ export interface BrowserDependencies {
   openExternal(url: string): Promise<void>
   /** The live **Let agents use the browser without asking** setting (ADR-0029). */
   byDefault(): boolean
+  /** Point at something is on: the `quiet-browser` Owl answer, read once at start (ADR-0072). Off, it is refused. */
+  readonly pointAtSomething?: boolean
 }
 
 /** Untrusted browsing is wholly separate from the application renderer and its session. */
@@ -61,6 +62,9 @@ export class BrowserService extends ToolOperations {
   private readonly mounted = new Map<MountSlot, { record: PageRecord; window: BrowserWindow; cleanup(): void }>()
   private readonly mountVersion: Record<MountSlot, number> = { pane: 0, phone: 0 }
   private readonly desiredPageId: Record<MountSlot, string | null> = { pane: null, phone: null }
+  /** Point sessions, and the newest point request per page, so an Off that overtakes an On wins. */
+  private pointSessions = 0
+  private readonly pointRequests = new Map<string, number>()
   constructor(private readonly dependencies: BrowserDependencies) { super() }
   private publish(record: PageRecord): BrowserPage {
     if (!record.view.webContents.isDestroyed()) {
@@ -217,12 +221,14 @@ export class BrowserService extends ToolOperations {
     contents.on('will-redirect', (event, url) => blocked(event, url))
     contents.on('will-attach-webview', event => event.preventDefault())
     // Escape pressed while the page has the keyboard leaves Point at something, as it does in Sotto's own window.
+    // Enter picks the element the keyboard is on, as a click picks the one under the pointer; the page does not get it.
     contents.on('before-input-event', (event, input) => {
-      if (!record.point || input.type !== 'keyDown' || input.key !== 'Escape') return
+      if (!record.point || input.type !== 'keyDown') return
+      if (input.key === 'Enter') { if (record.automation.pickFocused()) event.preventDefault(); return }
+      if (input.key !== 'Escape') return
       event.preventDefault()
       // The keyboard goes back to Sotto's window, where the Point button takes it.
-      const shown = this.mounted.get('pane')
-      if (shown?.record === record && !shown.window.isDestroyed()) shown.window.webContents.focus()
+      this.focusWindow(record)
       this.endPoint(record, 'escape')
     })
     contents.setWindowOpenHandler(() => {
@@ -350,18 +356,24 @@ export class BrowserService extends ToolOperations {
     this.desiredPageId[slot] = request.pageId
     this.setBounds(record, window, request.bounds)
     const detach = (): void => this.detach()
+    // A hidden or minimized window shows no page, and the window's own frame loop stops while it is hidden.
+    const hidden = (): void => this.endPoint(record, 'hidden')
     // Detach on host reload/crash so native content cannot obscure a recovered app screen.
     window.webContents.on('did-start-loading', detach)
     window.webContents.on('render-process-gone', detach)
     window.webContents.on('destroyed', detach)
     window.on('closed', detach)
     window.on('resize', detach)
+    window.on('hide', hidden)
+    window.on('minimize', hidden)
     this.mounted.set(slot, { record, window, cleanup: () => {
       window.webContents.removeListener('did-start-loading', detach)
       window.webContents.removeListener('render-process-gone', detach)
       window.webContents.removeListener('destroyed', detach)
       window.removeListener('closed', detach)
       window.removeListener('resize', detach)
+      window.removeListener('hide', hidden)
+      window.removeListener('minimize', hidden)
     } })
     window.contentView.addChildView(record.view)
     this.startPoint(record)
@@ -460,6 +472,7 @@ export class BrowserService extends ToolOperations {
     if (this.isMounted(record)) this.removeMountedView(slot)
     // Closing says so with its own event; point mode simply goes with the page.
     record.point = null
+    this.pointRequests.delete(record.page.id)
     for (const task of this.taskRecords.values()) if (task.pageId === record.page.id && ['working', 'paused'].includes(task.status)) {
       task.status = 'failed'; task.summary = 'This browser page closed.'; task.output = null; task.thumbnail = null; task.evidence = []; this.publishTask(task)
     }
@@ -602,14 +615,21 @@ export class BrowserService extends ToolOperations {
   /**
    * Point at something (ADR-0154): the user's own action, so it needs neither sharing nor the browser grant. It
    * turns on for a page the pane shows or is about to show; a page nobody shows answers false and nothing starts.
+   * Requests for a page are answered in the order they were made: an Off made while an On is still being checked
+   * leaves the On with nothing to do.
    */
   point(payload: unknown) { return this.run(async () => {
     const request = parse(browserPointModeSchema, payload)
+    if (!this.dependencies.pointAtSomething) return fail('unavailable', t`Point at something is not available in this version of Sotto.`)
+    const ticket = ++this.pointSessions
+    this.pointRequests.set(request.pageId, ticket)
     const record = await this.owned(request, request.on)
     if (!request.on) { this.endPoint(record, null); return { pointing: false } }
+    if (this.pointRequests.get(request.pageId) !== ticket) return { pointing: false }
+    if (!request.color) return fail('blocked', t`Point at something needs the theme's accent colour from the window.`)
     const shown = this.isMounted(record) || this.desiredPageId.pane === record.page.id
     if (record.page.device || record.page.status === 'unavailable' || !shown) return { pointing: false }
-    record.point ??= { color: request.color ?? POINT_COLOR, live: false }
+    record.point ??= { session: ticket, color: request.color, live: false, picking: false }
     this.startPoint(record)
     return { pointing: true }
   }) }
@@ -618,16 +638,24 @@ export class BrowserService extends ToolOperations {
     const { threadId, workspaceId } = record.page.workspace
     this.dependencies.emit({ type: 'point', threadId, workspaceId, pageId: record.page.id, point })
   }
-  /** Turns the overlay on for a page the user asked to point at, once the pane shows it. */
+  private focusWindow(record: PageRecord): void {
+    const shown = this.mounted.get('pane')
+    if (shown?.record === record && !shown.window.isDestroyed()) shown.window.webContents.focus()
+  }
+  /**
+   * Turns the overlay on for a page the user asked to point at, once the pane shows it, and gives the page the
+   * keyboard, so Tab moves through its own elements and Enter picks one.
+   */
   private startPoint(record: PageRecord): void {
     const point = record.point
     if (!point || point.live || !this.isMounted(record)) return
     point.live = true
-    const generation = record.generation
+    const current = (): boolean => record.point === point
     void record.automation.point(point.color, {
-      hover: label => { if (record.point === point) this.emitPoint(record, { state: 'hover', label }) },
-      pick: backendNodeId => { if (record.point === point) { record.point = null; void this.pick(record, backendNodeId, generation) } },
-    }).catch(() => { if (record.point === point) this.endPoint(record, 'unavailable') })
+      hover: element => { if (current() && !point.picking) this.emitPoint(record, { state: 'hover', ...element }) },
+      pick: target => { if (current() && !point.picking) { point.picking = true; void this.pick(record, point, target) } },
+    }).then(() => { if (current() && !point.picking && !record.view.webContents.isDestroyed()) record.view.webContents.focus() },
+      () => { if (current()) this.endPoint(record, 'unavailable') })
   }
   /** Point mode off. `reason` tells the window why, when it was not the window's own doing. */
   private endPoint(record: PageRecord, reason: PointEnd | null): void {
@@ -638,21 +666,26 @@ export class BrowserService extends ToolOperations {
     if (reason) this.emitPoint(record, { state: 'ended', reason })
   }
   /**
-   * The user clicked an element: the overlay goes, the window gets the keyboard back for the comment, and the page
-   * is captured as it looks now, kept as the page's selection the way Comment on page keeps its capture.
+   * The user clicked an element, or pressed Enter on one: the overlay goes, the window gets the keyboard back for the
+   * comment, and the page is captured as it looks now, kept as the page's selection the way Comment on page keeps its
+   * capture. The session lasts until the picture is sent, so a hide, a navigation or Off meanwhile ends it, and
+   * nothing is sent for a page nobody shows.
    */
-  private async pick(record: PageRecord, backendNodeId: number, generation: number): Promise<void> {
+  private async pick(record: PageRecord, point: PointSession, target: PointTarget): Promise<void> {
+    const current = (): boolean => record.point === point && this.isMounted(record) && !record.view.webContents.isDestroyed()
     try {
       await record.automation.unpoint()
-      const shown = this.mounted.get('pane')
-      if (shown?.record === record && !shown.window.isDestroyed()) shown.window.webContents.focus()
-      const pointed = await record.automation.pointed(backendNodeId)
-      if (!pointed) { this.emitPoint(record, { state: 'ended', reason: 'unavailable' }); return }
+      if (!current()) return
+      this.focusWindow(record)
+      const pointed = await record.automation.pointed(target)
+      if (!current()) return
+      if (!pointed) { this.endPoint(record, 'unavailable'); return }
       const full = await record.automation.capture(record.page.url)
-      if (record.generation !== generation) { this.emitPoint(record, { state: 'ended', reason: 'navigated' }); return }
-      record.selection = { id: randomUUID(), generation, capture: { ...full, element: pointed.element }, expiresAt: Date.now() + 5 * 60_000 }
+      if (!current()) return
+      record.point = null
+      record.selection = { id: randomUUID(), generation: record.generation, capture: { ...full, element: pointed.element }, expiresAt: Date.now() + 5 * 60_000 }
       this.emitPoint(record, { state: 'picked', capture: { ...full, captureId: record.selection.id, element: pointed.element }, box: pointed.box })
-    } catch { this.emitPoint(record, { state: 'ended', reason: 'unavailable' }) }
+    } catch { if (record.point === point) this.endPoint(record, 'unavailable') }
   }
   startTask(payload: unknown) { return this.run(async () => {
     const request = parse(browserStartTaskSchema, payload)

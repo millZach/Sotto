@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { lstat, mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { ATTACHED_FILES_NEED_A_FOLDER, AGENT_GENERIC_FILE_MIME_TYPE, isImageAttachment } from '../../shared/agents'
+import { ATTACHED_FILES_NEED_A_FOLDER, AGENT_GENERIC_FILE_MIME_TYPE, isImageAttachment, type AgentBrowserFeedback } from '../../shared/agents'
 import { attachmentExtension, fileTypeLabel, formatAttachmentSize } from '../../shared/attachmentLabels'
 import type { PromptImage } from './host'
 import { isPdfBytes, nativePdfSelection } from './pdfPages'
@@ -66,9 +66,16 @@ const NOTE_HEADER = 'The user attached these files. They are saved in this worki
  */
 const NOTE_LINE = String.raw`- \.sotto/attachments/[0-9a-f]{12}/[^\s/\\<>]+ \([^\n<>]*, [^\n<>]+, (?:\d+ B|\d+ KB|\d+(?:\.\d)? MB)?\)`
 const NOTE_BODY = `${NOTE_OPEN}\\n${NOTE_HEADER.replace(/[.]/gu, '\\.')}\\n(?:${NOTE_LINE}\\n)+${NOTE_CLOSE.replace('/', '\\/')}`
-const NOTE = new RegExp(`^${NOTE_BODY}$`, 'u')
+const FEEDBACK_OPEN = '<sotto-browser-feedback>'
+const FEEDBACK_CLOSE = '</sotto-browser-feedback>'
+const FEEDBACK_HEADER = 'The user pointed at this element on a page in Sotto\'s browser. Its picture is attached, with the element outlined.'
+/** Point at something's block (ADR-0154): lines that can hold neither an angle bracket nor end the block early. */
+const FEEDBACK_BODY = `${FEEDBACK_OPEN}\\n(?:[^\\n<>]*\\n)+${FEEDBACK_CLOSE.replace('/', '\\/')}`
+/** One block or more, files and browser feedback, each after a blank line, as `deliverAttachments` writes them. */
+const NOTES_BODY = `(?:${NOTE_BODY}|${FEEDBACK_BODY})(?:\\n\\n(?:${NOTE_BODY}|${FEEDBACK_BODY}))*`
+const NOTE = new RegExp(`^${NOTES_BODY}$`, 'u')
 /** The note at the end of a message, with the one separator the adapters put before it. */
-const TRAILING_NOTE = new RegExp(`(?:\\n\\n|\\n)?${NOTE_BODY}\\s*$`, 'u')
+const TRAILING_NOTE = new RegExp(`(?:\\n\\n|\\n)?${NOTES_BODY}\\s*$`, 'u')
 /** A name as the note shows it: nothing that could end a line or the note. */
 const noteName = (name: string): string => name.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}<>]+/gu, '-')
 
@@ -88,6 +95,32 @@ export function attachedFilesNote(files: readonly AttachedFileEntry[]): string {
     `- ${file.relativePath} (${noteName(file.name)}, ${noteName(fileTypeLabel(file.mimeType, file.name) ?? 'File')}, ${formatAttachmentSize(file.sizeBytes) ?? ''})`), NOTE_CLOSE].join('\n')
 }
 
+/** Feedback words as the block holds them: no angle brackets or invisible characters, one line per line. */
+const feedbackLine = (line: string): string => line.replace(/</gu, '\u2039').replace(/>/gu, '\u203a').replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, ' ').trimEnd()
+const feedbackLines = (text: string): string[] => text.split(/\r?\n/u).map(feedbackLine)
+
+/**
+ * The blocks for a message's Point at something pictures (ADR-0154), given to the provider apart from the user's
+ * words, as an attached file's note is: what the picture shows, then the user's comment.
+ *
+ *   <sotto-browser-feedback>
+ *   The user pointed at this element on a page in Sotto's browser. Its picture is attached, with the element outlined.
+ *   Picture: button · Sign in
+ *   Browser feedback: http://localhost:5173/
+ *   ...
+ *   The user's comment:
+ *   Make this match the header.
+ *   </sotto-browser-feedback>
+ *
+ * Empty when no attachment carries feedback.
+ */
+export function browserFeedbackNote(attachments: readonly { readonly name: string; readonly browserFeedback?: AgentBrowserFeedback | undefined }[]): string {
+  return attachments.flatMap(attachment => attachment.browserFeedback ? [attachment as typeof attachment & { browserFeedback: AgentBrowserFeedback }] : []).map(({ name, browserFeedback }) => [
+    FEEDBACK_OPEN, FEEDBACK_HEADER, feedbackLine(`Picture: ${name}`), ...feedbackLines(browserFeedback.context).filter(Boolean),
+    ...(browserFeedback.comment.trim() ? ['The user\'s comment:', ...feedbackLines(browserFeedback.comment.trim())] : []), FEEDBACK_CLOSE,
+  ].join('\n')).join('\n\n')
+}
+
 /** Whether a text is exactly a note, as a provider that keeps each text part apart gives it back. */
 export function isAttachedFilesNote(text: string): boolean { return NOTE.test(text) }
 
@@ -101,12 +134,15 @@ export function withAttachedFilesNote(text: string, note: string): string {
  * origin themselves first: a note is Sotto's only when the message's origin recorded an attached file.
  */
 export function stripAttachedFilesNote(text: string): string {
-  return text.includes(NOTE_OPEN) ? text.replace(TRAILING_NOTE, '') : text
+  return text.includes(NOTE_OPEN) || text.includes(FEEDBACK_OPEN) ? text.replace(TRAILING_NOTE, '') : text
 }
 
-/** Whether a message's recorded attachments include a file that is not an image: the only message Sotto adds a note to. */
-export function carriesAttachedFiles(attachments: readonly { readonly mimeType: string }[] | undefined): boolean {
-  return attachments?.some(attachment => !isImageAttachment(attachment.mimeType)) ?? false
+/**
+ * Whether a message's recorded attachments include a file that is not an image, or Point at something's picture:
+ * the only messages Sotto adds a note to.
+ */
+export function carriesAttachedFiles(attachments: readonly { readonly mimeType: string; readonly pointed?: true | undefined }[] | undefined): boolean {
+  return attachments?.some(attachment => !isImageAttachment(attachment.mimeType) || attachment.pointed === true) ?? false
 }
 
 /**
@@ -153,11 +189,13 @@ const isPdf = (file: Pick<PromptImage, 'mimeType' | 'name'>): boolean =>
 export async function deliverAttachments(workingDirectory: string | undefined, attachments: readonly PromptImage[] = [], options: { readonly nativePdf?: boolean } = {}): Promise<DeliveredAttachments> {
   const images = attachments.filter(attachment => isImageAttachment(attachment.mimeType))
   const files = attachments.filter(attachment => !isImageAttachment(attachment.mimeType))
-  if (!files.length) return { images: attachments, note: '', nativePdfs: [] }
+  // Point at something's context goes with its picture, apart from the user's words, as an attached file's note does.
+  const feedback = browserFeedbackNote(images)
+  if (!files.length) return { images: attachments, note: feedback, nativePdfs: [] }
   const saved = await saveAttachedFiles(workingDirectory, files)
   const pdfs = saved.filter(file => options.nativePdf && isPdf(file) && isPdfBytes(file.bytes))
   const chosen = nativePdfSelection(images.reduce((sum, image) => sum + image.sizeBytes, 0), pdfs.map(file => file.bytes))
-  return { images, note: attachedFilesNote(saved), nativePdfs: pdfs.filter((_, index) => chosen[index]).map(({ name, bytes }) => ({ name, bytes })) }
+  return { images, note: [attachedFilesNote(saved), feedback].filter(Boolean).join('\n\n'), nativePdfs: pdfs.filter((_, index) => chosen[index]).map(({ name, bytes }) => ({ name, bytes })) }
 }
 
 /** Each file read, checked against its digest, and saved; what was saved, with its bytes, in order. */

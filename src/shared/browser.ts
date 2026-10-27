@@ -49,17 +49,17 @@ export const browserCaptureSchema = browserRequestSchema.extend({ point: browser
 export const browserCaptureResultSchema = z.object({ captureId: z.string().uuid().optional(), image: z.string().max(16_000_000), url: browserUrlSchema, width: z.number(), height: z.number(), element: z.object({ tag: z.string(), role: z.string(), name: z.string(), text: z.string(), selector: z.string() }).nullable() }).strict()
 /**
  * Point at something (ADR-0154): the user turns Chromium's own inspect overlay on or off for the page Tools shows.
- * `color` is the theme's accent, so the outline is the room's colour rather than DevTools' blue.
+ * `color` is the theme's accent, which turning it on needs, so the tint is the room's colour rather than DevTools' blue.
  */
 export const browserPointModeSchema = browserRequestSchema.extend({ on: z.boolean(), color: z.object({ r: z.number().int().min(0).max(255), g: z.number().int().min(0).max(255), b: z.number().int().min(0).max(255) }).strict().optional() })
 /** Where the element sits in the picture, in its pixels. Part of it may lie outside the picture. */
 const pointBoxSchema = z.object({ x: z.number().finite(), y: z.number().finite(), width: z.number().finite().min(0), height: z.number().finite().min(0) }).strict()
 /**
- * What point mode tells the window: the element under the pointer by its tag and accessible name (`label`), the
- * element the user clicked with a picture of the page at that moment, or that point mode ended and why.
+ * What point mode tells the window: the element under the pointer by its tag and accessible name, the element the
+ * user clicked or picked with Enter, with a picture of the page at that moment, or that point mode ended and why.
  */
 export const browserPointStateSchema = z.discriminatedUnion('state', [
-  z.object({ state: z.literal('hover'), label: z.string().max(600) }).strict(),
+  z.object({ state: z.literal('hover'), tag: z.string().max(100), name: z.string().max(500) }).strict(),
   z.object({ state: z.literal('picked'), capture: browserCaptureResultSchema, box: pointBoxSchema.nullable() }).strict(),
   z.object({ state: z.literal('ended'), reason: z.enum(['navigated', 'hidden', 'escape', 'unavailable']) }).strict(),
 ])

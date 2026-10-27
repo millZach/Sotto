@@ -7,7 +7,7 @@ import { resolveModel } from '../../../shared/modelCatalog'
 import { useOptionalAgents } from '../agents/AgentContext'
 import { PaneMenu, type PaneMenuItem } from '../agents/PaneMenu'
 import { appendBrowserFeedback } from './BrowserFeedback'
-import { outlinedCapture, PointComment, PointLine, themeRgb } from './BrowserPoint'
+import { outlinedCapture, PointComment, PointLine, pointedWords, themeRgb, type PointedName } from './BrowserPoint'
 import { browserPages, normalizeAddress, pageLabel, useBrowserTasks, useOpenedAddresses, useThreadBrowser, type BrowserStore } from './browserStore'
 import { changePage, listProblem, PageViewport } from './browserPageView'
 import { browsingWords, shortAddress } from './browserSteps'
@@ -47,7 +47,7 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
   // Point at something: on while `pointing`; `hover` names the element under the pointer, and `picked` is the one
   // clicked, its picture standing in the page's place with a comment until it is added or cancelled.
   const [pointing, setPointing] = useState(false)
-  const [hover, setHover] = useState<string | null>(null)
+  const [hover, setHover] = useState<PointedName | null>(null)
   const [picked, setPicked] = useState<BrowserPointPick | null>(null)
   const [pageShown, setPageShown] = useState(false)
   const pointButton = useRef<HTMLButtonElement>(null)
@@ -71,7 +71,7 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
     return bridge.onEvent(event => {
       if (event.type !== 'point' || event.pageId !== activeId || event.threadId !== threadId) return
       const point = event.point
-      if (point.state === 'hover') setHover(point.label)
+      if (point.state === 'hover') setHover({ tag: point.tag, name: point.name })
       else if (point.state === 'picked') { if (pointingRef.current) { setHover(null); setPicked(point) } }
       else if (!pickedRef.current) {
         // Escape pressed in the page leaves point mode as Escape in the pane does; navigating or hiding the page just ends it.
@@ -86,8 +86,10 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
   useEffect(() => {
     if (!armed || !bridge || !pointTarget) return
     let current = true
+    // The overlay is tinted in the theme's accent; a window that cannot read it does not point.
     const color = themeRgb('--tt-accent')
-    void bridge.point({ ...pointTarget, on: true, ...(color ? { color } : {}) }).then(result => {
+    if (!color) { setProblem(t`Point at something could not read the theme's colours. Try again.`); setPointing(false); return }
+    void bridge.point({ ...pointTarget, on: true, color }).then(result => {
       if (!current) return
       if (!result.ok) { setProblem(result.error.message); setPointing(false) }
       else if (!result.value.pointing) setPointing(false)
@@ -273,10 +275,11 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
     const thread = agents.state?.host.threads.find(item => item.id === threadId)
     const model = resolveModel(agents.state?.host.models ?? [], thread?.modelId)
     const element = pick.capture.element
-    const label = element ? element.name ? `${element.tag} · ${element.name}` : element.tag : t`Browser feedback`
+    const label = element ? pointedWords(element) : t`Browser feedback`
     const capture = await outlinedCapture(pick.capture, pick.box)
     if (signal.aborted) return null
-    const error = await appendBrowserFeedback(agents.threadDrafts, threadId, capture, comment, model?.supportsImages === true, { signal, name: label.slice(0, 200), box: pick.box })
+    // One draft item: the picture named after the element, carrying the comment and the context until it is sent.
+    const error = await appendBrowserFeedback(agents.threadDrafts, threadId, capture, comment, model?.supportsImages === true, { signal, pointed: { label: label.slice(0, 200), box: pick.box } })
     if (error || signal.aborted) return error
     const threadTitle = thread?.title
     onStatus(threadTitle !== undefined ? t({ message: `Added to the draft for ${threadTitle}`, comment: '{threadTitle} is a thread\'s title.' }) : t`Added to the draft for this thread`)
