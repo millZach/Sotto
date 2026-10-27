@@ -700,7 +700,7 @@ struct CardPermissionButtons: View {
 // MARK: - Working now
 
 /// A thread at work: a breathing accent halo, how long it has been at it, and what it is doing.
-private struct WorkingCard: View {
+struct WorkingCard: View {
     @EnvironmentObject var model: AppModel
     /// Watched for the step the open thread is running, which the thread's history carries.
     @EnvironmentObject var detailStore: DetailStore
@@ -772,7 +772,7 @@ private struct WorkingCard: View {
 // MARK: - Recent and settled
 
 /// Quiet rows on one surface, for Recent and the settled shelf.
-private struct ThreadRowList: View {
+struct ThreadRowList: View {
     let rows: [HostedThread]
     let unread: Set<String>
     var watched: Set<String> = []

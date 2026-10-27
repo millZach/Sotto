@@ -6,7 +6,13 @@ import SottoCore
 struct RootView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
-        if model.computers.isEmpty { PairFlow() } else { MainTabs() }
+        if model.computers.isEmpty { PairFlow() } else {
+            #if DEBUG
+            DuoRoot()
+            #else
+            MainTabs()
+            #endif
+        }
     }
 }
 
@@ -47,7 +53,13 @@ struct MainTabs: View {
         // A tapped alert opens its thread on Threads (ADR-0051), and Watcher's own opens the Watcher tab.
         .onChange(of: model.alertOpened) { _, ref in openAlerted(ref) }
         .onChange(of: model.watcherAlertOpened) { _, hostID in openWatcher(hostID) }
-        .onAppear { openAlerted(model.alertOpened); openWatcher(model.watcherAlertOpened) }
+        .onAppear {
+            openAlerted(model.alertOpened); openWatcher(model.watcherAlertOpened)
+            #if DEBUG
+            if let id = DuoLaunch.openThread { threadPath = NavigationPath([ThreadRoute(ref: ThreadRef(hostID: DuoLaunch.laptop, threadID: id))]) }
+            if DuoLaunch.openWatcher { tab = .watcher }
+            #endif
+        }
         // A computer that stops offering Watcher takes its tab with it.
         .onChange(of: model.watcherHostID) { _, hostID in
             if hostID == nil, tab == .watcher { tab = .threads; watcherPath = NavigationPath() }

@@ -23,6 +23,7 @@ struct ThreadView: View {
     @State private var agentsOpen = false
     @State private var agentsCovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sharesScreen) private var sharesScreen
     private var thread: ThreadSummary? { model.thread(ref) }
 
     var body: some View {
@@ -46,7 +47,7 @@ struct ThreadView: View {
         }
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbarBackground(stuck ? .visible : .hidden, for: .navigationBar)
-        .toolbar(.hidden, for: .tabBar)
+        .toolbar(sharesScreen ? .automatic : .hidden, for: .tabBar)
         // While a request sheet is up its keyboard never squeezes the page behind it, so the conversation keeps its
         // size and its place.
         .ignoresSafeArea(open != nil ? SafeAreaRegions.keyboard : [], edges: .bottom)

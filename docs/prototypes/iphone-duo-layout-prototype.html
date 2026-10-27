@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>iPhone Duo layouts</title>
+<style>
+  body { margin: 0; padding: 32px; background: #121211; color: #ecebe6; font: 15px/1.5 Figtree, -apple-system, sans-serif; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 40px 0 4px; }
+  p { margin: 0 0 12px; color: #a9a8a1; max-width: 70ch; }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+  figure { margin: 0; }
+  img { display: block; border-radius: 14px; border: 1px solid #2b2b28; }
+  .open img { width: 560px; }
+  .folded img { width: 260px; }
+  figcaption { font-size: 13px; color: #a9a8a1; margin-top: 6px; }
+  .pick { color: #e8c547; }
+</style>
+</head>
+<body>
+<h1>iPhone Duo layouts</h1>
+<p>Captured on the iPhone Duo simulator (iOS 27.1) with the UI fixture. Unfolded is landscape, 951×669 pt, size class regular, with 867 pt left for the app beside the system's tab rail. Folded is 382×644 pt, compact, and stays exactly as it is today.</p>
+
+<h2>Today</h2>
+<div class="row open">
+  <figure><img src="../../artifacts/iphone-duo-layout/00-now-open-threads.jpg"><figcaption>Threads, unfolded</figcaption></figure>
+  <figure><img src="../../artifacts/iphone-duo-layout/00-now-open-thread.jpg"><figcaption>A thread, unfolded: lines run about 140 characters</figcaption></figure>
+  <figure><img src="../../artifacts/iphone-duo-layout/00-now-open-watcher.jpg"><figcaption>Watcher, unfolded: the question card sits under the reply box</figcaption></figure>
+</div>
+<div class="row folded">
+  <figure><img src="../../artifacts/iphone-duo-layout/00-now-folded-threads.jpg"><figcaption>Threads, folded</figcaption></figure>
+  <figure><img src="../../artifacts/iphone-duo-layout/00-now-folded-thread.jpg"><figcaption>A thread, folded</figcaption></figure>
+  <figure><img src="../../artifacts/iphone-duo-layout/00-now-folded-watcher.jpg"><figcaption>Watcher, folded</figcaption></figure>
+  <figure><img src="../../artifacts/iphone-duo-layout/9-folded-with-mock-flag.jpg"><figcaption>Folded with a mock-up on: unchanged</figcaption></figure>
+</div>
+
+<h2>1. List and thread <span class="pick">(recommended)</span></h2>
+<p>Threads on the left at 360 pt, the open thread on the right. The tab rail stays.</p>
+<div class="row open"><figure><img src="../../artifacts/iphone-duo-layout/1-split.jpg"></figure></div>
+
+<h2>2. Two threads</h2>
+<p>One thread on each half of the fold. The right page reads "Reading this thread…" because the app holds one open thread's conversation at a time; this one needs a model change.</p>
+<div class="row open"><figure><img src="../../artifacts/iphone-duo-layout/2-two-threads.jpg"></figure></div>
+
+<h2>3. Watcher beside</h2>
+<p>Watcher becomes a standing page on the right. The left keeps the phone's own Threads stack. No Watcher tab.</p>
+<div class="row open">
+  <figure><img src="../../artifacts/iphone-duo-layout/3-watcher-beside.jpg"><figcaption>Threads beside Watcher</figcaption></figure>
+  <figure><img src="../../artifacts/iphone-duo-layout/3-watcher-beside-thread.jpg"><figcaption>A thread beside Watcher</figcaption></figure>
+</div>
+
+<h2>4. Reading measure</h2>
+<p>The phone layout kept, every page held to 620 pt in the middle. The smallest change.</p>
+<div class="row open">
+  <figure><img src="../../artifacts/iphone-duo-layout/4-measure.jpg"></figure>
+  <figure><img src="../../artifacts/iphone-duo-layout/4-measure-thread.jpg"></figure>
+</div>
+
+<h2>5. Needs you column</h2>
+<p>The open thread, and on the right every question and permission waiting anywhere. The Threads home sits behind the list button.</p>
+<div class="row open"><figure><img src="../../artifacts/iphone-duo-layout/5-needs-column.jpg"></figure></div>
+
+<h2>6. Sidebar</h2>
+<p>The tab bar becomes a labelled sidebar, with the threads at work listed under it.</p>
+<div class="row open">
+  <figure><img src="../../artifacts/iphone-duo-layout/6-sidebar.jpg"></figure>
+  <figure><img src="../../artifacts/iphone-duo-layout/6-sidebar-thread.jpg"></figure>
+</div>
+
+<h2>7. Board</h2>
+<p>The Threads home as three columns: Needs you, Working now, Recent. A thread opens full width at 680 pt.</p>
+<div class="row open">
+  <figure><img src="../../artifacts/iphone-duo-layout/7-board.jpg"></figure>
+  <figure><img src="../../artifacts/iphone-duo-layout/7-board-thread.jpg"></figure>
+</div>
+
+<h2>8. Thread strip</h2>
+<p>One thread at a reading measure, with every live thread as a mark down a thin strip on the left. The top mark goes back to the Threads home.</p>
+<div class="row open"><figure><img src="../../artifacts/iphone-duo-layout/8-strip.jpg"></figure></div>
+</body>
+</html>
