@@ -575,14 +575,14 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       // A sweep in progress finishes its current worktree, and takes no other, before the host it asks is closed.
       // A babysitting pass finishes the pull request it is on, and records what it told, the same way.
       stopWatcher()
-      // Checks that were waiting let go of the branches they would have started from (#1312).
-      await delegation?.drained()
       await worktreeCleanup.close()
       if (mainCheckout) await mainCheckout.close()
       if (babysitter) await babysitter.close()
       if (watchedPullRequests) await watchedPullRequests.close()
       toolReads.dispose()
-      try { await stopProviders(); await preparingForShutdown } finally { usage?.close(); await agentHost.close() }
+      // Checks that were waiting let go of the branches they would have started from (#1312), alongside the providers'
+      // drain rather than ahead of it, and before the store closes.
+      try { await stopProviders(); await preparingForShutdown } finally { await delegation?.drained(); usage?.close(); await agentHost.close() }
     })()
     return closing
   }
