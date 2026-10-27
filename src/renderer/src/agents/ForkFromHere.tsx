@@ -3,6 +3,7 @@ import { msg, ph } from '@lingui/core/macro'
 import { GitFork, Laptop, Server } from 'lucide-react'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { PROVIDER_LABELS, type AgentModel, type AgentWorkingCopyOptions, type AgentCommand, type AgentState, type ProviderId } from '../../../shared/agents'
+import { hostEntityKey, parseHostEntityKey } from '../../../shared/clientIdentity'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { NATIVE_FORKS, sameFolderForks } from '../../../shared/threadStarts'
 import { Button } from '../components/Button'
@@ -43,6 +44,15 @@ export interface ForkOptions {
 }
 export const ForkContext = createContext<ForkOptions | null>(null)
 export function useForkOptions(): ForkOptions | null { return useContext(ForkContext) }
+
+/**
+ * Where a fork opens once main has made it. On the Threads page main selects the fork, and the focused pane follows that
+ * selection, so nothing is provided there. Watcher's room keeps its own view and never follows the selection, so the pane
+ * beside Watcher provides one that puts the fork there in place of its source (#1136).
+ */
+export const ForkLandingContext = createContext<((threadId: string) => void) | null>(null)
+/** Frames a fork's composer is looked for while its pane is drawn. */
+const FORK_FOCUS_FRAMES = 10
 
 /** The press under a reply. */
 export function ForkPress({ messageId, at }: { readonly messageId: string; readonly at: string }): ReactNode {
@@ -89,6 +99,7 @@ function ForkForm({ options, messageId, at }: { readonly options: ForkOptions; r
     return () => { current = false }
   }, [read, remote, projectId, sourceBranch])
   const name = PROVIDER_LABELS[options.provider]
+  const land = useContext(ForkLandingContext)
   const close = (): void => {
     // Back to this transcript's own press: a fork and its source show the same reply under the same ID.
     const transcript = card.current?.closest('.thread-transcript') ?? card.current?.parentElement
@@ -99,11 +110,20 @@ function ForkForm({ options, messageId, at }: { readonly options: ForkOptions; r
     if (busy || !modelId) return
     setBusy(true); setError(null)
     try {
-      const result = await options.command({ type: 'fork-thread', threadId: options.threadId, messageId, newThreadId: crypto.randomUUID(),
+      const newThreadId = crypto.randomUUID()
+      const result = await options.command({ type: 'fork-thread', threadId: options.threadId, messageId, newThreadId,
         ...(native ? { modelId } : {}), workingCopy: copy, ...(copy === 'independent' && git?.currentBranch ? { baseBranch: git.currentBranch } : {}) })
       if (result === null) setError(msg`Sotto could not confirm this. Look for the new thread in the list before trying again.`)
       else if (result.error) setError(result.error)
-      else options.open(null)
+      else {
+        // The window knows the fork by the key of its source's host. It takes its source's place once main lists it, and
+        // the cursor goes to its composer, ready for the message it was made for.
+        const forkId = hostEntityKey(parseHostEntityKey(options.threadId)?.hostId, newThreadId)
+        const from = card.current
+        options.open(null)
+        if (result.host.threads.some(thread => thread.id === forkId)) land?.(forkId)
+        requestAnimationFrame(() => focusForkComposer(forkId, from, FORK_FOCUS_FRAMES))
+      }
     } finally { setBusy(false) }
   }
   const choices = options.models.filter(model => model.ready && model.providerId === options.provider)
@@ -140,6 +160,16 @@ function ForkForm({ options, messageId, at }: { readonly options: ForkOptions; r
     </section>
     <p className="fork-card__stays tt-paragraph"><Trans>Not carried: this stays in {threadTitle}</Trans></p>
   </>
+}
+
+/** Puts the cursor in a new fork's composer once its pane is drawn, unless the user has put focus somewhere other than the
+ * card it was forked from meanwhile. */
+function focusForkComposer(threadId: string, from: HTMLElement | null, frames: number): void {
+  const active = document.activeElement
+  if (active !== null && active !== document.body && active.isConnected && !from?.contains(active)) return
+  const field = document.querySelector<HTMLElement>(`.thread-pane[data-thread-id="${CSS.escape(threadId)}"] .thread-workspace__compose :is(.prompt-editor[contenteditable="true"], textarea:not(:disabled))`)
+  if (field !== null) field.focus()
+  else if (frames > 0) requestAnimationFrame(() => focusForkComposer(threadId, from, frames - 1))
 }
 
 /** The model a fork starts on: the thread's own, where its provider still has it ready. */

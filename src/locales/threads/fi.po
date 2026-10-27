@@ -1560,6 +1560,10 @@ msgstr ""
 msgid "Add server"
 msgstr ""
 
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Add to favorites"
+msgstr ""
+
 #: src/renderer/src/agents/ReplyQuoteButton.tsx
 msgid "Add to prompt"
 msgstr ""
@@ -3660,6 +3664,10 @@ msgstr ""
 msgid "Fastest. For the smallest tasks."
 msgstr ""
 
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Favorites"
+msgstr ""
+
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "Fetches the branch before first send."
 msgstr ""
@@ -4553,6 +4561,7 @@ msgstr ""
 msgid "Model, reasoning effort and permissions."
 msgstr ""
 
+#: src/renderer/src/agents/ModelPicker.tsx
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Models"
 msgstr ""
@@ -5981,6 +5990,10 @@ msgstr ""
 msgid "Remove comment on {label}"
 msgstr ""
 
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Remove from favorites"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Remove its worktree too?"
 msgstr ""
@@ -7091,6 +7104,10 @@ msgstr ""
 #. A heading over the ways to choose a folder for a new thread.
 #: src/renderer/src/agents/ProjectChooser.tsx
 msgid "Sources"
+msgstr ""
+
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Star a model to keep it here."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadComposer.tsx
