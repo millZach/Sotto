@@ -85,7 +85,7 @@ import {
 } from 'electron'
 import { spawn } from 'node:child_process'
 import { appendFile, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
+import { homedir, release as osRelease } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 
 import {
@@ -145,7 +145,11 @@ import { PARAKEET_V3, SOTTO_SPEECH_MODELS, sottoSpeechModel, sottoSpeechModelOpt
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
 import { newVersionListener, UpdateService, waitingVersion } from './updates/updateService'
 import { e2eUpdater } from './updates/e2eUpdater'
-import { platformProfile, updatesInApp, type WidgetAlwaysOnTopLevel } from './platformProfile'
+import { glassMaterialFor, platformProfile, updatesInApp, type WidgetAlwaysOnTopLevel } from './platformProfile'
+import { registerGlassWindowIpc } from './windows/glassWindowIpc'
+import { readTransparencyEffects } from './windows/transparencyEffects'
+import { GLASS_WINDOW_CHANGED } from '../shared/glassWindow'
+import { GLASS_THEME_ID } from '../shared/themes/glass'
 import { RecoveryNoticeCenter } from './storage/recoveryNoticeCenter'
 import { createStorageRepositories } from './storage/repositories'
 import type { HistoryLogEvent } from './storage/historyRepository'
@@ -507,6 +511,18 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
     this.window.setIgnoreMouseEvents(ignore, options)
   }
 
+  setBackgroundColor(color: string): void {
+    this.window.setBackgroundColor(color)
+  }
+
+  setBackgroundMaterial(material: 'acrylic' | 'none'): void {
+    this.window.setBackgroundMaterial(material)
+  }
+
+  setVibrancy(type: 'under-window' | null): void {
+    this.window.setVibrancy(type)
+  }
+
   onNavigation(
     event: NavigationEventName,
     listener: (event: { preventDefault(): void }, details: { readonly url: string }) => void,
@@ -718,6 +734,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     overrides: process.env.SOTTO_OWL_FEATURES, watcherOverride: process.env.SOTTO_WATCHER_ENABLED })
   // Existing Watcher options wrap the Owl feature list for branches in flight.
   const watcherEnabled = owlFeatures.watcher
+  // Glass (ADR-0150) is an Owl feature: read once here, it decides whether the window may be see-through, whether the
+  // window is told of Glass at all, and whether a half saved on Glass dresses the Dock and the widget in Glass or Sotto.
+  const glassThemeEnabled = owlFeatures['glass-theme']
   // The providers an Owl feature holds off this run (ADR-0072): every boundary asks this set, not a provider's own answer.
   const heldProviders = heldProvidersOf(owlFeatures)
   const usageEnabled = owlFeatures.usage
@@ -827,7 +846,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   let showWidgetWhenIdle = (await settings.get()).showWidgetWhenIdle
   // Main owns the widget's presentation: every snapshot is stamped with the
   // current theme halves, so a theme change repaints the widget mid-session.
-  let widgetPresentation = widgetPresentationFor(await settings.get())
+  let widgetPresentation = widgetPresentationFor(await settings.get(), glassThemeEnabled)
   // The Dock icon wears the saved theme's mark, as the main window's mark does, repainted when the theme or the
   // system's scheme changes. Without its coverage file the Dock keeps the bundle's icon, and a failed paint gives
   // the bundle's icon back rather than leaving an earlier theme's.
@@ -846,7 +865,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     restoreBundleIcon: () => app.dock?.setIcon(null as unknown as Electron.NativeImage),
     log: logOperational,
   })
-  const paintDock = (): void => paintDockFor?.(dockSettings, nativeTheme.shouldUseDarkColors)
+  const paintDock = (): void => paintDockFor?.({ ...dockSettings, glass: glassThemeEnabled }, nativeTheme.shouldUseDarkColors)
   paintDock()
   if (dockCoverage !== null) nativeTheme.on('updated', paintDock)
   let handleRendererProcessGone: (kind: 'main' | 'widget') => void = () => undefined
@@ -856,8 +875,23 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   // Windows updates itself on both tracks and a Mac on Owl only, the one signed with Sotto's Developer ID (ADR-0093).
   const inAppUpdates = updatesInApp(profile, releaseTrack)
   const terminalFocus = new WeakSet<Electron.WebContents>()
+  const glassMaterial = glassMaterialFor(profile.platform, osRelease())
+  // Windows' Transparency effects switch, which Electron does not expose: read before the window is made, so a window
+  // made while it is off starts solid with Glass's own backdrop (ADR-0150).
+  const readWindowsTransparency = glassThemeEnabled && glassMaterial === 'acrylic' ? readTransparencyEffects : null
+  const transparencyAtStart = readWindowsTransparency === null ? true : await readWindowsTransparency()
   const windows = new WindowManager({
     title: buildName,
+    ...(glassThemeEnabled ? { glassWindow: {
+      material: glassMaterial,
+      // The half the saved look paints now, as the renderer resolves it; a system asking for less transparency keeps
+      // the window solid, and the renderer paints Glass's own backdrop instead.
+      seeThroughAtStart: () => {
+        const dark = dockSettings.appearance === 'dark' || (dockSettings.appearance === 'system' && nativeTheme.shouldUseDarkColors)
+        return (dark ? dockSettings.darkTheme : dockSettings.lightTheme) === GLASS_THEME_ID && !nativeTheme.prefersReducedTransparency
+      },
+      onSeeThroughChanged: seeThrough => windows.sendToMain(GLASS_WINDOW_CHANGED, seeThrough),
+    } } : {}),
     createWindow: options => {
       const mainRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=main')
       const featureArguments = [...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []), ...(mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
@@ -900,6 +934,11 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       linuxDictationShell?.place(placement.edge)
     },
   })
+  if (readWindowsTransparency !== null) {
+    windows.setGlassMaterialAvailable(transparencyAtStart)
+    // Windows announces a change to its colour settings, Transparency effects among them, as a theme update.
+    nativeTheme.on('updated', () => { void readWindowsTransparency().then(on => windows.setGlassMaterialAvailable(on)) })
+  }
   // This explicit development-only path drives the real adapter through a scripted ACP child.
   const devinFixtureRoot = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_DEVIN_ROOT'] : undefined
   const devinFixtureExecutable = process.env['SOTTO_E2E_DEVIN_EXECUTABLE']
@@ -1763,7 +1802,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       if (dictationNow !== dictationActive) applyDictation(dictationNow)
       await cleanSettingsHistory(agentControl, async () => {
         showWidgetWhenIdle = settings.showWidgetWhenIdle
-        widgetPresentation = widgetPresentationFor(settings)
+        widgetPresentation = widgetPresentationFor(settings, glassThemeEnabled)
         dockSettings = settings
         paintDock()
         if (!dictationActive) {
@@ -1879,7 +1918,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     if (!dictationActive) return
     await dictationLifecycle.publish({
       status: 'idle',
-      ...widgetPresentationFor(current),
+      ...widgetPresentationFor(current, glassThemeEnabled),
       shortcut: current.hotkey,
       cancellable: false,
     })
@@ -2005,6 +2044,8 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       // A recording profiles the main window that asked, through its own debugger (ADR-0098).
       const cleanupMainActivity = registerMainActivityIpc(ipcMain, mainActivity, () => windows.getTrustedRenderers(),
         event => { const sender = BrowserWindow.getAllWindows().find(window => window.webContents === event.sender)?.webContents; return sender ? windowProfiler(sender.debugger) : null })
+      // The see-through window (ADR-0150): only while Glass's Owl feature is on, so stable registers nothing.
+      const cleanupGlassWindow = registerGlassWindowIpc(ipcMain, glassThemeEnabled ? on => windows.setMainWindowSeeThrough(on) : null, () => windows.getTrustedRenderers())
       // Keep main up to date (ADR-0142): only while its Owl feature is on, so stable registers nothing.
       const cleanupMainCheckout = registerMainCheckoutIpc(ipcMain, localRuntime.mainCheckout, () => windows.getTrustedRenderers(),
         async path => { const error = await shell.openPath(path); if (error) throw new Error('Sotto could not open that folder.') })
@@ -2248,6 +2289,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         cleanupContinue()
         cleanupNextPrompts()
         cleanupMainActivity()
+        cleanupGlassWindow()
         cleanupMainCheckout()
         unsubscribeMainCheckout?.()
         cleanupNotifications()

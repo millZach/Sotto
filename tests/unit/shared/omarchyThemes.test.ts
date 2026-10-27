@@ -154,7 +154,7 @@ describe('Omarchy M3 and readability check', () => {
     expect(resolveThemeFor(settings, 'light').theme.id).toBe(OMARCHY_THEME_ID)
     expect(resolveThemeFor(settings, 'dark').theme.id).toBe(DEFAULT_THEME_ID)
     expect(widgetPaletteFor(settings).light.canvas).toBe(theme.colors.canvas)
-    expect(widgetPresentationFor(settings).theme).toBe('light')
+    expect(widgetPresentationFor(settings, false).theme).toBe('light')
     expect(resolveThemeFor({ ...settings, omarchyTheme: null }, 'light').theme.id).toBe(DEFAULT_THEME_ID)
   })
   it.each(['Windows', 'macOS'])('%s keeps its defaults and six palettes, ignoring any persisted Omarchy state', () => {
@@ -176,10 +176,11 @@ describe('Omarchy M3 and readability check', () => {
     // theirs (ADR-0128), and when the light crossing a running turn's working words got a colour of its own (ADR-0134,
     // October 25 amendment), and when DeepSeek's mark got its badge colour, and when the effort trace's halo got its
     // strength for dark and light rooms (ADR-0019, October 26 amendment), and when the Appearance preview could paint a
-    // half of its own (`[data-theme-scope]`); none of them changes a palette.
+    // half of its own (`[data-theme-scope]`), and when the Glass theme's see-through tokens and the card's
+    // solid colour arrived (ADR-0150); none of them changes a palette.
     expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('5e43d8dae0a93190f59afd80f75f3400076c21aa2cb023b1aec0f8348ca8aac1')
     const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
-    expect(createHash('sha256').update(tokenText).digest('hex')).toBe('6c152a6dfc9653772d41388ed9639e945855739c6d82b6cef4b8b4a2aedebd51')
+    expect(createHash('sha256').update(tokenText).digest('hex')).toBe('048cabb692cf6265a437f7931ca7779e88cea38021037fea9cf297f50b58d0df')
     // Existing Windows and macOS imports named Omarchy remain user themes.
     expect(parseCustomThemes([{ ...parseOmarchyTheme(fixtures.themes.hackerman.rendered), id: 'omarchy' }])[0]?.id).toBe('omarchy')
   })

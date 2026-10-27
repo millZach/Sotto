@@ -1642,6 +1642,10 @@ msgstr "Collapsed"
 msgid "Color and border intensity."
 msgstr "Color and border intensity."
 
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Color and border intensity. Glass keeps text at 100% or stronger, so it stays readable over any desktop."
+msgstr "Color and border intensity. Glass keeps text at 100% or stronger, so it stays readable over any desktop."
+
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Color scheme"
