@@ -17,7 +17,7 @@ import { seedWatcherRoom } from './support/watcherRoom'
  * Watcher's night scene never blinks (the user's rule, October 24, 2026). The screen is recorded, frame by frame as the
  * compositor draws it, while the room goes through what changes it: a reply arrives, the room's projection changes (an
  * owl wakes, a newcomer comes out of the moon, a question waits and the needs-you line appears), a fold opens and
- * closes, the composer slims and widens, the Watched tab opens and closes, a draft is typed, the window is resized and
+ * closes, the composer slims and widens, Watcher's own owl rests and glows again, a draft is typed, the window is resized and
  * the scene is set in each of its places in turn (ADR-0149). In every frame the scene's left margin keeps its glyphs: a
  * frame that loses most of the ones its place shows is a blink, and while one place gives way to the next, most of the
  * fainter one's. Run after
@@ -134,8 +134,15 @@ test("Watcher's night scene never blinks while the room changes", async () => {
       await page.mouse.move(0, 0)
       step('the composer slims'); await toEnd(420); await page.waitForTimeout(700)
       step('the composer widens'); await toEnd(0); await page.waitForTimeout(700)
-      step('Watched opens'); await page.getByRole('tab', { name: /^Watched, / }).click(); await page.waitForTimeout(700)
-      step('Conversation again'); await page.getByRole('tab', { name: 'Conversation' }).click(); await page.waitForTimeout(700)
+      // Watcher's own owl glows while something waits on the user: the fixture's permission and failed turn are answered,
+      // so it rests and the needs-you line goes, then a permission waits again and it glows.
+      step('Watcher’s owl rests'); await page.evaluate(async () => {
+        await window.sottoE2E!.agentEvent!({ type: 'history', threadId: 'visual-gate', text: '', messages: [], status: 'idle' })
+        await window.sottoE2E!.agentEvent!({ type: 'ready', threadId: 'wav-stall', text: 'The playback test passes now.' })
+      })
+      await expect(page.locator(`${WATCHER} .watcher-glance`)).toHaveCount(0); await page.waitForTimeout(700)
+      step('Watcher’s owl glows'); await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'permission', threadId: 'visual-gate', requestId: 'blink-permission', text: 'Run the unit suite?', status: 'running' }))
+      await expect(page.locator(`${WATCHER} .watcher-glance`)).toContainText(/need/i); await page.waitForTimeout(700)
       step('a draft is typed'); await page.getByRole('textbox', { name: 'Watcher message' }).click(); await page.keyboard.type('Is visual gate green?'); await page.waitForTimeout(500)
       await page.keyboard.press('Control+A'); await page.keyboard.press('Delete'); await page.mouse.move(0, 0)
       // The room's own changes come on the stand-in's clock: an owl wakes, a newcomer joins, a question waits.

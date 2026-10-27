@@ -36,7 +36,8 @@ const factories = { codex: () => codexFixture(undefined, false, 10_000), claude:
 const MUSE_SUFFIX = /_[0-9a-f]{10}$/u
 const MSP_MODE: Record<AgentRuntimeMode, string | undefined> = { 'approval-required': 'promptUnmatched', 'auto-accept-edits': undefined, auto: 'onRequest', 'full-access': 'allowAll' }
 const flag = (args: string[], name: string) => args[args.indexOf(name) + 1]
-const names = ['sotto_threads', 'sotto_visual', 'sotto_pull_requests']
+// Watcher's own tools and its pull request babysitting; a thread's other scoped tools, its visuals among them, stay out.
+const names = ['sotto_threads', 'sotto_pull_requests']
 function scoped(name: string): ScopedThreadTools {
   return { name, definitions: [{ name: 'fixture_tool', description: 'Synthetic', inputSchema: {} }],
     mcpServer: async () => ({ name, type: 'http', url: 'http://127.0.0.1:12345/mcp', headers: [] }) }
@@ -92,7 +93,7 @@ function assertConfiguration(provider: keyof typeof factories, records: Recorded
       expect(['default', 'acceptEdits', 'auto', 'bypassPermissions']).toContain(flag(args, '--permission-mode'))
       expect(flag(args, '--permission-prompts')).toBe('host')
       expect(args).toContain('mcp__sotto_threads__list_threads')
-      expect(args).toContain('mcp__sotto_visual__fixture_tool')
+      expect(args.some(arg => arg.includes('sotto_visual'))).toBe(false)
       expect(args).toContain('mcp__sotto_pull_requests__fixture_tool')
       for (const denied of ['--tools', '--safe-mode', '--restricted', '--strict-mcp-config', '--setting-sources']) expect(args).not.toContain(denied)
     }
@@ -489,7 +490,7 @@ it('admits only Watcher’s own suffixed Muse tool names and shows a folded look
   const given = Object.keys(((await f.driver.requests()).find(record => record.method === 'session/start')!.params!.config as { mcpServers: Record<string, unknown> }).mcpServers)
   const server = (plain: string) => given.find(name => name.replace(MUSE_SUFFIX, '') === plain)!
   const decided = async () => (await f.driver.requests()).filter(record => record.method === 'approval/decide').length
-  for (const [plain, tool] of [['sotto_threads', 'list_threads'], ['sotto_visual', 'fixture_tool'], ['sotto_pull_requests', 'fixture_tool']] as const) {
+  for (const [plain, tool] of [['sotto_threads', 'list_threads'], ['sotto_pull_requests', 'fixture_tool']] as const) {
     const before = await decided()
     await f.action(id, { type: 'tool-permission', toolName: museToolName(server(plain), tool) })
     await expect.poll(decided).toBe(before + 1)
@@ -553,7 +554,7 @@ it('preallows only exact Grok Sotto tool names and shows other tools as ordinary
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
   await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Center', modelId: f.modelId })
-  for (const tool_name of ['sotto_threads__list_threads', 'sotto_visual__fixture_tool', 'sotto_pull_requests__fixture_tool']) {
+  for (const tool_name of ['sotto_threads__list_threads', 'sotto_pull_requests__fixture_tool']) {
     const before = (await f.driver.requests()).filter(record => record.result).length
     await f.action(id, { type: 'permission', text: 'Synthetic use_tool', rawInput: { tool_name } })
     await expect.poll(async () => (await f.driver.requests()).filter(record => record.result).length).toBeGreaterThan(before)

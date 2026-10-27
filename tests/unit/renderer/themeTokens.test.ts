@@ -310,7 +310,6 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/nextPrompt.css',
       'src/renderer/src/agents/owlSky.css',
       'src/renderer/src/watcher/watcher.css',
-      'src/renderer/src/watcher/watcherPicture.css',
       'src/renderer/src/watcher/nightScene.css',
       'src/renderer/src/agents/workingCopy.css',
       'src/renderer/src/agents/threadClear.css',
