@@ -41,6 +41,9 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { readProjectOrigins } from '../../src/main/agents/projectOrigins'
 import type { WorkerMachineSetting } from '../../src/shared/workerMachine'
+import { BranchBundles } from '../../src/main/agents/branchBundles'
+import { DesktopBranchMoves, foldersOfSnapshot } from '../../src/main/agents/branchMoves'
+import { branchMoveWords } from '../../src/shared/branchMoves'
 
 /** These tests run on the real clock: ordinary news waits as long as a question does (#1190's timing has unit tests). */
 const SHORT_BATCH = { quietMs: 2_000, maxMs: 5_000 }
@@ -76,9 +79,13 @@ async function master(native?: CodexAppServerHost, usage = false, machines?: boo
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => false, watcherEnabled: true } })
   // This computer's facts are read as the desktop reads them, from this machine (#1031).
   const facts = new HostFactsSource({ sleep: async () => undefined })
-  const watcher = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => false,
+  // A start from a thread's branch moves it as the desktop does (#1033), over this computer's sockets to its hosts.
+  const moving: { watcher?: WatcherService } = {}
+  const branchMoves = new DesktopBranchMoves({ bundles: new BranchBundles({ stagingDirectory: join(f.root, 'branch-moves'), recordsPath: join(f.root, 'branch-moves.json') }),
+    folders: foldersOfSnapshot(() => f.control.watcherSnapshot()), host: id => moving.watcher?.branchMoveHost(id), hostName: id => moving.watcher?.machineName(id) ?? 'That machine' })
+  const watcher = moving.watcher = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => false,
     machineFacts: () => hostMachineReport(facts, () => ({ threads: f.control.watcherSnapshot().threads, ...f.control.watcherSendRecords() }), crossMachine), crossMachine,
-    ...placing ? { workerMachine: placing.setting, projectOrigins: () => readProjectOrigins(f.control.shell().host.projects) } : {} })
+    ...placing ? { workerMachine: placing.setting, projectOrigins: () => readProjectOrigins(f.control.shell().host.projects) } : {}, ...crossMachine ? { branchMoves } : {} })
   const tools = new WatcherToolServer(watcher, { machines: crossMachine }); workspace.host.useWatcherTools(tools)
   const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true })
   const connection = { hostId: paired.pairing.hostId, name: 'Synthetic remote', kind: 'remote' as const, service: paired.socket,
@@ -1750,6 +1757,233 @@ it('starts a worker that names a system on a machine of it, and refuses one no c
   expect(f.control.watcherRecord().operations).toHaveLength(before)
 })
 
+// Starting from a thread's branch (#1033): This computer's project is a repository with a branch, and a thread works in it.
+async function fromBranch() {
+  const f = await acrossMachines()
+  const run = async (...args: string[]) => (await git('git', ['-C', f.local.path, '-c', 'user.name=Sotto test', '-c', 'user.email=test@example.invalid', ...args])).stdout.trim()
+  await writeFile(join(f.local.path, 'README.md'), '# Project\n'); await run('add', 'README.md'); await run('commit', '-q', '-m', 'Start the project')
+  await run('switch', '-q', '-c', 'feat/x')
+  await writeFile(join(f.local.path, 'x.txt'), 'x\n'); await run('add', 'x.txt'); await run('commit', '-q', '-m', 'Add x')
+  const here = f.control.shell().host.models.find(item => item.providerId === 'codex' && item.ready)!
+  const source = randomUUID()
+  expect((await f.control.commandShell({ type: 'create-thread', threadId: source, projectId: f.local.id, title: 'Synthetic source', modelId: here.id, workingCopy: 'shared' })).error).toBeNull()
+  return { ...f, run, commit: await run('rev-parse', 'HEAD'), fromThread: { hostId: f.control.hostId()!, threadId: source } }
+}
+
+it('starts a worker on the paired machine from a thread’s branch on This computer, in a new worktree on that branch, and says so (#1033)', async () => {
+  const f = await fromBranch()
+  expect(f.hello.features).toContain('branch-moves')
+  const raw = vi.spyOn(f.socket as unknown as { call(request: { op: string }): Promise<unknown> }, 'call')
+  const started = await f.call('start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId, workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
+  if (started.status !== 'ok' || !('target' in started)) throw new Error(`start-refused: ${started.status === 'refused' ? started.message : ''}`)
+  expect(started.startedFrom).toEqual({ hostId: f.pairing.hostId, name: 'Synthetic remote', branch: 'feat/x', note: 'Started on Synthetic remote from feat/x.' })
+  // The host is sent the move the start comes from, and neither the thread nor the machine it named.
+  const packet = raw.mock.calls.map(([request]) => request).find(request => request.op === 'watcher-control') as unknown as { request: { call: { input: Record<string, unknown> } } }
+  raw.mockRestore()
+  const moveId = packet.request.call.input['fromMove'] as string
+  expect(moveId).toMatch(/^[0-9a-f-]{36}$/u)
+  expect(packet.request.call.input).not.toHaveProperty('fromThread')
+  expect(packet.request.call.input).not.toHaveProperty('testRun')
+  // The worker's worktree on the host is made from the move's incoming ref, on the branch's own name.
+  await expect.poll(() => f.socket.shell().host.threads.find(thread => thread.id === started.target.threadId)?.worktree?.status, { timeout: 20_000 }).toBe('ready')
+  const worktree = f.socket.shell().host.threads.find(thread => thread.id === started.target.threadId)!.worktree!
+  expect(worktree).toMatchObject({ branch: 'feat/x', incomingRef: `refs/sotto/incoming/${moveId}/feat/x` })
+  expect((await git('git', ['-C', worktree.path!, 'rev-parse', 'HEAD'])).stdout.trim()).toBe(f.commit)
+})
+
+it('refuses a start from a thread with uncommitted work in the move’s words, and a test run starts from a snapshot of it (#1033)', async () => {
+  const f = await fromBranch()
+  await writeFile(join(f.local.path, 'x.txt'), 'edited\n'); await writeFile(join(f.local.path, 'new.txt'), 'new\n')
+  const refused = await f.startHere({ ...f.staysHere(), workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
+  expect(refused).toMatchObject({ status: 'refused', code: 'WORKING_COPY_UNAVAILABLE', message: branchMoveWords.uncommitted })
+  expect(f.control.shell().host.threads.filter(thread => thread.title === 'Synthetic remote worker')).toHaveLength(0)
+  expect(await f.run('for-each-ref', 'refs/sotto')).toBe('')
+  const tested = await f.startHere({ ...f.staysHere(), title: 'Synthetic test run', workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread, testRun: true })
+  if (tested.status !== 'ok' || !('target' in tested)) throw new Error(`start-refused: ${tested.status === 'refused' ? tested.message : ''}`)
+  expect(tested.startedFrom).toEqual({ hostId: f.control.hostId(), name: 'This computer', branch: 'feat/x', snapshot: { untracked: ['new.txt'], untrackedCount: 1 },
+    note: 'Started on This computer from feat/x with your uncommitted changes (1 untracked file).' })
+  await expect.poll(() => f.control.shell().host.threads.find(thread => thread.id === tested.target.threadId)?.worktree?.status, { timeout: 20_000 }).toBe('ready')
+  const worktree = f.control.shell().host.threads.find(thread => thread.id === tested.target.threadId)!.worktree!
+  // The source thread holds feat/x, so the worker's branch takes the next name; its folder has the uncommitted work.
+  expect(worktree.branch).toBe('feat/x-2')
+  // As committed: this computer's own `core.autocrlf` may give a checkout CRLF on the way out.
+  expect((await readFile(join(worktree.path!, 'new.txt'), 'utf8')).replace(/\r\n/gu, '\n')).toBe('new\n')
+  expect((await readFile(join(worktree.path!, 'x.txt'), 'utf8')).replace(/\r\n/gu, '\n')).toBe('edited\n')
+  // The source is as it was: on feat/x, its changes uncommitted, nothing stashed.
+  expect(await f.run('symbolic-ref', '--short', 'HEAD')).toBe('feat/x')
+  // Trimmed, so the first line's leading space is gone.
+  expect(await f.run('status', '--porcelain')).toBe('M x.txt\n?? new.txt')
+  expect(await f.run('stash', 'list')).toBe('')
+  // Watcher never names a move itself.
+  expect(await f.startHere({ ...f.staysHere(), workingCopy: { kind: 'new-worktree' }, fromMove: randomUUID() })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+})
+
+for (const where of ['paired', 'here'] as const) {
+  it(`lets go of a moved branch when its start is stopped after the branch arrived, ${where === 'paired' ? 'on the paired machine' : 'on This computer'} (#1033)`, async () => {
+    const f = await fromBranch()
+    // The branch arrives, then the user stops Watcher's request before the start goes.
+    const move = DesktopBranchMoves.prototype.forStart
+    const forStart = vi.spyOn(DesktopBranchMoves.prototype, 'forStart').mockImplementation(async function (this: DesktopBranchMoves, input) {
+      const moved = await move.call(this, input)
+      expect(moved.type).toBe('moved')
+      await f.control.updateWatcher(record => {
+        for (const request of record.requests) if (request.state === 'active') { request.state = 'stopped'; request.closedAt = new Date().toISOString() }
+      })
+      return moved
+    })
+    try {
+      const started = where === 'paired'
+        ? await f.call('start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId, workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
+        : await f.startHere({ ...f.staysHere(), workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
+      expect(started).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+      expect(forStart).toHaveBeenCalledTimes(1)
+      const repository = where === 'paired' ? f.project.path : f.local.path
+      await expect.poll(async () => (await git('git', ['-C', repository, 'for-each-ref', 'refs/sotto'])).stdout.trim()).toBe('')
+    } finally { forStart.mockRestore() }
+  })
+}
+
+it('lets go of a moved branch once reconciling finds the start failed with no thread, after its answer was lost (#1033)', async () => {
+  const f = await fromBranch()
+  const refs = async () => (await git('git', ['-C', f.project.path, 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/sotto'])).stdout.trim()
+  // The branch has arrived on the paired machine. Its start there fails without making a thread, as when the ref is
+  // missing as the worktree is made, and the answer never reaches this computer.
+  const control = f.socket.watcherControl.bind(f.socket)
+  vi.spyOn(f.socket, 'watcherControl').mockImplementationOnce(async (request, ...rest) => {
+    const [ref, commit] = (await refs()).split(' ')
+    await git('git', ['-C', f.project.path, 'update-ref', '-d', ref!])
+    const answer = await control(request, ...rest)
+    expect(answer).toMatchObject({ status: 'refused', receipt: { deliveryState: 'failed' } })
+    await git('git', ['-C', f.project.path, 'update-ref', ref!, commit!])
+    throw new Error('synthetic-lost-answer')
+  })
+  try {
+    const started = await f.call('start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId, workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
+    expect(started).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN' })
+    expect(await refs()).not.toBe('')
+    // Reconciling reads the failed receipt and a host with no such thread: the branch is let go.
+    await expect.poll(refs, { timeout: 30_000 }).toBe('')
+  } finally { vi.restoreAllMocks() }
+}, 60_000)
+
+for (const answer of ['accepted', 'uncertain'] as const) {
+  it(`keeps a lost start’s moved branch when reconciling reads its receipt as ${answer} (#1033)`, async () => {
+    const f = await fromBranch()
+    const refs = async () => (await git('git', ['-C', f.project.path, 'for-each-ref', 'refs/sotto'])).stdout.trim()
+    const watcher = f.watcher as unknown as { lostStartMoves: Map<string, unknown>; reconcileRemote(hostId?: string): Promise<void> }
+    // The start is made on the paired machine, and its answer never reaches this computer.
+    const control = f.socket.watcherControl.bind(f.socket)
+    vi.spyOn(f.socket, 'watcherControl').mockImplementationOnce(async (request, ...rest) => {
+      expect(await control(request, ...rest)).toMatchObject({ status: 'ok' })
+      throw new Error('synthetic-lost-answer')
+    })
+    // The paired machine's receipt for the start reads as `answer`: the stand-in provider never confirms a first prompt,
+    // so a real start there reads uncertain, and an accepted one is staged.
+    const read = f.socket.watcherRead.bind(f.socket)
+    let operationId: string | undefined
+    const reported = (value: unknown): unknown => {
+      if (Array.isArray(value)) return value.map(reported)
+      if (!value || typeof value !== 'object') return value
+      const item = Object.fromEntries(Object.entries(value).map(([name, field]) => [name, reported(field)]))
+      return operationId && (item['id'] === operationId || item['operationId'] === operationId) && 'deliveryState' in item ? { ...item, deliveryState: answer } : item
+    }
+    const reads = vi.spyOn(f.socket, 'watcherRead').mockImplementation(async request => reported(await read(request)))
+    try {
+      const started = await f.call('start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId, workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
+      expect(started).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN' })
+      operationId = (started as { receipt: { operationId: string } }).receipt.operationId
+      reads.mockClear()
+      await watcher.reconcileRemote(f.pairing.hostId)
+      expect(reads).toHaveBeenCalled()
+      expect((f.watcher as unknown as { record(): { operations: { id: string; deliveryState: string }[] } }).record().operations
+        .find(operation => operation.id === operationId)?.deliveryState).toBe(answer)
+      // An accepted start's thread owns the branch, and its entry is done with. An uncertain one may yet have made the
+      // thread, so its entry waits for a later reconcile. Either way the branch stays.
+      expect(watcher.lostStartMoves.size).toBe(answer === 'accepted' ? 0 : 1)
+      expect(await refs()).not.toBe('')
+    } finally { vi.restoreAllMocks() }
+  }, 60_000)
+}
+
+it('lets go of a timed-out start’s moved branch once the paired machine shows it never had the start (#1033)', async () => {
+  const f = await fromBranch()
+  const refs = async () => (await git('git', ['-C', f.project.path, 'for-each-ref', 'refs/sotto'])).stdout.trim()
+  const watcher = f.watcher as unknown as { lostStartMoves: Map<string, unknown>; timedOutStarts: Set<string> }
+  // The request for the start times out before it reaches the paired machine, which so never makes the thread.
+  vi.spyOn(f.socket, 'watcherControl').mockImplementationOnce(async () => { throw Object.assign(new Error('synthetic-timeout'), { timedOut: true }) })
+  try {
+    const started = await f.call('start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId, workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
+    expect(started).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN' })
+    expect(watcher.timedOutStarts.size).toBe(1)
+    expect(await refs()).not.toBe('')
+    await expect.poll(refs, { timeout: 30_000 }).toBe('')
+    expect(watcher.lostStartMoves.size).toBe(0)
+  } finally { vi.restoreAllMocks() }
+}, 60_000)
+
+it('keeps a lost start’s moved branch for the next reconcile when this computer has no host ID for a moment (#1033)', async () => {
+  const f = await fromBranch()
+  const refs = async () => (await git('git', ['-C', f.project.path, 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/sotto'])).stdout.trim()
+  const watcher = f.watcher as unknown as { madeThread: (...args: unknown[]) => boolean; lostStartMoves: Map<string, unknown>; reconcileRemote(hostId?: string): Promise<void> }
+  // As the test above: the start fails on the paired machine with no thread, and its answer is lost.
+  const control = f.socket.watcherControl.bind(f.socket)
+  vi.spyOn(f.socket, 'watcherControl').mockImplementationOnce(async (request, ...rest) => {
+    const [ref, commit] = (await refs()).split(' ')
+    await git('git', ['-C', f.project.path, 'update-ref', '-d', ref!])
+    await control(request, ...rest)
+    await git('git', ['-C', f.project.path, 'update-ref', ref!, commit!])
+    throw new Error('synthetic-lost-answer')
+  })
+  // While Sotto starts, this computer has no host ID, and asking whether the paired machine made the thread throws.
+  const made = vi.spyOn(watcher, 'madeThread').mockImplementation(() => { throw new Error('synthetic-no-host-id') })
+  try {
+    const started = await f.call('start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId, workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
+    expect(started).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN' })
+    await expect.poll(() => made.mock.calls.length, { timeout: 30_000 }).toBeGreaterThan(0)
+    // Nothing was decided, so the branch and its entry wait.
+    expect(watcher.lostStartMoves.size).toBe(1)
+    expect(await refs()).not.toBe('')
+    made.mockRestore()
+    await watcher.reconcileRemote(f.pairing.hostId)
+    await expect.poll(refs, { timeout: 30_000 }).toBe('')
+    expect(watcher.lostStartMoves.size).toBe(0)
+  } finally { vi.restoreAllMocks() }
+}, 60_000)
+
+it('lets go of a moved branch when the paired machine answers its start with a definite failure and no thread (#1033)', async () => {
+  const f = await fromBranch()
+  // The branch has arrived on the paired machine; its answer is a failed receipt for this very start, and it made no thread.
+  vi.spyOn(f.socket, 'watcherControl').mockImplementationOnce(async request => {
+    const { operation } = request
+    return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: 'Synthetic failure. Nothing was started.', retryable: false,
+      receipt: { operationId: operation.id, target: operation.target, requestId: operation.requestId, deliveryState: 'failed', receiptId: operation.receiptId, cardId: operation.cardId } }
+  })
+  try {
+    const started = await f.call('start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId, workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
+    expect(started).toMatchObject({ status: 'refused', code: 'PROVIDER_UNAVAILABLE', receipt: { deliveryState: 'failed' } })
+    await expect.poll(async () => (await git('git', ['-C', f.project.path, 'for-each-ref', 'refs/sotto'])).stdout.trim()).toBe('')
+  } finally { vi.restoreAllMocks() }
+})
+
+it('lets go of a moved branch when its permission is refused after the branch arrived, on This computer (#1033)', async () => {
+  const f = await fromBranch()
+  // The branch arrives, then the start's permission no longer fits, as when the user narrows New threads start with.
+  const move = DesktopBranchMoves.prototype.forStart
+  const watcher = f.watcher as unknown as { permission: (...args: unknown[]) => unknown }
+  const forStart = vi.spyOn(DesktopBranchMoves.prototype, 'forStart').mockImplementation(async function (this: DesktopBranchMoves, input) {
+    const moved = await move.call(this, input)
+    expect(moved.type).toBe('moved')
+    vi.spyOn(watcher, 'permission').mockImplementationOnce(() => { throw new Error('synthetic-permission-narrowed') })
+    return moved
+  })
+  try {
+    const started = await f.startHere({ ...f.staysHere(), workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
+    expect(started).toMatchObject({ status: 'refused' })
+    expect(forStart).toHaveBeenCalledTimes(1)
+    await expect.poll(async () => (await git('git', ['-C', f.local.path, 'for-each-ref', 'refs/sotto'])).stdout.trim()).toBe('')
+  } finally { forStart.mockRestore(); vi.restoreAllMocks() }
+})
+
 it('warns when starts the paired machine answered before its list holds them leave more than ten working there (#1032)', async () => {
   const f = await acrossMachines(), hostId = f.pairing.hostId
   // The paired machine's list as this computer holds it: nine threads working, and none of the starts below yet.
@@ -1929,9 +2163,27 @@ it('refuses a machine or system while Work across machines is off, and lists no 
   expect(f.hello.features).not.toContain('project-origins')
   expect(await f.call('start_thread', { ...f.start(), machine: f.pairing.hostId })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
   expect(await f.call('start_thread', { ...f.start(), os: family })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+  // Nor a thread's branch to start from, or a test run (#1033).
+  expect(await f.call('start_thread', { ...f.start(), workingCopy: { kind: 'new-worktree' }, fromThread: { hostId: f.pairing.hostId, threadId: 'x' } })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+  expect(await f.call('start_thread', { ...f.start(), testRun: true })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
   const listed = await f.call('list_machines', {})
   expect(listed).not.toHaveProperty('newWorkersStart')
   expect(await f.call('start_thread', f.start())).not.toHaveProperty('placement')
   const room = f.watcher.get()
   expect(room.status === 'ok' && room.state.receiptPlacements).toBeFalsy()
+})
+
+it('refuses a start that names a move on a Stable host, even from a desktop that sends one (#1033)', async () => {
+  const f = await master()
+  // A desktop that puts a move in the start it sends, with the digest made to match, as only Owl's Watcher would.
+  const control = f.socket.watcherControl.bind(f.socket)
+  vi.spyOn(f.socket, 'watcherControl').mockImplementation(async (request, ...rest) => {
+    if (request.call.name !== 'start_thread') return control(request, ...rest)
+    const input = watcherToolSchemas.start_thread.input.parse({ ...request.call.input, workingCopy: { kind: 'new-worktree' }, fromMove: randomUUID() })
+    const operation = { ...request.operation, digest: createHash('sha256').update(JSON.stringify(['start_thread', input])).digest('hex') }
+    return control({ ...request, operation, call: { name: 'start_thread', input } } as WatcherHostControl, ...rest)
+  })
+  const started = await f.call('start_thread', { ...f.start(), title: 'Synthetic moved start' })
+  expect(started).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+  expect(f.socket.shell().host.threads.some(thread => thread.title === 'Synthetic moved start')).toBe(false)
 })

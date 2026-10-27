@@ -494,6 +494,9 @@ export const agentWorktreeSchema = z.object({
   /** The worktree checks `branch` out as it stands instead of cutting a new branch from the base: a pull request
    * checked out into a worktree of its own, whose branch the first send puts in the new folder. */
   checkoutBranch: z.boolean().optional(),
+  /** A worker started from a thread's branch (#1033): the move's incoming ref this worktree was made from, removed with
+   * the worktree (ADR-0082 decision 3). */
+  incomingRef: z.string().max(512).optional(),
 })
 export type AgentWorktree = z.infer<typeof agentWorktreeSchema>
 export const agentWorkingCopySelectionSchema = z.object({
@@ -1275,6 +1278,9 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
     threadId: z.uuid().optional(),
     workingCopy: z.enum(['independent', 'shared']).optional(),
     baseBranch: z.string().min(1).max(512).optional(), startFromOrigin: z.boolean().optional(), existingWorktreePath: z.string().min(1).max(4096).optional(),
+    /** A worker started from a thread's branch (#1033): the move that landed it in this project's incoming ref, which the
+     * thread's new worktree is made from. Watcher's and delegation's own starts only; a person's create-thread is refused. */
+    startFromMove: z.uuid().optional(),
     reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional() }).strict(),
   /**
    * One of a thread's agents continued as a thread of its own (#1028). `threadId` is the agent's thread, so the command goes

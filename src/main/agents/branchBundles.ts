@@ -1,13 +1,13 @@
 import { createHash, randomUUID, type Hash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { mkdir, open, readdir, stat, unlink, type FileHandle } from 'node:fs/promises'
-import { join } from 'node:path'
+import { copyFile, mkdir, open, readdir, stat, unlink, type FileHandle } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import { z } from 'zod'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { runGitStatusCommand, type RunGitCommand } from './gitStatus'
 import {
   BRANCH_BUNDLE_CHUNK_BYTES, BRANCH_BUNDLE_GIT_MS, BRANCH_BUNDLE_MAX_BYTES, BRANCH_TIPS_MAX, branchMoveRefusal, branchMoveWords, branchNameSchema, commitIdSchema,
-  incomingRef, outgoingRef, type BranchMoved, type BranchMoveRefusal,
+  incomingRef, outgoingRef, SNAPSHOT_UNTRACKED_LISTED, type BranchMoved, type BranchMoveRefusal, type SnapshotCarried,
 } from '../../shared/branchMoves'
 
 /**
@@ -19,8 +19,14 @@ import {
  * Git's output never reaches a log or an answer: a failure is one of the refusals in `branchMoveWords`.
  */
 
-/** What a sender moves: the branch's name and the commit Sotto checked. A test-run snapshot will be a commit object here. */
-export interface BranchSource { readonly branch: string; readonly commit: string }
+/**
+ * What a sender moves: the branch's name and the commit Sotto checked. For a test run with uncommitted work the commit is
+ * a snapshot made from a temporary index, on no branch, and `snapshot` says what it carried.
+ */
+export interface BranchSource { readonly branch: string; readonly commit: string; readonly snapshot?: SnapshotCarried }
+/** Who a test-run snapshot's commit names, so it reads as Sotto's own and needs no identity configured in the repository. */
+const SNAPSHOT_IDENTITY = { GIT_AUTHOR_NAME: 'Sotto', GIT_AUTHOR_EMAIL: 'sotto@localhost', GIT_COMMITTER_NAME: 'Sotto', GIT_COMMITTER_EMAIL: 'sotto@localhost' } as const
+const SNAPSHOT_MESSAGE = 'Snapshot of uncommitted work for a check\n\nMade by Sotto from a temporary index. It is on no branch, and the working tree it came from is unchanged.\n'
 /** A bundle staged for sending, with what the receiver checks it against. */
 export interface PreparedBundle { readonly type: 'sending'; readonly path: string; readonly size: number; readonly sha256: string }
 /** The receiver already has the commit, from the tips it named: no bundle is needed, only its incoming ref. */
@@ -39,10 +45,10 @@ type Records = z.infer<typeof recordsSchema>
 const RECORDS_MAX = 1000
 
 /**
- * The bundle file names this module stages, so a start clears what a crash left and nothing else: the move, then the
+ * The bundle and test-run snapshot index file names this module stages, so a start clears what a crash left and nothing else: the move, then the
  * attempt, so an attempt that outlives its connection can only ever remove its own file.
  */
-const STAGED = /^[0-9a-f-]{36}\.[0-9a-f-]{36}\.(?:in|out)\.bundle$/u
+const STAGED = /^[0-9a-f-]{36}\.(?:[0-9a-f-]{36}\.(?:in|out)\.bundle|snapshot\.index)$/u
 
 export interface BranchBundlesOptions {
   /** A folder of Sotto's own, in its data folder, where bundles wait while they cross. Emptied of them at start. */
@@ -66,10 +72,16 @@ export class MoveFence {
   /** Whether the move was ended, so nothing more of it may land. */
   get cancelled(): boolean { return this.ended }
   /** Runs `write`, which creates the incoming ref, unless the move was ended first: null when it was. */
-  land<T>(write: () => Promise<T>): Promise<T> | null {
-    if (this.ended) return null
+  land<T>(write: () => Promise<T>): Promise<T> | null { return MoveFence.land([this], write) }
+  /**
+   * Runs `write` behind every fence at once, as when a move's own fence and its bundle's both guard one ref: null when any
+   * of them was ended first, and each one's `cancel` waits for the write once it has begun.
+   */
+  static land<T>(fences: readonly MoveFence[], write: () => Promise<T>): Promise<T> | null {
+    if (fences.some(fence => fence.ended)) return null
     const landing = write()
-    this.landing = landing.then(() => undefined, () => undefined)
+    const settled = landing.then(() => undefined, () => undefined)
+    for (const fence of fences) fence.landing = settled
     return landing
   }
   /** Ends the move. Once this resolves no ref is created for it: a landing already under way has finished. */
@@ -119,8 +131,8 @@ export class BranchBundles {
     })()
   }
 
-  private git(cwd: string, args: readonly string[], stdin?: string, timeoutMs = 120_000): Promise<string> {
-    return this.run(cwd, 'git', args, { timeoutMs, ...(stdin !== undefined ? { stdin } : {}) })
+  private git(cwd: string, args: readonly string[], stdin?: string, timeoutMs = 120_000, env?: Readonly<Record<string, string>>): Promise<string> {
+    return this.run(cwd, 'git', args, { timeoutMs, ...(stdin !== undefined ? { stdin } : {}), ...(env ? { env } : {}) })
   }
   private async isRepository(folder: string): Promise<boolean> {
     try { return (await this.git(folder, ['rev-parse', '--is-inside-work-tree', '--git-dir'], undefined, 30_000)).length > 0 } catch { return false }
@@ -151,7 +163,7 @@ export class BranchBundles {
   async branchOf(workingCopy: string): Promise<BranchSource | BranchMoveRefusal> {
     if (!await this.isRepository(workingCopy)) return branchMoveRefusal('not-a-repository', branchMoveWords.notARepository)
     try {
-      if ((await this.git(workingCopy, ['status', '--porcelain', '--untracked-files=normal'], undefined, 60_000)).trim()) return branchMoveRefusal('uncommitted', branchMoveWords.uncommitted)
+      if ((await this.git(workingCopy, ['status', '--porcelain', '--untracked-files=normal', '--ignore-submodules=none'], undefined, 60_000)).trim()) return branchMoveRefusal('uncommitted', branchMoveWords.uncommitted)
       let branch: string
       try { branch = (await this.git(workingCopy, ['symbolic-ref', '--quiet', '--short', 'HEAD'], undefined, 30_000)).trim() } catch { return branchMoveRefusal('not-on-branch', branchMoveWords.notOnBranch) }
       if (!branchNameSchema.safeParse(branch).success) return branchMoveRefusal('unsupported', branchMoveWords.branchName)
@@ -159,6 +171,112 @@ export class BranchBundles {
       if (!commitIdSchema.safeParse(commit).success) return branchMoveRefusal('failed', branchMoveWords.failed)
       return { branch, commit }
     } catch { return branchMoveRefusal('failed', branchMoveWords.failed) }
+  }
+
+  /** `branchOf` for a move, or `snapshotOf` for a test run, which carries uncommitted work rather than refusing it. */
+  sourceOf(workingCopy: string, snapshot: boolean): Promise<BranchSource | BranchMoveRefusal> {
+    return snapshot ? this.snapshotOf(workingCopy) : this.branchOf(workingCopy)
+  }
+
+  /**
+   * A test run's source (ADR-0105 decision 8): the branch and its commit when the working copy is clean, and otherwise a
+   * snapshot of it. The snapshot is a commit object made from a copy of the index: `git add -A` against the copy, so
+   * `.gitignore` is respected, then its tree, with the branch's commit as parent. No branch, no stash, and the working tree
+   * and the real index are untouched. It names the untracked files it took.
+   */
+  async snapshotOf(workingCopy: string): Promise<BranchSource | BranchMoveRefusal> {
+    if (!await this.isRepository(workingCopy)) return branchMoveRefusal('not-a-repository', branchMoveWords.notARepository)
+    await this.start()
+    const index = join(this.options.stagingDirectory, `${randomUUID()}.snapshot.index`)
+    try {
+      let branch: string
+      try { branch = (await this.git(workingCopy, ['symbolic-ref', '--quiet', '--short', 'HEAD'], undefined, 30_000)).trim() } catch { return branchMoveRefusal('not-on-branch', branchMoveWords.notOnBranch) }
+      if (!branchNameSchema.safeParse(branch).success) return branchMoveRefusal('unsupported', branchMoveWords.branchName)
+      const head = (await this.git(workingCopy, ['rev-parse', '--verify', 'HEAD^{commit}'], undefined, 30_000)).trim()
+      if (!commitIdSchema.safeParse(head).success) return branchMoveRefusal('failed', branchMoveWords.failed)
+      if (!(await this.git(workingCopy, ['status', '--porcelain', '--untracked-files=normal', '--ignore-submodules=none'], undefined, 60_000)).trim()) return { branch, commit: head }
+      if (await this.dirtySubmodule(workingCopy)) return branchMoveRefusal('uncommitted', branchMoveWords.submoduleChanges)
+      // From the top of the working tree, so `add -A` takes all of it and the untracked paths read from its root.
+      const top = (await this.git(workingCopy, ['rev-parse', '--show-toplevel'], undefined, 30_000)).trim()
+      const untracked = (await this.git(top, ['ls-files', '--others', '--exclude-standard', '-z'], undefined, 60_000)).split('\0').filter(Boolean)
+      const real = resolve(top, (await this.git(top, ['rev-parse', '--git-path', 'index'], undefined, 30_000)).trim())
+      // A repository with nothing staged yet may have no index; the temporary one then starts empty.
+      await copyFile(real, index).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error })
+      const env = { GIT_INDEX_FILE: index }
+      await this.git(top, ['add', '-A', '--', '.'], undefined, 300_000, env)
+      const tree = (await this.git(top, ['write-tree'], undefined, 60_000, env)).trim()
+      // Never signed: the snapshot is a throwaway object on no branch, and a signing prompt would hold the start.
+      const commit = (await this.git(top, ['commit-tree', '--no-gpg-sign', tree, '-p', head, '-F', '-'], SNAPSHOT_MESSAGE, 60_000, SNAPSHOT_IDENTITY)).trim()
+      if (!commitIdSchema.safeParse(commit).success) return branchMoveRefusal('failed', branchMoveWords.failed)
+      return { branch, commit, snapshot: { untracked: untracked.slice(0, SNAPSHOT_UNTRACKED_LISTED), untrackedCount: untracked.length } }
+    } catch { return branchMoveRefusal('failed', branchMoveWords.failed) }
+    finally { await unlink(index).catch(() => undefined) }
+  }
+
+  /**
+   * Whether a submodule of the working copy has changes of its own, tracked or untracked. `git add -A` in the parent takes
+   * only a submodule's commit, so a check's snapshot would leave that work behind while saying it carried everything.
+   * Porcelain v2 marks a submodule `S<c><m><u>`: `M` for its tracked changes, `U` for its untracked files.
+   * `--ignore-submodules=none` here and in the status calls before it, so a repository's `submodule.<name>.ignore` set to
+   * `dirty` or `all` cannot make a changed submodule read as clean.
+   */
+  private async dirtySubmodule(workingCopy: string): Promise<boolean> {
+    const lines = (await this.git(workingCopy, ['status', '--porcelain=v2', '--untracked-files=normal', '--ignore-submodules=none'], undefined, 60_000)).split(/\r?\n/u)
+    return lines.some(line => {
+      const fields = line.split(' ')
+      const sub = fields[2] ?? ''
+      return (fields[0] === '1' || fields[0] === '2') && sub.startsWith('S') && (sub[2] === 'M' || sub[3] === 'U')
+    })
+  }
+
+  /**
+   * Lands a branch on the same machine, for a worker started there from a thread's branch: in `repository`'s incoming ref
+   * for the move, written once, as a move lands. When `repository` already has the commit and its history, as a thread's
+   * worktree and its project's checkout share one object store, only the ref is written; otherwise, as for a test-run
+   * snapshot that no ref names yet, the commit goes across from `from` as a bundle staged here and taken in at once. A copy
+   * ended through `fence` creates no ref, as a move ended over the socket does not.
+   */
+  async copy(input: { readonly from: string; readonly source: BranchSource; readonly repository: string; readonly moveId: string; readonly fence?: MoveFence }): Promise<BranchMoved | BranchMoveRefusal> {
+    const { source, repository, moveId, fence } = input
+    const carried = (moved: BranchMoved | BranchMoveRefusal): BranchMoved | BranchMoveRefusal => moved.type === 'moved' && source.snapshot ? { ...moved, snapshot: source.snapshot } : moved
+    const cutOff = (): BranchMoveRefusal => branchMoveRefusal('cut-off', branchMoveWords.cutOff)
+    if (fence?.cancelled) return cutOff()
+    const tips = await this.tips(repository)
+    if (!Array.isArray(tips)) return tips
+    const prepared = await this.prepare({ repository: input.from, moveId, commit: source.commit, bases: tips })
+    if (prepared.type === 'refused') return prepared
+    if (prepared.type === 'present') return carried(await this.receiveRef({ repository, moveId, branch: source.branch, commit: source.commit, ...fence ? { fence } : {} }))
+    // Whatever stops the copy before its finish, a read or write that fails included, abandons what it staged here
+    // (ADR-0105 decision 8): its handle is closed and its file removed, never left for the next start to clear.
+    let incoming: IncomingBundle | undefined
+    let finishing = false
+    try {
+      if (fence?.cancelled) return cutOff()
+      const begun = await this.receive({ repository, moveId, branch: source.branch, commit: source.commit, size: prepared.size, sha256: prepared.sha256 })
+      if (!(begun instanceof IncomingBundle)) return carried(begun)
+      incoming = begun
+      for (let offset = 0; offset < prepared.size;) {
+        if (fence?.cancelled) return cutOff()
+        const chunk = await this.readChunk(prepared.path, offset)
+        if (chunk.byteLength === 0 || !await incoming.write(offset, chunk)) return branchMoveRefusal('not-whole', branchMoveWords.notWhole)
+        offset += chunk.byteLength
+      }
+      finishing = true
+      return carried(await this.finish(incoming, fence))
+    } catch { return branchMoveRefusal('failed', branchMoveWords.failed) }
+    finally {
+      if (incoming && !finishing) await this.abandon(incoming)
+      await this.discard(prepared)
+    }
+  }
+
+  /** Removes the incoming ref a move landed in `repository`, for a start that never made its worktree. Best effort. */
+  async forget(repository: string, moveId: string): Promise<void> {
+    if (!/^[0-9a-f-]{36}$/u.test(moveId)) return
+    try {
+      const refs = (await this.git(repository, ['for-each-ref', '--format=%(refname)', `refs/sotto/incoming/${moveId}/`], undefined, 30_000)).split(/\r?\n/u).filter(Boolean)
+      for (const ref of refs) await this.git(repository, ['update-ref', '-d', '--no-deref', ref], undefined, 30_000)
+    } catch { /* Kept: its commits stay until the thread goes. */ }
   }
 
   /**
@@ -328,10 +446,11 @@ export class BranchBundles {
   /**
    * Lands a whole bundle: its size and SHA-256 as the sender named them, `git bundle verify` in the receiving repository,
    * and exactly one ref, the sender's outgoing ref for this move, naming the commit. The objects are imported without
-   * writing any ref, the commit is checked to be a commit, the move is recorded, and the incoming ref created only if it does not exist, then read back. The staged
-   * file is removed whatever happens.
+   * writing any ref, the commit is checked to be a commit, the move is recorded, and the incoming ref created only if it
+   * does not exist, then read back. The staged file is removed whatever happens.
    */
-  async finish(incoming: IncomingBundle): Promise<BranchMoved | BranchMoveRefusal> {
+  async finish(incoming: IncomingBundle, fence?: MoveFence): Promise<BranchMoved | BranchMoveRefusal> {
+    const fences = fence ? [incoming, fence] : [incoming]
     const { repository, moveId, branch, commit, path } = incoming
     const ref = incomingRef(moveId, branch)
     try {
@@ -342,16 +461,16 @@ export class BranchBundles {
       if (heads.length !== 1 || heads[0] !== `${commit} ${outgoingRef(moveId)}`) return branchMoveRefusal('not-whole', branchMoveWords.notWhole)
       const landed = await this.landed(repository, moveId, ref, commit)
       if (landed) return landed
-      if (incoming.cancelled) return branchMoveRefusal('cut-off', branchMoveWords.cutOff)
+      if (fences.some(each => each.cancelled)) return branchMoveRefusal('cut-off', branchMoveWords.cutOff)
       await this.git(repository, ['bundle', 'unbundle', path], undefined, BRANCH_BUNDLE_GIT_MS)
       // A bundle whose one ref names a blob or a tree verifies and imports like any other, so its object's type is
       // checked before the move is recorded: a record of what never landed would turn a good retry into move-differs.
       if (!await this.isCommit(repository, commit)) return branchMoveRefusal('not-whole', branchMoveWords.notWhole)
-      if (incoming.cancelled) return branchMoveRefusal('cut-off', branchMoveWords.cutOff)
+      if (fences.some(each => each.cancelled)) return branchMoveRefusal('cut-off', branchMoveWords.cutOff)
       await this.record(moveId, commit, ref)
       // The fence: a move ended while it was checked or imported creates no ref. Its objects stay, unreferenced, for Git
       // to collect, and its record lets a retry go ahead.
-      const landing = incoming.land(() => this.createRef(repository, moveId, branch, commit))
+      const landing = MoveFence.land(fences, () => this.createRef(repository, moveId, branch, commit))
       return landing ? await landing : branchMoveRefusal('cut-off', branchMoveWords.cutOff)
     } catch { return branchMoveRefusal('failed', branchMoveWords.failed) }
     finally { await unlink(path).catch(() => undefined) }

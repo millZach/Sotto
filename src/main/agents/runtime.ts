@@ -60,6 +60,8 @@ import { HostFactsSource, hostMachineReport, type MachineWork } from './hostFact
 import type { HostMachineReport } from '../../shared/hostFacts'
 import { readProjectOrigins } from './projectOrigins'
 import { threadDelegations } from './agentsView'
+import { BranchBundles } from './branchBundles'
+import { desktopBranchMoves, foldersOfSnapshot } from './branchMoves'
 import { DesktopDefaultsStore, hostDelegationMachines } from './hostDelegation'
 import { machineWorkingThreadsWarning } from '../../shared/workingThreads'
 
@@ -350,9 +352,18 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (workerRoles) agentHost.useWorkerRoles(workerRoles)
   // Work across machines (#1032): only the desktop places starts, so only its Watcher reads where new workers start. Every
   // host that has it on, the desktop's own included, reports its projects' origins.
+  // Starting a worker from a thread's branch (#1033) moves that branch first: only the desktop places starts, so only it
+  // moves branches, asked once here with the Owl answer. Its own bundles wait in its data folder while they cross.
+  // The mover reaches hosts through Watcher's view of them, which exists only once Watcher is made below.
+  const moving: { watcher?: WatcherService | undefined } = {}
+  const branchMoves = desktopBranchMoves(crossMachine && options.runsAs !== 'headless-host', {
+    bundles: new BranchBundles({ stagingDirectory: join(directory, 'branch-moves'), recordsPath: join(directory, 'branch-moves.json') }),
+    folders: foldersOfSnapshot(() => agentControl.watcherSnapshot()), host: hostId => moving.watcher?.branchMoveHost(hostId),
+    hostName: hostId => moving.watcher?.machineName(hostId) ?? 'That machine' })
   const placing = crossMachine && options.runsAs !== 'headless-host'
-    ? { workerMachine: () => options.settings().newWorkerMachine, projectOrigins: () => readProjectOrigins(agentControl.watcherSnapshot().projects) } : {}
-  const watcher = options.watcherEnabled === true
+    ? { workerMachine: () => options.settings().newWorkerMachine, projectOrigins: () => readProjectOrigins(agentControl.watcherSnapshot().projects),
+      ...branchMoves ? { branchMoves } : {} } : {}
+  const watcher = moving.watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
       workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts, crossMachine,
       settleFinished: () => options.settings().watcherSettlesFinishedThreads, compactAt: () => options.settings().watcherCompactAtTokens, ...options.watcherLog ? { log: options.watcherLog } : {},
@@ -364,7 +375,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
       tool: threadId => options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId), ...roles,
       ...placingWatcher ? { machines: { list: () => placingWatcher.machines(), place: (ask, project, setting) => placingWatcher.placement(ask, project, setting),
-        name: hostId => placingWatcher.machineName(hostId), setting: () => options.settings().newWorkerMachine } } : {} })
+        name: hostId => placingWatcher.machineName(hostId), setting: () => options.settings().newWorkerMachine } } : {},
+      // Offered with the machines, as the tool server offers from_my_branch and test_run only with them (#1033).
+      ...placingWatcher && branchMoves ? { branchMoves } : {} })
   } else if (hostDelegation && desktopDefaults) {
     agentHost.enableDelegation()
     // A thread here delegates on this machine alone until #1316. Its ceiling and roles are the desktop's, never this host's

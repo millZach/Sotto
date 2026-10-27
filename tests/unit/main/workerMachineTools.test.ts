@@ -23,12 +23,15 @@ describe('Watcher with Work across machines', () => {
     }
     expect(WATCHER_TOOL_DEFINITIONS).toEqual(watcherToolDefinitions(false, false))
   })
-  it('advertises no placement or newWorkersStart in any result while it is off, and both while it is on', () => {
+  it('advertises no placement, startedFrom or newWorkersStart in any result while it is off, and all of them while it is on', () => {
     const offered = (roles: boolean, machines: boolean) => JSON.stringify(watcherToolDefinitions(roles, machines))
     const output = (roles: boolean, machines: boolean, name: string) => JSON.stringify(watcherToolDefinitions(roles, machines).find(item => item.name === name)!.outputSchema)
     for (const roles of [false, true]) {
-      for (const field of ['placement', 'newWorkersStart']) expect(offered(roles, false)).not.toContain(field)
+      // startedFrom carries a test run's snapshot (#1033): its untracked files and their count are Work across machines' too.
+      for (const field of ['placement', 'newWorkersStart', 'startedFrom', 'untracked', 'untrackedCount']) expect(offered(roles, false)).not.toContain(field)
       expect(output(roles, true, 'start_thread')).toContain('"placement"')
+      expect(output(roles, true, 'start_thread')).toContain('"startedFrom"')
+      expect(output(roles, true, 'start_thread')).toContain('"untrackedCount"')
       expect(output(roles, true, 'list_machines')).toContain('"newWorkersStart"')
       // The rest of each result, and the refusal, are the same either way.
       expect(output(roles, false, 'start_thread')).toContain('"firstPromptReceiptId"')
@@ -80,6 +83,26 @@ describe('delegate with Work across machines', () => {
       expect(delegate.schema.properties['os']!.enum).toEqual(['windows', 'macos', 'linux'])
       expect(delegate.description).toContain('a delegated thread starts only on This computer for now')
       expect(tool(definitions, LIST_MACHINES_TOOL)!.description).toContain('newWorkersStart')
+    }
+  })
+})
+
+// #1033: starting from a thread's branch, and saying a start is a test run, are Work across machines too.
+describe('starting from a branch with Work across machines', () => {
+  it('offers Watcher no thread to start from and no test run while it is off, and never a move', () => {
+    for (const roles of [false, true]) for (const machines of [false, true]) {
+      const properties = tool(watcherToolDefinitions(roles, machines), 'start_thread')!.schema.properties
+      expect(properties).not.toHaveProperty('fromMove')
+      for (const name of ['fromThread', 'testRun']) expect(Object.hasOwn(properties, name)).toBe(machines)
+      expect(tool(watcherToolDefinitions(roles, machines), 'start_thread')!.description.includes('fromThread')).toBe(machines)
+    }
+    expect(WATCHER_MACHINES_PROMPT).toContain('Set testRun only when the worker is there to run tests')
+  })
+  it('offers a delegating thread from_my_branch and test_run only while it is on', () => {
+    for (const roles of [false, true]) for (const machines of [false, true]) {
+      const delegate = tool(delegationToolDefinitions(roles, machines), 'delegate')!
+      for (const name of ['from_my_branch', 'test_run']) expect(Object.hasOwn(delegate.schema.properties, name)).toBe(machines)
+      expect(delegate.description.includes('from_my_branch')).toBe(machines)
     }
   })
 })

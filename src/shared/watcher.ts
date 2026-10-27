@@ -4,6 +4,7 @@ import { watcherGroupSchema, WATCHER_GROUPS } from './watcherOverview'
 import { hostFactsSchema, hostLoadSchema, hostOsSchema } from './hostFacts'
 import { workerKindSchema } from './workerRoles'
 import { newWorkersStartSchema, workerPlacementReceiptSchema, workerSystemSchema } from './workerMachine'
+import { branchStartReceiptSchema } from './branchMoves'
 export { watcherOwnChangeSchema, type WatcherOwnChange } from './watcherChanges'
 
 export const WATCHER_PROMPT_BYTES_MAX = 32 * 1_024
@@ -317,9 +318,16 @@ export const watcherToolSchemas = {
     // A start names its worker role, its model, or both (#1041). Main fills the rest from the role before admission, and
     // never sends `role` to a paired host: an older one refuses keys it does not know. `machine` and `os` say where it
     // starts (#1032, Owl `cross-machine-work`); main places the start before admission and sends neither to a paired host.
+    // `fromThread` starts it from that thread's branch, and `testRun` says the start is a test run, whose uncommitted work
+    // goes too as a snapshot (#1033, #1312): main takes both off before admission and puts `fromMove` in their place, the
+    // move it makes just before the start, which is all a paired host is sent. Watcher never names a move itself.
     input: z.object({ ...mutation, project: watcherProjectTargetSchema, machine: z.uuid().optional(), os: workerSystemSchema.optional(), role: workerKindSchema.optional(), modelId: entityId.optional(), reasoningEffort: z.string().min(1).max(64).optional(),
-      permission: permission.optional(), workingCopy, baseRefChoiceId: id.optional(), title: z.string().min(1).max(WATCHER_TITLE_MAX), firstPrompt: prompt }).strict(),
+      permission: permission.optional(), workingCopy, baseRefChoiceId: id.optional(), title: z.string().min(1).max(WATCHER_TITLE_MAX), firstPrompt: prompt,
+      fromThread: watcherThreadTargetSchema.optional(), testRun: z.boolean().optional(), fromMove: z.uuid().optional() }).strict(),
     output: result({ ...receiptResult, target: watcherThreadTargetSchema, effectiveChoices: choices, creationReceiptId: id, firstPromptReceiptId: id,
+      // Where a start from a thread's branch began and from which branch, with what a test run's snapshot carried (#1033).
+      // In memory only, as `placement` is.
+      startedFrom: branchStartReceiptSchema.optional(),
       // What the start's worker role gave it and what the request named in its place. In memory only: a retry after a restart has none.
       role: z.object({ id: workerKindSchema, named: z.array(z.enum(['model', 'effort', 'permission'])).max(3), note: shortText.min(1) }).strict().optional(),
       // Where the start was placed (#1032): the machine, whether it is somewhere other than where new workers start, and

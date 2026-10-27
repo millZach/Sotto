@@ -3832,6 +3832,10 @@ msgid "It asked for more permission than this thread has, or than your new-threa
 msgstr "It asked for more permission than this thread has, or than your new-thread default allows. A delegated thread gets no more than either. {nothing} To give it more, raise the lower of the two first."
 
 #: src/renderer/src/agents/delegationWords.ts
+msgid "It asked to start from this thread's branch, and the branch could not go: this thread had uncommitted changes and it was not a check, it was not on a branch, or Git could not copy it. {nothing} Commit first, then ask again."
+msgstr "It asked to start from this thread's branch, and the branch could not go: this thread had uncommitted changes and it was not a check, it was not on a branch, or Git could not copy it. {nothing} Commit first, then ask again."
+
+#: src/renderer/src/agents/delegationWords.ts
 msgid "It had answered at {time}, when Sotto last read it."
 msgstr "It had answered at {time}, when Sotto last read it."
 
@@ -6991,6 +6995,10 @@ msgstr "Takes images."
 msgid "Takes longer and catches more."
 msgstr "Takes longer and catches more."
 
+#: src/renderer/src/agents/movedWorktreeWords.ts
+msgid "That is not a branch Sotto moved here. Nothing was made."
+msgstr "That is not a branch Sotto moved here. Nothing was made."
+
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "That is not an address Sotto can reach. Type it like http://localhost:11434 or http://spark-head:8888."
 msgstr "That is not an address Sotto can reach. Type it like http://localhost:11434 or http://spark-head:8888."
@@ -7070,6 +7078,14 @@ msgstr "the branch"
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "The branch could not be switched. Nothing was changed."
 msgstr "The branch could not be switched. Nothing was changed."
+
+#: src/renderer/src/agents/movedWorktreeWords.ts
+msgid "The branch this worker starts from is no longer here. Start the worker again. Nothing was made."
+msgstr "The branch this worker starts from is no longer here. Start the worker again. Nothing was made."
+
+#: src/renderer/src/agents/movedWorktreeWords.ts
+msgid "The branch this worker starts from is not in this project. Start the worker again. Nothing was made."
+msgstr "The branch this worker starts from is not in this project. Start the worker again. Nothing was made."
 
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "The changed files could not be read."
@@ -7238,6 +7254,10 @@ msgstr "The page starts when it is in view."
 #: src/renderer/src/agents/InteractiveVisual.tsx
 msgid "The page stopped."
 msgstr "The page stopped."
+
+#: src/renderer/src/agents/movedWorktreeWords.ts
+msgid "The project subdirectory is not on the branch this worker starts from. Nothing was made."
+msgstr "The project subdirectory is not on the branch this worker starts from. Nothing was made."
 
 #. Stands for a provider whose name is not known, inside a sentence.
 #: src/renderer/src/agents/ThreadStart.tsx

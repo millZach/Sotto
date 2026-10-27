@@ -24,6 +24,7 @@ import type { HostAnswerTarget, HostAttachmentFile, HostAttachmentFileRequest, H
 import { mayGrantLocally, REMOTE_PERMISSION_DENIED } from './authority'
 import type { HostMachineReport } from '../../shared/hostFacts'
 import type { ProjectOrigins } from '../../shared/workerMachine'
+import type { HostBranchMoveRequest } from '../../shared/branchMoves'
 import type { DesktopDefaultsInput, DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
 import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
 import type { DelegationViews } from './delegationIpc'
@@ -113,6 +114,9 @@ export interface HostService {
    */
   readonly supportsProjectOrigins?: boolean
   projectOrigins?(): Promise<ProjectOrigins>
+  /** The host moves branches with this desktop over its socket (`branch-moves`, ADR-0105 decision 8); a remote host's only. */
+  readonly supportsBranchMoves?: boolean
+  branchMove?(request: HostBranchMoveRequest): Promise<unknown>
   /**
    * The host runs delegation for its own threads and keeps the desktop defaults a desktop sends it (#1310), present only
    * on a headless host whose Owl answer turns on Work across machines. On a desktop's connection to such a host,
