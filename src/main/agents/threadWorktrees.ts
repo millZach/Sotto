@@ -846,8 +846,11 @@ export class ThreadWorktrees {
       this.git(cwd, ['branch', '--show-current']), this.git(cwd, ['for-each-ref', '--format=%(refname:short)', 'refs/heads']),
       this.registry(cwd, ['worktree', 'list', '--porcelain', '-z'], identity),
     ])
+    // The machine's check worktrees are the checks' own (#1312): the next check moves them, so no thread is offered one.
+    const checks = await realpath(join(this.directory, CHECK_WORKTREE_FOLDER)).then(folder => pathKey(folder) + sep, () => undefined)
     return { isGit: true, currentBranch: branch.trim() || null, branches: branches.split(/\r?\n/u).filter(Boolean),
-      worktrees: registeredWorktrees(entries).filter(entry => !entry.locked && !entry.prunable).map(entry => ({ path: entry.path, branch: entry.branch?.replace(/^refs\/heads\//u, '') ?? null })) }
+      worktrees: registeredWorktrees(entries).filter(entry => !entry.locked && !entry.prunable && !(checks && pathKey(entry.path).startsWith(checks)))
+        .map(entry => ({ path: entry.path, branch: entry.branch?.replace(/^refs\/heads\//u, '') ?? null })) }
   }
 
   /** Canonical checkout root, so a subdirectory and its root count as the same working copy. */

@@ -66,6 +66,10 @@ it('moves one check worktree to each check’s snapshot, keeping its packages, a
   const path = f.worktree(first.delegation.thread)!.path!
   expect(path).toContain('check-worktrees')
   expect(f.worktree(first.delegation.thread)).toMatchObject({ status: 'ready', reused: true, check: {} })
+  // It is the checks' own, so no thread is offered it among the project's worktrees.
+  const project = f.control.shell().host.threads.find(thread => thread.id === f.parent)!.projectId
+  const offered = await f.workspace.host.workingCopyOptions(project)
+  expect(offered.worktrees.some(worktree => sameFolder(worktree.path, path))).toBe(false)
   expect((f.ok(await f.read(f.parent, first.delegation.id)) as CheckResult).delegation.check).toBeUndefined()
   await f.endTurn(first.delegation.thread, 'Synthetic verdict: passed')
 
