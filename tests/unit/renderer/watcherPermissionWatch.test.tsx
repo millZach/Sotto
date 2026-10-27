@@ -20,7 +20,6 @@ import { roomView } from '../../../src/renderer/src/watcher/WatcherBeside'
 import { WatcherView } from '../../../src/renderer/src/watcher/WatcherView'
 import { WatcherOwnChangeLine } from '../../../src/renderer/src/watcher/WatcherOwnChange'
 import { watcherModeDescriptions, WATCHER_PERMISSIONS_FOOT } from '../../../src/renderer/src/watcher/WatcherPermissionChip'
-import { watchedDoing, watchedLead } from '../../../src/renderer/src/watcher/WatcherWatched'
 import { watchNotices } from '../../../src/renderer/src/watcher/watchNotice'
 import { firstMessage } from '../../../src/renderer/src/watcher/watcherFirstMessage'
 import { agentContextFixture } from '../../fixtures/agentContext'
@@ -134,7 +133,7 @@ const watcherPane = () => screen.findByRole('region', { name: 'Watcher' })
 
 beforeEach(() => {
   vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset()
-  localStorage.clear(); roomView.set({ besideId: null, share: 0.5, tab: 'conversation' }); firstMessage.clear()
+  localStorage.clear(); roomView.set({ besideId: null, share: 0.5 }); firstMessage.clear()
   const shown = watchNotices.get(); if (shown !== null) watchNotices.dismiss(shown.id)
 })
 afterEach(() => { cleanup(); localStorage.clear(); sessionStorage.clear() })
@@ -387,21 +386,6 @@ describe('watching a thread', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('promises a thread watched only for a request nothing past the user’s own send, over Watched', async () => {
-    const user = userEvent.setup()
-    // Footer links takes part in Watcher's request, with no standing watch.
-    const participant = { requestId: REQUEST, startedBy: 'watcher' as const, generation: 0, state: 'participating' as const, target: target('footer-links'), promptCount: 1 }
-    const room = roomState({ standingWatches: [], requests: [{ id: REQUEST, watcher: identity.target, rootUserMessageId: 'watcher-1', state: 'active', createdAt: at, closedAt: null, participants: [participant] }],
-      watchedThreads: [row('footer-links', 'Footer links', { participation: [participant] })] })
-    renderRoom(room)
-    const room1 = await watcherPane()
-    await user.click(within(room1).getByRole('tab', { name: 'Watched, 1 thread' }))
-    expect(within(room1).getByRole('tabpanel', { name: 'Watched, 1 thread' })).toHaveTextContent(
-      'Watcher keeps this thread going on its own and brings you its questions and permissions. It is watched for a request: if you send to it yourself, Watcher stops sending to it.')
-    expect(within(room1).queryByText(/until you stop it/)).toBeNull()
-    expect(watchedLead(3, 1)).toBe('Watcher keeps these 3 threads going on its own and brings you their questions and permissions. A thread you watch stays watched until you stop it. One watched for a request stops when you send to it yourself.')
-  })
-
   it('puts the owl among each sidebar row’s actions, pressed while watched', async () => {
     const user = userEvent.setup()
     const { bridge } = renderThreads(roomState())
@@ -434,63 +418,6 @@ describe('watching a thread', () => {
     expect(screen.getByRole('dialog', { name: 'All threads' })).toBeInTheDocument()
     await waitFor(() => expect(within(weeklyRow).getByRole('button', { name: 'Watch Weekly note' })).toHaveAttribute('aria-pressed', 'true'))
     expect(within(list).getByText(/The owl watches a thread until you press it again/)).toBeInTheDocument()
-  })
-
-  it('shows Watched in Watcher’s pane: a card for each watched thread, with what Watcher last did and Stop watching', async () => {
-    const user = userEvent.setup()
-    const receipts = [{ id: '0b9c8d7e-6f5a-4b3c-9d2e-1f0a9b8c7d6e', requestId: REQUEST, retryKey: '1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f', digest: 'a'.repeat(64), action: 'send' as const,
-      target: target('footer-links'), generation: 0, deliveryState: 'accepted' as const, createdAt: at, updatedAt: at, receiptId: 'receipt', cardId: 'card' }]
-    const { bridge } = renderRoom(roomState({ receipts, watchedThreads: [row('footer-links', 'Footer links'), row('visual-gate', 'Visual gate flake'), row('weekly-note', 'Weekly note', { watched: false })],
-      standingWatches: [{ id: WATCH, target: target('footer-links'), createdAt: at, generation: 0 }, { id: '6e2a1b0f-3d4c-4b6a-9f8e-7a6b5c4d3e2f', target: target('visual-gate'), createdAt: at, generation: 0 }] }))
-    const pane = await watcherPane()
-    const tabs = within(pane).getByRole('tablist', { name: 'Watcher’s view' })
-    const watchedTab = within(tabs).getByRole('tab', { name: 'Watched, 2 threads' })
-    await user.click(watchedTab)
-    expect(watchedTab).toHaveAttribute('aria-selected', 'true')
-    const panel = within(pane).getByRole('tabpanel', { name: 'Watched, 2 threads' })
-    expect(within(pane).queryByRole('log', { name: 'Thread transcript' })).toBeNull()
-    expect(panel).toHaveTextContent('Watcher keeps these 2 threads going on its own and brings you their questions and permissions. Each stays watched until you stop it.')
-    // Grouped as the Overview groups them: Visual gate flake waits on its permission.
-    expect(within(panel).getAllByRole('region').map(section => section.getAttribute('aria-label'))).toEqual(['Needs you, 1 thread', 'Working, 1 thread'])
-    expect(within(panel).getByRole('button', { name: 'Open Visual gate flake to answer its permission' })).toBeInTheDocument()
-    const footer = within(panel).getByRole('button', { name: 'Open Footer links beside Watcher' }).closest('li')!
-    expect(footer).toHaveTextContent(/Watcher last sent to it at/)
-    expect(within(panel).queryByText('Weekly note')).toBeNull()
-    await user.click(within(footer).getByRole('button', { name: 'Stop watching Footer links' }))
-    expect(bridge.unwatchThread).toHaveBeenCalledWith({ target: target('footer-links') })
-    await waitFor(() => expect(within(pane).getByRole('tab', { name: 'Watched, 1 thread' })).toBeInTheDocument())
-    // Its card went with the button; the keyboard goes on to the card before it, the last one left.
-    expect(within(panel).getByRole('button', { name: 'Stop watching Visual gate flake' })).toHaveFocus()
-    await user.click(within(panel).getByRole('button', { name: 'Stop watching Visual gate flake' }))
-    await waitFor(() => expect(within(pane).getByRole('tab', { name: 'Watched, 0 threads' })).toBeInTheDocument())
-    expect(within(pane).getByRole('button', { name: 'Watch a thread' })).toHaveFocus()
-    // Watch a thread opens All threads, where the owl watches one.
-    await user.click(within(pane).getByRole('button', { name: 'Watch a thread' }))
-    expect(screen.getByRole('dialog', { name: 'All threads' })).toBeInTheDocument()
-  })
-
-  it('moves between Conversation and Watched with the arrow keys, and remembers the choice for the window', async () => {
-    const user = userEvent.setup()
-    const view = renderRoom(roomState())
-    const pane = await watcherPane()
-    const conversation = within(pane).getByRole('tab', { name: 'Conversation' })
-    conversation.focus()
-    await user.keyboard('{ArrowRight}')
-    const watched = within(pane).getByRole('tab', { name: 'Watched, 1 thread' })
-    expect(watched).toHaveFocus()
-    expect(watched).toHaveAttribute('aria-selected', 'true')
-    expect(watched).toHaveAttribute('tabindex', '0')
-    expect(conversation).toHaveAttribute('tabindex', '-1')
-    view.unmount()
-    renderRoom(roomState())
-    expect(within(await watcherPane()).getByRole('tab', { name: 'Watched, 1 thread' })).toHaveAttribute('aria-selected', 'true')
-  })
-
-  it('says how long a watch has run with nothing sent, or that the user’s turn holds it', () => {
-    const state = roomState()
-    expect(watchedDoing(row('footer-links', 'Footer links'), state)).toMatch(/^Watching since .+\. Nothing sent yet\.$/u)
-    expect(watchedDoing(row('footer-links', 'Footer links', { paused: true }), state)).toBe('You sent here yourself. Until that turn ends, Watcher can only steer it.')
-    expect(watchedDoing(row('weekly-note', 'Weekly note'), state)).toBeNull()
   })
 
   it('offers no owl where the bridge cannot watch, and nothing of watching with the gate off', async () => {

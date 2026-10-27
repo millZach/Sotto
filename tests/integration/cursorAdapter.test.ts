@@ -251,7 +251,7 @@ describe('Cursor ACP adapter', () => {
     it('gives Watcher its own tools, never the browser, and allows them by name in Sotto’s Cursor folder', async () => {
       await openWatcher()
       const made = (await f!.requests()).filter(record => record.method === 'session/new').map(record => record.params!.mcpServers as { name: string; headers: unknown }[])
-      expect(made[0]!.map(server => server.name).sort()).toEqual(['sotto_pull_requests', 'sotto_threads', 'sotto_visual'])
+      expect(made[0]!.map(server => server.name).sort()).toEqual(['sotto_pull_requests', 'sotto_threads'])
       expect(made[0]!.find(server => server.name === 'sotto_threads')!.headers).toEqual([{ name: 'Authorization', value: 'Bearer synthetic' }])
       // An ordinary thread beside it gets the browser and every scoped server, and never Watcher's.
       expect(made[1]!.map(server => server.name).sort()).toEqual(['sotto_browser', 'sotto_host_setup', 'sotto_pull_requests', 'sotto_visual'])
@@ -277,7 +277,7 @@ describe('Cursor ACP adapter', () => {
       await expect.poll(async () => (await thread(id)).messages.length).toBe(2)
       expect(await shown()).toEqual([typed])
       const load = (await f.requests()).filter(record => record.method === 'session/load').at(-1)!
-      expect((load.params!.mcpServers as { name: string }[]).map(server => server.name).sort()).toEqual(['sotto_pull_requests', 'sotto_threads', 'sotto_visual'])
+      expect((load.params!.mcpServers as { name: string }[]).map(server => server.name).sort()).toEqual(['sotto_pull_requests', 'sotto_threads'])
     })
 
     it('puts a skill first, then Watcher’s instructions, then the words, and shows the words as typed, live and replayed', async () => {

@@ -1368,6 +1368,11 @@ msgstr "{working, plural, other {{workingThreads} working}}"
 msgid "{working} working"
 msgstr "{working} working"
 
+#. The keys of an expanded diagram that is a walkthrough: the arrows left and right go to the previous and next step.
+#: src/renderer/src/agents/diagrams/DiagramViewer.tsx
+msgid "← → to step · Drag or ↑ ↓ to move · Scroll or +/− to zoom · 0 to fit"
+msgstr "← → to step · Drag or ↑ ↓ to move · Scroll or +/− to zoom · 0 to fit"
+
 #. A keyboard hint: the arrow keys move through the list.
 #: src/renderer/src/agents/NextList.tsx
 msgid "↑ ↓ choose"

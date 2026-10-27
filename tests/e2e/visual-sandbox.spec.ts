@@ -258,10 +258,20 @@ test('an interactive visual runs sealed: it draws and follows Sotto, and ordinar
     await expect(viewer.locator('.interactive-visual')).toHaveAttribute('data-state', 'running', { timeout: 15_000 })
     await expect(card.locator('.interactive-visual[data-state="expanded"]')).toHaveCount(1)
     await expect.poll(() => launched!.app.evaluate(({ webContents }) => webContents.getAllWebContents().filter(contents => contents.getType() === 'webview' && !contents.isDestroyed()).length)).toBe(1)
+    // The card's walkthrough is under the page, on the card's step. Right, with the focus outside the page, steps it
+    // and the page shows the step; Escape leaves the card on the step Expand closed on.
+    const expandedBar = viewer.getByRole('group', { name: 'Walkthrough' })
+    await expect(expandedBar).toContainText('Step 1 of 2')
+    await expect.poll(async () => (await guestRecord(launched!)).shown).toBe('Step 1 of 2: bars')
+    await expect(viewer.getByRole('button', { name: 'Close page' })).toBeFocused()
+    await view.keyboard.press('ArrowRight')
+    await expect(expandedBar).toContainText('Step 2 of 2')
+    await expect.poll(async () => (await guestRecord(launched!)).shown).toBe('Step 2 of 2')
     await captureWindow(launched.app, join(SHOTS, 'expanded-1280x800-dark.png'))
     await view.keyboard.press('Escape')
     await expect(viewer).toBeHidden()
     await expect(expand).toBeFocused()
+    await expect(card.getByText('Step 2 of 2')).toBeVisible()
     await expect(frame).toHaveAttribute('data-state', 'running', { timeout: 15_000 })
 
     // Light and dark at the sizes the window supports; the theme reaches the page by message and by its style.

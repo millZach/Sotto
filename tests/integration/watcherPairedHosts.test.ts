@@ -377,16 +377,8 @@ it('starts, reads positions, sends, stops and settles through the owning host wi
   remote.native.event({ type: 'ready', threadId: (await remote.native.snapshot()).threads.find(item => item.title === input.title)!.id, text: 'Synthetic completion' })
   await f.socket.command({ type: 'refresh', provider: 'codex' })
   await vi.waitFor(() => expect(f.socket.shell().host.threads.find(item => item.id === first.target.threadId)?.status).toBe('idle'))
-  // A merge turn's mark is the desktop's alone (#1339): the owning host is sent the send without it, and the picture has it.
-  const forwarded = vi.spyOn(f.socket as unknown as { call(request: { op: string }): Promise<unknown> }, 'call')
-  const second = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, text: 'Synthetic second prompt', delivery: 'now', mergeTurn: { pullRequest: 1291 } })
-  const packet = forwarded.mock.calls.map(([request]) => request).find(request => request.op === 'watcher-control')
-  forwarded.mockRestore()
+  const second = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, text: 'Synthetic second prompt', delivery: 'now' })
   expect(second).toMatchObject({ status: 'ok', limits: { promptCount: 2 } })
-  expect(packet).toBeDefined()
-  expect(JSON.stringify(packet)).not.toContain('mergeTurn')
-  if (second.status !== 'ok' || !('receipt' in second)) throw new Error('send-refused')
-  expect(f.watcher.readMergeTurns()).toMatchObject({ status: 'ok', turns: [{ operationId: second.receipt.operationId, target: first.target, pullRequest: 1291 }] })
   expect(await f.call('stop_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target })).toMatchObject({ status: 'ok', stopRequested: true })
   await vi.waitFor(() => expect(f.socket.shell().host.threads.find(item => item.id === first.target.threadId)?.status).toBe('idle'))
   const settled = await f.call('settle_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target })
@@ -2236,6 +2228,30 @@ it('runs Watcher’s checks on This computer one at a time, answers a waiting on
   expect(made(third.target.threadId)).toBe(false)
 })
 
+it('starts Watcher’s check in the check worktree, installing packages first and saying so while they install (#1312)', async () => {
+  const f = await fromBranch()
+  const installs: string[] = []
+  let finish!: () => void
+  f.workspace.host.allowCheckWorktrees(async folder => { installs.push(folder); await new Promise<void>(resolve => { finish = resolve }); return 'installed' })
+  // The snapshot carries an untracked package-lock.json, which node_modules there was never installed from.
+  await writeFile(join(f.local.path, 'package-lock.json'), '{ "lockfileVersion": 3 }\n')
+  const call = f.watcher.startCall(f.id, 'start_thread', { ...f.staysHere(), title: 'Synthetic check', workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread, testRun: true }, { waitMs: 4_000 })
+  // The call answers inside its wait while the start carries on: its first prompt waits for the install, so it reads as still under way.
+  const started = await call.answer as { receipt: { operationId: string; target: { threadId: string } } }
+  expect(started).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN', retryable: true })
+  const worktree = () => f.control.shell().host.threads.find(thread => thread.id === started.receipt.target.threadId)?.worktree
+  await vi.waitFor(() => expect(installs).toHaveLength(1))
+  expect(worktree()).toMatchObject({ status: 'pending', reused: true, check: { install: 'running' } })
+  expect(worktree()?.path).toContain('check-worktrees')
+  const read = watcherToolSchemas.read_operation.output.parse(await f.watcher.invoke(f.id, 'read_operation', { operationId: started.receipt.operationId }))
+  expect(read).toMatchObject({ status: 'ok', outcome: 'working',
+    outcomeNote: 'Installing packages first, because package-lock.json changed since the last check on This computer. The checks start when that finishes. '
+      + "Install scripts do not run, so a package that needs one is ready only once the check's thread runs npm rebuild." })
+  finish()
+  await call.settled
+  expect(worktree()).toMatchObject({ status: 'ready', reused: true, check: {} })
+}, 60_000)
+
 it('sends a check to a host that keeps its own queue, which answers a waiting one at once and starts it when the one ahead ends; a stable desktop sends none (#1312)', async () => {
   const f = await master(undefined, false, { setting: () => 'this-computer' })
   expect(f.hello.features).toContain('watcher-check-queue')
@@ -2347,12 +2363,14 @@ it('keeps the branch a stopped check waiting on a paired host would have started
   await writeFile(join(f.local.path, 'new.txt'), 'new\n')
   vi.spyOn(f.socket, 'supportsWatcherCheckQueue', 'get').mockReturnValue(true)
   expect(await f.watcher.invoke(f.id, 'start_thread', { ...f.start(), title: 'Synthetic first remote check', testRun: true })).toMatchObject({ status: 'ok' })
+  const refs = async () => (await git('git', ['-C', f.project.path, 'for-each-ref', '--format=%(refname)', 'refs/sotto'])).stdout.trim()
+  const before = new Set((await refs()).split('\n'))
   const waiting = watcherToolSchemas.start_thread.output.parse(await f.watcher.invoke(f.id, 'start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId,
     title: 'Synthetic waiting remote check', workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread, testRun: true }))
   expect(waiting).toMatchObject({ status: 'ok', check: { ahead: 1 } })
-  const refs = async () => (await git('git', ['-C', f.project.path, 'for-each-ref', 'refs/sotto'])).stdout.trim()
-  const landed = await refs()
-  expect(landed).not.toBe('')
+  // The waiting check's own ref. The first check's goes on its own once its check worktree has the commit (#1312, third part).
+  const landed = (await refs()).split('\n').filter(ref => ref && !before.has(ref))
+  expect(landed).toHaveLength(1)
   // The host cannot be read when the user stops the request: this desktop records the stop, and the host has not heard it.
   const read = vi.spyOn(f.socket, 'watcherRead').mockRejectedValue(new Error('synthetic lost read'))
   const forget = vi.spyOn(DesktopBranchMoves.prototype, 'forget')
@@ -2360,7 +2378,7 @@ it('keeps the branch a stopped check waiting on a paired host would have started
   await vi.waitFor(() => expect(f.watcher.outcomeOf(f.control.watcherRecord().operations.find(item => item.id === waiting.receipt!.operationId)!)).toBe('stopped'))
   await vi.waitFor(() => expect(read).toHaveBeenCalled())
   expect(forget).not.toHaveBeenCalled()
-  expect(await refs()).toBe(landed)
+  expect((await refs()).split('\n')).toContain(landed[0])
   // Once the host is read again it hears the stop and fails the start there, and only then does the branch go.
   read.mockRestore()
   await expect.poll(refs, { timeout: 10_000 }).toBe('')

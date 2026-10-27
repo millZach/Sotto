@@ -131,7 +131,7 @@ private struct ComputerCard: View {
         return count == 1 ? String(localized: "1 project") : String(localized: "\(count) projects")
     }
     private var threadWords: String {
-        let count = shared?.threads.count ?? 0
+        let count = shared?.threads.filter { !ThreadGroups.isUnsent($0) }.count ?? 0
         return count == 1 ? String(localized: "1 thread") : String(localized: "\(count) threads")
     }
 }
