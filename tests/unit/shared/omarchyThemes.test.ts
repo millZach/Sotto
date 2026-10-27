@@ -175,11 +175,12 @@ describe('Omarchy M3 and readability check', () => {
     // mark on a badge, which gave Muse and OpenCode's badge a colour of their own, and when Cursor's mark and badge got
     // theirs (ADR-0128), and when the light crossing a running turn's working words got a colour of its own (ADR-0134,
     // October 25 amendment), and when DeepSeek's mark got its badge colour, and when the effort trace's halo got its
-    // strength for dark and light rooms (ADR-0019, October 26 amendment), and when the Glass theme's see-through tokens and the
-    // card's solid colour arrived (ADR-0149); none of them changes a palette.
+    // strength for dark and light rooms (ADR-0019, October 26 amendment), and when the Appearance preview could paint a
+    // half of its own (`[data-theme-scope]`), and when the Glass theme's see-through tokens and the card's
+    // solid colour arrived (ADR-0149); none of them changes a palette.
     expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('5e43d8dae0a93190f59afd80f75f3400076c21aa2cb023b1aec0f8348ca8aac1')
     const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
-    expect(createHash('sha256').update(tokenText).digest('hex')).toBe('13e62e69437f31747d8abd68c3f209e75b2d45447f308830aa6d95e25c1db88d')
+    expect(createHash('sha256').update(tokenText).digest('hex')).toBe('8ab279bab978a90dddc190deac1c4a18431dd269abdd069f096f39c968eba323')
     // Existing Windows and macOS imports named Omarchy remain user themes.
     expect(parseCustomThemes([{ ...parseOmarchyTheme(fixtures.themes.hackerman.rendered), id: 'omarchy' }])[0]?.id).toBe('omarchy')
   })

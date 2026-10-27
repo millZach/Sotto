@@ -35,11 +35,11 @@ describe('Settings > Appearance > Language', () => {
     expect(onSave).not.toHaveBeenCalled()
   })
 
-  it('opens as the first row of Appearance, naming what it does and what it is set to', () => {
+  it('stands in the Details card of Appearance, naming what it does and what it is set to', () => {
     appearance()
     const section = document.querySelector('#settings-appearance') as HTMLElement
     const picker = within(section).getByRole('combobox', { name: 'Language Same as this computer (English)' })
-    expect(section.querySelector('.theme-settings__controls')?.firstElementChild).toContainElement(picker)
+    expect(within(section).getByRole('region', { name: 'Details' })).toContainElement(picker)
     expect(picker).toHaveAccessibleDescription('Menus, buttons and messages. What you dictate and what agents write stay as they are.')
     expect(picker).toHaveAttribute('aria-expanded', 'false')
     expect(within(section).getAllByText('Preview')).not.toHaveLength(0)

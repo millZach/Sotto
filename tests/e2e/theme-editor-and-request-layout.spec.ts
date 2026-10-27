@@ -84,14 +84,14 @@ const BUILT_IN_NAMES = ['Sotto', 'Hush', 'Citrine', 'Graphite', 'Clay', 'Fern']
 /** Every option in one half's column, measured where it is drawn. */
 const columnLayout = (column: Locator) => column.evaluate(element => {
   const box = (node: Element) => { const r = node.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height } }
-  return [...element.querySelectorAll<HTMLButtonElement>('.theme-option')].map(option => {
-    const name = option.querySelector('.theme-option__name')!
+  return [...element.querySelectorAll<HTMLButtonElement>('.theme-tile')].map(option => {
+    const name = option.querySelector('.theme-tile__name')!
     return {
       name: name.textContent!,
       tooltip: option.title,
       clipped: name.scrollWidth > name.clientWidth + 1,
       lines: Math.round(name.getBoundingClientRect().height / parseFloat(getComputedStyle(name).lineHeight)),
-      option: box(option), title: box(name), chord: box(option.querySelector('.theme-chord')!),
+      option: box(option), title: box(name), chord: box(option.querySelector('.theme-tile__window')!),
     }
   })
 })
@@ -107,7 +107,7 @@ const ownLayout = (list: Locator) => list.evaluate(element => {
       name: name.textContent!,
       tooltip: (name as HTMLElement).title,
       modes: row.querySelector('.theme-own__modes')!.textContent!,
-      chords: row.querySelectorAll('.theme-chords > .theme-chord').length,
+      chords: row.querySelectorAll('.theme-tile__half').length,
       clipped: name.scrollWidth > name.clientWidth + 1,
       lines: Math.round(name.getBoundingClientRect().height / parseFloat(getComputedStyle(name).lineHeight)),
       row: box(row), title: box(name), actions: box(actions),
@@ -130,8 +130,11 @@ test('custom names read in full in their own rows, and each half lists the theme
       await openPage(page, 'Settings')
       await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
       const section = page.locator('#settings-appearance')
-      const halves = section.locator('.theme-halves')
-      const column = (half: 'light' | 'dark') => section.locator(`.theme-half[data-half="${half}"] .theme-half__options`)
+      const halves = section.locator('.appearance-themes')
+      const column = (half: 'light' | 'dark') => section.locator(`.appearance-tiles[data-half="${half}"] .appearance-tiles__grid`)
+      // Each half's own grid, and the saved themes' list, open on the page as the user opens them.
+      await section.getByRole('switch', { name: 'A different theme when dark' }).click()
+      await section.getByRole('button', { name: /^Your themes \(/u }).click()
       const own = section.getByRole('list', { name: 'Your themes' })
       const row = (id: string) => own.locator(`li[data-theme-row="${id}"]`)
       const notes: Record<string, unknown> = {}

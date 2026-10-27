@@ -558,6 +558,10 @@ msgstr ""
 msgid "{roleName} is back on its defaults."
 msgstr ""
 
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
+msgid "{roomName} in {name}, {halfName}"
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "{saved} created. It’s now your dark theme."
 msgstr ""
@@ -738,6 +742,11 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "A community color theme for your editor."
+msgstr ""
+
+#. A switch on Settings > Appearance: on, the light and the dark color schemes each get their own theme
+#: src/renderer/src/features/settings/themes/ThemeGallery.tsx
+msgid "A different theme when dark"
 msgstr ""
 
 #: src/renderer/src/features/settings/DevicePicker.tsx
@@ -1057,10 +1066,6 @@ msgstr ""
 msgid "Anything the agent installed on {name} stays there, and the thread {thread} stays in your Threads list."
 msgstr ""
 
-#: src/renderer/src/features/settings/themes/ThemeLivePreview.tsx
-msgid "App icon"
-msgstr ""
-
 #. A Settings page, named in its rail and its heading. Other messages name it as "Settings > Appearance".
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
@@ -1071,10 +1076,6 @@ msgstr "Ulkoasu"
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgctxt "theme editor"
 msgid "Appearance"
-msgstr ""
-
-#: src/renderer/src/features/settings/themes/ThemeLivePreview.tsx
-msgid "Appearance preview"
 msgstr ""
 
 #. A Settings page, named in its rail and its heading: startup, history, updates and reset. Other messages name it as "Settings > Application".
@@ -1103,10 +1104,16 @@ msgstr ""
 msgid "as {user}, port from your SSH configuration"
 msgstr ""
 
+#. Shows the preview in the color scheme the window is in now
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
+msgid "As set"
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "As written"
 msgstr ""
 
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Ask about your threads, or say what to start or send"
 msgstr ""
@@ -1128,7 +1135,7 @@ msgid "At <0>{address}</0>."
 msgstr ""
 
 #. A composer chip: the Auto permission
-#: src/renderer/src/features/settings/themes/EffortColor.tsx
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 msgid "Auto"
 msgstr ""
 
@@ -1242,6 +1249,11 @@ msgstr ""
 
 #: src/renderer/src/features/settings/DevicePicker.tsx
 msgid "Can connect"
+msgstr ""
+
+#. A sample message from the user in the Appearance preview
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
+msgid "Can you make the settings page shorter?"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
@@ -1450,7 +1462,7 @@ msgid "Choose from your devices"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
-msgid "Choose one theme for light mode and one for dark."
+msgid "Choose the light theme and the dark theme on their own."
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
@@ -1643,6 +1655,10 @@ msgstr ""
 msgid "Color scheme saved."
 msgstr "Värimaailma tallennettu."
 
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
+msgid "Color scheme the preview shows"
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Colors"
 msgstr ""
@@ -1771,6 +1787,11 @@ msgstr "Kontrasti tallennettu."
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Conventional Commits"
+msgstr ""
+
+#. The tab that shows Watcher’s own conversation
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
+msgid "Conversation"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
@@ -1905,7 +1926,14 @@ msgstr "Hahmo näytetään."
 msgid "Custom instructions"
 msgstr ""
 
+#. The dark color scheme, inside a sentence: "Threads in Sotto, dark"
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
+msgid "dark"
+msgstr ""
+
 #. The dark color scheme, or the themes that paint it
+#. The dark color scheme, or the themes that paint it
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Dark"
@@ -1925,8 +1953,6 @@ msgid "dash"
 msgstr ""
 
 #. A worker role is on its default model
-#. Marks the model's default effort level on the effort card
-#: src/renderer/src/features/settings/themes/EffortColor.tsx
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Default"
 msgstr ""
@@ -1961,6 +1987,11 @@ msgstr ""
 msgid "Deletes a settled thread’s history once it has been quiet this long. Never clears one with uncommitted work or an open pull request. Checked every hour."
 msgstr ""
 
+#. A card on Settings > Appearance: effort color, creature, contrast and language
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Details"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 msgid "Details<0> of why {name} did not update</0>"
 msgstr ""
@@ -1975,7 +2006,7 @@ msgid "Devin updates with the Devin app."
 msgstr ""
 
 #. The Dictate room, named in the title bar
-#: src/renderer/src/features/settings/themes/ThemeLivePreview.tsx
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 msgid "Dictate"
 msgstr ""
 
@@ -2153,10 +2184,6 @@ msgstr ""
 msgid "Effort"
 msgstr ""
 
-#: src/renderer/src/features/settings/themes/EffortColor.tsx
-msgid "Effort at its highest level"
-msgstr ""
-
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/themes/EffortColor.tsx
 msgid "Effort color"
@@ -2231,10 +2258,6 @@ msgstr ""
 msgid "Every shortcut is at its default."
 msgstr ""
 
-#: src/renderer/src/features/settings/themes/EffortColor.tsx
-msgid "Everything the model has. Slowest, costliest."
-msgstr ""
-
 #. An example commit subject and pull request title
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Example"
@@ -2271,10 +2294,6 @@ msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Fast-forwards a clean folder on the default branch when it falls behind. Nothing is merged or rebased."
-msgstr ""
-
-#: src/renderer/src/features/settings/themes/EffortColor.tsx
-msgid "Faster"
 msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx
@@ -2317,12 +2336,18 @@ msgstr ""
 msgid "Finishing sign-in on {hostName}, then connecting {name}…"
 msgstr ""
 
-#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
-msgid "Fixed & elsewhere"
+#. A sample thread title in the Appearance preview
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
+msgid "Fix the login test"
 msgstr ""
 
-#: src/renderer/src/features/settings/themes/ThemeLivePreview.tsx
-msgid "Floating widget"
+#. A sample reply from Watcher in the Appearance preview
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
+msgid "Fix the login test is waiting on you. The other two are working."
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Fixed & elsewhere"
 msgstr ""
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
@@ -2350,7 +2375,7 @@ msgstr ""
 msgid "Follow pull request templates"
 msgstr ""
 
-#: src/renderer/src/features/settings/SettingsView.tsx
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
 msgid "Follow system"
 msgstr ""
 
@@ -2547,6 +2572,11 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Hosts could not be read. Reopen Settings and try again."
+msgstr ""
+
+#. A sample message to Watcher in the Appearance preview
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
+msgid "How are my threads doing?"
 msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx
@@ -2888,7 +2918,14 @@ msgstr ""
 msgid "Let Watcher choose"
 msgstr ""
 
+#. The light color scheme, inside a sentence: "Threads in Sotto, light"
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
+msgid "light"
+msgstr ""
+
 #. The light color scheme, or the themes that paint it
+#. The light color scheme, or the themes that paint it
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Light"
@@ -2924,10 +2961,6 @@ msgstr ""
 msgid "Listening. Say something."
 msgstr ""
 
-#: src/renderer/src/features/settings/themes/ThemeLivePreview.tsx
-msgid "Live appearance"
-msgstr ""
-
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "load unknown"
 msgstr ""
@@ -2958,7 +2991,7 @@ msgid "Match {system}"
 msgstr ""
 
 #. The highest reasoning effort level, as the effort card names it
-#: src/renderer/src/features/settings/themes/EffortColor.tsx
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 msgid "Max"
 msgstr ""
 
@@ -3057,7 +3090,7 @@ msgstr ""
 #. The AI model an agent runs on.
 #: src/renderer/src/features/settings/HostProviderAgent.tsx
 #: src/renderer/src/features/settings/HostSetupView.tsx
-#: src/renderer/src/features/settings/themes/EffortColor.tsx
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Model"
 msgstr ""
@@ -3071,16 +3104,17 @@ msgstr ""
 msgid "More for {name}"
 msgstr ""
 
-#: src/renderer/src/features/settings/themes/EffortColor.tsx
-msgid "More thorough"
-msgstr ""
-
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Most downloaded"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Most relevant"
+msgstr ""
+
+#. A card on Settings > Appearance: reduced motion and night falls
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Motion"
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
@@ -3386,6 +3420,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/CreatureChoice.tsx
 msgid "Off, nothing stands above the composer. The sidebar still says when a thread is working or waiting."
+msgstr ""
+
+#: src/renderer/src/features/settings/themes/ThemeGallery.tsx
+msgid "Off, one theme paints light and dark."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
@@ -3756,10 +3794,6 @@ msgstr ""
 msgid "Pick a machine Sotto can reach over SSH, then add it yourself or have an agent set it up."
 msgstr ""
 
-#: src/renderer/src/features/settings/themes/EffortColor.tsx
-msgid "Play again"
-msgstr ""
-
 #. Precedes theme names people often search for
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Popular"
@@ -3806,7 +3840,9 @@ msgstr ""
 msgid "Press to start and stop"
 msgstr ""
 
+#. The card on Settings > Appearance that shows a small window in the chosen theme
 #: src/renderer/src/features/settings/LanguagePicker.tsx
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 msgid "Preview"
 msgstr "Esiversio"
 
@@ -3938,12 +3974,8 @@ msgid "Reads and replies. Can’t answer questions or permissions."
 msgstr ""
 
 #. The floating widget, waiting to dictate
-#: src/renderer/src/features/settings/themes/ThemeLivePreview.tsx
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 msgid "Ready"
-msgstr ""
-
-#: src/renderer/src/features/settings/themes/ThemeLivePreview.tsx
-msgid "Ready when you are"
 msgstr ""
 
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
@@ -3963,12 +3995,12 @@ msgstr ""
 msgid "Recording limit"
 msgstr ""
 
-#: src/renderer/src/features/settings/SettingsView.tsx
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
 msgid "Reduce motion"
 msgstr ""
 
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
-#: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Reduced motion"
 msgstr ""
 
@@ -4219,6 +4251,10 @@ msgstr ""
 msgid "Resume threads after a restart"
 msgstr ""
 
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
+msgid "Room the preview shows"
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Run a quick input-level test."
 msgstr ""
@@ -4290,6 +4326,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Search themes…"
+msgstr ""
+
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
+msgid "Search threads"
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
@@ -4426,6 +4466,11 @@ msgstr ""
 #. A group on Settings > Dictation: the keyboard shortcuts that start and stop dictation.
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Shortcuts"
+msgstr ""
+
+#. A sample thread title in the Appearance preview
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
+msgid "Shorten the settings page"
 msgstr ""
 
 #: src/renderer/src/features/settings/PhonesSettings.tsx
@@ -5614,11 +5659,11 @@ msgstr ""
 msgid "The update ran, but {host} still starts {installed}."
 msgstr ""
 
-#: src/renderer/src/features/settings/themes/ThemeLivePreview.tsx
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 msgid "The widget follows {system} light or dark mode."
 msgstr ""
 
-#: src/renderer/src/features/settings/themes/ThemeLivePreview.tsx
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 msgid "The widget follows the Omarchy theme’s mode."
 msgstr ""
 
@@ -5628,6 +5673,13 @@ msgstr "Ikkuna pyyhkäisee, kun siirryt Dictate- tai Threads-sivun ja Watcherin 
 
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "Their messages and activity leave Sotto and can’t be brought back."
+msgstr ""
+
+#. A card on Settings > Appearance: the color scheme and the themes
+#. The theme tiles that each paint both the light and the dark color scheme
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+#: src/renderer/src/features/settings/themes/ThemeGallery.tsx
+msgid "Theme"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
@@ -5646,14 +5698,15 @@ msgstr ""
 msgid "Theme saved."
 msgstr "Teema tallennettu."
 
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Theme, details & motion"
+msgstr ""
+
+#. The theme tiles on Settings > Appearance
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Themes"
 msgstr ""
-
-#: src/renderer/src/features/settings/AppearanceSettings.tsx
-msgid "Themes, contrast & motion"
-msgstr "Teemat, kontrasti ja liike"
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "These shortcuts are Hyprland bindings, so keys Hyprland already uses can’t be one of them. Press Cancel on the widget to stop without transcribing."
@@ -5738,8 +5791,10 @@ msgid "Thread providers"
 msgstr ""
 
 #. A Settings page, named in its rail and its heading: settings for threads. Other messages name it as "Settings > Threads".
+#. A room of the main window, shown in the Appearance preview
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Threads"
 msgstr ""
@@ -5968,6 +6023,11 @@ msgstr ""
 #. A theme color: text on the update notice
 #: src/renderer/src/features/settings/themes/ThemeColorField.tsx
 msgid "Update text"
+msgstr ""
+
+#. A sample thread title in the Appearance preview
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
+msgid "Update the guide"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
@@ -6212,6 +6272,10 @@ msgstr ""
 msgid "Waits for a light Omarchy theme"
 msgstr ""
 
+#: src/renderer/src/features/settings/themes/ThemeGallery.tsx
+msgid "Waits for an Omarchy theme"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "Waits for Tailscale."
@@ -6237,6 +6301,11 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeColorField.tsx
 msgid "Warning text"
+msgstr ""
+
+#. The tab that lists the threads Watcher watches, in the Appearance preview
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
+msgid "Watched"
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -6311,6 +6380,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "What Sotto said about start at boot on {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
+msgid "What would you like to do next?"
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -6416,6 +6489,11 @@ msgstr ""
 msgid "Worktrees, commits, pull requests, Changes & fetching"
 msgstr ""
 
+#. A sample reply from a thread in the Appearance preview
+#: src/renderer/src/features/settings/themes/AppearancePreview.tsx
+msgid "Yes. The controls now sit in three short cards, beside a preview."
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "You are on the newest release."
 msgstr ""
@@ -6487,6 +6565,11 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Your themes"
+msgstr ""
+
+#. Opens the list of the themes the user created or added, with how many there are
+#: src/renderer/src/features/settings/themes/ThemeGallery.tsx
+msgid "Your themes ({count})"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
