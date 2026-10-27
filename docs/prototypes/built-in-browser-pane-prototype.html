@@ -1,0 +1,1006 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Three directions for Sotto's built-in browser pane; ?variant=A|B|C&state=idle|agent|pointing.
+
+  Not shipped, not tested, not wired to anything. Extra parameters: &theme=light, &point=hover|comment|added (which
+  moment of Pointing to show), &motion=reduced. Left and right arrow keys cycle the variants when no field has focus.
+
+  Question: Zach wants the built-in browser to look like the in-app browsers in Codex and T3 Code. Today every agent
+  browser call is its own row in the thread, and the pane stacks a grant line, a task line with Pause, a "N recorded
+  steps" fold and a viewport-size picker above the page. Here the agent's work is one quiet line in the thread that
+  updates in place, the pane shows the live page, and Zach's own controls are the address bar, Back, Forward, Reload,
+  Point at something and Screenshot to message.
+
+    A  Tools pane.    The browser stays the Browser surface of Tools, rail at the outer edge. One chrome row; a thin
+                      tab strip only with 2+ pages; a slim strip at the page's foot while the agent browses.
+    B  Browser pane.  A pane of its own, Chrome-like: tabs on top, then the toolbar. While the agent works: its
+                      cursor, a soft accent ring round the page and a "Take over" pill at the top centre.
+    C  Split thread.  The browser lives inside the thread pane under one header with a browser toggle. One compact
+                      row; pages in a "2 pages" menu; the agent shows only as the thread's line and its cursor.
+
+  Colours are the default theme's first-paint values (src/shared/themes/palettes.ts, src/renderer/src/styles/tokens.css).
+  The Fieldnotes page is a website, so it keeps its own colours in both themes.
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sotto — built-in browser pane, prototype</title>
+<style>
+/* Figtree only if it is installed; nothing is fetched. */
+@font-face { font-family: 'Figtree'; font-weight: 300 900; src: local('Figtree'), local('Figtree Regular'); }
+
+/* ---- Theme roles: first-paint Sotto defaults ---- */
+:root {
+  color-scheme: dark;
+  --theme-canvas: oklch(0.115 0.008 265);
+  --theme-surface: oklch(0.145 0.008 265);
+  --theme-surface-raised: oklch(0.185 0.008 265);
+  --theme-surface-overlay: oklch(0.215 0.008 265);
+  --theme-text: oklch(0.985 0.005 280);
+  --theme-border: oklch(0.305 0.02 265);
+  --theme-input: oklch(0.375 0.024 265);
+  --theme-focus: oklch(0.714403 0.104089 183.092);
+  --theme-accent: oklch(0.714403 0.104089 183.092);
+  --theme-accent-foreground: oklch(0.16 0.012 190);
+  --theme-muted: oklch(0.155 0.008 265);
+  --theme-muted-foreground: oklch(0.72 0.014 265);
+  --theme-placeholder: oklch(0.675 0.012 270);
+  --theme-warning-foreground: oklch(0.829017 0.171221 81.038);
+  --theme-update-foreground: oklch(0.83 0.08 183);
+  --theme-accent-surface: oklch(0.32 0.05 185);
+  --theme-accent-surface-foreground: oklch(0.985 0.005 280);
+  --theme-message-surface: oklch(0.205 0.014 265);
+  --theme-message-foreground: oklch(0.985 0.005 280);
+  --theme-message-action: oklch(0.714403 0.104089 183.092);
+  --theme-message-action-foreground: oklch(0.16 0.012 190);
+  --theme-code-background: oklch(0.155 0.008 265);
+  --theme-sidebar: oklch(0.235 0.003 265);
+  --theme-sidebar-foreground: oklch(0.985 0.005 280);
+  --theme-sidebar-muted-foreground: oklch(0.72 0.014 265);
+  --theme-sidebar-row-selected: oklch(0.355 0.035 188);
+  --theme-sidebar-border: oklch(0.355 0.012 265);
+  --tt-card: var(--theme-surface-raised);
+  --tt-success: oklch(0.79 0.13 165);
+  --tt-provider-claude: #e3b58e;
+  --tt-provider-ink: #080b0a;
+  --tt-shadow-overlay: 0 24px 72px -20px rgb(0 0 0 / 90%);
+  --tt-shadow-color: rgb(0 0 0 / 73%);
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --theme-canvas: oklch(0.978 0.004 85);
+  --theme-surface: oklch(0.99 0.003 85);
+  --theme-surface-raised: oklch(0.955 0.006 85);
+  --theme-surface-overlay: oklch(0.945 0.007 85);
+  --theme-text: oklch(0.235 0.014 75);
+  --theme-border: oklch(0.86 0.012 80);
+  --theme-input: oklch(0.8 0.016 80);
+  --theme-focus: oklch(0.53 0.095 186);
+  --theme-accent: oklch(0.53 0.095 186);
+  --theme-accent-foreground: oklch(0.99 0.003 85);
+  --theme-muted: oklch(0.945 0.008 85);
+  --theme-muted-foreground: oklch(0.5 0.014 75);
+  --theme-placeholder: oklch(0.525 0.015 78);
+  --theme-warning-foreground: oklch(0.530927 0.155556 45.359);
+  --theme-update-foreground: oklch(0.43 0.08 186);
+  --theme-accent-surface: oklch(0.92 0.03 186);
+  --theme-accent-surface-foreground: oklch(0.235 0.014 75);
+  --theme-message-surface: oklch(0.93 0.012 85);
+  --theme-message-foreground: oklch(0.235 0.014 75);
+  --theme-message-action: oklch(0.53 0.095 186);
+  --theme-message-action-foreground: oklch(0.99 0.003 85);
+  --theme-code-background: oklch(0.96 0.005 85);
+  --theme-sidebar: oklch(0.955 0.008 85);
+  --theme-sidebar-foreground: oklch(0.235 0.014 75);
+  --theme-sidebar-muted-foreground: oklch(0.5 0.014 75);
+  --theme-sidebar-row-selected: oklch(0.895 0.028 188);
+  --theme-sidebar-border: oklch(0.87 0.012 82);
+  --tt-card: color-mix(in oklab, var(--theme-text) 4%, var(--theme-canvas));
+  --tt-success: oklch(0.445 0.11 158);
+  --tt-provider-claude: #e2ad80;
+  --tt-provider-ink: #0b0d0c;
+  --tt-shadow-overlay: 0 24px 64px -24px rgb(0 0 0 / 45%);
+  --tt-shadow-color: rgb(20 24 22 / 18%);
+}
+/* ---- Derived --tt-* tokens ---- */
+:root {
+  --tt-canvas: var(--theme-canvas);
+  --tt-surface: var(--theme-surface);
+  --tt-surface-elevated: var(--theme-surface-raised);
+  --tt-surface-sunken: var(--theme-muted);
+  --tt-sidebar: var(--theme-sidebar);
+  --tt-field: var(--theme-surface);
+  --tt-text: var(--theme-text);
+  --tt-text-2: color-mix(in oklab, var(--theme-text) 55%, var(--theme-muted-foreground));
+  --tt-text-muted: color-mix(in oklab, var(--theme-muted-foreground) 85%, var(--theme-text));
+  --tt-text-faint: var(--theme-placeholder);
+  --tt-hairline: var(--theme-border);
+  --tt-field-border: var(--theme-input);
+  --tt-hover: color-mix(in srgb, var(--theme-accent-surface) 70%, transparent);
+  --tt-bubble: var(--theme-message-surface);
+  --tt-bubble-text: var(--theme-message-foreground);
+  --tt-warning: var(--theme-warning-foreground);
+  --tt-accent: var(--theme-accent);
+  --tt-accent-contrast: var(--theme-accent-foreground);
+  --tt-accent-text: var(--theme-update-foreground);
+  --tt-accent-surface: var(--theme-accent-surface);
+  --tt-accent-surface-text: var(--theme-accent-surface-foreground);
+  --tt-activity: var(--tt-accent-text);
+  --tt-focus-ring: var(--theme-focus);
+  --tt-primary: var(--theme-message-action);
+  --tt-primary-contrast: var(--theme-message-action-foreground);
+  --tt-selected: var(--theme-sidebar-row-selected);
+  --tt-selected-border: color-mix(in srgb, var(--tt-accent) 30%, var(--tt-field-border));
+  --tt-sidebar-text: var(--theme-sidebar-foreground);
+  --tt-sidebar-text-muted: var(--theme-sidebar-muted-foreground);
+  --tt-sidebar-border: var(--theme-sidebar-border);
+  --tt-code-bg: var(--theme-code-background);
+  --tt-glass: var(--theme-surface-overlay);
+  --tt-tab-on: color-mix(in oklab, var(--tt-text) 9%, var(--tt-sidebar));
+  --tt-font-ui: 'Figtree', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --tt-font-mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body { min-height: 100vh; padding: 10px 8px 150px; background: #222327; font-family: var(--tt-font-ui); }
+:root[data-theme='light'] body { background: #c9c5bc; }
+svg.i { flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+button { font-family: inherit; }
+
+/* ---- Prototype chrome: deliberately not Sotto's look ---- */
+.cap { max-width: 1280px; margin: 0 auto 8px; color: #f3f1ea; font: 13px/1.4 system-ui, 'Segoe UI', sans-serif; }
+:root[data-theme='light'] .cap { color: #1d1d1d; }
+.cap b.tag { display: inline-block; margin-right: 8px; padding: 1px 6px; border-radius: 4px; background: #ffd34d; color: #111; font-size: 11px; letter-spacing: .06em; }
+.cap strong { font-weight: 700; }
+.holder { margin: 0 auto; }
+.sw { position: fixed; bottom: max(10px, env(safe-area-inset-bottom)); left: 50%; z-index: 100; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 10px; width: max-content; max-width: calc(100vw - 16px); padding: 6px 8px; border: 2px solid #ffd34d; border-radius: 26px; background: #0c0c0e; color: #fff; box-shadow: 0 10px 40px rgb(0 0 0 / 55%); font: 14px/1 system-ui, 'Segoe UI', sans-serif; transform: translateX(-50%); }
+.sw button { min-width: 40px; min-height: 40px; padding: 0 12px; border: 0; border-radius: 20px; background: transparent; color: #fff; font: inherit; cursor: pointer; }
+.sw button:hover { background: #2a2a2e; }
+.sw button:focus-visible { outline: 2px solid #ffd34d; outline-offset: 1px; }
+.sw__v { display: flex; align-items: center; }
+.sw__v button { font-size: 22px; padding: 0 10px; }
+.sw__label { min-width: 132px; padding: 0 4px; font-weight: 700; text-align: center; white-space: nowrap; }
+.sw__seg { display: flex; padding: 2px; border-radius: 22px; background: #26262b; }
+.sw__seg button[aria-pressed='true'] { background: #ffd34d; color: #111; font-weight: 700; }
+.sw__sub[hidden] { display: none; }
+
+/* ---- The window ---- */
+.win { position: relative; display: flex; width: 1280px; height: 800px; overflow: hidden; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-canvas); color: var(--tt-text); font-family: var(--tt-font-ui); font-size: 14px; transform-origin: 0 0; box-shadow: 0 30px 80px rgb(0 0 0 / 45%); }
+.f:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 1px; }
+.winctl { display: flex; flex: none; align-self: flex-start; color: var(--tt-text-muted); }
+.winctl span { display: grid; place-items: center; width: 40px; height: 36px; }
+
+/* Sidebar */
+.nav { display: flex; flex: none; flex-direction: column; width: 248px; min-height: 0; border-right: 1px solid var(--tt-hairline); background: var(--tt-sidebar); color: var(--tt-sidebar-text); }
+.nav__top { display: flex; flex: none; align-items: center; gap: 2px; height: 44px; padding: 0 6px 0 14px; }
+.nav__brand { display: inline-flex; align-items: center; gap: 8px; margin-right: auto; font-size: 14px; font-weight: 600; }
+.seg { display: inline-flex; flex: none; padding: 2px; border-radius: 8px; background: var(--tt-surface-sunken); }
+.seg span { display: grid; place-items: center; width: 28px; height: 24px; border-radius: 6px; color: var(--tt-text-muted); }
+.seg span[data-on] { background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 1px 2px var(--tt-shadow-color); }
+.act { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.act:hover { background: var(--tt-hover); color: var(--tt-text); }
+.act[aria-pressed='true'] { background: var(--tt-selected); color: var(--tt-text); }
+.act:disabled, .act[aria-disabled='true'] { opacity: .45; cursor: default; }
+.act:disabled:hover { background: transparent; color: var(--tt-text-muted); }
+.search { position: relative; display: flex; flex: none; align-items: center; height: 32px; margin: 0 8px 10px; color: var(--tt-text-muted); }
+.search svg { position: absolute; left: 9px; }
+.search span { display: flex; align-items: center; width: 100%; height: 100%; padding: 0 10px 0 32px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-field); color: var(--tt-text-faint); font-size: 13px; }
+.nav__scroll { flex: 1; min-height: 0; overflow: hidden; padding: 0 8px; }
+.folder { margin: 0 0 14px; }
+.folder__head { display: flex; align-items: center; gap: 5px; min-height: 26px; padding: 0 8px 0 6px; color: var(--tt-text-2); font-size: 12.5px; font-weight: 600; }
+.folder__head svg { color: var(--tt-text-muted); }
+.folder__count { margin-left: auto; color: var(--tt-text-muted); font-weight: 400; }
+.rows { margin: 0; padding: 0; list-style: none; }
+.row { display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: 8px; row-gap: 2px; align-items: center; margin: 1px 0; padding: 7px 10px 7px 8px; border: 1px solid transparent; border-radius: 8px; color: var(--tt-text-2); }
+.row[data-current] { border-color: var(--tt-selected-border); background: var(--tt-selected); }
+.row__title { overflow: hidden; font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.row[data-current] .row__title { color: var(--tt-text); }
+.row__meta { grid-column: 2; display: flex; align-items: center; gap: 7px; color: var(--tt-text-muted); font-size: 12px; }
+.row__status { margin-left: auto; }
+.row__status[data-state='working'] { color: var(--tt-activity); }
+.ring { width: 10px; height: 10px; justify-self: center; border: 1.5px solid var(--tt-hairline); border-radius: 50%; }
+.ring[data-state='working'] { border: 0; background: conic-gradient(var(--tt-activity) 0 32%, color-mix(in srgb, var(--tt-activity) 22%, transparent) 32% 100%); mask: radial-gradient(circle, transparent 38%, #000 42%); }
+.ring[data-state='done'] { border-color: var(--tt-success); background: radial-gradient(circle, var(--tt-success) 0 28%, transparent 30%); }
+.mark { display: inline-grid; place-items: center; flex: none; width: 15px; height: 15px; border-radius: 4px; background: var(--tt-provider-claude); color: var(--tt-provider-ink); font-size: 9.5px; font-weight: 800; }
+.nav__foot { display: flex; flex: none; flex-direction: column; gap: 8px; padding: 8px 10px 10px; border-top: 1px solid var(--tt-sidebar-border); }
+.nav__pages { display: grid; grid-template-columns: 1fr 1fr; padding: 2px; border-radius: 9px; background: var(--tt-surface-sunken); }
+.nav__pages span { padding: 6px 0; border-radius: 7px; color: var(--tt-text-muted); font-size: 13px; text-align: center; }
+.nav__pages span[data-on] { background: var(--tt-surface-elevated); color: var(--tt-text); }
+.nav__icons { display: flex; gap: 16px; padding: 0 4px; color: var(--tt-text-muted); }
+
+/* Thread workspace */
+.ws { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.ws__head { display: flex; flex: none; align-items: center; gap: 4px; height: 44px; padding: 0 0 0 18px; }
+.ws__title { display: flex; align-items: center; gap: 10px; min-width: 0; margin-right: auto; }
+.ws__title h1 { margin: 0; overflow: hidden; font-size: 15px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.ws__project { flex: none; color: var(--tt-text-muted); font-size: 13px; }
+.ws__head > .act:last-of-type { margin-right: 8px; }
+.ws__split { display: flex; flex: 1; min-height: 0; }
+.thread { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.thread__body { flex: 1; min-height: 0; overflow: hidden auto; padding: 14px 22px 8px; scrollbar-width: thin; }
+.bubble { width: fit-content; max-width: 86%; margin: 0 0 20px auto; padding: 10px 14px; border-radius: 16px; background: var(--tt-bubble); color: var(--tt-bubble-text); font-size: 15px; line-height: 1.5; }
+.reply { margin: 0 0 12px; color: var(--tt-text); font-size: 15px; line-height: 1.6; }
+.reply p { margin: 0 0 10px; }
+.reply code { padding: 1px 5px; border-radius: 5px; background: var(--tt-code-bg); font: 13px var(--tt-font-mono); }
+.sign { margin: -2px 0 14px; color: var(--tt-text-muted); font-size: 12.5px; }
+
+/* The quiet line: one row for the agent's whole browser run, updated in place. */
+.bline-wrap { margin: 0 0 14px; }
+.bline { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-height: 30px; margin-left: -8px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13.5px; text-align: left; cursor: pointer; }
+.bline:hover { background: var(--tt-hover); }
+.bline__globe { color: var(--tt-text-muted); }
+.bline__dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-activity); }
+.bline__dot[data-paused] { border: 1.5px solid var(--tt-activity); background: transparent; }
+.bline__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bline__last { color: var(--tt-text-muted); }
+.bline__chev { color: var(--tt-text-muted); }
+.bline[aria-expanded='true'] .bline__chev { rotate: 90deg; }
+.steps { margin: 2px 0 4px 7px; padding: 2px 0 2px 16px; border-left: 1px solid var(--tt-hairline); list-style: none; }
+.steps[hidden] { display: none; }
+.steps li { display: flex; align-items: center; gap: 8px; min-height: 24px; color: var(--tt-text-2); font-size: 13px; }
+.steps li svg { color: var(--tt-text-muted); }
+.steps li[data-warn], .steps li[data-warn] svg { color: color-mix(in oklab, var(--tt-warning) 70%, var(--tt-text-muted)); }
+
+/* Composer: the card surface, no border. */
+.compose { flex: none; padding: 8px 18px 16px; }
+.prompt { padding: 12px 14px 8px; border-radius: 16px; background: var(--tt-card); }
+.prompt__chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.prompt__chips:empty { display: none; }
+.prompt textarea { display: block; width: 100%; min-height: 44px; padding: 0; border: 0; outline: 0; background: transparent; color: var(--tt-text); font: inherit; font-size: 15px; line-height: 1.5; resize: none; }
+.prompt textarea::placeholder { color: color-mix(in srgb, var(--tt-text-muted) 55%, transparent); }
+.prompt__foot { display: flex; align-items: center; gap: 2px; margin-top: 4px; }
+.chip { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 7px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.chip:first-of-type { color: var(--tt-text-2); }
+.chip:hover { background: var(--tt-hover); }
+.send { display: grid; place-items: center; width: 32px; height: 32px; margin-left: auto; border: 0; border-radius: 50%; background: var(--tt-primary); color: var(--tt-primary-contrast); cursor: pointer; }
+.att { display: flex; align-items: center; gap: 10px; max-width: 100%; padding: 5px 4px 5px 5px; border-radius: 10px; background: color-mix(in oklab, var(--tt-text) 7%, var(--tt-card)); }
+.att__thumb { position: relative; flex: none; width: 54px; height: 38px; overflow: hidden; border-radius: 6px; background: #f6f3ea; }
+.att__thumb i { position: absolute; display: block; }
+.att__body { display: grid; min-width: 0; gap: 1px; }
+.att__label { overflow: hidden; color: var(--tt-text); font-size: 13px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.att__label code { font: 12.5px var(--tt-font-mono); }
+.att__note { overflow: hidden; color: var(--tt-text-muted); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+.att .act { width: 24px; height: 24px; }
+
+/* The draggable edge between the thread and the browser. */
+.divider { position: relative; z-index: 6; flex: none; width: 1px; background: var(--tt-hairline); }
+.divider__hit { position: absolute; top: 0; bottom: 0; left: -4px; width: 9px; cursor: col-resize; }
+.divider__grip { position: absolute; top: 50%; left: -2px; width: 5px; height: 36px; border-radius: 3px; background: color-mix(in srgb, var(--tt-text-muted) 55%, var(--tt-canvas)); translate: 0 -50%; }
+.divider__hit:is(:hover, :focus-visible) .divider__grip { background: var(--tt-activity); }
+
+/* Shared browser controls */
+.crow { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.addr { position: relative; display: flex; flex: 1; align-items: center; gap: 7px; min-width: 0; height: 30px; margin: 0 6px; padding: 0 10px; border: 1px solid transparent; border-radius: 8px; background: var(--tt-field); color: var(--tt-text-muted); }
+.addr[data-focus], .addr:focus-within { border-color: var(--tt-focus-ring); box-shadow: 0 0 0 1px var(--tt-focus-ring); }
+.addr input { position: absolute; inset: 0; width: 100%; padding: 0 10px 0 32px; border: 0; outline: 0; border-radius: 8px; background: transparent; color: transparent; font: inherit; font-size: 13.5px; caret-color: var(--tt-text); }
+.addr input::placeholder { color: var(--tt-text-muted); }
+.addr:focus-within input, .addr[data-empty] input { color: var(--tt-text); }
+.addr__show { display: flex; align-items: baseline; gap: 8px; min-width: 0; overflow: hidden; font-size: 13.5px; white-space: nowrap; pointer-events: none; }
+.addr__url { overflow: hidden; color: var(--tt-text); text-overflow: ellipsis; }
+.addr__title { flex: 1; min-width: 0; overflow: hidden; color: var(--tt-text-muted); text-overflow: ellipsis; }
+.addr:focus-within .addr__show, .addr[data-empty] .addr__show { visibility: hidden; }
+.addr__caret { position: absolute; top: 7px; left: 32px; width: 1.5px; height: 16px; background: var(--tt-text); }
+.addr:focus-within .addr__caret, .addr:not([data-focus]) .addr__caret, .addr[data-center] .addr__caret { display: none; }
+.addr[data-center] .addr__show { justify-content: center; flex: 1; }
+.addr[data-center] .addr__title { flex: 0 1 auto; }
+.addr[data-center] input { text-align: center; padding: 0 10px; }
+.menu-anchor { position: relative; flex: none; }
+.menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; display: grid; min-width: 240px; padding: 5px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-glass); box-shadow: var(--tt-shadow-overlay); }
+.menu button { display: flex; align-items: center; gap: 9px; min-height: 32px; padding: 0 9px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13.5px; text-align: left; cursor: pointer; }
+.menu button:hover, .menu button:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
+.menu button small { margin-left: auto; color: var(--tt-text-muted); font-size: 12px; }
+.menu hr { margin: 4px 2px; border: 0; border-top: 1px solid var(--tt-hairline); }
+.menu svg[data-check] { color: var(--tt-accent-text); }
+
+/* The page: a website, plus Sotto's layers over it. */
+.pw { position: relative; flex: 1; min-height: 0; overflow: hidden; border-top: 1px solid var(--tt-hairline); }
+.pw__scroll { position: absolute; inset: 0; overflow: hidden; display: flex; flex-direction: column; }
+.pw[data-ring]::after { position: absolute; inset: 0; z-index: 8; border-radius: 2px; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--tt-accent) 75%, transparent), inset 0 0 28px color-mix(in srgb, var(--tt-accent) 22%, transparent); pointer-events: none; content: ''; }
+
+/* Empty page */
+.blank { flex: 1; padding: 56px 32px 24px; background: var(--tt-surface); }
+.blank__col { max-width: 380px; margin: 0 auto; }
+.blank h2 { margin: 0 0 6px; padding: 0 8px; color: var(--tt-text-muted); font-size: 12.5px; font-weight: 600; }
+.blank ul { margin: 0 0 22px; padding: 0; list-style: none; }
+.blank__row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+.blank__row:hover { background: var(--tt-hover); }
+.blank__row svg { color: var(--tt-text-muted); }
+.blank__row small { margin-left: auto; color: var(--tt-text-muted); font-size: 12.5px; }
+
+/* Fieldnotes, a website: its own colours, the same in both themes. */
+.site { flex: 1; min-height: 0; background: #f6f3ea; color: #1f2a24; font: 14px/1.5 Georgia, 'Times New Roman', serif; }
+.site[data-pointing] { cursor: crosshair; }
+.site[data-pointing] * { cursor: crosshair !important; }
+.site__head { display: flex; align-items: center; gap: 18px; height: 56px; padding: 0 22px; border-bottom: 1px solid #d9d3c2; font-family: system-ui, 'Segoe UI', sans-serif; }
+.site__logo { display: inline-flex; align-items: center; gap: 8px; color: #1f2a24; font-weight: 700; font-size: 15px; }
+.site__logo i { width: 18px; height: 18px; border-radius: 5px; background: #2f5d4a; }
+.site__nav { display: flex; gap: 14px; color: #3c4a42; font-size: 13.5px; }
+.site__signin { margin-left: auto; height: 32px; padding: 0 14px; border: 0; border-radius: 16px; background: #2f5d4a; color: #fff; font: 600 13px system-ui, 'Segoe UI', sans-serif; }
+.site__main { padding: 28px 22px; }
+.site__hero h1 { max-width: 420px; margin: 0 0 10px; font-size: 27px; font-weight: 600; line-height: 1.2; letter-spacing: -.3px; }
+.site__hero p { max-width: 400px; margin: 0 0 16px; color: #3c4a42; }
+.site__cta { height: 34px; padding: 0 14px; border: 1px solid #2f5d4a; border-radius: 6px; background: transparent; color: #2f5d4a; font: 600 13px system-ui, 'Segoe UI', sans-serif; }
+.site__cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 28px; }
+.site__card { padding: 12px; border: 1px solid #ddd7c6; border-radius: 8px; background: #fbf9f3; }
+.site__card b { display: block; margin-bottom: 4px; font-size: 14px; }
+.site__card span { color: #4a564f; font-size: 12.5px; }
+.site__form { display: grid; gap: 12px; width: 300px; margin: 12px auto 0; padding: 20px; border: 1px solid #ddd7c6; border-radius: 10px; background: #fbf9f3; font-family: system-ui, 'Segoe UI', sans-serif; }
+.site__form h2 { margin: 0 0 2px; font: 600 19px Georgia, serif; }
+.site__form label { display: grid; gap: 4px; color: #3c4a42; font-size: 12.5px; }
+.site__form input { height: 34px; padding: 0 10px; border: 1px solid #c9c2ae; border-radius: 6px; background: #fff; color: #1f2a24; font: 14px system-ui, sans-serif; }
+.site__submit { height: 36px; border: 0; border-radius: 6px; background: #2f5d4a; color: #fff; font: 600 14px system-ui, sans-serif; }
+.site__list { display: grid; gap: 8px; max-width: 460px; margin: 12px 0 0; padding: 0; list-style: none; }
+.site__list li { padding: 10px 12px; border: 1px solid #ddd7c6; border-radius: 8px; background: #fbf9f3; }
+.site__list small { display: block; color: #4a564f; font: 12px system-ui, sans-serif; }
+.site h2.site__h { margin: 0; font-size: 22px; font-weight: 600; }
+.site [data-show] { display: none; }
+.site[data-view='landing'] [data-show~='landing'], .site[data-view='signin'] [data-show~='form'], .site[data-view='email'] [data-show~='form'],
+.site[data-view='password'] [data-show~='form'], .site[data-view='notes'] [data-show~='notes'], .site[data-view='shared'] [data-show~='shared'] { display: block; }
+.site[data-view='signin'] .site__form, .site[data-view='email'] .site__form, .site[data-view='password'] .site__form { display: grid; }
+
+/* The agent's cursor, at its last click. Moves only when motion is allowed; never pulses. */
+.acur { position: absolute; z-index: 9; width: 22px; height: 22px; pointer-events: none; }
+.acur[hidden] { display: none; }
+.acur svg { position: absolute; left: -3px; top: -3px; filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 45%)); }
+.acur::before { position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; border: 2px solid color-mix(in srgb, var(--tt-accent) 55%, transparent); border-radius: 50%; content: ''; }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-motion='reduced']) .acur { transition: left .45s cubic-bezier(.3,.7,.2,1), top .45s cubic-bezier(.3,.7,.2,1); } }
+
+/* A: the slim strip pinned to the page's foot while the agent browses. */
+.astrip { display: flex; flex: none; align-items: center; gap: 8px; height: 38px; padding: 0 6px 0 14px; border-top: 1px solid var(--tt-hairline); background: var(--tt-sidebar); color: var(--tt-text-2); font-size: 13px; }
+.astrip[hidden] { display: none; }
+.astrip__text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.astrip__text span { color: var(--tt-text-muted); }
+.tbtn { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+.tbtn:hover { background: var(--tt-hover); color: var(--tt-text); }
+.tbtn--accent { color: var(--tt-accent-text); font-weight: 600; }
+
+/* B: the pill at the page's top centre. */
+.bpill { position: absolute; top: 12px; left: 50%; z-index: 10; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 4px 0 12px; border: 1px solid var(--tt-hairline); border-radius: 17px; background: var(--tt-glass); box-shadow: 0 8px 24px -8px var(--tt-shadow-color); color: var(--tt-text-2); font-size: 13px; white-space: nowrap; translate: -50% 0; }
+.bpill[hidden] { display: none; }
+.bpill .tbtn { height: 26px; border-radius: 13px; }
+
+/* Point at something */
+.pt-banner { display: flex; flex: none; align-items: center; justify-content: center; gap: 8px; height: 32px; padding: 0 12px; background: var(--tt-accent-surface); color: var(--tt-accent-surface-text); font-size: 13px; }
+.pt-banner kbd, .pt-pop kbd { padding: 0 5px; border: 1px solid color-mix(in srgb, currentColor 35%, transparent); border-radius: 4px; font: 11.5px var(--tt-font-ui); }
+.pt-box { position: absolute; z-index: 11; border: 2px solid var(--tt-accent); border-radius: 4px; background: color-mix(in srgb, var(--tt-accent) 10%, transparent); pointer-events: none; }
+.pt-chip { position: absolute; z-index: 12; padding: 2px 7px; border-radius: 5px; background: var(--tt-accent); color: var(--tt-accent-contrast); font-size: 12px; font-weight: 600; white-space: nowrap; pointer-events: none; }
+.pt-chip code { font: 600 11.5px var(--tt-font-mono); }
+.pt-pop { position: absolute; z-index: 13; width: 300px; padding: 12px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-glass); box-shadow: var(--tt-shadow-overlay); color: var(--tt-text); }
+.pt-pop textarea { display: block; width: 100%; height: 64px; padding: 8px 10px; border: 1px solid var(--tt-field-border); border-radius: 8px; outline: 0; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 14px; resize: none; }
+.pt-pop textarea:focus { border-color: var(--tt-focus-ring); }
+.pt-pop textarea::placeholder { color: var(--tt-text-muted); }
+.pt-pop__foot { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 10px; }
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+.btn:hover { background: var(--tt-hover); color: var(--tt-text); }
+.btn--primary { border-color: transparent; background: var(--tt-primary); color: var(--tt-primary-contrast); font-weight: 600; }
+.btn--primary:hover { background: var(--tt-primary); color: var(--tt-primary-contrast); filter: brightness(1.06); }
+.act[data-point-on] { background: var(--tt-accent-surface); color: var(--tt-accent-surface-text); }
+
+/* ---- A: Tools pane ---- */
+.pa { display: flex; flex: none; flex-direction: column; width: 600px; min-height: 0; background: var(--tt-sidebar); color: var(--tt-text-2); }
+.pa__strip { display: flex; flex: none; align-items: center; height: 44px; padding-left: 8px; }
+.pa__strip > .crow, .pa__strip > .tabs-a { flex: 1; min-width: 0; }
+.pa__body { display: flex; flex: 1; min-height: 0; }
+.pa__surface { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.pa__surface > .crow { flex: none; height: 40px; padding: 0 8px; }
+.tabs-a { display: flex; align-items: center; gap: 2px; }
+.tab-a { display: inline-flex; align-items: center; gap: 7px; max-width: 190px; height: 28px; padding: 0 4px 0 9px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12.5px; cursor: pointer; }
+.tab-a[aria-selected='true'] { background: var(--tt-tab-on); color: var(--tt-text); }
+.tab-a span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-x { display: grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: 5px; color: var(--tt-text-muted); }
+.tab-x:hover { background: var(--tt-hover); color: var(--tt-text); }
+.rail { display: flex; flex: none; flex-direction: column; align-items: center; gap: 2px; width: 58px; padding: 6px 0 8px; border-left: 1px solid var(--tt-hairline); }
+.rail__tab { position: relative; display: grid; place-items: center; align-content: center; gap: 4px; width: 50px; height: 50px; padding: 0; border: 0; border-radius: 9px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; font-weight: 500; line-height: 1; cursor: pointer; }
+.rail__tab:hover { background: var(--tt-hover); color: var(--tt-text); }
+.rail__tab[aria-selected='true'] { background: var(--tt-selected); color: var(--tt-text); }
+.rail__tab[aria-selected='true']::before { position: absolute; top: 13px; right: -4px; bottom: 13px; width: 0; border-radius: 2px; box-shadow: 3px 0 0 1px var(--tt-activity); content: ''; }
+.rail__foot { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 40px; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--tt-hairline); }
+
+/* ---- B: Browser pane ---- */
+.pb { display: flex; flex: none; flex-direction: column; width: 600px; min-height: 0; background: var(--tt-canvas); }
+.pb__tabs { display: flex; flex: none; align-items: flex-end; gap: 2px; height: 44px; padding: 0 0 0 8px; }
+.tab-b { position: relative; display: inline-flex; align-items: center; gap: 8px; width: 190px; height: 36px; padding: 0 6px 0 12px; border: 0; border-radius: 10px 10px 0 0; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.tab-b span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-b:hover { color: var(--tt-text); }
+.tab-b[aria-selected='true'] { background: var(--tt-sidebar); color: var(--tt-text); }
+.tab-b:not([aria-selected='true']) + .tab-b:not([aria-selected='true'])::before { position: absolute; top: 10px; bottom: 10px; left: -2px; width: 1px; background: var(--tt-hairline); content: ''; }
+.pb__tabs > .act { align-self: center; margin-left: 2px; }
+.pb__end { display: flex; align-items: center; align-self: stretch; margin-left: auto; }
+.pb__end > .act { margin-right: 6px; }
+.pb__sep { width: 1px; height: 18px; margin-right: 2px; background: var(--tt-hairline); }
+.pb__bar { display: flex; flex: none; align-items: center; height: 42px; padding: 0 8px; background: var(--tt-sidebar); }
+.pb .pw { border-top: 0; }
+
+/* ---- C: Split thread ---- */
+.pc { display: flex; flex: none; flex-direction: column; width: 592px; min-height: 0; background: var(--tt-sidebar); }
+.pc[data-expanded] { flex: 1; width: auto; }
+.pc__row { display: flex; flex: none; align-items: center; height: 40px; padding: 0 6px; }
+.pages-btn { display: inline-flex; flex: none; align-items: center; gap: 4px; height: 28px; padding: 0 7px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; cursor: pointer; }
+.pages-btn:hover, .pages-btn[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.pc .pw { border-top: 1px solid var(--tt-hairline); }
+.ws[data-v='C'] .ws__head { border-bottom: 0; }
+</style>
+</head>
+<body>
+<header class="cap" id="cap"></header>
+<div class="holder" id="holder"><div class="win" id="win" role="application" aria-label="Sotto window, prototype"></div></div>
+
+<nav class="sw" id="sw" aria-label="Prototype switcher">
+  <div class="sw__v">
+    <button type="button" id="prevV" aria-label="Previous variant">&#8249;</button>
+    <span class="sw__label" id="vLabel"></span>
+    <button type="button" id="nextV" aria-label="Next variant">&#8250;</button>
+  </div>
+  <div class="sw__seg" role="group" aria-label="State">
+    <button type="button" data-st="idle">Idle</button>
+    <button type="button" data-st="agent">Agent browsing</button>
+    <button type="button" data-st="pointing">Pointing</button>
+  </div>
+  <div class="sw__sub" id="subAgent"><button type="button" id="replay" aria-label="Play the agent's run again">Replay</button></div>
+  <div class="sw__sub sw__seg" id="subPoint" role="group" aria-label="Moment of pointing">
+    <button type="button" data-pt="hover">Hover</button>
+    <button type="button" data-pt="comment">Comment</button>
+    <button type="button" data-pt="added">Added</button>
+  </div>
+  <button type="button" id="themeBtn"></button>
+</nav>
+
+<script>
+const icon = (d, size = 16, extra = '') => `<svg class="i" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true" ${extra}>${d}</svg>`
+const I = {
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  pen: '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a1 1 0 0 1 3 3l-9 9a2 2 0 0 1-.85.5l-2.87.84a.5.5 0 0 1-.62-.62l.84-2.87a2 2 0 0 1 .5-.85z"/>',
+  collapse: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v21"/><path d="m16 15-3-3 3-3"/>',
+  chat: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  term: '<path d="m7 11 2-2-2-2"/><path d="M11 13h4"/><rect width="18" height="18" x="3" y="3" rx="2"/>',
+  history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+  settings: '<path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>',
+  help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  up: '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
+  more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  panel: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/>',
+  split: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 3v18"/>',
+  minus: '<path d="M5 12h14"/>',
+  square: '<rect width="14" height="14" x="5" y="5" rx="1"/>',
+  back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
+  fwd: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  reload: '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  point: '<path d="M12.034 12.681a.498.498 0 0 1 .647-.647l9 3.5a.5.5 0 0 1-.033.943l-3.444 1.068a1 1 0 0 0-.66.66l-1.067 3.443a.5.5 0 0 1-.943.033z"/><path d="M5 3a2 2 0 0 0-2 2"/><path d="M19 3a2 2 0 0 1 2 2"/><path d="M5 21a2 2 0 0 1-2-2"/><path d="M9 3h1"/><path d="M9 21h2"/><path d="M14 3h1"/><path d="M3 9v1"/><path d="M21 9v2"/><path d="M3 14v1"/>',
+  shot: '<path d="M16 5h6"/><path d="M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/><circle cx="9" cy="9" r="2"/>',
+  expand: '<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/>',
+  shrink: '<path d="m14 10 7-7"/><path d="M20 10h-6V4"/><path d="m3 21 7-7"/><path d="M4 14h6v6"/>',
+  chevR: '<path d="m9 18 6-6-6-6"/>',
+  chevD: '<path d="m6 9 6 6 6-6"/>',
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  pause: '<rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/>',
+  play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+  files: '<path d="M20 10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-2.5a1 1 0 0 1-.8-.4l-.9-1.2A1 1 0 0 0 15 3h-2a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z"/><path d="M20 21a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1h-2.9a1 1 0 0 1-.88-.55l-.42-.85a1 1 0 0 0-.92-.6H13a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z"/><path d="M3 5a2 2 0 0 0 2 2h3"/><path d="M3 3v13a2 2 0 0 0 2 2h3"/>',
+  changes: '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M11 18H8a2 2 0 0 1-2-2V9"/>',
+  pr: '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" x2="6" y1="9" y2="21"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  pin: '<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>',
+  clip: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
+  server: '<rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/>',
+  eye: '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
+  click: '<path d="M14 4.1 12 6"/><path d="m5.1 8-2.9-.8"/><path d="m6 12-1.9 2"/><path d="M7.2 2.2 8 5.1"/><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/>',
+  keys: '<path d="M10 8h.01"/><path d="M12 12h.01"/><path d="M14 8h.01"/><path d="M16 12h.01"/><path d="M18 8h.01"/><path d="M6 8h.01"/><path d="M7 16h10"/><path d="M8 12h.01"/><rect width="20" height="16" x="2" y="4" rx="2"/>',
+  enter: '<polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/>',
+  camera: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  ext: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  phone: '<rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/>',
+  hand: '<path d="M18 11V6a2 2 0 0 0-4 0v1"/><path d="M14 10V4a2 2 0 0 0-4 0v2"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>',
+}
+const logo = `<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6" fill="#47b8a9"/><path d="M6 15.5V8.5M10 17V7M14 14.5V9.5M18 16V8" stroke="#0b0f0e" stroke-width="2.2" stroke-linecap="round"/></svg>`
+const cursorSvg = `<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" fill="var(--tt-accent)" stroke="var(--tt-accent-contrast)" stroke-width="1.6" stroke-linejoin="round"/></svg>`
+const winctl = () => `<div class="winctl" aria-hidden="true"><span>${icon(I.minus, 15)}</span><span>${icon(I.square, 13)}</span><span>${icon(I.x, 15)}</span></div>`
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+
+// ---- The agent's run ----
+const STEPS = [
+  { verb: 'Opened localhost:5173', short: 'opened localhost:5173', ic: 'globe', view: 'landing', path: '/', title: 'Fieldnotes' },
+  { verb: 'Looked at the page', short: 'looked at the page', ic: 'eye', view: 'landing', path: '/', title: 'Fieldnotes' },
+  { verb: "Couldn't scroll: the page didn't answer", short: "couldn't scroll", ic: 'alert', warn: true, view: 'landing', path: '/', title: 'Fieldnotes' },
+  { verb: 'Clicked Sign in', short: 'clicked Sign in', ic: 'click', view: 'signin', path: '/sign-in', title: 'Sign in · Fieldnotes', target: 'signin' },
+  { verb: 'Typed an email', short: 'typed an email', ic: 'keys', view: 'email', path: '/sign-in', title: 'Sign in · Fieldnotes', target: 'email' },
+  { verb: 'Typed a password', short: 'typed a password', ic: 'keys', view: 'password', path: '/sign-in', title: 'Sign in · Fieldnotes', target: 'password' },
+  { verb: 'Pressed Enter', short: 'pressed Enter', ic: 'enter', view: 'password', path: '/sign-in', title: 'Sign in · Fieldnotes', target: 'password' },
+  { verb: 'Looked at the page', short: 'looked at the page', ic: 'eye', view: 'notes', path: '/notes', title: 'Your notes · Fieldnotes' },
+  { verb: 'Took a picture of the page', short: 'took a picture of the page', ic: 'camera', view: 'notes', path: '/notes', title: 'Your notes · Fieldnotes' },
+]
+const PLAY = [3, 4, 6, 7, 8] // the line's last step, advanced every 1.5 s, then it settles
+const SAMPLE_COMMENT = 'This sits under the logo on narrow windows. Keep it on the right.'
+
+const VARIANTS = {
+  A: { name: 'A · Tools pane', text: 'The browser stays the Browser surface of Tools, with the rail at the outer edge. One chrome row; a thin tab strip only with 2+ pages; a slim strip at the page\'s foot while the agent browses, with Pause.' },
+  B: { name: 'B · Browser pane', text: 'A browser pane of its own, Chrome-like: tabs on top with the pane\'s close at the far right, then the toolbar. While the agent works: its cursor, a soft accent ring round the page and a "Take over" pill.' },
+  C: { name: 'C · Split thread', text: 'The browser lives inside the thread pane under one header with a browser toggle. One compact row; pages sit in a "2 pages" menu; the agent shows only as the thread\'s line and its cursor.' },
+}
+const ORDER = ['A', 'B', 'C']
+const q = new URLSearchParams(location.search)
+const S = {
+  v: ORDER.includes(q.get('variant')) ? q.get('variant') : 'A',
+  st: ['idle', 'agent', 'pointing'].includes(q.get('state')) ? q.get('state') : 'idle',
+  theme: q.get('theme') === 'light' ? 'light' : 'dark',
+  point: ['hover', 'comment', 'added'].includes(q.get('point')) ? q.get('point') : 'comment',
+}
+if (q.get('motion') === 'reduced') document.documentElement.dataset.motion = 'reduced'
+let timer = null
+
+function resetState() {
+  clearInterval(timer); timer = null
+  Object.assign(S, { open: true, expanded: false, stepsOpen: false, tab: 0, menu: null, chips: [], loaded: false,
+    pointMode: false, popover: false, hover: 'button · Sign in', comment: '', paused: false, cursor: null })
+  if (S.st === 'idle') { Object.assign(S, { playIdx: 0, settled: true }) }
+  if (S.st === 'agent') { Object.assign(S, { playIdx: 0, settled: false }); startPlay() }
+  if (S.st === 'pointing') {
+    Object.assign(S, { playIdx: PLAY.length - 1, settled: true })
+    if (S.point === 'added') S.chips = [{ kind: 'point', label: 'button · Sign in', note: SAMPLE_COMMENT }]
+    else { S.pointMode = true; S.popover = S.point === 'comment' }
+  }
+}
+function startPlay() {
+  clearInterval(timer)
+  timer = setInterval(() => {
+    if (S.paused) return
+    if (S.playIdx < PLAY.length - 1) S.playIdx++
+    else { S.settled = true; clearInterval(timer); timer = null }
+    sync()
+  }, 1500)
+}
+const step = () => PLAY[S.playIdx]
+const pages = () => {
+  if (S.st === 'idle') return [S.loaded ? { title: 'Fieldnotes', host: 'localhost:5173' } : { title: 'New page', host: '' }]
+  return [{ title: 'Fieldnotes', host: 'localhost:5173' }, { title: 'Shared · Fieldnotes', host: 'localhost:5173' }]
+}
+const hasPage = () => S.st !== 'idle' || S.loaded
+const agentLive = () => S.st === 'agent' && !S.settled
+
+// ---- Pieces ----
+function sidebar() {
+  const working = agentLive()
+  const row = (t, cur, st) => `<li class="row"${cur ? ' data-current' : ''}><span class="ring" data-state="${st}"></span><span class="row__title">${t}</span>
+    <span class="row__meta"><span class="mark" aria-hidden="true">C</span>Claude<span class="row__status" data-state="${st}" data-slot="${cur ? 'nav-status' : ''}">${st === 'working' ? 'Working' : 'Done'}</span></span></li>`
+  return `<aside class="nav" aria-label="Threads">
+    <div class="nav__top"><span class="nav__brand">${logo}Sotto</span>
+      <span class="seg" aria-hidden="true"><span data-on>${icon(I.chat, 15)}</span><span>${icon(I.term, 15)}</span></span>
+      <button class="act f" type="button" aria-label="Start a new thread">${icon(I.pen, 15)}</button>
+      <button class="act f" type="button" aria-label="Hide the sidebar">${icon(I.collapse, 15)}</button></div>
+    <div class="search">${icon(I.search, 14)}<span>Search threads</span></div>
+    <div class="nav__scroll">
+      <div class="folder"><div class="folder__head">${icon(I.chevD, 14)}${icon(I.folder, 14)}Fieldnotes<span class="folder__count">3</span></div>
+        <ul class="rows">${row('Sign-in check', true, working ? 'working' : 'done')}${row('Notes export', false, 'done')}${row('Offline drafts', false, 'done')}</ul></div>
+      <div class="folder"><div class="folder__head">${icon(I.chevD, 14)}${icon(I.folder, 14)}Sotto<span class="folder__count">2</span></div>
+        <ul class="rows">${row('Quiet browser pane', false, 'done')}${row('Release notes', false, 'done')}</ul></div>
+    </div>
+    <div class="nav__foot"><div class="nav__pages" aria-hidden="true"><span>Dictate</span><span data-on>Threads</span></div>
+      <div class="nav__icons" aria-hidden="true">${icon(I.chat)}${icon(I.history)}${icon(I.settings)}${icon(I.help)}</div></div>
+  </aside>`
+}
+
+function conversation() {
+  if (S.st === 'idle') return `
+    <div class="bubble">Add a Remember me box under the password field.</div>
+    <div class="reply"><p>Done. <strong>Remember me</strong> sits under the password field and keeps you signed in for 30 days on this computer.</p>
+      <p>I changed <code>SignInForm.tsx</code> and <code>session.ts</code>, and added a test for the longer session.</p></div>
+    <div class="sign">Worked for 1m 12s</div>`
+  return `
+    <div class="bubble">Check that sign-in works on the dev server, and fix whatever breaks.</div>
+    <div class="reply"><p>I'll start the dev server and sign in the way a person would.</p></div>
+    <div class="bline-wrap">
+      <button class="bline f" type="button" data-act="steps" aria-expanded="false" aria-controls="bsteps" data-slot="bline"></button>
+      <ol class="steps" id="bsteps" data-slot="steps" hidden></ol>
+    </div>
+    <div class="reply" data-slot="after" hidden><p>Sign-in works now. Pressing Enter in the password field didn't send the form, so I fixed that in <code>SignInForm.tsx</code>.</p>
+      <p>One scroll got no answer from the page while the dev server reloaded. It worked on the next try.</p></div>`
+}
+
+function composer() {
+  return `<div class="compose"><div class="prompt">
+    <div class="prompt__chips" data-slot="chips"></div>
+    <textarea class="f" rows="2" aria-label="Message to the agent" placeholder="What would you like to do next?"></textarea>
+    <div class="prompt__foot">
+      <button class="act f" type="button" aria-label="Attach a file">${icon(I.clip, 16)}</button>
+      <button class="chip f" type="button" aria-label="Model: Opus 5.5. Change the model"><span class="mark" aria-hidden="true">C</span>Opus 5.5${icon(I.chevD, 13)}</button>
+      <button class="chip f" type="button" aria-label="Effort: High. Change the effort">High${icon(I.chevD, 13)}</button>
+      <button class="send f" type="button" aria-label="Send">${icon(I.up, 16)}</button>
+    </div></div></div>`
+}
+
+function threadCol() {
+  return `<section class="thread" aria-label="Thread"><div class="thread__body">${conversation()}</div>${composer()}</section>`
+}
+
+const navBtns = () => {
+  const d = hasPage() ? '' : ' disabled'
+  return `<button class="act f" type="button" aria-label="Go back"${d}>${icon(I.back, 16)}</button>
+    <button class="act f" type="button" aria-label="Go forward" disabled>${icon(I.fwd, 16)}</button>
+    <button class="act f" type="button" aria-label="Reload the page"${d}>${icon(I.reload, 15)}</button>`
+}
+const addr = (center = false) => `<label class="addr" data-slot="addr"${center ? ' data-center' : ''}>${icon(I.globe, 14)}
+    <input class="f" data-slot="addr-input" aria-label="Address" placeholder="Enter an address, such as localhost:5173" spellcheck="false" autocomplete="off">
+    <span class="addr__show" data-slot="addr-show"></span><span class="addr__caret"></span></label>`
+const pointBtn = () => `<button class="act f" type="button" data-act="point" data-slot="point-btn" aria-label="Point at something on the page" aria-pressed="false" title="Point at something">${icon(I.point, 16)}</button>`
+const shotBtn = () => `<button class="act f" type="button" data-act="shot" data-slot="shot-btn" aria-label="Add a picture of the page to the message" title="Screenshot to message">${icon(I.shot, 16)}</button>`
+const moreMenu = id => `<span class="menu-anchor"><button class="act f" type="button" data-act="menu" data-menu="${id}" aria-haspopup="menu" aria-expanded="false" aria-label="More browser actions">${icon(I.more, 16)}</button>
+  <div class="menu" role="menu" data-menu-for="${id}" hidden>
+    <button role="menuitem" type="button" data-act="close-menu">${icon(I.copy, 15)}Copy the address</button>
+    <button role="menuitem" type="button" data-act="close-menu">${icon(I.ext, 15)}Open in your own browser</button>
+    <button role="menuitem" type="button" data-act="close-menu">${icon(I.phone, 15)}Show at a phone's size</button>
+    <hr>
+    <button role="menuitem" type="button" data-act="close-menu">${icon(I.hand, 15)}Ask before this thread uses the browser</button>
+  </div></span>`
+
+function pageArea(kind) {
+  return `<div class="pw" data-slot="pw">
+    <div class="pw__scroll">
+      <div class="pt-banner" data-slot="banner" hidden>${icon(I.point, 14)}Click something on the page to point at it · <kbd>Esc</kbd> to stop</div>
+      <div class="blank" data-slot="blank" hidden><div class="blank__col">
+        <h2 id="h-local">Local servers</h2>
+        <ul aria-labelledby="h-local">
+          <li><button class="blank__row f" type="button" data-act="load">${icon(I.server, 15)}localhost:5173<small>Vite</small></button></li>
+          <li><button class="blank__row f" type="button" data-act="load">${icon(I.server, 15)}localhost:3000<small>Node</small></button></li>
+        </ul>
+        <h2 id="h-recent">Recent</h2>
+        <ul aria-labelledby="h-recent">
+          <li><button class="blank__row f" type="button" data-act="load">${icon(I.history, 15)}localhost:5173/notes<small>Yesterday</small></button></li>
+          <li><button class="blank__row f" type="button" data-act="load">${icon(I.history, 15)}github.com/millZach/fieldnotes<small>Monday</small></button></li>
+        </ul>
+      </div></div>
+      <div class="site" data-slot="site" hidden>
+        <header class="site__head">
+          <span class="site__logo" data-pick="link · Fieldnotes"><i></i>Fieldnotes</span>
+          <nav class="site__nav"><span data-pick="link · Notes">Notes</span><span data-pick="link · Shared">Shared</span></nav>
+          <button class="site__signin" type="button" tabindex="-1" data-el="signin" data-pick="button · Sign in" data-slot="site-signin">Sign in</button>
+        </header>
+        <div class="site__main">
+          <section class="site__hero" data-show="landing">
+            <h1 data-pick="heading · Take the long way round">Take the long way round, and write it down.</h1>
+            <p>Fieldnotes keeps short notes from walks, trips and site visits, and keeps them in order.</p>
+            <button class="site__cta" type="button" tabindex="-1" data-pick="button · Start a note">Start a note</button>
+            <div class="site__cards">
+              <div class="site__card" data-pick="article · Morning on the ridge"><b>Morning on the ridge</b><span>Fog lifted by eight. Two hawks.</span></div>
+              <div class="site__card" data-pick="article · Pump house visit"><b>Pump house visit</b><span>Valve 3 sticks when cold.</span></div>
+              <div class="site__card" data-pick="article · Ferry times"><b>Ferry times</b><span>Last boat back at 6:40.</span></div>
+            </div>
+          </section>
+          <form class="site__form" data-show="form" onsubmit="return false">
+            <h2>Sign in to Fieldnotes</h2>
+            <label>Email<input tabindex="-1" readonly data-el="email" data-slot="site-email"></label>
+            <label>Password<input tabindex="-1" readonly type="password" data-el="password" data-slot="site-pass"></label>
+            <button class="site__submit" type="button" tabindex="-1">Sign in</button>
+          </form>
+          <section data-show="notes"><h2 class="site__h">Your notes</h2>
+            <ul class="site__list"><li>Morning on the ridge<small>Edited today</small></li><li>Pump house visit<small>Edited Tuesday</small></li><li>Ferry times<small>Edited last week</small></li></ul></section>
+          <section data-show="shared"><h2 class="site__h">Shared with you</h2>
+            <ul class="site__list"><li>Harbour survey<small>From Ana · 3 notes</small></li><li>Trail repairs<small>From Sam · 8 notes</small></li></ul></section>
+        </div>
+      </div>
+    </div>
+    <div class="pt-box" data-slot="pt-box" hidden></div>
+    <div class="pt-chip" data-slot="pt-chip" hidden></div>
+    <div class="pt-pop" data-slot="pt-pop" role="dialog" aria-label="Point at button · Sign in" hidden>
+      <textarea class="f" data-slot="pt-text" aria-label="What should the agent know about this?" placeholder="What should the agent know about this?"></textarea>
+      <div class="pt-pop__foot">
+        <button class="btn f" type="button" data-act="pt-cancel" aria-keyshortcuts="Escape">Cancel <kbd>Esc</kbd></button>
+        <button class="btn btn--primary f" type="button" data-act="pt-add">Add to message</button>
+      </div>
+    </div>
+    <div class="acur" data-slot="acur" hidden>${cursorSvg}</div>
+    ${kind === 'B' ? `<div class="bpill" data-slot="bpill" hidden></div>` : ''}
+  </div>
+  ${kind === 'A' ? `<div class="astrip" data-slot="astrip" hidden></div>` : ''}`
+}
+
+const divider = label => `<div class="divider"><div class="divider__hit f" role="separator" aria-orientation="vertical" aria-label="${label}" aria-valuenow="47" tabindex="0"><span class="divider__grip"></span></div></div>`
+
+function tabsA() {
+  return `<div class="tabs-a" role="tablist" aria-label="Pages">${pages().map((p, i) => `<button class="tab-a f" type="button" role="tab" data-act="tab" data-tab="${i}" aria-selected="${i === S.tab}">${icon(I.globe, 13)}<span>${esc(p.title)}</span><span class="tab-x" role="button" aria-label="Close ${esc(p.title)}">${icon(I.x, 12)}</span></button>`).join('')}
+    <button class="act f" type="button" aria-label="Open a new page">${icon(I.plus, 15)}</button></div>`
+}
+
+function paneA() {
+  const many = pages().length > 1
+  const row = `<div class="crow" role="toolbar" aria-label="Browser">${navBtns()}${addr()}${pointBtn()}${shotBtn()}${moreMenu('a')}</div>`
+  const tile = (ic, word, sel) => `<button class="rail__tab f" type="button" role="tab" aria-selected="${sel}" aria-label="${word}">${icon(ic, 18)}<span>${word}</span></button>`
+  return `${divider('Resize Tools')}<aside class="pa" aria-label="Tools">
+    <div class="pa__strip">${many ? tabsA() : row}${winctl()}</div>
+    <div class="pa__body">
+      <div class="pa__surface">${many ? row : ''}${pageArea('A')}</div>
+      <nav class="rail" role="tablist" aria-label="Tools" aria-orientation="vertical">
+        ${tile(I.globe, 'Browser', true)}${tile(I.term, 'Terminal', false)}${tile(I.files, 'Files', false)}${tile(I.changes, 'Changes', false)}${tile(I.pr, 'PR', false)}${tile(I.users, 'Agents', false)}
+        <div class="rail__foot"><button class="act f" type="button" aria-label="Keep Tools open" aria-pressed="false">${icon(I.pin, 15)}</button>
+          <button class="act f" type="button" aria-label="Fill the window with Tools">${icon(I.expand, 15)}</button>
+          <button class="act f" type="button" data-act="close" aria-label="Close Tools">${icon(I.x, 15)}</button></div>
+      </nav>
+    </div></aside>`
+}
+
+function paneB() {
+  const tabs = pages().map((p, i) => `<button class="tab-b f" type="button" role="tab" data-act="tab" data-tab="${i}" aria-selected="${i === S.tab}">${icon(I.globe, 14)}<span>${esc(p.title)}</span><span class="tab-x" role="button" aria-label="Close ${esc(p.title)}">${icon(I.x, 13)}</span></button>`).join('')
+  return `${divider('Resize the browser')}<aside class="pb" aria-label="Browser">
+    <div class="pb__tabs"><div role="tablist" aria-label="Pages" style="display:flex;gap:2px;align-self:flex-end">${tabs}</div>
+      <button class="act f" type="button" aria-label="Open a new page">${icon(I.plus, 15)}</button>
+      <div class="pb__end"><button class="act f" type="button" data-act="close" aria-label="Close the browser">${icon(I.x, 15)}</button><span class="pb__sep"></span>${winctl()}</div></div>
+    <div class="pb__bar" role="toolbar" aria-label="Browser">${navBtns()}${addr()}${pointBtn()}${shotBtn()}${moreMenu('b')}</div>
+    ${pageArea('B')}</aside>`
+}
+
+function paneC() {
+  const many = pages().length > 1
+  const pagesMenu = many ? `<span class="menu-anchor"><button class="pages-btn f" type="button" data-act="menu" data-menu="pages" aria-haspopup="menu" aria-expanded="false" aria-label="${pages().length} pages open. Switch page">${pages().length} pages${icon(I.chevD, 13)}</button>
+    <div class="menu" role="menu" data-menu-for="pages" hidden>
+      ${pages().map((p, i) => `<button role="menuitemradio" aria-checked="${i === S.tab}" type="button" data-act="tab" data-tab="${i}">${icon(I.globe, 15)}${esc(p.title)}<small>${i === S.tab ? icon(I.check, 14, 'data-check') : p.host}</small></button>`).join('')}
+      <hr><button role="menuitem" type="button" data-act="close-menu">${icon(I.plus, 15)}Open a new page</button></div></span>` : ''
+  return `${S.expanded ? '' : divider('Resize the browser')}<aside class="pc" aria-label="Browser"${S.expanded ? ' data-expanded' : ''}>
+    <div class="pc__row" role="toolbar" aria-label="Browser">${navBtns()}${addr(true)}${pagesMenu}${pointBtn()}${shotBtn()}
+      <button class="act f" type="button" data-act="expand" aria-label="${S.expanded ? 'Show the thread again' : 'Show the browser across the thread'}">${icon(S.expanded ? I.shrink : I.expand, 15)}</button>
+      <button class="act f" type="button" data-act="close" aria-label="Close the browser">${icon(I.x, 15)}</button></div>
+    ${pageArea('C')}</aside>`
+}
+
+function header(withWinctl) {
+  const label = S.v === 'A' ? 'Show Tools' : 'Show the browser'
+  return `<header class="ws__head"><div class="ws__title"><h1>Sign-in check</h1><span class="ws__project">Fieldnotes</span></div>
+    <button class="act f" type="button" data-act="toggle" aria-pressed="${S.open}" aria-label="${label}" title="${S.v === 'A' ? 'Tools' : 'Browser'}">${icon(S.v === 'A' ? I.panel : S.v === 'C' ? I.split : I.globe, 16)}</button>
+    <button class="act f" type="button" aria-label="Thread options">${icon(I.more, 16)}</button>
+    ${withWinctl ? winctl() : ''}</header>`
+}
+
+function render() {
+  const win = document.getElementById('win')
+  let html = sidebar()
+  if (S.v === 'C') {
+    html += `<main class="ws" data-v="C">${header(true)}<div class="ws__split">${S.expanded && S.open ? '' : threadCol()}${S.open ? paneC() : ''}</div></main>`
+  } else {
+    html += `<main class="ws">${header(!S.open)}${threadCol()}</main>`
+    if (S.open) html += S.v === 'A' ? paneA() : paneB()
+  }
+  win.innerHTML = html
+  sync()
+  // The real focus would sit in the address field; the prototype only draws it there so ← → keep working.
+}
+
+// ---- Sync: everything that changes while the agent runs or Zach points ----
+function $(slot) { return document.querySelector(`#win [data-slot="${slot}"]`) }
+function scale() { return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--s')) || 1 }
+function relRect(el, wrap) {
+  const s = scale(), a = el.getBoundingClientRect(), b = wrap.getBoundingClientRect()
+  return { x: (a.left - b.left) / s, y: (a.top - b.top) / s, w: a.width / s, h: a.height / s, W: b.width / s, H: b.height / s }
+}
+
+function sync() {
+  const cur = STEPS[step()]
+  const live = agentLive()
+  // The quiet line
+  const bl = $('bline')
+  if (bl) {
+    const done = S.settled
+    const text = done ? `Browsed localhost:5173` : S.paused ? `Paused on localhost:5173` : `Browsing localhost:5173`
+    const last = done ? `${STEPS.length} steps` : cur.short
+    bl.innerHTML = `${icon(I.globe, 14).replace('class="i"', 'class="i bline__globe"')}${done ? '' : `<span class="bline__dot"${S.paused ? ' data-paused' : ''} aria-hidden="true"></span>`}
+      <span class="bline__text">${text} <span class="bline__last">· ${esc(last)}</span></span>${icon(I.chevR, 14).replace('class="i"', 'class="i bline__chev"')}
+      <span class="vh">${S.stepsOpen ? 'Hide the steps' : 'Show the steps'}</span>`
+    bl.setAttribute('aria-expanded', String(S.stepsOpen))
+    const list = $('steps'); list.hidden = !S.stepsOpen
+    const upto = done ? STEPS.length : step() + 1
+    list.innerHTML = STEPS.slice(0, upto).map(s => `<li${s.warn ? ' data-warn' : ''}>${icon(I[s.ic], 14)}${esc(s.verb)}</li>`).join('')
+    $('after').hidden = !S.settled
+  }
+  const ns = $('nav-status'); if (ns) { ns.dataset.state = live ? 'working' : 'done'; ns.textContent = live ? 'Working' : 'Done'; ns.closest('.row').querySelector('.ring').dataset.state = live ? 'working' : 'done' }
+
+  if (!S.open) { syncChips(); return }
+  // Page content
+  const page = pages()[S.tab] || pages()[0]
+  const site = $('site'), blank = $('blank')
+  site.hidden = !hasPage(); blank.hidden = hasPage()
+  let view = 'landing', path = '/', title = 'Fieldnotes'
+  if (S.st === 'agent') ({ view, path, title } = cur)
+  if (S.st === 'pointing' || S.loaded) { view = 'landing'; path = '/'; title = 'Fieldnotes' }
+  if (S.tab === 1) { view = 'shared'; path = '/shared'; title = 'Shared · Fieldnotes' }
+  site.dataset.view = view
+  $('site-signin').textContent = view === 'notes' ? 'Sign out' : 'Sign in'
+  const sIdx = S.st === 'agent' ? step() : 0
+  $('site-email').value = S.st === 'agent' && sIdx >= 4 && view !== 'notes' ? 'zach@example.com' : ''
+  $('site-pass').value = S.st === 'agent' && sIdx >= 5 && view !== 'notes' ? 'longwayround' : ''
+
+  // Address
+  const a = $('addr'), inp = $('addr-input'), show = $('addr-show')
+  if (hasPage()) {
+    delete a.dataset.empty; delete a.dataset.focus
+    if (document.activeElement !== inp) inp.value = `http://localhost:5173${path}`
+    show.innerHTML = `<span class="addr__url">localhost:5173${path === '/' ? '' : esc(path)}</span><span class="addr__title">${esc(title)}</span>`
+  } else {
+    a.dataset.empty = ''; if (document.activeElement !== inp) a.dataset.focus = ''
+    show.innerHTML = ''
+  }
+  for (const b of document.querySelectorAll('#win [data-slot="point-btn"], #win [data-slot="shot-btn"]')) b.disabled = !hasPage()
+  const pb = $('point-btn'); pb.setAttribute('aria-pressed', String(S.pointMode)); pb.toggleAttribute('data-point-on', S.pointMode)
+
+  // Agent presence on the page
+  const onAgentPage = live && S.tab === 0
+  const pw = $('pw')
+  pw.toggleAttribute('data-ring', S.v === 'B' && onAgentPage && !S.paused)
+  const acur = $('acur')
+  if (S.st === 'agent' && cur.target) {
+    const el = pw.querySelector(`[data-el="${cur.target}"]`)
+    if (el && el.offsetParent) { const r = relRect(el, pw); S.cursor = { x: r.x + Math.min(r.w * .62, 70), y: r.y + r.h * .6 } }
+  }
+  acur.hidden = !(onAgentPage && S.cursor && S.v !== 'A') // A shows the agent only in its foot strip
+  if (S.cursor) { acur.style.left = S.cursor.x + 'px'; acur.style.top = S.cursor.y + 'px' }
+  const strip = $('astrip')
+  if (strip) {
+    strip.hidden = !live
+    strip.innerHTML = S.paused
+      ? `<span class="bline__dot" data-paused aria-hidden="true"></span><span class="astrip__text">The agent is paused <span>· ${esc(cur.short)}</span></span><button class="tbtn tbtn--accent f" type="button" data-act="pause" aria-label="Let the agent continue">${icon(I.play, 13)}Continue</button>`
+      : `<span class="bline__dot" aria-hidden="true"></span><span class="astrip__text">Agent is browsing <span>· ${esc(cur.short)}</span></span><button class="tbtn f" type="button" data-act="pause" aria-label="Pause the agent">${icon(I.pause, 13)}Pause</button>`
+  }
+  const pill = $('bpill')
+  if (pill) {
+    pill.hidden = !onAgentPage
+    pill.innerHTML = S.paused
+      ? `<span class="bline__dot" data-paused aria-hidden="true"></span>The agent is paused<button class="tbtn tbtn--accent f" type="button" data-act="pause" aria-label="Let the agent continue">Continue</button>`
+      : `<span class="bline__dot" aria-hidden="true"></span>Agent is using this page<button class="tbtn tbtn--accent f" type="button" data-act="pause" aria-label="Take over the page and pause the agent">Take over</button>`
+  }
+  syncPoint()
+  syncChips()
+}
+
+function syncPoint() {
+  const pw = $('pw'); if (!pw) return
+  const site = $('site'), banner = $('banner'), box = $('pt-box'), chip = $('pt-chip'), pop = $('pt-pop')
+  site.toggleAttribute('data-pointing', S.pointMode)
+  banner.hidden = !S.pointMode
+  const target = S.pointMode && site.querySelector(`[data-pick="${S.hover}"]`)
+  box.hidden = chip.hidden = !target
+  pop.hidden = !(target && S.popover)
+  if (!target) return
+  const r = relRect(target, pw), pad = 3
+  Object.assign(box.style, { left: r.x - pad + 'px', top: r.y - pad + 'px', width: r.w + pad * 2 + 'px', height: r.h + pad * 2 + 'px' })
+  const [kind, ...rest] = S.hover.split(' · ')
+  chip.innerHTML = `<code>${esc(kind)}</code> · ${esc(rest.join(' · '))}`
+  const cw = chip.offsetWidth
+  let cx = Math.min(Math.max(8, r.x + r.w + pad - cw), r.W - cw - 8)
+  const below = r.y + r.h + pad + 6
+  chip.style.left = cx + 'px'; chip.style.top = below + 'px'
+  pop.setAttribute('aria-label', `Point at ${S.hover}`)
+  const pwid = 300
+  pop.style.left = Math.min(Math.max(8, r.x + r.w + pad - pwid), r.W - pwid - 8) + 'px'
+  pop.style.top = below + 28 + 'px'
+}
+
+function thumb(c) {
+  if (c.kind === 'shot') return `<span class="att__thumb" aria-hidden="true"><i style="left:0;right:0;top:0;height:8px;border-bottom:1px solid #d9d3c2"></i><i style="left:5px;top:13px;width:30px;height:4px;border-radius:2px;background:#1f2a24"></i><i style="left:5px;top:20px;width:38px;height:3px;border-radius:2px;background:#9aa39c"></i><i style="left:5px;top:27px;width:13px;height:5px;border-radius:2px;border:1px solid #2f5d4a"></i></span>`
+  return `<span class="att__thumb" aria-hidden="true"><i style="left:0;right:0;top:0;height:13px;border-bottom:1px solid #d9d3c2"></i><i style="right:6px;top:15px;width:30px;height:13px;border-radius:7px;background:#2f5d4a"></i><i style="right:4px;top:13px;width:34px;height:17px;border-radius:5px;border:2px solid var(--tt-accent)"></i><i style="left:5px;top:4px;width:5px;height:5px;border-radius:1px;background:#2f5d4a"></i></span>`
+}
+function syncChips() {
+  const box = $('chips'); if (!box) return
+  box.innerHTML = S.chips.map((c, i) => {
+    const [kind, ...rest] = c.label.split(' · ')
+    const label = c.kind === 'point' ? `<code>${esc(kind)}</code> · ${esc(rest.join(' · '))}` : esc(c.label)
+    return `<span class="att">${thumb(c)}<span class="att__body"><span class="att__label">${label}</span>${c.note ? `<span class="att__note">${esc(c.note)}</span>` : c.kind === 'shot' ? '<span class="att__note">localhost:5173 · as it looks now</span>' : ''}</span>
+      <button class="act f" type="button" data-act="unchip" data-i="${i}" aria-label="Remove ${esc(c.label)} from the message">${icon(I.x, 13)}</button></span>`
+  }).join('')
+}
+
+// ---- Interaction ----
+function closeMenus(returnFocus) {
+  for (const m of document.querySelectorAll('#win .menu')) m.hidden = true
+  for (const b of document.querySelectorAll('#win [data-act="menu"]')) { if (b.getAttribute('aria-expanded') === 'true' && returnFocus) b.focus(); b.setAttribute('aria-expanded', 'false') }
+  S.menu = null
+}
+document.getElementById('win').addEventListener('click', e => {
+  const t = e.target.closest('[data-act]')
+  if (S.pointMode && e.target.closest('.site')) {
+    const pick = e.target.closest('[data-pick]')
+    if (pick) { S.hover = pick.dataset.pick; S.popover = true; syncPoint(); $('pt-text').focus() }
+    e.preventDefault(); return
+  }
+  if (!t) { if (!e.target.closest('.menu')) closeMenus(false); return }
+  const act = t.dataset.act
+  if (act !== 'menu' && !t.closest('.menu')) closeMenus(false)
+  if (act === 'steps') { S.stepsOpen = !S.stepsOpen; sync() }
+  else if (act === 'menu') {
+    const id = t.dataset.menu, m = document.querySelector(`#win [data-menu-for="${id}"]`), open = m.hidden
+    closeMenus(false)
+    if (open) { m.hidden = false; t.setAttribute('aria-expanded', 'true'); S.menu = id; m.querySelector('button').focus() }
+  }
+  else if (act === 'close-menu') closeMenus(true)
+  else if (act === 'tab') { S.tab = +t.dataset.tab; render() }
+  else if (act === 'point') { S.pointMode = !S.pointMode; S.popover = false; S.hover = 'button · Sign in'; sync() }
+  else if (act === 'pt-cancel') { S.popover = false; syncPoint() }
+  else if (act === 'pt-add') {
+    S.chips.push({ kind: 'point', label: S.hover, note: $('pt-text').value.trim() })
+    S.pointMode = false; S.popover = false; sync()
+    document.querySelector('#win .prompt textarea').focus()
+  }
+  else if (act === 'shot') { if (hasPage()) { S.chips.push({ kind: 'shot', label: 'Picture of the page' }); syncChips() } }
+  else if (act === 'unchip') { S.chips.splice(+t.dataset.i, 1); syncChips() }
+  else if (act === 'pause') { S.paused = !S.paused; sync() }
+  else if (act === 'close') { S.open = false; S.pointMode = false; render(); document.querySelector('#win [data-act="toggle"]').focus() }
+  else if (act === 'toggle') { S.open = !S.open; S.expanded = false; render() }
+  else if (act === 'expand') { S.expanded = !S.expanded; render() }
+  else if (act === 'load') { S.loaded = true; render() }
+})
+// Hover in Point mode moves the outline until a click opens the comment.
+document.getElementById('win').addEventListener('mouseover', e => {
+  if (!S.pointMode || S.popover) return
+  const pick = e.target.closest('.site [data-pick]')
+  if (pick && pick.dataset.pick !== S.hover) { S.hover = pick.dataset.pick; syncPoint() }
+})
+document.getElementById('win').addEventListener('focusin', e => { if (e.target.dataset.slot === 'addr-input') { delete $('addr').dataset.focus } })
+document.getElementById('win').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.dataset.slot === 'addr-input' && e.target.value.trim()) { S.loaded = true; e.target.blur(); render() }
+})
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (S.menu) { closeMenus(true); e.preventDefault(); return }
+    if (S.popover) { S.popover = false; syncPoint(); $('point-btn')?.focus(); e.preventDefault(); return }
+    if (S.pointMode) { S.pointMode = false; sync(); $('point-btn')?.focus(); e.preventDefault(); return }
+  }
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+  const a = document.activeElement
+  if (a && (a.matches('input, textarea, select, [contenteditable]') || a.closest('[role="menu"], [role="tablist"]'))) return
+  if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+  const i = ORDER.indexOf(S.v)
+  setVariant(ORDER[(i + (e.key === 'ArrowRight' ? 1 : ORDER.length - 1)) % ORDER.length])
+})
+
+// ---- Switcher ----
+function writeUrl() {
+  const p = new URLSearchParams({ variant: S.v, state: S.st })
+  if (S.theme === 'light') p.set('theme', 'light')
+  if (S.st === 'pointing' && S.point !== 'comment') p.set('point', S.point)
+  if (document.documentElement.dataset.motion === 'reduced') p.set('motion', 'reduced')
+  history.replaceState(null, '', `${location.pathname}?${p}`)
+}
+function paintSwitcher() {
+  document.getElementById('vLabel').textContent = VARIANTS[S.v].name
+  for (const b of document.querySelectorAll('[data-st]')) b.setAttribute('aria-pressed', String(b.dataset.st === S.st))
+  for (const b of document.querySelectorAll('[data-pt]')) b.setAttribute('aria-pressed', String(b.dataset.pt === S.point))
+  document.getElementById('subAgent').hidden = S.st !== 'agent'
+  document.getElementById('subPoint').hidden = S.st !== 'pointing'
+  const tb = document.getElementById('themeBtn')
+  tb.textContent = S.theme === 'dark' ? 'Light' : 'Dark'
+  tb.setAttribute('aria-label', S.theme === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme')
+  document.documentElement.dataset.theme = S.theme
+  const stName = { idle: 'Idle', agent: 'Agent browsing', pointing: 'Pointing' }[S.st]
+  document.getElementById('cap').innerHTML = `<b class="tag">PROTOTYPE</b><strong>${VARIANTS[S.v].name}</strong> — ${stName}. ${VARIANTS[S.v].text}`
+}
+function setVariant(v) { S.v = v; S.open = true; S.expanded = false; S.menu = null; render(); paintSwitcher(); writeUrl() }
+function setState(st) { S.st = st; resetState(); render(); paintSwitcher(); writeUrl() }
+document.getElementById('prevV').onclick = () => setVariant(ORDER[(ORDER.indexOf(S.v) + 2) % 3])
+document.getElementById('nextV').onclick = () => setVariant(ORDER[(ORDER.indexOf(S.v) + 1) % 3])
+for (const b of document.querySelectorAll('[data-st]')) b.onclick = () => setState(b.dataset.st)
+for (const b of document.querySelectorAll('[data-pt]')) b.onclick = () => { S.point = b.dataset.pt; setState('pointing') }
+document.getElementById('replay').onclick = () => setState('agent')
+document.getElementById('themeBtn').onclick = () => { S.theme = S.theme === 'dark' ? 'light' : 'dark'; paintSwitcher(); writeUrl() }
+
+// ---- Fit the 1280x800 window to the viewport's width ----
+function fit() {
+  const s = Math.min(1, (document.documentElement.clientWidth - 16) / 1280)
+  document.documentElement.style.setProperty('--s', s)
+  const h = document.getElementById('holder'), w = document.getElementById('win')
+  h.style.width = 1280 * s + 'px'; h.style.height = 800 * s + 'px'
+  w.style.transform = `scale(${s})`
+  document.getElementById('cap').style.maxWidth = Math.max(1280 * s, 300) + 'px'
+}
+addEventListener('resize', () => { fit(); if (S.open) syncPoint() })
+fit()
+resetState()
+render()
+paintSwitcher()
+writeUrl()
+</script>
+</body>
+</html>
