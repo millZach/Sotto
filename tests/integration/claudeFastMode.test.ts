@@ -78,7 +78,7 @@ it('turns fast mode on in place on the running CLI, and launches with it once So
   next.host.observeThreads?.([id])
   await next.adapter.refreshThread(id)
   const args = (await launchArgs(next)).at(-1)!
-  expect(args[args.indexOf('--settings') + 1]).toBe('{"fastMode":true}')
+  expect(args[args.indexOf('--settings') + 1]).toBe('{"fastMode":true,"ultracode":false}')
   expect((await next.liveSettings.effective(id)).fastMode).toBe(true)
 
   // Off again is `false`, so the flag layer outranks a fastMode in the user's own settings.
@@ -135,7 +135,7 @@ it('creates a thread with fast mode on, as a first send from a draft that chose 
   await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Fast', modelId: 'fixture-model', fastMode: true })
   expect((await thread(f, id)).fastMode).toBe(true)
   const args = (await launchArgs(f)).at(-1)!
-  expect(args[args.indexOf('--settings') + 1]).toBe('{"fastMode":true}')
+  expect(args[args.indexOf('--settings') + 1]).toBe('{"fastMode":true,"ultracode":false}')
 })
 
 it('saves the toggle through the coordinator, which reconciles off against a thread that shows none, and keeps an unanswered one', async () => {
@@ -219,7 +219,7 @@ it('does not adopt a spare started without fast mode for a first send that turne
   await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: plain, projectId: f.projectId, title: 'Fast', modelId: 'fixture-model', fastMode: true })
   const [spare, own] = await launchArgs(f)
   expect(fastFlag(spare!)).toBe(false)
-  expect(own![own!.indexOf('--settings') + 1]).toBe('{"fastMode":true}')
+  expect(own![own!.indexOf('--settings') + 1]).toBe('{"fastMode":true,"ultracode":false}')
   expect(session(own!)).not.toBe(session(spare!))
 
   // A spare started with the choice the first send carries is the thread's CLI.
@@ -228,5 +228,5 @@ it('does not adopt a spare started without fast mode for a first send that turne
   await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: fast, projectId: f.projectId, title: 'Fast', modelId: 'fixture-model', fastMode: true })
   const all = await launchArgs(f)
   expect(all).toHaveLength(3)
-  expect(all[2]![all[2]!.indexOf('--settings') + 1]).toBe('{"fastMode":true}')
+  expect(all[2]![all[2]!.indexOf('--settings') + 1]).toBe('{"fastMode":true,"ultracode":false}')
 })
