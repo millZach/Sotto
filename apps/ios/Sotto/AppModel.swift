@@ -1964,9 +1964,10 @@ struct HeldDetail {
     }
     /// A reply, answer or stop still on its way, as opposed to one its computer couldn't confirm.
     func isSending(_ item: PendingOperation) -> Bool { dispatchingOperations.keys.contains(item.id) || receiptFollowers[item.id] != nil }
-    /// Stop waits only for another stop or an answer on its way; a reply, a queued reply, a steer or a removal never holds it.
+    /// Stop waits only for another stop or an answer on its way; a reply, a queued reply, a steer, a removal or a settle
+    /// never holds it.
     func canInterrupt(_ ref: ThreadRef) -> Bool {
-        online(ref.hostID) && pending(for: ref).allSatisfy { ["reply", "queue", "steer", "remove"].contains($0.kind) }
+        online(ref.hostID) && pending(for: ref).allSatisfy { ["reply", "queue", "steer", "remove", "settle", "restore"].contains($0.kind) }
             && thread(ref)?.status == "running" && (capabilities(for: ref)?.interrupt ?? false)
     }
     /// The thread's follow-up queue, in order, as the reply box shows it.
@@ -2953,8 +2954,9 @@ struct HeldDetail {
     }
     /// Moves the thread on or off the Settled shelf. The thread, its history and its working copy all stay, and a running
     /// thread settles as it does on the desktop: settling stops nothing.
-    func shelve(_ ref: ThreadRef) async {
-        guard canAct(on: ref), let action = shelfAction(ref), actionHeld(ref) == nil else { return }
+    /// The action is the one the press showed, so a thread moved on the desktop meanwhile is left as it now stands.
+    func shelve(_ ref: ThreadRef, _ action: ShelfAction) async {
+        guard canAct(on: ref), shelfAction(ref) == action, actionHeld(ref) == nil else { return }
         await act(on: ref, kind: action == .settle ? "settle" : "restore") { try Commands.settle(threadID: ref.threadID, settled: action == .settle) }
     }
     /// One of the thread's own commands, marked by its kind and thread alone before it goes.

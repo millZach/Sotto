@@ -187,7 +187,7 @@ private struct ThreadMenu: View {
             }
             if let action = model.shelfAction(ref) {
                 let held = model.actionHeld(ref)
-                Button { Task { await model.shelve(ref) } } label: {
+                Button { Task { await model.shelve(ref, action) } } label: {
                     Text(action == .settle ? String(localized: "Settle", comment: "Settle the thread: put it away on the Settled shelf.")
                          : String(localized: "Restore", comment: "Restore a settled thread to open work."))
                     if let held { Text(held) }
