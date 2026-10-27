@@ -54,7 +54,9 @@ function SceneCards({ value, onChoose }: { readonly value: WatcherScene; readonl
     onChoose(scene)
   }
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    const at = WATCHER_SCENES.indexOf(chosen), last = WATCHER_SCENES.length - 1
+    // From the card that has focus, which is the chosen one unless something else put focus elsewhere.
+    const from = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>('[data-scene]')?.dataset.scene : undefined
+    const at = WATCHER_SCENES.indexOf((WATCHER_SCENES as readonly string[]).includes(from ?? '') ? from as WatcherScene : chosen), last = WATCHER_SCENES.length - 1
     const next = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? (at + 1) % WATCHER_SCENES.length
       : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? (at + last) % WATCHER_SCENES.length
         : event.key === 'Home' ? 0 : event.key === 'End' ? last : null

@@ -36,8 +36,8 @@ function drawDesert(fx: Field, ax: Field, g: SceneLayout): void {
     fx.globalAlpha = alpha; poly(fx, [...pts, [W + 8, g.groundY + 2], [0, g.groundY + 2]])
     fx.globalAlpha = ridge; fx.lineWidth = 4.5; strokePts(fx, pts)
   }
-  dune(g.horizon + sky * 0.12, sky * 0.07, Math.max(120, W * 0.3), 0.2, 0.03, 0.42)
-  dune(g.groundY - sky * 0.08, sky * 0.08, Math.max(140, W * 0.42), 0.55, 0.04, 0.55)
+  dune(g.horizon + sky * 0.12, sky * 0.07, Math.max(120, W * 0.3), 0.2, 0.05, 0.5)
+  dune(g.groundY - sky * 0.08, sky * 0.08, Math.max(140, W * 0.42), 0.55, 0.06, 0.62)
 
   // Small far saguaros on the left margin's dunes.
   for (let i = 0; i < 6; i++) {
@@ -68,7 +68,7 @@ function drawDesert(fx: Field, ax: Field, g: SceneLayout): void {
 /** A saguaro where a night wood tree stands: a ribbed column with rounded ends, and its limbs as arms. */
 function saguaro(fx: Field, t: Tree, s: number): void {
   const w = clamp(t.h * 0.06, 8, 26), top = t.y - t.h * 0.88
-  fx.globalAlpha = 0.66; fx.lineCap = 'round'; fx.lineWidth = w; strokePts(fx, [[t.x, t.y], [t.x, top + w / 2]]); fx.lineCap = 'butt'
+  fx.globalAlpha = 0.72; fx.lineCap = 'round'; fx.lineWidth = w; strokePts(fx, [[t.x, t.y], [t.x, top + w / 2]]); fx.lineCap = 'butt'
   cutOut(fx, () => {
     fx.globalAlpha = 0.35; fx.lineWidth = 1.4
     for (const k of [-0.22, 0.18]) strokePts(fx, [[t.x + w * k, t.y], [t.x + w * k, top + w]])
@@ -89,7 +89,7 @@ function arm(fx: Field, l: Limb, w: number, rise: number): void {
 }
 
 /** How many grains drift at once: a fixed number, whatever the room's size, history or threads. */
-const GRAINS = 44
+const GRAINS = 60
 
 function sandAmbience(g: SceneLayout): Ambience {
   const R = seeded(29), low = g.horizon + g.sky * 0.15

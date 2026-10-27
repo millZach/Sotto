@@ -36,7 +36,7 @@ function drawHarbour(fx: Field, ax: Field, g: SceneLayout): void {
   // The sea in broken rows that thicken toward the quay, and on under it.
   for (let y = seaY + 9; y < H + 8; y += 8 + (y - seaY) * 0.05) {
     const k = clamp((y - seaY) / Math.max(1, g.groundY - seaY), 0, 1)
-    fx.globalAlpha = 0.18 + 0.24 * k; fx.lineWidth = 2.4 + 2.2 * k
+    fx.globalAlpha = 0.28 + 0.3 * k; fx.lineWidth = 3 + 2.4 * k
     for (let x = -R() * 40; x < W; ) {
       const len = 18 + R() * 60, yy = y + Math.sin(x * 0.04 + y) * 1.5
       strokePts(fx, [[x, yy], [x + len * 0.5, yy - 1.2], [x + len, yy]])
@@ -83,13 +83,13 @@ function drawHarbour(fx: Field, ax: Field, g: SceneLayout): void {
 
 /** The ship at the quay: hull, mast, the yards the night wood's limbs become, furled sails, rigging and its lights. */
 function drawShip(fx: Field, ax: Field, g: SceneLayout): void {
-  const t = g.left, mastW = clamp(t.h * 0.016, 3, 8), top = t.y - t.h * 0.98
+  const t = g.left, mastW = clamp(t.h * 0.022, 4, 12), top = t.y - t.h * 0.98
   const gunwale = g.groundY - Math.max(12, g.sky * 0.045)
   const stern = t.x - t.h * 0.24, bow = Math.min(g.column.left - COLUMN_GAP - 10, t.x + t.h * 0.3)
   // The hull, its bow raised toward the room, behind the quay.
-  fx.globalAlpha = 0.42
+  fx.globalAlpha = 0.5
   poly(fx, [[stern, gunwale + 3], [lerp(stern, bow, 0.6), gunwale], [bow, gunwale - Math.max(6, g.sky * 0.02)], [bow - 8, g.groundY + 2], [stern, g.groundY + 2]])
-  fx.globalAlpha = 0.75; fx.lineWidth = 3.5
+  fx.globalAlpha = 0.8; fx.lineWidth = 4.5
   strokePts(fx, [[stern, gunwale + 3], [lerp(stern, bow, 0.6), gunwale], [bow, gunwale - Math.max(6, g.sky * 0.02)]])
   // The mast, thinner above the highest yard.
   const highest = Math.min(...t.limbs.map(l => Math.min(l.y0, l.y1)))
@@ -105,9 +105,9 @@ function drawShip(fx: Field, ax: Field, g: SceneLayout): void {
   for (const l of t.limbs) {
     const d = Math.sign(l.x1 - l.x0), back = (l.x1 - l.x0) * -0.35
     const yard: Limb = { ...l, x0: l.x0 + back, y0: l.y0 - (l.y1 - l.y0) * 0.35 }
-    fx.globalAlpha = 0.8; fx.lineCap = 'round'; fx.lineWidth = Math.max(3.5, t.h * 0.011); strokeLimb(fx, yard); fx.lineCap = 'butt'
+    fx.globalAlpha = 0.8; fx.lineCap = 'round'; fx.lineWidth = Math.max(4, t.h * 0.02); strokeLimb(fx, yard); fx.lineCap = 'butt'
     const sail = alongLimb(yard).map(([x, y]) => [x, y + 3] as const)
-    fx.globalAlpha = 0.28; poly(fx, [...sail, ...sail.slice().reverse().map(([x, y]) => [x, y + Math.max(4, t.h * 0.012)] as const)])
+    fx.globalAlpha = 0.34; poly(fx, [...sail, ...sail.slice().reverse().map(([x, y]) => [x, y + Math.max(4, t.h * 0.012)] as const)])
     // The lifts, from the masthead to the yard's ends.
     fx.globalAlpha = 0.28; fx.lineWidth = 1.5
     strokePts(fx, [[t.x, top + 8], [l.x1 - d * 3, limbY(l, l.x1)]])
@@ -127,15 +127,15 @@ function drawLighthouse(fx: Field, ax: Field, g: SceneLayout): void {
   cutOut(fx, () => { fx.globalAlpha = 0.5; for (const k of [0.2, 0.6]) fx.fillRect(t.x - bw * 1.2, lerp(base, topY, k + 0.2), bw * 2.4, (base - topY) * 0.12) })
   // The gallery, the lamp room in the accent, and the roof.
   fx.globalAlpha = 0.95; fx.fillRect(t.x - bw * 0.95, topY - 4, bw * 1.9, 5)
-  fx.globalAlpha = 0.35; fx.fillRect(t.x - bw * 0.48, topY - 4 - bw * 1.1, bw * 0.96, bw * 1.1)
+  fx.globalAlpha = 0.6; fx.fillRect(t.x - bw * 0.48, topY - 4 - bw * 1.1, bw * 0.96, bw * 1.1)
   ax.globalAlpha = 1; ax.fillRect(t.x - bw * 0.48, topY - 4 - bw * 1.1, bw * 0.96, bw * 1.1)
   fx.globalAlpha = 0.9; poly(fx, [[t.x - bw * 0.7, topY - 4 - bw * 1.1], [t.x + bw * 0.7, topY - 4 - bw * 1.1], [t.x, topY - 4 - bw * 1.9]])
   // The rope where the night wood's long limb is, and the pole it is tied to, flying a flag away from the column.
   for (const l of t.limbs) {
     const d = Math.sign(l.x1 - l.x0)
-    fx.globalAlpha = 0.78; fx.lineWidth = Math.max(2.5, t.h * 0.007); strokeLimb(fx, l)
+    fx.globalAlpha = 0.8; fx.lineWidth = Math.max(3.5, t.h * 0.014); strokeLimb(fx, l)
     const poleTop = l.y1 - Math.max(18, t.h * 0.06)
-    fx.globalAlpha = 0.85; fx.lineWidth = Math.max(3, t.h * 0.01); strokePts(fx, [[l.x1, g.groundY], [l.x1, poleTop]])
+    fx.globalAlpha = 0.85; fx.lineWidth = Math.max(4, t.h * 0.016); strokePts(fx, [[l.x1, g.groundY], [l.x1, poleTop]])
     fx.globalAlpha = 0.5; poly(fx, [[l.x1, poleTop], [l.x1 - d * Math.max(12, t.h * 0.04), poleTop + 5], [l.x1, poleTop + 10]])
   }
 }

@@ -5,13 +5,25 @@ import type { FamilyOwl, OwlMood, ThreadOwlPose } from './owlFamily'
 
 /**
  * A place's picture for Settings → Appearance (ADR-0148), drawn by the night scene's own painter in a small room of its
- * own: the narrowest column that still leaves both margins their trees, no header and no words, Watcher's owl at home
- * and two thread owls on their spots, everything holding still. The picture is drawn once at this size and shown
- * smaller, so its glyphs are the scene's own, finer.
+ * own, about the size of a small window's margins and column, with no header and no words, Watcher's owl at home and
+ * two thread owls on their spots, everything holding still. A smaller room would thin its trees and limbs below a
+ * glyph's density; this one keeps them, and is shown smaller, so its glyphs are the scene's own, finer.
  */
-export const THUMBNAIL_ROOM: SceneMeasure = { width: 380, height: 170, header: 0, composer: { x: 160, y: 118, w: 60, h: 28 }, words: [] }
+export const THUMBNAIL_ROOM: SceneMeasure = { width: 520, height: 231, header: 0, composer: { x: 165, y: 170, w: 190, h: 36 }, words: [] }
 
-const THUMBNAIL_OWLS: readonly OwlMood[] = ['waiting', 'asleep']
+/**
+ * How much stronger the picture's glyphs are drawn than the room's: shown at about two fifths of its size, each glyph
+ * is averaged with the canvas round it and would read fainter than the scene does. The inks are still the theme's.
+ */
+export const THUMBNAIL_INK_BOOST = 1.8
+
+/** The theme's inks, each step taking a stronger one, so the shrunken picture reads as strong as the room. */
+export function thumbnailInk(ink: SceneInk): SceneInk {
+  const stronger = (steps: readonly string[]): string[] => steps.map((_, k) => steps[Math.min(steps.length - 1, Math.round(k * THUMBNAIL_INK_BOOST))]!)
+  return { ...ink, ink: stronger(ink.ink), accent: stronger(ink.accent) }
+}
+
+const THUMBNAIL_OWLS: readonly OwlMood[] = ['awake', 'asleep']
 
 /** Draws `place` on `target` in the theme's inks; false when there is no canvas to draw with. */
 export function paintSceneThumbnail(target: HTMLCanvasElement, place: WatcherScene, ink: SceneInk, fontFamily: string, dpr: number): boolean {
@@ -20,7 +32,7 @@ export function paintSceneThumbnail(target: HTMLCanvasElement, place: WatcherSce
   painter.setPlace(place)
   const layout = painter.resize(THUMBNAIL_ROOM, dpr)
   if (layout === null) return false
-  painter.setInk(ink, fontFamily)
+  painter.setInk(thumbnailInk(ink), fontFamily)
   const spots = layout.spots.filter(spot => spot.kind === 'limb' || spot.kind === 'tree')
   const owls: ThreadOwlPose[] = THUMBNAIL_OWLS.flatMap((mood, order) => {
     const spot = spots[order]

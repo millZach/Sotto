@@ -1,16 +1,24 @@
 /* Settings → Appearance → Watcher scene (ADR-0148). Each place is a card (ADR-0110), as the creatures are: filled, no
    outline, the chosen one wearing the accent edge and wash, its picture on the room's own canvas colour so it shows
-   as Watcher's room does. Two cards to a row, one where the section is narrow. Every colour is a theme role; the
+   as Watcher's room does. One card to a row with its picture beside its words, or two to a row with the picture on
+   top where the section is wide enough for the picture to keep its glyphs readable. Every colour is a theme role; the
    pictures take theirs from the probe below. */
 .watcher-scene-choice { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--tt-hairline); container-type: inline-size; }
 .watcher-scene-choice .theme-settings__subheading { margin: 0 0 10px; }
 .watcher-scene-choice .theme-settings__assignment-hint { margin-bottom: 12px; }
-.watcher-scene-choice__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-@container (max-width: 380px) { .watcher-scene-choice__grid { grid-template-columns: minmax(0, 1fr); } }
-.watcher-scene-option { display: flex; flex-direction: column; align-items: stretch; gap: 2px; min-width: 0; padding: 8px 8px 10px; border: 1px solid transparent; border-radius: 12px; background: var(--tt-card); color: var(--tt-text); font: inherit; text-align: left; cursor: pointer; }
+.watcher-scene-choice__grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.watcher-scene-option { display: grid; grid-template-columns: minmax(0, 11fr) minmax(0, 9fr); grid-template-rows: auto auto; align-content: center; column-gap: 12px; row-gap: 2px; min-width: 0; padding: 8px; border: 1px solid transparent; border-radius: 12px; background: var(--tt-card); color: var(--tt-text); font: inherit; text-align: left; cursor: pointer; }
+.watcher-scene-option > .watcher-scene-option__picture { grid-row: 1 / span 2; margin: 0; }
+.watcher-scene-option__name { align-self: end; }
+.watcher-scene-option__words { align-self: start; }
+@container (min-width: 600px) {
+  .watcher-scene-choice__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .watcher-scene-option { display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 8px 8px 10px; }
+  .watcher-scene-option > .watcher-scene-option__picture { margin-bottom: 6px; }
+}
 .watcher-scene-option:hover:not([aria-checked='true']) { background: color-mix(in srgb, var(--tt-accent-surface) 30%, var(--tt-card)); }
 .watcher-scene-option[aria-checked='true'] { border-color: var(--tt-accent); background: var(--tt-card-selected); box-shadow: 0 0 0 1px var(--tt-accent); }
-.watcher-scene-option__picture { display: block; margin-bottom: 6px; overflow: hidden; border-radius: 6px; background: var(--tt-canvas); aspect-ratio: 380 / 170; }
+.watcher-scene-option__picture { display: block; margin-bottom: 6px; overflow: hidden; border-radius: 6px; background: var(--tt-canvas); aspect-ratio: 520 / 231; }
 .watcher-scene-option__picture > canvas { display: block; width: 100%; height: 100%; }
 .watcher-scene-option__name { padding: 0 2px; font-size: 14px; font-weight: 600; line-height: 20px; }
 .watcher-scene-option__now { color: var(--tt-text-muted); font-weight: 400; }

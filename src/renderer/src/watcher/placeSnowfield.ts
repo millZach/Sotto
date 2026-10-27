@@ -81,28 +81,28 @@ function drawAurora(fx: Field, ax: Field, g: SceneLayout): void {
  * lying along each, and its limbs as long boughs owls sit on. The needles are kept off every place an owl sits.
  */
 function drawPine(fx: Field, t: Tree, spread: number, clear: readonly Point[], s: number): void {
-  const top = t.y - t.h, foot = t.y - t.h * 0.28, trunk = clamp(t.h * 0.022, 3, 10)
+  const top = t.y - t.h, foot = t.y - t.h * 0.28, trunk = clamp(t.h * 0.03, 4, 14)
   fx.globalAlpha = 0.8; poly(fx, [[t.x - trunk, t.y], [t.x + trunk, t.y], [t.x + trunk * 0.3, top], [t.x - trunk * 0.3, top]])
   const tiers = 6
   for (let k = 0; k < tiers; k++) {
     const u = k / (tiers - 1), y0 = lerp(top, foot - t.h * 0.12, u), y1 = y0 + t.h * (0.12 + 0.05 * u)
     const half = t.h * lerp(0.04, spread, u)
     const tier: Array<readonly [number, number]> = [[t.x, y0], [t.x + half, y1], [t.x + half * 0.45, y1 - t.h * 0.02], [t.x, y1 + t.h * 0.01], [t.x - half * 0.45, y1 - t.h * 0.02], [t.x - half, y1]]
-    fx.globalAlpha = 0.2; poly(fx, tier)
-    fx.globalAlpha = 0.55; fx.lineWidth = 3; strokePts(fx, [[t.x - half, y1], [t.x, y0], [t.x + half, y1]])
+    fx.globalAlpha = 0.4; poly(fx, tier)
+    fx.globalAlpha = 0.7; fx.lineWidth = 4; strokePts(fx, [[t.x - half, y1], [t.x, y0], [t.x + half, y1]])
     // Snow along the tier's lower edge.
     cutOut(fx, () => { fx.globalAlpha = 0.45; fx.lineWidth = 2.5; strokePts(fx, [[t.x - half * 0.9, y1 - 4], [t.x - half * 0.4, y1 - t.h * 0.02 - 4], [t.x, y1 + t.h * 0.01 - 4], [t.x + half * 0.4, y1 - t.h * 0.02 - 4], [t.x + half * 0.9, y1 - 4]]) })
   }
   // Room round every owl, so each reads against the dark between the needles.
   cutOut(fx, () => { fx.globalAlpha = 1; for (const spot of clear) ellipse(fx, spot.x, spot.y - 18 * s, 24 * s + 6, 26 * s + 8) })
-  for (const l of t.limbs) bough(fx, l, Math.max(3, t.h * 0.011), s)
+  for (const l of t.limbs) bough(fx, l, Math.max(4, t.h * 0.02), s)
 }
 
 /** A bough an owl sits on: the branch, snow lying along its top, and needles hanging under it. */
 function bough(fx: Field, l: Limb, w: number, s: number): void {
   const d = Math.sign(l.x1 - l.x0)
   fx.globalAlpha = 0.78; fx.lineCap = 'round'; fx.lineWidth = w; strokeLimb(fx, l); fx.lineCap = 'butt'
-  fx.globalAlpha = 0.3; fx.lineWidth = 2.5; strokeLimb(fx, { ...l, y0: l.y0 - w * 0.6 - 1, y1: l.y1 - w * 0.6 - 1 })
+  fx.globalAlpha = 0.35; fx.lineWidth = 3; strokeLimb(fx, { ...l, y0: l.y0 - w * 0.6 - 1, y1: l.y1 - w * 0.6 - 1 })
   fx.globalAlpha = 0.42; fx.lineWidth = 2
   const len = Math.abs(l.x1 - l.x0)
   for (let k = 10; k < len - 4; k += 9) {
@@ -113,7 +113,7 @@ function bough(fx: Field, l: Limb, w: number, s: number): void {
 }
 
 /** How many flakes fall at once: a fixed number, whatever the room's size, history or threads. */
-const FLAKES = 56
+const FLAKES = 90
 
 function snowAmbience(g: SceneLayout): Ambience {
   const R = seeded(31), span = Math.max(1, g.height - g.header)
@@ -124,7 +124,7 @@ function snowAmbience(g: SceneLayout): Ambience {
     cells(t, emit) {
       for (const f of flakes) {
         const y = g.header + wrap(f.y0 + f.v * t, span), x = wrap(f.x0 + Math.sin(t * 0.7 + f.ph) * f.amp + 6 * t, g.width)
-        emit(x, y, f.size > 0.78 ? '*' : f.size > 0.4 ? '·' : '.', false, 0.32 + 0.45 * f.size, false)
+        emit(x, y, f.size > 0.78 ? '*' : f.size > 0.4 ? '·' : '.', false, 0.4 + 0.45 * f.size, false)
       }
     },
   }
