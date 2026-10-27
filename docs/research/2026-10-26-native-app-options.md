@@ -7,7 +7,7 @@ Researched October 26, 2026. Two read-only passes did the outside and inside wor
 **Stay on Electron. Fix three measured problems first.** None of the three depends on the framework.
 
 1. **The shell's own memory.** On the owner's live instance the main process alone holds 1.3 GB of private memory. A clean profile's whole shell holds 298 MB. Most of the difference sits in the main process, and what fills it is not known yet. Tracked in #1618.
-2. **Idle CPU.** A clean launch with no threads used 30% to 68% of one core across two 20-second samples. That was one run, so it is a lead, not a result. Tracked in #1619.
+2. **Clean-launch CPU.** A clean launch used 30% to 68% of one core across two 20-second samples. That was one run, and most of it was the first-run usage-history import, not idle work. With an empty home folder, main's timers were under 0.2% of a core. Tracked in #1619, where #1623 cut the import's cost.
 3. **Unused Chromium locales.** 46 MB of the 55 locale packs in the installed app are never used. electron-builder's `electronLanguages` option can drop them. Checked against electron-builder 26.15.3's source. Tracked in #1620.
 
 **Tauri 2 is the only candidate worth a spike, and only as a shell.** Keep the React renderer. Move the Electron-coupled shell, about 11,000 lines, to Rust. Run the agent runtime as a Node sidecar, since the headless host already runs that code under plain Node. A native toolkit rewrite is not worth it. It would rebuild about 81,000 lines of renderer, the rich-text editor, the Canvas-drawn Watcher scene and the i18n catalogues. Most toolkits are also not ready on Linux. Swift has an official toolchain on Windows and Linux, but I found no UI toolkit for it that is ready.
@@ -18,15 +18,15 @@ Researched October 26, 2026. Two read-only passes did the outside and inside wor
 
 **Machine.** Windows 11 Home 10.0.26200, Intel Core Ultra 9 275HX with 24 logical cores, 31.4 GB RAM and 7.7 GB free at the time of measuring. Electron is 43.8.3 ([`package.json`](../../package.json)).
 
-**Method.** One packaged launch of the installed Owl 0.1.41 build (`C:\Program Files\Sotto\Sotto.exe`), with a throwaway `--user-data-dir`. A separate profile lets the launch skip Electron's single-instance lock, so it did not join the owner's running instance. I measured the first visible window, waited 60 seconds idle, took two 20-second CPU samples, then stopped the launched processes and deleted the throwaway profile. The owner's instance was not touched, and both of its checked processes were still running afterwards. The launch may have shown a tray icon and tried to register the dictation hotkey, which the running instance already held.
+**Method.** One packaged launch of the installed Owl 0.1.41 build (`C:\Program Files\Sotto\Sotto.exe`), with a throwaway `--user-data-dir`. A separate profile lets the launch skip Electron's single-instance lock, so it did not join the owner's running instance. I measured the first visible window, waited 60 seconds, took two 20-second CPU samples, then stopped the launched processes and deleted the throwaway profile. The owner's instance was not touched, and both of its checked processes were still running afterwards. The launch may have shown a tray icon and tried to register the dictation hotkey, which the running instance already held.
 
 | Measure | Result | Notes |
 | --- | --- | --- |
 | Time to first visible window, clean profile | 1,845 ms | From the `Start-Process` call. One run. |
-| Processes after 60 s idle, clean profile | 7 | 1 browser, 1 GPU, 3 utility, 2 renderer |
+| Processes after 60 s, clean profile | 7 | 1 browser, 1 GPU, 3 utility, 2 renderer |
 | Private working set, clean profile | 298 MB | Sum of private working sets, close to Task Manager's view |
 | Summed working set, clean profile | 1,067 MB | Counts shared pages in every process, so it overstates |
-| Idle CPU, clean profile | 68% of one core, then 30% | Two 20 s samples, starting about 60 s after launch. Of all 24 cores, 2.8% then 1.2% |
+| CPU, clean profile | 68% of one core, then 30% | Two 20 s samples, starting about 60 s after launch, while the first-run usage-history import was running. Of all 24 cores, 2.8% then 1.2% |
 | Installed footprint | 435 MB, 284 files | `Sotto.exe` 228.5 MB; `app.asar` 43.7 MB; `dxcompiler.dll` 24.4 MB; `LICENSES.chromium.html` 19.4 MB; sherpa `onnxruntime.dll` 17.0 MB; `icudtl.dat` 10.4 MB |
 | Locale packs in the installed app | 55 files, 46.6 MB | `en-US.pak` is 0.54 MB. The other 54 total 46.1 MB. `electronLanguages` is not set in [`electron-builder.yml`](../../electron-builder.yml). |
 | Owl installer on disk | 113.3 MB | `Sotto-Owl-Setup-0.1.41-owl.20261024.1.exe` |
@@ -34,7 +34,7 @@ Researched October 26, 2026. Two read-only passes did the outside and inside wor
 | Owner's live instance, shell | 7 processes, 1,313 MB private | Main process 1,301 MB. Started at 17:44, relaunched after an update. |
 | Owner's live instance, whole tree | 132 processes, 4,783 MB private | `claude.exe` 12 processes, 2,323 MB; `codex.exe` 6 processes, 611 MB; `opencode.exe` 188 MB; `node.exe` 10 processes, 106 MB |
 | Owner's live shell CPU, 15 s | 37% of one core | Taken while provider CLIs were active, so not idle |
-| Battery | Not measured | No power meter here. Idle CPU is the proxy, and it is the thing to fix first. |
+| Battery | Not measured | No power meter here. CPU is the proxy, and steady-state CPU is the first thing to measure (#1619). |
 
 **Reading the numbers.**
 
@@ -160,8 +160,8 @@ The requirements come from the code. The first column says what Sotto does today
 | **Memory** | Clean shell 298 MB. Owner's live shell 1.3 GB. Other processes in the owner's live tree, mostly provider CLIs, about 3.5 GB. | Tauri drops the Chromium payload: most of `Sotto.exe`, `dxcompiler.dll`, the locales, ICU and GL. A Node sidecar keeps the V8 heap, and the 1.3 GB main process is state, so a shell change does not shrink it. | Low. Estimate only. |
 | **Startup** | 1.8 s to first window on a clean profile, one run. | Not measured for any alternative. Native toolkits and Tauri usually start faster, but no build was made here. | None |
 | **Installer size** | Owl 113.3 MB. Installed 435 MB, of which at least 340 MB is Electron's own files, by the largest files listed. | A Tauri shell with a Node sidecar might install at about 150 to 200 MB: the app's 44 MB asar, ONNX Runtime at 17 MB, a Tauri binary of about 10 MB, and a Node binary of about 80 to 100 MB uncompressed. Those are my estimates from the file list, not a build. WebView2 is preinstalled on Windows 11, so it is not counted. | Low. Not built. |
-| **Idle CPU** | 30% to 68% of one core on a clean profile, one run. 37% on the live shell with providers active. | Unknown. The cause is not identified. A shell change may or may not help. | Low. Profile first. |
-| **Battery** | Not measured. | Follows idle CPU and timers. Fix idle CPU first. | None |
+| **CPU** | 30% to 68% of one core on a clean profile, one run, mostly the first-run usage import (#1623 cut its cost). 37% on the live shell with providers active. | Unknown for steady idle, which is being measured (#1619). Idle timers were small. A shell change may or may not help. | Low. Measure steady CPU first. |
+| **Battery** | Not measured. | Follows steady CPU and timers. Measure steady CPU first (#1619). | None |
 | **Native look and feel** | Custom design: a quiet single-window design with theme tokens, and an always-solid window ([ADR-0084](../adr/0084-the-window-and-its-surfaces-are-always-solid.md)). | Native toolkits add platform controls, which the design does not use. Re-skinning them costs more than the gain. Tauri keeps the same design code. | Qualitative |
 | **Accessibility** | Runs on all three OSes today, on the Chromium the app already ships. | The candidates are less proven on Linux, as the table shows. Qt is the only one documented ready on all three. | Qualitative |
 
@@ -224,7 +224,7 @@ Totals from the rows above: about 206,000 lines in the desktop layers. The shell
 **Stay on Electron. Fix three things first.** Filed as #1618, #1619 and #1620.
 
 1. **Find what fills the main process** (#1618). Take a heap snapshot, or a per-process memory breakdown, of the main process after a representative session. The aim is to tell V8 heap held in state apart from anything else. If it is state, the fix is in how history is kept, which the AGENTS.md performance rules already point toward. A framework change would not fix it.
-2. **Measure idle CPU properly** (#1619). Run five minutes idle on a clean profile and on a seeded one. Profile the main and renderer processes. Check timers and animation loops: the menu-bar owl animator (`src/main/tray/owl/animator.ts`), the widget, and the Watcher scene while idle.
+2. **Measure steady CPU** (#1619). The clean-launch CPU was mostly the first-run usage import, which #1623 cut: main's CPU since launch fell from 76.7 s to 39.9 s in one matched run per side. Measure five minutes of idle on a clean profile and on a seeded one, once the import has finished, then profile the main and renderer processes. Check the timers and animation loops that run with threads loaded: the menu-bar owl animator (`src/main/tray/owl/animator.ts`), the widget, and the Watcher scene.
 3. **Set `electronLanguages`, after deciding which locales to keep** (#1620). The option is in electron-builder 26.15.3's platform options and top-level config. It deletes non-matching Chromium `.pak` files on Windows and Linux, and `.lproj` folders on macOS, which is 46 MB installed here. The compressed installer saving is not measured. Keeping only `en-US` changes Chromium's own strings for non-English users, and Sotto's interface language reads `app.getLocale()` and `app.getPreferredSystemLanguages()` in `src/main/interfaceLanguage.ts`. Check whether removing a pak changes either result before setting it.
 
 **Revisit Tauri only after these three.** Open the Tauri spike if the clean shell is still a large cost, or if a smaller installer matters more than one engine on every OS. The spike is the next step, not the migration.
@@ -233,11 +233,11 @@ Totals from the rows above: about 206,000 lines in the desktop layers. The shell
 
 **Main risks.**
 
-- *Stay on Electron.* The Chromium payload stays at about 300 MB installed. The idle CPU may not be a bug with a clean fix. Memory grows with use until state changes.
+- *Stay on Electron.* The Chromium payload stays at about 300 MB installed. The steady CPU may not have a clean fix (#1619). Memory grows with use until state changes.
 - *Tauri.* Three engines instead of one. Design captures and e2e are rebuilt. The updater key must be guarded, because losing it blocks updates. `tauri-driver` has no macOS path. The Wayland shortcut gap is open. A Node sidecar brings a runtime back into the bundle. The in-app browser and sealed pages are unverified.
 - *Native rewrite.* A rebuild of about 200,000 lines. Linux accessibility and IME gaps in most toolkits. Loss of the one-engine design gate. TipTap, Lingui and Canvas work redone. The iOS wire, hand-mirrored today in three languages, would be mirrored in four.
 
-**What would change the pick.** A measured clean-shell memory or idle CPU that stays high after the three fixes. A measured Tauri spike that holds the hotkey, paste and tray behaviour on all three OSes. Or a decision to drop the one-engine guarantee for a smaller installer.
+**What would change the pick.** A measured clean-shell memory or steady CPU that stays high after the three fixes. A measured Tauri spike that holds the hotkey, paste and tray behaviour on all three OSes. Or a decision to drop the one-engine guarantee for a smaller installer.
 
 ## Other findings
 
