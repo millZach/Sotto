@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { APP_MAXIMIZED, APP_WINDOW_HIDDEN } from '../../../src/shared/channels'
+import { APP_MAXIMIZED, APP_WINDOW_HIDDEN, APP_WINDOW_VISIBLE } from '../../../src/shared/channels'
 import { platformProfile } from '../../../src/main/platformProfile'
 import { createDeferred, createHarness } from '../../fixtures/windowManager'
 
@@ -30,6 +30,29 @@ describe('WindowManager lifecycle', () => {
     expect(widget.webContents.send).not.toHaveBeenCalledWith(APP_WINDOW_HIDDEN, null)
     main.emit('closed')
     expect(main.removedListeners).toEqual(expect.arrayContaining(['hide', 'minimize']))
+  })
+
+  it('tells the main renderer whether its window can be seen, from its first load on', async () => {
+    const { manager, windows } = createHarness()
+    const main = (): (typeof windows)[number] => windows[0]!
+    // Made hidden and never shown, as Start minimized leaves it: the page is told so once it has loaded.
+    const created = manager.createWindows()
+    main().isVisible.mockReturnValue(false)
+    await created
+    const visibility = (): unknown[] => main().webContents.send.mock.calls.filter(([channel]) => channel === APP_WINDOW_VISIBLE).map(([, visible]) => visible)
+    expect(visibility()).toEqual([false])
+    main().isVisible.mockReturnValue(true)
+    main().emit('show')
+    main().isMinimized.mockReturnValue(true)
+    main().emit('minimize')
+    main().isMinimized.mockReturnValue(false)
+    main().emit('restore')
+    main().isVisible.mockReturnValue(false)
+    main().emit('hide')
+    expect(visibility()).toEqual([false, true, false, true, false])
+    expect(windows[1]!.webContents.send.mock.calls.some(([channel]) => channel === APP_WINDOW_VISIBLE)).toBe(false)
+    main().emit('closed')
+    expect(main().removedListeners).toEqual(expect.arrayContaining(['show', 'restore']))
   })
 
   it('toggles only the main window and publishes native maximize changes', async () => {

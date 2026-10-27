@@ -29,7 +29,12 @@ export class DeferredStoreWriter implements ThreadStoreWriter {
 
   post(write: ThreadStoreWrite, confirm?: (outcome: ThreadStoreWriteOutcome) => void): void {
     this.log.push(write)
-    if (!this.holding) { confirm?.(this.apply(write)); return }
+    if (!this.holding) {
+      // Applied before the confirmation is called, which an optional call would skip with nobody to confirm to.
+      const outcome = this.apply(write)
+      confirm?.(outcome)
+      return
+    }
     this.queue.push({ write, confirm, threads: new Set(writeThreads(write)), whole: writesWholeStore(write) })
   }
 

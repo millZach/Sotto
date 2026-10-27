@@ -492,6 +492,8 @@ export interface SottoBridge {
   getWindowMaximized(): Promise<boolean>
   onWindowMaximized(listener: (maximized: boolean) => void): () => void
   onWindowHidden(listener: () => void): () => void
+  /** Whether the main window can be seen, with the latest answer replayed to the first listener. */
+  onWindowVisible(listener: (visible: boolean) => void): () => void
   quitApp(): Promise<void>
 }
 

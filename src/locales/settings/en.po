@@ -5889,6 +5889,11 @@ msgstr "Typing speed"
 msgid "Typing speed saved."
 msgstr "Typing speed saved."
 
+#. A setting on Settings > Providers > Claude Code. Ultracode is Claude Code’s own name for its multi-agent workflow mode; keep it as it is.
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Ultracode effort"
+msgstr "Ultracode effort"
+
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Undo"
 msgstr "Undo"

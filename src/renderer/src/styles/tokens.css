@@ -361,6 +361,8 @@
   --tt-shadow-lg: 0 24px 60px rgb(0 0 0 / 55%);
   --tt-shadow-overlay: 0 24px 72px -20px rgb(0 0 0 / 90%);
   --tt-shadow-color: rgb(0 0 0 / 73%);
+  /* How strongly the effort trace's halo falls on the room (effortTrace.css); a light room takes a little more. */
+  --tt-effort-trace-halo: .55;
 
   --tt-radius-sm: 6px;
   --tt-radius-md: 10px;
@@ -432,6 +434,7 @@
   --tt-owl-night: color-mix(in oklab, var(--tt-sidebar) 90%, oklch(from var(--tt-accent) 1 c h));
   --tt-owl-room-night: color-mix(in oklab, var(--tt-canvas) 90%, oklch(from var(--tt-accent) 1 c h));
   --tt-owl-night-field: var(--tt-field);
+  --tt-effort-trace-halo: .7;
 }
 
 /* The effort colourways (ADR-0019). Ember and Theme accent come from theme roles; Cyberpunk, Rainbow, Aurora

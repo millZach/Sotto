@@ -21,6 +21,7 @@ import { useMemoryEnabled } from '../state/memoryFeature'
 import type { UpdateControlProps } from '../features/updates/UpdateControl'
 import { updateAction, updateIconState, updateTooltip } from '../features/updates/updateControlLogic'
 import { EffortPicker } from '../agents/EffortPicker'
+import { EffortTrace } from '../agents/EffortTrace'
 import { ModelPicker } from '../agents/ModelPicker'
 import { OwlRoomSky } from '../agents/OwlSky'
 import { useClock } from '../agents/paneGrid'
@@ -255,6 +256,7 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
     {model !== undefined ? <div className="thread-workspace__compose">
       {error ? <p className="agent-error watcher-first__error tt-paragraph" role="alert">{error}</p> : null}
       <form className="thread-prompt" onSubmit={event => { event.preventDefault(); void start() }}>
+        <EffortTrace />
         <PromptEditor fieldRef={field} id={WATCHER_PROMPT_ID} text={text} skills={[]} sigils={[]} label={t`Watcher message`} editable={!starting}
           placeholder={t`Say what to start or check. Sending starts Watcher.`}
           onChange={next => firstMessage.update({ text: next })}

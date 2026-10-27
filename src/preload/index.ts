@@ -69,6 +69,7 @@ import {
   APP_TOGGLE_MAXIMIZE,
   APP_MAXIMIZED,
   APP_WINDOW_HIDDEN,
+  APP_WINDOW_VISIBLE,
   APP_QUIT,
   APP_SHOW,
   EXTERNAL_LINK_OPEN,
@@ -413,6 +414,13 @@ export function createSottoBridge(
     updateStatusSchema,
     1,
   )
+  // Main says so once the page has loaded, before the renderer may be listening, so the last answer is kept for it.
+  const onWindowVisible = createBufferedSubscription(
+    renderer,
+    APP_WINDOW_VISIBLE,
+    z.boolean(),
+    1,
+  )
   const bridge: SottoBridge = {
     ...(usageEnabled ? { usage: Object.freeze<UsageBridge>({
       read: query => invokeParsed(renderer, USAGE_READ, usageDashboardReadSchema, usageQuerySchema.parse(query)),
@@ -641,6 +649,7 @@ export function createSottoBridge(
     getWindowMaximized: () => invokeParsed(renderer, APP_MAXIMIZED, z.boolean()),
     onWindowMaximized: listener => subscribe(renderer, APP_MAXIMIZED, z.boolean(), listener),
     onWindowHidden: listener => subscribe(renderer, APP_WINDOW_HIDDEN, z.null(), () => listener()),
+    onWindowVisible,
     quitApp: () => invokeParsed(renderer, APP_QUIT, voidSchema),
   }
   return hostClientBridge(bridge)

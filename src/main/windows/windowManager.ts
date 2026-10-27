@@ -1,4 +1,4 @@
-import { APP_MAXIMIZED, APP_WINDOW_HIDDEN, WIDGET_VISIBILITY } from '../../shared/channels'
+import { APP_MAXIMIZED, APP_WINDOW_HIDDEN, APP_WINDOW_VISIBLE, WIDGET_VISIBILITY } from '../../shared/channels'
 import { APP_NAME } from '../../shared/constants'
 import type {
   WidgetDragPayload,
@@ -181,7 +181,7 @@ export interface WebContentsLike {
 }
 
 /** The window events Sotto listens for; `close` and `page-title-updated` can be prevented. */
-export type WindowEventName = 'close' | 'closed' | 'moved' | 'maximize' | 'unmaximize' | 'hide' | 'minimize' | 'page-title-updated'
+export type WindowEventName = 'close' | 'closed' | 'moved' | 'maximize' | 'unmaximize' | 'show' | 'restore' | 'hide' | 'minimize' | 'page-title-updated'
 
 export interface BrowserWindowLike {
   readonly webContents: WebContentsLike
@@ -537,6 +537,8 @@ export class WindowManager {
       () => {
         this.assertLoadedWindow(window, 'main')
         this.loadedRendererUrls.set(window, window.webContents.getURL())
+        // A window made hidden reports its page visible until it is first shown, and Start minimized may never show it.
+        this.sendMainVisibility(window)
         return window
       },
       (error: unknown) => {
@@ -1097,10 +1099,14 @@ export class WindowManager {
     const onUnmaximized = (): void => onMaximized()
     window.on('unmaximize', onUnmaximized)
     // Capture can keep Chromium's page visible after the native window hides.
-    const onHidden = (): void => window.webContents.send(APP_WINDOW_HIDDEN, null)
+    const onHidden = (): void => { window.webContents.send(APP_WINDOW_HIDDEN, null); this.sendMainVisibility(window) }
     const onMinimized = (): void => onHidden()
+    const onShown = (): void => this.sendMainVisibility(window)
+    const onRestored = (): void => onShown()
     window.on('hide', onHidden)
     window.on('minimize', onMinimized)
+    window.on('show', onShown)
+    window.on('restore', onRestored)
     window.on('close', onClose)
     window.on('closed', onClosed)
     this.addCleanup(window, () => {
@@ -1108,6 +1114,8 @@ export class WindowManager {
       window.removeListener('unmaximize', onUnmaximized)
       window.removeListener('hide', onHidden)
       window.removeListener('minimize', onMinimized)
+      window.removeListener('show', onShown)
+      window.removeListener('restore', onRestored)
       window.removeListener('close', onClose)
       window.removeListener('closed', onClosed)
       window.removeListener('page-title-updated', onPageTitle)
@@ -1502,6 +1510,12 @@ export class WindowManager {
       this.disposeWindow(window)
       throw new RendererProcessGoneError(kind)
     }
+  }
+
+  /** Tells the main window's page whether anyone can see the window, so motion that only it draws can stop. */
+  private sendMainVisibility(window: BrowserWindowLike): void {
+    if (window.isDestroyed() || window.webContents.isDestroyed()) return
+    window.webContents.send(APP_WINDOW_VISIBLE, window.isVisible?.() !== false && !window.isMinimized())
   }
 
   private isRendererGone(window: BrowserWindowLike, kind: WindowKind): boolean {

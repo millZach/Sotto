@@ -151,9 +151,14 @@ async function complete(action) {
 // The settings this process runs: what it was launched with, then whatever a settings request changed. Written to
 // settings-<session>.json on every change so a test reads what the running CLI would use for its next turn.
 const bypassAllowed = args.includes('--allow-dangerously-skip-permissions')
-// Fast mode arrives as a flag layer on every launch, `--settings '{"fastMode":true|false}'`, and on only for a model whose catalog entry offers it.
+// Fast mode and Ultracode arrive as a flag layer on every launch, `--settings '{"fastMode":…,"ultracode":…}'`, fast mode on
+// only for a model whose catalog entry offers it.
 const launchFlags = args.includes('--settings') ? JSON.parse(value('--settings')) : {}
-const settings = { model: value('--model'), effort: args.includes('--effort') ? value('--effort') : null, mode: value('--permission-mode'), fast: launchFlags.fastMode === true }
+const settings = { model: value('--model'), effort: args.includes('--effort') ? value('--effort') : null, mode: value('--permission-mode'), fast: launchFlags.fastMode === true,
+  ultracode: launchFlags.ultracode === true }
+// Ultracode is a session setting beside a real effort, never an effort of its own (ADR-0148).
+const checkEffort = () => { if (settings.effort === 'ultracode') violation('Ultracode was sent as an effort level') }
+checkEffort()
 const fastOffered = model => models.some(entry => (entry.value === model || entry.value === String(model).replace(/\[\d+[km]\]$/iu, '')) && entry.supportsFastMode === true)
 const checkFast = () => { if (settings.fast && !fastOffered(settings.model)) violation('Fast mode was on for a model without it') }
 checkFast()
@@ -285,12 +290,20 @@ lines.on('line', async line => {
         if (listed === null || !models.some(model => model.value === request.model || model.value === listed)) { refuse('Unknown model'); return }
         settings.model = request.model
       } else if (request.subtype === 'apply_flag_settings') {
-        const keys = Object.keys(request.settings ?? {})
-        if (keys.length !== 1 || !['effortLevel', 'fastMode'].includes(keys[0])) violation('Settings requests may only carry effortLevel or fastMode')
-        if (keys[0] === 'fastMode') {
+        // Ultracode only ever travels with the effort it runs at, so the CLI never holds one without the other.
+        const keys = Object.keys(request.settings ?? {}).sort().join(',')
+        if (!['effortLevel', 'fastMode', 'effortLevel,ultracode'].includes(keys)) violation('Settings requests may only carry effortLevel, fastMode, or effortLevel with ultracode')
+        if (keys === 'fastMode') {
           if (typeof request.settings.fastMode !== 'boolean') violation('fastMode is a boolean')
           settings.fast = request.settings.fastMode === true
-        } else settings.effort = request.settings.effortLevel
+        } else {
+          settings.effort = request.settings.effortLevel
+          if ('ultracode' in request.settings) {
+            if (typeof request.settings.ultracode !== 'boolean') violation('ultracode is a boolean')
+            settings.ultracode = request.settings.ultracode === true
+          }
+          checkEffort()
+        }
       } else {
         if (!['default', 'acceptEdits', 'auto', 'bypassPermissions'].includes(request.mode)) violation('Unknown permission mode')
         // The native CLI refuses bypassPermissions unless bypassing was allowed at launch.
