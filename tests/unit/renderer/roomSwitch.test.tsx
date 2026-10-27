@@ -49,7 +49,7 @@ describe('RoomSwitch drawn iconOnly, as the sidebar foot draws it', () => {
     expect(screen.getByRole('tab', { selected: true })).toHaveAttribute('data-room', 'threads')
   })
 
-  it('keeps the lit name where it is not iconOnly, as where a switch shows its lit room's name', () => {
+  it('keeps the lit name where it is not iconOnly, as where a switch shows the name of its lit room', () => {
     const { container } = render(<RoomSwitch className="thread-nav__seg" />)
     expect(container.querySelectorAll('.room-tab__name')).toHaveLength(2)
     expect(screen.getByRole('tab', { selected: true })).not.toHaveAttribute('title')
