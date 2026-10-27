@@ -1,6 +1,6 @@
 # The iPhone leaves unsent threads off Threads
 
-October 27, 2026. ADR-0152.
+October 27, 2026. ADR-0155.
 
 What was checked:
 
