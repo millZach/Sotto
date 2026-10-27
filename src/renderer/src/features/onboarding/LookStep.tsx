@@ -36,7 +36,7 @@ function onRadioKey(event: KeyboardEvent<HTMLElement>): void {
  */
 export function LookStep({ settings, platform, onUpdateSettings, heading }: LookStepProps): ReactNode {
   useAppearancePreviewVersion()
-  // Glass is offered only where its Owl feature is on (ADR-0149).
+  // Glass is offered only where its Owl feature is on (ADR-0150).
   const glass = useOwlFeature('glass-theme')
   const systemDark = useSystemPrefersDark()
   const shown = appearancePreview.effective(settings)

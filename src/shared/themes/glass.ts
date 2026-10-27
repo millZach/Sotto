@@ -1,5 +1,5 @@
 /*
- * Glass, the see-through built-in (ADR-0149; Zach's pick on October 26, 2026, `THEMES.glass` in the
+ * Glass, the see-through built-in (ADR-0150; Zach's pick on October 26, 2026, `THEMES.glass` in the
  * `prototype/appearance-rework` tag's appearance-prototype-kit.js): the room is a tint over the desktop, blurred by
  * the operating system, with frosted panes and an azure accent.
  *

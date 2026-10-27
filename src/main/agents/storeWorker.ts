@@ -3,12 +3,12 @@ import { join } from 'node:path'
 import { MessageChannel, receiveMessageOnPort, Worker, type MessagePort } from 'node:worker_threads'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { SAVE_SYNCHRONOUS } from '../storage/sqliteDurability'
-import { isImmutableActivities, isImmutableActivity } from './activitySnapshots'
-import type { ActivityListEntry, ThreadStoreWrite, ThreadStoreWriteOutcome } from './threadStoreWriter'
-import { CONTROL, LIFE, type StoreWorkerData, type WireActivityEntry, type WireWrite, type WorkerAnswer, type WorkerRequest } from './storeWorkerProtocol'
+import { isImmutableActivities, isImmutableActivity, ownBuiltActivity } from './activitySnapshots'
+import type { ActivityListEntry, ActivityReadBack, ThreadStoreWrite, ThreadStoreWriteOutcome } from './threadStoreWriter'
+import { CONTROL, LIFE, type StoreWorkerData, type WireActivityEntry, type WireWrite, type WorkerAnswer, type WorkerMessage, type WorkerReadAnswer, type WorkerRequest } from './storeWorkerProtocol'
 
 export { CHECKPOINT, CONTROL, LIFE } from './storeWorkerProtocol'
-export type { StoreWorkerData, WireActivityEntry, WireWrite, WorkerAnswer, WorkerRequest } from './storeWorkerProtocol'
+export type { StoreWorkerData, WireActivityEntry, WireWrite, WorkerAnswer, WorkerMessage, WorkerReadAnswer, WorkerRequest } from './storeWorkerProtocol'
 
 /**
  * Main's side of the store worker (#1457, ADR-0016's October 26 amendment): the worker thread (`threadStoreWorker.ts`)
@@ -69,6 +69,9 @@ interface SentList { readonly version: number; readonly list: readonly AgentActi
 
 export class StoreWorker {
   private readonly pending = new Map<number, Pending>()
+  /** Stored threads' activity being read back, each heard once: its records, that they could not be read, or lost. */
+  private readonly reads = new Map<number, { readonly settle: (result: ActivityReadBack) => void; readonly records: AgentActivity[] }>()
+  private nextRead = 1
   private readonly sent = new Map<string, SentList>()
   private nextId = 1
   private nextVersion = 1
@@ -76,7 +79,7 @@ export class StoreWorker {
   private stopping = false
   private constructor(private readonly worker: Worker, private readonly port: MessagePort, private readonly control: Int32Array,
     private readonly lost: (unanswered: readonly UnansweredWrite[]) => void) {
-    port.on('message', (answer: WorkerAnswer) => { this.answered(answer) })
+    port.on('message', (message: WorkerMessage) => { this.heard(message) })
     port.unref()
   }
 
@@ -120,6 +123,20 @@ export class StoreWorker {
     return id
   }
 
+  /**
+   * Reads a stored thread's activity back on the worker, behind every write posted before it; `settle` hears once what
+   * came back. The list comes in pieces (`READ_PIECE_RECORDS`), each asked for from a task of its own once the one before
+   * it is in, so no one receive holds main long. The records are frozen and owned here as they arrive, so main holds them as
+   * it holds a list it read itself. A worker that goes or stops first answers it lost, and the caller reads on main.
+   */
+  read(threadId: string, settle: (result: ActivityReadBack) => void): void {
+    if (this.gone || this.stopping) { settle({ lost: true }); return }
+    const read = this.nextRead++
+    this.reads.set(read, { settle, records: [] })
+    this.port.ref()
+    this.port.postMessage({ kind: 'read-activities', read, threadId } satisfies WorkerRequest)
+  }
+
   /** Whether the worker has begun this write, so what it commits may already show to main's reads. */
   started(id: number): boolean { return Atomics.load(this.control, CONTROL.APPLYING) >= id }
 
@@ -134,7 +151,7 @@ export class StoreWorker {
     const deadline = performance.now() + limitMs
     while (this.pending.size) {
       const received = receiveMessageOnPort(this.port)
-      if (received) { this.answered(received.message as WorkerAnswer); continue }
+      if (received) { this.heard(received.message as WorkerMessage); continue }
       if (this.gone || Atomics.load(this.control, CONTROL.LIFE) === LIFE.STOPPED) { this.lose(); return true }
       if (performance.now() >= deadline) return false
       Atomics.wait(this.control, CONTROL.DONE, Atomics.load(this.control, CONTROL.DONE), 50)
@@ -167,17 +184,52 @@ export class StoreWorker {
     this.gone = true
     this.pending.clear()
     this.port.close()
+    this.readsLost()
     void this.worker.terminate().catch(() => undefined)
   }
 
   /** Lets the worker go at once, as if it had failed: what a test does to see the store finish its writes on main. */
   async terminate(): Promise<void> { await this.worker.terminate() }
 
+  private heard(message: WorkerMessage): void {
+    if ('read' in message) this.readAnswered(message)
+    else this.answered(message)
+  }
+
+  private readAnswered(answer: WorkerReadAnswer): void {
+    const read = this.reads.get(answer.read)
+    if (!read) return
+    if (answer.activities !== undefined) {
+      // Frozen where they arrived: nobody else holds these copies.
+      for (const activity of answer.activities) read.records.push(ownBuiltActivity(activity))
+      if (answer.more) {
+        // Asked for after this task, so the next piece is received in a task of its own, with the window's work between.
+        setImmediate(() => { if (this.reads.get(answer.read) === read && !this.gone && !this.stopping) this.port.postMessage({ kind: 'read-more', read: answer.read } satisfies WorkerRequest) })
+        return
+      }
+    }
+    this.reads.delete(answer.read)
+    this.unrefIfIdle()
+    read.settle(answer.activities === undefined ? { unreadable: true } : { activities: read.records })
+  }
+
+  /** Every read not yet answered is heard as lost, so its caller reads on main. */
+  private readsLost(): void {
+    const reads = [...this.reads.values()]
+    this.reads.clear()
+    for (const { settle } of reads) settle({ lost: true })
+  }
+
+  /** Lets the port go once nothing waits for an answer, so an idle worker keeps nothing alive. */
+  private unrefIfIdle(): void {
+    if (!this.pending.size && !this.reads.size && !this.gone) this.port.unref()
+  }
+
   private answered(answer: WorkerAnswer): void {
     const pending = this.pending.get(answer.id)
     if (!pending) return
     this.pending.delete(answer.id)
-    if (!this.pending.size && !this.gone) this.port.unref()
+    this.unrefIfIdle()
     const failed = new Set(answer.failed)
     // A list that did not commit is sent whole next time, so the worker never rebuilds from one it lacks.
     for (const threadId of failed) this.sent.delete(threadId)
@@ -188,15 +240,15 @@ export class StoreWorker {
 
   /** The worker went without being stopped: what it answered before going is heard, and the rest goes back in order. */
   private lose(): void {
-    if (this.stopping && this.pending.size === 0) { this.gone = true; return }
-    if (this.gone && this.pending.size === 0) return
+    if (this.stopping && this.pending.size === 0) { this.gone = true; this.readsLost(); return }
+    if (this.gone && this.pending.size === 0) { this.readsLost(); return }
     for (;;) {
       const received = this.gone ? undefined : receiveMessageOnPort(this.port)
       if (!received) break
-      this.answered(received.message as WorkerAnswer)
+      this.heard(received.message as WorkerMessage)
     }
     // An answer just heard may have stopped it, as Keep local history turning off does.
-    if (this.stopping) { this.gone = true; return }
+    if (this.stopping) { this.gone = true; this.readsLost(); return }
     const wasGone = this.gone
     this.gone = true
     const applying = Atomics.load(this.control, CONTROL.APPLYING)
@@ -209,6 +261,8 @@ export class StoreWorker {
       if (!this.stopping) console.warn('thread-store-worker-lost')
     }
     this.lost(unanswered.map(({ id, write, settle }) => ({ write, started: id <= applying, settle })))
+    // Heard once the writes are handed back; the caller waits for main to finish them, then reads behind them there.
+    this.readsLost()
   }
 
   /** The write as it crosses: activity lists as what changed since the last sent. */

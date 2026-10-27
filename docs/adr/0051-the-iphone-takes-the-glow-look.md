@@ -2,7 +2,7 @@
 
 Accepted October 4, 2026. Zach found the iPhone app's type and spacing uneven, its surfaces flat and colourless, and its movement abrupt, and asked for a redesign in Sotto's own character. From five whole-app studies (Layers, Glow, Editorial, Soft and Timeline) he chose **Glow**, asked for its Threads page to scroll as one sheet the way Soft does, and chose version B of three thread pages. He kept the question sheet and New thread as Glow drew them and approved the refined study as the app's new look. The studies are on `prototype/iphone-glow-redesign` under `docs/prototypes/iphone-redesign/`; `glow-refined.html` is the approved one.
 
-Amended October 26, 2026 by [ADR-0149](0149-glass-is-a-see-through-theme-held-in-owl.md): the desktop's seventh built-in, Glass, is see-through and held in Owl, so the iPhone does not offer it; its palettes stay generated from the six in `BUILT_IN_THEMES`.
+Amended October 26, 2026 by [ADR-0150](0150-glass-is-a-see-through-theme-held-in-owl.md): the desktop's seventh built-in, Glass, is see-through and held in Owl, so the iPhone does not offer it; its palettes stay generated from the six in `BUILT_IN_THEMES`.
 
 This amends [ADR-0039](0039-the-iphone-opens-on-focus-threads.md). Its navigation stands: Threads, Computers and Settings, questions and permissions first, Settled collapsed. What changes is how the app looks and moves, the thread page, and what Settings holds.
 

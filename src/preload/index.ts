@@ -381,7 +381,7 @@ export function createSottoBridge(
   ownServerCleanupEnabled = false,
   /** Keep main up to date (ADR-0142): only while the `keep-main-current` Owl feature is on and the local host runs. */
   mainCheckoutEnabled = false,
-  /** The see-through window as main made it (ADR-0149): only while the `glass-theme` Owl feature is on. */
+  /** The see-through window as main made it (ADR-0150): only while the `glass-theme` Owl feature is on. */
   glassWindow: GlassWindowState | null = null,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(

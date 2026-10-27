@@ -83,7 +83,7 @@ export const BUILT_IN_THEMES: readonly ThemeDefinition[] = [
 ]
 
 /**
- * Glass, the see-through theme (ADR-0149): an Owl feature, `glass-theme`. It is not in BUILT_IN_THEMES, which is what
+ * Glass, the see-through theme (ADR-0150): an Owl feature, `glass-theme`. It is not in BUILT_IN_THEMES, which is what
  * stable offers, the iPhone generates its palettes from and the design captures paint. A run that has the feature asks
  * builtInThemesFor(true), and resolution finds Glass only when the selection says the run has it.
  */
@@ -230,7 +230,7 @@ function normalizeStoredTheme(value: unknown): ThemeDefinition | null {
 }
 
 /**
- * The ids Graphite, Clay and Fern (ADR-0024) and Glass (ADR-0149) took on October 26, 2026. Until then a theme of the
+ * The ids Graphite, Clay and Fern (ADR-0024) and Glass (ADR-0150) took on October 26, 2026. Until then a theme of the
  * user's own could carry one, so a saved theme that does keeps its colours under a free id and a half that named it
  * follows it.
  */
@@ -282,7 +282,7 @@ export function getThemeModes(theme: ThemeDefinition): ThemeAppearance[] {
   return (['light', 'dark'] as const).filter(mode => getThemeColorsForMode(theme, mode) !== null)
 }
 
-/** `glass` says whether this run has the Glass theme (ADR-0149); without it, Glass is a theme that is not there. */
+/** `glass` says whether this run has the Glass theme (ADR-0150); without it, Glass is a theme that is not there. */
 export function findTheme(id: string, customThemes: readonly ThemeDefinition[], glass = false): ThemeDefinition | null {
   return builtInThemesFor(glass).find(theme => theme.id === id) ?? customThemes.find(theme => theme.id === id) ?? null
 }
@@ -299,7 +299,7 @@ export function resolveThemeHalfId(id: string, appearance: ThemeAppearance, cust
 
 /**
  * The id a saved half keeps: Glass is kept on every build, so a stable run that reads a selection an Owl install
- * saved paints Sotto and leaves the choice whole for the next Owl run (ADR-0149). Any other id is resolved.
+ * saved paints Sotto and leaves the choice whole for the next Owl run (ADR-0150). Any other id is resolved.
  */
 export function savedThemeHalfId(id: string, appearance: ThemeAppearance, customThemes: readonly ThemeDefinition[]): string {
   return id === GLASS_THEME_ID ? id : resolveThemeHalfId(id, appearance, customThemes)

@@ -1,4 +1,4 @@
-/* The see-through window (ADR-0149). appearance.ts marks the root data-glass only while the Glass theme paints:
+/* The see-through window (ADR-0150). appearance.ts marks the root data-glass only while the Glass theme paints:
    `see-through` once main draws the system's material behind the room (Acrylic on Windows 11, vibrancy on macOS),
    `in-app` until then and wherever it cannot (Linux, Windows 10, a system asking for less transparency), where the
    room sits on Glass's own backdrop instead of the desktop. Nothing here applies to any other theme.
@@ -18,7 +18,7 @@
 
 /* In-app glass: the same tint over a quiet gradient in the theme's hues, which stays where it is as the page scrolls.
    The tint is the background colour too, hidden under the opaque gradient, so the room measures the same as when the
-   desktop shows through: Watcher's night scene reads it to set its ink (WatcherNightScene.tsx, ADR-0149). */
+   desktop shows through: Watcher's night scene reads it to set its ink (WatcherNightScene.tsx, ADR-0150). */
 :root[data-glass='in-app'] body {
   background: linear-gradient(var(--tt-glass-room), var(--tt-glass-room)) fixed, var(--tt-glass-backdrop) fixed;
   background-color: var(--tt-glass-room);

@@ -35,7 +35,7 @@ function room(...backgrounds: string[]): HTMLElement {
 
 afterEach(() => { document.body.replaceChildren(); document.body.removeAttribute('style') })
 
-describe('the surface the night scene reads (ADR-0126, ADR-0149)', () => {
+describe('the surface the night scene reads (ADR-0126, ADR-0150)', () => {
   it('is the first solid background on a solid window', () => {
     expect(surfaceOf(room('rgb(20, 22, 26)', 'rgba(0, 0, 0, 0)'), pixel())).toEqual({ r: 20, g: 22, b: 26 })
   })

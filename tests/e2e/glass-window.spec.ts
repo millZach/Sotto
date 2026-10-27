@@ -8,7 +8,7 @@ import { captureSotto } from './support/sottoCapture'
 import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
 
 /**
- * The see-through window (ADR-0149) on the Windows 11 machine it runs on: Glass's Owl feature forced on, Glass chosen
+ * The see-through window (ADR-0150) on the Windows 11 machine it runs on: Glass's Owl feature forced on, Glass chosen
  * for both halves, and the window captured from the screen over a desktop of colour, then over pure black and white
  * stripes, in light and dark, in Threads and in Watcher's room. A capture shows whatever is behind the window, so it
  * runs only when asked: SOTTO_GLASS_EVIDENCE=1, with the captures in artifacts/glass-theme/.

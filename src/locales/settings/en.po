@@ -1987,6 +1987,11 @@ msgstr "Defaults, in order"
 msgid "Deletes a settled thread’s history once it has been quiet this long. Never clears one with uncommitted work or an open pull request. Checked every hour."
 msgstr "Deletes a settled thread’s history once it has been quiet this long. Never clears one with uncommitted work or an open pull request. Checked every hour."
 
+#. A place Watcher’s night scene can be set in
+#: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
+msgid "Desert"
+msgstr "Desert"
+
 #. A card on Settings > Appearance: effort color, creature, contrast and language
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 msgid "Details"
@@ -2137,6 +2142,10 @@ msgstr "Drafted pull requests use Sotto's own sections."
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Drop T3 Code or VS Code .json files"
 msgstr "Drop T3 Code or VS Code .json files"
+
+#: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
+msgid "Dunes, tall cactus and a big moon."
+msgstr "Dunes, tall cactus and a big moon."
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Duplicate {name}"
@@ -2471,6 +2480,11 @@ msgstr "Global — the one set that works outside Sotto."
 msgid "Global — the one set that works outside Sotto. Changed in Settings › Dictation."
 msgstr "Global — the one set that works outside Sotto. Changed in Settings › Dictation."
 
+#. A place Watcher’s night scene can be set in
+#: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
+msgid "Harbour"
+msgstr "Harbour"
+
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Have my agent fix this"
 msgstr "Have my agent fix this"
@@ -2500,6 +2514,10 @@ msgstr "Hide whitespace changes"
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Highlight surface"
 msgstr "Highlight surface"
+
+#: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
+msgid "Hills, a river, the moon and a broad tree."
+msgstr "Hills, a river, the moon and a broad tree."
 
 #. A group on Settings > Application: the saved transcripts of dictation.
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -2676,6 +2694,7 @@ msgstr "In the focused thread’s project, or the chooser when none is focused."
 msgid "In the thread <0>{workingThread}</0> on this computer."
 msgstr "In the thread <0>{workingThread}</0> on this computer."
 
+#: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "In use"
 msgstr "In use"
@@ -3230,6 +3249,11 @@ msgstr "Night falls look"
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Night falls speed"
 msgstr "Night falls speed"
+
+#. A place Watcher’s night scene can be set in
+#: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
+msgid "Night wood"
+msgstr "Night wood"
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "No connected provider can do this work."
@@ -4373,6 +4397,14 @@ msgstr "Sent. If you did not see it, allow Sotto in System Settings → Notifica
 msgid "Set up the keys"
 msgstr "Set up the keys"
 
+#: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
+msgid "Set Watcher’s scene in {place}"
+msgstr "Set Watcher’s scene in {place}"
+
+#: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
+msgid "Set Watcher’s scene in {place}, in use"
+msgstr "Set Watcher’s scene in {place}, in use"
+
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "Setting it up…"
@@ -4608,6 +4640,15 @@ msgstr "Signing in…"
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
 msgid "Slower to watch the sweep, faster to get there sooner. 1x takes under a second."
 msgstr "Slower to watch the sweep, faster to get there sooner. 1x takes under a second."
+
+#. A place Watcher’s night scene can be set in
+#: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
+msgid "Snowfield"
+msgstr "Snowfield"
+
+#: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
+msgid "Snowy pines and falling snow under the northern lights."
+msgstr "Snowy pines and falling snow under the northern lights."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Sort themes"
@@ -5551,6 +5592,10 @@ msgstr "The pull request checklist starts on {method}."
 msgid "The pull request checklist starts on the method you used last, or Merge the first time."
 msgstr "The pull request checklist starts on the method you used last, or Merge the first time."
 
+#: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
+msgid "The sea, a ship at the quay and a lighthouse."
+msgstr "The sea, a ship at the quay and a lighthouse."
+
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "The setup could not be stopped. Try again."
 msgstr "The setup could not be stopped. Try again."
@@ -6336,6 +6381,15 @@ msgstr "Watcher picks a machine from each one’s load and the project’s notes
 msgid "Watcher runs on {watcherProviders}. Connect one to choose its model."
 msgstr "Watcher runs on {watcherProviders}. Connect one to choose its model."
 
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
+msgid "Watcher scene"
+msgstr "Watcher scene"
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Watcher scene saved."
+msgstr "Watcher scene saved."
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Watcher settles a thread it watches once its work is done: nothing running or waiting on you, and every pull request merged or closed. Then it stops watching it."
 msgstr "Watcher settles a thread it watches once its work is done: nothing running or waiting on you, and every pull request merged or closed. Then it stops watching it."
@@ -6432,6 +6486,10 @@ msgstr "Where links in threads open. To choose for one link, right-click it or p
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "Where new workers start"
 msgstr "Where new workers start"
+
+#: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
+msgid "Where Watcher and the owls for your threads live. Its colors come from your theme."
+msgstr "Where Watcher and the owls for your threads live. Its colors come from your theme."
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "While Tools is closed, Changes opens on its own when a turn leaves 3 more changed files or 50 more changed lines."

@@ -176,7 +176,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
   const microphoneReleaseTailRef = useRef<Promise<void>>(Promise.resolve())
   const microphoneReleasesRef = useRef(new WeakMap<MicrophoneTestController, Promise<void>>())
   const systemDark = useSystemPrefersDark()
-  // Glass turns solid at once when the system asks for less transparency (ADR-0149); held, nothing listens.
+  // Glass turns solid at once when the system asks for less transparency (ADR-0150); held, nothing listens.
   const reducesTransparency = useSystemReducesTransparency(useOwlFeature('glass-theme'))
   const appearanceEdits = useAppearancePreviewVersion()
   const [settingsNotice, setSettingsNotice] = useState<string | null>(null)

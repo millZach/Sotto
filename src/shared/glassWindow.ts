@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 /**
- * The see-through window (ADR-0149): while the Glass theme paints the main window, the operating system draws a blurred
+ * The see-through window (ADR-0150): while the Glass theme paints the main window, the operating system draws a blurred
  * material behind the room, Acrylic on Windows 11 and window vibrancy on macOS, and the room's tints let it through.
  * Glass is an Owl feature (`glass-theme`): main gives the window this bridge only while the startup answers turn it on,
  * so on stable the window has no way to ask for the material and is never see-through.

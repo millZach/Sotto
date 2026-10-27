@@ -43,7 +43,7 @@ function glassRoom(mode: Mode, desk: Rgba, contrast = 100): Map<string, string> 
   return declarations
 }
 
-describe('Glass, the see-through theme (ADR-0149)', () => {
+describe('Glass, the see-through theme (ADR-0150)', () => {
   it('is an Owl feature held from stable', () => {
     expect(OWL_FEATURES.find(feature => feature.id === 'glass-theme')?.sentToStable).toBe(false)
     expect(isOwlFeatureEnabled('glass-theme', 'stable')).toBe(false)
@@ -123,7 +123,7 @@ describe('Glass, the see-through theme (ADR-0149)', () => {
   })
 })
 
-describe('the reduced-transparency listener (ADR-0149)', () => {
+describe('the reduced-transparency listener (ADR-0150)', () => {
   const original = window.matchMedia
   afterEach(() => { window.matchMedia = original })
 

@@ -1,4 +1,4 @@
-# Glass, the see-through theme (ADR-0149)
+# Glass, the see-through theme (ADR-0150)
 
 Checked October 26, 2026 on the Windows 11 development laptop (build 26200, 1920 × 1080 at 125%, Windows in dark mode, transparency effects on, energy saver off), from a build of `feat/glass-theme`. macOS and Linux were not run.
 
@@ -16,7 +16,7 @@ Checked October 26, 2026 on the Windows 11 development laptop (build 26200, 1920
 
 ## After review
 
-The review that followed added what this run showed was missing. Windows' Transparency effects switch is now read from the registry, so with it off the room keeps Glass's own backdrop; it was on here, so this laptop's flat material is still not detectable (ADR-0149, known limitation). Glass holds Contrast at 100% or above, since lower values took words under 4.5:1 over a black desktop. In-app glass keeps its tint measurable, so Watcher's night scene starts on it. These were checked by unit tests, not captured again.
+The review that followed added what this run showed was missing. Windows' Transparency effects switch is now read from the registry, so with it off the room keeps Glass's own backdrop; it was on here, so this laptop's flat material is still not detectable (ADR-0150, known limitation). Glass holds Contrast at 100% or above, since lower values took words under 4.5:1 over a black desktop. In-app glass keeps its tint measurable, so Watcher's night scene starts on it. These were checked by unit tests, not captured again.
 
 ## Not verified
 

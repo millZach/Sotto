@@ -1,5 +1,6 @@
 import { clamp, gridFor, inkAt, limbY, rampGlyph, seeded, starStrength, twinkleStep, type Grid, type OwlPose, type SceneInk, type Star } from './nightScene'
-import { context, drawMoon, drawOwl, GLYPH_PX, makeCanvas, prepare, readField, SS, strokeLimb } from './nightScenePainter'
+import { context, drawOwl, GLYPH_PX, makeCanvas, prepare, readField, SS } from './nightScenePainter'
+import { drawMoon, strokeLimb } from './sceneDraw'
 import { glowStep, owlEyes, perchedGlyphs, spriteCells, type OwlMood } from './owlFamily'
 import type { GroveLayout, GroveTree } from './pictureGrove'
 

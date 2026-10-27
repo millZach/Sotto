@@ -4,7 +4,7 @@ import { GLASS_WINDOW_SET, glassWindowRequestSchema, glassWindowResultSchema } f
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 
 /**
- * The see-through window's one handler (ADR-0149). Stable has no Glass, so nothing is registered there and no window
+ * The see-through window's one handler (ADR-0150). Stable has no Glass, so nothing is registered there and no window
  * can ask for a material. Only the main window may ask, and only for itself.
  */
 export function registerGlassWindowIpc(ipc: IpcMainAdapter, setSeeThrough: ((on: boolean) => boolean) | null,

@@ -67,7 +67,7 @@ export interface WindowConstructorOptions {
   readonly show: false
   readonly title?: string
   readonly backgroundColor?: string
-  /** Windows 11: the blurred material behind a see-through Glass window (ADR-0149). */
+  /** Windows 11: the blurred material behind a see-through Glass window (ADR-0150). */
   readonly backgroundMaterial?: 'acrylic'
   /** macOS: the same, as window vibrancy. */
   readonly vibrancy?: 'under-window'
@@ -116,7 +116,7 @@ function mainWindowChromeOptions(
 
 /** A solid main window is black behind the room, with no system material (ADR-0009, ADR-0084). */
 const SOLID_BACKGROUND = '#000000'
-/** A see-through Glass window is clear over its material, so the room's tints sit on the blurred desktop (ADR-0149). */
+/** A see-through Glass window is clear over its material, so the room's tints sit on the blurred desktop (ADR-0150). */
 const CLEAR_BACKGROUND = '#00000000'
 
 type MainWindowMaterialOptions = Pick<WindowConstructorOptions, 'backgroundColor' | 'backgroundMaterial' | 'vibrancy' | 'visualEffectState'>
@@ -272,7 +272,7 @@ export interface WindowManagerDependencies {
   /** The main window's title: the running build's name ("Sotto Owl" on that track). Defaults to Sotto. */
   readonly title?: string
   /**
-   * Present only while the Owl feature `glass-theme` is on (ADR-0149): the material this computer can draw behind the
+   * Present only while the Owl feature `glass-theme` is on (ADR-0150): the material this computer can draw behind the
    * main window (null where it has none and Glass paints its own backdrop), and whether the saved look paints Glass
    * when the window is made. Absent, the window is always solid and the renderer is told nothing of Glass.
    */
@@ -403,7 +403,7 @@ export class WindowManager {
   private mainWindow: BrowserWindowLike | null = null
   /** Whether the renderer last asked for a see-through window; a new main window is made the way it was left. */
   private seeThroughWanted: boolean | null = null
-  /** False while the system will not draw the material, as with Windows' Transparency effects off (ADR-0149). */
+  /** False while the system will not draw the material, as with Windows' Transparency effects off (ADR-0150). */
   private glassMaterialAvailable = true
   private widgetWindow: BrowserWindowLike | null = null
   private widgetFocusable: boolean | null = null
@@ -461,7 +461,7 @@ export class WindowManager {
   }
 
   /**
-   * Turns the main window's material on or off in place, with no restart and no new window (ADR-0149). The renderer
+   * Turns the main window's material on or off in place, with no restart and no new window (ADR-0150). The renderer
    * asks while it paints Glass and stops asking when it leaves it; it keeps its own backdrop under the room until this
    * says the window is see-through, so nothing flashes black or white. Returns whether it is see-through now.
    */

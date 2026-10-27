@@ -3,6 +3,7 @@ import { ArrowUp, AudioLines } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
 
 import type { Creature } from '../../../../../shared/settings'
+import type { WatcherScene } from '../../../../../shared/watcherScene'
 import { themeBrand, wearsAppIcon, widgetPaletteFor } from '../../../../../shared/themeBranding'
 import { THEME_COLOR_ROLES, resolveThemeFor, type ThemeAppearance } from '../../../../../shared/themes/library'
 import { OMARCHY_THEME_ID } from '../../../../../shared/themes/omarchy'
@@ -37,7 +38,7 @@ export type PreviewHalf = 'set' | ThemeAppearance
  * the main window is never repainted by it. The small widget beside it uses the same palette as the real widget, which
  * follows the system's mode.
  */
-export function AppearancePreview({ shown, systemDark, system, still = false, creature, showCreature, watcher }: {
+export function AppearancePreview({ shown, systemDark, system, still = false, creature, showCreature, watcher, place = 'night-wood' }: {
   readonly shown: AppearanceChoice
   readonly systemDark: boolean
   readonly system: string
@@ -47,6 +48,8 @@ export function AppearancePreview({ shown, systemDark, system, still = false, cr
   readonly showCreature: boolean
   /** Whether Watcher's room exists here (the `watcher` Owl feature), so the preview offers it. */
   readonly watcher: boolean
+  /** The place Watcher's night scene is set in (ADR-0149). */
+  readonly place?: WatcherScene | undefined
 }): ReactNode {
   const { t } = useLingui()
   const titleId = useId()
@@ -59,7 +62,7 @@ export function AppearancePreview({ shown, systemDark, system, still = false, cr
 
   const windowHalf = resolveAppearance(shown.appearance, systemDark, shown)
   const painted = half === 'set' ? windowHalf : half
-  // Glass resolves only where this run has it, as the window's own paint does (ADR-0149).
+  // Glass resolves only where this run has it, as the window's own paint does (ADR-0150).
   const { theme, colors } = resolveThemeFor({ ...shown, glass: shown.glass ?? glassThemeOffered() }, painted)
   const scope = half === 'set' ? undefined : half
   const scoped = scope === undefined ? undefined : Object.fromEntries(THEME_COLOR_ROLES.map(role => [themeColorVariable(role), colors[role]])) as CSSProperties
@@ -115,7 +118,7 @@ export function AppearancePreview({ shown, systemDark, system, still = false, cr
           </div>
           {shownRoom === 'threads'
             ? <ThreadsSample creature={creature} showCreature={showCreature} arrival={arrival} />
-            : <WatcherSample arrival={arrival} paint={`${painted}:${theme.id}:${JSON.stringify(colors.canvas)}:${shown.appearanceContrast}:${scope ?? ''}`} />}
+            : <WatcherSample arrival={arrival} place={place} paint={`${painted}:${theme.id}:${JSON.stringify(colors.canvas)}:${shown.appearanceContrast}:${scope ?? ''}`} />}
         </div>
       </div>
 
@@ -182,11 +185,11 @@ function ThreadsSample({ creature, showCreature, arrival }: { readonly creature:
   )
 }
 
-function WatcherSample({ arrival, paint }: { readonly arrival: EffortArrival; readonly paint: string }): ReactNode {
+function WatcherSample({ arrival, place, paint }: { readonly arrival: EffortArrival; readonly place: WatcherScene; readonly paint: string }): ReactNode {
   const { t } = useLingui()
   return (
     <div className="studio-watcher">
-      <PreviewNightScene paint={paint} />
+      <PreviewNightScene paint={paint} place={place} />
       <div className="studio-watcher__head">
         <b>Watcher</b>
         <span data-on="true">{t({ message: 'Conversation', comment: 'The tab that shows Watcher’s own conversation' })}</span>

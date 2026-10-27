@@ -144,7 +144,7 @@ export interface WidgetPresentationSettings extends ThemeSelection {
 
 /**
  * Every presentation field a widget snapshot carries, from settings. `glass` is the run's answer for the Glass theme's
- * Owl feature (ADR-0149): with it, a half saved on Glass dresses the widget in Glass's solid roles; without it, Sotto's.
+ * Owl feature (ADR-0150): with it, a half saved on Glass dresses the widget in Glass's solid roles; without it, Sotto's.
  */
 export function widgetPresentationFor(settings: WidgetPresentationSettings, glass: boolean): {
   readonly theme: WidgetPresentationSettings['theme']

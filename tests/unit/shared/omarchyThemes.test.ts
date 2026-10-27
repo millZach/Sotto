@@ -177,10 +177,10 @@ describe('Omarchy M3 and readability check', () => {
     // October 25 amendment), and when DeepSeek's mark got its badge colour, and when the effort trace's halo got its
     // strength for dark and light rooms (ADR-0019, October 26 amendment), and when the Appearance preview could paint a
     // half of its own (`[data-theme-scope]`), and when the Glass theme's see-through tokens and the card's
-    // solid colour arrived (ADR-0149); none of them changes a palette.
+    // solid colour arrived (ADR-0150); none of them changes a palette.
     expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('5e43d8dae0a93190f59afd80f75f3400076c21aa2cb023b1aec0f8348ca8aac1')
     const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
-    expect(createHash('sha256').update(tokenText).digest('hex')).toBe('8ab279bab978a90dddc190deac1c4a18431dd269abdd069f096f39c968eba323')
+    expect(createHash('sha256').update(tokenText).digest('hex')).toBe('048cabb692cf6265a437f7931ca7779e88cea38021037fea9cf297f50b58d0df')
     // Existing Windows and macOS imports named Omarchy remain user themes.
     expect(parseCustomThemes([{ ...parseOmarchyTheme(fixtures.themes.hackerman.rendered), id: 'omarchy' }])[0]?.id).toBe('omarchy')
   })

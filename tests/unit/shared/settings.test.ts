@@ -5,6 +5,7 @@ import { defaultHoldShortcuts, defaultHotkey } from '../../../src/shared/platfor
 import { createVividThemeColors } from '../../../src/shared/themes/engine'
 import { parseThemeFile } from '../../../src/shared/themes/library'
 import { MENU_BAR_OWL_BODIES, MENU_BAR_OWL_EYES } from '../../../src/shared/menuBarOwl'
+import { WATCHER_SCENES } from '../../../src/shared/watcherScene'
 import {
   dictationOn,
   APPEARANCES,
@@ -33,6 +34,7 @@ const customSettings = {
   effortColor: 'aurora',
   menuBarOwlBody: 'ink',
   menuBarOwlEyes: 'amber',
+  watcherScene: 'harbour',
   creature: 'claude',
   showCreature: false,
   interfaceLanguage: 'ja',
@@ -363,6 +365,15 @@ describe('settings', () => {
     expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, menuBarOwlEyes: 'pink' }).success).toBe(false)
   })
 
+  it('keeps every Watcher scene, starts in the night wood, and recovers an unknown one as the night wood', () => {
+    expect(DEFAULT_SETTINGS.watcherScene).toBe('night-wood')
+    for (const watcherScene of WATCHER_SCENES) expect(parseSettings({ watcherScene }).watcherScene).toBe(watcherScene)
+    expect(parseSettings({}).watcherScene).toBe('night-wood')
+    expect(parseSettings({ watcherScene: 'moon-base' }).watcherScene).toBe('night-wood')
+    expect(parseSettings({ watcherScene: 7 }).watcherScene).toBe('night-wood')
+    expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, watcherScene: 'moon-base' }).success).toBe(false)
+  })
+
   it('keeps either creature and recovers an unknown one as Sotto\'s own', () => {
     expect(DEFAULT_SETTINGS.creature).toBe('sotto')
     for (const creature of CREATURES) expect(parseSettings({ creature }).creature).toBe(creature)
@@ -419,6 +430,7 @@ describe('settings', () => {
       effortColor: 'ember',
       menuBarOwlBody: 'slate',
       menuBarOwlEyes: 'teal',
+      watcherScene: 'night-wood',
       creature: 'sotto',
       showCreature: true,
       interfaceLanguage: 'system',

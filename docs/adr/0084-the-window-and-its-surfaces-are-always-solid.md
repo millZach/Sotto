@@ -4,7 +4,7 @@
 
 Accepted October 14, 2026. Zach asked to remove the Glass opacity slider, the Frosted window switch and the See-through slider from Settings → Appearance, and everything behind them. This supersedes [ADR-0048](0048-the-main-window-can-let-the-desktop-through.md) and amends the Glass part of [ADR-0011](0011-main-window-themes-replace-the-accent.md). It is a removal, not an Owl feature, so it reaches stable with the next release.
 
-Amended October 26, 2026 by [ADR-0149](0149-glass-is-a-see-through-theme-held-in-owl.md): in Sotto Owl, the Glass theme makes the window see-through, and only Glass. Every other theme keeps the solid window, and menus, dialogs, fields, code and the terminal stay solid under Glass too.
+Amended October 26, 2026 by [ADR-0150](0150-glass-is-a-see-through-theme-held-in-owl.md): in Sotto Owl, the Glass theme makes the window see-through, and only Glass. Every other theme keeps the solid window, and menus, dialogs, fields, code and the terminal stay solid under Glass too.
 
 Amended October 23, 2026 by [ADR-0126](0126-watchers-conversation-runs-over-a-still-night-scene.md): Watcher's composer is frosted glass over the night scene. The window stays solid, and so does every other surface, the Threads composer included.
 

@@ -61,7 +61,7 @@ export function ThemeGallery({ shown, resolved, system, onChooseMode, onSelect, 
   const ownButton = useRef<HTMLButtonElement>(null)
   const ownListId = useId()
   const omarchy = system === 'Linux' ? shown.omarchyTheme ?? { ...T3_CODE_THEME, id: OMARCHY_THEME_ID, label: 'Omarchy' } : null
-  // Glass is offered only where its Owl feature is on (ADR-0149).
+  // Glass is offered only where its Owl feature is on (ADR-0150).
   const all = [...(omarchy ? [omarchy] : []), ...builtInThemesFor(useOwlFeature('glass-theme')), ...shown.customThemes]
   const omarchyMode = shown.omarchyTheme?.appearance
   const omarchyName = shown.omarchyTheme?.sourceName

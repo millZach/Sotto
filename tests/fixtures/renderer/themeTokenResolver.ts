@@ -23,7 +23,7 @@ export interface Rgba {
 
 export const TOKENS_PATH = join(process.cwd(), 'src/renderer/src/styles/tokens.css')
 export const MODES: readonly Mode[] = ['dark', 'light']
-/** Every built-in, Glass included: its roles are solid, so it is held to every check the others are (ADR-0149). */
+/** Every built-in, Glass included: its roles are solid, so it is held to every check the others are (ADR-0150). */
 export const THEME_IDS: readonly string[] = EVERY_BUILT_IN_THEME.map(theme => theme.id)
 
 interface Block {

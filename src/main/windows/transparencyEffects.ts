@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 
 /**
- * Windows' "Transparency effects" switch (Settings → Personalization → Colors), which Glass honours (ADR-0149): with it
+ * Windows' "Transparency effects" switch (Settings → Personalization → Colors), which Glass honours (ADR-0150): with it
  * off, Windows draws Acrylic as a flat colour, so the room keeps Glass's own backdrop instead. Electron does not expose
  * the switch, so it is read from the registry with Windows' own `reg.exe`, once at start and again when the system's
  * colours change. Anything unreadable counts as on, as a fresh Windows install has it.

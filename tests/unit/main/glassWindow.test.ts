@@ -19,7 +19,7 @@ function glassHarness(seeThroughAtStart: boolean) {
   return { ...harness, calls, onSeeThroughChanged }
 }
 
-describe('the see-through window (ADR-0149)', () => {
+describe('the see-through window (ADR-0150)', () => {
   it('draws Acrylic from Windows 11 22H2, vibrancy on every Mac, and nothing on Linux or Windows 10', () => {
     expect(glassMaterialFor('win32', '10.0.26200')).toBe('acrylic')
     expect(glassMaterialFor('win32', '10.0.22621')).toBe('acrylic')

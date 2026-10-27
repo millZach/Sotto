@@ -14,7 +14,7 @@ export type ApplicationMenuTemplate = 'none' | 'macos'
 export type WidgetAlwaysOnTopLevel = 'normal' | 'floating' | 'screen-saver'
 
 /**
- * The material Glass draws behind a see-through main window (ADR-0149). Windows draws Acrylic from Windows 11 22H2
+ * The material Glass draws behind a see-through main window (ADR-0150). Windows draws Acrylic from Windows 11 22H2
  * (build 22621); earlier builds have none, and Glass paints its own backdrop there. Every macOS Sotto runs on has
  * window vibrancy. Linux has no blur behind a window Sotto can rely on.
  */

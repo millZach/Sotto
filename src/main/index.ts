@@ -734,7 +734,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     overrides: process.env.SOTTO_OWL_FEATURES, watcherOverride: process.env.SOTTO_WATCHER_ENABLED })
   // Existing Watcher options wrap the Owl feature list for branches in flight.
   const watcherEnabled = owlFeatures.watcher
-  // Glass (ADR-0149) is an Owl feature: read once here, it decides whether the window may be see-through, whether the
+  // Glass (ADR-0150) is an Owl feature: read once here, it decides whether the window may be see-through, whether the
   // window is told of Glass at all, and whether a half saved on Glass dresses the Dock and the widget in Glass or Sotto.
   const glassThemeEnabled = owlFeatures['glass-theme']
   // The providers an Owl feature holds off this run (ADR-0072): every boundary asks this set, not a provider's own answer.
@@ -877,7 +877,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   const terminalFocus = new WeakSet<Electron.WebContents>()
   const glassMaterial = glassMaterialFor(profile.platform, osRelease())
   // Windows' Transparency effects switch, which Electron does not expose: read before the window is made, so a window
-  // made while it is off starts solid with Glass's own backdrop (ADR-0149).
+  // made while it is off starts solid with Glass's own backdrop (ADR-0150).
   const readWindowsTransparency = glassThemeEnabled && glassMaterial === 'acrylic' ? readTransparencyEffects : null
   const transparencyAtStart = readWindowsTransparency === null ? true : await readWindowsTransparency()
   const windows = new WindowManager({
@@ -2044,7 +2044,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       // A recording profiles the main window that asked, through its own debugger (ADR-0098).
       const cleanupMainActivity = registerMainActivityIpc(ipcMain, mainActivity, () => windows.getTrustedRenderers(),
         event => { const sender = BrowserWindow.getAllWindows().find(window => window.webContents === event.sender)?.webContents; return sender ? windowProfiler(sender.debugger) : null })
-      // The see-through window (ADR-0149): only while Glass's Owl feature is on, so stable registers nothing.
+      // The see-through window (ADR-0150): only while Glass's Owl feature is on, so stable registers nothing.
       const cleanupGlassWindow = registerGlassWindowIpc(ipcMain, glassThemeEnabled ? on => windows.setMainWindowSeeThrough(on) : null, () => windows.getTrustedRenderers())
       // Keep main up to date (ADR-0142): only while its Owl feature is on, so stable registers nothing.
       const cleanupMainCheckout = registerMainCheckoutIpc(ipcMain, localRuntime.mainCheckout, () => windows.getTrustedRenderers(),

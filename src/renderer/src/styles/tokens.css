@@ -512,7 +512,7 @@
   --tt-effort-text-image: linear-gradient(90deg, oklch(0.55 0.22 20), oklch(0.6 0.16 70), oklch(0.58 0.18 140), oklch(0.55 0.13 210), oklch(0.5 0.22 280), oklch(0.55 0.25 340));
 }
 
-/* Glass, the see-through theme (ADR-0149). appearance.ts marks the root data-glass only while Glass paints and writes
+/* Glass, the see-through theme (ADR-0150). appearance.ts marks the root data-glass only while Glass paints and writes
    its tints as --theme-glass-*: the room once over whatever is behind the window, and the sidebar, its rows, the cards
    and the user's messages translucent over the room. Menus, dialogs, fields, code and the terminal keep their solid
    roles. Where nothing is drawn behind the window the room sits on the backdrop, a quiet gradient in the theme's own

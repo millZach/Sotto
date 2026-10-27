@@ -1,5 +1,6 @@
 import React, { useLayoutEffect, useRef, type ReactNode } from 'react'
 
+import type { WatcherScene } from '../../../../../shared/watcherScene'
 import { clamp, owlAt, sceneInk, TREES_MIN_MARGIN, type Box, type SceneLayout, type SceneMeasure, type WatcherOwlState, type Word } from '../../../watcher/nightScene'
 import { NightScenePainter } from '../../../watcher/nightScenePainter'
 import { OwlFamily, type WatchedOwl } from '../../../watcher/owlFamily'
@@ -30,11 +31,17 @@ const T = 0
  * The parent is the room: it holds `.studio-watcher__head` and `.studio-watcher__composer`, which set the header band
  * and the column as Watcher's own header and composer do. `paint` changes whenever the colours the room is shown in do.
  */
-export function PreviewNightScene({ paint }: { readonly paint: string }): ReactNode {
+export function PreviewNightScene({ paint, place = 'night-wood' }: {
+  readonly paint: string
+  /** The place the scene is set in (ADR-0149): a new one is drawn in the same task, so it never shows blank. */
+  readonly place?: WatcherScene | undefined
+}): ReactNode {
   const back = useRef<HTMLCanvasElement>(null)
   const front = useRef<HTMLCanvasElement>(null)
   const probe = useRef<HTMLElement>(null)
   const repaint = useRef<() => void>(() => undefined)
+  const placeRef = useRef(place)
+  const movePlace = useRef<() => void>(() => undefined)
 
   useLayoutEffect(() => {
     const land = back.current, owl = front.current, ink = probe.current
@@ -46,6 +53,7 @@ export function PreviewNightScene({ paint }: { readonly paint: string }): ReactN
     const pixel = pixelCanvas.getContext('2d', { willReadFrequently: true })
     if (pixel === null) return
     const painter = new NightScenePainter(land, owl)
+    painter.setPlace(placeRef.current)
     let disposed = false
     let measured = ''
     let inked = ''
@@ -99,6 +107,7 @@ export function PreviewNightScene({ paint }: { readonly paint: string }): ReactN
       readInk(true)
     }
     repaint.current = () => readInk()
+    movePlace.current = () => { if (painter.setPlace(placeRef.current)) draw() }
 
     const sizes = new ResizeObserver(relayout)
     sizes.observe(room)
@@ -112,6 +121,7 @@ export function PreviewNightScene({ paint }: { readonly paint: string }): ReactN
     return () => {
       disposed = true
       repaint.current = () => undefined
+      movePlace.current = () => undefined
       sizes.disconnect()
       theme.disconnect()
     }
@@ -119,6 +129,8 @@ export function PreviewNightScene({ paint }: { readonly paint: string }): ReactN
 
   // The preview's colours changed (a theme chosen, or the other half shown): new inks, drawn before the frame is shown.
   useLayoutEffect(() => { repaint.current() }, [paint])
+  // Another place chosen: its landscape is drawn now, before the frame is shown.
+  useLayoutEffect(() => { placeRef.current = place; movePlace.current() }, [place])
 
   return <>
     <canvas ref={back} className="studio-scene studio-scene--land" aria-hidden="true" />

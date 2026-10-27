@@ -25,7 +25,7 @@ export type ResolvedAppearance = ThemeAppearance
 export type AppearanceChoice = Pick<AppSettings, 'appearance' | 'lightTheme' | 'darkTheme' | 'appearanceContrast' | 'effortColor'> & {
   readonly customThemes: readonly ThemeDefinition[]
   readonly omarchyTheme?: OmarchyTheme | null | undefined
-  /** Whether this run has the Glass theme (ADR-0149); filled in from the window's bridge when unsaid. */
+  /** Whether this run has the Glass theme (ADR-0150); filled in from the window's bridge when unsaid. */
   readonly glass?: boolean | undefined
 }
 
@@ -74,7 +74,7 @@ type GlassTarget = (Pick<Window, 'matchMedia'> & { readonly sotto?: Pick<NonNull
 const currentWindow = (): GlassTarget => (typeof window === 'undefined' ? undefined : window)
 
 /**
- * Whether this run has the Glass theme (ADR-0149). Main gives the window its Glass bridge only while the Owl feature
+ * Whether this run has the Glass theme (ADR-0150). Main gives the window its Glass bridge only while the Owl feature
  * `glass-theme` is on, and the bridge is there before the first frame, so a saved Glass never paints Sotto first.
  * What the window offers asks useOwlFeature('glass-theme'), the same startup answer.
  */
@@ -92,7 +92,7 @@ const glassWindowSync: { confirmed: boolean; requested: boolean | null } = (() =
 })()
 
 // When the system takes the material away (Windows' Transparency effects turned off) or gives it back, main says so,
-// and the room follows: its own backdrop first, the desktop again only once the material is back (ADR-0149).
+// and the room follows: its own backdrop first, the desktop again only once the material is back (ADR-0150).
 currentWindow()?.sotto?.glassWindow?.onChanged(seeThrough => {
   glassWindowSync.confirmed = seeThrough && glassWindowSync.requested === true
   const root = typeof document === 'undefined' ? null : document.documentElement
@@ -218,7 +218,7 @@ export function applyAppearance(
   // An editor draft is a palette of solid roles, so the window is solid while one paints.
   const glassPaints = draft === null && theme.id === GLASS_THEME_ID
   applyGlass(root, glassPaints ? resolved : null, target)
-  // Glass never softens its words below full strength: they must read over whatever desktop is behind (ADR-0149).
+  // Glass never softens its words below full strength: they must read over whatever desktop is behind (ADR-0150).
   const chosenContrast = clampStep(choice.appearanceContrast, APPEARANCE_CONTRAST)
   const contrast = glassPaints ? Math.max(chosenContrast, GLASS_CONTRAST_FLOOR) : chosenContrast
   root.style.setProperty('--theme-contrast-base', `${Math.min(contrast, 100)}%`)

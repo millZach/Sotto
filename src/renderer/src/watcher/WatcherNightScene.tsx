@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, type CSSProperties, type ReactNode 
 import { i18n } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
+import type { WatcherScene } from '../../../shared/watcherScene'
 import { slimMoving } from '../agents/slimComposer'
 import { useReducedMotion } from '../state/reducedMotion'
 import {
@@ -17,6 +18,8 @@ import './nightScene.css'
 
 /** How long the scene takes to fade when it steps away, as for Visualize (nightScene.css). */
 export const SCENE_FADE_MS = 700
+/** How long the last place's landscape takes to fade over the new one's when the place changes (nightScene.css). */
+export const PLACE_FADE_MS = 600
 
 /** Where a press is a control's, or the composer's or the header's, and sends out no ripple. */
 const NOT_BACKGROUND = [
@@ -76,7 +79,7 @@ export function toWord(value: string, pixel: CanvasRenderingContext2D): Word | n
   return a >= 1 ? rgb : { ...rgb, a }
 }
 
-/** Pure white and pure black: the two ends any desktop can show behind a see-through window (ADR-0149). */
+/** Pure white and pure black: the two ends any desktop can show behind a see-through window (ADR-0150). */
 const DESKS: readonly Rgb[] = [{ r: 255, g: 255, b: 255 }, { r: 0, g: 0, b: 0 }]
 
 /**
@@ -147,12 +150,18 @@ interface Target {
  * about 30 frames a second while something flies or fades, checks 8 times a second while it only blinks and twinkles and
  * paints only when that changed the picture, and draws nothing when nothing moves, the window is hidden or the scene
  * has gone. With motion reduced, or `held` for a capture, nothing flies: owls appear and fade, and the scene holds still.
+ *
+ * The scene is set in the place the user picked in Settings → Appearance (ADR-0149). A new place is drawn whole in the
+ * frame it is picked, under a copy of the last place's landscape that fades away over it, so the scene never shows a
+ * blank frame; with motion reduced the new place simply replaces the last in that one frame.
  */
-export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: {
+export function WatcherNightScene({ shown, held, place = 'night-wood', owls, onOpen, onShowWatched }: {
   /** Whether the scene shows: the room is open on Conversation or Watched. When it turns false the scene fades and stops. */
   readonly shown: boolean
   /** A capture's fixed clock: the scene draws its settled picture and holds it. */
   readonly held: boolean
+  /** The place the scene is set in. */
+  readonly place?: WatcherScene | undefined
   /** The threads Watcher watches, one owl each. */
   readonly owls: readonly WatchedOwl[]
   readonly onOpen: OpenThread
@@ -172,6 +181,8 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
   const kept = useRef<{ family: OwlFamily | null; watcher: WatcherOwlState }>({ family: null, watcher: { at: 'home', side: 'left', flight: null, next: 0 } })
   const stillRef = useRef(still)
   const owlsRef = useRef(owls)
+  const placeRef = useRef(place)
+  const movePlaceRef = useRef<() => void>(() => undefined)
   const leaving = useRef(phase === 'leaving')
   const wakeRef = useRef<() => void>(() => undefined)
   const takeOwlsRef = useRef<() => void>(() => undefined)
@@ -189,6 +200,7 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
   useEffect(() => { leaving.current = phase === 'leaving' }, [phase])
   useEffect(() => { stillRef.current = still; settleRef.current(); wakeRef.current() }, [still])
   useEffect(() => { owlsRef.current = owls; takeOwlsRef.current() }, [owls])
+  useEffect(() => { placeRef.current = place; movePlaceRef.current() }, [place])
   // A tip goes with its owl when the owl leaves, and takes the owl's new words and place while it stays.
   useEffect(() => { setTip(current => current === null ? null : targets.find(target => target.key === current.key) ?? null) }, [targets])
   // A tip that is showing answers Escape, as everything that opens does.
@@ -210,6 +222,14 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
     const pixel = pixelCanvas.getContext('2d', { willReadFrequently: true })
     if (pixel === null) return
     const painter = new NightScenePainter(land, owl)
+    painter.setPlace(placeRef.current)
+    /** A copy of the last place's landscape, fading out over the new one as it fades in. */
+    let outgoing: { readonly canvas: HTMLCanvasElement; readonly timer: number } | null = null
+    const endFade = (): void => {
+      if (outgoing === null) return
+      window.clearTimeout(outgoing.timer); outgoing.canvas.remove(); outgoing = null
+      delete land.dataset.arriving
+    }
     let disposed = false
     let timer: number | null = null
     let request: number | null = null
@@ -334,6 +354,39 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
     }
     settleRef.current = settle
 
+    /**
+     * The place changed: the new landscape is drawn in this same frame, and unless the scene holds still, a copy of the
+     * last one lies over it. The copy fades out as the new one fades in, in step and linearly, so their opacities always
+     * add to one: the scene never shows a blank frame, and where the two overlap their ink stays under the column's
+     * ceiling (a and 1 - a of an ink c lay down c - a(1 - a)c², never more than c). A change during a fade starts it
+     * again from the scene as it stands.
+     */
+    const movePlace = (): void => {
+      if (disposed || placeRef.current === painter.place) return
+      const drawn = painter.ready && layout !== null
+      endFade()
+      if (drawn && !stillRef.current && land.width > 0 && land.height > 0) {
+        const copy = document.createElement('canvas')
+        copy.width = land.width; copy.height = land.height
+        copy.className = 'watcher-scene watcher-scene--land watcher-scene--outgoing'
+        copy.setAttribute('aria-hidden', 'true')
+        copy.getContext('2d')?.drawImage(land, 0, 0)
+        land.after(copy)
+        // Both fades start in the same style pass, so they stay in step.
+        void land.offsetWidth
+        land.dataset.arriving = ''
+        outgoing = { canvas: copy, timer: window.setTimeout(endFade, PLACE_FADE_MS + 80) }
+      }
+      painter.setPlace(placeRef.current)
+      if (counted) pane.dataset.nightScenePlace = painter.place
+      if (!drawn) return
+      halt()
+      delay = 0
+      last = Number.NEGATIVE_INFINITY
+      frame(performance.now())
+    }
+    movePlaceRef.current = movePlace
+
     const readInk = (): void => {
       const style = getComputedStyle(ink)
       // Every colour the conversation's words can take, each with its opacity: the text, its secondary tier (the names and
@@ -388,7 +441,7 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
       }
       const t = clock()
       layout = next
-      if (counted) pane.dataset.nightSceneLayouts = String(++layouts)
+      if (counted) { pane.dataset.nightSceneLayouts = String(++layouts); pane.dataset.nightScenePlace = painter.place }
       // A new layout ends every flight where it was going.
       if (watcher.flight !== null) watcher = { at: watcher.flight.to, side: watcher.flight.side, flight: null, next: watcher.next }
       if (next.mode !== 'trees') watcher = { at: 'home', side: 'left', flight: null, next: watcher.next }
@@ -461,6 +514,8 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
       wakeRef.current = () => undefined
       takeOwlsRef.current = () => undefined
       settleRef.current = () => undefined
+      movePlaceRef.current = () => undefined
+      endFade()
       halt()
       if (layoutRequest !== null) cancelAnimationFrame(layoutRequest)
       unwatchResolution()
