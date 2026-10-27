@@ -4824,9 +4824,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       try {
         const worktree = this.thread(id).worktree
         const branch = (worktree?.mode === 'independent' ? worktree.sentBranch ?? worktree.branch : worktree?.sentBranch) ?? null
-        // The branch's tip as it stands, or null when the branch is gone; a branch with no repository to read it in refuses.
-        const tip = branch === null ? null : worktree?.repositoryRoot
-          ? await runWorktreeGit(worktree.repositoryRoot, ['rev-parse', '--verify', '--end-of-options', `refs/heads/${branch}^{commit}`]).then(value => value.trim(), () => null) : undefined
+        // The branch's tip as it stands, or null when it is gone from a repository Git can read; a branch with no
+        // repository to read it in, or one Git cannot read, refuses.
+        const root = worktree?.repositoryRoot
+        const tip = branch === null ? null : root
+          ? await runWorktreeGit(root, ['rev-parse', '--verify', '--end-of-options', `refs/heads/${branch}^{commit}`]).then(value => value.trim(),
+            () => runWorktreeGit(root, ['rev-parse', '--git-dir']).then(() => null, () => undefined)) : undefined
         if (branch !== options.expectedMergedBranch || tip !== options.expectedMergedTip) {
           throw new Error('This branch changed after its merged pull request was checked. Its thread stays unsettled.')
         }

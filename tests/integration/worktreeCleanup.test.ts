@@ -263,6 +263,7 @@ describe('auto-settle merged threads', () => {
   /** Like `trunkGit`, but every branch under `gone/` was deleted after its pull request merged. */
   const goneGit = vi.fn(async (cwd: string, args: string[]) => {
     if (args[0] === 'rev-parse' && args.at(-1)?.startsWith('refs/heads/gone/')) throw new Error('unknown revision')
+    if (args[0] === 'rev-parse' && args[1] === '--git-dir') return '.git\n'
     return trunkGit(cwd, args)
   })
   it('settles a thread whose branch was deleted after its pull request merged, or that never recorded one, from its own links', async () => {
@@ -313,6 +314,25 @@ describe('auto-settle merged threads', () => {
     expect(host.settled).toEqual([])
     // A branch that is there is current work: its links do not stand in for its tip.
     expect(pullRequestState).not.toHaveBeenCalled()
+  })
+  it('settles from links only when Git can read the repository and no pull request was linked meanwhile, asking once for a shared one', async () => {
+    const unreadableGit = vi.fn(async (_cwd: string, args: string[]) => { if (args[0] === 'symbolic-ref') return 'origin/trunk\n'; if (args.at(-1) === 'refs/heads/trunk') return 'abc\n'; throw new Error('not a git repository') })
+    const unreadable = settlingHost([thread('unreadable', own('feature/unreadable'), { pullRequests: [link(1)] })])
+    const merged = vi.fn(async (): Promise<PullRequestState> => ({ state: 'merged', headRefName: 'feature/unreadable', headRefOid: 'a' }))
+    await new WorktreeCleanup({ host: unreadable, git: unreadableGit, rules: () => DEFAULT_WORKTREE_CLEANUP, autoSettleMerged: () => true, pullRequestMerged: async () => true, pullRequestState: merged }).sweep()
+    // A folder Git cannot read is not a deleted branch: nothing is asked or settled.
+    expect(unreadable.settled).toEqual([])
+    expect(merged).not.toHaveBeenCalled()
+    const threads = [thread('late', own('gone/late'), { pullRequests: [link(1)] }), thread('shared-a', own('gone/a'), { pullRequests: [link(2)] }), thread('shared-b', own('gone/b'), { pullRequests: [link(2)] })]
+    const host = settlingHost(threads)
+    const pullRequestState = vi.fn(async (url: string): Promise<PullRequestState> => {
+      // A new pull request is linked to the thread while GitHub answers about its old one.
+      if (url === link(1).url) threads[0]!.pullRequests = [link(1), link(8)]
+      return url === link(1).url ? { state: 'merged', headRefName: 'gone/late', headRefOid: 'a' } : { state: 'open', headRefName: 'gone/a', headRefOid: 'b' }
+    })
+    await new WorktreeCleanup({ host, git: goneGit, rules: () => DEFAULT_WORKTREE_CLEANUP, autoSettleMerged: () => true, pullRequestMerged: async () => true, pullRequestState }).sweep()
+    expect(host.settled).toEqual([])
+    expect(pullRequestState.mock.calls.map(call => call[0])).toEqual([link(1).url, link(2).url])
   })
   it('leaves a thread whose branch is gone while GitHub is limiting the sign-in', async () => {
     const host = settlingHost([thread('gone', own('gone/limited'), { pullRequests: [link(1)] })])

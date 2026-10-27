@@ -112,6 +112,8 @@ export class WorktreeCleanup {
   private readonly mergedPullRequests = new Map<string, string>()
   /** Each skip reason is logged once a sweep, so a thread left alone every hour does not fill the log. */
   private logged = new Set<WorktreeCleanupEvent>()
+  /** Pull requests asked about in this sweep, by key, so threads that share one ask once. */
+  private linkAnswers = new Map<string, Promise<PullRequestState>>()
   private defaults = new Map<string, string | null>()
   private disposed = false
   /** The rules and Auto-settle merged threads as the last sweep request saw them. */
@@ -191,38 +193,51 @@ export class WorktreeCleanup {
     }
     return await answer && await this.tipOf(repositoryRoot, branch) === tip ? tip : null
   }
+  /** Whether the branch is gone from a repository Git can still read; a folder Git cannot read says nothing about it. */
+  private async branchGone(repositoryRoot: string, branch: string): Promise<boolean> {
+    return !await this.tipOf(repositoryRoot, branch) && await this.git(repositoryRoot, ['rev-parse', '--git-dir']).then(() => true, () => false)
+  }
   private skipped(event: WorktreeCleanupEvent): void {
     if (!this.logged.has(event)) this.dependencies.log?.(event)
     this.logged.add(event)
   }
-  /**
-   * Whether the thread's own pull request links say its work merged, for a thread whose branch is gone or was never
-   * recorded: GitHub reports none of them open, and one merged from `branch` (any, when there is no branch). Each answer
-   * also brings the thread's link up to date, so a merged one stops reading open even when the thread is not settled.
-   */
-  private async linksMerged(thread: AgentThread, branch: string | null): Promise<boolean> {
-    const ask = this.dependencies.pullRequestState
-    if (!ask) return false
+  /** The thread's links not known closed, by key: its branch's own pull request and the ones it links. */
+  private openLinks(thread: AgentThread | undefined): Map<string, string> {
     const links = new Map<string, string>()
-    for (const link of [thread.worktree?.git?.pullRequest, ...thread.pullRequests ?? []]) {
+    for (const link of [thread?.worktree?.git?.pullRequest, ...thread?.pullRequests ?? []]) {
       const key = link && link.state !== 'closed' ? pullRequestKey(link.url) : null
       if (key && !links.has(key)) links.set(key, link!.url)
     }
-    let mergedFromBranch = false
+    return links
+  }
+  /**
+   * The links asked about when the thread's own pull request links say its work merged, for a thread whose branch is
+   * gone or was never recorded: GitHub reports none of them open, and one merged from `branch` (any, when there is no
+   * branch); else null. Each answer also brings the thread's link up to date, so a merged one stops reading open even
+   * when the thread is not settled.
+   */
+  private async linksMerged(thread: AgentThread, branch: string | null): Promise<ReadonlySet<string> | null> {
+    const ask = this.dependencies.pullRequestState
+    if (!ask) return null
+    const links = this.openLinks(thread)
+    let mergedFromBranch = false, mergedElsewhere = false
     for (const [key, url] of links) {
       let head = this.mergedPullRequests.get(key)
       if (head === undefined) {
-        const read = await ask(url)
+        let answer = this.linkAnswers.get(key)
+        if (!answer) { answer = ask(url); this.linkAnswers.set(key, answer) }
+        const read = await answer
         this.dependencies.host.notePullRequestState?.({ url, head: read.headRefOid, state: read.state, availability: 'available', observedAt: new Date(this.now()).toISOString() })
-        if (read.state === 'open') { this.skipped('thread-auto-settle-pull-request-open'); return false }
+        if (read.state === 'open') { this.skipped('thread-auto-settle-pull-request-open'); return null }
         if (read.state !== 'merged') continue
         head = read.headRefName
         this.mergedPullRequests.set(key, head)
       }
       if (branch === null || head === branch) mergedFromBranch = true
+      else mergedElsewhere = true
     }
-    if (links.size && !mergedFromBranch) this.skipped('thread-auto-settle-branch-differs')
-    return mergedFromBranch
+    if (!mergedFromBranch && mergedElsewhere) this.skipped('thread-auto-settle-branch-differs')
+    return mergedFromBranch ? new Set(links.keys()) : null
   }
   /**
    * Auto-settle merged threads: a thread at rest whose branch's pull request GitHub reports merged is settled,
@@ -244,9 +259,10 @@ export class WorktreeCleanup {
       if (this.autoSettled.has(key)) continue
       try {
         let expected: MergedSettleExpectation
+        let asked: ReadonlySet<string> | null = null
         if (branch === null) {
           // No branch to ask about, as in a folder that is not a repository or a checkout that was never on one.
-          if (!await this.linksMerged(thread, null)) continue
+          if (!(asked = await this.linksMerged(thread, null))) continue
           expected = { expectedMergedBranch: null, expectedMergedTip: null }
         } else {
           if (!worktree?.repositoryRoot || branch === await this.defaultBranchOf(worktree.repositoryRoot)) continue
@@ -256,13 +272,16 @@ export class WorktreeCleanup {
             expected = { expectedMergedBranch: branch, expectedMergedTip: tip }
           } else {
             // The branch was deleted, as it is once its pull request merges: gone, it holds no current work.
+            if (!await this.branchGone(worktree.repositoryRoot, branch)) continue
             this.skipped('thread-auto-settle-branch-gone')
-            if (!await this.linksMerged(thread, branch)) continue
+            if (!(asked = await this.linksMerged(thread, branch))) continue
             expected = { expectedMergedBranch: branch, expectedMergedTip: null }
           }
         }
-        // Asked again as it now stands: work may have started while Git and GitHub were asked.
-        if (atWork(this.dependencies.host.workspaceSnapshot().threads, thread.id, true)) continue
+        // Asked again as it now stands: work may have started, or a pull request been linked, while Git and GitHub were asked.
+        const now = this.dependencies.host.workspaceSnapshot().threads
+        if (atWork(now, thread.id, true)) continue
+        if (asked && [...this.openLinks(now.find(item => item.id === thread.id)).keys()].some(key => !asked.has(key))) continue
         await this.dependencies.host.setWorkspaceSettled!('thread', thread.id, true, expected)
         this.autoSettled.add(key)
         this.dependencies.log?.('thread-auto-settled')
@@ -313,6 +332,7 @@ export class WorktreeCleanup {
     this.mergedAnswers = new Map()
     this.defaults = new Map()
     this.logged = new Set()
+    this.linkAnswers = new Map()
     if (settle) await this.settleMerged()
     if (!rulesOn(rules) || this.disposed) return
     const snapshot = this.dependencies.host.workspaceSnapshot()
