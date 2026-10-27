@@ -436,6 +436,29 @@ describe('browser actions that the page cannot finish', () => {
     expect(await service.action({ ...request, action: { type: 'scroll', x: 300, y: 300, deltaX: 0, deltaY: 400 } })).toMatchObject({ ok: true })
   })
 
+  it('keeps the agent\'s viewport through the fresh attachment a deadline leaves behind', async () => {
+    const { service, request, view } = await sharedTask()
+    unwrap(await service.action({ ...request, action: { type: 'viewport', width: 820, height: 560 } }))
+    const original = vi.mocked(view.webContents.debugger.sendCommand).getMockImplementation()!
+    const dispatched = deferred<void>()
+    let hung = false
+    vi.mocked(view.webContents.debugger.sendCommand).mockImplementation(async (...args) => {
+      if (args[0] === 'Input.dispatchMouseEvent' && args[1]?.type === 'mouseWheel' && !hung) { hung = true; dispatched.resolve(); return new Promise(() => undefined) }
+      return original(...args)
+    })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const scrolled = service.action({ ...request, action: { type: 'scroll', x: 300, y: 300, deltaX: 0, deltaY: 400 } })
+    await dispatched.promise
+    await vi.advanceTimersByTimeAsync(BROWSER_COMMAND_DEADLINE_MS)
+    expect(await scrolled).toMatchObject({ ok: false })
+    vi.useRealTimers()
+    // Detaching drops Chromium's emulation; the next attachment puts the page back at the size Sotto reports.
+    vi.mocked(view.webContents.debugger.sendCommand).mockClear()
+    unwrap(await service.action({ ...request, action: { type: 'inspect' } }))
+    expect(view.webContents.debugger.sendCommand).toHaveBeenCalledWith('Emulation.setDeviceMetricsOverride', { width: 820, height: 560, deviceScaleFactor: 1, mobile: false })
+    expect(unwrap(await service.list({ threadId: request.threadId })).pages[0]?.viewport).toEqual({ width: 820, height: 560 })
+  })
+
   it('tries the debugger setup again after it failed once', async () => {
     const { service, target, view } = await browserFixture()
     const original = vi.mocked(view.webContents.debugger.sendCommand).getMockImplementation()!

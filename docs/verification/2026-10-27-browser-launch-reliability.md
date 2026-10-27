@@ -19,5 +19,6 @@ Each was run with its fix undone and failed, and passes with it (`tests/unit/mai
 - a screenshot of a page that has not drawn yet says so;
 - a screenshot that gave up after 10 seconds ends its debugger attachment at once, so its abandoned commands cannot detach the debugger under the next action when their own deadline passes (found by the Sol review);
 - when a swipe's move or typing's check runs out of time, the cleanup command that follows (lifting the finger, releasing the focused element) cannot replace the deadline's words with the generic error (found by the Sol review).
+- a viewport the agent set survives the fresh debugger attachment a deadline leaves behind, since detaching drops Chromium's emulation (found by Bug Bot).
 
 Not checked here: macOS and Linux. The capture host they share was already used for screenshots there; input on a hidden page was not tried on either.

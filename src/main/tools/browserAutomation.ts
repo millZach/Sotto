@@ -23,6 +23,8 @@ export class BrowserAutomation {
   private enabled: Promise<void> | null = null
   /** Which debugger attachment is current. A command left from an earlier one cannot reset this one. */
   private session = 0
+  /** The viewport the agent set, if any. Chromium drops it with the attachment, so a fresh one sets it again. */
+  private viewport: { width: number; height: number } | null = null
   private readonly errors: { kind: string; message: string }[] = []
   /**
    * `touch` is the test iPhone's (ADR-0045): while attached, the page sees a touch screen and the mouse taps it.
@@ -70,6 +72,7 @@ export class BrowserAutomation {
         this.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }),
         this.send('Emulation.setEmitTouchEventsForMouse', { enabled: true, configuration: 'mobile' }),
       )
+      if (this.viewport) commands.push(this.send('Emulation.setDeviceMetricsOverride', { ...this.viewport, deviceScaleFactor: 1, mobile: false }))
       const enabling = Promise.all(commands).then(() => undefined)
       // A setup that failed is not kept: the next action tries it again rather than failing on the old answer.
       enabling.catch(() => { if (this.enabled === enabling) this.enabled = null })
@@ -234,11 +237,15 @@ export class BrowserAutomation {
       await this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: Math.round(action.x), y: Math.round(action.y), button: 'left', clickCount: 1 })
     } else if (action.type === 'type') await this.send('Input.insertText', { text: action.text })
     else if (action.type === 'scroll') await this.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: action.x, y: action.y, deltaX: action.deltaX, deltaY: action.deltaY })
-    else await this.send('Emulation.setDeviceMetricsOverride', { width: action.width, height: action.height, deviceScaleFactor: 1, mobile: false })
+    else {
+      await this.send('Emulation.setDeviceMetricsOverride', { width: action.width, height: action.height, deviceScaleFactor: 1, mobile: false })
+      this.viewport = { width: action.width, height: action.height }
+    }
   }
   async resetViewport(): Promise<void> {
     await this.ready()
     await this.send('Emulation.clearDeviceMetricsOverride')
+    this.viewport = null
   }
   clear(): void { this.errors.length = 0 }
   dispose(): void {
