@@ -16,6 +16,7 @@ import type { PlacementAsk, WorkerPlacement } from './workerPlacement'
 import type { DesktopBranchMoves } from './branchMoves'
 import { branchStartWords, systemClockTime, type BranchStartReceipt } from '../../shared/branchMoves'
 import { CHECK_HOLDS_THROUGH_BACKGROUND, checkWaitingWords, type CheckQueue } from './checkQueue'
+import { checkInstallFailedWords, checkInstallWords } from './checkWorktree'
 import { WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
 import { cancelDelegationInputSchema, delegatedThreadsBelow, delegateInputSchema, delegationRefusalCodeSchema, delegationWorkSchema, readDelegationInputSchema,
   DELEGATION_BRIEF_MAX, DELEGATION_LEVELS_MAX, DELEGATION_PROMPTS_PER_THREAD, DELEGATION_VIEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES, RECORDED_REFUSALS,
@@ -296,6 +297,8 @@ interface DelegatedStart {
   readonly startFromMove?: string
   /** A new worktree starts from the delegating thread's branch, so its commits can be brought back to it (#1030). */
   readonly baseBranch?: string
+  /** A check this machine's queue runs (#1312): a new worktree it gets is the machine's check worktree for the repository. */
+  readonly check?: true
 }
 /** The branch the delegating thread works on, as its folder was last read; none for a detached HEAD or a folder that is no repository. */
 function callerBranch(caller: AgentThread): string | undefined {
@@ -567,7 +570,8 @@ export class DelegationService {
     const record = admitted.record
     // A call that raced the first one with the same retry key copied a branch of its own, which no thread will use.
     if (admitted.retry) { await this.letGo(branch); return this.result(record) }
-    const start = admitted.start && branch ? { ...admitted.start, workingCopy: 'independent' as const, startFromMove: branch.moveId } : admitted.start
+    const fromBranch = admitted.start && branch ? { ...admitted.start, workingCopy: 'independent' as const, startFromMove: branch.moveId } : admitted.start
+    const start = fromBranch && ticket !== undefined ? { ...fromBranch, check: true as const } : fromBranch
     // A check waits for this machine's check ahead of it, in the order asked, before its thread is made (#1312). One
     // stopped while it was admitted holds no place, brief or snapshot: it goes on as any stopped start, which makes nothing.
     const live = this.record(record.id)?.deliveryState === 'queued'
@@ -1187,6 +1191,7 @@ export class DelegationService {
           title: start.title, titleSource: start.titleSource, modelId: start.modelId, workingCopy: start.workingCopy,
           // A start from the delegating thread's branch cuts its worktree from the moved branch; any other new worktree from that branch (#1030).
           ...start.startFromMove ? { startFromMove: start.startFromMove } : start.baseBranch ? { baseBranch: start.baseBranch } : {},
+          ...start.check ? { check: true as const } : {},
           ...(start.reasoningEffort ? { reasoningEffort: start.reasoningEffort } : {}),
           ...(start.runtimeMode ? { runtimeMode: start.runtimeMode } : {}), ...(start.providerMode ? { providerMode: start.providerMode } : {}) },
         () => { this.guardLive(record.id); this.guardCeiling(record, start) })
@@ -1279,7 +1284,10 @@ export class DelegationService {
   }
   /** Whether a delegated thread can take a brief now: idle, connected, asking nothing and holding nothing of the user's. */
   private free(thread: AgentThread, snapshot: AgentHostSnapshot): boolean {
+    // A check's thread takes its brief once its working copy is ready, packages installed first included (#1312), so the
+    // call that started it does not wait for the install.
     return !isThreadTurnRunning(thread) && !thread.requests.length && !this.sending.has(thread.id) && thread.clientConnected !== false
+      && !(thread.worktree?.check !== undefined && thread.worktree.status === 'pending')
       && isThreadProviderConnected(snapshot, thread) && !this.options.control.hasPendingThreadWork(thread.id)
   }
   /**
@@ -1640,6 +1648,12 @@ export class DelegationService {
     const ticket = this.waitingChecks.has(record.id) ? this.checkTickets.get(record.id) : undefined
     const ahead = ticket !== undefined ? this.options.checks?.ahead(ticket) : undefined
     if (ahead !== undefined) read.check = { ahead, note: checkWaitingWords(this.options.checks!.machine, ahead) }
+    else if (this.checkTickets.has(record.id) && this.options.checks) {
+      // A check whose turn came installs packages first when package-lock.json changed, and its brief waits for that.
+      const install = thread?.worktree?.check?.install
+      if (install === 'running') read.check = { ahead: 0, note: checkInstallWords(this.options.checks.machine) }
+      else if (install === 'failed') read.check = { ahead: 0, note: checkInstallFailedWords(this.options.checks.machine) }
+    }
     if (outcome === 'answered' && record.replyMessageId) {
       const reply = this.replyOf(record, thread)
       if (reply.replyUnavailable) read.replyUnavailable = reply.replyUnavailable

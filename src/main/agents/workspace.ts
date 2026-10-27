@@ -46,6 +46,7 @@ import { resolveModel } from '../../shared/modelCatalog'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
 import { isThreadArchived, isThreadSettled, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { delegatedThreadsBelow } from '../../shared/delegation'
+import { npmCi, preparePackages, type PackageInstaller } from './checkWorktree'
 import { checkoutIdentity, existingWorkingDirectory, movedBranchRef, runWorktreeGit, ThreadWorktrees } from './threadWorktrees'
 import { claudeSkillFolder, claudeSkillPath } from './claudeSkills'
 import { providerTakesNoSkills } from './providerSwitch'
@@ -994,6 +995,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * thread's folder, so a send never waits for one (issue #766). Closing waits for them as it waits for the lanes.
    */
   private readonly remoteStatusReads = new Set<Promise<void>>()
+  /** Aborts when closing begins: a remote half still running is stopped and no longer waited for (#1664). */
+  private readonly remoteStatusStop = new AbortController()
   /** Threads whose send has queued Git's inspection of the folder in the thread's lane, not yet begun. */
   private readonly inspectionsQueued = new Set<string>()
   /** Threads whose folder an inspection after a send or a turn could not confirm: their next send asks Git before the prompt. */
@@ -1421,6 +1424,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private bringBackAllowed = false
   allowBringBack(): void { this.bringBackAllowed = true }
   /**
+   * How a check installs packages first, present only while Work across machines is on (#1312, ADR-0072): main turns it on
+   * once, at start. Absent, a check's new worktree is made as any new worktree is.
+   */
+  private checkInstaller: PackageInstaller | undefined
+  /** Stops every check's install, with its whole process tree, when Sotto closes. */
+  private readonly checkInstallsStop = new AbortController()
+  allowCheckWorktrees(install: PackageInstaller = npmCi): void { this.checkInstaller = install }
+  /**
    * The merge-commit question each thread holds, by the press that asked it and the two tips it named. A question about a
    * child on another machine is held by the thread the commits go to, under that child's name too. Never saved.
    */
@@ -1828,7 +1839,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
           await this.onLane(threadId, () => this.readGitStatus(threadId, false))
           const folder = this.statusFolder(threadId)
           if (folder === undefined || this.stopping) return
-          if (await source.readRemote(folder, options)) break
+          const remote = await this.unlessClosing(source.readRemote(folder, options))
+          if (remote === undefined || this.stopping) return
+          if (remote) break
         }
       }
       await this.onLane(threadId, () => this.readGitStatus(threadId, true))
@@ -1836,6 +1849,16 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.remoteStatusReads.add(read)
     void read.finally(() => this.remoteStatusReads.delete(read))
     return read
+  }
+  /** `work`'s answer, or undefined as soon as closing begins: closing never waits for a fetch or a GitHub lookup (#1664). */
+  private unlessClosing<Result>(work: Promise<Result>): Promise<Result | undefined> {
+    const stop = this.remoteStatusStop.signal
+    if (stop.aborted) return Promise.resolve(undefined)
+    return new Promise<Result | undefined>((resolve, reject) => {
+      const closing = (): void => resolve(undefined)
+      stop.addEventListener('abort', closing, { once: true })
+      work.then(resolve, reject).finally(() => stop.removeEventListener('abort', closing))
+    })
   }
   /**
    * Reads the thread's folder, locally, and publishes only a status that changed. Callers hold the thread's lane, so
@@ -2124,18 +2147,69 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (!project) throw new Error('Choose an available project.')
     return this.worktrees.options(project.path)
   }
-  private async selectedWorkingCopy(projectId: string, selection: AgentWorkingCopySelection & { readonly startFromMove?: string | undefined; readonly madeFrom?: WorktreeMadeFrom | undefined }): Promise<AgentWorktree> {
+  private async selectedWorkingCopy(projectId: string, selection: AgentWorkingCopySelection & { readonly startFromMove?: string | undefined; readonly madeFrom?: WorktreeMadeFrom | undefined; readonly check?: true | undefined }): Promise<AgentWorktree> {
     const project = this.state.snapshot.projects.find(item => item.id === projectId)
     if (!project) throw new Error('Choose an available project.')
+    // A check's new worktree is the machine's check worktree, moved to its commit as setup begins (#1312), while Work
+    // across machines is on; a check that would work in the project folder or an existing worktree stays there.
+    const check = selection.check && this.checkInstaller ? { check: {} } : {}
     if (selection.startFromMove) {
-      return { mode: 'independent', status: 'pending', incomingRef: await movedBranchRef(project.path, selection.startFromMove), ...selection.madeFrom ? { madeFrom: selection.madeFrom } : {} }
+      return { mode: 'independent', status: 'pending', incomingRef: await movedBranchRef(project.path, selection.startFromMove), ...selection.madeFrom ? { madeFrom: selection.madeFrom } : {}, ...check }
     }
     if (selection.workingCopy === 'shared') return this.worktrees.inspect(await this.worktrees.allocate(project.path, 'shared'))
     // A draft pointed at a worktree that exists carries that worktree's branch, so the toolbar can name it.
     const existing = selection.existingWorktreePath
     const known = existing ? (await this.worktrees.options(project.path).catch(() => null))?.worktrees.find(item => sameFolder(item.path, existing)) : undefined
     return { mode: 'independent', status: 'pending', baseBranch: selection.baseBranch,
-      startFromOrigin: selection.startFromOrigin, existingWorktreePath: existing, ...(known?.branch ? { branch: known.branch } : {}) }
+      startFromOrigin: selection.startFromOrigin, existingWorktreePath: existing, ...(known?.branch ? { branch: known.branch } : {}), ...existing ? {} : check }
+  }
+  /**
+   * A check's working copy (#1312): the repository's check worktree on this machine, moved to the check's commit, with the
+   * folder's checkout reservation, held from before it is read until the caller lets it go once the check's packages are
+   * ready, so no send or Git action starts there meanwhile. Undefined when the check worktree is not taken, and the check
+   * gets a worktree of its own as before (CHECK_WORKTREE_PREVIOUS_THREAD).
+   */
+  private async takeCheckWorktree(threadId: string, metadata: AgentWorktree): Promise<{ readonly worktree: AgentWorktree; readonly release: () => void } | undefined> {
+    if (!this.checkInstaller || !metadata.check || metadata.reused || metadata.status !== 'pending') return undefined
+    try {
+      const taken = await this.worktrees.takeCheckWorktree(metadata, path => this.reserveCheckWorktree(threadId, path))
+      if (!taken) console.info('check-worktree-held')
+      return taken
+    } catch { console.warn('check-worktree-not-taken'); return undefined }
+  }
+  /**
+   * A check's packages, in whichever worktree it got (#1312), the check worktree or one of its own: `npm ci` first when
+   * its `package-lock.json` differs from the one `node_modules` there was installed from. The thread reads as installing
+   * meanwhile, and its first message waits, as it waits for any setup.
+   */
+  private async checkPackages(threadId: string, metadata: AgentWorktree, folder: string): Promise<AgentWorktree> {
+    const install = this.checkInstaller
+    if (!install || !metadata.check) return metadata
+    const outcome = await preparePackages(folder, install, this.checkInstallsStop.signal, () => {
+      const running = this.threadById(threadId)
+      if (running) { this.touched(running).worktree = { ...metadata, status: 'pending', check: { install: 'running' } }; this.publish() }
+    }).catch(() => 'failed' as const)
+    return outcome === 'none' ? metadata : { ...metadata, check: outcome === 'installed' ? {} : { install: 'failed' } }
+  }
+  /**
+   * The check worktree's checkout reservation (ADR-0027's checkout guard), taken as a Git action takes it: the mutation
+   * reservation first, so no send or Git action starts there from now on, then every other thread whose checkout it is
+   * must hold no work, active or pending. Undefined, holding nothing, when one does.
+   */
+  private async reserveCheckWorktree(threadId: string, path: string): Promise<(() => void) | undefined> {
+    let key: string
+    try { key = await checkoutIdentity(path) } catch { return undefined }
+    let release: () => void
+    try { release = this.checkoutMutations.acquireIdentity(key, 'mutation', this.checkoutThreadHolder(threadId, 'preparation')) } catch { return undefined }
+    try {
+      for (const thread of this.state.snapshot.threads) {
+        if (thread.id === threadId || !this.checkoutWorkHolder(thread) && thread.gitAction?.status !== 'running') continue
+        let identity: string
+        try { identity = await checkoutIdentity(this.threadCheckoutFolder(thread.id)) } catch { continue }
+        if (identity === key) { release(); return undefined }
+      }
+      return release
+    } catch (error) { release(); throw error }
   }
   /** Keep a destination checkout present from its first inspection through publication of the new reference. */
   private async reserveWorkingCopySelection(projectId: string, selection: AgentWorkingCopySelection, holder: CheckoutHolder): Promise<(() => void) | undefined> {
@@ -3773,11 +3847,18 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Finish command lanes before detaching provider delivery and closing SQLite. */
   async close(): Promise<void> {
     this.stopping = true
+    // A check's install stops with its whole process tree (#1312), and every working copy's setup, a check's included, ends
+    // before the last save below, so nothing of either is still writing once the store closes.
+    this.checkInstallsStop.abort()
+    // A fetch or GitHub lookup for a folder's status is stopped, and not waited for: what it would bring is never shown
+    // now, and on a slow network or a remote that hangs it held closing for the full minute below (#1664).
+    this.remoteStatusStop.abort()
+    const gitStopped = this.gitStatus?.stop?.()
     // Closing waits a minute at most, whatever holds it: a store worker that stops answering costs that, and what it did
     // not answer is reported as not saved (ADR-0016, October 26 amendment).
     const deadline = Date.now() + CLOSE_LIMIT_MS
     // A stored thread's records still on their way carry what its provider published meanwhile, which the last save keeps.
-    let inTime = await this.beforeDeadline(Promise.allSettled([...this.branchWrites, ...this.lanes.values(), ...this.interruptLanes.values(), ...this.remoteStatusReads,
+    let inTime = await this.beforeDeadline(Promise.allSettled([...gitStopped ? [gitStopped] : [], ...this.branchWrites, ...this.lanes.values(), ...this.interruptLanes.values(), ...this.preparations.values(), ...this.remoteStatusReads,
       ...[...this.activityReads.values()].map(read => read.done)]), deadline)
     this.stopDelivery()
     // Quitting loses no commit: what was posted is confirmed before the store closes.
@@ -3805,6 +3886,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Closes the history store. Called when the app quits, after the last flush. */
   dispose(): void {
     this.stopDelivery()
+    this.checkInstallsStop.abort()
     clearTimeout(this.publishTimer); clearTimeout(this.writeTimer); clearTimeout(this.historyRetryTimer)
     this.historyRetryTimer = undefined
     for (const { timer } of this.worktreeRefreshes.values()) clearTimeout(timer)
@@ -4968,19 +5050,28 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         const project = this.state.snapshot.projects.find(project => project.id === thread.projectId)
         if (!project) throw new Error('The original project is unavailable.')
         // The thread a moved branch came from stays on the record, so the worker can bring its commits back there (#1030).
-        const madeFrom = metadata.madeFrom
+        const madeFrom = metadata.madeFrom, check = metadata.check
         metadata = await this.worktrees.allocate(project.path, metadata.mode, { baseBranch: metadata.baseBranch, startFromOrigin: metadata.startFromOrigin, existingWorktreePath: metadata.existingWorktreePath,
           ...(metadata.checkoutBranch && metadata.branch ? { checkoutBranch: metadata.branch } : {}), ...(metadata.incomingRef ? { incomingRef: metadata.incomingRef } : {}) })
         if (madeFrom && metadata.incomingRef) metadata = { ...metadata, madeFrom }
+        if (check) metadata = { ...metadata, check }
         this.touched(current()).worktree = metadata
         this.dirty = true
         await this.flush() // Allocation owns its exact path/branch before Git mutates anything.
       }
-      metadata = await this.worktrees.ensure(metadata)
-      const workingDirectory = await this.worktrees.workingDirectory(metadata)
-      const target = this.touched(current())
-      target.worktree = metadata
-      target.workingDirectory = workingDirectory
+      const taken = await this.takeCheckWorktree(thread.id, metadata)
+      try {
+        if (taken) metadata = taken.worktree
+        // An install a restart cut off is over: nothing was recorded as installed, so the next check installs again.
+        if (metadata.check?.install === 'running') metadata = { ...metadata, check: { install: 'failed' } }
+        metadata = await this.worktrees.ensure(metadata)
+        const workingDirectory = await this.worktrees.workingDirectory(metadata)
+        // The check worktree installs only under its reservation; a check's own worktree is its alone.
+        if (taken || !metadata.reused) metadata = await this.checkPackages(thread.id, metadata, workingDirectory)
+        const target = this.touched(current())
+        target.worktree = metadata
+        target.workingDirectory = workingDirectory
+      } finally { taken?.release() }
     } catch (error) {
       const target = this.touched(current())
       target.worktree = { ...(target.worktree ?? thread.worktree), status: 'error', error: error instanceof Error ? error.message : 'Working-copy setup failed. Retry after restoring the folder and Git.' }
@@ -5268,7 +5359,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         throw error
       }
       this.publish()
-      // Opening a thread never allocates a worktree. Its choice remains editable until first send.
+      // Opening a thread never allocates a worktree. Its choice remains editable until first send. A check's is the
+      // exception (#1312): its setup, packages installed first included, starts now, and its first message waits for it.
+      if (thread.worktree?.check && this.checkInstaller) void this.startWorkingCopy(thread)
       return { accepted: true }
     }
     let thread = this.thread(command.threadId)

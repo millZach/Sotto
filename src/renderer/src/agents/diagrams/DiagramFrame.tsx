@@ -5,6 +5,7 @@ import { useTransientFlag, writeClipboard } from '../richActions'
 import { DiagramViewer } from './DiagramViewer'
 import { CrossFadeImage, DiagramImage } from './DiagramImage'
 import type { MermaidRendering } from './MermaidDiagram'
+import type { ExpandedWalkthrough } from '../VisualWalkthrough'
 
 /**
  * What a visual's frame keeps while it is on screen, whatever it shows: whether its source is shown instead, whether it
@@ -132,12 +133,17 @@ export function DiagramStage({ frame, name, sourceLabel, block, stage, picture }
   return stage ? <div className={stage}>{fallback}</div> : fallback
 }
 
-/** The expanded drawing, while it is open: `picture` when given (the one the stage shows), else the drawing itself. */
-export function DiagramExpanded({ frame, name, picture }: { readonly frame: DiagramFrameState; readonly name: string; readonly picture?: string | undefined }): ReactNode {
+/**
+ * The expanded drawing, while it is open: `picture` when given (the one the stage shows), else the drawing itself, and
+ * a visual's walkthrough under it.
+ */
+export function DiagramExpanded({ frame, name, picture, walkthrough }: {
+  readonly frame: DiagramFrameState; readonly name: string; readonly picture?: string | undefined; readonly walkthrough?: ExpandedWalkthrough | undefined
+}): ReactNode {
   const drawn = frame.rendering.drawing
   if (!frame.expanded || !drawn) return null
   return <DiagramViewer dataUrl={picture ?? drawn.dataUrl} width={drawn.width} height={drawn.height} name={name}
-    description={drawn.description} copyFeedback={frame.feedback} copied={frame.copied} onCopy={frame.copy} onClose={frame.close} />
+    description={drawn.description} copyFeedback={frame.feedback} copied={frame.copied} onCopy={frame.copy} onClose={frame.close} walkthrough={walkthrough} />
 }
 
 /** The `data-state` a frame's root carries: drawn, failed, or showing its source while it draws. */

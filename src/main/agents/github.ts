@@ -82,9 +82,16 @@ export class GitHubHosts {
   private signedIn: { readonly at: number; readonly hosts: Promise<ReadonlySet<string>> } | null = null
   private readonly aliases = new Map<string, { readonly at: number; readonly hostname: Promise<string | null> }>()
   private readonly now: () => number
+  /** Aborts once `stop` is called: the lookup running is stopped, and none starts after it. */
+  private readonly stopped = new AbortController()
   constructor(private readonly options: { readonly run: RunGitCommand; readonly sshHostName?: (alias: string) => Promise<string | null>; readonly now?: () => number }) {
     this.now = options.now ?? (() => Date.now())
   }
+  /**
+   * Stops a `gh auth status` running, and starts none after it, for closing (#1664): a lookup stopped, or asked after,
+   * answers no hosts, so nothing stopped falls back to asking gh again.
+   */
+  stop(): void { this.stopped.abort() }
 
   /** The GitHub repository a remote URL names, as gh would read it; null for a remote gh would not ask about. */
   async repository(url: string): Promise<GitHubRepository | null> {
@@ -118,11 +125,14 @@ export class GitHubHosts {
    * a folder being removed is never held by it.
    */
   private async listSignedIn(): Promise<ReadonlySet<string>> {
-    const options = { timeoutMs: 15_000 }
+    const stop = this.stopped.signal
+    if (stop.aborted) return new Set()
+    const options = { timeoutMs: 15_000, signal: stop }
     try {
       const listed = await this.options.run(homedir(), 'gh', ['auth', 'status', '--json', 'hosts', '--jq', '.hosts | keys[]'], options)
       return new Set(listed.split(/\r?\n/u).map(line => line.trim().toLowerCase()).filter(Boolean))
     } catch { /* An older gh, or none: its words are read below. */ }
+    if (stop.aborted) return new Set()
     const text = await this.options.run(homedir(), 'gh', ['auth', 'status'], options).catch((error: unknown) =>
       error instanceof Error ? `${String((error as { stdout?: unknown }).stdout ?? '')}\n${error.message}` : '')
     return new Set([...text.matchAll(/Logged in to (\S+)/gu)].map(match => match[1]!.toLowerCase()))
