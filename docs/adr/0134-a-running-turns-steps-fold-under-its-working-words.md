@@ -60,3 +60,9 @@ Drake asked for the steps to remember being opened across the whole app: open on
 **Running turns.** Nothing was forced open while a turn ran: the working line started folded each turn, and the group under it, once opened, has no button of its own. So the answer replaces the working line's folded start, and nothing else about a running turn changed. A fold that opens itself, as **Show where it asked** opens one, does not set the answer. Escape folds only the line it is in: it is also how a pane beside Watcher is put away, one level at a time, and a key pressed to get out should not change how every other turn opens.
 
 This replaces "starts folded" for the working line and "opens on a press" for the Worked for line in the Decision above; both still open and fold on a press, and Escape still folds one level at a time.
+
+## October 26 amendment: the clock goes again
+
+Zach changed his mind on the clock: the line should be the Spaceballs words alone, with the light crossing their letters. The line now reads only the words ("Combing the desert"), and the chevron once the turn has a step. The light, the words' timing, reduced motion and the button's name are as the October 25 amendment left them.
+
+This takes back **The clock** in the October 25 amendment, so "There is no clock on the line" in the Decision holds again. Only the working line loses its clock. A running step's own clock in the opened steps ("Running 12s"), the line that says a turn on one of the user's own servers is still waiting (ADR-0124), the **Worked for** line and the held action's creature keep theirs, because none of them sits beside the words.

@@ -133,13 +133,10 @@ test('a running turn folds its steps under the glowing working words, opens them
     const live = log.getByTestId('thread-activity-live')
     const line = live.getByRole('button', { name: /^Working, \d+ steps so far$/ })
     await expect(line).toHaveAttribute('aria-expanded', 'false')
-    // The words carry the wait beside the turn's clock: no step named on the line, and no live rows until it opens.
+    // The words alone carry the wait: no clock, no step named on the line, and no live rows until it opens.
     await expect(live.locator('.thread-activity-live__word')).toBeVisible()
     await expect(live).not.toContainText('npm test')
-    const clock = live.locator('.thread-activity-live__clock [data-elapsed]')
-    await expect(clock).toBeVisible()
-    const started = await clock.textContent()
-    await expect.poll(() => clock.textContent(), { timeout: 3_000 }).not.toBe(started)
+    await expect(live.locator('[data-elapsed]')).toHaveCount(0)
     await expect(log.locator('.thread-activity[data-live]')).toHaveCount(0)
     // A band of the accent, at its most vivid, lights the letters as it crosses them, and the dot steps aside for it.
     const glow = (property: 'animationName' | 'color'): Promise<string> =>
@@ -187,7 +184,6 @@ test('a running turn folds its steps under the glowing working words, opens them
     await show(page, 'disconnected')
     await expect(live).toContainText('Last seen working')
     await expect(live.locator('.thread-activity-live__word')).toHaveCount(0)
-    await expect(live.locator('.thread-activity-live__clock')).toHaveCount(0)
     await expect(live.locator('.thread-activity__pulse')).toHaveCSS('animation-name', 'none')
     const seen = live.getByRole('button', { name: /^Last seen working, \d+ steps so far$/ })
     if (await seen.getAttribute('aria-expanded') === 'false') await seen.click()
