@@ -62,8 +62,8 @@ export function settingsSectionHome(id: SettingsSectionId): { readonly page: Set
     : { page: id as SettingsPageId, group: null }
 }
 
-/** What has to be on for a setting to show: dictation itself, or an Owl feature that holds it back. */
-export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'cross-machine-work' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers' | 'keep-main-current' | 'clear-threads'
+/** What has to be on for a setting to show: dictation itself, or an Owl feature that holds it back. `babysitting` is on while restarting stopped threads (ADR-0144), which takes babysitting away, is off. */
+export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'cross-machine-work' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers' | 'keep-main-current' | 'clear-threads' | 'restart-stopped-threads' | 'babysitting'
 
 /**
  * The attribute that marks a setting's control on its page with the setting's id: Find a setting lands on a control by
@@ -148,6 +148,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'thread-titles', label: msg`Generated thread titles`, section: 'settings-agents', words: 'names branch' },
     { id: 'next-prompt', label: msg`Suggest a next prompt after each turn`, section: 'settings-agents', words: 'suggestions ghost tab next', gate: 'next-prompt' },
     { id: 'resume-after-restart', label: msg`Resume threads after a restart`, section: 'settings-agents', gate: 'resume-after-restart' },
+    { id: 'restart-stopped-threads', label: msg`Restart stopped threads`, section: 'settings-agents', words: 'usage limit resets resume continue carry on after a restart', gate: 'restart-stopped-threads' },
     { id: 'web-links', label: msg`Web links in threads`, section: 'settings-browser', words: 'open links browser' },
     { id: 'browser-previews', label: msg`Show the browser when an agent opens a page`, section: 'settings-browser', words: 'test iphone' },
     { id: 'browser-without-asking', label: msg`Let agents use the browser without asking`, section: 'settings-browser', words: 'permission' },
@@ -185,7 +186,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'pull-request-templates', label: msg`Follow pull request templates`, section: 'settings-git' },
     { id: 'merge-method', label: msg`Default merge method`, section: 'settings-git', words: 'squash rebase' },
     { id: 'auto-settle-merged', label: msg`Auto-settle merged threads`, section: 'settings-git' },
-    { id: 'babysit-pull-requests', label: msg`Let agents babysit pull requests`, section: 'settings-git', words: 'checks wake' },
+    { id: 'babysit-pull-requests', label: msg`Let agents babysit pull requests`, section: 'settings-git', words: 'checks wake', gate: 'babysitting' },
     { id: 'diff-layout', label: msg`Diff layout`, section: 'settings-git', words: 'changes stacked split' },
     { id: 'diff-hide-whitespace', label: msg`Hide whitespace changes`, section: 'settings-git', words: 'diff' },
     { id: 'diff-file-state', label: msg`Default diff file state`, section: 'settings-git', words: 'expanded collapsed' },

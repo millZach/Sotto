@@ -527,6 +527,8 @@ export class WatcherService implements WatcherControlHooks {
      */
     settleFinished?: () => boolean
     settleFinishedAfterMs?: number
+    /** Restart stopped threads retired babysitting (ADR-0144): a babysat pull request no longer holds a settle. Read once at start. */
+    babysittingRetired?: boolean
     /** Compact Watcher at (`watcherCompactAtTokens`), read at every look; absent, Watcher compacts at 400K (#1189). */
     compactAt?: () => number
     /** What Settle finished threads did, as stable event names; never a thread, a title or a pull request. */
@@ -859,8 +861,9 @@ export class WatcherService implements WatcherControlHooks {
     const quiet = (item: AgentThread) => !item.requests.length && !isWatcherWorkActive(item) && watcherBackgroundWorkCount(item) === 0
     const open = (item: AgentThread) => [...(item.pullRequests ?? []).filter(pr => pr.state === 'open').map(pr => pr.url),
       ...item.worktree?.git?.pullRequest?.state === 'open' ? [item.worktree.git.pullRequest.url] : [],
-      // One it babysits is unfinished until babysitting ends, linked or not, and a settle would end it (ADR-0061 decision 9).
-      ...(item.babysitting ?? []).map(pr => pr.url)]
+      // One it babysits is unfinished until babysitting ends, linked or not, and a settle would end it (ADR-0061 decision 9),
+      // until Restart stopped threads retires babysitting (ADR-0144).
+      ...this.options.babysittingRetired === true ? [] : (item.babysitting ?? []).map(pr => pr.url)]
     if (!quiet(thread) || !this.connected(thread) || this.protectedThread(thread) || isThreadClosed(thread)
       || isWorkspaceThreadSettled(thread, snapshot.projects.find(project => project.id === thread.projectId))) return undefined
     // Nothing on its way to it: queued here, or a Watcher start or send, and the user has not taken it over.

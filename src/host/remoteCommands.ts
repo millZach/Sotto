@@ -68,6 +68,8 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   // Babysitting is the user's own request too, and grants nothing: a wake-up approves, merges and answers nothing
   // (ADR-0061 decisions 4 and 11), so neither needs a remote-answer policy record.
   'babysit-pull-request': ['threadId', 'url'], 'stop-babysitting': ['threadId', 'url'],
+  // Don't restart takes back a restart Sotto scheduled (ADR-0144): it sends and grants nothing, so pairing is enough.
+  'cancel-restart': ['threadId'],
   'configure-thread': ['threadId', 'modelId', 'reasoningEffort', 'runtimeMode', 'providerMode'],
   'select-thread': ['threadId'], 'observe-threads': ['threadIds'], 'load-earlier-messages': ['threadId', 'throughMessageId'],
   // Dismiss all marks failed threads seen, as opening each would (ADR-0092). It answers no request: a thread waiting on a

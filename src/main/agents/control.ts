@@ -20,9 +20,9 @@ import {
   type AgentMessage, type AgentRequest, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type AgentThreadSummary, type ProviderClientUpdate, type SubscriptionProvider,
 } from '../../shared/agents'
 import type { BabysitNews } from './babysitNews'
-import { BABYSIT_REFUSALS, type Babysitter } from './babysitting'
+import { BABYSITTING_RETIRED, BABYSIT_REFUSALS, type Babysitter } from './babysitting'
 import { pullRequestAddress } from '../../shared/gitPullRequests'
-import { queuedWakeUpText, isDelegationNews, isDelegationOnlyWakeUp, isHiddenWakeUp, isRestartNews, isWatcherNews, isWatcherOnlyWakeUp, watcherNewsAsks, watcherWakeUpNote, type WakeUpNews } from './wakeUp'
+import { queuedWakeUpText, isAnyRestartNews, isDelegationNews, isDelegationOnlyWakeUp, isHiddenWakeUp, isLimitRestartNews, isRestartNews, isWatcherNews, isWatcherOnlyWakeUp, watcherNewsAsks, watcherWakeUpNote, type WakeUpNews } from './wakeUp'
 import { watcherWakeUpShown, watcherWakeUpsAsShown } from './watcherNews'
 import { HiddenWakeUpSettlements, hiddenEvents, hiddenWakeUpStep, type HiddenWakeUpOutcome } from './hiddenWakeUp'
 import { samePlainValue, withoutHiddenWakeUps } from './hiddenWakeUpDisplay'
@@ -80,6 +80,8 @@ import { quietLongerThan, THREAD_CLEAR_MAX, threadClearKeptWords, threadQuietSin
 import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord, type WatcherThreadTarget } from '../../shared/watcher'
 import { isImageAttachment, parsePublicProviderEntityId, threadProviderOf } from '../../shared/agents'
 import { isResumeNoteText } from '../../shared/restartResume'
+import { isLimitRestartNoteText } from '../../shared/limitRestart'
+import type { LimitRestart } from './limitRestart'
 import { migrateWatcherRecord, prunePromptTurns, WATCHER_PROMPT_TURNS_KEPT, watcherRecordForDisk } from './watcherRecords'
 
 /** One shared empty array stands in for every shell thread's history; the clone that follows copies nothing. */
@@ -362,6 +364,11 @@ function freezeSaved(value: unknown): void {
 const DELEGATION_NEWS_RETRY_MS = 10_000
 /** How long closing waits for a thread title still being written, so it is saved (#980). Quit never waits longer for one. */
 export const TITLE_WRITE_CLOSING_WAIT_MS = 2_000
+/**
+ * Babysitting's news of a pull request, told by what it holds rather than by what it is not, so news of a kind added
+ * later is never taken for it when Restart stopped threads drops babysitting's from the queue (ADR-0144).
+ */
+const isPullRequestNews = (news: WakeUpNews): boolean => !('source' in news) && 'pullRequest' in news
 /** A wake-up about to go holds news of babysitting that ended quietly or by the switch since it was told. */
 class WakeUpNoLongerDue extends Error {
   constructor() { super('Babysitting ended before this wake-up went, so what it said of that pull request was taken out.') }
@@ -513,6 +520,8 @@ export class AgentControl {
   private wakeUpGuard: WakeUpGuard | undefined
   /** Resuming after a restart (ADR-0076): whether a note may still go, and who hears that one is going. Absent where the Owl list keeps it off. */
   private restartHooks: RestartResumeHooks | undefined
+  /** Restarting threads a usage limit stopped (ADR-0144): given before start, only while that Owl feature is on. */
+  private limitRestart: LimitRestart | undefined
   private readonly threadActions = new Map<string, Promise<unknown>>()
   /** How many lanes of each thread's own work are running; ephemeral, like the global lane's own flag. */
   private readonly busyThreads = new Map<string, number>()
@@ -970,6 +979,8 @@ export class AgentControl {
     /** Muse's answer alone, from before the held set; `heldProviders` wins. */
     museEnabled?: boolean
     streamingPublishCost?: boolean
+    /** Restart stopped threads (ADR-0144): the Owl answer, read once at start. With it, Watcher's sends count as Watcher's in Usage. */
+    restartStoppedThreads?: boolean
     /** Numeric-only Owl history. It never gates or retries a provider send. */
     usage?: UsagePromptRecorder
     observeActiveThread?: boolean
@@ -1013,6 +1024,12 @@ export class AgentControl {
     threadStartsEnabled?: boolean
     /** Clearing settled threads (ADR-0140): the Owl list's answer, read once at start. Absent fails closed. */
     clearThreadsEnabled?: boolean
+    /**
+     * Restart stopped threads retires babysitting (ADR-0144): the Owl list's answer, read once at start. With it the user's
+     * Babysit pull request and Stop babysitting are refused, no babysitting wake-up is queued, a saved one leaves the queue
+     * at start, and clearing stops counting a babysat pull request. Absent, babysitting is as it was.
+     */
+    babysittingRetired?: boolean
     /** What clearing did, as stable event names with a count or a reason's code; never a title, path or branch. */
     logClear?: (event: 'threads-cleared' | 'thread-clear-kept', detail: string) => void
     /** Times a held prototype question and the minute after a send-back (ADR-0108); injectable so tests own the clock. */
@@ -1121,6 +1138,7 @@ export class AgentControl {
     // Upgrade the native singleton in place, never from the currently selected thread.
     this.syncLegacyDraft()
     await this.followupStore.load(this.stageInline, handle => this.attachments.has(handle.digest), id => this.threadAvailable(id))
+    if (this.dependencies.babysittingRetired === true) await this.retireBabysitting()
     // A restart starts Watcher's news afresh (ADR-0073): what its hidden wake-up holds is untold again here, and the wake-up
     // leaves the queue only once that is saved, below, so a crash at any point leaves the news to be observed anew.
     const untold = new Set(this.followupStore.heldWatcherEvents().map(event => event.id))
@@ -1330,7 +1348,7 @@ export class AgentControl {
     return { get threads() { return state.host.threads }, delegators: threadDelegators(state.host.threads), get projects() { return state.host.projects },
       hidden: id => !this.threadAvailable(id),
       pending: id => this.hasPendingThreadWork(id) || this.outbox.some(item => item.threadId === id),
-      watched: id => watched.has(id) }
+      watched: id => watched.has(id), ...this.dependencies.babysittingRetired === true ? { babysittingRetired: true } : {} }
   }
   /** Why the coordinator keeps this thread back from clearing now, or null (ADR-0140 decision 3). */
   private clearHold(threadId: string, facts = this.clearFacts()): ThreadClearKeptReason | null {
@@ -1573,8 +1591,8 @@ export class AgentControl {
     state.host.threads = state.host.threads.map(thread => {
       // Projected from this copy's own messages, never handed the kept projection: what `get()` returns is the caller's to change.
       const presented = this.presentedMessages(thread, true), summary = thread.summary && this.presentedSummary(thread)
-      return this.failuresSeen.publish(this.finishedUnread.publish(presented === thread.messages && summary === thread.summary ? thread
-        : { ...thread, messages: [...presented], ...(summary ? { summary } : {}) }))
+      return this.restartMark(this.failuresSeen.publish(this.finishedUnread.publish(presented === thread.messages && summary === thread.summary ? thread
+        : { ...thread, messages: [...presented], ...(summary ? { summary } : {}) })))
     })
     state.hostId = state.host.hostId
     state.threadDraftPersistence = this.draftPersistence()
@@ -1671,7 +1689,7 @@ export class AgentControl {
     // than clone every model on each broadcast (#917). One that is not certified is copied, as everything else is.
     const shared = isImmutableModels(models)
     const bare = { ...this.state, error: this.migrationSaveFailure ?? this.state.error, host: { ...this.state.host, ...(shared ? { models: EMPTY_MODELS } : {}),
-      threads: shareThreads ? EMPTY_THREADS : threads.map(thread => this.failuresSeen.publish(this.finishedUnread.publish(this.shellThread(thread, EMPTY_MESSAGES, EMPTY_ACTIVITIES)))) },
+      threads: shareThreads ? EMPTY_THREADS : threads.map(thread => this.restartMark(this.failuresSeen.publish(this.finishedUnread.publish(this.shellThread(thread, EMPTY_MESSAGES, EMPTY_ACTIVITIES))))) },
       obsoleteDrafts: this.persistedObsoleteDrafts }
     let state: AgentState
     if (shareThreads) {
@@ -1768,7 +1786,7 @@ export class AgentControl {
       records.set(thread.id, held)
     }
     // Marking is the coordinator's: the record already carrying the marks it should is handed back as it is.
-    const marked = this.failuresSeen.publish(this.finishedUnread.publish(held.record))
+    const marked = this.restartMark(this.failuresSeen.publish(this.finishedUnread.publish(held.record)))
     if (marked !== held.record) held.record = Object.freeze(marked)
     return held.record
   }
@@ -2890,6 +2908,7 @@ export class AgentControl {
    */
   async deliverWakeUp(threadId: string, news: WakeUpNews, options: { readonly tool: boolean }): Promise<void> {
     if (this.disposed) throw new Error('Sotto is closing.')
+    if (this.dependencies.babysittingRetired === true && isPullRequestNews(news)) throw new Error(BABYSITTING_RETIRED)
     if (isWatcherNews(news) && (news.watcher.threadId !== threadId || !this.canDeliverWatcherNews(news.watcher))) throw new Error('Watcher is unavailable.')
     const available = (): AgentThread => {
       const thread = this.state.host.threads.find(item => item.id === threadId)
@@ -2898,7 +2917,7 @@ export class AgentControl {
       return thread
     }
     let thread = available()
-    if (isRestartNews(news)) {
+    if (isAnyRestartNews(news)) {
       await this.readTurnFirst(threadId)
       thread = available()
       if (isThreadTurnRunning(thread)) throw new Error('This thread is working again.')
@@ -3351,9 +3370,46 @@ export class AgentControl {
    * The reader that babysits this host's threads' pull requests (ADR-0061), and what the queue asks it before each
    * wake-up goes. Given before `start`, so no wake-up restored from the queue can go unasked.
    */
-  useBabysitting(babysitting: Pick<Babysitter, 'start' | 'stop'>, guard?: WakeUpGuard): void { this.babysitting = babysitting; this.wakeUpGuard = guard }
+  useBabysitting(babysitting: Pick<Babysitter, 'start' | 'stop'>, guard?: WakeUpGuard): void {
+    if (this.dependencies.babysittingRetired === true) return
+    this.babysitting = babysitting; this.wakeUpGuard = guard
+  }
+  /**
+   * Restart stopped threads retired babysitting (ADR-0144): any babysitting news a wake-up saved in the queue holds is
+   * taken out as the queue loads, before anything can send, and a wake-up that held nothing else leaves it. The guard
+   * left behind holds no babysitting news due, so none goes even if some arrives later. The records stay on disk, unread.
+   */
+  private async retireBabysitting(): Promise<void> {
+    this.babysitting = undefined
+    this.wakeUpGuard = { due: (_threadId, news) => !isPullRequestNews(news), tool: () => false }
+    const ids = this.followupStore.peek().items.filter(item => item.wakeUp === true && item.news?.some(isPullRequestNews)).map(item => item.id)
+    if (!ids.length) return
+    await this.followupStore.pruneWakeUps(ids, () => () => ({ due: news => !isPullRequestNews(news), word: kept => queuedWakeUpText(kept, { tool: false }) }))
+  }
   /** Resuming after a restart (ADR-0076): given before start, so a resume note restored from the queue is asked about too. */
   useRestartResume(hooks: RestartResumeHooks): void { this.restartHooks = hooks }
+  /**
+   * Restarting threads a usage limit stopped (ADR-0144): given before start, so the first snapshot is read for stops and
+   * a restart note restored from the queue is asked about too. Its marks are published as the finished and failure marks are.
+   */
+  useLimitRestart(restart: LimitRestart): void {
+    this.limitRestart = restart
+    restart.onMoved = id => { this.marksMoved.add(id) }
+    restart.onChanged = () => { if (!this.disposed) this.publish() }
+  }
+  /** The thread with its scheduled restart while one stands (ADR-0144); as it is while the feature is off. */
+  private restartMark<T extends AgentThread>(thread: T): T { return this.limitRestart ? this.limitRestart.publish(thread) : thread }
+  /** The user's Don't restart (ADR-0144), from this computer's window or a paired client: the thread waits for them. */
+  private cancelRestart(command: Extract<AgentCommand, { type: 'cancel-restart' }>): AgentState {
+    try {
+      this.thread(command.threadId)
+      if (!this.limitRestart) throw new Error('This host does not restart stopped threads. Nothing was changed.')
+      this.state.notice = this.limitRestart.cancel(command.threadId) ? 'Sotto won’t restart this thread. It waits for your next message.' : 'This thread has no restart scheduled.'
+      this.state.error = null
+    } catch (error) { this.setCommandError(error, error instanceof Error ? error.message : 'The restart could not be changed.') }
+    this.publish()
+    return this.shell()
+  }
   /**
    * Whether a wake-up holds news that may no longer go: the last line of defence behind withdrawal, so that whatever
    * order a stop, the switch and the queue run in, a babysitting ended quietly or by the switch sends nothing after.
@@ -3364,6 +3420,8 @@ export class AgentControl {
     return item.wakeUp === true && (item.news ?? []).some(news => isWatcherNews(news)
       ? this.dependencies.watcherEnabled !== true || news.events.some(event => !due(event))
       : isRestartNews(news) ? this.restartHooks?.due() !== true
+        // A limit restart's note goes only while the feature and its setting are on (ADR-0144).
+        : isLimitRestartNews(news) ? this.limitRestart?.due() !== true
         // A delegation's news is never outdated: while delegation is off the pump holds it, unsent and whole (ADR-0081).
         : isDelegationNews(news) ? false
           : guard !== undefined && (!guard.due(threadId, news) || (guard.current !== undefined && JSON.stringify(guard.current(threadId, news)) !== JSON.stringify(news))))
@@ -3387,11 +3445,12 @@ export class AgentControl {
       return ({ threadId }) => ({
         // A delegation's news asks nothing: it is never outdated, so it adds no ask to the batch (ADR-0081).
         due: news => isWatcherNews(news) ? news.events.length > 0 : isRestartNews(news) ? this.restartHooks?.due() === true
+          : isLimitRestartNews(news) ? this.limitRestart?.due() === true
           : isDelegationNews(news) ? true : !guard || guard.due(threadId, news),
         word: kept => queuedWakeUpText(kept, { tool: guard?.tool(threadId) ?? false }),
         transform: news => {
           // A resume note and a delegation's news are no pull request's: babysitting has nothing to say of them (ADR-0076, ADR-0081).
-          if (isRestartNews(news) || isDelegationNews(news)) return news
+          if (isAnyRestartNews(news) || isDelegationNews(news)) return news
           if (!isWatcherNews(news)) return guard?.current ? guard.current(threadId, news) : news
           const events = news.events.filter(due)
           return events.length ? { ...news, events } : undefined
@@ -3406,6 +3465,7 @@ export class AgentControl {
   private async babysitCommand(command: BabysitCommand): Promise<AgentState> {
     try {
       this.thread(command.threadId)
+      if (this.dependencies.babysittingRetired === true) throw new Error(BABYSITTING_RETIRED)
       if (!this.babysitting) throw new Error('This host cannot babysit pull requests: it reads GitHub through Git status, which is off here. Nothing was started.')
       const number = pullRequestAddress(command.url)?.number
       if (command.type === 'babysit-pull-request') {
@@ -3803,6 +3863,8 @@ export class AgentControl {
     if (isGitCommand(command)) return this.gitCommand(command)
     // Babysitting is Sotto's own record on the thread, so starting or stopping it waits on no turn and no lane.
     if (command.type === 'babysit-pull-request' || command.type === 'stop-babysitting') return this.babysitCommand(command)
+    // Don't restart changes Sotto's own record of the thread alone, so it waits on no turn and no lane (ADR-0144).
+    if (command.type === 'cancel-restart') return Promise.resolve(this.cancelRestart(command))
     // Renaming edits Sotto's own record of the thread, so it never waits on a running turn or any provider action.
     if (command.type === 'rename-thread') return this.renameThread(command)
     // Naming a thread is Sotto's own record too: the thread's provider is asked on the side, never inside the thread.
@@ -4308,7 +4370,8 @@ export class AgentControl {
             const offered = sentCommandId !== undefined && this.wakeUpsOffered.has(sentCommandId)
             // A resume note its provider refused leaves the queue, so the thread's own messages never wait behind it (#1187).
             // One that failed before it was offered, as when the thread could not be read, waits for Resume queue as before.
-            if (outcome === 'failed' && offered && first.news?.some(isRestartNews) && isResumeNoteText(first.text)) {
+            if (outcome === 'failed' && offered && (first.news?.some(isRestartNews) && isResumeNoteText(first.text)
+              || first.news?.some(isLimitRestartNews) && isLimitRestartNoteText(first.text))) {
               await this.followupStore.dropFailedResume(first.id, kept => queuedWakeUpText(kept, { tool: this.wakeUpGuard?.tool(threadId) ?? false }), failure)
             } else await this.followupStore.settle(first.id, outcome, failure)
             // A Watcher send's outcome is read from its queue item, and a takeover's queue cancel removes a failed item.
@@ -5274,7 +5337,9 @@ export class AgentControl {
         if (prompt && isUsageProviderId(provider)) {
           try { this.dependencies.usage?.submitPrompt({ providerId: provider, threadId: prompt.threadId,
             messageId: prompt.messageId, modelId: this.thread(prompt.threadId).modelId, at: new Date().toISOString(),
-            kind: wakeUp ? 'wake-up' : origin?.operationId ? 'watcher' : 'user', inputKind: command.type === 'steer' ? 'steer' : 'send' }) }
+            // With restarting stopped threads on, Watcher's news counts as Watcher's (ADR-0144): its sends before Sotto's notes.
+            kind: this.dependencies.restartStoppedThreads === true ? origin?.operationId ? 'watcher' : wakeUp ? 'wake-up' : 'user'
+              : wakeUp ? 'wake-up' : origin?.operationId ? 'watcher' : 'user', inputKind: command.type === 'steer' ? 'steer' : 'send' }) }
           catch { /* A usage failure cannot refuse or resend the user's message. */ }
         }
         if (wakeUp) this.wakeUpsOffered.add(command.commandId)
@@ -5909,6 +5974,8 @@ export class AgentControl {
     // shown as it fails, or a failure that moves to a later turn, so its early return saves the failures it changed.
     if (changed) this.finishedUnread.trackChanged(snapshot, changed.threads, changed.gone); else this.finishedUnread.track(snapshot)
     const failuresChanged = changed ? this.failuresSeen.trackChanged(snapshot, changed.threads, changed.gone) : this.failuresSeen.track(snapshot)
+    // A turn stopped at a usage limit is recorded for its restart, from the threads the change named (ADR-0144).
+    if (this.limitRestart) { if (changed) this.limitRestart.track(snapshot, changed.threads, changed.gone); else this.limitRestart.trackAll(snapshot) }
     this.scheduleProviderReconnects()
     if (this.state.activeProjectId) this.state.activeProjectId = this.dependencies.host.resolveProjectId?.(this.state.activeProjectId) ?? this.state.activeProjectId
     if (this.state.configuration.defaultModelId) this.state.configuration.defaultModelId = this.dependencies.host.resolveModelId?.(this.state.configuration.defaultModelId) ?? this.state.configuration.defaultModelId

@@ -2051,6 +2051,16 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const thread = this.threadById(threadId)
     return { branch: thread ? branchPullRequestUrl(thread) : undefined, linked: (thread?.pullRequests ?? []).map(link => link.url) }
   }
+  /**
+   * The thread's pull requests not known to have merged or closed, its branch's own and its linked ones, by URL: what
+   * Watcher's background reads follow for a watched thread (ADR-0144). Read by ID, so asking costs the thread's links alone.
+   */
+  openPullRequestUrls(threadId: string): string[] {
+    const thread = this.threadVisible(threadId) ? this.threadById(threadId) : undefined
+    if (!thread) return []
+    const branch = thread.worktree?.git?.pullRequest
+    return [...branch?.state === 'open' ? [branch.url] : [], ...(thread.pullRequests ?? []).flatMap(link => link.state === 'open' ? [link.url] : [])]
+  }
   /** One visual this thread holds, as the store keeps it: what an interactive visual's page is served from (ADR-0060). */
   visual(threadId: string, visualId: string): AgentVisual | undefined {
     if (!this.threadVisible(threadId)) return undefined

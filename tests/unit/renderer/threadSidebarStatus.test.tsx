@@ -285,10 +285,10 @@ describe('a thread that babysits a pull request', () => {
   it('gives way to a request waiting on you, and to settling', () => {
     const state = threadsStateFixture()
     Object.assign(state, babysat(state, 'visual-gate', 'idle'))
-    expect(rowStatus(rowFor(state, 'visual-gate'))).toEqual({ text: 'Needs your approval', finished: false, babysitting: false, prototype: false, background: false })
+    expect(rowStatus(rowFor(state, 'visual-gate'))).toEqual({ text: 'Needs your approval', finished: false, babysitting: false, prototype: false, background: false, restart: false })
     const done = rowFor(state, 'footer-links')
     const thread = { ...done.thread, babysitting }
-    expect(rowStatus({ ...done, thread, state: 'done', stateLabel: 'Done', settledBy: null })).toEqual({ text: 'Babysitting #74', finished: false, babysitting: true, prototype: false, background: true })
+    expect(rowStatus({ ...done, thread, state: 'done', stateLabel: 'Done', settledBy: null })).toEqual({ text: 'Babysitting #74', finished: false, babysitting: true, prototype: false, background: true, restart: false })
     expect(rowStatus({ ...done, thread, state: 'done', stateLabel: 'Done', settledBy: 'thread' })).toMatchObject({ text: 'Settled', babysitting: false, background: false })
     const watching = { ...done.thread, monitoring: [{ id: '00000000-0000-4000-8000-000000000001', label: 'CI run' }] }
     expect(rowStatus({ ...done, thread: watching, state: 'done', stateLabel: 'Done', settledBy: null })).toMatchObject({ text: 'Monitoring', background: true })
@@ -337,7 +337,7 @@ describe('a thread with a prototype waiting for review', () => {
     expect(rowStatus(rowFor(state, 'visual-gate'))).toMatchObject({ text: 'Needs your answer', prototype: false })
     const done = rowFor(state, 'footer-links')
     const thread = { ...done.thread, prototypeReady: { source: 'reply:m-1', pages: [page] } }
-    expect(rowStatus({ ...done, thread, state: 'done', stateLabel: 'Done', settledBy: null })).toEqual({ text: 'Prototype ready', finished: false, babysitting: false, prototype: true, background: false })
+    expect(rowStatus({ ...done, thread, state: 'done', stateLabel: 'Done', settledBy: null })).toEqual({ text: 'Prototype ready', finished: false, babysitting: false, prototype: true, background: false, restart: false })
     expect(rowStatus({ ...done, thread, state: 'done', stateLabel: 'Done', settledBy: 'thread' })).toMatchObject({ text: 'Settled', prototype: false })
   })
 })

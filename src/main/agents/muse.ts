@@ -21,7 +21,7 @@ import { MUSE_CLI_VERSION, MUSE_MSP_VERSION, MuseRejected, MuseRpc, MuseTooOld, 
 import { needsPerson, unreadableRequest } from './nativeRequests'
 import { tokenCount } from './nativeUsage'
 import { ObservedUsage } from './observedUsage'
-import { parseMuseQuota, unavailableProviderQuota } from './providerQuota'
+import { exhaustedQuotaReset, parseMuseQuota, unavailableProviderQuota } from './providerQuota'
 import { OpenSessions } from './openSessions'
 import { verifyFileMentions } from './promptFiles'
 import { ProviderUnavailable } from './providerProblem'
@@ -304,7 +304,14 @@ export interface MuseMspOptions {
   sessionIdleMs?: number
   /** Usage's startup answer (ADR-0083): count this computer's Muse threads and read Muse's subscription window. */
   usageEnabled?: boolean
+  /**
+   * Restart stopped threads (ADR-0144), the Owl answer read once at start: a turn Muse ended at its usage limit says so on its
+   * `lastTurn`, with the reset from the subscription window Muse last reported, which is kept for that even while Usage is off.
+   */
+  limitStops?: boolean
 }
+/** The error kinds Muse ends a turn with at its usage limit (ADR-0144). Read from its classification alone, never its words. */
+const MUSE_LIMIT_KINDS: ReadonlySet<string> = new Set(['usageLimit', 'usageLimitExceeded', 'usageLimitReached', 'quotaExceeded'])
 
 /** Muse owns its sign-in, tools and durable sessions. Only alias and origin metadata belongs to Sotto. */
 export class MuseMspHost implements AgentHost {
@@ -1470,14 +1477,14 @@ export class MuseMspHost implements AgentHost {
       turnFinishWaitMs: times.lastOutputAt !== undefined ? now - times.lastOutputAt : null,
     })
   }
-  private settleTurn(id: string, turnId: string, outcome: 'completed' | 'interrupted' | 'failed', error?: string): void {
+  private settleTurn(id: string, turnId: string, outcome: 'completed' | 'interrupted' | 'failed', error?: string, limitStop?: { resetsAt?: string }): void {
     const thread = this.thread(id)
     const messageId = this.fold(id).turnMessages.get(turnId) ?? this.activeTurns.get(id)?.messageId
     this.activeTurns.delete(id); this.activePrompts.delete(id)
     for (const pending of [...this.pending.values()]) if (pending.threadId === id) this.removeRequest(pending)
     this.log.dropEmpty(id)
     thread.status = outcome === 'failed' ? 'error' : 'idle'
-    thread.lastTurn = { id: messageId ?? turnId, status: outcome }
+    thread.lastTurn = { id: messageId ?? turnId, status: outcome, ...(limitStop ? { limitStop } : {}) }
     if (thread.activities?.length) {
       thread.activities = thread.activities.map(record => record.kind !== 'turn' && record.status === 'running' && record.turnId === (messageId ?? turnId)
         ? { ...record, status: outcome === 'completed' ? 'unknown' : outcome } : record)
@@ -1560,7 +1567,9 @@ export class MuseMspHost implements AgentHost {
             : outcome === 'failed' ? 'Muse could not finish this turn. Nothing else was lost. Send a message to carry on.' : undefined
           const messageId = this.fold(owner).turnMessages.get(parsed.turnId) ?? this.activeTurns.get(owner)?.messageId
           if (copying) this.moveToCopy(owner, entry, messageId)
-          this.settleTurn(owner, parsed.turnId, outcome, said)
+          const limitStop = outcome === 'failed' && this.options.limitStops === true && MUSE_LIMIT_KINDS.has(parsed.error?.kind ?? '')
+            ? (reset => reset ? { resetsAt: reset } : {})(exhaustedQuotaReset(this.quota)) : undefined
+          this.settleTurn(owner, parsed.turnId, outcome, said, limitStop)
           this.emit()
           return
         }
@@ -1660,7 +1669,7 @@ export class MuseMspHost implements AgentHost {
         }
         case 'usage/changed': {
           // The host's subscription window changed (MSP Developer Preview); Usage reads it when it asks.
-          if (this.readProviderQuota) this.keepQuota(frame.params)
+          if (this.readProviderQuota || this.options.limitStops === true) this.keepQuota(frame.params)
           return
         }
         case 'session/contextUsage': {
