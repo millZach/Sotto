@@ -14,7 +14,7 @@ import { claimRoomFocus } from '../components/AppShell'
 import { useOptionalApp } from '../state/AppContext'
 import { useOwlFeature } from '../state/owlFeature'
 import { useAgents } from '../agents/AgentContext'
-import { PageLinks, RoomSwitch } from '../agents/SidebarFrame'
+import { WayOffThePage } from '../agents/SidebarFrame'
 import { UpdateControl, type UpdateControlProps } from '../features/updates/UpdateControl'
 import { EffortPicker } from '../agents/EffortPicker'
 import { EffortTrace } from '../agents/EffortTrace'
@@ -42,7 +42,7 @@ import { WatcherMachines } from './WatcherMachines'
 import { watcherProviderOf } from './watcherProviders'
 import { WatcherHandoverOffer, WatcherSendGateContext, watcherSendGate } from './WatcherHandover'
 import { NewWatcherNote, newWatcherNoteFacts, WatcherStartStopped } from './WatcherNew'
-import { overviewCount, statusWord, threadPress, TONES, unlistedStatus, useOverview, waitKind, WatcherOverviewList, type OpenThread, type OverviewEntry } from './WatcherOverview'
+import { overviewCount, statusWord, threadPress, TONES, unlistedStatus, useOverview, WatcherOverviewList, type OpenThread, type OverviewEntry } from './WatcherOverview'
 import { WatcherContextTile } from './WatcherContextTile'
 import { WatcherOwl } from './WatcherOwl'
 import { WatcherNightScene } from './WatcherNightScene'
@@ -76,12 +76,8 @@ interface HeaderParts {
  * name on hover and to assistive technology. It replaced the More menu that held the pages and the update.
  */
 function WatcherWayOut({ update }: { readonly update: UpdateControlProps | null }): ReactNode {
-  return <div className="watcher-head__way">
-    <RoomSwitch className="thread-nav__seg watcher-head__rooms" iconOnly />
-    <span className="thread-nav__foot-rule" aria-hidden="true" />
-    <PageLinks className="thread-nav__pages watcher-head__pages" linkClassName="thread-nav__page" />
-    {update === null ? null : <UpdateControl status={update.status} busy={update.busy} onActivate={update.onActivate} />}
-  </div>
+  return <WayOffThePage className="watcher-head__way" roomsClassName="thread-nav__seg watcher-head__rooms" pagesClassName="thread-nav__pages watcher-head__pages"
+    updateControl={update === null ? null : <UpdateControl status={update.status} busy={update.busy} onActivate={update.onActivate} />} />
 }
 
 /**
@@ -568,7 +564,10 @@ export function WatcherView({ now: fixedNow, update = null }: {
   // Watcher's own owl glows while something waits on the user (Zach, October 27, 2026): a question or permission of
   // Watcher's own, or a thread in Needs you for a question, a permission or a prototype to review. A failed turn alone
   // lights it no more than it lights a thread owl.
-  const glowing = (watcherRow?.thread.requests.length ?? 0) > 0 || needs.some(entry => waitKind(entry) !== 'failed')
+  // A thread's request or prototype is read on its own, since the needs-you line's word for a thread puts a failed turn
+  // before a prototype that also waits.
+  const glowing = (watcherRow?.thread.requests.length ?? 0) > 0 || needs.some(({ facts }) =>
+    facts.request !== undefined || facts.thread.requests.length > 0 || facts.thread.prototypeReady !== undefined)
   const showAll = useCallback((): void => { listOpener.current = null; setListOpen(true) }, [])
 
   const beside = besideRow !== undefined && state !== null

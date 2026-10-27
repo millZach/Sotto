@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted October 27, 2026. Zach asked for it: "I want to remove these little guys up here. Please remove the watched and visualize features as we only use the threads view. Also, I would like to add the same accent glow to watcher when it needs you that the little owls have." He reviewed `docs/prototypes/watcher-without-tabs-prototype.html` and picked the glyphs-only glow, no glow for a failed turn alone, All threads for the "+N" pile, and the room switch and its pages moved to where the tabs were. Supersedes [ADR-0106](0106-watchers-picture-reads-what-the-window-holds.md). Watcher is an Owl feature, so stable sees none of this.
+Accepted October 27, 2026. Zach asked for it: "I want to remove these little guys up here. Please remove the watched and visualize features as we only use the threads view. Also, I would like to add the same accent glow to watcher when it needs you that the little owls have." He reviewed `docs/prototypes/watcher-without-tabs-prototype.html` and picked the glyphs-only glow, no glow for a failed turn alone, All threads for the "+N" pile, and the room switch and its pages moved to where the tabs were. Supersedes [ADR-0106](0106-watchers-picture-reads-what-the-window-holds.md). Watcher has been on stable since 0.1.40, so this goes straight through to both tracks.
 
 ## Context
 
@@ -14,7 +14,7 @@ The night scene's thread owls glow in the accent while their thread waits on the
 
 ## Decision
 
-**1. The room is the conversation.** The three tabs go. Once Watcher runs, the header holds the tile, Watcher, All threads, then Stop all while it shows, the room switch and More. The Watched view and Visualize go with them. Watching does not change: Watch in a pane's header and the owl in a sidebar row or an All threads row still start and stop a watch.
+**1. The room is the conversation.** The three tabs go. Once Watcher runs, the header holds the tile, Watcher, All threads and the way off the page (decision 6), then Stop all while it shows. The Watched view and Visualize go with them. Watching does not change: Watch in a pane's header and the owl in a sidebar row or an All threads row still start and stop a watch.
 
 **2. What only the picture used goes too.** The merge turns read (`sotto:watcher:read-merge-turns`) and send_to_thread's `mergeTurn` mark are removed. The merge workflow itself stays: read_state still works out the merge queue, and READY TO MERGE, GO MERGE and MERGED still come from the pull request's facts and Watcher's sends.
 
@@ -32,3 +32,4 @@ The night scene's thread owls glow in the accent while their thread waits on the
 - Main does less: no merge turns in memory, no watched rows kept for a read, no admission hook on a send.
 - A Watcher that still sends `mergeTurn` is refused for an unknown field. Nothing reads it now, and its tool description no longer mentions it.
 - History and replay of the picture (#1340) have nothing left to replay.
+- A watched thread on a host the user has disconnected is not in All threads, so the desktop offers no way to stop that watch until the host is back. The user can still ask Watcher to stop watching it, or stop it from the iPhone's Watched list.

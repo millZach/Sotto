@@ -144,6 +144,26 @@
 @container thread-pane (width < 550px) {
   .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) .watcher-head__list { gap: 4px; padding: 0 6px 0 7px; }
 }
+/* In the narrowest panes off macOS the row keeps to one line with a three-digit count on All threads beside Stop all by
+   drawing its gaps closer: after the tile, between All threads and the way off the page, and round its hairline. */
+@container thread-pane (width < 450px) {
+  .watcher-room:not(.threads-view--mac) .watcher-head > .thread-workspace__title { gap: 4px; }
+  .watcher-room:not(.threads-view--mac) .watcher-head :is(.watcher-head__tile, .watcher-context) { margin-right: 2px; }
+  .watcher-room:not(.threads-view--mac) .watcher-head__way { margin-left: 0; }
+  .watcher-room:not(.threads-view--mac) .watcher-head__way .thread-nav__foot-rule { margin: 0 2px; }
+}
+/* Off macOS one row holds the way off the page beside Stop all in the narrowest pane, with Usage, Settings, Help and the
+   update control; Memory's link, while memory is on, makes it 32 pixels wider, so below 440 pixels the way off the
+   page and Stop all then take a second row, as they do on macOS below 650. */
+@container thread-pane (width < 440px) {
+  .watcher-room:not(.threads-view--mac) .thread-pane .watcher-head:has(.watcher-head__pages > :nth-child(4)) {
+    display: grid; grid-template-columns: auto minmax(0, max-content) auto minmax(0, 1fr) auto; grid-template-rows: 44px auto; align-items: center;
+    column-gap: 10px; height: auto; padding-bottom: 6px;
+  }
+  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-head__pages > :nth-child(4)) > .thread-workspace__title { display: contents; }
+  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-head__pages > :nth-child(4)) .watcher-head__way { grid-row: 2; grid-column: 1 / 5; justify-self: start; margin-left: 0; }
+  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-head__pages > :nth-child(4)) > .thread-workspace__actions { grid-row: 2; grid-column: 5; }
+}
 /* Beside a thread at the smallest window the header's controls need the name's room: the tile still says whose room it
    is, and the heading stays for assistive technology. */
 @container thread-pane (width < 580px) {
@@ -167,6 +187,8 @@
   .threads-view--mac .watcher-head > .thread-workspace__title { display: contents; }
   .threads-view--mac .watcher-head .watcher-head__tile { margin: 0 0 0 var(--owl-sky-inset); }
   .threads-view--mac .watcher-head h1 { position: static; width: auto; height: auto; clip-path: none; }
+  /* Before Watcher starts there is no tile to keep the first row clear of the lights, so the name keeps their room. */
+  .threads-view--mac .watcher-head:not(:has(.watcher-head__tile)) h1 { margin-left: calc(var(--mac-lights-room) - 14px); }
   .threads-view--mac .watcher-head .watcher-head__way { grid-row: 2; grid-column: 1 / 5; justify-self: start; margin-left: 0; }
   .threads-view--mac .watcher-head > .thread-workspace__actions { grid-row: 2; grid-column: 5; }
 }

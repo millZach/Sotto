@@ -422,6 +422,8 @@ test.describe("Watcher's night scene on the built app", () => {
         await openRoom(page)
         await expect(owl(page)).toHaveAttribute('data-owl', 'perched')
         await expect(owlButtons(page)).toHaveCount(2)
+        // Night falls has swept the room in, so the captures show the room and not the band over the Threads page.
+        await expect(page.locator('html[data-room-transition]')).toHaveCount(0, { timeout: 10_000 })
         await settle(page)
         const readings: Record<string, unknown> = {}
         /** Watcher's owl in the accent, nearly every glyph of it, or in the ink with the accent in its eyes alone. */

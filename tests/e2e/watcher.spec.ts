@@ -267,10 +267,17 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
       probe.remove()
       return hex(value)
     }
+    /** How much a fill covers what is under it, 0 to 255, as the canvas paints it. */
+    const cover = (value: string): number => {
+      context.clearRect(0, 0, 1, 1); context.fillStyle = 'rgba(0, 0, 0, 0)'; context.fillStyle = value; context.fillRect(0, 0, 1, 1)
+      return context.getImageData(0, 0, 1, 1).data[3]!
+    }
+    // A faint tint, such as the lit room tile's 12% of the text colour, is read through to the surface under it: painted
+    // alone it is the text's own colour, and the ink would measure against itself.
     const background = (element: Element): string => {
       for (let node: Element | null = element; node !== null; node = node.parentElement) {
         const color = getComputedStyle(node).backgroundColor
-        if (color !== 'rgba(0, 0, 0, 0)' && color !== 'transparent') return hex(color)
+        if (color !== 'rgba(0, 0, 0, 0)' && color !== 'transparent' && cover(color) >= 128) return hex(color)
       }
       return hex(getComputedStyle(document.body).backgroundColor)
     }
