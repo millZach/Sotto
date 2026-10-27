@@ -67,10 +67,13 @@ export interface ThreadStoreWriter {
   unconfirmed(threadId?: string): boolean
   /** Settles once every write posted so far for this thread, or for every thread, is confirmed. */
   confirmed(threadId?: string): Promise<void>
-  /** Commits and confirms everything posted before it returns: for shutdown, which cannot wait for a confirmation. */
-  drain(): void
-  /** Commits and confirms everything posted, then closes the store. */
-  close(): void
+  /**
+   * Commits and confirms everything posted before it returns: for shutdown, which cannot wait for a confirmation. A writer
+   * that commits elsewhere waits at most `limitMs`, and confirms what is left then as not saved.
+   */
+  drain(limitMs?: number): void
+  /** Commits and confirms everything posted, then closes the store, within `limitMs` as `drain` is. */
+  close(limitMs?: number): void
 }
 
 export const NO_EVENTS: readonly ThreadEvent[] = Object.freeze([])
@@ -183,8 +186,8 @@ interface EventBase { readonly seq: number; settled: number }
  * (`ThreadStore.reading`), says which posted writes have already committed.
  */
 export class ThreadStoreWriterOnWorker implements ThreadStoreWriter {
-  /** Every write posted and not yet confirmed, in the order posted. */
-  private readonly queue: PostedWrite[] = []
+  /** Every write posted and not yet confirmed, in the order posted: each confirmation takes its own out at once. */
+  private readonly queue = new Set<PostedWrite>()
   private readonly byThread = new Map<string, PostedWrite[]>()
   private readonly bases = new Map<string, EventBase>()
   private readonly waiters: { readonly threadId: string | undefined; readonly resolve: () => void }[] = []
@@ -200,14 +203,14 @@ export class ThreadStoreWriterOnWorker implements ThreadStoreWriter {
   }
 
   post(write: ThreadStoreWrite, confirm?: (outcome: ThreadStoreWriteOutcome) => void): void {
-    if (this.queue.length === 0 && !this.store.writer) {
+    if (this.queue.size === 0 && !this.store.writer) {
       // Applied before the confirmation is called, which an optional call would skip with nobody to confirm to.
       const outcome = applyWrite(this.store, write)
       confirm?.(outcome)
       return
     }
     const posted: PostedWrite = { write, confirm, threads: new Set(writeThreads(write)), whole: writesWholeStore(write) }
-    this.queue.push(posted)
+    this.queue.add(posted)
     for (const threadId of posted.threads) {
       const list = this.byThread.get(threadId)
       if (list) list.push(posted)
@@ -238,7 +241,7 @@ export class ThreadStoreWriterOnWorker implements ThreadStoreWriter {
   }
 
   unconfirmed(threadId?: string): boolean {
-    return threadId === undefined ? this.queue.length > 0 : this.wholeCount > 0 || this.byThread.has(threadId)
+    return threadId === undefined ? this.queue.size > 0 : this.wholeCount > 0 || this.byThread.has(threadId)
   }
 
   confirmed(threadId?: string): Promise<void> {
@@ -246,22 +249,25 @@ export class ThreadStoreWriterOnWorker implements ThreadStoreWriter {
     return new Promise(resolve => { this.waiters.push({ threadId, resolve }) })
   }
 
-  drain(): void {
-    for (let rounds = 0; this.queue.length && rounds < 1_000; rounds++) {
+  drain(limitMs?: number): void {
+    const deadline = limitMs === undefined ? undefined : performance.now() + limitMs
+    for (let rounds = 0; this.queue.size && rounds < 1_000; rounds++) {
       const worker = this.store.writer
-      if (worker && this.queue.some(posted => posted.sent)) {
-        if (!worker.drain()) { this.abandon(); return }
+      // Writes sent and unanswered are those not held.
+      if (worker && this.queue.size > this.held) {
+        if (!worker.drain(deadline === undefined ? undefined : Math.max(0, deadline - performance.now()))) { this.abandon(); return }
         continue
       }
       this.flushHeld()
-      if (this.queue.length && !this.store.writer && this.queue.every(posted => posted.sent)) { this.abandon(); return }
+      if (this.queue.size && !this.store.writer && this.held === 0) { this.abandon(); return }
     }
   }
 
-  close(): void {
-    try { this.drain() } finally {
+  close(limitMs?: number): void {
+    const deadline = limitMs === undefined ? undefined : performance.now() + limitMs
+    try { this.drain(limitMs) } finally {
       this.store.onUnanswered(undefined)
-      this.store.close()
+      this.store.close(deadline === undefined ? undefined : Math.max(0, deadline - performance.now()))
     }
   }
 
@@ -277,7 +283,7 @@ export class ThreadStoreWriterOnWorker implements ThreadStoreWriter {
   }
 
   private answered(posted: PostedWrite, result: StoreWorkerResult): void {
-    if (!this.queue.includes(posted)) return
+    if (!this.queue.has(posted)) return
     let outcome: ThreadStoreWriteOutcome & { memory?: true | undefined }
     if ('lost' in result) outcome = this.finishOnMain(posted, result.started)
     else {
@@ -325,9 +331,7 @@ export class ThreadStoreWriterOnWorker implements ThreadStoreWriter {
   }
 
   private remove(posted: PostedWrite): void {
-    const index = this.queue.indexOf(posted)
-    if (index < 0) return
-    this.queue.splice(index, 1)
+    if (!this.queue.delete(posted)) return
     if (posted.whole) this.wholeCount--
     if (!posted.sent) this.held--
     for (const threadId of posted.threads) {
@@ -346,11 +350,12 @@ export class ThreadStoreWriterOnWorker implements ThreadStoreWriter {
     this.flushing = true
     try {
       while (this.held > 0 && !this.switching && !this.recovering) {
-        const next = this.queue.find(posted => !posted.sent)
+        let next: PostedWrite | undefined
+        for (const posted of this.queue) if (!posted.sent) { next = posted; break }
         if (!next) { this.held = 0; break }
         if (this.store.writer) { this.held--; this.send(next); continue }
         // Without a worker it commits here, once nothing posted ahead of it is still unanswered.
-        if (this.queue[0] !== next) break
+        if (this.queue.values().next().value !== next) break
         const outcome = applyWrite(this.store, next.write)
         this.remove(next)
         next.confirm?.(outcome)
@@ -369,6 +374,7 @@ export class ThreadStoreWriterOnWorker implements ThreadStoreWriter {
 
   /** The worker never answered: shutdown cannot wait longer, so what is left is confirmed as not saved. */
   private abandon(): void {
+    console.warn('thread-store-worker-unanswered')
     for (const posted of [...this.queue]) {
       this.remove(posted)
       posted.confirm?.({ failed: new Set(posted.threads), error: new Error('Thread history could not be saved') })

@@ -3,7 +3,8 @@ import { isBuiltin } from 'node:module'
 
 import { lingui } from '@lingui/vite-plugin'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
-import { build as buildVite, type InlineConfig, type Plugin } from 'vite'
+import { build as buildVite, type Plugin } from 'vite'
+import { storeWorkerBuild } from './scripts/store-worker-build.mjs'
 
 // Preview code is inert unless the renderer was built with this exact test-only gate.
 const visualPreviewEnvironment = process.env.SOTTO_VISUAL_PREVIEW === '1' ? '1' : '0'
@@ -84,35 +85,17 @@ function headlessHostBuild(): Plugin {
           },
         },
       })
-      await buildVite(storeWorkerBuild(resolve(__dirname, 'out/host')))
+      await buildVite(storeWorkerBuild({ root: __dirname, outDir: resolve(__dirname, 'out/host') }))
     },
   }
 }
 
 /**
- * The store worker (`threadStoreWorker.ts`), which writes the thread store off main (#1457), as one file with everything it
- * imports inside it, beside the bundle that starts it. Built on its own, so the thread store's code stays in that bundle
- * rather than moving to a chunk the two would share. `scripts/build-host.mjs` and `tests/fixtures/storeWorker.ts` build it
- * the same way.
+ * Builds the store worker (`threadStoreWorker.ts`), which writes the thread store off main (#1457), beside main's bundle
+ * once main is built, as one file on its own (`scripts/store-worker-build.mjs`).
  */
-function storeWorkerBuild(outDir: string): InlineConfig {
-  return {
-    configFile: false, logLevel: 'warn',
-    ssr: { noExternal: true },
-    build: {
-      ssr: true, target: 'node24', outDir, emptyOutDir: false, minify: false, copyPublicDir: false,
-      rollupOptions: {
-        input: { threadStoreWorker: resolve(__dirname, 'src/main/agents/threadStoreWorker.ts') },
-        external: id => isBuiltin(id),
-        output: { format: 'cjs', entryFileNames: '[name].js' },
-      },
-    },
-  }
-}
-
-/** Builds the store worker beside main's bundle once main is built. */
 function storeWorkerBesideMain(): Plugin {
-  return { name: 'sotto-store-worker', async closeBundle() { await buildVite(storeWorkerBuild(resolve(__dirname, 'out/main'))) } }
+  return { name: 'sotto-store-worker', async closeBundle() { await buildVite(storeWorkerBuild({ root: __dirname, outDir: resolve(__dirname, 'out/main') })) } }
 }
 
 export default defineConfig({

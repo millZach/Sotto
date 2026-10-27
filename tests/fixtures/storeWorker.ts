@@ -1,30 +1,19 @@
 /**
  * The store worker (`src/main/agents/threadStoreWorker.ts`) compiled the way the build compiles it, for a test that writes
  * on it (#1457). The test runner has no built file beside the thread store, so a store writes on main unless a test hands
- * it this path. Built with the bundler into one `.cjs` file with what it imports inside it, as `electron.vite.config.ts`
- * and `scripts/build-host.mjs` build it.
+ * it this path. Built with the bundler into one `.cjs` file with what it imports inside it, by the config the builds use
+ * (`scripts/store-worker-build.mjs`).
  */
 import { closeSync, openSync, readSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { isBuiltin } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { build } from 'vite'
+import { storeWorkerBuild } from '../../scripts/store-worker-build.mjs'
 
 export async function builtStoreWorker(): Promise<{ readonly path: string; dispose(): Promise<void> }> {
   const root = await mkdtemp(join(tmpdir(), 'sotto-store-worker-'))
-  await build({
-    configFile: false, logLevel: 'silent',
-    ssr: { noExternal: true },
-    build: {
-      ssr: true, target: 'node24', outDir: root, emptyOutDir: false, minify: false, copyPublicDir: false,
-      rollupOptions: {
-        input: { threadStoreWorker: resolve('src/main/agents/threadStoreWorker.ts') },
-        external: id => isBuiltin(id),
-        output: { format: 'cjs', entryFileNames: '[name].cjs' },
-      },
-    },
-  })
+  await build(storeWorkerBuild({ root: resolve('.'), outDir: root, extension: 'cjs', logLevel: 'silent' }))
   return {
     path: join(root, 'threadStoreWorker.cjs'),
     dispose: async () => {

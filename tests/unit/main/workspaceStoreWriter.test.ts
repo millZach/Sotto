@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { writeThreads } from '../../../src/main/agents/threadStoreWriter'
+import { CLOSE_LIMIT_MS } from '../../../src/main/agents/storeWorker'
+import { eventsOfWrite, writeThreads } from '../../../src/main/agents/threadStoreWriter'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { DeferredStoreWriter } from '../../fixtures/deferredStoreWriter'
 import { added, aliased, answer, appended, cleanUp, cleanup, DOCS, EventProvider, fixture, message, isSettled, pumped, record, releaseUntilPosted, replaced, reset, runEquivalence, settle, shown, storedMessages, visual, WORKSHOP } from '../../fixtures/storeWriterEquivalence'
@@ -228,6 +229,65 @@ describe('a provider that publishes whole histories', () => {
     settle(f)
     expect(storedMessages(f.directory).map(item => item.id)).toEqual(['ask', 'reply', 'more'])
   })
+  it('holds an answer behind a history write in flight, and behind one that failed until its retry lands', async () => {
+    const f = await fixture({ deferred: true, wholeHistories: true })
+    const thread = f.adapter.state.threads.find(item => item.id === WORKSHOP)!
+    thread.messages = [message('ask', 'user', 'Asked'), message('reply', 'assistant', 'Answered with a question')]
+    f.adapter.emit()
+    f.host.recordAnswer(WORKSHOP, answer('request-1'))
+    const answers = () => f.writer!.log.filter(write => eventsOfWrite(write, WORKSHOP).some(event => event.kind === 'answer-given')).length
+    // The history write is in flight, so the answer waits behind it rather than going with it.
+    expect(answers()).toBe(0)
+    f.writer!.failing = write => eventsOfWrite(write, WORKSHOP).some(event => event.kind === 'message-added')
+    f.writer!.release()
+    f.host.workspaceSnapshot()
+    // The history failed: the answer still waits, for the comparison that retries it.
+    expect(answers()).toBe(0)
+    f.writer!.failing = undefined
+    thread.messages = [...thread.messages]
+    f.adapter.emit()
+    settle(f)
+    const kinds = f.writer!.attempted.map(write => eventsOfWrite(write, WORKSHOP).map(event => event.kind).join(','))
+      .filter(kind => kind.includes('message-added') || kind.includes('answer-given'))
+    expect(kinds.at(-1)).toBe('answer-given')
+    expect(kinds.filter(kind => kind.includes('message-added'))).toHaveLength(2)
+    expect(storedMessages(f.directory).map(item => item.id)).toEqual(['ask', 'reply'])
+  })
+
+  it('holds a history write behind an answer in flight, and posts it once the answer lands', async () => {
+    const f = await fixture({ deferred: true, wholeHistories: true })
+    const thread = f.adapter.state.threads.find(item => item.id === WORKSHOP)!
+    thread.messages = [message('ask', 'user', 'Asked')]
+    f.adapter.emit()
+    settle(f)
+    f.host.recordAnswer(WORKSHOP, answer('request-1'))
+    const posted = f.writer!.log.length
+    thread.messages = [...thread.messages, message('reply', 'assistant', 'After the answer')]
+    f.adapter.emit()
+    // The answer is in flight: the history the host published waits for it.
+    expect(f.writer!.log.slice(posted)).toEqual([])
+    f.writer!.release()
+    expect(f.writer!.log.slice(posted).map(write => eventsOfWrite(write, WORKSHOP).map(event => event.kind))).toEqual([['message-added']])
+    settle(f)
+    expect(storedMessages(f.directory).map(item => item.id)).toEqual(['ask', 'reply'])
+  })
+
+  it('publishes once a history write is confirmed, so a client catching up reads the commit', async () => {
+    const f = await fixture({ deferred: true, wholeHistories: true })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] })
+    const thread = f.adapter.state.threads.find(item => item.id === WORKSHOP)!
+    thread.messages = [message('ask', 'user', 'Pushed before it committed')]
+    f.adapter.emit()
+    await vi.advanceTimersByTimeAsync(5_000)
+    let publishes = 0
+    const unsubscribe = f.host.subscribe(() => { publishes++ })
+    publishes = 0
+    f.writer!.release()
+    await vi.advanceTimersByTimeAsync(5_000)
+    unsubscribe()
+    expect(publishes).toBeGreaterThan(0)
+    expect(f.host.eventsAfter(0, WORKSHOP).map(item => item.event.kind)).toContain('message-added')
+  })
 })
 
 describe('order, failure and durability through the seam', () => {
@@ -364,6 +424,27 @@ describe('order, failure and durability through the seam', () => {
     while (!writer!.attempted.includes(off)) writer!.release(1)
     await pumped({ directory, adapter, host, writer }, switched)
     expect(storedMessages(directory)).toEqual([])
+  })
+
+  it('stops waiting for a writer that never answers a minute after closing began, and says what was not saved', async () => {
+    const f = await fixture({ deferred: true })
+    f.adapter.publish(added('reply', 'Never answered'))
+    f.host.workspaceSnapshot()
+    expect(f.writer!.waiting).toBeGreaterThan(0)
+    // A store worker that has stopped answering: nothing posted is ever confirmed, even when closing asks.
+    f.writer!.drain = () => undefined
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] })
+    f.host.disconnect()
+    let failure: unknown
+    const closing = f.host.close().catch((error: unknown) => { failure = error })
+    await vi.advanceTimersByTimeAsync(CLOSE_LIMIT_MS - 1_000)
+    expect(failure).toBeUndefined()
+    await vi.advanceTimersByTimeAsync(2_000)
+    await closing
+    expect(failure).toBeInstanceOf(Error)
+    expect(String((failure as Error).message)).toContain('Thread messages could not be saved')
+    expect(warn).toHaveBeenCalledWith('thread-store-close-timed-out')
   })
 
   it('closing commits everything posted before the store closes', async () => {

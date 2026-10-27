@@ -8,22 +8,21 @@ import type { MessagePort } from 'node:worker_threads'
 import { workerData } from 'node:worker_threads'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { immutableActivities, ownBuiltActivity } from './activitySnapshots'
-import type { StoreWorkerData, WireActivityEntry, WireWrite, WorkerAnswer, WorkerRequest } from './storeWorker'
+import { CHECKPOINT, CONTROL, LIFE, type StoreWorkerData, type WireActivityEntry, type WireWrite, type WorkerAnswer, type WorkerRequest } from './storeWorkerProtocol'
 import { ThreadStore } from './threadStore'
 import { applyWrite, writeThreads, type ActivityListEntry, type ThreadStoreWrite, type ThreadStoreWriteOutcome } from './threadStoreWriter'
 
-// The control values `storeWorker.ts` describes, kept here so this file reads none of main's state.
-const STATE = 0, LIFE = 1, RESTARTS = 2, RESTARTS_BUSY = 3, APPLYING = 4, DONE = 5
-const IDLE = 0, RUNNING = 1, RESTARTING = 3
-const STARTING = 0, STOPPED = 2, OPEN = 3
+const { STATE, RESTARTS, RESTARTS_BUSY, APPLYING, DONE } = CONTROL
+const { IDLE, RUNNING, RESTARTING } = CHECKPOINT
+const { STARTING, STOPPED, OPEN } = LIFE
 
 const data = workerData as StoreWorkerData
 const control = new Int32Array(data.control)
 const port: MessagePort = data.port
 
 function finish(): void {
-  Atomics.store(control, LIFE, STOPPED)
-  Atomics.notify(control, LIFE)
+  Atomics.store(control, CONTROL.LIFE, STOPPED)
+  Atomics.notify(control, CONTROL.LIFE)
 }
 
 /** A worker that dies says so, so a main waiting for it stops waiting. */
@@ -117,7 +116,7 @@ function answer(id: number, outcome: ThreadStoreWriteOutcome & { memory?: true }
 }
 
 // Main stopped it before it started: it never opens the file.
-if (Atomics.compareExchange(control, LIFE, STARTING, OPEN) === STARTING) {
+if (Atomics.compareExchange(control, CONTROL.LIFE, STARTING, OPEN) === STARTING) {
   try {
     store.open({ onMain: true, busyTimeoutMs: data.busyTimeoutMs })
     // The worker checkpoints the log itself, between its writes.
@@ -141,7 +140,7 @@ if (Atomics.compareExchange(control, LIFE, STARTING, OPEN) === STARTING) {
   let timer: ReturnType<typeof setTimeout> | undefined
   let open = true
   const pass = (): void => {
-    if (!open || Atomics.load(control, LIFE) !== OPEN) return
+    if (!open || Atomics.load(control, CONTROL.LIFE) !== OPEN) return
     let next = data.intervalMs
     Atomics.store(control, STATE, RUNNING)
     try {

@@ -379,7 +379,12 @@ export class ThreadStore {
     if (db === undefined || this.worker === undefined || this.inRead) return read()
     db.exec('BEGIN')
     this.inRead = true
-    try { return read() } finally {
+    try {
+      // A deferred transaction takes its snapshot at its first read, which here is now: whatever `read` works out first,
+      // such as which posted writes the worker has begun, is checked against the file as it already stands.
+      this.statement('SELECT 1 FROM meta LIMIT 1').get()
+      return read()
+    } finally {
       this.inRead = false
       try { db.exec('COMMIT') } catch { /* A read transaction has nothing to keep. */ }
     }
@@ -448,7 +453,8 @@ export class ThreadStore {
     this.open()
   }
 
-  close(): void {
+  /** Closes the store; `limitMs` bounds how long it waits for the store worker to close its connection first. */
+  close(limitMs?: number): void {
     this.durableRedactions?.close()
     this.durableRedactions = undefined
     this.statements.clear()
@@ -463,7 +469,7 @@ export class ThreadStore {
     // The worker's connection closes first, so main's close is the file's last and checkpoints the log as it always did; it
     // may write again for that, since a connection that only reads leaves the log behind.
     if (this.worker) {
-      this.worker.stop()
+      this.worker.stop(limitMs)
       try { this.db?.exec('PRAGMA query_only=OFF') } catch { /* The connection is going either way. */ }
     }
     this.worker = undefined

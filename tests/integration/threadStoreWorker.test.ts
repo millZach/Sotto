@@ -8,7 +8,8 @@ import { DatabaseSync } from 'node:sqlite'
 import { setTimeout as delay } from 'node:timers/promises'
 import { receiveMessageOnPort, type MessagePort } from 'node:worker_threads'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { applyEventsToWindow } from '../../src/main/agents/storeOverlay'
+import { applyEventsToMessage, applyEventsToWindow } from '../../src/main/agents/storeOverlay'
+import { immutableActivities, ownBuiltActivity } from '../../src/main/agents/activitySnapshots'
 import { CONTROL, type StoreWorker, type StoreWorkerTiming } from '../../src/main/agents/storeWorker'
 import { ThreadStore } from '../../src/main/agents/threadStore'
 import { ThreadStoreWriterOnMain, ThreadStoreWriterOnWorker, type ThreadStoreWrite, type ThreadStoreWriteOutcome } from '../../src/main/agents/threadStoreWriter'
@@ -97,6 +98,30 @@ describe('the store worker', () => {
     expect(shown(store, writer, 'thread').map(item => item.text)).toEqual(['Hello, world', 'Next'])
   })
 
+  it('reads at the moment the read began, so a write the worker commits during it is laid over once', async () => {
+    const { store, writer, path, post } = await open({ busyTimeoutMs: 30_000 })
+    await post({ kind: 'events', threadId: 'thread', events: [added('reply', 'Hello')] })
+    // Another connection holds the write lock, so the worker waits inside the write ahead and has not begun the append.
+    const holder = new DatabaseSync(path, { timeout: 5_000 })
+    holder.exec('BEGIN IMMEDIATE')
+    writer.post({ kind: 'events', threadId: 'other', events: [added('ahead', 'Ahead')] })
+    const ahead = 2
+    while (!internals(store).worker!.started(ahead)) await delay(5)
+    writer.post({ kind: 'events', threadId: 'thread', events: [appended('reply', ', world')] })
+    const read = store.reading(() => {
+      // What is held is worked out first, as the workspace's single-message read does: the append is not begun.
+      const held = writer.posted('thread')
+      expect(held).toHaveLength(1)
+      // The worker commits the append before the message itself is read.
+      holder.exec('COMMIT'); holder.close()
+      waitForCommitUnheard(path, 3)
+      return applyEventsToMessage('reply', held, id => store.message('thread', id))
+    })
+    expect(read?.text).toBe('Hello, world')
+    await writer.confirmed()
+    expect(store.message('thread', 'reply')?.text).toBe('Hello, world')
+  })
+
   it('lays a write the worker has not committed over the window', async () => {
     const { store, writer, path } = await open({ busyTimeoutMs: 30_000 })
     // The worker has opened its connection, whose start takes the write lock a moment.
@@ -128,13 +153,38 @@ describe('the store worker', () => {
 
   it('sends a list that changed as what changed, and rebuilds it whole on the worker', async () => {
     const { store, post } = await open()
-    const first = Array.from({ length: 50 }, (_, index) => Object.freeze(record(`a${index}`, index)) as AgentActivity)
-    expect((await post({ kind: 'activities', entries: [{ threadId: 'thread', activities: first }] })).failed.size).toBe(0)
-    const later = [...first.slice(10), record('b0', 60)]
+    // Records owned as the workspace holds them: frozen and branded, so the same record again is known without comparing.
+    const owned = (id: string, sequence: number, title = `Tool ${id}`, status: AgentActivity['status'] = 'completed'): AgentActivity =>
+      ownBuiltActivity({ ...record(id, sequence), title, status })
     const sent = vi.spyOn(internals(store).worker! as unknown as { list(entry: unknown): unknown }, 'list')
-    expect((await post({ kind: 'activities', entries: [{ threadId: 'thread', activities: later }] })).failed.size).toBe(0)
-    expect(sent.mock.results[0]!.value).toMatchObject({ base: expect.any(Number) as number })
-    expect(store.readActivities('thread').map(activity => activity.id)).toEqual(later.map(activity => activity.id))
+    const lastSent = (): Record<string, unknown> => sent.mock.results.at(-1)!.value as Record<string, unknown>
+    const save = async (activities: readonly AgentActivity[]): Promise<void> => {
+      expect((await post({ kind: 'activities', entries: [{ threadId: 'thread', activities }] })).failed.size).toBe(0)
+    }
+    const stored = () => store.readActivities('thread').map(({ id, title, status }) => ({ id, title, status }))
+    const first = immutableActivities(Array.from({ length: 50 }, (_, index) => owned(`a${index}`, index)))
+    await save(first)
+    expect(lastSent()).toMatchObject({ whole: first })
+    // A certified list that dropped ten from its front and added one: only the new record crosses.
+    const later = immutableActivities([...first.slice(10), owned('b0', 60)])
+    await save(later)
+    expect(lastSent()).toMatchObject({ base: expect.any(Number) as number, ids: later.map(activity => activity.id) })
+    expect((lastSent().changed as AgentActivity[]).map(activity => activity.id)).toEqual(['b0'])
+    // The same certified list again: nothing crosses but that it is the same.
+    await save(later)
+    expect(lastSent()).toMatchObject({ same: true })
+    expect(stored().map(item => item.id)).toEqual(later.map(activity => activity.id))
+    // An array that is not certified, edited where it is between saves: a record replaced, one removed and the rest reordered.
+    const mutable: AgentActivity[] = [...later.slice(0, 5), owned('c0', 70, 'Before', 'running')]
+    await save(mutable)
+    expect((lastSent().changed as AgentActivity[]).map(activity => activity.id)).toEqual(['c0'])
+    mutable[5] = owned('c0', 70, 'After', 'completed')
+    mutable.splice(1, 1)
+    mutable.reverse()
+    await save(mutable)
+    expect(lastSent().same).toBeUndefined()
+    expect((lastSent().changed as AgentActivity[]).map(activity => activity.title)).toEqual(['After'])
+    expect(stored()).toEqual(mutable.map(({ id, title, status }) => ({ id, title, status })))
   })
 
   it('commits on main what it was posted once the worker goes mid-batch, and goes on writing there', async () => {

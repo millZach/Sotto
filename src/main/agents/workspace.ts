@@ -31,7 +31,7 @@ import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type Agent
 import { agentHandover, type AgentHandover } from './agentHandover'
 import { AGENT_HANDOVER_UNAVAILABLE, AGENT_NOT_SEEN_FINISHING, AGENT_STILL_WORKING, FORK_REPLY_GONE, FORK_TURN_RUNNING, NATIVE_FORKS } from '../../shared/threadStarts'
 import { EMPTY_WINDOW, FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, RECORDED_USER_MESSAGES_MAX, replacementEvents, summaryOf, ThreadStore, type RecordedUserMessageIdentity, type StoredVisual, type ThreadMessageWindow } from './threadStore'
-import { BUILT_STORE_WORKER, type StoreWorkerOptions } from './storeWorker'
+import { BUILT_STORE_WORKER, CLOSE_LIMIT_MS, type StoreWorkerOptions } from './storeWorker'
 import { NO_EVENTS, throwIfFailed, writeFailed, ThreadStoreWriterOnWorker, type ThreadStoreWrite, type ThreadStoreWriteOutcome, type ThreadStoreWriter } from './threadStoreWriter'
 import { applyEventsToIdentities, applyEventsToMessage, applyEventsToSummary, applyEventsToWindow, keepsPositions, pageWithEvents } from './storeOverlay'
 import { readHandover, type Handover, type HandoverStore } from './handover'
@@ -1013,6 +1013,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private readonly recordsInFlight = new Set<string>()
   /** What such a host published while its thread's write was in flight, recorded once that write is confirmed. */
   private readonly recordsOwed = new Map<string, { readonly messages: readonly AgentMessage[]; readonly previousEpoch: string | undefined }>()
+  /**
+   * Threads whose last whole-history write failed. Its retry is the next comparison of what the host publishes, and an
+   * answer waits for it, so nothing of the thread commits ahead of the words that failed.
+   */
+  private readonly recordsFailed = new Set<string>()
+  /** When closing must be done by, once `close` began (`CLOSE_LIMIT_MS`). */
+  private closeDeadline: number | undefined
   /** Counts activity saves, so a failure heard late puts back only what no later save has replaced. */
   private activitySaves = 0
   /** Activity saves posted and not yet confirmed: until they are, what the store holds is not known. */
@@ -1873,7 +1880,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     for (const threadId of deleted) {
       this.clearedIds.add(threadId)
       this.forgetting.delete(threadId)
-      this.pendingEvents.delete(threadId); this.inFlight.delete(threadId); this.failedEventThreads.delete(threadId); this.invalidEventThreads.delete(threadId); this.eventChanged.delete(threadId)
+      this.pendingEvents.delete(threadId); this.inFlight.delete(threadId); this.failedEventThreads.delete(threadId); this.recordsFailed.delete(threadId); this.recordsOwed.delete(threadId); this.invalidEventThreads.delete(threadId); this.eventChanged.delete(threadId)
     }
     this.state.snapshot.threads = this.state.snapshot.threads.flatMap(thread => {
       if (gone.has(thread.id)) return []
@@ -2728,7 +2735,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const due = new Map<string, ThreadEvent[]>()
     for (const [threadId, pending] of this.pendingEvents) {
       // A thread's posted batch, or answer, is confirmed before its next is posted, so nothing commits ahead of one that failed.
-      if (this.inFlight.has(threadId) || this.answersInFlight.has(threadId)) continue
+      // A history-publishing host's write in flight, or one that failed and waits for its next comparison, holds it too.
+      if (this.inFlight.has(threadId) || this.answersInFlight.has(threadId) || this.recordsInFlight.has(threadId) || this.recordsFailed.has(threadId)) continue
       // A thread being cleared posts nothing more: its forget is posted, and anything after it would outlive it.
       if (this.forgetting.has(threadId)) continue
       const events: ThreadEvent[] = []
@@ -2805,6 +2813,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       else this.pendingEvents.delete(threadId)
       this.failedEventThreads.delete(threadId)
       this.noteWritten(threadId, events)
+      this.recordOwed(threadId)
       this.markChanged(threadId)
       this.eventChanged.add(threadId)
       this.known.delete(threadId)
@@ -3106,22 +3115,26 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * at once.
    */
   private recordHistory(thread: AgentThread, messages: readonly AgentMessage[], previousEpoch: string | undefined): boolean {
-    if (this.recordsInFlight.has(thread.id)) { this.recordsOwed.set(thread.id, { messages, previousEpoch }); return true }
+    // Behind its own write in flight, an answer or a batch in flight, or a batch that failed: kept, and compared once it lands.
+    if (this.historyHeld(thread.id)) { this.recordsOwed.set(thread.id, { messages, previousEpoch }); return true }
     const events = this.differences(thread.id, messages, thread.historyEpoch, previousEpoch)
     if (events.length) {
       let failed = false
       this.recordsInFlight.add(thread.id)
       this.post({ kind: 'events', threadId: thread.id, events }, (outcome, late) => {
         this.recordsInFlight.delete(thread.id)
-        const owed = this.recordsOwed.get(thread.id)
-        this.recordsOwed.delete(thread.id)
         if (!writeFailed(outcome)) {
+          this.recordsFailed.delete(thread.id)
           this.noteWritten(thread.id, events)
           // What the host published meanwhile is compared with the store as this write left it, and posted in turn.
-          const current = owed && this.threadById(thread.id)
-          if (current && this.historyWritable() && !this.forgetting.has(thread.id)) this.recordHistory(current, owed.messages, owed.previousEpoch)
+          this.recordOwed(thread.id)
+          // A confirmation heard after the post owes a publish: a client catching up reads the commit with it, and an
+          // answer that waited behind the write is posted.
+          if (late && !this.stopping) this.publishSoon()
           return
         }
+        this.recordsOwed.delete(thread.id)
+        this.recordsFailed.add(thread.id)
         failed = true
         // The whole history goes to the pane as it is, so nothing is above a window any more.
         this.saveError = HISTORY_SAVE_ERROR; this.hidden.delete(thread.id); this.storedAnchors.delete(thread.id)
@@ -3135,6 +3148,18 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       this.known.set(thread.id, { epoch: thread.historyEpoch, messages: messages.map(markOf) })
     }
     return true
+  }
+  /** Whether a thread's next whole-history write waits: behind its own, an answer or a batch in flight, or a batch that failed. */
+  private historyHeld(threadId: string): boolean {
+    return this.recordsInFlight.has(threadId) || this.answersInFlight.has(threadId) || this.inFlight.has(threadId) || this.failedEventThreads.has(threadId)
+  }
+  /** Compares and posts the history a host published while the thread's writes were held, once nothing holds it. */
+  private recordOwed(threadId: string): void {
+    const owed = this.recordsOwed.get(threadId)
+    if (!owed || this.historyHeld(threadId)) return
+    this.recordsOwed.delete(threadId)
+    const thread = this.threadById(threadId)
+    if (thread && this.historyWritable() && !this.forgetting.has(threadId)) this.recordHistory(thread, owed.messages, owed.previousEpoch)
   }
   private legacyMessages(thread: AgentThread, messages: readonly AgentMessage[]): readonly AgentMessage[] {
     let privateMessages = this.privateLegacyMessages.get(thread.id)
@@ -3368,7 +3393,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // Behind words still held, in flight, waiting for a failed batch's retry or held while the thread is cleared, the
     // answer waits with them, so it is posted after them and its batch is retried with theirs.
     const waiting = this.pendingEvents.get(threadId)
-    if (waiting || this.forgetting.has(threadId)) {
+    // A history-publishing host's write in flight, or one that failed and waits for its retry, holds the answer the same way.
+    if (waiting || this.forgetting.has(threadId) || this.recordsInFlight.has(threadId) || this.recordsFailed.has(threadId)) {
       if (!this.historyEnabled()) this.pendingEventsPrivate = true
       if (waiting) waiting.push(event)
       else this.pendingEvents.set(threadId, [event])
@@ -3381,7 +3407,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (left > 0) this.answersInFlight.set(threadId, left)
       else this.answersInFlight.delete(threadId)
       if (writeFailed(outcome)) this.saveError = HISTORY_SAVE_ERROR
-      // Words that waited behind the answer are posted at the next publish.
+      // A history the host published behind the answer is compared now; words that waited are posted at the next publish.
+      if (left === 0) this.recordOwed(threadId)
       if (late && left === 0 && this.pendingEvents.has(threadId) && !this.stopping) this.publishSoon()
     })
   }
@@ -3401,13 +3428,33 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Finish command lanes before detaching provider delivery and closing SQLite. */
   async close(): Promise<void> {
     this.stopping = true
-    await Promise.allSettled([...this.branchWrites, ...this.lanes.values(), ...this.interruptLanes.values(), ...this.remoteStatusReads])
+    // Closing waits a minute at most, whatever holds it: a store worker that stops answering costs that, and what it did
+    // not answer is reported as not saved (ADR-0016, October 26 amendment).
+    const deadline = Date.now() + CLOSE_LIMIT_MS
+    let inTime = await this.beforeDeadline(Promise.allSettled([...this.branchWrites, ...this.lanes.values(), ...this.interruptLanes.values(), ...this.remoteStatusReads]), deadline)
     this.stopDelivery()
     // Quitting loses no commit: what was posted is confirmed before the store closes.
-    try { if (this.ready) { await this.flush(); if (this.writes.unconfirmed()) await this.settled(undefined, true) } } finally { this.dispose() }
+    try {
+      if (this.ready && inTime) inTime = await this.beforeDeadline((async () => { await this.flush(); if (this.writes.unconfirmed()) await this.settled(undefined, true) })(), deadline)
+    } finally {
+      this.closeDeadline = deadline
+      this.dispose()
+    }
+    if (!inTime) { console.warn('thread-store-close-timed-out'); throw new Error(HISTORY_SAVE_ERROR) }
     if (this.pendingEvents.size) throw new Error(HISTORY_SAVE_ERROR)
   }
+  /** Whether `work` settled before `deadline`. A failure it meets in time is thrown; one after is left, as it is no longer waited for. */
+  private async beforeDeadline(work: Promise<unknown>, deadline: number): Promise<boolean> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const late = new Promise<false>(resolve => { timer = setTimeout(() => resolve(false), Math.max(0, deadline - Date.now())); timer.unref?.() })
+    work.catch(() => undefined)
+    try { return await Promise.race([work.then(() => true as const), late]) } finally { clearTimeout(timer) }
+  }
 
+  /** What is left of the minute closing may take, once `close` began; undefined for a dispose on its own. */
+  private closeRemaining(): number | undefined {
+    return this.closeDeadline === undefined ? undefined : Math.max(0, this.closeDeadline - Date.now())
+  }
   /** Closes the history store. Called when the app quits, after the last flush. */
   dispose(): void {
     this.stopDelivery()
@@ -3423,14 +3470,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (this.ready) {
         this.writeEvents(true)
         // What waited behind a batch in flight is posted once that batch is confirmed, which shutdown cannot wait for.
-        if (this.inFlight.size || this.answersInFlight.size) { this.writes.drain(); this.writeEvents(true) }
+        if (this.inFlight.size || this.answersInFlight.size) { this.writes.drain(this.closeRemaining()); this.writeEvents(true) }
         const saved = this.saveActivities(!this.rosterOnDisk(), true)
         if (saved) saved.catch(() => { this.saveError = unsaved })
       }
     }
     catch { this.saveError = unsaved }
     // Closing confirms everything posted before the store closes, so quitting loses no commit.
-    finally { this.writes.close(); this.subagentStore.close() }
+    finally { this.writes.close(this.closeRemaining()); this.subagentStore.close() }
     if (this.subagentTimer) clearTimeout(this.subagentTimer)
     this.subagentChanges.clear(); this.subagentListeners.clear()
     this.activityInputs.clear(); this.activityListeners.clear(); this.listeners.clear(); this.settledThreadListeners.clear()
@@ -4273,6 +4320,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       this.pendingEvents.clear()
       this.inFlight.clear()
       this.failedEventThreads.clear()
+      this.recordsFailed.clear()
       clearTimeout(this.historyRetryTimer)
       this.historyRetryTimer = undefined
       this.historyRetryDelay = 1_000

@@ -3,8 +3,12 @@ import { join } from 'node:path'
 import { MessageChannel, receiveMessageOnPort, Worker, type MessagePort } from 'node:worker_threads'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { SAVE_SYNCHRONOUS } from '../storage/sqliteDurability'
-import { isImmutableActivity } from './activitySnapshots'
+import { isImmutableActivities, isImmutableActivity } from './activitySnapshots'
 import type { ActivityListEntry, ThreadStoreWrite, ThreadStoreWriteOutcome } from './threadStoreWriter'
+import { CONTROL, LIFE, type StoreWorkerData, type WireActivityEntry, type WireWrite, type WorkerAnswer, type WorkerRequest } from './storeWorkerProtocol'
+
+export { CHECKPOINT, CONTROL, LIFE } from './storeWorkerProtocol'
+export type { StoreWorkerData, WireActivityEntry, WireWrite, WorkerAnswer, WorkerRequest } from './storeWorkerProtocol'
 
 /**
  * Main's side of the store worker (#1457, ADR-0016's October 26 amendment): the worker thread (`threadStoreWorker.ts`)
@@ -30,22 +34,14 @@ export const RESTART_WAIT_MS = 10
 export const RESTART_RETRY_MS = 2
 /** How long the worker's writes wait for a lock, as main's did. */
 export const WRITE_BUSY_TIMEOUT_MS = 5_000
-/** How long closing waits for the worker to answer every write posted before it goes on without the rest. */
-const DRAIN_LIMIT_MS = 60_000
+/**
+ * How long closing waits, from when it begins, for every write posted to be answered: the awaits before the store closes,
+ * the drain and the worker's stop share it. What is not answered by then is reported as not saved.
+ */
+export const CLOSE_LIMIT_MS = 60_000
 /** How long a stop waits for the worker to close its connection. */
 const STOP_LIMIT_MS = 10_000
 
-/**
- * The slots of the control array main and the worker share; `threadStoreWorker.ts` keeps its own copy, since it must not
- * import main's modules. STATE says whether a passive checkpoint (RUNNING) or a RESTART (RESTARTING) runs. LIFE goes
- * STARTING, then OPEN once the worker opened its connection, then STOPPED once it has closed it or never will; STOPPING
- * asks an open worker to close. APPLYING is the identity of the newest write the worker has begun, and DONE of the newest
- * it has answered; a read on main compares them with what it posted (`started`). RESTARTS and RESTARTS_BUSY count the
- * RESTARTs that put the whole log in the file and those that found a read on it, for a test or a measurement.
- */
-export const CONTROL = { STATE: 0, LIFE: 1, RESTARTS: 2, RESTARTS_BUSY: 3, APPLYING: 4, DONE: 5, SLOTS: 6 } as const
-export const CHECKPOINT = { IDLE: 0, RUNNING: 1, RESTARTING: 3 } as const
-export const LIFE = { STARTING: 0, STOPPING: 1, STOPPED: 2, OPEN: 3 } as const
 
 export interface StoreWorkerTiming {
   readonly intervalMs?: number
@@ -57,48 +53,6 @@ export interface StoreWorkerTiming {
 
 /** The built worker and, for a test or a measurement, its timing. */
 export interface StoreWorkerOptions { readonly path: string; readonly timing?: StoreWorkerTiming }
-
-export interface StoreWorkerData {
-  readonly path: string
-  readonly control: SharedArrayBuffer
-  readonly port: MessagePort
-  readonly intervalMs: number
-  readonly restartPages: number
-  readonly restartWaitMs: number
-  readonly restartRetryMs: number
-  readonly busyTimeoutMs: number
-  readonly synchronous: string
-}
-
-/**
- * One thread's activity list as it crosses to the worker. A list sent before is sent as what changed since (`base`): the
- * order of its identities and the records that are not the same frozen record as last time. The worker keeps the list it
- * last committed for each thread and rebuilds the rest from it, so a save of a thread holding two thousand records copies
- * the few that changed rather than all of them. A worker that no longer holds `base` fails the entry, and the next save
- * sends the list whole.
- */
-export type WireActivityEntry = { readonly threadId: string; readonly epoch?: string | undefined; readonly version: number } & (
-  | { readonly whole: readonly AgentActivity[] }
-  | { readonly base: number; readonly same: true }
-  | { readonly base: number; readonly ids: readonly string[]; readonly changed: readonly AgentActivity[] })
-
-/** A write as it crosses to the worker: activity lists as changes, and Keep local history's dormant threads named. */
-export type WireWrite =
-  | Exclude<ThreadStoreWrite, { kind: 'activities' } | { kind: 'activity-list' } | { kind: 'history-off' }>
-  | { readonly kind: 'activities'; readonly entries: readonly WireActivityEntry[] }
-  | { readonly kind: 'activity-list'; readonly flushed?: boolean | undefined; readonly entry: WireActivityEntry }
-  | (Extract<ThreadStoreWrite, { kind: 'history-off' }> & { readonly preserved: readonly string[] })
-
-export type WorkerRequest = { readonly kind: 'write'; readonly id: number; readonly write: WireWrite } | { readonly kind: 'stop' }
-
-/** The worker's answer to one write. `memory` says it took the file's words out and closed it for Keep local history. */
-export interface WorkerAnswer {
-  readonly id: number
-  readonly failed: readonly string[]
-  readonly error?: { readonly name: string; readonly message: string } | undefined
-  readonly removed?: number | undefined
-  readonly memory?: true | undefined
-}
 
 /** What became of a posted write: the worker's outcome, or the worker went before answering it. */
 export type StoreWorkerResult =
@@ -176,7 +130,7 @@ export class StoreWorker {
    * Waits until every write posted has been answered, receiving each answer here rather than on the event loop: for
    * shutdown, which cannot wait for a task. Answers whether it finished; a worker that never answers is left for `stop`.
    */
-  drain(limitMs = DRAIN_LIMIT_MS): boolean {
+  drain(limitMs = CLOSE_LIMIT_MS): boolean {
     const deadline = performance.now() + limitMs
     while (this.pending.size) {
       const received = receiveMessageOnPort(this.port)
@@ -198,15 +152,15 @@ export class StoreWorker {
 
   /**
    * Stops the worker, its connection closed before this returns, so main's close is the file's last. Writes still
-   * unanswered are not waited for; `drain` first for those.
+   * unanswered are not waited for; `drain` first for those. It waits for the worker at most `limitMs`.
    */
-  stop(): void {
+  stop(limitMs = STOP_LIMIT_MS): void {
     if (this.stopping) return
     this.stopping = true
     if (!this.gone && Atomics.compareExchange(this.control, CONTROL.LIFE, LIFE.STARTING, LIFE.STOPPED) !== LIFE.STARTING) {
       if (Atomics.compareExchange(this.control, CONTROL.LIFE, LIFE.OPEN, LIFE.STOPPING) === LIFE.OPEN) {
         this.port.postMessage({ kind: 'stop' } satisfies WorkerRequest)
-        const deadline = performance.now() + STOP_LIMIT_MS
+        const deadline = performance.now() + Math.min(limitMs, STOP_LIMIT_MS)
         while (Atomics.load(this.control, CONTROL.LIFE) !== LIFE.STOPPED && performance.now() < deadline) Atomics.wait(this.control, CONTROL.LIFE, LIFE.STOPPING, 100)
       }
     }
@@ -274,10 +228,13 @@ export class StoreWorker {
     const { threadId, activities, epoch } = entry
     const version = this.nextVersion++
     const last = this.sent.get(threadId)
-    const records = last?.list === activities ? last.records : new Map(activities.map(activity => [activity.id, activity]))
+    // Only a certified list, frozen and owned whole, is known to be unchanged by being the same list: an array that is not
+    // may have had records replaced, removed or reordered where it is, so it is read again each time.
+    const same = last?.list === activities && isImmutableActivities(activities)
+    const records = same ? last.records : new Map(activities.map(activity => [activity.id, activity]))
     this.sent.set(threadId, { version, list: activities, records })
     if (!last) return { threadId, epoch, version, whole: activities }
-    if (last.list === activities && activities.every(isImmutableActivity)) return { threadId, epoch, version, base: last.version, same: true }
+    if (same) return { threadId, epoch, version, base: last.version, same: true }
     // A record that is not frozen may have been edited where it is, so only a frozen one the same as last time is left out.
     const changed = activities.filter(activity => !isImmutableActivity(activity) || last.records.get(activity.id) !== activity)
     return { threadId, epoch, version, base: last.version, ids: activities.map(activity => activity.id), changed }
