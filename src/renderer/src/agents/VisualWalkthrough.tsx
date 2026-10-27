@@ -3,7 +3,7 @@ import { useLingui } from '@lingui/react/macro'
 import { keepRecent, readRecent } from '../../../shared/recentMap'
 import type { AgentVisual } from '../../../shared/visuals'
 import { READ_ALL_STEP, type VisualStepPlace } from '../../../shared/visualGuest'
-import { clampStep } from './VisualStepper'
+import { VisualStepper, clampStep } from './VisualStepper'
 
 /**
  * A visual's walkthrough place (#793), shared by every card that shows one: a diagram's and an interactive page's
@@ -35,6 +35,32 @@ export function walkthroughView(steps: NonNullable<AgentVisual['steps']>, place:
   const walking = steps.length > 0 && !place.readAll
   const current = clampStep(place.step, steps.length)
   return { walking, current, highlight: walking ? steps[current]?.highlight : undefined }
+}
+
+/**
+ * The walkthrough as Expand shows it: the card's own bar under the picture, and a step for Left and Right anywhere in
+ * the expanded view. It moves the card's place, so Expand opens on the card's step and the card is on the step Expand
+ * closed on.
+ */
+export interface ExpandedWalkthrough {
+  readonly bar: ReactNode
+  /** One step back (-1) or on (1), stopping at the ends; none for a visual with one step, which has nowhere to go. */
+  readonly step: ((direction: -1 | 1) => void) | undefined
+}
+
+/** The expanded walkthrough for a place, or none while Read all shows every step or the visual has none. */
+export function expandedWalkthrough(steps: NonNullable<AgentVisual['steps']>, place: WalkthroughPlace,
+  movePlace: (change: Partial<WalkthroughPlace>) => void): ExpandedWalkthrough | undefined {
+  const { walking, current } = walkthroughView(steps, place)
+  if (!walking) return undefined
+  const onStep = (index: number): void => movePlace({ step: index })
+  return {
+    bar: <VisualStepper steps={steps} index={current} onStep={onStep} />,
+    step: steps.length < 2 ? undefined : direction => {
+      const next = clampStep(current + direction, steps.length)
+      if (next !== current) onStep(next)
+    },
+  }
 }
 
 /**

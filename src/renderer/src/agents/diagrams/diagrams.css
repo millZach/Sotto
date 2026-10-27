@@ -92,6 +92,10 @@
   transition: width 140ms ease-out, height 140ms ease-out, transform 140ms ease-out;
 }
 .rich-diagram-viewer__viewport:is([data-dragging], :not([data-settled])) .rich-diagram-viewer__image { transition: none; }
+/* A visual's walkthrough in Expand: the card's bar under the picture, which gives up room to a long step but never more
+   than half the dialog; a step longer than that scrolls in the bar. */
+.rich-diagram-viewer__walkthrough { flex: none; max-height: 50%; overflow-y: auto; }
+.rich-diagram-viewer__walkthrough .visual-stepper { padding-inline: 18px; }
 .rich-diagram-viewer__hint {
   margin: 0;
   padding: 8px 18px;

@@ -194,6 +194,94 @@ describe('a walkthrough in the card', () => {
     expect(litIn(within(viewer).getByRole('img'))).toEqual(['sotto-diagram-flowchart-flowchart-A-0'])
   })
 
+  it('steps in Expand from the card\'s bar under the drawing, on the card\'s step, and leaves the card on the step it closed on', async () => {
+    document.documentElement.dataset.reducedMotion = 'on'
+    render(<VisualCard visual={visual()} />)
+    const card = screen.getByRole('region', { name: 'Visual: How a draft is sent' })
+    await within(card).findByRole('img')
+    await userEvent.click(within(card).getByRole('button', { name: 'Next' }))
+    await userEvent.click(within(card).getByRole('button', { name: 'Expand How a draft is sent' }))
+    const viewer = screen.getByRole('dialog')
+    const bar = within(viewer).getByRole('group', { name: 'Walkthrough' })
+    expect(bar).toHaveTextContent('Step 2 of 3')
+    expect(within(bar).getByText('It goes to the provider.')).toHaveAttribute('aria-live', 'polite')
+    expect(litIn(within(viewer).getByRole('img'))).toContain('sotto-diagram-flowchart-Provider')
+    await userEvent.click(within(bar).getByRole('button', { name: 'Next' }))
+    expect(bar).toHaveTextContent('Step 3 of 3')
+    expect(within(viewer).getByRole('img')).toHaveAttribute('src', DRAWING.ok && DRAWING.dataUrl)
+    await userEvent.click(within(viewer).getByRole('button', { name: 'Close diagram' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(within(card).getByRole('group', { name: 'Walkthrough' })).toHaveTextContent('Step 3 of 3')
+  })
+
+  it('steps with Left and Right anywhere in Expand, the drawing keeping its place, and keeps Up and Down for moving it', async () => {
+    document.documentElement.dataset.reducedMotion = 'on'
+    render(<VisualCard visual={visual()} />)
+    const card = screen.getByRole('region', { name: 'Visual: How a draft is sent' })
+    await within(card).findByRole('img')
+    await userEvent.click(within(card).getByRole('button', { name: 'Expand How a draft is sent' }))
+    const viewer = screen.getByRole('dialog')
+    const view = within(viewer).getByRole('group', { name: 'Diagram view' })
+    expect(view).toHaveFocus()
+    expect(within(viewer).getByText('← → to step · Drag or ↑ ↓ to move · Scroll or +/− to zoom · 0 to fit')).toBeInTheDocument()
+    const bar = within(viewer).getByRole('group', { name: 'Walkthrough' })
+    const placed = (): string => within(viewer).getByRole('img').getAttribute('style') ?? ''
+    await userEvent.keyboard('+')
+    const zoomed = placed()
+    await userEvent.keyboard('{ArrowRight}')
+    expect(bar).toHaveTextContent('Step 2 of 3')
+    expect(placed()).toBe(zoomed)
+    await userEvent.keyboard('{ArrowRight}{ArrowRight}')
+    // It stops at the last step; Start over is Next's to press.
+    expect(bar).toHaveTextContent('Step 3 of 3')
+    await userEvent.keyboard('{ArrowLeft}')
+    expect(bar).toHaveTextContent('Step 2 of 3')
+    // From Close, and from the bar's own buttons, too.
+    within(viewer).getByRole('button', { name: 'Close diagram' }).focus()
+    await userEvent.keyboard('{ArrowLeft}')
+    expect(bar).toHaveTextContent('Step 1 of 3')
+    within(bar).getByRole('button', { name: 'Next' }).focus()
+    await userEvent.keyboard('{ArrowRight}')
+    expect(bar).toHaveTextContent('Step 2 of 3')
+    view.focus()
+    await userEvent.keyboard('{ArrowDown}')
+    expect(placed()).not.toBe(zoomed)
+    expect(bar).toHaveTextContent('Step 2 of 3')
+  })
+
+  it('shows no bar in Expand under Read all, where Left and Right move the drawing as before', async () => {
+    document.documentElement.dataset.reducedMotion = 'on'
+    render(<VisualCard visual={visual()} />)
+    const card = screen.getByRole('region', { name: 'Visual: How a draft is sent' })
+    await within(card).findByRole('img')
+    await userEvent.click(within(card).getByRole('button', { name: 'Read all' }))
+    await userEvent.click(within(card).getByRole('button', { name: 'Expand How a draft is sent' }))
+    const viewer = screen.getByRole('dialog')
+    expect(within(viewer).queryByRole('group', { name: 'Walkthrough' })).toBeNull()
+    expect(within(viewer).getByText('Drag or use arrow keys to move · Scroll or +/− to zoom · 0 to fit')).toBeInTheDocument()
+    const placed = (): string => within(viewer).getByRole('img').getAttribute('style') ?? ''
+    await userEvent.keyboard('+')
+    const zoomed = placed()
+    await userEvent.keyboard('{ArrowRight}')
+    expect(placed()).not.toBe(zoomed)
+  })
+
+  it('shows a single step\'s words in Expand, where Left and Right still move the drawing', async () => {
+    document.documentElement.dataset.reducedMotion = 'on'
+    render(<VisualCard visual={visual({ steps: [{ text: 'You write a draft.', highlight: ['A'] }] })} />)
+    const card = screen.getByRole('region', { name: 'Visual: How a draft is sent' })
+    await within(card).findByRole('img')
+    await userEvent.click(within(card).getByRole('button', { name: 'Expand How a draft is sent' }))
+    const viewer = screen.getByRole('dialog')
+    expect(within(viewer).getByRole('group', { name: 'Walkthrough' })).toHaveTextContent(/^You write a draft\.$/u)
+    expect(within(viewer).getByText('Drag or use arrow keys to move · Scroll or +/− to zoom · 0 to fit')).toBeInTheDocument()
+    const placed = (): string => within(viewer).getByRole('img').getAttribute('style') ?? ''
+    await userEvent.keyboard('+')
+    const zoomed = placed()
+    await userEvent.keyboard('{ArrowRight}')
+    expect(placed()).not.toBe(zoomed)
+  })
+
   it('shows a single step as its words under its lit part, with no count, dots, Back or Next', async () => {
     render(<VisualCard visual={visual({ steps: [{ text: 'You write a draft.', highlight: ['A'] }] })} />)
     const card = screen.getByRole('region', { name: 'Visual: How a draft is sent' })
