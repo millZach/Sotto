@@ -251,6 +251,12 @@ interface WatcherCheck {
   at?: number | undefined
   /** When its thread was last seen running a turn while it held its place through background work. */
   workedAt?: number | undefined
+  /**
+   * A check this desktop sent to a paired host, waiting in that host's own queue: the branch this desktop landed there for
+   * it, which it lets go of if the check is stopped or fails before its thread is made, and what the host last said of its
+   * place. It holds no place in this machine's queue.
+   */
+  away?: { readonly landed: LandedMove | undefined; readonly input: WatcherToolInput<'start_thread'>; readonly ahead: number; readonly note: string } | undefined
   /** While it waits its turn: what it starts with, and the branch landed for it. */
   waiting?: { readonly input: WatcherToolInput<'start_thread'>; readonly landed: LandedMove | undefined } | undefined
 }
@@ -1395,6 +1401,13 @@ export class WatcherService implements WatcherControlHooks {
     let soonest = Infinity
     for (const check of [...this.checkOf.values()]) {
       const operation = this.operationOfCheck(check, operations)
+      if (check.away) {
+        // The host made its thread, which owns the branch now; or it failed or was stopped first, and nothing will.
+        if (operation?.deliveryState !== 'accepted' && operation?.deliveryState !== 'failed') continue
+        this.checkOf.delete(check.ticket)
+        if (operation.deliveryState === 'failed' && !this.madeThread(operation.target)) void this.releaseMove(check.away.landed)
+        continue
+      }
       const hold = operation ? this.checkHold(check, operation) : false
       if (hold === true) continue
       if (typeof hold === 'number') { soonest = Math.min(soonest, hold); continue }
@@ -3988,11 +4001,17 @@ ${operation.draftId}`)
         // receipt keeps it: the host may have made the thread. The host's own copy of the start landed nothing to release.
         if (name === 'start_thread' && parsed.status === 'refused' && receipt.deliveryState === 'failed' && !this.madeThread(operation.target)) await this.releaseMove(landed)
       }
-      // A check waiting its turn on the host is named by the host's name here, as its placement is.
+      // A check waiting its turn on the host is named by the host's name here, as its placement is. The branch landed for it
+      // stays this desktop's to let go of until the host makes its thread (#1312).
       const waitingOn = waitingThere ? this.machineName(operation.target.hostId) ?? 'that machine' : undefined
+      if (waitingThere && waitingOn) {
+        const note = checkWaitingWords(waitingOn, waitingThere.ahead, WATCHER_CHECK_STOP)
+        this.checkOf.set(operation.id, { ticket: operation.id, operationId: operation.id, away: { landed, input: input as WatcherToolInput<'start_thread'>, ahead: waitingThere.ahead, note } })
+        this.releaseChecks()
+      }
       return parsed.status === 'ok' ? { ...parsed, limits: this.limits(this.record().operations.find(item => item.id === operation.id)!),
         ...(name === 'start_thread' ? { ...this.roleBlock(operation.id), ...this.placementBlock(operation.id), ...this.branchStartBlock(operation.id, waitingThere !== undefined), ...this.machineWorkingWarning(operation.target),
-          ...waitingThere && waitingOn ? { check: { ahead: waitingThere.ahead, note: checkWaitingWords(waitingOn, waitingThere.ahead, WATCHER_CHECK_STOP) } } : {} } : {}),
+          ...waitingThere && waitingOn ? { check: { ahead: waitingThere.ahead, note: this.checkOf.get(operation.id)!.away!.note } } : {} } : {}),
         ...(name === 'send_to_thread' ? this.fallbackBlock(operation.id) : {}) } : parsed
     } catch (error) {
       if (!sent) await this.releaseMove(landed)
