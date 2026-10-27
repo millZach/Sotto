@@ -59,7 +59,7 @@ extension AppModel {
     /// The threads this iPhone holds something for, by `ThreadRef.id`: words, photos or files in the reply box, a refused
     /// reply, or anything sent and not yet confirmed. An unsent thread is listed only while it is one of these.
     private var holdingThreads: Set<String> {
-        var refs = Set(drafts.filter { !$0.value.isEmpty }.keys)
+        var refs = Set(drafts.filter { !$0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.keys)
         refs.formUnion(draftPhotos.filter { !$0.value.isEmpty }.keys)
         refs.formUnion(draftFiles.filter { !$0.value.isEmpty }.keys)
         refs.formUnion(failedReplies.keys)
