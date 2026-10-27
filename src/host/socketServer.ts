@@ -14,7 +14,7 @@ import { FileUploadRefusal, FileUploads } from './fileUploads'
 import { pullRequestReadFailureOf } from '../main/agents/gitPullRequests'
 import type { GitPullRequestReadFailure } from '../shared/gitPullRequests'
 import { shellForProtocolV1, clientUpdateForOlderClient, clientUpdateWithoutNotListed, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, providersUnknownTo, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostWireShell } from '../shared/hostProtocol'
-import { hostCatalogKey, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate } from '../shared/agents'
+import { hostCatalogKey, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentThreadSummary } from '../shared/agents'
 import { foldAgentThreadDetailUpdates, isAgentThreadDetailDelta } from '../shared/agentThreadDetail'
 import { resolveModel } from '../shared/modelCatalog'
 import { version as packageVersion } from '../../package.json'
@@ -456,10 +456,35 @@ export async function startSocketServer(options: SocketServerOptions) {
     if (!made) undelegated.set(state, made = stateWithoutDelegation(state))
     return made
   }
+  /**
+   * A shell's thread rows as a phone reads them (October 26, 2026). A row's summary carries the newest messages' opening
+   * words and a count of the thread's activity records, which the desktop's sidebar reads and no phone does. Both change
+   * with every word and step a working thread streams, so with them no shell to a phone ever repeated the last one: a
+   * phone with threads working was pushed its whole shell with every publish, about twenty a second, and the iPhone
+   * lagged while typing and scrolling. A phone's rows leave them out, so only what a phone reads makes its shell new.
+   * Made once per read however many phones are sent it, and the read itself when no row carries any of them.
+   */
+  const phoneShells = new WeakMap<AgentState, AgentState>()
+  const forPhone = (state: AgentState): AgentState => {
+    let made = phoneShells.get(state)
+    if (made) return made
+    let changed = false
+    const threads = state.host.threads.map(thread => {
+      const summary = thread.summary
+      if (!summary || !('lastUser' in summary || 'lastAssistant' in summary || 'activityCount' in summary)) return thread
+      // Without `activityCount` too, which the schema reads as 0: no phone reads it.
+      const kept: Partial<AgentThreadSummary> = { ...summary }
+      delete kept.lastUser; delete kept.lastAssistant; delete kept.activityCount
+      changed = true
+      return { ...thread, summary: kept as AgentThreadSummary }
+    })
+    phoneShells.set(state, made = changed ? { ...state, host: { ...state.host, threads } } : state)
+    return made
+  }
   /** One phone's view of `original`, which is never edited here, so one read can serve every phone in a publish. */
   const shell = (peer: Peer, read: AgentState = service.shell()) => {
     const original = withoutUnknown(withoutDelegation(read), peer.unknownProviders)
-    const visible = isPhonePeer(peer) ? visibleWatcherState(original, false) : original
+    const visible = isPhonePeer(peer) ? visibleWatcherState(forPhone(original), false) : original
     // `original` names no thread of a provider this peer does not know, so only a phone's own rule is asked here.
     const hiddenProjects = isPhonePeer(peer) ? new Set([...original.host.threads.filter(thread => hiddenFromPhone(peer, thread.id)).map(thread => thread.projectId),
       ...service.watcherPhoneExclusions?.().projectIds ?? []]) : new Set<string>()

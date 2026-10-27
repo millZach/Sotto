@@ -459,6 +459,17 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
       }
       return
     }
+    if (event === 'show' || event === 'restore') {
+      const wrapped = (): void => listener({ preventDefault: () => undefined })
+      if (event === 'show') {
+        this.window.on('show', wrapped)
+        this.windowListenerCleanups.set(listener, () => this.window.removeListener('show', wrapped))
+      } else {
+        this.window.on('restore', wrapped)
+        this.windowListenerCleanups.set(listener, () => this.window.removeListener('restore', wrapped))
+      }
+      return
+    }
     if (event === 'moved' || event === 'maximize' || event === 'unmaximize') {
       const wrapped = (): void => listener({ preventDefault: () => undefined })
       if (event === 'maximize') {

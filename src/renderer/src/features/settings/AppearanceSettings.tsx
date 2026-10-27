@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { RotateCcw } from 'lucide-react'
 import { i18n } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
@@ -6,55 +6,90 @@ import { Trans, useLingui } from '@lingui/react/macro'
 
 import type { SottoPlatform } from '../../../../shared/platform'
 import type { InterfaceLanguageSetting } from '../../../../shared/interfaceLanguages'
-import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
+import type { AppSettings, ReducedMotion, SettingsPatch } from '../../../../shared/settings'
 import { APPEARANCE_CONTRAST, type ThemeDefinition } from '../../../../shared/themes/library'
 import { Button } from '../../components/Button'
 import { Card } from '../../components/Card'
+import { Field } from '../../components/Field'
+import { Select } from '../../components/Select'
+import { platformCopy } from '../../platformCopy'
 import { appearancePreview, resolveAppearance, useAppearancePreviewVersion, useSystemPrefersDark, type AppearanceChoice } from '../../state/appearance'
 import { messageIn, useInterfaceLanguageState } from '../../state/interfaceLanguage'
 import { useOwlFeature } from '../../state/owlFeature'
 import { LanguagePicker } from './LanguagePicker'
 import { shownWords, type LaterWords } from './laterWords'
 import { MenuBarOwlSettings } from './MenuBarOwlSettings'
+import { NightFallsSettings } from './NightFallsSettings'
+import { AppearancePreview } from './themes/AppearancePreview'
 import { CreatureChoice } from './themes/CreatureChoice'
 import { EffortColorChoice } from './themes/EffortColor'
 import { ThemeImportDialog } from './themes/ThemeImportDialog'
 import { ThemeGallery, themeExportFile } from './themes/ThemeGallery'
-import { ThemeLivePreview } from './themes/ThemeLivePreview'
+import { WatcherSceneChoice } from './themes/WatcherSceneChoice'
 import { removeThemesPatch, ThemeLibraryWriter, type LibraryPatch, type ThemeMode } from './themes/themeLibrary'
 import './themes/themes.css'
+import './themes/appearanceStudio.css'
 
 export interface AppearanceSettingsProps {
   readonly settings: AppSettings
   readonly platform: SottoPlatform
   readonly onSave: (patch: SettingsPatch, successText?: LaterWords) => Promise<boolean>
   readonly getSettings: () => AppSettings
-  /** Rows that follow Contrast: Reduced motion, which Settings keeps the save of. */
-  readonly children?: ReactNode
+  /** Reduced motion's save, which Settings keeps: it paints the preference before the save and puts it back on failure. */
+  readonly onSaveMotion?: (reducedMotion: ReducedMotion) => void
+}
+
+/** The page's width from which the cards and the preview stand side by side (appearanceStudio.css keys on the attribute this sets). */
+export const STUDIO_COLUMNS_MIN_WIDTH = 760
+
+/**
+ * Whether the page is wide enough for two columns, measured on the page itself. The layout and the reading order both
+ * follow it, so focus moves the way the eye does: the cards first where the preview stands beside them, the preview
+ * first where it stands on top.
+ */
+function useTwoColumns(): [React.RefObject<HTMLDivElement | null>, boolean] {
+  const ref = useRef<HTMLDivElement | null>(null)
+  const [wide, setWide] = useState(false)
+  useLayoutEffect(() => {
+    const element = ref.current
+    if (element === null) return
+    const measure = (width: number): void => { if (width > 0) setWide(width >= STUDIO_COLUMNS_MIN_WIDTH) }
+    measure(element.getBoundingClientRect().width)
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(entries => { const last = entries[entries.length - 1]; if (last) measure(last.contentRect.width) })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+  return [ref, wide]
 }
 
 /** How long a slider waits after the last movement before it saves. */
 const SLIDER_SAVE_DELAY_MS = 250
 
 /**
- * The main window's colour scheme, themes, effort colour and contrast (ADR-0011, ADR-0019). Every
- * choice becomes a pending edit that App paints before the save round-trip, so
- * the preview is immediate and overlapping edits combine; a failed save leaves
- * the saved look in force. The floating widget keeps following the system.
+ * Settings → Appearance as a studio (ADR-0011, ADR-0019): the controls in three short cards, Theme, Details and Motion,
+ * beside a preview card that stays in view as the page scrolls. Every palette choice becomes a pending edit that App
+ * paints before the save round-trip, so the whole window repaints at once and overlapping edits combine; a failed save
+ * leaves the saved look in force. The floating widget keeps following the system.
  */
-export function AppearanceSettings({ settings, platform, onSave, getSettings, children }: AppearanceSettingsProps): ReactNode {
+export function AppearanceSettings({ settings, platform, onSave, getSettings, onSaveMotion }: AppearanceSettingsProps): ReactNode {
   useAppearancePreviewVersion()
   const { t } = useLingui()
   const systemDark = useSystemPrefersDark()
   const menuBarOwl = useOwlFeature('menu-bar-owl') && platform === 'darwin'
   const creatureToggle = useOwlFeature('creature-toggle')
   const interfaceLanguage = useOwlFeature('interface-language')
+  const watcherOn = useOwlFeature('watcher')
+  const nightFalls = useOwlFeature('night-falls') && watcherOn
   const { system: computerLanguage } = useInterfaceLanguageState()
+  const copy = platformCopy(platform)
   const system = platform === 'darwin' ? 'macOS' : platform === 'linux' ? 'Linux' : 'Windows'
   const shown = appearancePreview.effective(settings)
   const resolved = resolveAppearance(shown.appearance, systemDark, shown)
   const [importing, setImporting] = useState(false)
   const [status, setStatus] = useState<{ text: LaterWords; error: boolean } | null>(null)
+  const themeId = useId(), detailsId = useId(), motionId = useId()
+  const [pageRef, twoColumns] = useTwoColumns()
   const getSettingsRef = useRef(getSettings)
   getSettingsRef.current = getSettings
   const onSaveRef = useRef(onSave)
@@ -68,11 +103,13 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, ch
     return saved
   }
 
-  const select = (patch: LibraryPatch): void => {
-    void writer.run(() => ({ patch })).then(result => {
-      if (!result.saved) setStatus({ text: msg`That theme could not be saved. Your previous theme is still active.`, error: true })
-    })
-  }
+  const select = (patch: LibraryPatch): Promise<boolean> => writer.run(() => ({ patch })).then(result => {
+    if (!result.saved) setStatus({ text: msg`That theme could not be saved. Your previous theme is still active.`, error: true })
+    return result.saved
+  }, () => {
+    setStatus({ text: msg`That theme could not be saved. Your previous theme is still active.`, error: true })
+    return false
+  })
 
   const remove = async (ids: readonly string[]): Promise<boolean> => {
     const result = await writer.run(state => ({ patch: removeThemesPatch(state, ids) })).catch(() => null)
@@ -100,48 +137,80 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, ch
     else if (result.value.saved) setStatus({ text: msg`${name} exported.`, error: false })
   }
 
+  const saveMotion = (reducedMotion: ReducedMotion): void => {
+    if (onSaveMotion) onSaveMotion(reducedMotion)
+    else void onSave({ reducedMotion }).catch(() => false)
+  }
+
+  // Where the page is narrow the preview stands above the cards, so it comes first; beside them, it comes after.
+  const preview = <AppearancePreview key="preview" shown={shown} systemDark={systemDark} system={system} still={settings.reducedMotion === 'on'}
+    creature={settings.creature} showCreature={!creatureToggle || settings.showCreature} watcher={watcherOn} place={settings.watcherScene} />
+
+  const cards = (
+    <div className="appearance-studio__cards" key="cards">
+      <section className="appearance-card" aria-labelledby={themeId}>
+        <h3 id={themeId}>{t({ message: 'Theme', comment: 'A card on Settings > Appearance: the color scheme and the themes' })}</h3>
+        <ThemeGallery
+          shown={shown}
+          resolved={resolved}
+          system={system}
+          onChooseMode={(mode: ThemeMode) => void choose({ appearance: mode }, msg`Color scheme saved.`)}
+          onSelect={select}
+          onRemove={remove}
+          onExport={theme => void exportTheme(theme)}
+          onAddTheme={() => setImporting(true)}
+        />
+        <p className={`tt-paragraph theme-settings__status${status?.error ? ' theme-settings__status--error' : ''}`} role="status">{shownWords(status?.text) ?? ''}</p>
+      </section>
+
+      <section className="appearance-card" aria-labelledby={detailsId}>
+        <h3 id={detailsId}>{t({ message: 'Details', comment: 'A card on Settings > Appearance: effort color, creature, contrast and language' })}</h3>
+        <div className="settings-rows">
+          <EffortColorChoice value={shown.effortColor} onChoose={effortColor => void choose({ effortColor }, msg`Effort color saved.`)} />
+          <CreatureChoice value={settings.creature} shown={!creatureToggle || settings.showCreature} onShow={creatureToggle ? showCreature => void onSave({ showCreature }, showCreature ? msg`Creature shown.` : msg`Creature hidden.`).catch(() => false) : undefined} onChoose={creature => void onSave({ creature }, msg`Creature saved.`).catch(() => false)} />
+          <WatcherSceneChoice value={settings.watcherScene} onChoose={watcherScene => onSave({ watcherScene }, msg`Watcher scene saved.`).catch(() => false)} />
+          <AppearanceSlider
+            label={t`Contrast`}
+            resetLabel={amount => t`Reset contrast to ${amount}`}
+            description={t`Color and border intensity.`}
+            bounds={APPEARANCE_CONTRAST}
+            value={shown.appearanceContrast}
+            onPreview={value => appearancePreview.choose({ appearanceContrast: value })}
+            onCommit={(value, sequence) => void onSave({ appearanceContrast: value }, msg`Contrast saved.`).catch(() => false).then(saved => appearancePreview.settle(sequence, saved, getSettings()))}
+          />
+          {interfaceLanguage
+            ? <LanguagePicker value={settings.interfaceLanguage} onChoose={choice => void chooseLanguage(choice)} />
+            : null}
+          {menuBarOwl ? <MenuBarOwlSettings body={settings.menuBarOwlBody} eyes={settings.menuBarOwlEyes} onChoose={(patch, text) => void onSave(patch, text).catch(() => false)} /> : null}
+        </div>
+      </section>
+
+      <section className="appearance-card" aria-labelledby={motionId}>
+        <h3 id={motionId}>{t({ message: 'Motion', comment: 'A card on Settings > Appearance: reduced motion and night falls' })}</h3>
+        <div className="settings-rows">
+          <Field setting="reduced-motion" label={t`Reduced motion`} description={copy.settingsReducedMotionDescription}>
+            <Select value={settings.reducedMotion} onChange={event => saveMotion(event.currentTarget.value as ReducedMotion)}>
+              <option value="system">{t`Follow system`}</option>
+              <option value="on">{t`Reduce motion`}</option>
+            </Select>
+          </Field>
+          {nightFalls ? <NightFallsSettings settings={settings} onSave={patch => onSave(patch).catch(() => false)} /> : null}
+        </div>
+      </section>
+    </div>
+  )
+
   return (
     <Card className="settings-section theme-settings" id="settings-appearance">
       <div className="settings-section__heading">
         <h2><Trans>Appearance</Trans></h2>
-        <p className="tt-paragraph"><Trans>Themes, contrast &amp; motion</Trans></p>
+        <p className="tt-paragraph"><Trans>Theme, details &amp; motion</Trans></p>
       </div>
 
-      <div className="theme-settings__layout">
-        <div className="theme-settings__controls">
-          {interfaceLanguage
-            ? <LanguagePicker value={settings.interfaceLanguage} onChoose={choice => void chooseLanguage(choice)} />
-            : null}
-          <ThemeGallery
-            shown={shown}
-            resolved={resolved}
-            system={system}
-            onChooseMode={(mode: ThemeMode) => void choose({ appearance: mode }, msg`Color scheme saved.`)}
-            onSelect={select}
-            onRemove={remove}
-            onExport={theme => void exportTheme(theme)}
-            onAddTheme={() => setImporting(true)}
-          />
-          <p className={`tt-paragraph theme-settings__status${status?.error ? ' theme-settings__status--error' : ''}`} role="status">{shownWords(status?.text) ?? ''}</p>
-
-          <EffortColorChoice value={shown.effortColor} onChoose={effortColor => void choose({ effortColor }, msg`Effort color saved.`)} />
-          <CreatureChoice value={settings.creature} shown={!creatureToggle || settings.showCreature} onShow={creatureToggle ? showCreature => void onSave({ showCreature }, showCreature ? msg`Creature shown.` : msg`Creature hidden.`).catch(() => false) : undefined} onChoose={creature => void onSave({ creature }, msg`Creature saved.`).catch(() => false)} />
-          {menuBarOwl ? <MenuBarOwlSettings body={settings.menuBarOwlBody} eyes={settings.menuBarOwlEyes} onChoose={(patch, text) => void onSave(patch, text).catch(() => false)} /> : null}
-
-          <div className="settings-rows">
-            <AppearanceSlider
-              label={t`Contrast`}
-              resetLabel={amount => t`Reset contrast to ${amount}`}
-              description={t`Color and border intensity.`}
-              bounds={APPEARANCE_CONTRAST}
-              value={shown.appearanceContrast}
-              onPreview={value => appearancePreview.choose({ appearanceContrast: value })}
-              onCommit={(value, sequence) => void onSave({ appearanceContrast: value }, msg`Contrast saved.`).catch(() => false).then(saved => appearancePreview.settle(sequence, saved, getSettings()))}
-            />
-            {children}
-          </div>
-        </div>
-        <ThemeLivePreview shown={shown} systemDark={systemDark} system={system} still={settings.reducedMotion === 'on'} />
+      <div className="appearance-studio" ref={pageRef} data-columns={twoColumns ? 'two' : 'one'}>
+        {/* An array of keyed parts, so a change of layout moves the preview rather than mounting it again: its night scene
+            keeps its frame. */}
+        {twoColumns ? [cards, preview] : [preview, cards]}
       </div>
 
       {importing

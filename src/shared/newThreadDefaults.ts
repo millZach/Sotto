@@ -1,4 +1,5 @@
 import { agentRuntimeModeSchema, type AgentConfiguration, type AgentModel, type AgentRuntimeMode } from './agents'
+import { ULTRACODE, withoutUltracode } from './ultracode'
 
 /** Sotto's four runtime modes, least to most permissive (issue #347's nearest fit reads positions in this order). */
 export const RUNTIME_MODE_ORDER: readonly AgentRuntimeMode[] = agentRuntimeModeSchema.options
@@ -72,6 +73,11 @@ export function hostNewThreadPermission(model: AgentModel | undefined, defaultMo
 export function nearestReasoningEffort(desired: string, reference: readonly string[], offered: readonly string[]): string | undefined {
   if (offered.length === 0) return undefined
   if (offered.includes(desired)) return desired
+  // Ultracode is only ever chosen by name (ADR-0148): another level's place, such as the top of another provider's list,
+  // never lands on it, and it takes no place among the levels it is measured against. A default of Ultracode itself keeps
+  // its place, so it lands on another provider's highest level.
+  if (desired !== ULTRACODE) { reference = withoutUltracode(reference); offered = withoutUltracode(offered) }
+  if (offered.length === 0) return undefined
   const at = reference.indexOf(desired)
   // No position to map from: an unrecognized value, or a reference too short to hold a low-to-high position.
   // The provider's own default (unset) is the honest answer, not the top of the offered list.

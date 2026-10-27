@@ -1713,17 +1713,17 @@ import XCTest
         }
         capture("settings-glow-notifications")
 
-        let tropic = app.buttons["setting-theme-tropic"]
-        reveal(tropic, swipingDown: true)
-        tropic.tap()
-        XCTAssertEqual(tropic.value as? String, "Selected")
+        let fern = app.buttons["setting-theme-fern"]
+        reveal(fern, swipingDown: true)
+        fern.tap()
+        XCTAssertEqual(fern.value as? String, "Selected")
         let sotto = app.buttons["setting-theme-sotto"]
         reveal(sotto, swipingDown: true)
         XCTAssertTrue(sotto.exists, "The other themes stay listed after a new one paints")
         XCTAssertEqual(sotto.value as? String, "Not selected")
         app.tabBars.buttons["Threads"].tap()
         XCTAssertTrue(app.textFields["thread-search"].waitForExistence(timeout: 5))
-        capture("threads-glow-tropic")
+        capture("threads-glow-fern")
 
         app.tabBars.buttons["Settings"].tap()
         let light = app.buttons["setting-light"]
@@ -1732,7 +1732,7 @@ import XCTest
         XCTAssertEqual(light.value as? String, "Selected")
         app.tabBars.buttons["Threads"].tap()
         XCTAssertTrue(app.textFields["thread-search"].waitForExistence(timeout: 5))
-        capture("threads-glow-tropic-light")
+        capture("threads-glow-fern-light")
 
         app.tabBars.buttons["Settings"].tap()
         let compact = app.buttons["setting-density-compact"]

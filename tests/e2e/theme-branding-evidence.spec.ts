@@ -141,10 +141,10 @@ test.describe('theme branding evidence', () => {
   test.skip(!enabled, 'Run with SOTTO_THEME_BRANDING_EVIDENCE=1 after npm run build')
   test.setTimeout(240_000)
 
-  test('mark and widget wear Nocturne and contrasting themes, live, in both modes and after restart', async () => {
+  test('mark and widget wear Graphite and contrasting themes, live, in both modes and after restart', async () => {
     await mkdir(evidenceRoot, { recursive: true })
     const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-theme-branding-' })).directory
-    let settings: Settings = { onboardingComplete: true, theme: 'system', appearance: 'dark', lightTheme: 'nocturne', darkTheme: 'nocturne', customThemes: [saffron] }
+    let settings: Settings = { onboardingComplete: true, theme: 'system', appearance: 'dark', lightTheme: 'graphite', darkTheme: 'graphite', customThemes: [saffron] }
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, ...settings }), 'utf8')
     let launched: LaunchedSotto | undefined
     try {
@@ -154,11 +154,11 @@ test.describe('theme branding evidence', () => {
       await openThreads(page)
       let widget = await widgetOf(launched)
 
-      // Nocturne, dark room and dark widget.
-      await expectRoom(page, settings, 'dark', 'nocturne-dark')
-      await expectWidget(widget, settings, 'dark', 'nocturne-dark', null)
+      // Graphite, dark room and dark widget.
+      await expectRoom(page, settings, 'dark', 'graphite-dark')
+      await expectWidget(widget, settings, 'dark', 'graphite-dark', null)
       await startDictation(widget)
-      await expectWidget(widget, settings, 'dark', 'nocturne-dark', page)
+      await expectWidget(widget, settings, 'dark', 'graphite-dark', page)
 
       // Citrine selected mid-session: the capsule repaints without a new session.
       settings = { ...settings, darkTheme: 'citrine' }
@@ -167,13 +167,13 @@ test.describe('theme branding evidence', () => {
       await expectWidget(widget, settings, 'dark', 'citrine-dark-live', page)
       await cancelDictation(widget)
 
-      // Light room with Tropic; the widget follows the system to its light half while idle.
-      settings = { ...settings, appearance: 'light', lightTheme: 'tropic' }
-      await update(page, { appearance: 'light', lightTheme: 'tropic' })
-      await expectRoom(page, settings, 'light', 'tropic-light-live')
-      await expectWidget(widget, settings, 'light', 'tropic-light-idle', null)
+      // Light room with Fern; the widget follows the system to its light half while idle.
+      settings = { ...settings, appearance: 'light', lightTheme: 'fern' }
+      await update(page, { appearance: 'light', lightTheme: 'fern' })
+      await expectRoom(page, settings, 'light', 'fern-light-live')
+      await expectWidget(widget, settings, 'light', 'fern-light-idle', null)
       await startDictation(widget)
-      await expectWidget(widget, settings, 'light', 'tropic-light', page)
+      await expectWidget(widget, settings, 'light', 'fern-light', page)
       // The system turning dark flips the widget to the dark half, Citrine, mid-session.
       await expectWidget(widget, settings, 'dark', 'system-dark-citrine', page)
       await cancelDictation(widget)
@@ -212,7 +212,7 @@ test.describe('theme branding evidence', () => {
   test('a failed dictation keeps the theme error role, distinct from the accent', async () => {
     await mkdir(evidenceRoot, { recursive: true })
     const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-theme-branding-error-' })).directory
-    const settings: Settings = { onboardingComplete: true, theme: 'system', appearance: 'light', lightTheme: 'tropic', darkTheme: 'citrine' }
+    const settings: Settings = { onboardingComplete: true, theme: 'system', appearance: 'light', lightTheme: 'fern', darkTheme: 'citrine' }
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, ...settings }), 'utf8')
     let launched: LaunchedSotto | undefined
     try {
@@ -245,7 +245,7 @@ test.describe('theme branding evidence', () => {
         expect(colors.error).not.toBe(colors.accent)
         expect(await widget.evaluate(() => document.documentElement.style.getPropertyValue('--theme-error-foreground'))).toBe(roles.errorForeground)
         await settle(widget)
-        await widget.screenshot({ path: resolve(evidenceRoot, `error-${scheme === 'light' ? 'tropic-light' : 'citrine-dark'}-widget.png`), animations: 'disabled' })
+        await widget.screenshot({ path: resolve(evidenceRoot, `error-${scheme === 'light' ? 'fern-light' : 'citrine-dark'}-widget.png`), animations: 'disabled' })
         // A failed transcription keeps its recording, so the pill offers Try again
         // and the error waits for the user to discard it.
         await expect(widget.locator('.widget-copy', { hasText: 'Click to try again' })).toBeVisible()

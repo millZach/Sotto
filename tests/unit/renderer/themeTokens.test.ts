@@ -201,13 +201,14 @@ describe('main-window theme tokens', () => {
     }
     expect(hue('t3-code')).toBeCloseTo(265, -1)
     expect(hue('citrine')).toBeCloseTo(265, -1)
-    // Tropic's night is green, Nocturne's blue.
-    expect(hue('tropic')).toBeCloseTo(158, -1)
-    expect(hue('nocturne')).toBeCloseTo(254, -1)
+    expect(hue('graphite')).toBeCloseTo(265, -1)
+    // Fern's night is green, Clay's the colour of fired earth.
+    expect(hue('fern')).toBeCloseTo(160, -1)
+    expect(hue('clay')).toBeCloseTo(40, -1)
   })
 
   it.each(MODES)('%s mode: the contrast slider strengthens and softens text and borders around 100', (mode) => {
-    const at = (value: number) => palette(mode, 'nocturne', { contrast: value })
+    const at = (value: number) => palette(mode, 'graphite', { contrast: value })
     const [soft, standard, strong] = [at(50), at(100), at(200)]
     const measure = (color: (name: string) => Rgba, ink: string) => contrast(color(ink), color('canvas'))
     for (const ink of ['text', 'text-muted', 'border']) {
@@ -220,7 +221,7 @@ describe('main-window theme tokens', () => {
 
   it('paints glass solid: the overlay surface, and the field under the composer (ADR-0084)', () => {
     for (const mode of MODES) {
-      const declarations = rootDeclarations(mode, 'nocturne', {}, tokenBlocks)
+      const declarations = rootDeclarations(mode, 'graphite', {}, tokenBlocks)
       expect(resolveColor('--tt-glass', declarations), `${mode} glass`).toEqual(resolveColor('--tt-surface-overlay', declarations))
       expect(resolveColor('--tt-glass-field', declarations), `${mode} glass field`).toEqual(resolveColor('--tt-field', declarations))
       for (const surface of ['--tt-glass', '--tt-glass-field']) {
@@ -229,8 +230,8 @@ describe('main-window theme tokens', () => {
         expect(contrast(resolveColor('--tt-text', declarations), painted), `${mode} text on ${surface}`).toBeGreaterThanOrEqual(4.5)
       }
     }
-    const dark = rootDeclarations('dark', 'nocturne', {}, tokenBlocks)
-    const light = rootDeclarations('light', 'nocturne', {}, tokenBlocks)
+    const dark = rootDeclarations('dark', 'graphite', {}, tokenBlocks)
+    const light = rootDeclarations('light', 'graphite', {}, tokenBlocks)
     expect(dark.get('--tt-glass-filter')).toBe('blur(var(--tt-glass-blur)) saturate(var(--tt-glass-saturation))')
     expect([dark.get('--tt-glass-blur'), dark.get('--tt-glass-saturation')]).toEqual(['16px', '1.08'])
     expect([light.get('--tt-glass-blur'), light.get('--tt-glass-saturation')]).toEqual(['12px', '1.14'])
@@ -249,7 +250,8 @@ describe('main-window theme tokens', () => {
   it('derives every colour token from theme roles, never from an accent attribute', () => {
     const css = tokensCss.replace(/\/\*[\s\S]*?\*\//gu, '')
     expect(css).not.toMatch(/data-accent/u)
-    const derived = tokenBlocks.find(block => block.selectors.length === 1 && block.selectors[0] === ':root' && block.declarations.has('--tt-canvas'))!
+    // The token block is also declared on a theme scope (the Appearance preview), which re-derives it from its own roles.
+    const derived = tokenBlocks.find(block => block.selectors[0] === ':root' && block.selectors.every(selector => selector === ':root' || selector === '[data-theme-scope]') && block.declarations.has('--tt-canvas'))!
     const constants = new Set(['--tt-success', '--tt-provider-codex', '--tt-provider-claude', '--tt-provider-grok', '--tt-provider-devin', '--tt-provider-opencode', '--tt-provider-cursor', '--tt-provider-muse', '--tt-provider-opencode-badge', '--tt-provider-cursor-badge', '--tt-provider-deepseek-badge', '--tt-provider-ink', ...CHART_SERIES.map(name => `--tt-${name}`), '--tt-chart-other', '--tt-backdrop', '--tt-shadow-sm', '--tt-shadow-lg', '--tt-shadow-overlay', '--tt-shadow-color'])
     for (const [name, value] of derived.declarations) {
       // A relative colour from a theme role (`oklch(from var(…) …)`) is derived, not a literal.
@@ -288,7 +290,9 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/features/settings/dictationShortcuts.css',
       'src/renderer/src/features/settings/threadShortcuts.css',
       'src/renderer/src/features/settings/menuBarOwl.css',
+      'src/renderer/src/features/settings/themes/watcherSceneChoice.css',
       'src/renderer/src/features/settings/languagePicker.css',
+      'src/renderer/src/features/settings/themes/appearanceStudio.css',
       'src/renderer/src/agents/hostBadge.css',
       'src/renderer/src/agents/activityBodies.css',
       'src/renderer/src/agents/requests/requests.css',
@@ -298,6 +302,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/agents.css',
       'src/renderer/src/agents/modelPicker.css',
       'src/renderer/src/agents/effortPicker.css',
+      'src/renderer/src/agents/effortTrace.css',
       'src/renderer/src/agents/skillPill.css',
       'src/renderer/src/agents/threadMonitor.css',
       'src/renderer/src/agents/threadChips.css',

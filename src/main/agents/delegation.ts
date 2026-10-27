@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { isThreadProviderConnected, lastUserMessageIdOf, providerIdSchema, threadTakesSottoTools,
   type AgentCommand, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
+import { withoutUltracode } from '../../shared/ultracode'
 import { resolveNewThreadPermission, RUNTIME_MODE_ORDER } from '../../shared/newThreadDefaults'
 import { capRuntimeMode, roleInForce, roleStartNote, startFromRole, WORKER_KINDS, type HeldPermission, type RoleField, type RoleStart, type WorkerRoleChoices } from '../../shared/workerRoles'
 import { isThreadClosed, isThreadTurnRunning } from '../../shared/threadActivity'
@@ -1134,7 +1135,8 @@ export class DelegationService {
     } else if (!named) refuse('INVALID_INPUT', `Name the provider and model for a new thread. ${this.readyModels(snapshot, input.provider)} Nothing was started.`)
     const model = resolveModel(snapshot.models, byRole?.modelId ?? input.model!)
     if (!model?.ready || named && model.providerId !== input.provider) refuse('PROVIDER_UNAVAILABLE', `That model is not ready on this computer. ${this.readyModels(snapshot, input.provider)} Nothing was started.`)
-    const efforts = model.reasoningEfforts ?? []
+    // Ultracode is the user's own choice in a thread, never a delegating agent's (ADR-0148).
+    const efforts = withoutUltracode(model.reasoningEfforts ?? [])
     const roleEffort = byRole && input.effort === undefined && byRole.reasoningEffort && efforts.includes(byRole.reasoningEffort) ? byRole.reasoningEffort : undefined
     const effort = input.effort ?? roleEffort
     if (effort === undefined ? efforts.length > 0 && !byRole : !efforts.includes(effort)) refuse('INVALID_INPUT', `Name the effort for this model, one of: ${efforts.join(', ') || 'none, so leave it out'}. Nothing was started.`)
@@ -1712,7 +1714,7 @@ export class DelegationService {
     // Those started on another machine through the desktop (#1316), with the machine, as last read there.
     const elsewhere = this.options.relay?.list(caller.id) ?? []
     const ready = this.ready(snapshot).map(model => ({ provider: model.providerId!, model: model.id, name: model.name,
-      efforts: model.reasoningEfforts ?? [], permissions: model.runtimeModes ?? [] }))
+      efforts: withoutUltracode(model.reasoningEfforts ?? []), permissions: model.runtimeModes ?? [] }))
     // On a headless host (#1310), the new-thread default it holds starts to, and why when it holds them to Ask for approval.
     const hold = this.options.newThreadCeiling?.()
     return { status: 'ok' as const, delegations: own, ...(elsewhere.length ? { onOtherMachines: elsewhere } : {}), models: ready, ...(this.options.roles ? { roles: this.roles(caller, snapshot, this.options.roles()) } : {}),

@@ -5,6 +5,7 @@ import { OMARCHY_THEME_ID, omarchyThemeSchema, type OmarchyTheme } from './theme
 import { DEFAULT_HOTKEY } from './constants'
 import { INTERFACE_LANGUAGE_SETTINGS, type InterfaceLanguageSetting } from './interfaceLanguages'
 import { DEFAULT_MENU_BAR_OWL_BODY, DEFAULT_MENU_BAR_OWL_EYES, MENU_BAR_OWL_BODIES, MENU_BAR_OWL_EYES, type MenuBarOwlBody, type MenuBarOwlEyes } from './menuBarOwl'
+import { DEFAULT_WATCHER_SCENE, WATCHER_SCENES, type WatcherScene } from './watcherScene'
 import { parseWorkerRoleChoices, workerRoleChoicesSchema, type WorkerRoleChoices } from './workerRoles'
 import { DEFAULT_WORKER_MACHINE, workerMachineSettingSchema, type WorkerMachineSetting } from './workerMachine'
 import { parseThreadShortcutChoices, threadShortcutChoicesSchema, type ThreadShortcutChoices } from './threadShortcuts'
@@ -14,7 +15,7 @@ import {
   DEFAULT_THEME_ID,
   customThemesSchema,
   isThemeId,
-  parseCustomThemes,
+  parseSavedThemeLibrary,
   resolveThemeHalfId,
   type ThemeDefinition,
 } from './themes/library'
@@ -141,6 +142,8 @@ export interface AppSettings {
   menuBarOwlBody: MenuBarOwlBody
   /** The colour its eyes glow. */
   menuBarOwlEyes: MenuBarOwlEyes
+  /** The place Watcher's night scene is set in (ADR-0149); kept whole where Watcher is off. */
+  watcherScene: WatcherScene
   /** Which character stands above the composer; Sotto's own unless Claude bot is chosen. */
   creature: Creature
   /** Off hides the creature and its readout above every composer; the sidebar still says what a thread is doing. */
@@ -418,6 +421,7 @@ const fieldSchemas = {
   effortColor: z.enum(EFFORT_COLORS),
   menuBarOwlBody: z.enum(MENU_BAR_OWL_BODIES),
   menuBarOwlEyes: z.enum(MENU_BAR_OWL_EYES),
+  watcherScene: z.enum(WATCHER_SCENES),
   creature: z.enum(CREATURES),
   showCreature: z.boolean(),
   interfaceLanguage: z.enum(INTERFACE_LANGUAGE_SETTINGS),
@@ -528,6 +532,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   effortColor: 'ember',
   menuBarOwlBody: DEFAULT_MENU_BAR_OWL_BODY,
   menuBarOwlEyes: DEFAULT_MENU_BAR_OWL_EYES,
+  watcherScene: DEFAULT_WATCHER_SCENE,
   creature: 'sotto',
   showCreature: true,
   interfaceLanguage: 'system',
@@ -680,11 +685,14 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
   // The library is read leniently, one theme at a time, so a single damaged
   // entry never costs the user the rest of their themes. A half naming a theme
   // that is gone, or that cannot paint that half, lands on the default.
-  const customThemes = Array.isArray(persisted.customThemes)
-    ? parseCustomThemes(persisted.customThemes)
-    : [...defaults.customThemes]
+  // A theme of the user's own whose id a built-in has since taken is kept under a new id, and its halves follow it.
+  const library = Array.isArray(persisted.customThemes)
+    ? parseSavedThemeLibrary(persisted.customThemes)
+    : { themes: [...defaults.customThemes], moved: new Map<string, string>() }
+  const customThemes = library.themes
   const half = (key: 'lightTheme' | 'darkTheme'): string => {
-    const id = parseField(persisted, key, defaults)
+    const saved = parseField(persisted, key, defaults)
+    const id = library.moved.get(saved) ?? saved
     return allowOmarchy && id === OMARCHY_THEME_ID ? id : resolveThemeHalfId(id, key === 'lightTheme' ? 'light' : 'dark', customThemes)
   }
 
@@ -700,6 +708,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     effortColor: parseField(persisted, 'effortColor', defaults),
     menuBarOwlBody: parseField(persisted, 'menuBarOwlBody', defaults),
     menuBarOwlEyes: parseField(persisted, 'menuBarOwlEyes', defaults),
+    watcherScene: parseField(persisted, 'watcherScene', defaults),
     creature: parseField(persisted, 'creature', defaults),
     showCreature: parseField(persisted, 'showCreature', defaults),
     interfaceLanguage: parseField(persisted, 'interfaceLanguage', defaults),

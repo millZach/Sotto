@@ -56,6 +56,8 @@
 .provider-row__column .provider-client__owed { margin-top: 8px; color: var(--tt-text); }
 .provider-client__actions .tt-toggle { width: auto; grid-template-columns: 36px; gap: 0; padding: 7px 0; }
 .provider-client__actions .tt-toggle__copy { display: none; }
+/* Ultracode's effort (ADR-0148): a list as wide as its longest level, not the column. */
+.provider-client__actions .provider-client__select { width: auto; min-width: 200px; max-width: 100%; }
 /* Cursor's connection (ADR-0128, variant A of its prototype): what to do next in the text colour and, while a sign-in
    waits on cursor.com, a live line whose dot pulses as a busy status's does. Its refusals sit under its words. */
 .provider-row__column p.provider-connection__lead, .provider-row__column p.provider-connection__notice { color: var(--tt-text); }

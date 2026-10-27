@@ -173,11 +173,11 @@ describe('NativeDictationLifecycle idle reporting', () => {
 })
 
 describe('NativeDictationLifecycle theme presentation', () => {
-  const tropic = widgetPaletteFor({ lightTheme: 'tropic', darkTheme: 'tropic', customThemes: [] })
+  const fern = widgetPaletteFor({ lightTheme: 'fern', darkTheme: 'fern', customThemes: [] })
   const citrine = widgetPaletteFor({ lightTheme: 'citrine', darkTheme: 'citrine', customThemes: [] })
 
   function presentedHarness() {
-    let presentation = { theme: 'system' as const, palette: tropic, reducedMotion: 'system' as const }
+    let presentation = { theme: 'system' as const, palette: fern, reducedMotion: 'system' as const }
     const sendToWidget = vi.fn(async () => true)
     const lifecycle = new NativeDictationLifecycle({
       delivery: { sendToWidget },
@@ -191,7 +191,7 @@ describe('NativeDictationLifecycle theme presentation', () => {
     return {
       lifecycle,
       sendToWidget,
-      choose(palette: typeof tropic) { presentation = { ...presentation, palette } },
+      choose(palette: typeof fern) { presentation = { ...presentation, palette } },
       delivered: () => sendToWidget.mock.calls.map(call => (call as unknown[])[1] as WidgetSnapshot),
     }
   }
@@ -199,7 +199,7 @@ describe('NativeDictationLifecycle theme presentation', () => {
   it('stamps main’s current palette over a renderer publication built from older settings', async () => {
     const harness = presentedHarness()
     await harness.lifecycle.publish(listening())
-    expect(harness.delivered().at(-1)?.palette).toEqual(tropic)
+    expect(harness.delivered().at(-1)?.palette).toEqual(fern)
     expect(harness.delivered().at(-1)).toMatchObject({ status: 'listening', level: 0.5 })
   })
 

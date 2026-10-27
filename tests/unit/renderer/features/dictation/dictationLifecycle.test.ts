@@ -552,14 +552,14 @@ describe('DictationController', () => {
   })
 
   it('publishes the palette of the settings in force now, keeping the session shortcut', async () => {
-    let current = settings({ hotkey: 'Control+Alt+D', lightTheme: 'nocturne', darkTheme: 'nocturne' })
+    let current = settings({ hotkey: 'Control+Alt+D', lightTheme: 'graphite', darkTheme: 'graphite' })
     const harness = createHarness({ getSettings: () => current })
     await harness.controller.start()
     recorderOptions(harness).onLevel?.(0.3)
     expect(snapshots(harness).at(-1)?.palette).toEqual(widgetPaletteFor(current))
 
     // A theme chosen mid-session reaches the next level publication, not only the next session.
-    current = settings({ hotkey: 'Control+Alt+X', lightTheme: 'tropic', darkTheme: 'citrine' })
+    current = settings({ hotkey: 'Control+Alt+X', lightTheme: 'fern', darkTheme: 'citrine' })
     recorderOptions(harness).onLevel?.(0.6)
     const latest = snapshots(harness).at(-1)!
     expect(latest.palette).toEqual(widgetPaletteFor(current))

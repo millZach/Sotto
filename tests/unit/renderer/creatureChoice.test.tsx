@@ -34,12 +34,11 @@ afterEach(() => {
 })
 
 describe('creature choice', () => {
-  it('shows each creature in order, walking above its name, in a group named by the heading', () => {
+  it('shows each creature in order by name, in a group named by the heading', () => {
     render(<CreatureChoice value="sotto" shown onShow={() => undefined} onChoose={() => undefined} />)
     const group = screen.getByRole('group', { name: 'Creature' })
     const buttons = within(group).getAllByRole('button')
     expect(buttons.map(button => button.textContent)).toEqual(['Sotto', 'Claude bot'])
-    expect(buttons.map(button => within(button).getByTestId('walk').dataset.creature)).toEqual(['sotto', 'claude'])
   })
 
   it('marks the chosen creature pressed and says so in its name', () => {
@@ -81,6 +80,14 @@ describe('appearance settings creature', () => {
     const { save } = renderSettings({})
     await user.click(screen.getByRole('button', { name: 'Use Claude bot as the creature' }))
     await waitFor(() => expect(save).toHaveBeenCalledWith({ creature: 'claude' }, saying('Creature saved.')))
+  })
+
+  it('walks the chosen creature above the preview’s composer, and none while it is hidden', () => {
+    renderSettings({ creature: 'claude' })
+    expect(document.querySelector('.studio-threads__creature [data-testid="walk"]')).toHaveAttribute('data-creature', 'claude')
+    cleanup()
+    renderSettings({ showCreature: false })
+    expect(document.querySelector('.studio-threads__creature')).toBeNull()
   })
 
   it('shows the saved creature pressed', () => {

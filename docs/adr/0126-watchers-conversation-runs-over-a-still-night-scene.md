@@ -26,7 +26,7 @@ Watcher's night scene drew its sky and hills under the conversation's column at 
 
 ## Consequences
 
-- Measured on the built app at 1600x1000 and 1280x800 in all six built-in themes (`tests/e2e/watcher-column.spec.ts`), the lowest contrast of any word against any pixel the scene draws in the column is 4.87:1 by night (Tropic) and 4.82:1 by day (Sotto); the composer's words against the glass over the brightest of the scene, unblurred, 5.49:1 (Linen, by day), and over pure white or black, 4.63:1 (Linen, by day). `docs/verification/watcher-floating-composer.md` has every theme's numbers and ceilings.
+- Measured on the built app at 1600x1000 and 1280x800 in all six built-in themes (`tests/e2e/watcher-column.spec.ts`), the lowest contrast of any word against any pixel the scene draws in the column is 4.87:1 by night (Tropic, which Fern replaced on October 26, 2026 under ADR-0024) and 4.82:1 by day (Sotto); the composer's words against the glass over the brightest of the scene, unblurred, 5.49:1 (Linen, by day), and over pure white or black, 4.63:1 (Linen, by day). `docs/verification/watcher-floating-composer.md` has every theme's numbers and ceilings.
 - Sotto's own light palette writes links at about 7.2:1 on the canvas, below its secondary tier, so its links, not its names, set its ceiling by day (19% against the other themes' 28%). Lifting it would mean a stronger link colour, which is a palette change.
 - The scene in the column still reads quieter than in the margins, as dotted hills and stars; the margins are unchanged.
 - The scene no longer measures the conversation, so a scroll or a streamed word costs it nothing.

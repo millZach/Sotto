@@ -31,8 +31,9 @@ import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type Agent
 import { agentHandover, type AgentHandover } from './agentHandover'
 import { AGENT_HANDOVER_UNAVAILABLE, AGENT_NOT_SEEN_FINISHING, AGENT_STILL_WORKING, FORK_REPLY_GONE, FORK_TURN_RUNNING, NATIVE_FORKS } from '../../shared/threadStarts'
 import { EMPTY_WINDOW, FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, RECORDED_USER_MESSAGES_MAX, replacementEvents, summaryOf, ThreadStore, type RecordedUserMessageIdentity, type StoredVisual, type ThreadMessageWindow } from './threadStore'
-import { NO_EVENTS, throwIfFailed, writeFailed, ThreadStoreWriterOnMain, type ThreadStoreWrite, type ThreadStoreWriteOutcome, type ThreadStoreWriter } from './threadStoreWriter'
-import { applyEventsToSummary, applyEventsToWindow } from './storeOverlay'
+import { BUILT_STORE_WORKER, CLOSE_LIMIT_MS, type StoreWorkerOptions } from './storeWorker'
+import { NO_EVENTS, throwIfFailed, writeFailed, ThreadStoreWriterOnWorker, type ActivityReadBack, type ThreadStoreWrite, type ThreadStoreWriteOutcome, type ThreadStoreWriter } from './threadStoreWriter'
+import { applyEventsToIdentities, applyEventsToMessage, applyEventsToSummary, applyEventsToWindow, keepsPositions, pageWithEvents } from './storeOverlay'
 import { readHandover, type Handover, type HandoverStore } from './handover'
 import { continuedPromptWords, continuedWordsOnly } from './continueThread'
 import { handoverCounts } from './watcherHandover'
@@ -135,6 +136,20 @@ async function skillInWorkingCopy(selected: AgentSkillReference, projectPath: st
 function settledHeadMovers(activities: readonly AgentActivity[] | undefined): Set<string> {
   return new Set((activities ?? []).filter(activity => HEAD_MOVING_KINDS.has(activity.kind) && isTerminalActivity(activity.status)).map(activity => activity.id))
 }
+/** Whether `after` settled a record that may move a branch which `before` had not, so the worktree is read again. */
+function settledHeadMoved(before: readonly AgentActivity[] | undefined, after: readonly AgentActivity[] | undefined): boolean {
+  if (before === after) return false
+  const settled = settledHeadMovers(before)
+  return [...settledHeadMovers(after)].some(id => !settled.has(id))
+}
+
+/** A stored thread's records on their way back from the store worker for a window (`readBack`). */
+interface ActivityRead {
+  /** Each record the thread's provider published meanwhile, merged onto the list in the order it came once it is here. */
+  readonly held: AgentThread[]
+  /** Settles once the read has been dealt with: arrived, let go, or waited out behind a clear. */
+  readonly done: Promise<void>
+}
 
 /**
  * The turn still being worked: the latest running turn record's, or, with none and the thread running, the
@@ -176,8 +191,10 @@ export type VisualAddition =
 interface MessageMark { readonly id: string; readonly length: number; readonly attachments: number; readonly tail: string; readonly watcherChanges: string; readonly turnMessageId: string | undefined }
 /** The characters of a message kept for comparison; a rewrite of the same length still differs here. */
 const TAIL = 24
+/** A slice of a long string keeps the whole message alive. Joining the slice onto a space first leaves the mark pointing at a short string of its own (#1618). */
+const ownCopy = (text: string): string => (' ' + text).slice(1)
 const markOf = (message: AgentMessage): MessageMark =>
-  ({ id: message.id, length: message.text.length, attachments: message.attachments?.length ?? 0, tail: message.text.slice(-TAIL), watcherChanges: JSON.stringify([message.watcherOwnChange ?? null, message.watcherObservedChanges ?? null]), turnMessageId: message.turnMessageId })
+  ({ id: message.id, length: message.text.length, attachments: message.attachments?.length ?? 0, tail: ownCopy(message.text.slice(-TAIL)), watcherChanges: JSON.stringify([message.watcherOwnChange ?? null, message.watcherObservedChanges ?? null]), turnMessageId: message.turnMessageId })
 
 /** A record read back from disk: one still running there was an unfinished observation, not a live process. */
 function savedRecord(activity: AgentActivity): AgentActivity {
@@ -547,7 +564,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (!thread?.providerId || this.storeUnavailable) return undefined
     this.applyEvents()
     // Each message is shown once it is marked as a wake-up or not, so a hidden wake-up is known by its provenance.
-    return readHandover(this.handoverStore(threadId), { source: { threadId, title: thread.title, provider: thread.providerId }, shown })
+    const source = { threadId, title: thread.title, provider: thread.providerId }
+    // Read at one moment of the file, so a write the store worker commits meanwhile is not laid over it twice.
+    return this.threadStore.reading(() => readHandover(this.handoverStore(threadId), { source, shown }))
   }
   async setWatcherKind(threadId: string, kind: 'watcher' | 'watcher-history'): Promise<void> {
     if (!this.watcherEnabled) throw new Error(WATCHER_DISABLED)
@@ -622,6 +641,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private replyHandover(source: AgentThread, messageId: string): AgentHandover | undefined {
     if (!source.providerId || this.storeUnavailable) return undefined
     this.applyEvents()
+    const provider = source.providerId
+    return this.threadStore.reading(() => this.replyHandoverRead(source, provider, messageId))
+  }
+  /** `replyHandover`'s read, made at one moment of the file. */
+  private replyHandoverRead(source: AgentThread, provider: NonNullable<AgentThread['providerId']>, messageId: string): AgentHandover | undefined {
     const store = this.handoverStore(source.id)
     const identities = store.messageIdentities(source.id)
     const end = identities.findIndex(identity => identity.id === messageId)
@@ -644,7 +668,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       wakeUps: id => store.wakeUps(id),
       activityCount: id => store.activityCount(id),
     }
-    const built = readHandover(upToReply, { source: { threadId: source.id, title: source.title, provider: source.providerId } })
+    const built = readHandover(upToReply, { source: { threadId: source.id, title: source.title, provider } })
     return { text: built.text, counts: handoverCounts(built.summary) }
   }
   /**
@@ -788,7 +812,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   threadMessage(threadId: string, messageId: string): AgentMessage | undefined {
     if (!this.threadVisible(threadId) || this.storeUnavailable) return undefined
     this.applyEvents()
-    try { return this.writes.unconfirmed(threadId) ? this.historyWithHeld(threadId).find(message => message.id === messageId) : this.threadStore.message(threadId, messageId) }
+    try { return this.writes.unconfirmed(threadId) ? this.messageWithHeld(threadId, messageId) : this.threadStore.message(threadId, messageId) }
     catch { return undefined }
   }
   useWatcherTools(tools: WatcherProfileTools): void { this.launchProfiles.useTools(tools) }
@@ -924,6 +948,23 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * back (#918). Such a thread carries no `activities`, and nothing syncs it, so its stored list is never overwritten.
    */
   private readonly storedActivity = new Set<string>()
+  /**
+   * Stored threads whose records the store worker is reading back for a window (ADR-0016, October 26): their provider is
+   * not told they are observed until the list arrives, and each record it publishes for them meanwhile waits in `held`,
+   * merged onto the list once it is here, so it keeps its sequence. `done` settles once the read has been dealt with.
+   */
+  private readonly activityReads = new Map<string, ActivityRead>()
+  /** The threads the window last said it looks at, which their provider is told once no read holds one back. */
+  private observation: ReadonlySet<string> = new Set()
+  /**
+   * How many reads in `activityReads` are of threads in `observation`. The provider is told the observation once this
+   * comes to nought, so a window opening many stored threads tells it once for them all, not once for each (`endRead`).
+   */
+  private observedReads = 0
+  /** Whether telling the provider waits for the task an accept runs in to end (`endRead`). */
+  private observationQueued = false
+  /** Reads whose list arrived while their thread was being cleared, each waiting to hear whether the clear went through. */
+  private readonly readsAwaitingForget = new Map<string, () => void>()
   /** Whether this start read every record because the store had not yet said the roster holds their words. */
   private subagentWordsPending = false
   /** Set when legacy activity was moved into the roster, which the next save puts on the disk before anything drops it. */
@@ -1003,6 +1044,26 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private readonly writes: ThreadStoreWriter
   /** The batch at the front of a thread's `pendingEvents` that is posted and not yet confirmed. One per thread is. */
   private readonly inFlight = new Map<string, readonly ThreadEvent[]>()
+  /**
+   * Answers posted on their own and not yet confirmed, by thread. A thread's next batch waits for them, so each thread has
+   * one write of events unconfirmed at a time: what the store worker committed of it can then be told from the file.
+   */
+  private readonly answersInFlight = new Map<string, number>()
+  /** A history-publishing host's write per thread that is not yet confirmed (`record`), as `inFlight` is for events. */
+  private readonly recordsInFlight = new Set<string>()
+  /**
+   * What such a host published while its thread's writes were held, or the history whose write failed, compared again once
+   * nothing holds it; with the answers given since, which follow that comparison's write, so each commits after the words
+   * it answers.
+   */
+  private readonly recordsOwed = new Map<string, { readonly messages: readonly AgentMessage[]; readonly previousEpoch: string | undefined; readonly answers: AnswerGivenEvent[] }>()
+  /**
+   * Threads whose last whole-history write failed. Its retry is the next comparison, at the next publication or the history
+   * retry, whichever comes first; answers already waiting wait for it, so nothing commits ahead of the words that failed.
+   */
+  private readonly recordsFailed = new Set<string>()
+  /** When closing must be done by, once `close` began (`CLOSE_LIMIT_MS`). */
+  private closeDeadline: number | undefined
   /** Counts activity saves, so a failure heard late puts back only what no later save has replaced. */
   private activitySaves = 0
   /** Activity saves posted and not yet confirmed: until they are, what the store holds is not known. */
@@ -2019,14 +2080,17 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     try { await this.waited(this.commit({ kind: 'forget', threadIds: deleted })) }
     catch {
       // Kept: their held words go once the store takes them, and their records are saved again.
-      for (const threadId of deleted) { this.forgetting.delete(threadId); this.unsaved.add(threadId) }
+      // A history held for them while they were being cleared is compared now, and the answers behind it follow it.
+      for (const threadId of deleted) { this.forgetting.delete(threadId); this.unsaved.add(threadId); this.recordOwed(threadId) }
+      this.forgetEnded(deleted)
       throw new Error(`Sotto could not erase these threads' history, so it kept them, but their sub-agent lists are gone. ${DELETION_FOLDERS_WORDS} Restore access to local storage and try again.`)
     }
     for (const threadId of deleted) {
       this.clearedIds.add(threadId)
       this.forgetting.delete(threadId)
-      this.pendingEvents.delete(threadId); this.inFlight.delete(threadId); this.failedEventThreads.delete(threadId); this.invalidEventThreads.delete(threadId); this.eventChanged.delete(threadId)
+      this.pendingEvents.delete(threadId); this.inFlight.delete(threadId); this.failedEventThreads.delete(threadId); this.recordsFailed.delete(threadId); this.recordsOwed.delete(threadId); this.invalidEventThreads.delete(threadId); this.eventChanged.delete(threadId)
     }
+    this.forgetEnded(deleted)
     this.state.snapshot.threads = this.state.snapshot.threads.flatMap(thread => {
       if (gone.has(thread.id)) return []
       const unlinked = unlinkedFrom(thread, gone)
@@ -2048,7 +2112,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Every record this host holds in memory for one deleted thread, beside its record. */
   private forgetThreadState(threadId: string): void {
     this.babysitRecords.delete(threadId); this.wakeUpRecords.delete(threadId); this.hiddenWakeUpRecords.delete(threadId); this.wakeUpAskRecords.delete(threadId)
-    this.privateLegacyMessages.delete(threadId); this.storedActivity.delete(threadId); this.storedInputs.delete(threadId); this.heldForInput.delete(threadId)
+    this.privateLegacyMessages.delete(threadId); this.storedActivity.delete(threadId); this.storedInputs.delete(threadId); this.heldForInput.delete(threadId); this.letReadGo(threadId)
     this.activityInputs.delete(threadId); this.known.delete(threadId); this.watched.delete(threadId); this.hidden.delete(threadId)
     this.storedAnchors.delete(threadId); this.inspectionsQueued.delete(threadId); this.fullCheckDue.delete(threadId)
     this.subagentSummaries.delete(threadId); this.subagentInputs.delete(threadId); this.subagentChanges.delete(threadId); this.subagentLiveSince.delete(threadId)
@@ -2380,8 +2444,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     heldProviders: HeldProviders | boolean = false,
     /** The Owl list's answer for cheaper publish windows (#991), read once by the process owner. Absent fails closed. */
     private readonly streamingPublishCostEnabled = false,
-    /** The writer every thread-store write goes through (#1457). Absent, one that commits on main at once, as before. */
-    storeWriter: (store: ThreadStore) => ThreadStoreWriter = store => new ThreadStoreWriterOnMain(store)) {
+    /**
+     * The writer every thread-store write goes through (#1457). Absent, the store worker's, which commits off main where the
+     * built worker sits beside this module and on main at once where it does not, as under the test runner.
+     */
+    storeWriter: (store: ThreadStore) => ThreadStoreWriter = store => new ThreadStoreWriterOnWorker(store),
+    /** The built store worker, or null to write on main; absent, the file beside this module, which the test runner lacks. */
+    storeWorker: string | StoreWorkerOptions | null = BUILT_STORE_WORKER) {
     this.held = typeof heldProviders === 'boolean' ? heldProvidersOf({ muse: heldProviders }) : heldProviders
     this.concurrentProviders = inner.concurrentProviders === true
     if (inner.subscribeUsage) this.subscribeUsage = listener => inner.subscribeUsage!(record => {
@@ -2403,7 +2472,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     inner.useLaunchProfiles?.({ profileFor: async id => { await this.initialize(); return this.launchProfiles.profileFor(id) } })
     this.worktrees = new ThreadWorktrees(directory)
     const preserveThread = watcherEnabled && !this.held.size ? undefined : (id: string): boolean => !this.threadVisible(id)
-    this.threadStore = new ThreadStore(join(directory, 'threads.sqlite'), preserveThread)
+    this.threadStore = new ThreadStore(join(directory, 'threads.sqlite'), preserveThread, storeWorker)
     this.writes = storeWriter(this.threadStore)
     this.subagentStore = new SubagentStore(join(directory, 'subagents.sqlite'), preserveThread)
     const parseWorkspace = (input: unknown): Workspace => { this.babysitRecords = savedBabysitting(input); this.wakeUpRecords = savedWakeUps(input); this.hiddenWakeUpRecords = savedHiddenWakeUps(input); this.wakeUpAskRecords = savedWakeUpAsks(input); const parsed = workspaceSchema.parse(input);
@@ -2698,22 +2767,110 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /**
    * Reads a stored thread's records back into memory, mapped as the startup read was: a record still running in the
    * store was not live (#918). A read that fails turns saving off, as a failed startup read does, so the store keeps
-   * the records for the next start while this run shows only what the provider brings.
+   * the records for the next start while this run shows only what the provider brings. `records` gives those the store
+   * worker read back, frozen as they arrived, or throws as a failed read does; by default they are read here, on main.
    */
-  private holdActivities(thread: AgentThread): AgentActivity[] | undefined {
+  private holdActivities(thread: AgentThread, records: () => readonly AgentActivity[] = () => this.threadStore.readActivities(thread.id, { shared: true })): AgentActivity[] | undefined {
     if (!this.storedActivity.has(thread.id)) return thread.activities
     this.storedActivity.delete(thread.id)
     this.touch(thread.id)
     this.storedInputs.delete(thread.id)
     try {
-      // The store's own frozen records, shared: this list is replaced, never edited, like every list the workspace holds.
-      this.touched(thread).activities = this.threadStore.readActivities(thread.id, { shared: true }).map(savedRecord)
+      // Frozen records, shared: this list is replaced, never edited, like every list the workspace holds.
+      this.touched(thread).activities = records().map(savedRecord)
     } catch {
       this.activityStoreUnavailable = true
       this.saveError = ACTIVITY_READ_ERROR
     }
     if (thread.activities) this.moveSubagentWords(thread, thread.activities)
     return thread.activities
+  }
+  /**
+   * A stored thread a window began to look at has its records read back on the store worker, so the query, the parse and
+   * the schema check leave main; its provider hears of the observation once they have arrived (`activitiesArrived`). With
+   * no worker to read on, or writes waiting unsent that the read must follow, they are read here at once, as before.
+   */
+  private readBack(thread: AgentThread): void {
+    if (this.activityReads.has(thread.id)) return
+    const answer = this.writes.readActivities?.(thread.id)
+    if (!answer) { this.holdActivities(thread); return }
+    const held: AgentThread[] = []
+    const read: ActivityRead = { held, done: answer.then(result => this.activitiesArrived(thread.id, read, result)).catch(() => { console.warn('thread-activity-read-back-failed') }) }
+    this.activityReads.set(thread.id, read)
+  }
+  /**
+   * A read that will not be used. The provider is told the observation once no observed thread's read is on its way: the
+   * last of a batch tells it, once, and every read ends (arrived, let go or lost), so none waits for good. `soon` waits for
+   * the task under way to end, for a read let go inside an accept, which telling the provider must not run inside.
+   */
+  private endRead(threadId: string, read: ActivityRead, soon = false): void {
+    if (this.activityReads.get(threadId) !== read) return
+    this.activityReads.delete(threadId)
+    if (!this.observation.has(threadId) || --this.observedReads > 0 || this.stopping) return
+    if (!soon) { this.tellObservation(); return }
+    if (this.observationQueued) return
+    this.observationQueued = true
+    queueMicrotask(() => { this.observationQueued = false; if (this.observedReads === 0 && !this.stopping) this.tellObservation() })
+  }
+  /**
+   * A stored thread's list stops being the one a read on its way was asked for: a new history epoch's list replaced it,
+   * Keep local history turning off emptied it, or the thread was cleared. The read is let go for good, so it takes
+   * nothing when it arrives, and a later read of whatever the thread holds then starts afresh.
+   */
+  private letReadGo(threadId: string): void {
+    const read = this.activityReads.get(threadId)
+    if (read) this.endRead(threadId, read, true)
+  }
+  /** A clear of these threads is over, whether or not it went through: lists that arrived meanwhile go on (`activitiesArrived`). */
+  private forgetEnded(threadIds: readonly string[]): void {
+    for (const threadId of threadIds) {
+      const go = this.readsAwaitingForget.get(threadId)
+      if (go) { this.readsAwaitingForget.delete(threadId); go() }
+    }
+  }
+  /**
+   * A stored thread's records are back from the store worker. They are held as a read on main holds them, then each record
+   * its provider published meanwhile is merged onto them in the order it came, and the provider is told the window looks
+   * at the thread. A window that stopped looking meanwhile leaves them held, as a read on main had, until a save lets them
+   * go. A read let go (`letReadGo`) takes nothing. A list that arrives while its thread is being cleared waits to hear
+   * whether the clear went through: a clear that fails keeps the thread, and what was published behind the list with it.
+   * A worker that went first answers lost, and the records are read on main behind what it left unanswered, closing
+   * included, so the last save keeps what was published behind them.
+   */
+  private async activitiesArrived(threadId: string, read: ActivityRead, result: ActivityReadBack): Promise<void> {
+    if (this.activityReads.get(threadId) !== read) return
+    if ('lost' in result) await this.writes.confirmed(threadId)
+    if (this.forgetting.has(threadId) && this.activityReads.get(threadId) === read) await new Promise<void>(resolve => { this.readsAwaitingForget.set(threadId, resolve) })
+    if (this.activityReads.get(threadId) !== read) return
+    const wanted = this.observation.has(threadId)
+    const thread = this.threadById(threadId)
+    // While closing, a read matters only for what was published behind it, which the save closing makes then keeps.
+    const keeps = thread !== undefined && this.storedActivity.has(threadId) && !this.clearedIds.has(threadId) && (!this.stopping || read.held.length > 0)
+    if (keeps) {
+      const stored = 'activities' in result ? (): readonly AgentActivity[] => result.activities
+        : 'unreadable' in result ? (): never => { throw new Error('Thread activity could not be read') } : undefined
+      const before = this.holdActivities(thread, stored)
+      for (const record of read.held) {
+        const current = this.threadById(threadId)!
+        this.touched(current).activities = this.mergeActivities(record, current)
+      }
+      if (read.held.length) {
+        // A record the provider settled while the list was on its way may have moved the thread's branch (`refreshIfHeadMoved`).
+        if (settledHeadMoved(before, this.threadById(threadId)!.activities)) this.scheduleWorktreeRefresh(threadId)
+        this.dirty = true
+        this.writeSoon()
+      }
+    }
+    this.endRead(threadId, read)
+    // A window opening many stored threads publishes their records as a burst does, not once for each.
+    if (keeps && !this.stopping) this.publishSoon(wanted)
+  }
+  /** The provider hears which threads the window looks at, less those whose records are still on their way. */
+  private tellObservation(): void {
+    // A thread cleared since the window last said what it shows is left out: a read let go with the clear tells the provider
+    // again before the window does. A thread the workspace does not hold yet still goes, as the window names it.
+    this.inner.observeThreads?.([...this.observation].filter(id => !this.activityReads.has(id) && !this.forgetting.has(id)
+      && !this.clearedIds.has(id) && this.threadById(id)?.nativeSessionStarted !== false))
   }
   /**
    * A record read back may still carry subagent task words from before the roster held them, when the start that moved
@@ -2782,7 +2939,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private readWindow(threadId: string, turns?: number) {
     if (this.storeUnavailable) return undefined
     this.writeEvents()
-    try { return this.windowWithHeld(threadId, this.threadStore.readMessages(threadId, turns === undefined ? {} : { turns }), true) }
+    try { return this.windowWithHeld(threadId, () => this.threadStore.readMessages(threadId, turns === undefined ? {} : { turns }), true) }
     catch { this.saveError = HISTORY_SAVE_ERROR; return undefined }
   }
   /**
@@ -2795,9 +2952,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (this.storeUnavailable) return beside
     this.writeEvents()
     try {
-      // The appends waiting for the write window, and what is posted and not yet confirmed, lie over the store (`heldEvents`).
-      const events = this.heldEvents(thread.id, true)
-      const stored = events.length === 0 ? this.threadStore.summary(thread.id) : summaryOf(applyEventsToSummary(this.threadStore.summaryMessages(thread.id), events))
+      // The appends waiting for the write window, and what is posted and not yet confirmed, lie over the store (`heldEvents`),
+      // read at one moment of the file with it.
+      const stored = this.threadStore.reading(() => {
+        const messages = this.threadStore.summaryMessages(thread.id)
+        const events = this.heldEvents(thread.id, true)
+        return summaryOf(events.length === 0 ? messages : applyEventsToSummary(messages, events))
+      })
       return { ...stored, activityCount: beside.activityCount, ...(beside.runningTurnStartedAt === undefined ? {} : { runningTurnStartedAt: beside.runningTurnStartedAt }) }
     } catch { return beside }
   }
@@ -2872,8 +3033,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (!this.historyWritable()) return
     const due = new Map<string, ThreadEvent[]>()
     for (const [threadId, pending] of this.pendingEvents) {
-      // A thread's posted batch is confirmed before its next is posted, so nothing commits ahead of a batch that failed.
-      if (this.inFlight.has(threadId)) continue
+      // A thread's posted batch, or answer, is confirmed before its next is posted, so nothing commits ahead of one that failed.
+      // A history-publishing host's write in flight, or one that failed and waits for its next comparison, holds it too.
+      if (this.inFlight.has(threadId) || this.answersInFlight.has(threadId) || this.recordsInFlight.has(threadId) || this.recordsFailed.has(threadId)) continue
       // A thread being cleared posts nothing more: its forget is posted, and anything after it would outlive it.
       if (this.forgetting.has(threadId)) continue
       const events: ThreadEvent[] = []
@@ -2950,6 +3112,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       else this.pendingEvents.delete(threadId)
       this.failedEventThreads.delete(threadId)
       this.noteWritten(threadId, events)
+      this.recordOwed(threadId)
       this.markChanged(threadId)
       this.eventChanged.add(threadId)
       this.known.delete(threadId)
@@ -2963,7 +3126,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   /** A batch that failed is retried at one second, doubling to thirty, until it commits (ADR-0016, September 27). */
   private scheduleHistoryRetry(): void {
-    if (this.failedEventThreads.size === 0) {
+    if (this.failedEventThreads.size === 0 && this.recordsFailed.size === 0) {
       clearTimeout(this.historyRetryTimer)
       this.historyRetryTimer = undefined
       this.historyRetryDelay = 1_000
@@ -2971,6 +3134,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       this.historyRetryTimer = setTimeout(() => {
         this.historyRetryTimer = undefined
         this.applyEvents()
+        // A failed whole-history write is compared again, with nothing from its host needed to start it.
+        for (const threadId of [...this.recordsFailed]) this.recordOwed(threadId)
+        this.scheduleHistoryRetry()
         this.publish()
       }, this.historyRetryDelay)
       this.historyRetryTimer.unref?.()
@@ -3056,7 +3222,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const waiting = this.pendingEvents.get(threadId)
     const flying = this.inFlight.get(threadId)?.length ?? 0
     let rest: readonly ThreadEvent[] = NO_EVENTS
-    if (waiting && flying > 0) rest = waiting.slice(flying)
+    // Behind a batch or an answer in flight, everything waiting is held for its turn, not left behind by a failure.
+    if (waiting && (flying > 0 || this.answersInFlight.has(threadId))) rest = flying > 0 ? waiting.slice(flying) : waiting
     else if (waiting && withWaitingAppends && this.streamingPublishCostEnabled) {
       let leading = 0
       while (leading < waiting.length && waiting[leading]!.kind === 'message-text-appended') leading++
@@ -3064,17 +3231,27 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     return posted.length === 0 ? rest : rest.length === 0 ? posted : [...posted, ...rest]
   }
-  /** A window read from the store with the thread's held events laid over it (`heldEvents`). */
-  private windowWithHeld(threadId: string, window: ThreadMessageWindow, withWaitingAppends: boolean): ThreadMessageWindow {
-    const events = this.heldEvents(threadId, withWaitingAppends)
-    return events.length === 0 ? window : applyEventsToWindow(window, events, id => this.threadStore.message(threadId, id))
+  /**
+   * A window read from the store with the thread's held events laid over it (`heldEvents`). The window and the check of
+   * which posted writes it already holds read the file at one moment (`ThreadStore.reading`).
+   */
+  private windowWithHeld(threadId: string, read: () => ThreadMessageWindow, withWaitingAppends: boolean): ThreadMessageWindow {
+    return this.threadStore.reading(() => {
+      const window = read()
+      const events = this.heldEvents(threadId, withWaitingAppends)
+      return events.length === 0 ? window : applyEventsToWindow(window, events, id => this.threadStore.message(threadId, id))
+    })
+  }
+  /** One message as the store will hold it once what is held for its thread commits: it reads that message alone. */
+  private messageWithHeld(threadId: string, messageId: string): AgentMessage | undefined {
+    return this.threadStore.reading(() => applyEventsToMessage(messageId, this.heldEvents(threadId, false), id => this.threadStore.message(threadId, id)))
   }
   /**
    * A thread's whole history as the store will hold it once what was posted for it commits: for a read made while a
    * write is in flight, which reads it whole rather than waiting. It reads every message, so only a command reads it.
    */
   private historyWithHeld(threadId: string): AgentMessage[] {
-    return this.windowWithHeld(threadId, this.threadStore.readMessages(threadId), false).messages
+    return this.windowWithHeld(threadId, () => this.threadStore.readMessages(threadId), false).messages
   }
   /**
    * What a handover reads (#1028). While a write for the thread is in flight, its whole history as the store will hold
@@ -3083,9 +3260,22 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private handoverStore(threadId: string): HandoverStore {
     const store = this.threadStore
     if (!this.writes.unconfirmed(threadId)) return store
+    const wakeUps: ReadonlySet<string> = new Set([...store.wakeUps(threadId), ...this.wakeUpRecords.get(threadId) ?? []])
+    // What is posted, read once: the pages below lay it over the store page by page, so the handover reads what it shows.
+    const { events, lastStored } = store.reading(() => ({ events: this.heldEvents(threadId, false), lastStored: store.readMessages(threadId, { limit: 1 }).lastPosition }))
+    if (keepsPositions(events)) {
+      return {
+        ephemeral: store.ephemeral,
+        readMessages: (_id, options = {}) => pageWithEvents(page => store.readMessages(threadId, page), lastStored, events, options),
+        messageIdentities: () => [...applyEventsToIdentities(store.messageIdentities(threadId), events, id => store.message(threadId, id))],
+        message: (_id, messageId) => applyEventsToMessage(messageId, events, id => store.message(threadId, id)),
+        wakeUps: () => wakeUps,
+        activityCount: id => store.activityCount(id),
+      }
+    }
+    // A reset or an alias moves the stored messages, so the history is read whole once, as it will stand.
     const messages = this.historyWithHeld(threadId)
     const byId = new Map(messages.map(message => [message.id, message]))
-    const wakeUps: ReadonlySet<string> = new Set([...store.wakeUps(threadId), ...this.wakeUpRecords.get(threadId) ?? []])
     return {
       ephemeral: store.ephemeral,
       readMessages: (_id, options = {}) => {
@@ -3143,16 +3333,21 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (this.storeUnavailable) return []
     this.writeEvents(false, true)
     // An adapter seeds from this synchronously, so a write still in flight is laid over the store rather than waited for.
-    try { return this.writes.unconfirmed(threadId) ? this.historyWithHeld(threadId).map(storedIdentity) : this.threadStore.messageIdentities(threadId) }
+    // The identities are laid over, not the words: an adapter seeding reads no more while a write is in flight than after it.
+    try {
+      if (!this.writes.unconfirmed(threadId)) return this.threadStore.messageIdentities(threadId)
+      return this.threadStore.reading(() => applyEventsToIdentities(this.threadStore.messageIdentities(threadId), this.heldEvents(threadId, false), id => this.threadStore.message(threadId, id)))
+    }
     catch { return [] }
   }
   message(threadId: string, messageId: string): AgentMessage | undefined {
     if (!this.threadVisible(threadId)) return undefined
     if (this.storeUnavailable) return undefined
     this.writeEvents(false, true)
-    // Not yet: a caller that cannot wait asks again once what is held for the thread has committed.
-    if (this.pendingEvents.has(threadId) || this.writes.unconfirmed(threadId)) return undefined
-    try { return this.threadStore.message(threadId, messageId) }
+    // Not yet, while words wait that are not posted, as behind a failed batch or a thread being cleared: a caller that cannot
+    // wait asks again once they have committed. What is posted, and what waits behind it, is laid over the one message.
+    if (this.failedEventThreads.has(threadId) || this.forgetting.has(threadId) || (this.pendingEvents.has(threadId) && !this.inFlight.has(threadId) && !this.answersInFlight.has(threadId))) return undefined
+    try { return this.writes.unconfirmed(threadId) || this.pendingEvents.has(threadId) ? this.messageWithHeld(threadId, messageId) : this.threadStore.message(threadId, messageId) }
     catch { return undefined }
   }
   /**
@@ -3210,11 +3405,47 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private record(thread: AgentThread, messages: readonly AgentMessage[], previousEpoch: string | undefined): AgentMessage[] {
     // A thread being cleared takes no more of its words into the store; the next accept compares again if it is kept.
     if (!this.historyWritable() || this.forgetting.has(thread.id)) return [...messages]
+    if (!this.recordHistory(thread, messages, previousEpoch)) return [...messages]
+    if (!this.watched.has(thread.id)) return this.declared ? [] : this.withVisuals(thread.id, messages, true)
+    const hidden = Math.min(this.hidden.get(thread.id) ?? 0, messages.length)
+    if (hidden > 0) thread.earlierAvailable = true
+    return this.withVisuals(thread.id, hidden > 0 ? messages.slice(hidden) : messages, hidden === 0)
+  }
+  /**
+   * Posts what changed in a published history, or, while this thread's last such write is unconfirmed, keeps the history
+   * to compare once it is, so nothing commits ahead of a write that may fail (#1457). Answers false when the write failed
+   * at once.
+   */
+  private recordHistory(thread: AgentThread, messages: readonly AgentMessage[], previousEpoch: string | undefined): boolean {
+    // Behind its own write in flight, an answer or a batch in flight, or a batch that failed: kept, and compared once it lands.
+    if (this.historyHeld(thread.id)) {
+      this.recordsOwed.set(thread.id, { messages, previousEpoch, answers: this.recordsOwed.get(thread.id)?.answers ?? [] })
+      return true
+    }
+    // This comparison takes the place of any history held for the thread, and the answers that waited for it follow it.
+    const owed = this.recordsOwed.get(thread.id)
+    this.recordsOwed.delete(thread.id)
     const events = this.differences(thread.id, messages, thread.historyEpoch, previousEpoch)
     if (events.length) {
       let failed = false
+      this.recordsInFlight.add(thread.id)
       this.post({ kind: 'events', threadId: thread.id, events }, (outcome, late) => {
-        if (!writeFailed(outcome)) { this.noteWritten(thread.id, events); return }
+        this.recordsInFlight.delete(thread.id)
+        if (!writeFailed(outcome)) {
+          this.recordsFailed.delete(thread.id)
+          this.noteWritten(thread.id, events)
+          // What the host published meanwhile is compared with the store as this write left it, and posted in turn.
+          this.recordOwed(thread.id)
+          // A confirmation heard after the post owes a publish: a client catching up reads the commit with it, and an
+          // answer that waited behind the write is posted.
+          if (late && !this.stopping) this.publishSoon()
+          return
+        }
+        // The history is compared again, at the next publication or the history retry; answers given meanwhile follow it.
+        this.recordsFailed.add(thread.id)
+        const later = this.recordsOwed.get(thread.id)
+        this.recordsOwed.set(thread.id, later ?? { messages, previousEpoch, answers: [] })
+        this.scheduleHistoryRetry()
         failed = true
         // The whole history goes to the pane as it is, so nothing is above a window any more.
         this.saveError = HISTORY_SAVE_ERROR; this.hidden.delete(thread.id); this.storedAnchors.delete(thread.id)
@@ -3223,14 +3454,49 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         // A failure heard after the post: the store is compared afresh, and the thread published again.
         if (late) { this.known.delete(thread.id); this.touch(thread.id); if (!this.stopping) this.publishSoon() }
       })
-      if (failed) return [...messages]
+      this.follow(thread.id, owed?.answers)
+      if (failed) return false
       if (events[0]?.kind === 'messages-reset') this.hidden.delete(thread.id)
       this.known.set(thread.id, { epoch: thread.historyEpoch, messages: messages.map(markOf) })
+      return true
     }
-    if (!this.watched.has(thread.id)) return this.declared ? [] : this.withVisuals(thread.id, messages, true)
-    const hidden = Math.min(this.hidden.get(thread.id) ?? 0, messages.length)
-    if (hidden > 0) thread.earlierAvailable = true
-    return this.withVisuals(thread.id, hidden > 0 ? messages.slice(hidden) : messages, hidden === 0)
+    // Nothing to write: the store already holds this history, so a write that failed before it needs no retry.
+    this.recordsFailed.delete(thread.id)
+    this.follow(thread.id, owed?.answers)
+    return true
+  }
+  /**
+   * Answers that waited for a history now compared go to the thread's waiting events, behind its write if it posted one,
+   * and are posted as soon as nothing of the thread holds them: at once when the store already held that history.
+   */
+  private follow(threadId: string, answers: readonly AnswerGivenEvent[] | undefined): void {
+    if (answers?.length) {
+      const waiting = this.pendingEvents.get(threadId)
+      if (waiting) waiting.push(...answers)
+      else this.pendingEvents.set(threadId, [...answers])
+    }
+    if (this.pendingEvents.has(threadId) && !this.recordsInFlight.has(threadId) && !this.recordsFailed.has(threadId)) this.writeEvents(false, true)
+  }
+  /** Whether a thread's next whole-history write waits: behind its own, an answer or a batch in flight, or a batch that failed. */
+  private historyHeld(threadId: string): boolean {
+    return this.recordsInFlight.has(threadId) || this.answersInFlight.has(threadId) || this.inFlight.has(threadId) || this.failedEventThreads.has(threadId)
+  }
+  /** Compares and posts the history held for a thread, once nothing holds it; its answers follow (`recordHistory`). */
+  private recordOwed(threadId: string): void {
+    const owed = this.recordsOwed.get(threadId)
+    if (!owed || this.historyHeld(threadId)) return
+    const thread = this.threadById(threadId)
+    if (!thread) {
+      // The thread went: nothing of it is compared again, and what it held waits with whatever else it holds.
+      this.recordsOwed.delete(threadId)
+      this.recordsFailed.delete(threadId)
+      this.follow(threadId, owed.answers)
+      return
+    }
+    // While the thread is being cleared, or Keep local history is switching, the history and its answers wait for the outcome:
+    // a clear that succeeds takes them with the thread, and one that fails, or a switch that finishes, compares them again.
+    if (!this.historyWritable() || this.forgetting.has(threadId)) return
+    this.recordHistory(thread, owed.messages, owed.previousEpoch)
   }
   private legacyMessages(thread: AgentThread, messages: readonly AgentMessage[]): readonly AgentMessage[] {
     let privateMessages = this.privateLegacyMessages.get(thread.id)
@@ -3463,15 +3729,32 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (this.streamingPublishCostEnabled) this.writeEvents(false, true)
     // Behind words still held, in flight, waiting for a failed batch's retry or held while the thread is cleared, the
     // answer waits with them, so it is posted after them and its batch is retried with theirs.
+    // A history-publishing host's history held for the thread is what this answers: the answer follows its write.
+    const owed = this.recordsOwed.get(threadId)
+    if (owed) {
+      if (!this.historyEnabled()) this.pendingEventsPrivate = true
+      owed.answers.push(event)
+      return
+    }
     const waiting = this.pendingEvents.get(threadId)
-    if (waiting || this.forgetting.has(threadId)) {
+    // A history-publishing host's write in flight, or one that failed and waits for its retry, holds the answer the same way.
+    if (waiting || this.forgetting.has(threadId) || this.recordsInFlight.has(threadId) || this.recordsFailed.has(threadId)) {
       if (!this.historyEnabled()) this.pendingEventsPrivate = true
       if (waiting) waiting.push(event)
       else this.pendingEvents.set(threadId, [event])
       this.writeEvents(false, true)
       return
     }
-    this.post({ kind: 'events', threadId, events: [event] }, outcome => { if (writeFailed(outcome)) this.saveError = HISTORY_SAVE_ERROR })
+    this.answersInFlight.set(threadId, (this.answersInFlight.get(threadId) ?? 0) + 1)
+    this.post({ kind: 'events', threadId, events: [event] }, (outcome, late) => {
+      const left = (this.answersInFlight.get(threadId) ?? 1) - 1
+      if (left > 0) this.answersInFlight.set(threadId, left)
+      else this.answersInFlight.delete(threadId)
+      if (writeFailed(outcome)) this.saveError = HISTORY_SAVE_ERROR
+      // A history the host published behind the answer is compared now; words that waited are posted at the next publish.
+      if (left === 0) this.recordOwed(threadId)
+      if (late && left === 0 && this.pendingEvents.has(threadId) && !this.stopping) this.publishSoon()
+    })
   }
   /** What a client reads to catch up: every thread event after `seq`, with anything still buffered written first (ADR-0016). */
   eventsAfter(seq: number, threadId?: string, limit?: number): StoredThreadEvent[] {
@@ -3489,13 +3772,35 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Finish command lanes before detaching provider delivery and closing SQLite. */
   async close(): Promise<void> {
     this.stopping = true
-    await Promise.allSettled([...this.branchWrites, ...this.lanes.values(), ...this.interruptLanes.values(), ...this.remoteStatusReads])
+    // Closing waits a minute at most, whatever holds it: a store worker that stops answering costs that, and what it did
+    // not answer is reported as not saved (ADR-0016, October 26 amendment).
+    const deadline = Date.now() + CLOSE_LIMIT_MS
+    // A stored thread's records still on their way carry what its provider published meanwhile, which the last save keeps.
+    let inTime = await this.beforeDeadline(Promise.allSettled([...this.branchWrites, ...this.lanes.values(), ...this.interruptLanes.values(), ...this.remoteStatusReads,
+      ...[...this.activityReads.values()].map(read => read.done)]), deadline)
     this.stopDelivery()
     // Quitting loses no commit: what was posted is confirmed before the store closes.
-    try { if (this.ready) { await this.flush(); if (this.writes.unconfirmed()) await this.settled(undefined, true) } } finally { this.dispose() }
+    try {
+      if (this.ready && inTime) inTime = await this.beforeDeadline((async () => { await this.flush(); if (this.writes.unconfirmed()) await this.settled(undefined, true) })(), deadline)
+    } finally {
+      this.closeDeadline = deadline
+      this.dispose()
+    }
+    if (!inTime) { console.warn('thread-store-close-timed-out'); throw new Error(HISTORY_SAVE_ERROR) }
     if (this.pendingEvents.size) throw new Error(HISTORY_SAVE_ERROR)
   }
+  /** Whether `work` settled before `deadline`. A failure it meets in time is thrown; one after is left, as it is no longer waited for. */
+  private async beforeDeadline(work: Promise<unknown>, deadline: number): Promise<boolean> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const late = new Promise<false>(resolve => { timer = setTimeout(() => resolve(false), Math.max(0, deadline - Date.now())); timer.unref?.() })
+    work.catch(() => undefined)
+    try { return await Promise.race([work.then(() => true as const), late]) } finally { clearTimeout(timer) }
+  }
 
+  /** What is left of the minute closing may take, once `close` began; undefined for a dispose on its own. */
+  private closeRemaining(): number | undefined {
+    return this.closeDeadline === undefined ? undefined : Math.max(0, this.closeDeadline - Date.now())
+  }
   /** Closes the history store. Called when the app quits, after the last flush. */
   dispose(): void {
     this.stopDelivery()
@@ -3511,14 +3816,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (this.ready) {
         this.writeEvents(true)
         // What waited behind a batch in flight is posted once that batch is confirmed, which shutdown cannot wait for.
-        if (this.inFlight.size) { this.writes.drain(); this.writeEvents(true) }
+        if (this.inFlight.size || this.answersInFlight.size) { this.writes.drain(this.closeRemaining()); this.writeEvents(true) }
         const saved = this.saveActivities(!this.rosterOnDisk(), true)
         if (saved) saved.catch(() => { this.saveError = unsaved })
       }
     }
     catch { this.saveError = unsaved }
     // Closing confirms everything posted before the store closes, so quitting loses no commit.
-    finally { this.writes.close(); this.subagentStore.close() }
+    finally { this.writes.close(this.closeRemaining()); this.subagentStore.close() }
     if (this.subagentTimer) clearTimeout(this.subagentTimer)
     this.subagentChanges.clear(); this.subagentListeners.clear()
     this.activityInputs.clear(); this.activityListeners.clear(); this.listeners.clear(); this.settledThreadListeners.clear()
@@ -3802,9 +4107,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // A new history epoch replaces the list, as below. Anything else reads the stored list back first and merges onto
     // it, so sequence, anchors and finished states are kept; merging onto nothing would renumber every record.
     if (old && this.storedActivity.has(thread.id)) {
-      if (old.historyEpoch !== thread.historyEpoch) this.storedActivity.delete(thread.id)
-      else if (input !== undefined && input.length > 0 && this.storedInputs.get(thread.id) !== input) this.heldForInput.set(thread.id, this.holdActivities(old))
-      else {
+      const reading = this.activityReads.get(thread.id)
+      if (old.historyEpoch !== thread.historyEpoch) { this.storedActivity.delete(thread.id); this.letReadGo(thread.id) }
+      else if (input !== undefined && input.length > 0 && this.storedInputs.get(thread.id) !== input) {
+        // While the store worker reads the list back, the record waits to merge onto it (`activitiesArrived`); the same
+        // array published again is the same input.
+        if (reading) { if (reading.held.at(-1)?.activities !== input) reading.held.push(thread); return undefined }
+        this.heldForInput.set(thread.id, this.holdActivities(old))
+      } else {
         // The array kept for this comparison is only ever the one the provider is still publishing, which it holds anyway.
         if (this.storedInputs.get(thread.id) !== input) this.storedInputs.delete(thread.id)
         return undefined
@@ -4135,10 +4445,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     let moved = old.status === 'running' && thread.status !== 'running'
     // A stored list read back in this accept is what the thread held before it, not nothing (#918).
     const base = this.heldForInput.has(thread.id) ? this.heldForInput.get(thread.id) : old.activities
-    if (!moved && base !== thread.activities) {
-      const before = settledHeadMovers(base)
-      moved = [...settledHeadMovers(thread.activities)].some(id => !before.has(id))
-    }
+    if (!moved) moved = settledHeadMoved(base, thread.activities)
     if (moved) this.scheduleWorktreeRefresh(thread.id)
   }
   /** Whether a Watcher thread has something an accept must capture before it can be lost (`accept`). */
@@ -4363,6 +4670,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       this.pendingEvents.clear()
       this.inFlight.clear()
       this.failedEventThreads.clear()
+      this.recordsFailed.clear()
+      this.recordsOwed.clear()
       clearTimeout(this.historyRetryTimer)
       this.historyRetryTimer = undefined
       this.historyRetryDelay = 1_000
@@ -4434,6 +4743,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         for (const thread of this.state.snapshot.threads) if (this.storedActivity.has(thread.id) && thread.summary) thread.summary = { ...thread.summary, activityCount: 0 }
         dropped = this.storedActivity.size > 0
         this.storedActivity.clear()
+        for (const threadId of [...this.activityReads.keys()]) this.letReadGo(threadId)
         this.storedInputs.clear()
         // A visual has no copy but the store's (ADR-0056), so the windows stop showing the ones it no longer holds.
         for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
@@ -4445,6 +4755,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // Records, summaries and windows changed under every thread, and the activity inputs were let go.
     this.touchAll()
     this.dirty = true
+    // The switch stopped the history retry, and what failed is tried again at once in the store that now writes, as a failed
+    // batch is: a failed history held through the switch is compared now, and its answers follow it.
+    for (const threadId of [...this.recordsFailed]) this.recordOwed(threadId)
     await this.flush()
     if (dropped) this.publish()
     if (retryUnavailable && this.storeUnavailable) {
@@ -5105,13 +5418,17 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (this.stopping) return
     if ((!this.watcherEnabled || this.held.size) && !this.ready) { void this.initialize().then(() => this.observeThreads(ids)).catch(() => undefined); return }
     ids = ids.filter(id => { const thread = this.threadById(id); return !thread || this.visible(thread) })
-    // A thread coming into view reads its stored records back before its provider hears of it, so the pane's first
-    // publish has them and a provider reading the thread's history merges onto them (#918).
+    // A thread coming into view reads its stored records back before its provider hears of it, so a provider reading the
+    // thread's history merges onto them (#918). Read on the store worker, they arrive a moment after the pane's first
+    // publish, and only then is its provider told; the other threads' provider is told now (ADR-0016, October 26).
     for (const id of ids) {
       const thread = this.storedActivity.has(id) ? this.threadById(id) : undefined
-      if (thread) this.holdActivities(thread)
+      if (thread) this.readBack(thread)
     }
-    this.inner.observeThreads?.(ids.filter(id => this.threadById(id)?.nativeSessionStarted !== false))
+    this.observation = new Set(ids)
+    this.observedReads = 0
+    for (const id of this.observation) if (this.activityReads.has(id)) this.observedReads++
+    this.tellObservation()
     if (!this.ready) return
     const wanted = new Set(ids)
     let changed = !this.declared

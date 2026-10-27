@@ -33,6 +33,9 @@ async function appearance(page: Page): Promise<void> {
   await openPage(page, 'Settings')
   await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
   await page.locator('#settings-appearance').evaluate(element => element.scrollIntoView({ block:'start' }))
+  // Each half has its own grid once the switch splits them.
+  const split = page.getByRole('switch', { name: 'A different theme when dark' })
+  if (await split.getAttribute('aria-checked') !== 'true') await split.click()
 }
 
 /** Compare each window to the newly rendered file, independently of IPC and the other window. */
