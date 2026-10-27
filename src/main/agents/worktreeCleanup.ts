@@ -7,6 +7,9 @@ import { isWatcherWorkActive } from '../../shared/watcherOverview'
 import { delegatedThreadsBelow } from '../../shared/delegation'
 import { baseRepository, GitHubRateLimited, isRateLimitAnswer, readGitHubRemotes, type GitHubHosts, type GitHubRateLimit } from './github'
 import { runWorktreeGit, type RunGit } from './threadWorktrees'
+import { pullRequestKey } from '../../shared/gitPullRequests'
+import type { PullRequestObservation } from './watcherEvidence'
+import { PULL_REQUEST_HOST } from './backgroundPullRequestReads'
 
 /**
  * The part of WorkspaceHost the sweep needs: what threads there are, a way to reclaim, a way to hear a settle,
@@ -18,8 +21,18 @@ export interface WorktreeCleanupHost {
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void
   /** Reports the current IDs immediately, then on publication, without copying histories. */
   subscribeSettledThreads?(listener: (ids: readonly string[]) => void): () => void
-  setWorkspaceSettled?(kind: 'thread', id: string, settled: true, options?: { expectedMergedTip: string; expectedMergedBranch: string }): Promise<unknown>
+  setWorkspaceSettled?(kind: 'thread', id: string, settled: true, options?: MergedSettleExpectation): Promise<unknown>
+  /** Brings the thread's links to a pull request to the state GitHub just gave (#1147). */
+  notePullRequestState?(read: PullRequestObservation): void
 }
+/**
+ * What Auto-settle merged threads saw when it decided, which the host checks again under the thread's lane before it
+ * settles: the branch the thread last sent on, or null when it never recorded one, and that branch's local tip, or null
+ * when the branch is gone.
+ */
+export interface MergedSettleExpectation { readonly expectedMergedBranch: string | null; readonly expectedMergedTip: string | null }
+/** A pull request as GitHub reports it now: its state and the name and commit of its head branch. */
+export interface PullRequestState { readonly state: 'open' | 'closed' | 'merged'; readonly headRefName: string; readonly headRefOid: string | null }
 export interface WorktreeCleanupDependencies {
   readonly host: WorktreeCleanupHost
   /** The rules as the user has them now; read at every sweep so a change applies without a restart. */
@@ -39,6 +52,11 @@ export interface WorktreeCleanupDependencies {
   /** Whether GitHub reports this branch's pull request merged. Absent, neither the merged rule nor auto-settle fires. */
   readonly pullRequestMerged?: (repositoryRoot: string, branch: string, github?: SharedGitHub) => Promise<boolean>
   /**
+   * One pull request a thread links, by URL. Given, Auto-settle merged threads also settles a thread whose branch is gone
+   * or was never recorded, from its own pull request links.
+   */
+  readonly pullRequestState?: (url: string, github?: SharedGitHub) => Promise<PullRequestState>
+  /**
    * The head branches of the repository's open pull requests on GitHub now. Given, Clear settled threads after keeps a
    * thread whose branch is among them, and every thread with a branch in a repository it could not ask (ADR-0140).
    */
@@ -49,6 +67,7 @@ export interface WorktreeCleanupDependencies {
   readonly log?: (code: WorktreeCleanupEvent) => void
 }
 export type WorktreeCleanupEvent = 'worktree-cleanup-reclaimed' | 'worktree-cleanup-skipped' | 'thread-auto-settled' | 'thread-auto-settle-skipped'
+  | 'thread-auto-settle-branch-gone' | 'thread-auto-settle-pull-request-open' | 'thread-auto-settle-branch-differs'
 const HOUR_MS = 3_600_000
 /**
  * A thread still at work or waiting on the user: its turn, background work, sub-agents working or not yet known to have
@@ -89,6 +108,10 @@ export class WorktreeCleanup {
   /** Thread and branch pairs Auto-settle merged threads already settled while Sotto runs, so a restore sticks. */
   private readonly autoSettled = new Set<string>()
   private mergedAnswers = new Map<string, Promise<boolean>>()
+  /** Pull requests GitHub reported merged while Sotto runs, by key, with their head branch: merged is final. */
+  private readonly mergedPullRequests = new Map<string, string>()
+  /** Each skip reason is logged once a sweep, so a thread left alone every hour does not fill the log. */
+  private logged = new Set<WorktreeCleanupEvent>()
   private defaults = new Map<string, string | null>()
   private disposed = false
   /** The rules and Auto-settle merged threads as the last sweep request saw them. */
@@ -154,8 +177,11 @@ export class WorktreeCleanup {
   private autoSettleOn(): boolean {
     try { return this.dependencies.autoSettleMerged?.() === true && Boolean(this.dependencies.pullRequestMerged && this.dependencies.host.setWorkspaceSettled) } catch { return false }
   }
+  private tipOf(repositoryRoot: string, branch: string): Promise<string> {
+    return this.git(repositoryRoot, ['rev-parse', '--verify', '--end-of-options', `refs/heads/${branch}^{commit}`]).then(value => value.trim(), () => '')
+  }
   private async merged(repositoryRoot: string, branch: string): Promise<string | null> {
-    const tip = await this.git(repositoryRoot, ['rev-parse', '--verify', '--end-of-options', `refs/heads/${branch}^{commit}`]).then(value => value.trim(), () => '')
+    const tip = await this.tipOf(repositoryRoot, branch)
     if (!tip) return null
     const key = `${repositoryRoot}\0${branch}\0${tip}`
     let answer = this.mergedAnswers.get(key)
@@ -163,7 +189,40 @@ export class WorktreeCleanup {
       answer = this.dependencies.pullRequestMerged ? this.dependencies.pullRequestMerged(repositoryRoot, branch).catch(() => false) : Promise.resolve(false)
       this.mergedAnswers.set(key, answer)
     }
-    return await answer && await this.git(repositoryRoot, ['rev-parse', '--verify', '--end-of-options', `refs/heads/${branch}^{commit}`]).then(value => value.trim() === tip, () => false) ? tip : null
+    return await answer && await this.tipOf(repositoryRoot, branch) === tip ? tip : null
+  }
+  private skipped(event: WorktreeCleanupEvent): void {
+    if (!this.logged.has(event)) this.dependencies.log?.(event)
+    this.logged.add(event)
+  }
+  /**
+   * Whether the thread's own pull request links say its work merged, for a thread whose branch is gone or was never
+   * recorded: GitHub reports none of them open, and one merged from `branch` (any, when there is no branch). Each answer
+   * also brings the thread's link up to date, so a merged one stops reading open even when the thread is not settled.
+   */
+  private async linksMerged(thread: AgentThread, branch: string | null): Promise<boolean> {
+    const ask = this.dependencies.pullRequestState
+    if (!ask) return false
+    const links = new Map<string, string>()
+    for (const link of [thread.worktree?.git?.pullRequest, ...thread.pullRequests ?? []]) {
+      const key = link && link.state !== 'closed' ? pullRequestKey(link.url) : null
+      if (key && !links.has(key)) links.set(key, link!.url)
+    }
+    let mergedFromBranch = false
+    for (const [key, url] of links) {
+      let head = this.mergedPullRequests.get(key)
+      if (head === undefined) {
+        const read = await ask(url)
+        this.dependencies.host.notePullRequestState?.({ url, head: read.headRefOid, state: read.state, availability: 'available', observedAt: new Date(this.now()).toISOString() })
+        if (read.state === 'open') { this.skipped('thread-auto-settle-pull-request-open'); return false }
+        if (read.state !== 'merged') continue
+        head = read.headRefName
+        this.mergedPullRequests.set(key, head)
+      }
+      if (branch === null || head === branch) mergedFromBranch = true
+    }
+    if (links.size && !mergedFromBranch) this.skipped('thread-auto-settle-branch-differs')
+    return mergedFromBranch
   }
   /**
    * Auto-settle merged threads: a thread at rest whose branch's pull request GitHub reports merged is settled,
@@ -178,19 +237,33 @@ export class WorktreeCleanup {
       if (this.disposed || !this.autoSettleOn()) return
       const worktree = thread.worktree
       const project = snapshot.projects.find(item => item.id === thread.projectId)
-      if (!worktree?.repositoryRoot || thread.nativeSessionStarted === false || thread.archivedAt || isWorkspaceThreadSettled(thread, project)) continue
+      if (thread.nativeSessionStarted === false || thread.archivedAt || isWorkspaceThreadSettled(thread, project)) continue
       if (atWork(snapshot.threads, thread.id, true)) continue
-      const branch = worktree.mode === 'independent' ? worktree.sentBranch ?? worktree.branch : worktree.sentBranch
-      if (!branch) continue
-      const key = `${thread.id}\0${branch}`
+      const branch = (worktree?.mode === 'independent' ? worktree.sentBranch ?? worktree.branch : worktree?.sentBranch) ?? null
+      const key = `${thread.id}\0${branch ?? ''}`
       if (this.autoSettled.has(key)) continue
       try {
-        if (branch === await this.defaultBranchOf(worktree.repositoryRoot)) continue
-        const tip = await this.merged(worktree.repositoryRoot, branch)
-        if (!tip) continue
+        let expected: MergedSettleExpectation
+        if (branch === null) {
+          // No branch to ask about, as in a folder that is not a repository or a checkout that was never on one.
+          if (!await this.linksMerged(thread, null)) continue
+          expected = { expectedMergedBranch: null, expectedMergedTip: null }
+        } else {
+          if (!worktree?.repositoryRoot || branch === await this.defaultBranchOf(worktree.repositoryRoot)) continue
+          if (await this.tipOf(worktree.repositoryRoot, branch)) {
+            const tip = await this.merged(worktree.repositoryRoot, branch)
+            if (!tip) continue
+            expected = { expectedMergedBranch: branch, expectedMergedTip: tip }
+          } else {
+            // The branch was deleted, as it is once its pull request merges: gone, it holds no current work.
+            this.skipped('thread-auto-settle-branch-gone')
+            if (!await this.linksMerged(thread, branch)) continue
+            expected = { expectedMergedBranch: branch, expectedMergedTip: null }
+          }
+        }
         // Asked again as it now stands: work may have started while Git and GitHub were asked.
         if (atWork(this.dependencies.host.workspaceSnapshot().threads, thread.id, true)) continue
-        await this.dependencies.host.setWorkspaceSettled!('thread', thread.id, true, { expectedMergedTip: tip, expectedMergedBranch: branch })
+        await this.dependencies.host.setWorkspaceSettled!('thread', thread.id, true, expected)
         this.autoSettled.add(key)
         this.dependencies.log?.('thread-auto-settled')
       } catch { this.dependencies.log?.('thread-auto-settle-skipped') }
@@ -239,6 +312,7 @@ export class WorktreeCleanup {
     // GitHub is asked once per branch in a sweep, whichever of the two wants the answer.
     this.mergedAnswers = new Map()
     this.defaults = new Map()
+    this.logged = new Set()
     if (settle) await this.settleMerged()
     if (!rulesOn(rules) || this.disposed) return
     const snapshot = this.dependencies.host.workspaceSnapshot()
@@ -292,57 +366,61 @@ export class WorktreeCleanup {
 /** The process's GitHub rate limit and its answer to which hosts gh asks as GitHub, which the merged check shares (#820). */
 export interface SharedGitHub { readonly rateLimit: GitHubRateLimit; readonly hosts: GitHubHosts }
 
+/** The GitHub host the repository at `cwd` is on, when the shared rate limit is given and a remote names one. */
+async function githubHostOf(cwd: string, github: SharedGitHub | undefined): Promise<string | null> {
+  return github ? baseRepository(await readGitHubRemotes((folder, command, args) => command === 'git' ? runWorktreeGit(folder, [...args]) : Promise.reject(new Error('Only Git reads remotes.')), cwd, github.hosts))?.host ?? null : null
+}
 /**
- * Asks GitHub through `gh`, as the Git status reader and the Pull request surface do, whether this branch's pull request
- * is merged. With the process's shared `github` it asks as the timer does (#820): not while GitHub has paused the sign-in or
- * the reserve is reached, which rejects, so the branch is taken as not merged until the next sweep; and a rate-limited
- * answer pauses the status reader's background questions too. gh's words are only tested, never kept.
+ * Asks `gh` once, as the timer does (#820) when the process's shared `github` and the host are given: not while GitHub has
+ * paused the sign-in or the reserve is reached, which rejects with GitHubRateLimited; and a rate-limited answer pauses the
+ * status reader's background questions too. gh's words are only tested, never kept.
  */
-/** The head branches of the open pull requests GitHub lists for the repository at `cwd` (ADR-0140). Throws when it cannot ask. */
-export async function githubOpenPullRequestBranches(cwd: string, github?: SharedGitHub): Promise<ReadonlySet<string>> {
-  const host = github ? baseRepository(await readGitHubRemotes((folder, command, args) => command === 'git' ? runWorktreeGit(folder, [...args]) : Promise.reject(new Error('Only Git reads remotes.')), cwd, github.hosts))?.host ?? null : null
+async function askGitHub(args: readonly string[], options: { cwd?: string; maxBuffer: number; github: SharedGitHub | undefined; host: string | null }): Promise<string> {
+  const { github, host } = options
   const retryAt = github && host ? github.rateLimit.retryAt(host, 'background') : null
   if (retryAt !== null) throw new GitHubRateLimited(retryAt)
   const asked = github && host ? github.rateLimit.asking() : 0
-  return new Promise<ReadonlySet<string>>((accept, reject) => {
+  return new Promise<string>((accept, reject) => {
     const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1', GCM_INTERACTIVE: 'never' }
-    execFile('gh', ['pr', 'list', '--state', 'open', '--limit', '1000', '--json', 'headRefName'], { cwd, env, windowsHide: true, timeout: 30_000, maxBuffer: 2_000_000, encoding: 'utf8' }, (error, stdout, stderr) => {
+    execFile('gh', [...args], { ...options.cwd ? { cwd: options.cwd } : {}, env, windowsHide: true, timeout: 30_000, maxBuffer: options.maxBuffer, encoding: 'utf8' }, (error, stdout, stderr) => {
       if (error) {
         const words = typeof stderr === 'string' ? stderr : ''
         if (github && host && isRateLimitAnswer(words)) { reject(new GitHubRateLimited(github.rateLimit.limited(host, words))); return }
         reject(error); return
       }
       if (github && host) github.rateLimit.answered(host, asked, null)
-      try {
-        const prs: unknown = JSON.parse(stdout)
-        if (!Array.isArray(prs)) throw new Error('GitHub did not list pull requests.')
-        accept(new Set(prs.flatMap(pr => pr && typeof pr === 'object' && typeof pr.headRefName === 'string' ? [pr.headRefName as string] : [])))
-      } catch (parseError) { reject(parseError) }
+      accept(stdout)
     })
   })
 }
+
+/** The head branches of the open pull requests GitHub lists for the repository at `cwd` (ADR-0140). Throws when it cannot ask. */
+export async function githubOpenPullRequestBranches(cwd: string, github?: SharedGitHub): Promise<ReadonlySet<string>> {
+  const stdout = await askGitHub(['pr', 'list', '--state', 'open', '--limit', '1000', '--json', 'headRefName'], { cwd, maxBuffer: 2_000_000, github, host: await githubHostOf(cwd, github) })
+  const prs: unknown = JSON.parse(stdout)
+  if (!Array.isArray(prs)) throw new Error('GitHub did not list pull requests.')
+  return new Set(prs.flatMap(pr => pr && typeof pr === 'object' && typeof pr.headRefName === 'string' ? [pr.headRefName as string] : []))
+}
+/**
+ * Whether GitHub reports this branch's pull request merged at the branch's current local tip, asked as `askGitHub` says;
+ * a rate-limited ask rejects, so the branch is taken as not merged until the next sweep.
+ */
 export async function githubPullRequestMerged(cwd: string, branch: string, github?: SharedGitHub): Promise<boolean> {
-  const tip = await runWorktreeGit(cwd, ['rev-parse', '--verify', '--end-of-options', `refs/heads/${branch}^{commit}`]).then(value => value.trim(), () => '')
+  const tipOf = () => runWorktreeGit(cwd, ['rev-parse', '--verify', '--end-of-options', `refs/heads/${branch}^{commit}`]).then(value => value.trim(), () => '')
+  const tip = await tipOf()
   if (!tip) return false
-  const host = github ? baseRepository(await readGitHubRemotes((folder, command, args) => command === 'git' ? runWorktreeGit(folder, [...args]) : Promise.reject(new Error('Only Git reads remotes.')), cwd, github.hosts))?.host ?? null : null
-  const retryAt = github && host ? github.rateLimit.retryAt(host, 'background') : null
-  if (retryAt !== null) throw new GitHubRateLimited(retryAt)
-  const asked = github && host ? github.rateLimit.asking() : 0
-  const merged = await new Promise<boolean>((accept, reject) => {
-    const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1', GCM_INTERACTIVE: 'never' }
-    execFile('gh', ['pr', 'list', '--head', branch, '--state', 'merged', '--limit', '100', '--json', 'headRefOid'], { cwd, env, windowsHide: true, timeout: 30_000, maxBuffer: 200_000, encoding: 'utf8' }, (error, stdout, stderr) => {
-      if (error) {
-        const words = typeof stderr === 'string' ? stderr : ''
-        if (github && host && isRateLimitAnswer(words)) { reject(new GitHubRateLimited(github.rateLimit.limited(host, words))); return }
-        reject(error); return
-      }
-      if (github && host) github.rateLimit.answered(host, asked, null)
-      try {
-        const prs: unknown = JSON.parse(stdout)
-        accept(Array.isArray(prs) && prs.some(pr => pr && typeof pr === 'object' && pr.headRefOid === tip))
-      } catch (parseError) { reject(parseError) }
-    })
-  })
+  const stdout = await askGitHub(['pr', 'list', '--head', branch, '--state', 'merged', '--limit', '100', '--json', 'headRefOid'], { cwd, maxBuffer: 200_000, github, host: await githubHostOf(cwd, github) })
+  const prs: unknown = JSON.parse(stdout)
+  const merged = Array.isArray(prs) && prs.some(pr => pr && typeof pr === 'object' && pr.headRefOid === tip)
   // A branch moved while GitHub was answering is current work, even if its previous tip was merged.
-  return merged && await runWorktreeGit(cwd, ['rev-parse', '--verify', '--end-of-options', `refs/heads/${branch}^{commit}`]).then(value => value.trim() === tip, () => false)
+  return merged && await tipOf() === tip
+}
+/** One pull request by its github.com URL, which gh reads from any folder, asked as `askGitHub` says. Throws when it cannot ask. */
+export async function githubPullRequestState(url: string, github?: SharedGitHub): Promise<PullRequestState> {
+  const stdout = await askGitHub(['pr', 'view', url, '--json', 'state,headRefName,headRefOid'], { maxBuffer: 200_000, github, host: PULL_REQUEST_HOST })
+  const pr: unknown = JSON.parse(stdout)
+  const { state, headRefName, headRefOid } = (pr && typeof pr === 'object' ? pr : {}) as Record<string, unknown>
+  const known = typeof state === 'string' ? state.toLowerCase() : ''
+  if ((known !== 'open' && known !== 'closed' && known !== 'merged') || typeof headRefName !== 'string') throw new Error('GitHub did not describe the pull request.')
+  return { state: known, headRefName, headRefOid: typeof headRefOid === 'string' ? headRefOid : null }
 }

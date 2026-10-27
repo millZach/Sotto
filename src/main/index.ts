@@ -282,7 +282,7 @@ import { RunCloudClient } from './tools/cloudIphone/runCloudClient'
 import { registerCloudIphoneIpc } from './tools/cloudIphoneIpc'
 import { CLOUD_IPHONE_EVENT } from '../shared/cloudIphone'
 import { TERMINAL_EVENT } from '../shared/terminal'
-import { githubOpenPullRequestBranches, githubPullRequestMerged } from './agents/worktreeCleanup'
+import { githubOpenPullRequestBranches, githubPullRequestMerged, githubPullRequestState, type WorktreeCleanupEvent } from './agents/worktreeCleanup'
 import type { GitHubRateLimitEvent } from './agents/github'
 import type { BabysitEvent } from './agents/babysitting'
 import type { WatchedPullRequestEvent } from './agents/watchedPullRequests'
@@ -346,10 +346,7 @@ type NativeDiagnostic =
   | HistoryLogEvent
   | 'delivered-app-unreadable'
   | 'checkpoint-unavailable'
-  | 'worktree-cleanup-reclaimed'
-  | 'worktree-cleanup-skipped'
-  | 'thread-auto-settled'
-  | 'thread-auto-settle-skipped'
+  | WorktreeCleanupEvent
   | WatcherAutoSettleEvent
   | GitHubRateLimitEvent
   | BabysitEvent
@@ -1053,7 +1050,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(),
     } } : {}),
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
-    worktreeCleanup: { ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged, openPullRequestBranches: githubOpenPullRequestBranches } : {}), log: code => { logOperational(code) } },
+    worktreeCleanup: { ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged, pullRequestState: githubPullRequestState, openPullRequestBranches: githubOpenPullRequestBranches } : {}), log: code => { logOperational(code) } },
     watcherLog: event => { logOperational(event) },
     claudeSettingsLog: event => { logOperational(event) },
     codexLog: event => { logOperational(event) },
