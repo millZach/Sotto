@@ -21,27 +21,41 @@ export const BROWSER_COMMAND_DEADLINE_MS = 20_000
 /** Fixed operations only: callers cannot evaluate script or read cookies. */
 export class BrowserAutomation {
   private enabled: Promise<void> | null = null
+  /** Which debugger attachment is current. A command left from an earlier one cannot reset this one. */
+  private session = 0
   private readonly errors: { kind: string; message: string }[] = []
   /**
    * `touch` is the test iPhone's (ADR-0045): while attached, the page sees a touch screen and the mouse taps it.
    * `prepareCapture` lends the page a surface to draw into while it is off screen, and returns its release.
    */
-  constructor(private readonly contents: WebContents, private readonly prepareCapture: () => () => void = () => () => undefined, private readonly touch = false, private readonly deadline = BROWSER_COMMAND_DEADLINE_MS) {}
+  constructor(private readonly contents: WebContents, private readonly prepareCapture: () => () => void = () => () => undefined, private readonly touch = false) {}
   /**
-   * One debugger command, bounded by the deadline. A command past it detaches the debugger, which rejects anything
-   * still waiting on it, so the next action attaches afresh rather than queueing behind a page that never answered.
+   * Ends this debugger attachment: Electron rejects whatever is still waiting on it, and the next action attaches
+   * afresh rather than queueing behind a page that never answered.
    */
+  private reset(): void {
+    this.session++
+    this.enabled = null
+    if (this.contents.isDestroyed() || !this.contents.debugger.isAttached()) return
+    try { this.contents.debugger.detach() } catch { /* Already detached. */ }
+  }
+  /** One debugger command, bounded by the deadline. Past it, the attachment it was sent on ends. */
   private async send(method: string, params?: Record<string, unknown>): Promise<unknown> {
+    const session = this.session
     let timer: ReturnType<typeof setTimeout> | undefined
-    const late = new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new ToolFailure('unavailable', 'The page did not answer in time. Inspect it before trying again.')), this.deadline) })
+    const late = new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new ToolFailure('unavailable', 'The page did not answer in time. Inspect it before trying again.')), BROWSER_COMMAND_DEADLINE_MS) })
     try { return await Promise.race([this.contents.debugger.sendCommand(method, params), late]) }
     catch (error) {
-      if (error instanceof ToolFailure && !this.contents.isDestroyed() && this.contents.debugger.isAttached()) {
-        this.enabled = null
-        try { this.contents.debugger.detach() } catch { /* Already detached. */ }
-      }
+      if (error instanceof ToolFailure && session === this.session) this.reset()
       throw error
     } finally { clearTimeout(timer) }
+  }
+  /** Cleans up after `work` either way; a cleanup that fails speaks only when the work itself did not. */
+  private async cleaningUp<T>(work: () => Promise<T>, cleanup: () => Promise<unknown>): Promise<T> {
+    let result: T
+    try { result = await work() } catch (error) { await cleanup().catch(() => undefined); throw error }
+    await cleanup()
+    return result
   }
   private async ready(): Promise<void> {
     if (!this.contents.debugger.isAttached()) {
@@ -103,7 +117,8 @@ export class BrowserAutomation {
     const release = this.prepareCapture()
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      return await Promise.race([this.frame(rect), new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new ToolFailure('unavailable', 'The page did not draw in time. Inspect it before trying again.')), 10_000) })])
+      // Giving up ends the attachment too, so the abandoned capture's commands cannot cut into the next action.
+      return await Promise.race([this.frame(rect), new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { this.reset(); reject(new ToolFailure('unavailable', 'The page did not draw in time. Inspect it before trying again.')) }, 10_000) })])
     } finally { if (timer) clearTimeout(timer); release() }
   }
   private async frame(rect?: BrowserBounds): Promise<NativeImage> {
@@ -160,10 +175,9 @@ export class BrowserAutomation {
     } else {
       const focused = await this.send('Runtime.evaluate', { expression: 'document.activeElement', objectGroup: 'sotto-browser-target' }) as { result?: { objectId?: string } }
       if (!focused.result?.objectId) return fail('blocked', 'Nothing on the page has focus. Click a text field, then type.')
-      try {
-        const described = await this.send('DOM.describeNode', { objectId: focused.result.objectId }) as { node?: { backendNodeId?: number } }
-        backendNodeId = described.node?.backendNodeId
-      } finally { await this.send('Runtime.releaseObjectGroup', { objectGroup: 'sotto-browser-target' }) }
+      const objectId = focused.result.objectId
+      const described = await this.cleaningUp(() => this.send('DOM.describeNode', { objectId }), () => this.send('Runtime.releaseObjectGroup', { objectGroup: 'sotto-browser-target' })) as { node?: { backendNodeId?: number } }
+      backendNodeId = described.node?.backendNodeId
     }
     if (!backendNodeId) return fail('blocked', 'Nothing on the page is at that point. Inspect the page and use its coordinates.')
     const result = await this.send('DOM.describeNode', { backendNodeId, depth: 1, pierce: true }) as { node?: { nodeName?: string; attributes?: string[]; shadowRoots?: { shadowRootType?: string }[] } }
@@ -203,12 +217,12 @@ export class BrowserAutomation {
       await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
     } else if (action.type === 'swipe') {
       await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: Math.round(action.x), y: Math.round(action.y) }] })
-      try {
+      await this.cleaningUp(async () => {
         for (let step = 1; step <= SWIPE_STEPS; step++) {
           const x = action.x + (action.toX - action.x) * step / SWIPE_STEPS, y = action.y + (action.toY - action.y) * step / SWIPE_STEPS
           await send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: Math.round(x), y: Math.round(y) }] })
         }
-      } finally { await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }) }
+      }, () => send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }))
     } else if (action.type === 'key') {
       const key = KEYS[action.key]
       const event = { key: action.key, code: action.key, windowsVirtualKeyCode: key.code, nativeVirtualKeyCode: key.code }
