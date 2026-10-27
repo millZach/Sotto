@@ -44,6 +44,8 @@ export function walkthroughView(steps: NonNullable<AgentVisual['steps']>, place:
  */
 export interface ExpandedWalkthrough {
   readonly bar: ReactNode
+  /** The step shown, from 0. */
+  readonly current: number
   /** One step back (-1) or on (1), stopping at the ends; none for a visual with one step, which has nowhere to go. */
   readonly step: ((direction: -1 | 1) => void) | undefined
 }
@@ -56,6 +58,7 @@ export function expandedWalkthrough(steps: NonNullable<AgentVisual['steps']>, pl
   const onStep = (index: number): void => movePlace({ step: index })
   return {
     bar: <VisualStepper steps={steps} index={current} onStep={onStep} />,
+    current,
     step: steps.length < 2 ? undefined : direction => {
       const next = clampStep(current + direction, steps.length)
       if (next !== current) onStep(next)

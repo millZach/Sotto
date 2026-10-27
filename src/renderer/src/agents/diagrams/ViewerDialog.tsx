@@ -24,6 +24,8 @@ export function ViewerDialog({ title, className, describedBy, status, controls, 
   readonly children: ReactNode
 }): ReactNode {
   const dialog = useRef<HTMLDialogElement>(null)
+  const walkthroughBar = useRef<HTMLDivElement>(null)
+  const step = walkthrough?.current
   const titleId = useId()
   useLayoutEffect(() => {
     const element = dialog.current
@@ -32,13 +34,15 @@ export function ViewerDialog({ title, className, describedBy, status, controls, 
     focusOnOpen.current?.focus({ preventScroll: true })
     return () => { element?.close?.() }
   }, [focusOnOpen])
+  // A step too long for the bar scrolls in it; the next step starts at its count and the top of its words.
+  useLayoutEffect(() => { if (walkthroughBar.current) walkthroughBar.current.scrollTop = 0 }, [step])
   const keyDown = (event: KeyboardEvent): void => {
     // The bar steps for itself while it has focus, and marks the key used.
     const direction = event.defaultPrevented ? null : stepDirection(event)
-    const step = walkthrough?.step
-    if (step && direction !== null) {
+    const move = walkthrough?.step
+    if (move && direction !== null) {
       event.preventDefault()
-      step(direction)
+      move(direction)
       return
     }
     onKeyDown?.(event)
@@ -51,7 +55,7 @@ export function ViewerDialog({ title, className, describedBy, status, controls, 
       <div className="rich-diagram-viewer__controls">{controls}</div>
     </header>
     {children}
-    {walkthrough && <div className="rich-diagram-viewer__walkthrough">{walkthrough.bar}</div>}
+    {walkthrough && <div ref={walkthroughBar} className="rich-diagram-viewer__walkthrough">{walkthrough.bar}</div>}
     {footer}
   </dialog>
 }

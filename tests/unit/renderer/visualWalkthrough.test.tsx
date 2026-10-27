@@ -249,6 +249,29 @@ describe('a walkthrough in the card', () => {
     expect(bar).toHaveTextContent('Step 2 of 3')
   })
 
+  it('starts each step at the top of the bar in Expand when a long step had scrolled it, keeping the focus on Next', async () => {
+    document.documentElement.dataset.reducedMotion = 'on'
+    render(<VisualCard visual={visual()} />)
+    const card = screen.getByRole('region', { name: 'Visual: How a draft is sent' })
+    await within(card).findByRole('img')
+    await userEvent.click(within(card).getByRole('button', { name: 'Expand How a draft is sent' }))
+    const viewer = screen.getByRole('dialog')
+    const bar = within(viewer).getByRole('group', { name: 'Walkthrough' })
+    const scroller = bar.parentElement!
+    expect(scroller).toHaveClass('rich-diagram-viewer__walkthrough')
+    const next = within(bar).getByRole('button', { name: 'Next' })
+    next.focus()
+    scroller.scrollTop = 120
+    await userEvent.keyboard('{ArrowRight}')
+    expect(bar).toHaveTextContent('Step 2 of 3')
+    expect(scroller.scrollTop).toBe(0)
+    expect(next).toHaveFocus()
+    scroller.scrollTop = 80
+    await userEvent.click(next)
+    expect(bar).toHaveTextContent('Step 3 of 3')
+    expect(scroller.scrollTop).toBe(0)
+  })
+
   it('shows no bar in Expand under Read all, where Left and Right move the drawing as before', async () => {
     document.documentElement.dataset.reducedMotion = 'on'
     render(<VisualCard visual={visual()} />)
