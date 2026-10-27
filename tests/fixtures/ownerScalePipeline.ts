@@ -15,6 +15,7 @@ import { ThreadChangesPublisher, ThreadMap, verifyingThreadChanges, type Activit
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import { UsageService } from '../../src/main/agents/usageService'
 import { WatcherService } from '../../src/main/agents/watcher'
+import { CheckQueue } from '../../src/main/agents/checkQueue'
 import { createWatcherRoomDesktop } from '../../src/main/agents/watcherRoomDesktop'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
@@ -413,7 +414,8 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
   }
   const localHostId = control.hostId()!
   const idOf = (session: string): string => registry.bySession('claude', session)!.threadId
-  const watcher = owl ? new WatcherService({ directory: root, control, host: workspace, historyEnabled: () => true, streamingPublishCost: true }) : undefined
+  // Owl's Watcher keeps this computer's check queue (#1312), whose pass runs on every publish.
+  const watcher = owl ? new WatcherService({ directory: root, control, host: workspace, historyEnabled: () => true, streamingPublishCost: true, checks: new CheckQueue('This computer') }) : undefined
   const tools = watcher ? new WatcherToolServer(watcher) : undefined
   if (tools) workspace.useWatcherTools(tools)
   // As runtime.ts does once the coordinator has started: this starts Watcher's wake-up pass, which runs on every update.
@@ -515,6 +517,13 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
         if (result.status !== 'ok') throw new Error(`Watcher did not watch a thread: ${JSON.stringify(result)}`)
       }
       await control.updateWatcher(record => { addWatcherHistory(record, targets, counts, undefined, streamed) })
+      // One of those starts is a check still holding its place, as a running check does: the pass on every publish reads it
+      // by its position, and so must not grow with the history behind it (#1312).
+      const started = control.watcherRecord().operations.findLast(item => item.action === 'start' && item.target.hostId === localHostId)
+      if (started) {
+        const queue = watcher as unknown as { joinChecks(ticket: string): unknown; adoptCheck(check: unknown, operationId: string): void }
+        queue.adoptCheck(queue.joinChecks(started.id), started.id)
+      }
     } else {
       // Stable starts no Watcher and keeps the record an Owl build left, whole (ADR-0072).
       control.mutateWatcher(record => {
