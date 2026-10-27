@@ -20,8 +20,8 @@ import { foldedTurns, setStepsOpen, useStepsOpen } from './stepsOpen'
 import { MessageContent, AttachmentPreviews } from './MessageContent'
 import { renderedPlainText, useTransientFlag, writeClipboard } from './richActions'
 import { LinkMenu, type LinkMenuItem } from '../tools/webLinks'
-import { ActivityGroupView, CompactionLine, foldOnEscape, LiveActivity, LiveBrowserLines, TurnChangedFiles } from './ThreadActivity'
-import { newestStepId } from './browserLine'
+import { ActivityGroupView, BrowserLinesContext, CompactionLine, foldOnEscape, LiveActivity, LiveBrowserLines, TurnChangedFiles, type BrowserLinesIndex } from './ThreadActivity'
+import { browserLinesByTurn, goingRunKey, turnBrowserLines } from './browserLine'
 import { OwnServerTurnContext, TurnFailureReason, useOwnServerTurns } from './OwnServerTurn'
 import { ActivityBodyContext, type ActivityBodyHost } from './activityBodies'
 import { threadHostName } from './HostBadge'
@@ -76,11 +76,6 @@ const STATUS_LABELS: Record<SubmissionStatus, MessageDescriptor> = {
 
 export interface ActivityContext {
   readonly liveTurn: string | null
-  /**
-   * The running turn's newest step, when its calls to Sotto's browser show as lines in the transcript (ADR-0154; Owl
-   * only). Undefined leaves the running turn's work all under its working line, as on stable.
-   */
-  readonly liveStep?: string | null | undefined
   readonly running: boolean
   readonly connected: boolean
   readonly provider: string
@@ -98,8 +93,7 @@ function ActivityGroups({ groups, context, outcome }: {
     // and on Owl its calls to Sotto's browser, each run one line where it happened.
     return compaction
       ? <CompactionLine key={group.key} record={compaction} />
-      : group.turnId === context.liveTurn ? context.liveStep === undefined ? null
-        : <LiveBrowserLines key={group.key} group={group} latest={context.liveStep} connected={context.connected} onDisclosure={context.onDisclosure} />
+      : group.turnId === context.liveTurn ? <LiveBrowserLines key={group.key} group={group} connected={context.connected} onDisclosure={context.onDisclosure} />
       : <ActivityGroupView key={group.key} group={group} live={false} threadRunning={context.running}
         connected={context.connected} provider={context.provider} onDisclosure={context.onDisclosure} outcome={outcome} />
   }) ?? null
@@ -1009,11 +1003,15 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     if (thread.messages.some(message => message.id === target.messageId)) jumpTo(target.messageId, target.focus)
   }, [thread.messages, thread.id, jumpTo])
   const ownServerTurns = useOwnServerTurns(row, state, command, store)
-  // The browser line (ADR-0154; Owl only) needs the running turn's newest step, to say whether its run is still going.
+  // Browser lines (ADR-0154; Owl only): every turn's, read once for each set of records rather than on every draw, and the
+  // running turn's line that is still going, read again only when its records or the messages change.
   const quietBrowser = useOwlFeature('quiet-browser')
-  const liveStep = quietBrowser ? newestStepId(thread.activities, liveTurn) : undefined
-  const activity = useMemo<ActivityContext>(() => ({ liveTurn, liveStep, running: thread.status === 'running', connected: row.connected, provider: row.provider, onDisclosure, onSeek }),
-    [liveTurn, liveStep, thread.status, row.connected, row.provider, onDisclosure, onSeek])
+  const browserLines = useMemo(() => quietBrowser ? browserLinesByTurn(thread.activities) : null, [quietBrowser, thread.activities])
+  const goingKey = useMemo(() => browserLines === null || liveTurn === null ? null : goingRunKey(turnBrowserLines(browserLines, liveTurn), thread.messages),
+    [browserLines, liveTurn, thread.messages])
+  const browserIndex = useMemo<BrowserLinesIndex | null>(() => browserLines === null ? null : { byTurn: browserLines, goingKey }, [browserLines, goingKey])
+  const activity = useMemo<ActivityContext>(() => ({ liveTurn, running: thread.status === 'running', connected: row.connected, provider: row.provider, onDisclosure, onSeek }),
+    [liveTurn, thread.status, row.connected, row.provider, onDisclosure, onSeek])
   // A remote thread's rows read a body its host kept back from that host, by the name the window shows (ADR-0025, October
   // 18 amendment). This computer's threads have no such body, and their rows are given nothing.
   const bodyHostName = thread.remoteHost === true ? threadHostName(state, thread) : undefined
@@ -1055,7 +1053,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     <div className="thread-workspace__transcript" ref={scroller} onScroll={onScroll} onWheel={onReaderInput} onTouchStart={onReaderInput}
       onPointerDown={onReaderInput} onKeyDown={onTranscriptKey} tabIndex={0} role="log" aria-live="off"
       aria-label={t`Thread transcript`} aria-busy={thread.historyStatus === 'loading'}>
-      <div className="thread-transcript__content" ref={content}><OwnServerTurnContext.Provider value={ownServerTurns}>
+      <div className="thread-transcript__content" ref={content}><OwnServerTurnContext.Provider value={ownServerTurns}><BrowserLinesContext.Provider value={browserIndex}>
         {thread.historyStatus === 'loading' && <div className="thread-history-status" role="status">{t`Loading messages…`}</div>}
         {thread.historyStatus === 'error' && <div className="thread-history-status" role="alert"><span>{thread.historyError || t`Could not load this thread’s messages.`}</span><Button variant="ghost" disabled={state.globalLaneBusy || !row.connected} onClick={() => void command({ type: 'refresh' })}>{t`Retry loading messages`}</Button></div>}
         {hidden > 0
@@ -1084,7 +1082,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         </ActivityBodyContext.Provider>
         {recovery.map(item => <PendingMessage key={item.draftId} draftId={item.draftId} status={item.status} row={row} state={state} command={command} store={store} />)}
         {children}
-      </OwnServerTurnContext.Provider></div>
+      </BrowserLinesContext.Provider></OwnServerTurnContext.Provider></div>
     </div>
     {greets && greetingSlot ? createPortal(<ThreadGreeting row={row} state={state} />, greetingSlot) : null}
     {/* A request's choices and text are never covered: while a card reaches the button's band, the button steps aside. */}

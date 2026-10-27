@@ -2956,7 +2956,6 @@ msgid "Could not open {failedHost}."
 msgstr ""
 
 #. A step in the browser line; starts lowercase. {url} is a web address.
-#. A step in the browser line; starts lowercase. {url} is a web address.
 #: src/renderer/src/agents/browserLine.ts
 msgid "could not open {url}"
 msgstr ""
@@ -2989,7 +2988,6 @@ msgstr ""
 msgid "Could not open the project. Nothing was changed. Try again."
 msgstr ""
 
-#. A step in the browser line; starts lowercase. {key} is a key's name, such as Enter.
 #. A step in the browser line; starts lowercase. {key} is a key's name, such as Enter.
 #: src/renderer/src/agents/browserLine.ts
 msgid "could not press {key}"
@@ -4163,6 +4161,16 @@ msgstr ""
 #. Hides the list under a project
 #: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "Hide"
+msgstr ""
+
+#. The browser line's button when its steps show. {line} is what the line says, such as Browsing localhost:5173 · clicked in the page.
+#: src/renderer/src/agents/browserLine.ts
+msgid "Hide browser steps: {line}"
+msgstr ""
+
+#. The cloud iPhone line's button when its steps show. {line} is what the line says.
+#: src/renderer/src/agents/browserLine.ts
+msgid "Hide cloud iPhone steps: {line}"
 msgstr ""
 
 #: src/renderer/src/agents/HostUpdates.tsx
@@ -5638,7 +5646,6 @@ msgid "OpenCode tried it {ten} times over about a minute and a half. Nothing in 
 msgstr ""
 
 #. A step in the browser line; starts lowercase. {url} is a web address.
-#. A step in the browser line; starts lowercase. {url} is a web address.
 #: src/renderer/src/agents/browserLine.ts
 msgid "opened {url}"
 msgstr ""
@@ -5873,7 +5880,6 @@ msgstr ""
 msgid "Preparing the working copy."
 msgstr ""
 
-#. A step in the browser line; starts lowercase. {key} is a key's name, such as Enter.
 #. A step in the browser line; starts lowercase. {key} is a key's name, such as Enter.
 #: src/renderer/src/agents/browserLine.ts
 msgid "pressed {key}"
@@ -6892,8 +6898,18 @@ msgstr ""
 msgid "Show all waiting threads"
 msgstr ""
 
+#. The browser line's button when its steps are folded. {line} is what the line says, such as Browsing localhost:5173 · clicked in the page.
+#: src/renderer/src/agents/browserLine.ts
+msgid "Show browser steps: {line}"
+msgstr ""
+
 #: src/renderer/src/agents/mainCheckoutLine.logic.ts
 msgid "Show changes"
+msgstr ""
+
+#. The cloud iPhone line's button when its steps are folded. {line} is what the line says.
+#: src/renderer/src/agents/browserLine.ts
+msgid "Show cloud iPhone steps: {line}"
 msgstr ""
 
 #: src/renderer/src/agents/HostUpdates.tsx

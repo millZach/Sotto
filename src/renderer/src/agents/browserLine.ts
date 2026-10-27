@@ -1,6 +1,7 @@
 import { t } from '@lingui/core/macro'
 
 import type { AgentActivity } from '../../../shared/agentActivity'
+import type { AgentMessage } from '../../../shared/agents'
 import { sottoBrowserToolOfTitle, type SottoBrowserTool } from '../../../shared/sottoBrowserTools'
 import { activityInput, isStep, stepsLabel, type ActivityNode } from './threadActivityView'
 
@@ -94,38 +95,104 @@ export function browserStep(record: AgentActivity): BrowserStep | null {
   return step
 }
 
-export const isBrowserStep = (record: AgentActivity): boolean => browserStep(record) !== null
-
 export interface BrowserRun {
-  /** The run's first record, which stays its first while later calls join it. */
+  /** The run's first record, which stays its first while later calls join it: the line sits where that call happened. */
   readonly key: string
   readonly kind: BrowserRunKind
+  /** Every call of its kind in the turn, in the order they were reported, with other work in between left out. */
   readonly steps: readonly BrowserStep[]
-  /** The agent finished its browser task (browser_finish, iphone_cloud_finish): a later call starts a new line. */
+  /** The agent's newest call finished its task (browser_finish, iphone_cloud_finish). */
   readonly finished: boolean
 }
+
+/** One turn's browser lines: at most one for Sotto's browser and one for the cloud iPhone. */
+export interface TurnBrowserLines {
+  readonly runs: readonly BrowserRun[]
+  /** Each record a line stands for, with that line. A record found here draws no row of its own. */
+  readonly folded: ReadonlyMap<string, BrowserRun>
+  /** The turn's newest step of any kind, by reported order. */
+  readonly newest?: AgentActivity | undefined
+}
+
+const NO_LINES: TurnBrowserLines = { runs: [], folded: new Map() }
+
+/**
+ * Every turn's browser lines, in one pass over the records (ADR-0154): a turn's calls to Sotto's browser make one line,
+ * wherever other work falls between them, and its calls to the cloud iPhone another. A call that holds work of its own, or
+ * that sits under another record (a subagent's call), keeps its row where it is, so nothing reported is hidden. The caller
+ * keeps the answer for as long as the records are the same array.
+ */
+export function browserLinesByTurn(activities: readonly AgentActivity[] | undefined): ReadonlyMap<string, TurnBrowserLines> {
+  const turns = new Map<string, { runs: Map<BrowserRunKind, BrowserStep[]>; newest?: AgentActivity }>()
+  if (activities === undefined || activities.length === 0) return new Map()
+  const ids = new Set<string>(), parents = new Set<string>()
+  for (const record of activities) {
+    ids.add(record.id)
+    if (record.parentId !== undefined && record.parentId !== record.id) parents.add(record.parentId)
+  }
+  for (const record of activities) {
+    if (!isStep(record)) continue
+    let turn = turns.get(record.turnId)
+    if (turn === undefined) turns.set(record.turnId, turn = { runs: new Map() })
+    if (turn.newest === undefined || record.sequence > turn.newest.sequence) turn.newest = record
+    const step = browserStep(record)
+    if (step === null || parents.has(record.id) || (record.parentId !== undefined && record.parentId !== record.id && ids.has(record.parentId))) continue
+    const run = turn.runs.get(step.kind)
+    if (run === undefined) turn.runs.set(step.kind, [step])
+    else run.push(step)
+  }
+  const lines = new Map<string, TurnBrowserLines>()
+  for (const [turnId, turn] of turns) {
+    if (turn.runs.size === 0) { lines.set(turnId, { ...NO_LINES, newest: turn.newest }); continue }
+    const folded = new Map<string, BrowserRun>()
+    const runs = [...turn.runs.entries()].map(([kind, steps]) => {
+      steps.sort((a, b) => a.record.sequence - b.record.sequence)
+      const last = steps.at(-1)!.tool
+      const run: BrowserRun = { key: steps[0]!.record.id, kind, steps, finished: last === 'browser_finish' || last === 'iphone_cloud_finish' }
+      for (const step of steps) folded.set(step.record.id, run)
+      return run
+    })
+    lines.set(turnId, { runs, folded, newest: turn.newest })
+  }
+  return lines
+}
+
+export const turnBrowserLines = (lines: ReadonlyMap<string, TurnBrowserLines> | undefined, turnId: string): TurnBrowserLines => lines?.get(turnId) ?? NO_LINES
 
 export type ActivityItem = { readonly node: ActivityNode; readonly run?: undefined } | { readonly run: BrowserRun; readonly node?: undefined }
 
 /**
- * A group's rows with each run of consecutive calls to Sotto's browser folded into one item. Any other row ends a run, so
- * does the agent finishing its task, and the cloud iPhone's calls make runs of their own. A call that holds work of its own
- * under it keeps its row.
+ * A group's rows with its turn's browser lines in place: a line where its first call happened, and no row for any call it
+ * stands for. Rows the turn's lines do not stand for are drawn as before.
  */
-export function foldBrowserRuns(nodes: readonly ActivityNode[]): readonly ActivityItem[] {
+export function foldBrowserRuns(nodes: readonly ActivityNode[], lines: TurnBrowserLines): readonly ActivityItem[] {
+  if (lines.folded.size === 0) return nodes.map(node => ({ node }))
   const items: ActivityItem[] = []
-  let run: { key: string; kind: BrowserRunKind; steps: BrowserStep[]; finished: boolean } | null = null
   for (const node of nodes) {
-    const step = node.children.length ? null : browserStep(node.record)
-    if (step === null) { run = null; items.push({ node }); continue }
-    if (run === null || run.finished || run.kind !== step.kind) {
-      run = { key: step.record.id, kind: step.kind, steps: [], finished: false }
-      items.push({ run })
-    }
-    run.steps.push(step)
-    if (step.tool === 'browser_finish' || step.tool === 'iphone_cloud_finish') run.finished = true
+    const run = lines.folded.get(node.record.id)
+    if (run === undefined) items.push({ node })
+    else if (run.key === node.record.id) items.push({ run })
   }
   return items
+}
+
+/**
+ * The line still going in the running turn, by its first record: the one whose call is the turn's newest step, unless the
+ * agent finished its task or has written a reply since that call. Null when none is.
+ */
+export function goingRunKey(lines: TurnBrowserLines, messages: readonly AgentMessage[]): string | null {
+  const newest = lines.newest
+  const run = newest === undefined ? undefined : lines.folded.get(newest.id)
+  if (run === undefined || run.finished) return null
+  const anchor = newest!.afterMessageId
+  if (anchor !== undefined) {
+    for (let index = messages.length - 1; index >= 0; index--) {
+      const message = messages[index]!
+      if (message.id === anchor) break
+      if (message.role === 'assistant') return null
+    }
+  }
+  return run.key
 }
 
 const hostOf = (url: string): string | undefined => {
@@ -151,86 +218,101 @@ function shownAddress(url: string): string {
 }
 
 /**
+ * Translated words with at most one address or key name in them. The address stays left to right in its own element
+ * inside a sentence of any direction (ADR-0123), so the words keep a mark where it goes rather than the address itself.
+ */
+export interface BrowserWords {
+  /** The translated words, with `PLACE` where the address or key goes. */
+  readonly text: string
+  /** The address or key name, as written. */
+  readonly place?: string | undefined
+}
+export const PLACE = '\u0000'
+
+const placed = (text: string, place?: string): BrowserWords => place === undefined ? { text } : { text, place }
+
+/** The words as one string, the address in its place: for a name assistive tech reads. */
+export const plainWords = (words: BrowserWords): string => words.place === undefined ? words.text : words.text.replace(PLACE, words.place)
+
+/** The words starting with a capital, as a step in the opened list does. */
+export function sentenceWords(words: BrowserWords): BrowserWords {
+  const first = words.text.charAt(0)
+  return first === PLACE ? words : { ...words, text: first.toUpperCase() + words.text.slice(1) }
+}
+
+/**
  * What one call did, starting lowercase: "clicked in the page", or "could not click in the page" when it failed. The
  * steps list makes the first letter a capital.
  */
-export function browserStepWords(step: BrowserStep): string {
-  const url = step.url === undefined ? '' : shownAddress(step.url), key = step.key ?? ''
+export function browserStepWords(step: BrowserStep): BrowserWords {
   const failed = step.failed
+  const url = PLACE, key = PLACE
+  const address = step.url === undefined ? undefined : shownAddress(step.url)
   switch (step.verb) {
-    case 'open': return url
-      ? failed ? t({ message: `could not open ${url}`, comment: 'A step in the browser line; starts lowercase. {url} is a web address.' }) : t({ message: `opened ${url}`, comment: 'A step in the browser line; starts lowercase. {url} is a web address.' })
-      : failed ? t({ message: 'could not open a page', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'opened a page', comment: 'A step in the browser line; starts lowercase.' })
-    case 'phone-open': return url
-      ? failed ? t({ message: `could not open ${url} on the test iPhone`, comment: 'A step in the browser line; starts lowercase. {url} is a web address.' }) : t({ message: `opened ${url} on the test iPhone`, comment: 'A step in the browser line; starts lowercase. {url} is a web address.' })
-      : failed ? t({ message: 'could not open a page on the test iPhone', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'opened a page on the test iPhone', comment: 'A step in the browser line; starts lowercase.' })
-    case 'start': return failed ? t({ message: 'could not start a browser task', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'started a browser task', comment: 'A step in the browser line; starts lowercase.' })
-    case 'navigate': return url
-      ? failed ? t({ message: `could not go to ${url}`, comment: 'A step in the browser line; starts lowercase. {url} is a web address.' }) : t({ message: `went to ${url}`, comment: 'A step in the browser line; starts lowercase. {url} is a web address.' })
-      : failed ? t({ message: 'could not go to another page', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'went to another page', comment: 'A step in the browser line; starts lowercase.' })
-    case 'click': return failed ? t({ message: 'could not click in the page', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'clicked in the page', comment: 'A step in the browser line; starts lowercase.' })
-    case 'type': return failed ? t({ message: 'could not type into the page', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'typed into the page', comment: 'A step in the browser line; starts lowercase.' })
-    case 'key': return key
-      ? failed ? t({ message: `could not press ${key}`, comment: 'A step in the browser line; starts lowercase. {key} is a key\'s name, such as Enter.' }) : t({ message: `pressed ${key}`, comment: 'A step in the browser line; starts lowercase. {key} is a key\'s name, such as Enter.' })
-      : failed ? t({ message: 'could not press a key', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'pressed a key', comment: 'A step in the browser line; starts lowercase.' })
-    case 'scroll': return failed ? t({ message: 'could not scroll the page', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'scrolled the page', comment: 'A step in the browser line; starts lowercase.' })
-    case 'tap': return failed ? t({ message: 'could not tap in the page', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'tapped in the page', comment: 'A step in the browser line; starts lowercase.' })
-    case 'swipe': return failed ? t({ message: 'could not swipe in the page', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'swiped in the page', comment: 'A step in the browser line; starts lowercase.' })
-    case 'inspect': return failed ? t({ message: 'could not look at the page', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'looked at the page', comment: 'A step in the browser line; starts lowercase.' })
-    case 'screenshot': return failed ? t({ message: 'could not take a picture of the page', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'took a picture of the page', comment: 'A step in the browser line; starts lowercase.' })
-    case 'viewport': return failed ? t({ message: 'could not change the page size', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'changed the page size', comment: 'A step in the browser line; starts lowercase.' })
-    case 'work': return failed ? t({ message: 'could not work in the page', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'worked in the page', comment: 'A step in the browser line; starts lowercase.' })
-    case 'status': return failed ? t({ message: 'could not check the browser task', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'checked the browser task', comment: 'A step in the browser line; starts lowercase.' })
-    case 'pages': return failed ? t({ message: 'could not list its pages', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'listed its pages', comment: 'A step in the browser line; starts lowercase.' })
-    case 'finish': return failed ? t({ message: 'could not finish the browser task', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'finished the browser task', comment: 'A step in the browser line; starts lowercase.' })
-    case 'cloud-open': return failed ? t({ message: 'could not start a cloud iPhone', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'started a cloud iPhone', comment: 'A step in the cloud iPhone line; starts lowercase.' })
-    case 'cloud-tap': return failed ? t({ message: 'could not tap the screen', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'tapped the screen', comment: 'A step in the cloud iPhone line; starts lowercase.' })
-    case 'cloud-swipe': return failed ? t({ message: 'could not swipe the screen', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'swiped the screen', comment: 'A step in the cloud iPhone line; starts lowercase.' })
-    case 'cloud-type': return failed ? t({ message: 'could not type on the cloud iPhone', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'typed on the cloud iPhone', comment: 'A step in the cloud iPhone line; starts lowercase.' })
-    case 'cloud-key': case 'cloud-button': return key
-      ? failed ? t({ message: `could not press ${key}`, comment: 'A step in the browser line; starts lowercase. {key} is a key\'s name, such as Enter.' }) : t({ message: `pressed ${key}`, comment: 'A step in the browser line; starts lowercase. {key} is a key\'s name, such as Enter.' })
-      : failed ? t({ message: 'could not press a button', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'pressed a button', comment: 'A step in the cloud iPhone line; starts lowercase.' })
-    case 'cloud-url': return url
-      ? failed ? t({ message: `could not open ${url}`, comment: 'A step in the browser line; starts lowercase. {url} is a web address.' }) : t({ message: `opened ${url}`, comment: 'A step in the browser line; starts lowercase. {url} is a web address.' })
-      : failed ? t({ message: 'could not open a link', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'opened a link', comment: 'A step in the cloud iPhone line; starts lowercase.' })
-    case 'cloud-inspect': return failed ? t({ message: 'could not look at the screen', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'looked at the screen', comment: 'A step in the cloud iPhone line; starts lowercase.' })
-    case 'cloud-screenshot': return failed ? t({ message: 'could not take a picture of the screen', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'took a picture of the screen', comment: 'A step in the cloud iPhone line; starts lowercase.' })
-    case 'cloud-work': return failed ? t({ message: 'could not work on the cloud iPhone', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'worked on the cloud iPhone', comment: 'A step in the cloud iPhone line; starts lowercase.' })
-    case 'cloud-status': return failed ? t({ message: 'could not check the cloud iPhone', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'checked the cloud iPhone', comment: 'A step in the cloud iPhone line; starts lowercase.' })
-    case 'cloud-finish': return failed ? t({ message: 'could not finish the cloud iPhone session', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'finished the cloud iPhone session', comment: 'A step in the cloud iPhone line; starts lowercase.' })
+    // Opening an address reads the same on the browser and the cloud iPhone; without one, it says what was opened.
+    case 'open': case 'cloud-url': return address !== undefined
+      ? placed(failed ? t({ message: `could not open ${url}`, comment: 'A step in the browser line; starts lowercase. {url} is a web address.' }) : t({ message: `opened ${url}`, comment: 'A step in the browser line; starts lowercase. {url} is a web address.' }), address)
+      : step.verb === 'open'
+        ? placed(failed ? t({ message: 'could not open a page', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'opened a page', comment: 'A step in the browser line; starts lowercase.' }))
+        : placed(failed ? t({ message: 'could not open a link', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'opened a link', comment: 'A step in the cloud iPhone line; starts lowercase.' }))
+    case 'phone-open': return address !== undefined
+      ? placed(failed ? t({ message: `could not open ${url} on the test iPhone`, comment: 'A step in the browser line; starts lowercase. {url} is a web address.' }) : t({ message: `opened ${url} on the test iPhone`, comment: 'A step in the browser line; starts lowercase. {url} is a web address.' }), address)
+      : placed(failed ? t({ message: 'could not open a page on the test iPhone', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'opened a page on the test iPhone', comment: 'A step in the browser line; starts lowercase.' }))
+    case 'start': return placed(failed ? t({ message: 'could not start a browser task', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'started a browser task', comment: 'A step in the browser line; starts lowercase.' }))
+    case 'navigate': return address !== undefined
+      ? placed(failed ? t({ message: `could not go to ${url}`, comment: 'A step in the browser line; starts lowercase. {url} is a web address.' }) : t({ message: `went to ${url}`, comment: 'A step in the browser line; starts lowercase. {url} is a web address.' }), address)
+      : placed(failed ? t({ message: 'could not go to another page', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'went to another page', comment: 'A step in the browser line; starts lowercase.' }))
+    case 'click': return placed(failed ? t({ message: 'could not click in the page', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'clicked in the page', comment: 'A step in the browser line; starts lowercase.' }))
+    case 'type': return placed(failed ? t({ message: 'could not type into the page', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'typed into the page', comment: 'A step in the browser line; starts lowercase.' }))
+    // A named key reads the same on the page and the cloud iPhone, and so does a hardware button.
+    case 'key': case 'cloud-key': case 'cloud-button': return step.key !== undefined
+      ? placed(failed ? t({ message: `could not press ${key}`, comment: 'A step in the browser line; starts lowercase. {key} is a key\'s name, such as Enter.' }) : t({ message: `pressed ${key}`, comment: 'A step in the browser line; starts lowercase. {key} is a key\'s name, such as Enter.' }), step.key)
+      : step.verb === 'cloud-button'
+        ? placed(failed ? t({ message: 'could not press a button', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'pressed a button', comment: 'A step in the cloud iPhone line; starts lowercase.' }))
+        : placed(failed ? t({ message: 'could not press a key', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'pressed a key', comment: 'A step in the browser line; starts lowercase.' }))
+    case 'scroll': return placed(failed ? t({ message: 'could not scroll the page', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'scrolled the page', comment: 'A step in the browser line; starts lowercase.' }))
+    case 'tap': return placed(failed ? t({ message: 'could not tap in the page', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'tapped in the page', comment: 'A step in the browser line; starts lowercase.' }))
+    case 'swipe': return placed(failed ? t({ message: 'could not swipe in the page', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'swiped in the page', comment: 'A step in the browser line; starts lowercase.' }))
+    case 'inspect': return placed(failed ? t({ message: 'could not look at the page', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'looked at the page', comment: 'A step in the browser line; starts lowercase.' }))
+    case 'screenshot': return placed(failed ? t({ message: 'could not take a picture of the page', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'took a picture of the page', comment: 'A step in the browser line; starts lowercase.' }))
+    case 'viewport': return placed(failed ? t({ message: 'could not change the page size', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'changed the page size', comment: 'A step in the browser line; starts lowercase.' }))
+    case 'work': return placed(failed ? t({ message: 'could not work in the page', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'worked in the page', comment: 'A step in the browser line; starts lowercase.' }))
+    case 'status': return placed(failed ? t({ message: 'could not check the browser task', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'checked the browser task', comment: 'A step in the browser line; starts lowercase.' }))
+    case 'pages': return placed(failed ? t({ message: 'could not list its pages', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'listed its pages', comment: 'A step in the browser line; starts lowercase.' }))
+    case 'finish': return placed(failed ? t({ message: 'could not finish the browser task', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'finished the browser task', comment: 'A step in the browser line; starts lowercase.' }))
+    case 'cloud-open': return placed(failed ? t({ message: 'could not start a cloud iPhone', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'started a cloud iPhone', comment: 'A step in the cloud iPhone line; starts lowercase.' }))
+    case 'cloud-tap': return placed(failed ? t({ message: 'could not tap the screen', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'tapped the screen', comment: 'A step in the cloud iPhone line; starts lowercase.' }))
+    case 'cloud-swipe': return placed(failed ? t({ message: 'could not swipe the screen', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'swiped the screen', comment: 'A step in the cloud iPhone line; starts lowercase.' }))
+    case 'cloud-type': return placed(failed ? t({ message: 'could not type on the cloud iPhone', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'typed on the cloud iPhone', comment: 'A step in the cloud iPhone line; starts lowercase.' }))
+    case 'cloud-inspect': return placed(failed ? t({ message: 'could not look at the screen', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'looked at the screen', comment: 'A step in the cloud iPhone line; starts lowercase.' }))
+    case 'cloud-screenshot': return placed(failed ? t({ message: 'could not take a picture of the screen', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'took a picture of the screen', comment: 'A step in the cloud iPhone line; starts lowercase.' }))
+    case 'cloud-work': return placed(failed ? t({ message: 'could not work on the cloud iPhone', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'worked on the cloud iPhone', comment: 'A step in the cloud iPhone line; starts lowercase.' }))
+    case 'cloud-status': return placed(failed ? t({ message: 'could not check the cloud iPhone', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'checked the cloud iPhone', comment: 'A step in the cloud iPhone line; starts lowercase.' }))
+    case 'cloud-finish': return placed(failed ? t({ message: 'could not finish the cloud iPhone session', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'finished the cloud iPhone session', comment: 'A step in the cloud iPhone line; starts lowercase.' }))
   }
-}
-
-/** A step as the opened list says it, with a capital. */
-export function browserStepSentence(step: BrowserStep): string {
-  const words = browserStepWords(step)
-  return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
 /**
  * The line's words: "Browsing localhost:5173" while the run goes on, "Browsed localhost:5173" once the turn has moved on,
  * then after the dot the last step or how many there were.
  */
-export function browserRunWords(run: BrowserRun, going: boolean): { readonly headline: string; readonly detail: string } {
-  const host = browserRunHost(run)
+export function browserRunWords(run: BrowserRun, going: boolean): { readonly headline: BrowserWords; readonly detail: BrowserWords } {
+  const address = browserRunHost(run)
+  const host = PLACE
   const headline = run.kind === 'cloud'
-    ? going ? t({ message: 'Using the cloud iPhone', comment: 'The cloud iPhone line while the agent uses it.' }) : t({ message: 'Used the cloud iPhone', comment: 'The cloud iPhone line once the agent has moved on.' })
-    : host === undefined
-      ? going ? t({ message: 'Using the browser', comment: 'The browser line while the agent uses Sotto\'s browser and has opened no address.' }) : t({ message: 'Used the browser', comment: 'The browser line once the agent has moved on, when it opened no address.' })
-      : going ? t({ message: `Browsing ${host}`, comment: 'The browser line while the agent uses Sotto\'s browser. {host} is the site, such as localhost:5173.' })
-        : t({ message: `Browsed ${host}`, comment: 'The browser line once the agent has moved on. {host} is the site, such as localhost:5173.' })
-  return { headline, detail: going ? browserStepWords(run.steps.at(-1)!) : stepsLabel(run.steps.length) }
+    ? placed(going ? t({ message: 'Using the cloud iPhone', comment: 'The cloud iPhone line while the agent uses it.' }) : t({ message: 'Used the cloud iPhone', comment: 'The cloud iPhone line once the agent has moved on.' }))
+    : address === undefined
+      ? placed(going ? t({ message: 'Using the browser', comment: 'The browser line while the agent uses Sotto\'s browser and has opened no address.' }) : t({ message: 'Used the browser', comment: 'The browser line once the agent has moved on, when it opened no address.' }))
+      : placed(going ? t({ message: `Browsing ${host}`, comment: 'The browser line while the agent uses Sotto\'s browser. {host} is the site, such as localhost:5173.' })
+        : t({ message: `Browsed ${host}`, comment: 'The browser line once the agent has moved on. {host} is the site, such as localhost:5173.' }), address)
+  return { headline, detail: going ? browserStepWords(run.steps.at(-1)!) : placed(stepsLabel(run.steps.length)) }
 }
 
-/**
- * The newest step of a running turn, by its reported order: one pass, nothing copied. Null when the turn has none yet or
- * no turn is running.
- */
-export function newestStepId(activities: readonly AgentActivity[] | undefined, turnId: string | null): string | null {
-  if (turnId === null || activities === undefined) return null
-  let newest: AgentActivity | undefined
-  for (const record of activities) {
-    if (record.turnId === turnId && isStep(record) && (newest === undefined || record.sequence > newest.sequence)) newest = record
-  }
-  return newest?.id ?? null
+/** What a press on the line does, with the line's own words, for assistive tech. */
+export function browserLineName(run: BrowserRun, open: boolean, line: string): string {
+  return run.kind === 'cloud'
+    ? open ? t({ message: `Hide cloud iPhone steps: ${line}`, comment: 'The cloud iPhone line\'s button when its steps show. {line} is what the line says.' })
+      : t({ message: `Show cloud iPhone steps: ${line}`, comment: 'The cloud iPhone line\'s button when its steps are folded. {line} is what the line says.' })
+    : open ? t({ message: `Hide browser steps: ${line}`, comment: 'The browser line\'s button when its steps show. {line} is what the line says, such as Browsing localhost:5173 · clicked in the page.' })
+      : t({ message: `Show browser steps: ${line}`, comment: 'The browser line\'s button when its steps are folded. {line} is what the line says, such as Browsing localhost:5173 · clicked in the page.' })
 }

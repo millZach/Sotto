@@ -2956,7 +2956,6 @@ msgid "Could not open {failedHost}."
 msgstr "Could not open {failedHost}."
 
 #. A step in the browser line; starts lowercase. {url} is a web address.
-#. A step in the browser line; starts lowercase. {url} is a web address.
 #: src/renderer/src/agents/browserLine.ts
 msgid "could not open {url}"
 msgstr "could not open {url}"
@@ -2989,7 +2988,6 @@ msgstr "Could not open the folder dialog. Nothing was changed. Try again."
 msgid "Could not open the project. Nothing was changed. Try again."
 msgstr "Could not open the project. Nothing was changed. Try again."
 
-#. A step in the browser line; starts lowercase. {key} is a key's name, such as Enter.
 #. A step in the browser line; starts lowercase. {key} is a key's name, such as Enter.
 #: src/renderer/src/agents/browserLine.ts
 msgid "could not press {key}"
@@ -4164,6 +4162,16 @@ msgstr "hidden"
 #: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "Hide"
 msgstr "Hide"
+
+#. The browser line's button when its steps show. {line} is what the line says, such as Browsing localhost:5173 · clicked in the page.
+#: src/renderer/src/agents/browserLine.ts
+msgid "Hide browser steps: {line}"
+msgstr "Hide browser steps: {line}"
+
+#. The cloud iPhone line's button when its steps show. {line} is what the line says.
+#: src/renderer/src/agents/browserLine.ts
+msgid "Hide cloud iPhone steps: {line}"
+msgstr "Hide cloud iPhone steps: {line}"
 
 #: src/renderer/src/agents/HostUpdates.tsx
 msgid "Hide commands"
@@ -5638,7 +5646,6 @@ msgid "OpenCode tried it {ten} times over about a minute and a half. Nothing in 
 msgstr "OpenCode tried it {ten} times over about a minute and a half. Nothing in the thread was lost. Check that {name} is on and this computer can reach {host}, then try again."
 
 #. A step in the browser line; starts lowercase. {url} is a web address.
-#. A step in the browser line; starts lowercase. {url} is a web address.
 #: src/renderer/src/agents/browserLine.ts
 msgid "opened {url}"
 msgstr "opened {url}"
@@ -5873,7 +5880,6 @@ msgstr "Preparing agent controls…"
 msgid "Preparing the working copy."
 msgstr "Preparing the working copy."
 
-#. A step in the browser line; starts lowercase. {key} is a key's name, such as Enter.
 #. A step in the browser line; starts lowercase. {key} is a key's name, such as Enter.
 #: src/renderer/src/agents/browserLine.ts
 msgid "pressed {key}"
@@ -6892,9 +6898,19 @@ msgstr "Show all panes"
 msgid "Show all waiting threads"
 msgstr "Show all waiting threads"
 
+#. The browser line's button when its steps are folded. {line} is what the line says, such as Browsing localhost:5173 · clicked in the page.
+#: src/renderer/src/agents/browserLine.ts
+msgid "Show browser steps: {line}"
+msgstr "Show browser steps: {line}"
+
 #: src/renderer/src/agents/mainCheckoutLine.logic.ts
 msgid "Show changes"
 msgstr "Show changes"
+
+#. The cloud iPhone line's button when its steps are folded. {line} is what the line says.
+#: src/renderer/src/agents/browserLine.ts
+msgid "Show cloud iPhone steps: {line}"
+msgstr "Show cloud iPhone steps: {line}"
 
 #: src/renderer/src/agents/HostUpdates.tsx
 msgid "Show commands"

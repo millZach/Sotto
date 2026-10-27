@@ -12,8 +12,10 @@ export type SottoBrowserTool = typeof SOTTO_BROWSER_TOOLS[number]
 
 const NAMES: ReadonlySet<string> = new Set(SOTTO_BROWSER_TOOLS)
 // Claude Code's `mcp__sotto_browser__browser_open`, Grok's `sotto_browser__browser_open`, Codex's
-// `sotto_browser / browser_open` (server and tool joined by its adapter), and a client that joins them with one underscore.
-const TITLE = new RegExp(`^(?:mcp__)?${SOTTO_BROWSER_SERVER}(?:__|_| / )([a-z_]+)$`, 'u')
+// `sotto_browser / browser_open` (server and tool joined by its adapter), Muse's `mcp__sotto_browser_<suffix>__browser_open`
+// (each thread's server carries a suffix of letters and digits there, `museSessionServerName`), and a client that joins
+// server and tool with one underscore.
+const TITLE = new RegExp(`^(?:mcp__)?${SOTTO_BROWSER_SERVER}(?:_[A-Za-z0-9]+(?=__))?(?:__|_| / )([a-z_]+)$`, 'u')
 
 /** The Sotto browser tool an activity record's title names, or undefined for any other tool. */
 export function sottoBrowserToolOfTitle(title: string): SottoBrowserTool | undefined {

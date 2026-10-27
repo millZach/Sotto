@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import { sottoBrowserToolOfTitle } from '../../../src/shared/sottoBrowserTools'
+import type { AgentMessage } from '../../../src/shared/agents'
 import {
-  browserRunHost, browserRunWords, browserStep, browserStepSentence, foldBrowserRuns, newestStepId, type BrowserRun,
+  browserLineName, browserLinesByTurn, browserRunHost, browserRunWords, browserStep, browserStepWords, foldBrowserRuns, goingRunKey, PLACE,
+  plainWords, sentenceWords, turnBrowserLines, type BrowserRun, type BrowserStep,
 } from '../../../src/renderer/src/agents/browserLine'
 import { nestActivities } from '../../../src/renderer/src/agents/threadActivityView'
 
@@ -14,7 +16,13 @@ const record = (patch: Partial<AgentActivity> & Pick<AgentActivity, 'id'>): Agen
 /** Claude Code names a call `mcp__sotto_browser__<tool>` and reports its input as JSON. */
 const claude = (id: string, tool: string, input: unknown, patch: Partial<AgentActivity> = {}): AgentActivity =>
   record({ id, title: `mcp__sotto_browser__${tool}`, text: JSON.stringify(input), ...patch })
-const runs = (records: readonly AgentActivity[]): BrowserRun[] => foldBrowserRuns(nestActivities(records)).flatMap(item => item.run ? [item.run] : [])
+const lines = (records: readonly AgentActivity[]) => turnBrowserLines(browserLinesByTurn(records), 'turn-1')
+const runs = (records: readonly AgentActivity[]): readonly BrowserRun[] => lines(records).runs
+const browserStepSentence = (step: BrowserStep): string => plainWords(sentenceWords(browserStepWords(step)))
+const said = (run: BrowserRun, going: boolean): { headline: string; detail: string } => {
+  const words = browserRunWords(run, going)
+  return { headline: plainWords(words.headline), detail: plainWords(words.detail) }
+}
 
 describe('which records are calls to Sotto\'s browser', () => {
   it('knows each client\'s spelling of the eleven tools, and nothing else', () => {
@@ -23,10 +31,21 @@ describe('which records are calls to Sotto\'s browser', () => {
     expect(sottoBrowserToolOfTitle('sotto_browser / iphone_cloud_tap')).toBeUndefined()
     expect(sottoBrowserToolOfTitle('sotto_browser / iphone_cloud_action')).toBe('iphone_cloud_action')
     expect(sottoBrowserToolOfTitle('sotto_browser_browser_finish')).toBe('browser_finish')
+    // Muse names each thread's server with a suffix of its own (museSessionServerName).
+    expect(sottoBrowserToolOfTitle('mcp__sotto_browser_3fa9c01b7e__browser_open')).toBe('browser_open')
+    expect(sottoBrowserToolOfTitle('sotto_browser_3fa9c01b7e__iphone_cloud_action')).toBe('iphone_cloud_action')
+    expect(sottoBrowserToolOfTitle('mcp__sotto_browser_3fa9c01b7e__browser_delete')).toBeUndefined()
+    expect(sottoBrowserToolOfTitle('mcp__sotto_delegate_3fa9c01b7e__browser_open')).toBeUndefined()
     // Someone else's server, or a tool Sotto does not own, keeps its row.
     expect(sottoBrowserToolOfTitle('mcp__playwright__browser_click')).toBeUndefined()
     expect(sottoBrowserToolOfTitle('mcp__sotto_browser__browser_delete')).toBeUndefined()
     expect(sottoBrowserToolOfTitle('Bash')).toBeUndefined()
+  })
+
+  it('reads a Muse call as Claude Code\'s, by its suffixed server', () => {
+    const open = record({ id: 'm', title: 'mcp__sotto_browser_3fa9c01b7e__browser_open', text: JSON.stringify({ url: 'http://localhost:5173/' }) })
+    expect(browserStepSentence(browserStep(open)!)).toBe('Opened localhost:5173')
+    expect(runs([open])).toHaveLength(1)
   })
 
   it('reads only tool records', () => {
@@ -89,8 +108,8 @@ describe('the steps in plain words, per provider', () => {
   })
 })
 
-describe('folding a group\'s rows', () => {
-  it('folds consecutive calls into one run, and any other row splits the run', () => {
+describe('one line per turn', () => {
+  it('folds every call of the turn into one line where the first happened, whatever other work falls between', () => {
     const records = [
       record({ id: 'cmd', kind: 'command', title: 'Command', command: 'npm run dev' }),
       claude('open', 'browser_open', { url: 'http://localhost:5173' }),
@@ -99,27 +118,52 @@ describe('folding a group\'s rows', () => {
       claude('look', 'browser_action', { action: { type: 'inspect' } }),
       record({ id: 'other', title: 'mcp__playwright__browser_click' }),
     ]
-    const items = foldBrowserRuns(nestActivities(records))
+    const items = foldBrowserRuns(nestActivities(records), lines(records))
     expect(items.map(item => item.run ? `run:${item.run.steps.map(step => step.record.id).join('+')}` : item.node.record.id))
-      .toEqual(['cmd', 'run:open+click', 'edit', 'run:look', 'other'])
+      .toEqual(['cmd', 'run:open+click+look', 'edit', 'other'])
+    // A later group of the same turn, after a reply, draws no line and no rows for the calls the line stands for.
+    const later = [records[4]!, records[5]!]
+    expect(foldBrowserRuns(nestActivities(later), lines(records)).map(item => item.node?.record.id ?? 'line')).toEqual(['other'])
   })
 
-  it('ends a run when the agent finishes its task, and gives the cloud iPhone a run of its own', () => {
+  it('lists the steps in the order they were reported, and keeps one line after the agent finishes and starts again', () => {
+    const records = [
+      claude('open', 'browser_open', { url: 'http://localhost:5173' }, { sequence: 1 }),
+      claude('finish', 'browser_finish', { status: 'completed', summary: '', unchecked: [] }, { sequence: 3 }),
+      claude('look', 'browser_action', { action: { type: 'inspect' } }, { sequence: 2 }),
+      claude('again', 'browser_start', { pageId: 'p', description: 'Check notes' }, { sequence: 4 }),
+    ]
+    const [run] = runs(records)
+    expect(runs(records)).toHaveLength(1)
+    expect(run!.key).toBe('open')
+    expect(run!.steps.map(step => step.record.id)).toEqual(['open', 'look', 'finish', 'again'])
+    expect(run!.finished).toBe(false)
+    expect(runs(records.slice(0, 3))[0]!.finished).toBe(true)
+  })
+
+  it('gives the cloud iPhone a line of its own, one per turn too, and each turn its own lines', () => {
     const records = [
       claude('open', 'browser_open', { url: 'http://localhost:5173' }),
-      claude('finish', 'browser_finish', { status: 'completed', summary: '', unchecked: [] }),
-      claude('again', 'browser_start', { pageId: 'p', description: 'Check notes' }),
       claude('cloud', 'iphone_cloud_open', { buildPath: 'App.zip' }),
+      claude('look', 'browser_action', { action: { type: 'inspect' } }),
       claude('tap', 'iphone_cloud_action', { action: { type: 'tap', x: 1, y: 1 } }),
+      claude('next', 'browser_open', { url: 'http://localhost:5173' }, { turnId: 'turn-2' }),
     ]
-    const found = runs(records)
-    expect(found.map(run => [run.kind, run.finished, run.steps.length])).toEqual([['browser', true, 2], ['browser', false, 1], ['cloud', false, 2]])
+    expect(runs(records).map(run => [run.kind, run.steps.map(step => step.record.id).join('+')])).toEqual([['browser', 'open+look'], ['cloud', 'cloud+tap']])
+    expect(browserLinesByTurn(records).get('turn-2')!.runs.map(run => run.key)).toEqual(['next'])
   })
 
-  it('keeps the row of a call that holds other work under it', () => {
+  it('keeps the row of a call that holds other work under it, and of a call under a subagent', () => {
     const parent = claude('open', 'browser_open', { url: 'http://localhost:5173' })
     const child = record({ id: 'child', kind: 'command', title: 'Command', command: 'ls', parentId: 'open' })
-    expect(foldBrowserRuns(nestActivities([parent, child])).map(item => item.node?.record.id)).toEqual(['open'])
+    expect(foldBrowserRuns(nestActivities([parent, child]), lines([parent, child])).map(item => item.node?.record.id)).toEqual(['open'])
+    // A subagent's own call stays under the subagent, where the working line and the turn's rows show it.
+    const agent = record({ id: 'agent', kind: 'subagent', title: 'Task' })
+    const nested = claude('nested', 'browser_action', { action: { type: 'click', x: 1, y: 1 } }, { parentId: 'agent' })
+    const top = claude('top', 'browser_open', { url: 'http://localhost:5173' })
+    const found = lines([agent, nested, top])
+    expect(found.folded.has('nested')).toBe(false)
+    expect(found.runs.map(run => run.steps.map(step => step.record.id))).toEqual([['top']])
   })
 })
 
@@ -133,28 +177,58 @@ describe('the line\'s words', () => {
       claude('click', 'browser_action', { action: { type: 'click', x: 1, y: 1 } }),
     )
     expect(browserRunHost(going)).toBe('example.com')
-    expect(browserRunWords(going, true)).toEqual({ headline: 'Browsing example.com', detail: 'clicked in the page' })
-    expect(browserRunWords(going, false)).toEqual({ headline: 'Browsed example.com', detail: '3 steps' })
+    expect(said(going, true)).toEqual({ headline: 'Browsing example.com', detail: 'clicked in the page' })
+    expect(said(going, false)).toEqual({ headline: 'Browsed example.com', detail: '3 steps' })
   })
 
   it('says the last step did not work, and uses plain words when no address was opened', () => {
     const failed = run(claude('pages', 'browser_pages', {}), claude('look', 'browser_action', { action: { type: 'inspect' } }, { status: 'failed' }))
     expect(browserRunHost(failed)).toBeUndefined()
-    expect(browserRunWords(failed, true)).toEqual({ headline: 'Using the browser', detail: 'could not look at the page' })
-    expect(browserRunWords(failed, false)).toEqual({ headline: 'Used the browser', detail: '2 steps' })
-    expect(browserRunWords(run(claude('cloud', 'iphone_cloud_open', { buildPath: 'App.zip' })), true).headline).toBe('Using the cloud iPhone')
+    expect(said(failed, true)).toEqual({ headline: 'Using the browser', detail: 'could not look at the page' })
+    expect(said(failed, false)).toEqual({ headline: 'Used the browser', detail: '2 steps' })
+    expect(said(run(claude('cloud', 'iphone_cloud_open', { buildPath: 'App.zip' })), true).headline).toBe('Using the cloud iPhone')
+  })
+
+  it('keeps an address or a key name out of the translated words, to stand left to right in its own element', () => {
+    const going = run(claude('open', 'browser_open', { url: 'http://localhost:5173/sign-in' }), claude('key', 'browser_action', { action: { type: 'key', key: 'Enter' } }))
+    const { headline, detail } = browserRunWords(going, true)
+    expect(headline).toEqual({ text: `Browsing ${PLACE}`, place: 'localhost:5173' })
+    expect(detail).toEqual({ text: `pressed ${PLACE}`, place: 'Enter' })
+    expect(browserStepWords(going.steps[0]!)).toEqual({ text: `opened ${PLACE}`, place: 'localhost:5173/sign-in' })
+    // A capital goes on the first word, never on the address.
+    expect(sentenceWords({ text: `${PLACE} opened`, place: 'example.com' }).text).toBe(`${PLACE} opened`)
+  })
+
+  it('names the press for assistive tech: show or hide the steps, and what the line says', () => {
+    const going = run(claude('open', 'browser_open', { url: 'http://localhost:5173/' }))
+    expect(browserLineName(going, false, 'Browsing localhost:5173 · opened localhost:5173')).toBe('Show browser steps: Browsing localhost:5173 · opened localhost:5173')
+    expect(browserLineName(going, true, 'Browsed localhost:5173 · 1 step')).toBe('Hide browser steps: Browsed localhost:5173 · 1 step')
+    expect(browserLineName(run(claude('cloud', 'iphone_cloud_open', { buildPath: 'App.zip' })), false, 'Using the cloud iPhone · started a cloud iPhone'))
+      .toBe('Show cloud iPhone steps: Using the cloud iPhone · started a cloud iPhone')
   })
 })
 
-describe('the running turn\'s newest step', () => {
-  it('is the step of that turn reported last, whatever order the list holds', () => {
+describe('the line still going', () => {
+  const message = (id: string, role: AgentMessage['role']): AgentMessage => ({ id, role, text: 'words', createdAt: '2026-10-27T09:00:00.000Z' })
+
+  it('is the line whose call is the turn\'s newest step, found whatever order the records are in', () => {
     const records = [
       record({ id: 'turn', kind: 'turn', title: 'Turn', sequence: 99 }),
-      record({ id: 'late', sequence: 7 }), record({ id: 'early', sequence: 3 }),
+      claude('look', 'browser_action', { action: { type: 'inspect' } }, { sequence: 7, afterMessageId: 'said' }),
+      claude('open', 'browser_open', { url: 'http://localhost:5173' }, { sequence: 3, afterMessageId: 'said' }),
       record({ id: 'other-turn', turnId: 'turn-2', sequence: 50 }),
     ]
-    expect(newestStepId(records, 'turn-1')).toBe('late')
-    expect(newestStepId(records, null)).toBeNull()
-    expect(newestStepId(undefined, 'turn-1')).toBeNull()
+    expect(lines(records).newest?.id).toBe('look')
+    expect(goingRunKey(lines(records), [message('ask', 'user'), message('said', 'assistant')])).toBe('open')
+  })
+
+  it('ends once other work follows, the agent finishes its task, or it writes a reply after the call', () => {
+    const open = claude('open', 'browser_open', { url: 'http://localhost:5173' }, { afterMessageId: 'said' })
+    const messages = [message('ask', 'user'), message('said', 'assistant')]
+    expect(goingRunKey(lines([open, record({ id: 'test', kind: 'command', title: 'Command' })]), messages)).toBeNull()
+    expect(goingRunKey(lines([open, claude('done', 'browser_finish', { status: 'completed', summary: '', unchecked: [] }, { afterMessageId: 'said' })]), messages)).toBeNull()
+    expect(goingRunKey(lines([open]), [...messages, message('reply', 'assistant')])).toBeNull()
+    // The user's own message after it is not the agent moving on.
+    expect(goingRunKey(lines([open]), [...messages, message('queued', 'user')])).toBe('open')
   })
 })

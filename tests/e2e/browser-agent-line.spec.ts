@@ -107,7 +107,9 @@ test('an agent\'s calls to Sotto\'s browser read as one line that updates in pla
   try {
     const page = await prepare(launched)
     const transcript = log(page)
-    const line = transcript.getByRole('button', { name: 'Browsing localhost:5173 · took a picture of the page' })
+    // The line's name says what a press does, and what the line says.
+    const line = transcript.locator('.thread-browser__line')
+    await expect(line).toHaveAccessibleName('Show browser steps: Browsing localhost:5173 · took a picture of the page')
     await expect(line).toHaveAttribute('aria-expanded', 'false')
     await expect(transcript.locator('.thread-browser')).toHaveCount(1)
     // With room for them, the line's words are whole, not cut short.
@@ -123,6 +125,9 @@ test('an agent\'s calls to Sotto\'s browser read as one line that updates in pla
     await line.focus()
     await page.keyboard.press('Enter')
     await expect(line).toHaveAttribute('aria-expanded', 'true')
+    await expect(line).toHaveAccessibleName('Hide browser steps: Browsing localhost:5173 · took a picture of the page')
+    // The site stands left to right in its own element (ADR-0123).
+    await expect(line.locator('.thread-browser__place')).toHaveAttribute('dir', 'ltr')
     const steps = transcript.getByRole('list', { name: 'Browsing localhost:5173' })
     await expect(steps.getByRole('listitem')).toHaveText([
       'Opened localhost:5173', 'Looked at the page', 'Could not scroll the page', 'Clicked in the page', 'Typed into the page',
@@ -147,7 +152,7 @@ test('an agent\'s calls to Sotto\'s browser read as one line that updates in pla
     movedOn.push(record({ id: 'fix', kind: 'file-change', title: 'Edit', status: 'completed', changes: [{ path: 'src/SignInForm.tsx', kind: 'update', diff: '-<form>\n+<form onSubmit={submit}>' }] }))
     movedOn.push(record({ id: 'test', kind: 'command', title: 'Bash', command: 'npm test -- SignInForm', status: 'running' }))
     await event(page, { type: 'stream', threadId: THREAD, messageId: SAID, text: messages[1]!.text, status: 'running', activities: movedOn })
-    const browsed = transcript.getByRole('button', { name: 'Browsed localhost:5173 · 9 steps' })
+    const browsed = transcript.getByRole('button', { name: 'Show browser steps: Browsed localhost:5173 · 9 steps' })
     await expect(browsed).toBeVisible()
     await expect(browsed.locator('.thread-browser__dot')).toHaveCount(0)
     expect(await browsed.locator('.thread-browser__words').evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
