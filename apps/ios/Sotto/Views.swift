@@ -53,6 +53,10 @@ struct MainTabs: View {
             openForCapture()
             #endif
         }
+        // A confirmation belongs to the page that showed it (ADR-0051): another tab or page clears it.
+        .onChange(of: tab) { model.pageLeft() }
+        .onChange(of: threadPath) { model.pageLeft() }
+        .onChange(of: watcherPath) { model.pageLeft() }
         // A computer that stops offering Watcher takes its tab with it.
         .onChange(of: model.watcherHostID) { _, hostID in
             if hostID == nil, tab == .watcher { tab = .threads; watcherPath = NavigationPath() }
@@ -147,7 +151,7 @@ enum Words {
     }
 }
 
-/// Says what just went wrong, above whatever page is open.
+/// Says what just happened, above whatever page is open: a problem until dismissed, a confirmation for a few seconds.
 struct FeedbackBanner: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
@@ -168,6 +172,10 @@ struct FeedbackBanner: View {
             .padding(.leading, Space.s4)
             .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .accessibilityAddTraits(.updatesFrequently)
+            .transition(.opacity)
+            .task(id: model.passing) {
+                if let id = model.passing, model.confirmationShown(id) { UIAccessibility.post(notification: .announcement, argument: feedback) }
+            }
         }
     }
 }
