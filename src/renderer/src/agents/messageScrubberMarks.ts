@@ -154,8 +154,8 @@ export function scrubberAfter(mark: ScrubberMark, requests: readonly AgentReques
 
 /** The most room between two ticks. */
 const PITCH_MOST = 9
-/** The share of the transcript's height the column may take. */
-const COLUMN_SHARE = 0.8
+/** The share of the transcript's height the column may take: half, so it reads as a short ladder in the margin (Drake, October 27, 2026). */
+const COLUMN_SHARE = 0.5
 
 /**
  * Where each tick sits, from the top of the transcript: evenly spaced in one column centred on its height (Zach's pick A).
