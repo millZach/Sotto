@@ -1,9 +1,13 @@
 import React from 'react'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { cleanup, render } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { EffortPicker } from '../../../src/renderer/src/agents/EffortPicker'
+import { effortChoices } from '../../../src/renderer/src/agents/ThreadOptions'
+import { ULTRACODE, withUltracode } from '../../../src/shared/ultracode'
+import type { AgentState } from '../../../src/shared/agents'
+import { fixture, mount, setupThreadOptionsTests } from '../../fixtures/renderer/threadOptionsHarness'
 import { EffortTrace } from '../../../src/renderer/src/agents/EffortTrace'
 import { startWindowVisibility } from '../../../src/renderer/src/state/windowVisibility'
 
@@ -17,8 +21,16 @@ const traceMark = (value: string, options: ReturnType<typeof levels>): string | 
   const { container } = render(<EffortPicker value={value} options={options} disabled={false} onChange={() => {}} />)
   return container.querySelector('.effort-picker-anchor')!.getAttribute('data-effort-trace')
 }
+/** The harness's state with Claude's model offering Ultracode past Max, as the catalog reports a model with Extra high. */
+function claudeState(reasoningEffort: string): AgentState {
+  const state = fixture({ reasoningEffort })
+  state.host.models.find(model => model.id === 'claude:model')!.reasoningEfforts = withUltracode(['low', 'medium', 'high', 'xhigh', 'max'])
+  return state
+}
+const composerTrace = (): string | null => screen.getByRole('combobox', { name: 'Thread reasoning' }).closest('.effort-picker-anchor')!.getAttribute('data-effort-trace')
 const css = readFileSync(join(process.cwd(), 'src/renderer/src/agents/effortTrace.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '')
 
+setupThreadOptionsTests()
 afterEach(() => { cleanup(); document.documentElement.removeAttribute('data-window-hidden') })
 
 describe('the effort trace', () => {
@@ -35,6 +47,21 @@ describe('the effort trace', () => {
     expect(traceMark('max', levels('low', 'medium', 'high', 'xhigh', 'max', 'ultracode'))).toBe('true')
     expect(traceMark('ultracode', levels('low', 'medium', 'high', 'xhigh', 'max', 'ultracode'))).toBe('true')
     expect(traceMark('xhigh', levels('low', 'medium', 'high', 'xhigh', 'max', 'ultracode'))).toBe('false')
+  })
+
+  it('lights a thread composer at Ultracode, the real level past Max, and keeps Max lit under it (ADR-0148)', () => {
+    for (const [level, lit] of [[ULTRACODE, 'true'], ['max', 'true'], ['xhigh', 'false'], ['high', 'false']] as const) {
+      mount(claudeState(level))
+      expect(composerTrace(), level).toBe(lit)
+      cleanup()
+    }
+  })
+
+  it('lights Watcher’s composer at Max, its top level, since Watcher is never offered Ultracode', () => {
+    const model = claudeState('max').host.models.find(entry => entry.id === 'claude:model')
+    const watcherLevels = effortChoices(model, 'max', { ultracode: false })
+    expect(watcherLevels.map(option => option.id)).not.toContain(ULTRACODE)
+    expect(traceMark('max', watcherLevels.map(option => ({ id: option.id, label: option.label })))).toBe('true')
   })
 
   it('draws a halo and a head, hidden from speech, and nothing unless the effort chip asks for it', () => {
