@@ -1,4 +1,7 @@
+import { t } from '@lingui/core/macro'
+
 import type { CommandResult, UpdatePhase, UpdateStatus } from '../../shared/contracts'
+
 import type { AppSettings } from '../../shared/settings'
 import { getReleaseTrack } from '../../shared/releaseTrack'
 import { owlFeaturesForTrack, type OwlFeatureStates } from '../../shared/owlFeatures'
@@ -365,7 +368,7 @@ export class UpdateService {
   private recordInstallRefusal(problem: string | null): void {
     const current = this.phase
     if (current.phase !== 'downloaded') return
-    this.setPhase({ phase: 'downloaded', version: current.version, problem: problem ?? 'The installer could not be started.' })
+    this.setPhase({ phase: 'downloaded', version: current.version, problem: problem ?? t`The installer could not be started.` })
   }
 
   private async automaticChecksEnabled(): Promise<boolean> {
@@ -395,7 +398,7 @@ export class UpdateService {
   }
 
   private recordCheckFailure(problem: string | null): void {
-    problem ??= 'The update check could not be completed. Check the connection and try again.'
+    problem ??= t`The update check could not be completed. Check the connection and try again.`
     this.setPhase(this.previousOffer === null ? { phase: 'failed', problem } : { ...this.previousOffer, problem, failedStep: 'check' })
   }
 

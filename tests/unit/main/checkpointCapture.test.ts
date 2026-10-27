@@ -4,7 +4,7 @@ import { execFile, execFileSync } from 'node:child_process'
 import { lstat, mkdir, mkdtemp, realpath, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import type { BigIntStats } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as worktrees from '../../../src/main/agents/threadWorktrees'
 import { CheckpointCapture } from '../../../src/main/tools/checkpointCapture'
@@ -274,6 +274,104 @@ describe('checkpoint capture', () => {
     expect(await capture.heldVerdict(f.repo)).toMatch('size limit')
     await writeFile(join(f.repo, '.gitignore'), 'ignored/\nbulk/\n')
     expect(await capture.heldVerdict(f.repo)).toBeUndefined()
+  })
+
+  it('refuses a folder still over the size limit after a commit from the files that put it over, without sizing the rest', async () => {
+    const small = Object.fromEntries(Array.from({ length: 40 }, (_, index) => [`src/file-${index}.txt`, `${index}\n`]))
+    const f = await fixture({ files: { ...small, 'big.bin': Buffer.alloc(8 * 1024 * 1024 + 1) } })
+    await expect(f.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('size limit')
+    // An agent's commit moves HEAD's reflog, so the verdict is not held and the next send captures again.
+    git(f.repo, '-c', 'commit.gpgSign=false', 'commit', '-q', '--allow-empty', '-m', 'Agent work')
+    expect(await f.capture.heldVerdict(f.repo)).toBeUndefined()
+    const sized = vi.spyOn(fsPromises, 'lstat')
+    f.commands.length = 0
+    await expect(f.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('This working copy exceeds the checkpoint size limit (64 MiB total, 8 MiB per file).')
+    // Git lists the folder again, but only the file that decided the verdict is sized, and Git's state is not read.
+    expect(sized.mock.calls.map(([path]) => String(path)).filter(path => path.startsWith(join(f.repo, 'src')))).toEqual([])
+    expect(f.commands.filter(args => args[0] === 'ls-files' || args[0] === 'rev-parse' && args.includes('HEAD'))).toEqual([['ls-files', '-c', '-o', '--exclude-standard', '-z', '--', '.']])
+    expect(await f.capture.heldVerdict(f.repo)).toMatch('size limit')
+  })
+
+  /**
+   * A capture over `f.repo` whose listing adds `listed()` to Git's, each a file of `size` bytes that is sized but never
+   * written, in a folder `folder` the fixture makes. `stats` sees every `lstat`, and `gone()` makes those files absent.
+   */
+  async function listedAndSized(f: Awaited<ReturnType<typeof fixture>>, folder: string, listed: () => readonly string[], size: bigint) {
+    await mkdir(join(f.repo, folder))
+    const capture = new CheckpointCapture({ blobDirectory: join(f.root, 'blobs'), blobSizes: new Map(), now: later,
+      git: (cwd, args) => new Promise((done, reject) => execFile('git', args, { cwd, windowsHide: true, encoding: 'utf8' },
+        (error, output) => error ? reject(error) : done(args[0] === 'ls-files' && args[1] === '-c' ? `${output}${listed().map(path => `${path}\0`).join('')}` : output))) })
+    const template = await lstat(join(f.repo, 'a.txt'), { bigint: true })
+    const sized = Object.assign(Object.create(Object.getPrototypeOf(template) as object) as BigIntStats, template, { size })
+    const actual = fsPromises.lstat
+    let absent = false
+    const stats = vi.spyOn(fsPromises, 'lstat').mockImplementation(((target: string, options?: { bigint?: boolean }) =>
+      !target.startsWith(join(f.repo, folder) + sep) ? actual(target, options as never)
+        : absent ? Promise.reject(Object.assign(new Error('gone'), { code: 'ENOENT' })) : Promise.resolve(sized)) as typeof fsPromises.lstat)
+    const statted = (): string[] => stats.mock.calls.map(([path]) => String(path))
+    return { capture, stats, statted, gone: () => { absent = true } }
+  }
+  const commit = (repo: string, message: string) => git(repo, '-c', 'commit.gpgSign=false', 'commit', '-q', '--allow-empty', '-m', message)
+
+  it('refuses from the largest files alone while together they stay over the total limit', async () => {
+    const f = await fixture({ files: { 'a.txt': 'small\n', 'src/b.txt': 'small\n' } })
+    // Over the total in 20 files of 4 MiB, none over the per-file limit.
+    const parts = Array.from({ length: 20 }, (_, index) => `assets/part-${index}.bin`)
+    let listed = parts
+    const sizing = await listedAndSized(f, 'assets', () => listed, 4n * 1024n * 1024n)
+    await expect(sizing.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('size limit')
+    commit(f.repo, 'Agent work')
+    sizing.stats.mockClear()
+    await expect(sizing.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('size limit')
+    // The 17 largest exceed 64 MiB; the other three parts and the small files are not sized again.
+    expect(new Set(sizing.statted().filter(path => path.includes(join('assets', 'part-'))))).toHaveProperty('size', 17)
+    expect(sizing.statted()).not.toContain(join(f.repo, 'src', 'b.txt'))
+
+    // With three of the deciding files no longer listed, the folder is walked whole, and still over the limit.
+    listed = parts.slice(3)
+    commit(f.repo, 'More agent work')
+    sizing.stats.mockClear()
+    await expect(sizing.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('size limit')
+    expect(sizing.statted()).toContain(join(f.repo, 'src', 'b.txt'))
+    // Under the limit once they are gone, as a walk of every file finds.
+    commit(f.repo, 'Removed assets')
+    sizing.gone()
+    await expect(sizing.capture.snapshot(f.repo, { reuse: true })).resolves.toMatchObject({ files: { 'a.txt': expect.anything(), 'src/b.txt': expect.anything() } })
+  })
+
+  it('refuses from more deciding files than a verdict watches, sizing only those', async () => {
+    const f = await fixture({ files: { 'a.txt': 'small\n', 'src/b.txt': 'small\n' } })
+    // Over the total in 1,100 files of 64 KiB: it takes the 1,025 largest, more than a verdict watches.
+    const bulk = Array.from({ length: 1_100 }, (_, index) => `bulk/part-${String(index).padStart(4, '0')}.bin`)
+    const sizing = await listedAndSized(f, 'bulk', () => bulk, 64n * 1024n)
+    await expect(sizing.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('size limit')
+    commit(f.repo, 'Agent work')
+    sizing.stats.mockClear()
+    await expect(sizing.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('size limit')
+    const parts = sizing.statted().filter(path => path.includes(join('bulk', 'part-')))
+    expect(new Set(parts)).toHaveProperty('size', 1_025)
+    expect(parts).toHaveLength(1_025)
+    expect(sizing.statted()).not.toContain(join(f.repo, 'src', 'b.txt'))
+  })
+
+  it('walks the whole folder again once a file that decided a size verdict is no longer listed or no longer large', async () => {
+    const f = await fixture({ files: { 'a.txt': 'small\n', 'src/b.txt': 'small\n' } })
+    const big = Buffer.alloc(8 * 1024 * 1024 + 1)
+    await writeFile(join(f.repo, 'loose.bin'), big)
+    await expect(f.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('size limit')
+    // Cut down in place, then a commit: the listing still names it, but it no longer puts the folder over.
+    await writeFile(join(f.repo, 'loose.bin'), 'small now')
+    git(f.repo, '-c', 'commit.gpgSign=false', 'commit', '-q', '--allow-empty', '-m', 'Agent work')
+    await expect(f.capture.snapshot(f.repo, { reuse: true })).resolves.toMatchObject({ files: { 'loose.bin': expect.anything() } })
+
+    // Large again, then left out of the listing by Git's local ignore file.
+    await writeFile(join(f.repo, 'loose.bin'), big)
+    await expect(f.capture.snapshot(f.repo, { reuse: true })).rejects.toThrow('size limit')
+    await writeFile(join(f.repo, '.git', 'info', 'exclude'), 'loose.bin\n')
+    git(f.repo, '-c', 'commit.gpgSign=false', 'commit', '-q', '--allow-empty', '-m', 'More agent work')
+    const taken = await f.capture.snapshot(f.repo, { reuse: true })
+    expect(taken.files['loose.bin']).toBeUndefined()
+    expect(taken.files['src/b.txt']).toBeDefined()
   })
 
   it('holds a verdict only while the paths that decided it are as they were', async () => {

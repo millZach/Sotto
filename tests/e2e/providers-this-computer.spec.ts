@@ -81,12 +81,15 @@ test('Settings > Providers shows and acts on this computer’s clients while for
 
     // Settings > Providers shows this computer's Codex, connected, and none of forge's error.
     await page.getByRole('tab', { name: 'Providers', exact: true }).click()
-    const list = page.getByRole('navigation', { name: 'Thread providers' })
+    const list = page.getByRole('list', { name: 'Thread providers' })
+    // Every row starts closed; open Codex's.
+    await expect(list.getByRole('button', { name: 'Codex', exact: true })).toHaveAttribute('aria-expanded', 'false')
     await list.getByRole('button', { name: 'Codex', exact: true }).click()
+    await expect(list.getByRole('button', { name: 'Codex', exact: true })).toHaveAttribute('aria-expanded', 'true')
     await expect(list.getByRole('button', { name: 'Codex', exact: true })).toContainText('Connected')
-    const detail = page.getByRole('region', { name: 'Provider configuration' })
+    const detail = page.getByRole('region', { name: 'Codex details' })
     await expect(detail.getByRole('button', { name: 'Disconnect Codex' })).toBeVisible()
-    await expect(detail.getByRole('alert')).toHaveCount(0)
+    await expect(list.getByRole('alert')).toHaveCount(0)
     if (OUT) await page.screenshot({ path: join(OUT, 'providers-with-forge-selected.png') })
 
     // Disconnect and Connect act on this computer's Codex; forge's stays as it was and stays selected.

@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { agentMessageSchema, agentRequestSchema, agentQuestionAnswersSchema, providerIdSchema, agentRuntimeModeSchema } from './agents'
-import { watcherRefusalSchema, watcherThreadTargetSchema, watcherPhoneOriginSchema, watcherOwnChangeSchema, watcherStandingWatchSchema, watcherOutcomeSchema } from './watcher'
+import { agentAttachmentHandlesSchema, agentMessageSchema, agentRequestSchema, agentQuestionAnswersSchema, providerIdSchema, agentRuntimeModeSchema } from './agents'
+import { watcherRefusalSchema, watcherThreadTargetSchema, watcherPhoneOriginSchema, watcherOwnChangeSchema, watcherStandingWatchSchema, watcherOutcomeSchema, WATCHER_MACHINES_MAX } from './watcher'
 export { watcherPhoneOriginSchema } from './watcher'
 import { watcherStopAllPreviewSchema } from './watcherRoom'
 
@@ -20,15 +20,34 @@ export const WATCHER_PHONE_MANAGE_FEATURE = 'watcher-phone-manage' as const
  * waiting for Watcher, and `watcher-phone-remove-followup` takes one out of the queue.
  */
 export const WATCHER_PHONE_STEER_FEATURE = 'watcher-phone-steer' as const
+/**
+ * The machines line on the phone (#1032, part of the Owl feature Work across machines): a phone that accepts it is sent
+ * `machines` on its page, and may send `watcher-phone-read` with `machines: true` to have them read afresh, which it does
+ * when the user opens a machine's numbers or Watcher has placed work. Offered only where Work across machines is on.
+ */
+export const WATCHER_PHONE_MACHINES_FEATURE = 'watcher-phone-machines' as const
+/** How many working threads a machine's panel on the phone names; the rest are counted. */
+export const WATCHER_PHONE_MACHINE_THREADS_MAX = 6
+/**
+ * Photos for Watcher from the phone (October 23, 2026): a send may carry `images`, the handles `stage-attachment` answered,
+ * with or without words, and `watcher-phone-preview` reads one of a Watcher message's photos, which the page marks.
+ */
+export const WATCHER_PHONE_PHOTOS_FEATURE = 'watcher-phone-photos' as const
 /** How many of the user's follow-ups waiting for Watcher a phone's page carries, the first in line. */
 export const WATCHER_PHONE_FOLLOWUPS_MAX = 50
 export const watcherPhoneSetPermissionSchema = z.object({ runtimeMode: agentRuntimeModeSchema }).strict()
 export const watcherPhoneWatchSchema = z.object({ target: watcherThreadTargetSchema }).strict()
 export const watcherPhoneSendSchema = z.object({ origin: watcherPhoneOriginSchema, target: watcherThreadTargetSchema,
-  draftId: z.uuid(), text: z.string().min(1).max(20_000).refine(text => text.trim().length > 0),
+  draftId: z.uuid(), text: z.string().max(20_000),
+  // Only from a phone offered WATCHER_PHONE_PHOTOS_FEATURE: the photos it staged, which go with the words.
+  images: agentAttachmentHandlesSchema.min(1).optional(),
   // Only from a phone that negotiated WATCHER_PHONE_STEER_FEATURE: while Watcher works the message steers into its turn,
   // or goes next as its own turn when it cannot. Absent, a send while Watcher works is refused, as before (#1229).
   delivery: z.literal('steer').optional() }).strict()
+  .refine(send => send.text.trim().length > 0 || send.images !== undefined, 'Send words, photos or both.')
+/** One photo of a message in Watcher's conversation, for the phone to draw: Watcher's thread is never a phone's to read. */
+export const watcherPhonePreviewSchema = z.object({ target: watcherThreadTargetSchema, messageId: z.string().min(1).max(512),
+  attachmentId: z.string().min(1).max(512) }).strict()
 /** Takes one of the user's follow-ups out of Watcher's queue, by its queue item ID, before it goes (#1229). */
 export const watcherPhoneRemoveFollowupSchema = z.object({ target: watcherThreadTargetSchema, itemId: z.uuid() }).strict()
 const id = z.string().min(1).max(512)
@@ -44,6 +63,18 @@ const receipt = z.object({ operationId: z.uuid(), target: watcherThreadTargetSch
   outcome: watcherOutcomeSchema.optional() }).strict()
 const requestCard = z.object({ target: watcherThreadTargetSchema, title: z.string(), provider: providerIdSchema.nullable(),
   request: agentRequestSchema, connected: z.boolean(), mayAnswer: z.boolean() }).strict()
+const count = z.number().int().nonnegative()
+/** One machine on the phone's machines line and in its panel: the desktop's own words where they are sentences. */
+const phoneMachine = z.object({ hostId: z.string().min(1).max(512), name: z.string().max(200), thisComputer: z.boolean(), connected: z.boolean(),
+  working: count, starting: count, isDefault: z.boolean(),
+  // Null while the machine has not been read, which says nothing of its load.
+  cpuState: z.enum(['busy', 'not-busy', 'unknown']).nullable(), memoryState: z.enum(['short', 'enough', 'unknown']).nullable(),
+  system: z.string().max(200).nullable(), logicalCpuCount: count.nullable(), totalMemoryBytes: z.number().nonnegative().nullable(),
+  cpuBusyPercent: z.number().min(0).max(100).nullable(), windowMs: z.number().nonnegative().nullable(), availableMemoryBytes: z.number().nonnegative().nullable(),
+  loadObservedAt: z.string().nullable(), unknownWhy: z.string().max(500).nullable(),
+  threads: z.array(z.object({ title: z.string(), who: z.string() }).strict()).max(WATCHER_PHONE_MACHINE_THREADS_MAX) }).strict()
+export const watcherPhoneMachinesSchema = z.object({ readAt: z.string().nullable(), rows: z.array(phoneMachine).max(WATCHER_MACHINES_MAX) }).strict()
+export type WatcherPhoneMachines = z.infer<typeof watcherPhoneMachinesSchema>
 export const watcherPhoneStateSchema = z.object({ hostId: z.uuid(),
   current: z.object({ target: watcherThreadTargetSchema, provider: providerIdSchema, modelId: z.string(),
     runtimeMode: agentRuntimeModeSchema.optional(),
@@ -73,6 +104,8 @@ export const watcherPhoneStateSchema = z.object({ hostId: z.uuid(),
    */
   followups: z.array(z.object({ itemId: z.uuid(), draftId: z.uuid(), text: z.string(),
     status: z.enum(['queued', 'dispatching', 'uncertain', 'failed', 'paused']) }).strict()).max(WATCHER_PHONE_FOLLOWUPS_MAX).optional(),
+  /** Each machine and what works on it, for a phone that accepted WATCHER_PHONE_MACHINES_FEATURE (#1032). Older phones ignore it. */
+  machines: watcherPhoneMachinesSchema.optional(),
 }).strict()
 export const watcherPhoneResultSchema = z.union([z.object({ status: z.literal('ok'), state: watcherPhoneStateSchema }).strict(), watcherRefusalSchema])
 export const watcherPhoneManageOutcomeSchema = z.union([z.object({ status: z.literal('ok') }).strict(), watcherRefusalSchema])
@@ -90,6 +123,7 @@ export const watcherPhonePrepareStopResultSchema = z.union([watcherPhoneStopPrev
 export type WatcherPhoneState = z.infer<typeof watcherPhoneStateSchema>
 export type WatcherPhoneOrigin = z.infer<typeof watcherPhoneOriginSchema>
 export type WatcherPhoneSend = z.infer<typeof watcherPhoneSendSchema>
+export type WatcherPhonePreview = z.infer<typeof watcherPhonePreviewSchema>
 export type WatcherPhoneRemoveFollowup = z.infer<typeof watcherPhoneRemoveFollowupSchema>
 export type WatcherPhoneAnswer = z.infer<typeof watcherPhoneAnswerSchema>
 export type WatcherPhoneResult = z.infer<typeof watcherPhoneResultSchema>

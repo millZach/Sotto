@@ -1,5 +1,7 @@
 import { isDeepStrictEqual } from 'node:util'
 import { clientCatalogKey, hostCatalogKey } from '../../shared/agents'
+import { threadsReplacedSince } from '../../shared/threadListPatches'
+import { ThreadChangesDrift, verifyingThreadChanges } from './threadChanges'
 import type { AgentClientHost, AgentCommandReceipt, AgentModel, AgentModelCatalogBroadcast, AgentModelCatalogRevision, AgentState, AgentStateBroadcast, AgentThread, AgentThreadsBroadcast } from '../../shared/agents'
 
 type EncodedClientHost<Catalog> = Omit<AgentClientHost, 'models'> & { models: Catalog }
@@ -107,9 +109,23 @@ export function samePlainData(previous: unknown, next: unknown, depth = 0): bool
 
 interface ThreadBase {
   readonly revision: number
+  /**
+   * The host the threads were listed from, when the caller named it: a later host whose list notes it was made from this
+   * one's in place (`threadListPatches.ts`) is read only where it was. Held while it is the base, as the records are.
+   */
+  readonly host: object | undefined
+  /** The records sent, by ID: those of the last whole walk, with the ones later broadcasts read in part sent over them. */
   readonly records: ReadonlyMap<string, AgentThread>
+  readonly overrides: ReadonlyMap<string, AgentThread>
   readonly order: readonly string[]
 }
+
+/** The most records sent over a whole walk's before they are folded into a map of their own, which reads no thread. */
+const MAX_OVERRIDES = 64
+const NO_OVERRIDES: ReadonlyMap<string, AgentThread> = new Map()
+
+/** The record the window was last sent for a thread, by its ID. */
+function sentRecord(base: ThreadBase, id: string): AgentThread | undefined { return base.overrides.get(id) ?? base.records.get(id) }
 
 /**
  * The thread records of the main window's broadcasts (issue #1330, ADR-0028's October 22 amendment): each broadcast
@@ -124,43 +140,120 @@ interface ThreadBase {
  * read and never written into, as everything a publish carries is. Only a broadcast `deliver()` reports as sent
  * becomes the base the next is measured from, so after a failed send the next is measured from the one before.
  *
+ * A list whose host notes it was made in place from the base's host (`threadListPatches.ts`, #925 step 6) is read only
+ * at the positions replaced since: every other record is the very record the base listed, and the threads, their order
+ * and what went are the base's. A replaced record can hold the same data, so each is still compared. Any other list,
+ * and one of another length or with another thread at a replaced position, is walked whole. The router notes each
+ * publication so against the one before, and a note carries the steps before it, so a base sent several publications
+ * back is found though the ones between were skipped by a coalesced send and have gone.
+ *
  * `reset()` drops the base, and the next broadcast lists every record: main calls it when the window reads the whole
  * state, which it does whenever it loads or reloads and whenever it cannot apply a broadcast. A read while a send is
  * being delivered voids that send as a base too: the window may have read past it. Two records with one
  * Sotto thread ID cannot be told apart by ID, so a list that holds them goes complete and leaves no base, as the whole
  * array always did.
+ *
+ * Verifying mode (`SOTTO_VERIFY_THREAD_CHANGES=1`): each broadcast read in part is checked against the whole walk from
+ * the same base, which must give the very same payload. The check reads, and keeps and changes nothing.
  */
 export class ThreadRecordsBroadcast {
   private revision = 0
   private base: ThreadBase | null = null
   /** Advanced by every `reset()`, so a send the window read the whole state during cannot become a base after it. */
   private resets = 0
+  private readonly verifying = verifyingThreadChanges()
+  /** Broadcasts read only where their host's notes say the list was replaced. */
+  patchedEncodes = 0
+  /** Of those, the ones checked against the whole walk in verifying mode. */
+  verifiedEncodes = 0
 
-  /** `threads` encoded against what the window was last sent, and the commit that makes it the base once delivered. */
-  encode(threads: readonly AgentThread[]): { payload: AgentThreadsBroadcast; commit: () => void } {
+  /**
+   * `threads` encoded against what the window was last sent, and the commit that makes it the base once delivered.
+   * `host`, when given, is the object `threads` was listed from, whose notes say how its list was made.
+   */
+  encode(threads: readonly AgentThread[], host?: object): { payload: AgentThreadsBroadcast; commit: () => void } {
     const revision = ++this.revision
     const base = this.base
-    // One walk of the threads builds the records, the order and what changed: the broadcast runs on every publish.
-    const records = new Map<string, AgentThread>()
-    const order: string[] = []
-    const changed: AgentThread[] = []
-    for (const thread of threads) {
-      records.set(thread.id, thread)
-      order.push(thread.id)
-      const sent = base?.records.get(thread.id)
-      if (sent === undefined || !samePlainData(sent, thread)) changed.push(thread)
-    }
-    const unique = records.size === threads.length
     const resets = this.resets
-    const commit = (): void => { if (resets === this.resets) this.base = unique ? { revision, records, order } : null }
-    if (base === null || !unique) return { payload: { revision, base: null, changed: [...threads] }, commit }
-    const removed = base.order.filter(id => !records.has(id))
-    const moved = order.length !== base.order.length || order.some((id, index) => base.order[index] !== id)
-    return { payload: { revision, base: base.revision, changed, ...(removed.length ? { removed } : {}), ...(moved ? { order } : {}) }, commit }
+    const replaced = base?.host !== undefined && host !== undefined ? threadsReplacedSince(host, base.host) : undefined
+    const changed = replaced && base ? changedAt(threads, base, replaced) : undefined
+    if (changed && base) {
+      this.patchedEncodes++
+      const payload: AgentThreadsBroadcast = { revision, base: base.revision, changed }
+      if (this.verifying) this.verifyPatched(threads, base, payload)
+      let records = base.records, overrides = base.overrides
+      if (changed.length) {
+        const sent = new Map(overrides)
+        for (const thread of changed) sent.set(thread.id, thread)
+        if (sent.size > MAX_OVERRIDES) {
+          const folded = new Map(records)
+          for (const [id, thread] of sent) folded.set(id, thread)
+          records = folded; overrides = NO_OVERRIDES
+        } else overrides = sent
+      }
+      const commit = (): void => { if (resets === this.resets) this.base = { revision, host, records, overrides, order: base.order } }
+      return { payload, commit }
+    }
+    const walked = walk(threads, revision, base)
+    const commit = (): void => {
+      if (resets === this.resets) this.base = walked.unique ? { revision, host, records: walked.records, overrides: NO_OVERRIDES, order: walked.order } : null
+    }
+    return { payload: walked.payload, commit }
   }
 
   /** The next broadcast lists every record: the window holds none it can measure from. */
   reset(): void { this.base = null; this.resets++ }
+
+  /** Verifying mode: a broadcast read in part, against the whole walk from the same base. */
+  private verifyPatched(threads: readonly AgentThread[], base: ThreadBase, payload: AgentThreadsBroadcast): void {
+    this.verifiedEncodes++
+    const whole = walk(threads, payload.revision, base).payload
+    const differences: string[] = []
+    if (whole.base !== payload.base) differences.push(`the whole walk measures from ${String(whole.base)} where the broadcast measures from ${String(payload.base)}`)
+    if (whole.removed) differences.push(`the whole walk names ${whole.removed.length} threads gone, which a list made in place cannot have`)
+    if (whole.order) differences.push('the whole walk moves the order, which a list made in place cannot')
+    const sent = new Set(payload.changed), walked = new Set(whole.changed)
+    for (const thread of whole.changed) if (!sent.has(thread)) differences.push(`thread "${thread.id}" changed and was not sent, a missed change`)
+    for (const thread of payload.changed) if (!walked.has(thread)) differences.push(`thread "${thread.id}" was sent though it did not change`)
+    if (!differences.length && whole.changed.some((thread, index) => payload.changed[index] !== thread)) differences.push('the changed records are not in the order the whole walk lists them')
+    if (differences.length) throw new ThreadChangesDrift(differences)
+  }
+}
+
+/**
+ * The records at `replaced` that changed since `base`, in list order; undefined when the list cannot have been made from
+ * the base's in place (another length, or another thread at a replaced position) and must be walked whole.
+ */
+function changedAt(threads: readonly AgentThread[], base: ThreadBase, replaced: ReadonlySet<number>): AgentThread[] | undefined {
+  if (threads.length !== base.order.length) return undefined
+  const changed: AgentThread[] = []
+  for (const position of [...replaced].sort((left, right) => left - right)) {
+    if (!(position >= 0 && position < threads.length)) return undefined
+    const thread = threads[position]!
+    if (thread.id !== base.order[position]) return undefined
+    const sent = sentRecord(base, thread.id)
+    if (sent === undefined || !samePlainData(sent, thread)) changed.push(thread)
+  }
+  return changed
+}
+
+/** One walk of every thread, against `base` when there is one: the payload, and the records and order it leaves as a base. */
+function walk(threads: readonly AgentThread[], revision: number, base: ThreadBase | null): { payload: AgentThreadsBroadcast; records: Map<string, AgentThread>; order: string[]; unique: boolean } {
+  // One walk of the threads builds the records, the order and what changed.
+  const records = new Map<string, AgentThread>()
+  const order: string[] = []
+  const changed: AgentThread[] = []
+  for (const thread of threads) {
+    records.set(thread.id, thread)
+    order.push(thread.id)
+    const sent = base ? sentRecord(base, thread.id) : undefined
+    if (sent === undefined || !samePlainData(sent, thread)) changed.push(thread)
+  }
+  const unique = records.size === threads.length
+  if (base === null || !unique) return { payload: { revision, base: null, changed: [...threads] }, records, order, unique }
+  const removed = base.order.filter(id => !records.has(id))
+  const moved = order.length !== base.order.length || order.some((id, index) => base.order[index] !== id)
+  return { payload: { revision, base: base.revision, changed, ...(removed.length ? { removed } : {}), ...(moved ? { order } : {}) }, records, order, unique }
 }
 
 /**
@@ -200,7 +293,7 @@ export class AgentStateBroadcaster {
       confirmed.push([key, revision])
       return { revision, models: models as AgentModel[] }
     })
-    const threads = this.threads.encode(state.host.threads)
+    const threads = this.threads.encode(state.host.threads, state.host)
     const payload: AgentStateBroadcast = { ...encoded, host: { ...encoded.host, threads: threads.payload } }
     const delivered = deliver(payload)
     if (delivered) {
@@ -218,6 +311,9 @@ export class AgentStateBroadcaster {
    * An arrow property, so `registerAgentIpc` can be handed it on its own.
    */
   readonly windowRead = (): void => { this.threads.reset() }
+
+  /** The broadcasts whose threads were read only where their host's notes say they were replaced, and those verified (#925 step 6). */
+  get threadEncodes(): { readonly patched: number; readonly verified: number } { return { patched: this.threads.patchedEncodes, verified: this.threads.verifiedEncodes } }
 
   /**
    * A command's reply to a window (issue #323): `state` whole except that every catalog is named by its

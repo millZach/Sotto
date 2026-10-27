@@ -4,8 +4,8 @@
 // prototype's (docs/prototypes/menubar-owl-prototype.html, variant A).
 
 /** The icon's canvas in points. The frames are drawn at 1x and shown pixel-doubled. */
-export const OWL_WIDTH = 27
-export const OWL_HEIGHT = 22
+export const OWL_WIDTH = 18
+export const OWL_HEIGHT = 18
 
 /** A frame lasts 80 ms, the 12.5 a second every Sotto sprite shares; a few hold longer (`ms`). */
 export const OWL_FRAME_MS = 80

@@ -1,3 +1,5 @@
+import { t } from '@lingui/core/macro'
+
 import { PROVIDER_LABELS } from '../../shared/agents'
 import {
   ALERT_REFERENCES_MAX, ALERT_TITLE_MAX, type NotificationTestResult, type ThreadAlert,
@@ -34,16 +36,22 @@ const defaultTimers = {
 /** The notification's title: the thread's title on one line, at most `ALERT_TITLE_MAX` characters (ADR-0117). */
 export function alertTitle(title: string): string {
   const characters = [...title.replace(/\s+/g, ' ').trim()]
-  if (characters.length === 0) return 'A thread'
+  if (characters.length === 0) return t({ message: 'A thread', comment: 'A notification’s title when the thread has no title' })
   return characters.length <= ALERT_TITLE_MAX ? characters.join('') : `${characters.slice(0, ALERT_TITLE_MAX - 1).join('').trimEnd()}…`
 }
 
 /** One plain sentence, as the iPhone's alert says it; never a question's, a reply's or a path's words (ADR-0117). */
 export function alertBody(alert: ThreadAlert): string {
-  const agent = alert.providerId ? PROVIDER_LABELS[alert.providerId] : 'The agent'
-  const what = alert.kind === 'finished' ? 'finished'
-    : alert.request === 'permission' ? 'is asking for permission' : 'is asking a question'
-  return `${agent} ${what}${alert.computer ? ` on ${alert.computer}` : ''}.`
+  const computer = alert.computer
+  if (alert.providerId) {
+    const agent = PROVIDER_LABELS[alert.providerId]
+    if (alert.kind === 'finished') return computer ? t`${agent} finished on ${computer}.` : t`${agent} finished.`
+    if (alert.request === 'permission') return computer ? t`${agent} is asking for permission on ${computer}.` : t`${agent} is asking for permission.`
+    return computer ? t`${agent} is asking a question on ${computer}.` : t`${agent} is asking a question.`
+  }
+  if (alert.kind === 'finished') return computer ? t`The agent finished on ${computer}.` : t`The agent finished.`
+  if (alert.request === 'permission') return computer ? t`The agent is asking for permission on ${computer}.` : t`The agent is asking for permission.`
+  return computer ? t`The agent is asking a question on ${computer}.` : t`The agent is asking a question.`
 }
 
 /**
@@ -109,7 +117,8 @@ export function createDesktopNotifier(options: DesktopNotifierOptions): DesktopN
         pendingTests.set(timer, () => settle('unsupported'))
         try {
           tests += 1
-          notification = options.create({ id: `test/${tests}`, groupId: 'test', title: 'Sotto', body: 'Notifications are on.' })
+          notification = options.create({ id: `test/${tests}`, groupId: 'test', title: 'Sotto', body: t`Notifications are on.` })
+
           keep(notification)
           notification.on('show', () => settle('shown'))
           notification.on('failed', () => settle('failed'))

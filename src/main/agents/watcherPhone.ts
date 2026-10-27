@@ -1,7 +1,11 @@
-import type { AgentCommand, AgentThread } from '../../shared/agents'
+import type { AgentAttachmentPreviewResult, AgentCommand, AgentThread } from '../../shared/agents'
 import { WATCHER_PHONE_FOLLOWUPS_MAX, WATCHER_PHONE_LEGACY_LIMIT, WATCHER_PHONE_TAKEOVERS_MAX, watcherPhoneStateSchema, type WatcherPhoneState, type WatcherPhoneSend, type WatcherPhoneResult,
-  type WatcherPhoneSendResult, type WatcherPhonePrepareStopResult, type WatcherPhoneStopResult, type WatcherPhoneRemoveFollowup } from '../../shared/watcherPhone'
+  type WatcherPhoneSendResult, type WatcherPhonePrepareStopResult, type WatcherPhoneStopResult, type WatcherPhoneRemoveFollowup, type WatcherPhonePreview } from '../../shared/watcherPhone'
 import type { WatcherRefusal } from '../../shared/watcher'
+import { WATCHER_PHONE_MACHINE_THREADS_MAX, watcherPhoneMachinesSchema, type WatcherPhoneMachines } from '../../shared/watcherPhone'
+import { machineEntries, systemWords, unknownWhy } from '../../shared/machineLine'
+import { THIS_COMPUTER, countMachineWorkingThreads } from '../../shared/workingThreads'
+import { isThreadTurnRunning } from '../../shared/threadActivity'
 import type { WatcherCommandOrigin } from './watcherCommands'
 import { watcherRefusal, type WatcherService } from './watcher'
 import type { AgentControl } from './control'
@@ -17,7 +21,46 @@ function plainWords(text: string): boolean {
 }
 /** A phone reads the room, never the persisted control record or the desktop's aggregate shell. */
 export class WatcherPhoneService {
-  constructor(private readonly control: AgentControl, private readonly watcher: WatcherService) {}
+  /** `machinesOn`: Work across machines is on, read once at start, so a phone may be shown the machines line (#1032). */
+  constructor(private readonly control: AgentControl, private readonly watcher: WatcherService, private readonly machinesOn = false) {}
+  /** Whether a phone may be offered the machines line: only with Work across machines on (#1032). */
+  get offersMachines(): boolean { return this.machinesOn }
+  /** Reads every machine afresh, for a phone whose user opened a machine's numbers or whose Watcher placed work. */
+  async readMachines(): Promise<void> { if (this.machinesOn) await this.watcher.machines() }
+  /**
+   * The machines line for a phone (#1032): each machine as the desktop's line counts it, with its load as last read and,
+   * for its panel, what the desktop's panel says. Threads are counted from each machine's own list, read in place.
+   */
+  machines(): WatcherPhoneMachines {
+    const listed = this.watcher.lastMachines(), localId = this.control.hostId()
+    const paired = this.watcher.pairedMachines()
+    const working = new Map<string, number>([[THIS_COMPUTER, countMachineWorkingThreads(this.watcher.machineThreads(localId ?? ''))]])
+    for (const host of paired) working.set(host.hostId, countMachineWorkingThreads(this.watcher.machineThreads(host.hostId)))
+    const entries = machineEntries(listed?.machines ?? null, working, listed?.newWorkersStart, paired)
+    const now = Date.now()
+    const rows = entries.map(entry => {
+      const hostId = entry.thisComputer ? localId ?? entry.hostId : entry.hostId
+      const machine = entry.machine, load = machine?.load ?? null
+      const threads: WatcherPhoneMachines['rows'][number]['threads'] = []
+      if (entry.connected) {
+        const list = this.watcher.machineThreads(hostId)
+        for (const thread of list) {
+          if (threads.length >= WATCHER_PHONE_MACHINE_THREADS_MAX) break
+          if (thread.kind === 'watcher' || thread.kind === 'watcher-history' || !isThreadTurnRunning(thread)) continue
+          // Who started each thread shown comes from an index of Watcher's record, not a walk of its history.
+          const who = this.watcher.startedByWatcher(hostId, thread.id) ? 'Watcher'
+            : thread.delegatedBy !== undefined ? `delegated by ${list.find(row => row.id === thread.delegatedBy)?.title ?? 'another thread'}` : 'your thread'
+          threads.push({ title: thread.title, who })
+        }
+      }
+      return { hostId, name: entry.name, thisComputer: entry.thisComputer, connected: entry.connected, working: entry.working, starting: entry.starting,
+        isDefault: entry.isDefault, cpuState: machine === null ? null : machine.cpuState ?? 'unknown', memoryState: machine === null ? null : machine.memoryState ?? 'unknown',
+        system: machine === null ? null : systemWords(machine), logicalCpuCount: machine?.facts?.logicalCpuCount ?? null, totalMemoryBytes: machine?.facts?.totalMemoryBytes ?? null,
+        cpuBusyPercent: load?.cpuBusyPercent ?? null, windowMs: load?.windowMs ?? null, availableMemoryBytes: load?.availableMemoryBytes ?? null,
+        loadObservedAt: load?.observedAt ?? null, unknownWhy: unknownWhy(entry, now), threads }
+    })
+    return watcherPhoneMachinesSchema.parse({ readAt: listed?.observedAt ?? null, rows })
+  }
   /**
    * `standing`: whether this phone negotiated Watcher management, and with it knows standing watches. `steer`: whether it
    * negotiated steering, and with it is shown whether Watcher's provider steers and the follow-ups waiting for Watcher (#1229).
@@ -29,7 +72,9 @@ export class WatcherPhoneService {
     const current = room.current && thread(room.current.target)
     const detail = current ? this.control.threadDetail(current.id) : null
     // The coordinator's detail already shows Watcher's messages as typed: an older one's routing footer is off it.
-    const messages = (detail?.messages ?? []).slice(-200).map(message => ({ id: message.id, role: message.role, text: message.text, createdAt: message.createdAt }))
+    // A message's photos go as the detail marks them, with no bytes: the phone asks for each through `preview` below.
+    const messages = (detail?.messages ?? []).slice(-200).map(message => ({ id: message.id, role: message.role, text: message.text, createdAt: message.createdAt,
+      ...(message.attachments?.length ? { attachments: message.attachments } : {}) }))
     const receiptGroups: WatcherPhoneState['receiptGroups'] = []
     for (const operation of room.receipts.slice(-500)) {
       const request = room.requests.find(row => row.id === operation.requestId)
@@ -98,7 +143,9 @@ export class WatcherPhoneService {
     // What goes next, after Watcher's turn: the user's own follow-ups, read from the queue without copying it (#1229).
     ...(steer ? { followups: (current ? this.control.watcherFollowups(current.id) : []).slice(0, WATCHER_PHONE_FOLLOWUPS_MAX)
       .map(item => ({ itemId: item.id, draftId: item.draftId, text: item.text, status: item.status })) } : {}),
-    working: room.currentOptions?.status === 'running' || starts > 0, recoveryNotice: room.recoveryNotice, observedAt: room.observedAt })
+    // Watcher working is its own turn, a news turn included, as the desktop shows it. A thread it started says its own
+    // status under Watched: counted here, a few long-running workers kept the phone saying Working while Watcher was idle.
+    working: room.currentOptions?.status === 'running', recoveryNotice: room.recoveryNotice, observedAt: room.observedAt })
   }
   /** The newest takeover lines, as many as the page carries receipts, each titled from one index of the threads. */
   private takeovers(room: ReturnType<WatcherService['state']>, snapshot: ReturnType<WatcherService['phoneSnapshot']>): NonNullable<WatcherPhoneState['takeovers']> {
@@ -130,7 +177,7 @@ export class WatcherPhoneService {
       check()
       if (steers && this.control.watcherPhoneTurn(threadId).running) return await this.whileWorking(request, origin, phone, sent)
       const result = await this.control.commandFromWatcherPhone({ type: 'send', draft: { threadId,
-        draftId: request.draftId, text: request.text, attachments: [], binding: { requestId: null, questionsDigest: null } } }, origin, phone)
+        draftId: request.draftId, text: request.text, attachments: request.images ?? [], binding: { requestId: null, questionsDigest: null } } }, origin, phone)
       if (!result.error) return sent()
       // Watcher began a turn between the check and the send, which sent nothing: steered or queued instead.
       if (steers && this.control.watcherPhoneTurn(threadId).running && this.control.watcherPhoneDraftUnsent(threadId, request.draftId)) {
@@ -149,13 +196,24 @@ export class WatcherPhoneService {
   private async whileWorking(request: WatcherPhoneSend, origin: WatcherCommandOrigin, client: ClientIdentity,
     sent: () => WatcherPhoneSendResult): Promise<WatcherPhoneSendResult> {
     const { draftId, text } = request, threadId = request.target.threadId
+    // The photos go with the words however they go.
+    const photos = request.images ? { attachments: request.images } : {}
     if (this.control.watcherPhoneTurn(threadId).steers) {
-      const steered = await this.control.commandFromWatcherPhone({ type: 'steer', threadId, draftId, text }, origin, client)
+      const steered = await this.control.commandFromWatcherPhone({ type: 'steer', threadId, draftId, text, ...photos }, origin, client)
       if (!steered.error) return sent()
       if (!this.control.watcherPhoneDraftUnsent(threadId, draftId)) return this.refused(steered.error, threadId, draftId)
     }
-    const queued = await this.control.commandFromWatcherPhone({ type: 'queue-followup', threadId, draftId, text }, origin, client)
+    const queued = await this.control.commandFromWatcherPhone({ type: 'queue-followup', threadId, draftId, text, ...photos }, origin, client)
     return queued.error ? this.refused(queued.error, threadId, draftId) : sent()
+  }
+  /**
+   * One photo of a message in the current Watcher's conversation, as `preview` answers for a thread: null for any other
+   * Watcher, or a photo Sotto keeps no copy of. Watcher's thread is hidden from the phone's own reads.
+   */
+  async preview(request: WatcherPhonePreview): Promise<AgentAttachmentPreviewResult> {
+    const { hostId, threadId } = request.target
+    if (hostId !== this.control.hostId() || !this.watcher.isCurrent(threadId)) return null
+    return await this.control.attachmentPreview({ threadId, messageId: request.messageId, attachmentId: request.attachmentId })
   }
   /** Why a phone's message did not go, in words for the phone: never sent twice, and the words stay on the phone. */
   private refused(error: string, threadId: string, draftId: string): WatcherRefusal {

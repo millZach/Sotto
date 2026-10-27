@@ -126,7 +126,7 @@ export function watcherProvidersInWords(held: ReadonlySet<ProviderId>): string {
  * The order a role with no ready default looks through for one of a provider's own models. OpenCode comes last: a fresh
  * one offers only OpenCode Zen's free models, which no role names as a default.
  */
-const PROVIDER_ORDER = everyProvider(['claude', 'codex', 'grok', 'muse', 'devin', 'opencode'])
+const PROVIDER_ORDER = everyProvider(['claude', 'codex', 'grok', 'muse', 'devin', 'opencode', 'cursor', 'deepseek'])
 /** Whether a role can run on a model: Orchestrating only on a provider Watcher can run on. */
 export function roleCanUse(role: WorkerRoleId, model: Pick<AgentModel, 'providerId'>): boolean {
   return role !== 'orchestrating' || (model.providerId !== undefined && WATCHER_PROVIDERS.has(model.providerId))
@@ -288,12 +288,14 @@ export function startFromRole(role: WorkerKind, choices: WorkerRoleChoices, mode
 /**
  * A role's permission a ceiling held back: what the role wanted, what the start got, and which limit held it: the
  * user's new-thread default; for a delegation, the delegating thread's own permission when that is the narrower; for a
- * start on a paired host, what that host lets this computer give a thread there when that is the narrower.
+ * start on a paired host, what that host lets this computer give a thread there when that is the narrower. For a
+ * delegation on a headless host (#1310), Ask for approval because that host was never told the user's new-thread default
+ * (`not-told`) or does not let the desktop that told it answer there (`no-answer-grant`).
  */
 export interface HeldPermission {
   readonly wanted: AgentRuntimeMode
   readonly startedOn: AgentRuntimeMode
-  readonly by?: 'new-thread-default' | 'delegating-thread' | 'paired-host'
+  readonly by?: 'new-thread-default' | 'delegating-thread' | 'paired-host' | 'not-told' | 'no-answer-grant' | 'answers-revoked'
   /** That limit's own mode when the model does not offer it, so the start took the nearest mode the model does. */
   readonly unoffered?: AgentRuntimeMode | undefined
 }
@@ -301,6 +303,9 @@ export interface HeldPermission {
 const HELD_BY: Readonly<Record<NonNullable<HeldPermission['by']>, string>> = {
   'new-thread-default': "the user's new-thread default", 'delegating-thread': "the delegating thread's own permission",
   'paired-host': 'the most that host lets this computer give a thread there',
+  'not-told': 'Ask for approval, since this machine has not been told the user\'s new-thread default yet',
+  'no-answer-grant': 'Ask for approval, since this machine does not let the user\'s desktop answer permission requests here',
+  'answers-revoked': 'Ask for approval, since this machine no longer lets the user\'s desktop answer permission requests here',
 }
 /**
  * What a start by role says in its receipt, for the agent that asked to pass on: the role, what the request named in
@@ -324,6 +329,9 @@ export function roleStartNote(start: RoleStart, models: readonly AgentModel[], h
     parts.push(held.unoffered ? `Its permission, ${wanted}, was held to ${startedOn}: ${HELD_BY[held.by ?? 'new-thread-default']} is ${RUNTIME_MODE_WORDS[held.unoffered]}, which this model does not offer, so it starts on the nearest mode the model does.`
       : held.by === 'delegating-thread' ? `Its permission, ${wanted}, was held to ${startedOn}, the delegating thread's own, since a delegated thread gets no more.`
       : held.by === 'paired-host' ? `Its permission, ${wanted}, was held to ${startedOn}, the most that host lets this computer give a thread it starts there.`
+      : held.by === 'not-told' ? `Its permission, ${wanted}, was held to ${startedOn}, since this machine has not been told the user's new-thread default yet. It is told when Sotto's desktop connects.`
+      : held.by === 'no-answer-grant' ? `Its permission, ${wanted}, was held to ${startedOn}, since this machine does not let the user's desktop answer permission requests here.`
+      : held.by === 'answers-revoked' ? `Its permission, ${wanted}, was held to ${startedOn}, since this machine no longer lets the user's desktop answer permission requests here.`
         : `Its permission, ${wanted}, was held to the user's new-thread default, ${startedOn}.`)
   }
   return parts.join(' ')

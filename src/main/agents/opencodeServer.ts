@@ -7,6 +7,8 @@ import { z } from 'zod'
 import { compareClientVersions } from './clientVersions'
 import { withCliPath } from './cliLookup'
 import { acceptOpenCode, opencodeCandidates, resetOpenCodeLookup, type OpenCodeLookupOptions } from './opencodeLookup'
+import type { OwnServer } from '../../shared/ownModelServers'
+import { openCodeProviders } from '../ownModelServers/providerBlock'
 
 /**
  * OpenCode's floor: the oldest client Sotto connects (ADR-0042, ADR-0087). 2.0.31 is the client this adapter's routes,
@@ -41,16 +43,24 @@ export function opencodeDatabase(folders: OpenCodeFolders): string { return join
 
 /** What every Sotto server is told on top of its own config: no share links, and no update of its own (ADR-0087). */
 export const OPENCODE_CONFIG_CONTENT = JSON.stringify({ share: 'disabled', update: 'disable' })
+/**
+ * The same, with the user's own model servers (ADR-0124) as provider blocks beside it. With none it is exactly
+ * `OPENCODE_CONFIG_CONTENT`, so a run with the Owl feature off gives OpenCode what it always did.
+ */
+export function opencodeConfigContent(servers: readonly OwnServer[] = []): string {
+  return servers.length ? JSON.stringify({ share: 'disabled', update: 'disable', providers: openCodeProviders(servers) }) : OPENCODE_CONFIG_CONTENT
+}
 const safeEnvironment = new Set(['path', 'pathext', 'systemroot', 'windir', 'temp', 'tmp', 'tmpdir', 'home', 'user', 'logname', 'username', 'userprofile', 'homedrive', 'homepath', 'appdata', 'localappdata', 'programdata', 'allusersprofile', 'comspec', 'lang', 'lc_all', 'lc_ctype', 'tz', 'https_proxy', 'http_proxy', 'no_proxy', 'ssl_cert_file', 'ssl_cert_dir'])
 /**
  * The environment an OpenCode process gets: the shared allow-list and nothing else, so no provider's key reaches it and
  * a thread runs on the sign-ins OpenCode keeps in Sotto's own folder. The XDG folders are always Sotto's; the user's own
- * are never passed through. The password is this process's alone, so OpenCode never makes up and prints one.
+ * are never passed through. The password is this process's alone, so OpenCode never makes up and prints one. `servers`
+ * are the user's own model servers (ADR-0124), passed only while their Owl feature is on.
  */
-export function opencodeEnvironment(environment: NodeJS.ProcessEnv, folders: OpenCodeFolders, password: string): NodeJS.ProcessEnv {
+export function opencodeEnvironment(environment: NodeJS.ProcessEnv, folders: OpenCodeFolders, password: string, servers: readonly OwnServer[] = []): NodeJS.ProcessEnv {
   const env = Object.fromEntries(Object.entries(environment).filter(([key]) => safeEnvironment.has(key.toLowerCase())))
   return { ...env, XDG_DATA_HOME: folders.data, XDG_CONFIG_HOME: folders.config, XDG_STATE_HOME: folders.state, XDG_CACHE_HOME: folders.cache,
-    OPENCODE_PASSWORD: password, OPENCODE_CONFIG_CONTENT, OPENCODE_DISABLE_AUTOUPDATE: '1' }
+    OPENCODE_PASSWORD: password, OPENCODE_CONFIG_CONTENT: opencodeConfigContent(servers), OPENCODE_DISABLE_AUTOUPDATE: '1' }
 }
 /** A fresh secret for one server, never written down or logged. */
 export function opencodePassword(): string { return randomBytes(32).toString('base64url') }
@@ -227,6 +237,7 @@ export class OpenCodeServer {
       })
       launch.log?.('opencode-server-started')
       const closed = new Promise<void>(done => child.once('close', () => done()))
+      endWithSotto(child, closed)
       // Written down before anything else can happen to it, and taken off once it and what it left are gone.
       const { ledger } = launch, pid = child.pid
       const recorded = ledger && pid !== undefined ? recordOpenCodeServer(ledger, { pid, startedAt, owner: process.pid })
@@ -358,6 +369,26 @@ function taskkillTree(pid: number): Promise<boolean> {
 /** Whether a child process has exited. */
 const ended = (child: ChildProcess): boolean => child.exitCode !== null || child.signalCode !== null
 
+/** The servers this Sotto started that have not exited, ended with their process groups if Sotto exits without stopping them. */
+const running = new Set<ChildProcess>()
+let endingWithSotto = false
+/**
+ * A quit stops every server first; an exit that skips it, such as `process.exit` or an uncaught error, would leave them
+ * running in their own process groups on macOS and Linux until the next connect's sweep. Only a signal sent now can end
+ * them, and their records stay for that sweep to clear. Windows needs none: Node's job object ends them with Sotto.
+ */
+function endWithSotto(child: ChildProcess, closed: Promise<void>): void {
+  if (process.platform === 'win32' || child.pid === undefined) return
+  if (!endingWithSotto) {
+    endingWithSotto = true
+    process.once('exit', () => {
+      for (const server of running) if (!ended(server)) { try { process.kill(-server.pid!, 'SIGKILL') } catch { /* Gone. */ } }
+    })
+  }
+  running.add(child)
+  void closed.then(() => running.delete(child))
+}
+
 /**
  * End a process and its descendants: `taskkill /T /F` on Windows, its process group elsewhere. A leader that already
  * exited has no tree for taskkill to walk, so on Windows its descendants are found by their recorded parents; elsewhere
@@ -485,37 +516,46 @@ async function gone(pid: number, withinMs: number): Promise<boolean> {
   return !isRunning(pid)
 }
 
-/** End one server a crash left, and what it started, if the process that has its PID is still that server. */
-async function endRecordedServer(record: OpenCodeServerRecord, rows: readonly ProcessRow[]): Promise<boolean> {
+/**
+ * End one server a crash left, and what it started, if the process that has its PID is still that server: `ended` once it
+ * has gone, `gone` when no process of it was there to end, and `unsure` when it may still run, so its record is kept.
+ */
+async function endRecordedServer(record: OpenCodeServerRecord, rows: readonly ProcessRow[], seen: (pid: number) => Promise<ObservedProcess | undefined>): Promise<'ended' | 'gone' | 'unsure'> {
   if (process.platform === 'win32') {
     const row = rows.find(candidate => candidate.pid === record.pid)
     if (row && isRecordedServer(record, { started: row.created, command: row.command })) {
       await taskkillTree(record.pid)
-      return gone(record.pid, 2_000)
+      return await gone(record.pid, 2_000) ? 'ended' : 'unsure'
     }
     // The server is gone, as Node's job object ends it with Sotto on Windows; a tool it started may not be. A process
     // holding its PID now is someone else's, and so is anything that process started.
     await endOrphans(record.pid, record.startedAt, rows)
-    return false
+    return 'gone'
   }
   // Elsewhere the server leads a process group of its own, which holds every tool it started. A group whose leader has
   // gone is left alone: with no leader, nothing shows the group is still the server's.
-  if (!isRecordedServer(record, await processStart(record.pid))) return false
+  const observed = await seen(record.pid)
+  // `ps` said nothing of a process that still runs: it may be the server, and the next connect asks again.
+  if (!observed) return isRunning(record.pid) ? 'unsure' : 'gone'
+  if (!isRecordedServer(record, observed)) return 'gone'
   const signal = (name: NodeJS.Signals): void => { try { process.kill(-record.pid, name) } catch { /* Gone. */ } }
   signal('SIGTERM')
   if (!await gone(record.pid, 1_000)) signal('SIGKILL')
   // Children that ignored the first signal are still in its group.
   signal('SIGKILL')
-  return gone(record.pid, 2_000)
+  return await gone(record.pid, 2_000) ? 'ended' : 'unsure'
 }
 
 /**
  * End the servers a Sotto that has gone left running on these folders (ADR-0087), with what they started, and take their
  * records off. A record whose Sotto is still running is left for it, and a process that only has a recorded PID now,
- * started at another time or running something else, is never touched. On Windows the process table is read once, through
- * `readTable`: PowerShell's CIM query by default, which takes seconds, and on a loaded machine up to its 15 s bound.
+ * started at another time or running something else, is never touched. A record whose server may still run after the
+ * sweep is kept for the next connect. On Windows the process table is read once, through `readTable`: PowerShell's CIM
+ * query by default, which takes seconds, and on a loaded machine up to its 15 s bound. Elsewhere each process is read
+ * through `seen`, `ps` by default.
  */
-export async function endServersLeftBehind(ledger: string, log?: (event: OpenCodeServerEvent) => void, readTable: () => Promise<ProcessRow[]> = processTable): Promise<void> {
+export async function endServersLeftBehind(ledger: string, log?: (event: OpenCodeServerEvent) => void, readTable: () => Promise<ProcessRow[]> = processTable,
+  seen: (pid: number) => Promise<ObservedProcess | undefined> = processStart): Promise<void> {
   let names: string[]
   try { names = await readdir(ledger) } catch { return }
   // A record a Sotto that has gone was still writing when it went; one a running Sotto is writing is its own.
@@ -536,13 +576,14 @@ export async function endServersLeftBehind(ledger: string, log?: (event: OpenCod
   if (!left.length && !unread.length) return
   const rows = process.platform === 'win32' ? await readTable() : []
   for (const { file, record } of left) {
-    if (await endRecordedServer(record, rows)) log?.('opencode-server-left-ended')
-    await rm(file, { force: true }).catch(() => undefined)
+    const outcome = await endRecordedServer(record, rows, seen)
+    if (outcome === 'ended') log?.('opencode-server-left-ended')
+    if (outcome !== 'unsure') await rm(file, { force: true }).catch(() => undefined)
   }
   for (const file of unread) {
     // Named by its server's PID: while that PID runs OpenCode's server, the record may be all that shows it is Sotto's.
     const pid = Number(/(\d+)\.json$/u.exec(file)?.[1])
-    const command = process.platform === 'win32' ? rows.find(row => row.pid === pid)?.command : (await processStart(pid))?.command
+    const command = process.platform === 'win32' ? rows.find(row => row.pid === pid)?.command : (await seen(pid))?.command
     if (!isServerCommand(command)) await rm(file, { force: true }).catch(() => undefined)
   }
 }

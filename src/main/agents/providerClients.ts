@@ -12,6 +12,8 @@ import { findMuseExecutable } from './museRpc'
 import { findOpenCodeExecutable, opencodeEnvironment, opencodePassword, type OpenCodeFolders } from './opencodeServer'
 import { compareMuseVersions, installMuseClient, museByHand, museInstallForExecutable, musePublishedVersion, museReleaseChannel, museResponseText, MUSE_FEED_BYTES, type MuseChannel, type MuseMakerInstall } from './museClientInstall'
 import { findGrokExecutable } from './grokRpc'
+import { compareCursorVersions, cursorEnvironment, cursorInstallRoot, cursorProgramOf, cursorPublishedVersion, findCursorExecutable, parseCursorVersion } from './cursorRpc'
+import { findDeepSeekExecutable } from './deepseekRpc'
 import { findClaudeExecutable } from './subscriptionClaude'
 import { findCli, miseDataFolder, withCliPath } from './cliLookup'
 import { findExecutable as findCodexExecutable } from './subscriptionCodex'
@@ -21,6 +23,7 @@ export const CLIENT_PACKAGES: Readonly<Partial<Record<ProviderId, string>>> = {
   claude: '@anthropic-ai/claude-code', codex: '@openai/codex', grok: '@xai-official/grok',
   // OpenCode 2's package; OpenCode 1 is `opencode-ai`, and Sotto never moves an install between them (ADR-0087).
   opencode: '@opencode/cli',
+  deepseek: '@deepseek-ai/dsh',
 }
 const REGISTRY = 'https://registry.npmjs.org'
 /** How often each machine asks again while Sotto stays open, so a client published meanwhile is noticed (ADR-0042). */
@@ -67,6 +70,8 @@ function ownHome(provider: ProviderId, environment: NodeJS.ProcessEnv): readonly
   if (provider === 'grok') return [grokBin(environment)]
   // OpenCode 2's install script (`opencode.ai/v2/install`) puts it here, and `opencode upgrade` updates it in place.
   if (provider === 'opencode') return [join(home, '.opencode', 'bin')]
+  // Cursor's installer keeps each version in its own folder and `agent update` replaces them (ADR-0128).
+  if (provider === 'cursor') return [cursorInstallRoot(environment), ...(process.platform === 'win32' ? [] : [join(home, '.local', 'bin')])].filter((folder): folder is string => Boolean(folder))
   return []
 }
 function grokBin(environment: NodeJS.ProcessEnv): string {
@@ -356,6 +361,11 @@ export async function detectClientInstall(provider: ProviderId, executable: stri
     return inOwnHome ? { channel: 'self-update' } : { channel: 'unknown' }
   }
   if (MANAGED_ELSEWHERE.some(marker => lower.includes(marker))) return { channel: 'unknown' }
+  // Only a copy Cursor's own installer put in its version folders updates itself; any other copy is left to whoever installed it.
+  if (provider === 'cursor') {
+    const real = await realpath(executable).catch(() => executable)
+    return [executable, real].some(path => inOwnHome || ownHome(provider, environment).some(directory => within(path, directory))) ? { channel: 'self-update' } : { channel: 'unknown' }
+  }
   if (provider === 'muse') {
     const real = await realpath(executable).catch(() => executable)
     if (MANAGED_ELSEWHERE.some(marker => real.toLowerCase().includes(marker))) return { channel: 'unknown' }
@@ -379,9 +389,22 @@ export async function detectClientChannel(provider: ProviderId, executable: stri
 
 /** Grok Build's own install step, which mise's npm backend skips: it puts the new program in `~/.grok/bin`. */
 export const GROK_INSTALL_STEP = 'node bin/postinstall.js'
-/** The command to run on the machine by hand, a line each, or undefined when Sotto cannot name one. */
+/** A published version Sotto will pass to mise as `<tool>@<version>`: `2.1.310`, `1.4.12-R6909.1`, nothing that reads as an option. */
+const MISE_VERSION = /^\d[0-9A-Za-z.+_-]{0,63}$/u
+/**
+ * What a mise update asks mise for: `install <tool>@<version>` when Sotto knows a published version it can pass, else
+ * `upgrade <tool>`. Both the lines to run by hand and the arguments Sotto runs are made from it, so they cannot disagree.
+ */
+interface MiseTarget { readonly verb: 'install' | 'upgrade'; readonly tool: string; readonly version?: string }
+function miseTarget(miseTool: string, version: string | undefined): MiseTarget {
+  return version !== undefined && MISE_VERSION.test(version) ? { verb: 'install', tool: `${miseTool}@${version}`, version } : { verb: 'upgrade', tool: miseTool }
+}
+/**
+ * The command to run on the machine by hand, a line each, or undefined when Sotto cannot name one. `version` is the
+ * published version Sotto found, which a mise install asks for by name (see `updateActionFor`).
+ */
 export function byHandFor(provider: ProviderId, install: ClientInstall, platform: NodeJS.Platform = process.platform,
-  releaseAgeFlag = false): readonly string[] | undefined {
+  releaseAgeFlag = false, version?: string): readonly string[] | undefined {
   const packageName = CLIENT_PACKAGES[provider]
   switch (install.channel) {
     case 'npm': {
@@ -392,16 +415,18 @@ export function byHandFor(provider: ProviderId, install: ClientInstall, platform
       return [`npm install -g${prefix ? ` --prefix ${prefix}` : ''} --allow-scripts=${packageName} ${packageName}@latest`]
     }
     case 'self-update': return provider === 'muse' && install.muse ? museByHand(install.muse) : provider === 'claude' || provider === 'grok' ? [`${provider} update`]
-      : provider === 'opencode' ? ['opencode upgrade'] : undefined
+      : provider === 'opencode' ? ['opencode upgrade'] : provider === 'cursor' ? ['agent update'] : undefined
     case 'mise': {
       if (!install.miseTool) return undefined
-      const command = `mise upgrade ${install.miseTool}${releaseAgeFlag ? ' --minimum-release-age 0s' : ''}`
+      const target = miseTarget(install.miseTool, version)
+      const command = `mise ${target.verb} ${target.tool}${releaseAgeFlag ? ' --minimum-release-age 0s' : ''}`
       // A child cmd keeps the Windows override inside this one command, in either PowerShell or cmd.
       const upgrade = platform === 'win32' ? `cmd /c "set MISE_MINIMUM_RELEASE_AGE=0s&& ${command}"`
         : `MISE_MINIMUM_RELEASE_AGE=0s ${command}`
+      const lines = target.version ? [`mise cache clear ${install.miseTool}`, upgrade] : [upgrade]
       // Checked on forge on September 29, 2026: the package's install step, run in the folder mise installed it in.
       return needsInstallStep(provider, install.miseTool) && packageName
-        ? [upgrade, `cd "$(mise where ${install.miseTool})/node_modules/${packageName}"`, GROK_INSTALL_STEP] : [upgrade]
+        ? [...lines, `cd "$(mise where ${target.tool})/node_modules/${packageName}"`, GROK_INSTALL_STEP] : lines
     }
     default: return install.byHand?.length ? [...install.byHand] : undefined
   }
@@ -416,6 +441,9 @@ export function shellArgument(value: string, platform: NodeJS.Platform): string 
   return /^[\w/.:+-]+$/u.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`
 }
 const needsInstallStep = (provider: ProviderId, miseTool: string): boolean => provider === 'grok' && miseTool === `npm:${CLIENT_PACKAGES.grok}`
+/** The line a card names as the update: the first, or for a mise install by version the install after its cache clear. */
+const commandOf = (install: ClientInstall, lines: readonly string[], version: string | undefined): string =>
+  lines[install.channel === 'mise' && install.miseTool && miseTarget(install.miseTool, version).version ? 1 : 0]!
 
 export interface UpdateAction {
   readonly command: string; readonly executable: string; readonly args: readonly string[]; readonly asNode?: boolean
@@ -427,6 +455,11 @@ export interface UpdateAction {
   readonly env?: Readonly<NodeJS.ProcessEnv>
   /** Grok Build under mise: after the upgrade, its package's install step, in the folder `mise where` names. */
   readonly installStep?: { readonly mise: string; readonly tool: string; readonly packageName: string }
+  /**
+   * A mise install of one published version: before it runs, mise's cache of the tool is cleared and its version list
+   * is asked whether it has `version`. `releaseAge` says this mise takes the release-age flag.
+   */
+  readonly miseList?: { readonly tool: string; readonly version: string; readonly releaseAge: boolean }
 }
 /**
  * What a press runs. The package names come from this file's own table, and a mise tool's name from mise's own record
@@ -436,10 +469,17 @@ export interface UpdateAction {
  * the shell hop is where the first live run of this broke: a `cmd /s /c` line naming npm's batch
  * file loses its quoting and answers "operable program or batch file". No shell, no quoting, same npm.
  * mise is run as the mise binary itself, never through a shim, which would run the tool instead.
+ *
+ * Given the published `version`, mise installs that version by name rather than upgrading to the newest it knows.
+ * mise reads its version lists through caches of its own, and `mise upgrade` answers "up to date" and exits 0 while
+ * they lag: on forge on October 23, 2026 Claude Code 2.1.310 was on npm and GitHub for half an hour while
+ * `mise upgrade claude` still found 2.1.309. Clearing the tool's cache made `mise ls-remote` list 2.1.310, but
+ * `mise upgrade` still resolved the newest version through another cache; `mise install claude@2.1.310` installed it,
+ * and mise's `latest` link moved to it. Without a version, mise upgrades as it always has.
  */
 export async function updateActionFor(provider: ProviderId, install: ClientChannel | ClientInstall, executable: string | undefined,
   npmPath: () => Promise<string | undefined> = defaultNpmPath, misePath: () => Promise<string | undefined> = defaultMisePath,
-  miseReleaseAgeFlag: (executable: string) => Promise<boolean> = defaultMiseReleaseAgeFlag): Promise<UpdateAction | undefined> {
+  miseReleaseAgeFlag: (executable: string) => Promise<boolean> = defaultMiseReleaseAgeFlag, version?: string): Promise<UpdateAction | undefined> {
   const found: ClientInstall = typeof install === 'string' ? { channel: install } : install
   const byHand = byHandFor(provider, found)
   if (found.channel === 'npm') {
@@ -457,20 +497,24 @@ export async function updateActionFor(provider: ProviderId, install: ClientChann
     return { command: byHand[0]!, byHand, executable: process.execPath, asNode: true,
       args: [cli, 'install', '-g', ...found.npmPrefix ? ['--prefix', found.npmPrefix] : [], allowScripts, `${packageName}@latest`] }
   }
+  // Cursor's program on Windows is its own node.exe running the index.js beside it, so `update` follows that script.
+  if (found.channel === 'self-update' && provider === 'cursor' && executable && byHand) { const program = cursorProgramOf(executable); return { command: byHand[0]!, byHand, executable: program.executable, args: [...program.args, 'update'] } }
   if (found.channel === 'self-update' && provider !== 'muse' && executable && byHand) return { command: byHand[0]!, byHand, executable, args: [provider === 'opencode' ? 'upgrade' : 'update'] }
   if (found.channel === 'mise' && found.miseTool && byHand) {
     const mise = await misePath()
     if (!mise) return undefined
     const packageName = CLIENT_PACKAGES[provider]
     const supportsFlag = await miseReleaseAgeFlag(mise)
-    const commands = byHandFor(provider, found, process.platform, supportsFlag)!
+    const target = miseTarget(found.miseTool, version)
+    const commands = byHandFor(provider, found, process.platform, supportsFlag, version)!
     // Update is an explicit request to install now. mise's release-age delay can otherwise exit successfully
     // without changing the client. Older mise rejects the CLI flag but ignores this environment variable.
     // The flag also overrides a per-tool delay, which takes precedence over the global environment setting.
     // Override only this process, on desktops and hosts alike; leave the app and mise's saved policy alone.
-    return { command: commands[0]!, byHand: commands, executable: mise,
-      args: ['upgrade', found.miseTool, ...(supportsFlag ? ['--minimum-release-age', '0s'] : [])], cwd: homedir(), env: { MISE_MINIMUM_RELEASE_AGE: '0s' },
-      ...(needsInstallStep(provider, found.miseTool) && packageName ? { installStep: { mise, tool: found.miseTool, packageName } } : {}) }
+    return { command: commandOf(found, commands, version), byHand: commands, executable: mise,
+      args: [target.verb, target.tool, ...(supportsFlag ? ['--minimum-release-age', '0s'] : [])], cwd: homedir(), env: { MISE_MINIMUM_RELEASE_AGE: '0s' },
+      ...(target.version ? { miseList: { tool: found.miseTool, version: target.version, releaseAge: supportsFlag } } : {}),
+      ...(needsInstallStep(provider, found.miseTool) && packageName ? { installStep: { mise, tool: target.tool, packageName } } : {}) }
   }
   return undefined
 }
@@ -562,6 +606,8 @@ export interface ProviderClientsOptions {
   readonly opencodeFolders?: OpenCodeFolders
   /** The platform whose install layouts are read: this one's, by default. */
   readonly platform?: NodeJS.Platform
+  /** Sotto's own Cursor folder: `agent update` runs with it, never with the user's own Cursor folder (ADR-0128). */
+  readonly cursorConfigDirectory?: string
 }
 
 /**
@@ -579,6 +625,7 @@ export class ProviderClients {
   private readonly miseReleaseAgeFlag: (executable: string) => Promise<boolean>
   private readonly nodePath: string
   private readonly opencodeFolders: OpenCodeFolders | undefined
+  private readonly cursorConfigDirectory: string | undefined
   private readonly platform: NodeJS.Platform
   constructor(options: ProviderClientsOptions = {}) {
     this.fetchImpl = options.fetchImpl ?? ((url, init) => fetch(url, init))
@@ -589,6 +636,7 @@ export class ProviderClients {
     this.miseReleaseAgeFlag = options.miseReleaseAgeFlag ?? defaultMiseReleaseAgeFlag
     this.nodePath = options.nodePath ?? process.execPath
     this.opencodeFolders = options.opencodeFolders
+    this.cursorConfigDirectory = options.cursorConfigDirectory
     this.platform = options.platform ?? process.platform
   }
 
@@ -598,6 +646,7 @@ export class ProviderClients {
    */
   async publishedVersion(provider: ProviderId, museChannel: MuseChannel = 'muse-stable', afresh = false): Promise<string | undefined> {
     if (provider === 'muse') return this.publishedMuseVersion(museChannel, afresh)
+    if (provider === 'cursor') return this.publishedCursorVersion(afresh)
     const packageName = CLIENT_PACKAGES[provider]
     if (!packageName) return undefined
     const cached = this.cache.get(packageName)
@@ -613,6 +662,21 @@ export class ProviderClients {
       if (body.length > REGISTRY_MAX_BYTES) return undefined
       const version = published.parse(JSON.parse(body)).version
       this.cache.set(packageName, { version, expiresAt: this.now() + PUBLISHED_CACHE_MS })
+      return version
+    } catch { return undefined }
+  }
+
+  /** The version Cursor's own install script downloads, the one place Cursor says what it has published (ADR-0128). */
+  private async publishedCursorVersion(afresh: boolean): Promise<string | undefined> {
+    const key = 'cursor:install', cached = this.cache.get(key)
+    if (!afresh && cached && cached.expiresAt > this.now()) return cached.version
+    try {
+      const response = await this.fetchImpl('https://cursor.com/install', { redirect: 'error', signal: AbortSignal.timeout(REGISTRY_TIMEOUT_MS), headers: { accept: 'text/plain' } })
+      if (!response.ok) { await response.body?.cancel().catch(() => undefined); return undefined }
+      const body = await response.text()
+      if (body.length > REGISTRY_MAX_BYTES) return undefined
+      const version = cursorPublishedVersion(body)
+      if (version) this.cache.set(key, { version, expiresAt: this.now() + PUBLISHED_CACHE_MS })
       return version
     } catch { return undefined }
   }
@@ -640,17 +704,20 @@ export class ProviderClients {
   async check(provider: ProviderId, installed: string, executable: string | undefined,
     environment: NodeJS.ProcessEnv = process.env, options: { readonly afresh?: boolean } = {}): Promise<ProviderClientUpdate> {
     const install = await detectClientInstall(provider, executable, environment, this.platform)
-    const action = await updateActionFor(provider, install, executable, this.npmPath, this.misePath, this.miseReleaseAgeFlag)
-    const byHand = action?.byHand ?? byHandFor(provider, install)
     const museChannel = provider === 'muse' ? await museReleaseChannel(executable, environment) : undefined
     const latest = install.channel === 'devin-app' || provider === 'muse' && museChannel === undefined ? undefined : await this.publishedVersion(provider, museChannel, options.afresh === true)
     const behind = provider === 'muse'
       ? Boolean(latest && (compareMuseVersions(installed, latest) ?? 0) < 0)
+      : provider === 'cursor' ? Boolean(latest && parseCursorVersion(installed) && compareCursorVersions(installed, latest) < 0)
       : Boolean(installed && latest && isComparableVersion(installed) && isComparableVersion(latest) && compareClientVersions(installed, latest) < 0)
+    // A client behind what is published is updated to that version, which mise is asked for by name.
+    const target = behind ? latest : undefined
+    const action = await updateActionFor(provider, install, executable, this.npmPath, this.misePath, this.miseReleaseAgeFlag, target)
+    const byHand = action?.byHand ?? byHandFor(provider, install, process.platform, false, target)
     const makerUpdate = provider === 'muse' && Boolean(install.muse)
     return {
       id: provider, installed, ...(latest ? { published: latest } : {}), behind, channel: install.channel,
-      ...(makerUpdate ? { steps: 1 } : action ? { command: action.command, steps: action.installStep ? 2 : 1 } : byHand ? { command: byHand[0]! } : {}),
+      ...(makerUpdate ? { steps: 1 } : action ? { command: action.command, steps: action.installStep ? 2 : 1 } : byHand ? { command: commandOf(install, byHand, target) } : {}),
       ...(byHand ? { byHand: [...byHand] } : {}), canInstall: Boolean((action || makerUpdate) && behind),
       checkedAt: new Date(this.now()).toISOString(), state: 'idle',
     }
@@ -658,10 +725,11 @@ export class ProviderClients {
 
   /**
    * Install the published version through the channel that owns this install. `onStep` hears each step as it starts,
-   * counted from 1: Grok Build under mise has two, the upgrade and then its package's install step.
+   * counted from 1: Grok Build under mise has two, the upgrade and then its package's install step. `version` is the
+   * published version the check found, which mise installs by name once its version list has it.
    */
   async install(provider: ProviderId, executable: string | undefined,
-    environment: NodeJS.ProcessEnv = process.env, onStep?: (step: number) => void): Promise<InstallResult> {
+    environment: NodeJS.ProcessEnv = process.env, onStep?: (step: number) => void, version?: string): Promise<InstallResult> {
     const install = await detectClientInstall(provider, executable, environment, this.platform)
     if (provider === 'muse' && install.muse) {
       onStep?.(1)
@@ -671,7 +739,7 @@ export class ProviderClients {
       })
       return updated.ok ? updated : { ...updated, step: 1, failure: updated.failure ?? (DOWNLOAD_FAILED.test(updated.printed ?? updated.detail ?? '') ? 'download' : 'installer') }
     }
-    const action = await updateActionFor(provider, install, executable, this.npmPath, this.misePath, this.miseReleaseAgeFlag)
+    const action = await updateActionFor(provider, install, executable, this.npmPath, this.misePath, this.miseReleaseAgeFlag, version)
     if (!action) {
       return { ok: false, detail: install.channel === 'devin-app'
         ? `${PROVIDER_LABELS[provider]} updates with the Devin app.`
@@ -680,6 +748,9 @@ export class ProviderClients {
         : `Sotto does not know how ${PROVIDER_LABELS[provider]} was installed, so it will not replace it.` }
     }
     onStep?.(1)
+    if (action.miseList && await this.miseLists(action.executable, action.miseList, action.env) === false) {
+      return { ok: false, step: 1, failure: 'not-listed', detail: `mise does not list ${PROVIDER_LABELS[provider]} ${action.miseList.version} yet, so Sotto did not install it. Nothing was changed. Try again later.` }
+    }
     // Elsewhere npm deletes a running program's folder like any other, so nothing is left to clear.
     const packageName = CLIENT_PACKAGES[provider]
     if (process.platform === 'win32' && install.channel === 'npm' && executable && packageName) {
@@ -689,13 +760,29 @@ export class ProviderClients {
     // OpenCode's own updater reads its config folder, so it runs on Sotto's OpenCode folders and the shared allow-list,
     // never the user's own OpenCode folders or other providers' keys.
     const opencodeOwn = provider === 'opencode' && install.channel === 'self-update' && this.opencodeFolders
-      ? { environment: opencodeEnvironment(withCliPath(environment, action.executable), this.opencodeFolders, opencodePassword()) } : {}
+      ? { environment: opencodeEnvironment(withCliPath(environment, action.executable), this.opencodeFolders, opencodePassword()) }
+      // Cursor's updater runs with Sotto's Cursor folder and the shared allow-list, never the user's own ~/.cursor (ADR-0128).
+      : provider === 'cursor' && this.cursorConfigDirectory ? { environment: cursorEnvironment(this.cursorConfigDirectory, withCliPath(environment, action.executable)) } : {}
     const upgrade = await this.run(action.executable, action.args, action.asNode, action.cwd || action.env || opencodeOwn.environment
       ? { ...(action.cwd ? { cwd: action.cwd } : {}), ...(action.env ? { env: action.env } : {}), ...opencodeOwn } : undefined)
     if (!upgrade.ok) return { ...upgrade, step: 1, failure: DOWNLOAD_FAILED.test(upgrade.printed ?? upgrade.detail ?? '') ? 'download' : 'installer' }
     if (!action.installStep) return upgrade
     onStep?.(2)
     return this.installStep(action.installStep)
+  }
+
+  /**
+   * Whether mise's version list has the version about to be installed, read afresh: the tool's cache is cleared first,
+   * which costs nothing but the next read of the list, and `mise ls-remote <tool> <version>` lists what starts with it.
+   * Undefined when mise could not say, as when its list could not be fetched; the install then speaks for itself.
+   */
+  private async miseLists(mise: string, list: NonNullable<UpdateAction['miseList']>, env: Readonly<NodeJS.ProcessEnv> | undefined): Promise<boolean | undefined> {
+    const options = { cwd: homedir(), ...(env ? { env } : {}) }
+    // A mise too old to clear one tool's cache still installs; the list below says whether it can see the version.
+    await this.run(mise, ['cache', 'clear', list.tool], false, options)
+    const listed = await this.run(mise, ['ls-remote', list.tool, list.version, ...(list.releaseAge ? ['--minimum-release-age', '0s'] : [])], false, options)
+    if (!listed.ok) return undefined
+    return (listed.stdout ?? '').split(/\r?\n/u).some(line => line.trim() === list.version)
   }
 
   /**
@@ -728,5 +815,7 @@ export async function locateClient(provider: ProviderId): Promise<string | undef
     case 'devin': return findDevinExecutable()
     case 'muse': return findMuseExecutable()
     case 'opencode': return findOpenCodeExecutable()
+    case 'cursor': return findCursorExecutable()
+    case 'deepseek': return findDeepSeekExecutable()
   }
 }

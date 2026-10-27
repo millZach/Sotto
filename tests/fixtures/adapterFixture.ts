@@ -14,7 +14,7 @@ export interface AdapterSessionOptions { reaperSweepMs?: number; sessionIdleMs?:
  */
 export type AdapterContractSkips = Readonly<Partial<Record<'uncertain' | 'restart' | 'lazy' | 'sendStages'
   | 'activitySnapshots' | 'refreshThread' | 'threadEvents' | 'backgroundWork' | 'liveSettings'
-  | 'settingsConfirmation' | 'clientUpdate' | 'sendAnswerRunning', string>>>
+  | 'settingsConfirmation' | 'clientUpdate' | 'sendAnswerRunning' | 'attachedFiles' | 'questions', string>>>
 
 export interface AdapterFixture {
   host: AgentHost; projectId: string; modelId: string; root: string
@@ -44,6 +44,11 @@ export interface AdapterFixture {
     resumeMethod: string
     permissionDecision(record: RecordedRpc): boolean | undefined
   }
+  /**
+   * Where the provider's model reads a PDF as part of the prompt (ADR-0131): Claude's `document` block, and OpenCode's
+   * `file` part for a model whose catalog lists PDF input. Absent, a PDF goes by path alone.
+   */
+  nativePdf?: boolean
   /** A process-owned turn may stop when its adapter process exits. */
   restartStatus?: 'idle' | 'running'
   /** Lazy provider sessions: what this provider saw start, and whether one thread's session has stopped. */
@@ -70,7 +75,7 @@ export interface AdapterFixture {
     refuse(): Promise<void>
     silence(): Promise<void>
     answer(): Promise<void>
-    effective(threadId: string): Promise<{ process: number; modelId: string; reasoningEffort?: string; runtimeMode: string }>
+    effective(threadId: string): Promise<{ process: number; modelId: string; reasoningEffort?: string; runtimeMode: string; fastMode?: boolean }>
   }
   /**
    * What a thread settings change hands back (#318). `snapshot`: a change the provider confirmed comes back with

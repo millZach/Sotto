@@ -41,11 +41,13 @@
 .branch-toolbar__workspace-option > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .branch-toolbar__workspace-option > svg { flex: none; }
 .branch-toolbar__workspace-option:hover, .branch-toolbar__workspace-option:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
+.branch-toolbar__workspace-option:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
 .branch-toolbar__workspace-option[aria-selected='true'] { color: var(--tt-activity); }
 /* Placed by measurement from the trigger, so it stays inside the pane whatever the row wrapped into; the stylesheet gives the fallback. */
 .branch-toolbar__panel { left: 0; display: grid; width: min(340px, calc(100vw - 48px)); padding: 6px; }
 .branch-toolbar__list > button, .branch-toolbar__refs > button[role='option'] { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 32px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; text-align: left; white-space: nowrap; cursor: pointer; }
 .branch-toolbar__list > button:hover, .branch-toolbar__list > button:focus-visible, .branch-toolbar__refs > button:hover:not(:disabled), .branch-toolbar__refs > button:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
+.branch-toolbar__list > button:focus-visible, .branch-toolbar__refs > button:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
 .branch-toolbar__list > button[aria-selected='true'], .branch-toolbar__refs > button[aria-selected='true'] { color: var(--tt-activity); }
 
 .branch-toolbar__search { display: flex; align-items: center; gap: 8px; padding: 4px 8px 6px; color: var(--tt-text-muted); }

@@ -47,9 +47,16 @@ async function captureProviders(page: Page, path: string): Promise<void> {
   await page.screenshot({ animations: 'disabled', path })
 }
 
+/** Opens a provider's row in Settings > Providers, leaving it open if it already is. */
+async function openProviderRow(page: Page, provider: ProviderId): Promise<void> {
+  const header = page.getByRole('button', { name: PROVIDER_LABELS[provider], exact: true })
+  if (await header.getAttribute('aria-expanded') !== 'true') await header.click()
+  await expect(header).toHaveAttribute('aria-expanded', 'true')
+}
+
 async function providerAction(page: Page, provider: ProviderId, action: 'Connect' | 'Disconnect'): Promise<void> {
-  await page.getByRole('button', { name: PROVIDER_LABELS[provider], exact: true }).click()
-  const panel = page.getByRole('region', { name: 'Provider configuration', exact: true })
+  await openProviderRow(page, provider)
+  const panel = page.getByRole('region', { name: `${PROVIDER_LABELS[provider]} details`, exact: true })
   await panel.getByRole('button', { name: `${action} ${PROVIDER_LABELS[provider]}`, exact: true }).click()
   await expect.poll(async () => (await state(page)).host.providers?.find(item => item.id === provider)?.connection,
     { timeout: 45_000 }).toBe(action === 'Connect' ? 'connected' : 'disconnected')
@@ -133,11 +140,9 @@ test('three native providers coexist independently of Sotto reasoning and surviv
       await captureProviders(page, join(artifacts, 'initial-providers.png'))
       for (const provider of providers) {
         await providerAction(page, provider, 'Connect')
-        await expect(page.getByRole('tab', { name: 'Configuration', exact: true })).toBeVisible()
-        await page.getByRole('tab', { name: 'Models', exact: true }).click()
         await expect.poll(async () => (await state(page!)).host.models.filter(model => model.providerId === provider && model.ready).length).toBeGreaterThan(0)
+        await expect(page.getByRole('button', { name: new RegExp(`^Show ${PROVIDER_LABELS[provider]} models, `, 'u') })).toBeVisible()
         await captureProviders(page, join(artifacts, `${provider}-models.png`))
-        await page.getByRole('tab', { name: 'Configuration', exact: true }).click()
       }
       await expect.poll(async () => connections(await state(page!))).toEqual(allConnected)
       expect([...((await state(page)).configuration.enabledProviders ?? [])].sort()).toEqual([...providers].sort())
@@ -199,11 +204,8 @@ test('three native providers coexist independently of Sotto reasoning and surviv
     await page.screenshot({ animations: 'disabled', path: join(artifacts, 'three-providers.png') })
 
     await openProviders(page)
-    await page.getByRole('button', { name: 'Claude Code', exact: true }).click()
-    await captureProviders(page, join(artifacts, 'all-connected-claude-configuration.png'))
-    await page.getByRole('tab', { name: 'Models', exact: true }).click()
-    await captureProviders(page, join(artifacts, 'all-connected-claude-models.png'))
-    await page.getByRole('tab', { name: 'Configuration', exact: true }).click()
+    await openProviderRow(page, 'claude')
+    await captureProviders(page, join(artifacts, 'all-connected-claude.png'))
     const previousSize = await app!.evaluate(({ BrowserWindow }) => {
       const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!
       const size = window.getSize(); const minimum = window.getMinimumSize()

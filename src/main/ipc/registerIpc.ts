@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
-  WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, WATCHER_START_NEW, WATCHER_READ_MERGE_TURNS, watcherContinueHandoverRequestSchema,
+  WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, WATCHER_START_NEW, WATCHER_READ_MERGE_TURNS, WATCHER_READ_MACHINES, watcherContinueHandoverRequestSchema,
   watcherOpenRequestSchema, watcherStopAllRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, type WatcherBridge } from '../../shared/watcherRoom'
 import { externalLinkSchema } from '../../shared/externalLinks'
 import { questionPageOpenSchema, type QuestionPageOpen, type QuestionPageOpenResult } from '../../shared/questionPageOpen'
@@ -122,7 +122,9 @@ const settingKeys = [
   'reducedMotion',
   'roomTransition',
   'roomTransitionSpeed',
+  'roomTransitionLook',
   'terminalFontSize',
+  'threadShortcuts',
   'microphoneId',
   'maxRecordingSeconds',
   'soundCues',
@@ -148,12 +150,16 @@ const settingKeys = [
   'llmMinWords',
   'llmModel',
   'llmMode',
+  'llmOwnModel',
   'threadTitles',
+  'nextPromptSuggestions',
   'threadWorkingCopyDefault',
   'projectThreadWorkingCopyDefaults',
   'worktreeCleanup',
   'gitFetchIntervalSeconds',
   'gitAutoPull',
+  'keepMainCurrent',
+  'projectKeepMainCurrent',
   'defaultMergeMethod',
   'lastMergeMethod',
   'diffLayout',
@@ -163,6 +169,7 @@ const settingKeys = [
   'gitWritingInstructions',
   'followPullRequestTemplates',
   'autoSettleMergedThreads',
+  'clearSettledThreadsAfterDays',
   'proactivePanels',
   'commitMessages',
   'pullRequestText',
@@ -180,6 +187,9 @@ const settingKeys = [
   'resumeThreadsAfterRestart',
   'workerRoles',
   'watcherSettlesFinishedThreads',
+  'newWorkerMachine',
+  'watcherCompactAtTokens',
+  'compactIdleThreads',
   'memoryEnabled',
   'cloudIphoneMonthlyMinutes',
   'cloudIphoneIdleMinutes',
@@ -393,7 +403,7 @@ export interface RecoveryNoticeIpcService {
 
 export interface RegisterIpcDependencies {
   /** Supplied only when the immutable Watcher release gate is on. Never served over socket IPC. */
-  readonly watcher?: Required<Omit<WatcherBridge, 'onChanged'>>
+  readonly watcher?: Required<Omit<WatcherBridge, 'onChanged' | 'readMachines'>> & Pick<WatcherBridge, 'readMachines'>
   readonly settings: SettingsIpcService
   readonly history: HistoryIpcService
   readonly startup: StartupIpcService
@@ -589,6 +599,9 @@ export function registerIpc(
       register(WATCHER_DISMISS_HANDOVER, noPayloadSchema, 0, () => watcher.dismissHandover())
       register(WATCHER_START_NEW, noPayloadSchema, 0, () => watcher.startNew())
       register(WATCHER_READ_MERGE_TURNS, noPayloadSchema, 0, () => watcher.readMergeTurns())
+      // Only while Work across machines is on (#1032): Stable registers no machines read.
+      const readMachines = watcher.readMachines
+      if (readMachines) register(WATCHER_READ_MACHINES, noPayloadSchema, 0, () => readMachines.call(watcher))
     }
     register(RECOVERY_NOTICE_LIST, noPayloadSchema, 0, () =>
       dependencies.recoveryNotices?.list() ?? [],

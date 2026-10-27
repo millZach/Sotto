@@ -1,0 +1,316 @@
+<!doctype html>
+<!--
+  Throwaway prototype. Not product code.
+  Question: when a reply gives the user a shell command, how does a one-press
+  "Run in terminal" look, and does it run the command or only type it?
+  Picked: A (Run appears on hover or focus), polished; pressing it runs the
+  command in a new Terminal drawer shell. An Owl feature.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Run a command from a reply</title>
+<style>
+  :root, [data-mode="dark"] {
+    --canvas: oklch(0.1818 0.002 106.6); --surface: oklch(0.1968 0 0); --raised: oklch(0.2318 0 0);
+    --overlay: oklch(0.2568 0 0); --block: oklch(0.205 0.002 106.6); --rule: oklch(0.3218 0 0);
+    --border: oklch(0.3918 0 0); --text: oklch(0.95 0.0348 96.3); --muted: oklch(0.6165 0.0209 96.6);
+    --accent: oklch(0.8612 0.1705 96.5); --accent-soft: oklch(0.3118 0.0194 96.5);
+    --success: oklch(0.78 0.12 150); --error: oklch(0.7022 0.1892 22.2);
+    --term-bg: oklch(0.155 0.002 106.6); --shadow: 0 6px 18px oklch(0 0 0 / 0.45), 0 1px 2px oklch(0 0 0 / 0.4);
+  }
+  [data-mode="light"] {
+    --canvas: oklch(0.9723 0.008 98.9); --surface: oklch(0.9573 0.0062 91.9); --raised: oklch(0.9223 0.0062 91.9);
+    --overlay: oklch(0.99 0.004 98.9); --block: oklch(0.948 0.0062 91.9); --rule: oklch(0.8523 0.0099 91.9);
+    --border: oklch(0.78 0.0099 91.9); --text: oklch(0.2016 0.0296 92.8); --muted: oklch(0.533 0.0188 93.9);
+    --accent: oklch(0.552 0.1129 91.9); --accent-soft: oklch(0.92 0.04 96.5);
+    --success: oklch(0.52 0.12 150); --error: oklch(0.58 0.2 25.4);
+    --term-bg: oklch(0.985 0.004 98.9); --shadow: 0 6px 18px oklch(0.3 0.02 92 / 0.16), 0 1px 2px oklch(0.3 0.02 92 / 0.12);
+  }
+  :root { --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace; --ease: cubic-bezier(.2,.8,.2,1); }
+  [data-motion="reduced"] *, [data-motion="reduced"] *::before, [data-motion="reduced"] *::after {
+    transition-duration: 0ms !important; animation-duration: 0ms !important; animation-iteration-count: 1 !important; }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--canvas); color: var(--text);
+    font: 15px/1.6 Figtree, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .window { position: absolute; inset: 0; display: flex; flex-direction: column; }
+
+  /* strip */
+  .strip { flex: none; display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 12px 0 84px;
+    border-bottom: 1px solid var(--rule); font-size: 13px; color: var(--muted); -webkit-app-region: drag; }
+  .strip .title { color: var(--text); font-weight: 500; }
+  .strip .grow { flex: 1; }
+  .seg { display: inline-flex; padding: 2px; border: 1px solid var(--rule); border-radius: 8px; -webkit-app-region: no-drag; }
+  .seg button { border: 0; background: none; padding: 1px 9px; border-radius: 6px; font-size: 12px; color: var(--muted); cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--raised); color: var(--text); }
+  .lights { position: absolute; left: 14px; top: 13px; display: flex; gap: 8px; }
+  .lights i { width: 12px; height: 12px; border-radius: 50%; background: var(--rule); }
+
+  /* thread */
+  .scroll { flex: 1; min-height: 0; overflow: auto; padding: 28px 0 20px; }
+  .col { width: min(720px, calc(100% - 48px)); margin: 0 auto; }
+  .you { margin: 0 0 28px auto; width: fit-content; max-width: 80%; padding: 9px 14px; border-radius: 14px;
+    background: var(--accent-soft); font-size: 14.5px; }
+  .reply h3 { font-size: 16px; font-weight: 600; margin: 0 0 6px; }
+  .reply p { margin: 0 0 12px; }
+  .reply ol { padding-left: 22px; margin: 0 0 12px; }
+  .reply li { margin-bottom: 10px; }
+  .reply li::marker { color: var(--muted); }
+
+  code.ic { padding: 1px 5px; border: 1px solid var(--rule); border-radius: 5px; background: var(--block);
+    font-family: var(--mono); font-size: 13.5px; overflow-wrap: anywhere;
+    -webkit-box-decoration-break: clone; box-decoration-break: clone;
+    transition: border-color 120ms, background 120ms; }
+
+  /* runnable inline command */
+  .cmd { position: relative; }
+  .cmd:hover code.ic, .cmd:has(:focus-visible) code.ic, .cmd[data-state="running"] code.ic {
+    border-color: color-mix(in oklab, var(--accent) 55%, var(--rule)); background: color-mix(in oklab, var(--accent) 7%, var(--block)); }
+  .anchor { position: relative; display: inline-block; width: 0; height: 1em; }
+  .run { position: absolute; left: -4px; bottom: calc(100% + 7px); z-index: 2;
+    display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px 0 8px; white-space: nowrap;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--overlay); box-shadow: var(--shadow);
+    font-size: 12.5px; font-weight: 500; color: var(--text); cursor: pointer;
+    opacity: 0; transform: translateY(3px); pointer-events: none;
+    transition: opacity 120ms var(--ease), transform 160ms var(--ease), background 120ms; }
+  /* bridge so the pointer can travel from chip to button */
+  .run::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 9px; }
+  .run svg { width: 11px; height: 11px; flex: none; color: var(--accent); }
+  .run:hover { background: var(--raised); }
+  .run:focus-visible { outline-offset: 1px; }
+  .cmd:hover .run, .cmd:has(:focus-visible) .run, .cmd[data-state="running"] .run {
+    opacity: 1; transform: none; pointer-events: auto; transition-delay: 60ms; }
+  .spin { width: 11px; height: 11px; border: 1.5px solid var(--rule); border-top-color: var(--accent); border-radius: 50%;
+    animation: spin 700ms linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .ran { display: none; margin-left: 4px; vertical-align: -1px; color: var(--success); }
+  .ran svg { width: 12px; height: 12px; }
+  .cmd[data-state="ran"] .ran, .cmd[data-state="failed"] .ran { display: inline; }
+  .cmd[data-state="failed"] .ran { color: var(--error); }
+
+  /* code block */
+  .block { margin: 12px 0 14px; border: 1px solid var(--rule); border-radius: 10px; background: var(--block); overflow: hidden; }
+  .block__bar { display: flex; align-items: center; gap: 2px; height: 36px; padding: 0 5px 0 14px; border-bottom: 1px solid var(--rule); }
+  .block__lang { flex: 1; font-size: 12.5px; color: var(--muted); }
+  .bbtn { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; border: 0; border-radius: 6px;
+    background: none; color: var(--muted); font-size: 12.5px; cursor: pointer; transition: background 120ms, color 120ms; }
+  .bbtn svg { width: 12px; height: 12px; }
+  .bbtn:hover { background: var(--raised); color: var(--text); }
+  .bbtn.runb:hover svg { color: var(--accent); }
+  .bbtn .spin { width: 10px; height: 10px; }
+  .block pre { margin: 0; padding: 11px 14px; font: 13px/1.65 var(--mono); overflow: auto; }
+  .tok-k { color: color-mix(in oklab, var(--accent) 85%, var(--text)); }
+
+  /* composer */
+  .composer { flex: none; width: min(720px, calc(100% - 48px)); margin: 0 auto 14px; display: flex; align-items: center; gap: 8px;
+    min-height: 50px; padding: 0 8px 0 16px; border: 1px solid var(--rule); border-radius: 16px; background: var(--surface);
+    color: var(--muted); font-size: 14px; }
+  .composer span { flex: 1; }
+  .ibtn { display: inline-flex; padding: 6px; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; }
+  .ibtn:hover { background: var(--raised); color: var(--text); }
+  .ibtn[aria-pressed="true"] { color: var(--text); background: var(--raised); }
+
+  /* terminal drawer */
+  .drawer { flex: none; height: 0; overflow: hidden; display: flex; flex-direction: column; background: var(--term-bg);
+    border-top: 1px solid transparent; transition: height 220ms var(--ease); }
+  .drawer[data-open] { height: 34%; min-height: 150px; border-top-color: var(--rule); }
+  .tabs { flex: none; display: flex; align-items: center; gap: 2px; height: 34px; padding: 0 6px; border-bottom: 1px solid var(--rule); font-size: 12px; }
+  .tab { display: inline-flex; align-items: center; gap: 7px; max-width: 280px; height: 24px; padding: 0 4px 0 9px; border: 0;
+    border-radius: 6px; background: none; color: var(--muted); font-family: var(--mono); font-size: 11.5px; white-space: nowrap; cursor: pointer; }
+  .tab:hover { color: var(--text); }
+  .tab[aria-selected="true"] { background: var(--raised); color: var(--text); }
+  .tab .x { display: inline-flex; padding: 2px; border-radius: 4px; color: var(--muted); opacity: 0; }
+  .tab:hover .x, .tab[aria-selected="true"] .x { opacity: 1; }
+  .tab .x:hover { background: var(--overlay); color: var(--text); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--muted); }
+  .dot[data-s="running"] { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+  .dot[data-s="done"] { background: var(--success); }
+  .dot[data-s="failed"] { background: var(--error); }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .tabs .grow { flex: 1; }
+  .tabs .meta { color: var(--muted); padding: 0 8px; font-size: 12px; white-space: nowrap; }
+  .term { flex: 1; overflow: auto; padding: 10px 14px; font: 12.5px/1.6 var(--mono); white-space: pre-wrap; color: var(--text); }
+  .term .p { color: var(--accent); }
+  .term .dim { color: var(--muted); }
+  .term .err { color: var(--error); }
+  .caret { display: inline-block; width: 7px; height: 14px; background: var(--text); vertical-align: -2px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+</style>
+</head>
+<body data-mode="dark">
+<div class="window">
+  <div class="lights"><i></i><i></i><i></i></div>
+  <header class="strip">
+    <span class="title">Set up the Mac security agent</span><span>· Claude</span>
+    <span class="grow"></span>
+    <div class="seg" role="group" aria-label="Mode">
+      <button data-mode="dark" aria-pressed="true">Dark</button><button data-mode="light" aria-pressed="false">Light</button>
+    </div>
+    <div class="seg" role="group" aria-label="Motion">
+      <button data-motion="full" aria-pressed="true">Motion</button><button data-motion="reduced" aria-pressed="false">Reduced</button>
+    </div>
+    <div class="seg"><button id="reset">Reset</button></div>
+  </header>
+
+  <main class="scroll">
+    <div class="col">
+      <div class="you">How do I install the security agent on this Mac?</div>
+      <div class="reply">
+        <h3>Your steps</h3>
+        <ol>
+          <li>Run <span class="cmd"><code class="ic">brew install --cask osquery santa</code></span>, then
+            <span class="cmd"><code class="ic">sudo ~/Developer/mac-security-agent/mac/install.sh</code></span>.</li>
+          <li>Open <code class="ic">System Settings › Privacy &amp; Security</code> and allow Santa's system extension.</li>
+          <li>Check that both are running:</li>
+        </ol>
+        <div class="block">
+          <div class="block__bar">
+            <span class="block__lang">zsh</span>
+            <button class="bbtn runb" id="blockRun"><span class="ico"></span><span class="lbl">Run</span></button>
+            <button class="bbtn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="9" height="9" rx="2"/><path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"/></svg><span>Copy</span></button>
+          </div>
+<pre id="blocktext"><span class="tok-k">santactl</span> status
+<span class="tok-k">osqueryi</span> --version</pre>
+        </div>
+        <p>If Santa reports <code class="ic">Mode | Lockdown</code>, tell me and we'll add your apps to its allow list first.</p>
+      </div>
+    </div>
+  </main>
+
+  <div class="composer">
+    <span>Ask for follow-up changes</span>
+    <button class="ibtn" id="drawerToggle" aria-label="Terminal drawer" aria-pressed="false" title="Terminal drawer (⌘J)">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="M4.5 6l2 2-2 2M8.5 10h3"/></svg>
+    </button>
+  </div>
+
+  <section class="drawer" id="drawer" aria-label="Terminal drawer">
+    <div class="tabs" id="tabs" role="tablist"><span class="grow"></span><span class="meta">~/Developer/Sotto</span></div>
+    <div class="term" id="term" role="tabpanel"></div>
+  </section>
+</div>
+
+<script>
+const PLAY = '<svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 1.8v8.4c0 .4.4.6.7.4l6.6-4.2c.3-.2.3-.6 0-.8L3.7 1.4c-.3-.2-.7 0-.7.4z"/></svg>';
+const CHECK = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5l2.3 2.3 4.7-5"/></svg>';
+const CROSS = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 3l6 6M9 3l-6 6"/></svg>';
+const X = '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 2l6 6M8 2l-6 6"/></svg>';
+const SPIN = '<span class="spin" aria-hidden="true"></span>';
+const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const middle = (s, n = 34) => s.length <= n ? s : s.slice(0, Math.ceil(n * .55)) + '…' + s.slice(-Math.floor(n * .45));
+
+/* ---------- triggers ---------- */
+const triggers = [];
+document.querySelectorAll('.cmd').forEach(c => {
+  const cmd = c.querySelector('code').textContent;
+  const a = document.createElement('span'); a.className = 'anchor';
+  const b = document.createElement('button'); b.className = 'run';
+  const ran = document.createElement('span'); ran.className = 'ran'; ran.setAttribute('aria-hidden', 'true');
+  a.appendChild(b); c.prepend(a); c.append(ran);
+  const t = {
+    set(state) {
+      c.dataset.state = state;
+      const label = { idle: 'Run in terminal', running: 'Running in terminal', ran: 'Run again', failed: 'Run again' }[state];
+      b.innerHTML = (state === 'running' ? SPIN : PLAY) + '<span>' + label + '</span>';
+      b.setAttribute('aria-label', label + ': ' + cmd);
+      ran.innerHTML = state === 'failed' ? CROSS : CHECK;
+    }
+  };
+  t.set('idle');
+  b.onclick = () => run(cmd, t);
+  triggers.push(t);
+});
+
+const blockBtn = document.getElementById('blockRun');
+const blockT = {
+  set(state) {
+    blockBtn.querySelector('.ico').innerHTML = state === 'running' ? SPIN : state === 'ran' ? CHECK : state === 'failed' ? CROSS : PLAY;
+    blockBtn.querySelector('.ico').style.color = state === 'ran' ? 'var(--success)' : state === 'failed' ? 'var(--error)' : '';
+    blockBtn.querySelector('.ico').style.display = 'inline-flex';
+    const label = { idle: 'Run', running: 'Running', ran: 'Run again', failed: 'Run again' }[state];
+    blockBtn.querySelector('.lbl').textContent = label;
+    blockBtn.setAttribute('aria-label', state === 'idle' ? 'Run in terminal' : label);
+  }
+};
+blockT.set('idle'); triggers.push(blockT);
+blockBtn.onclick = () => run(document.getElementById('blocktext').textContent.trim(), blockT);
+
+/* ---------- terminal drawer ---------- */
+const drawer = document.getElementById('drawer'), tabs = document.getElementById('tabs'),
+      term = document.getElementById('term'), toggle = document.getElementById('drawerToggle');
+let shells = [], active = null, n = 0, installed = false;
+const openDrawer = open => { drawer.toggleAttribute('data-open', open); toggle.setAttribute('aria-pressed', open); };
+toggle.onclick = () => openDrawer(!drawer.hasAttribute('data-open'));
+
+const PROMPT = '<span class="p">~/Developer/Sotto ❯</span> ';
+function script(cmd) {
+  if (cmd.startsWith('brew')) { installed = true; return { out: ['<span class="dim">==> Downloading https://pkg.osquery.io/darwin/osquery-5.14.1.pkg</span>', '==> Installing Cask <b>osquery</b>', '🍺  osquery was successfully installed!', '==> Installing Cask <b>santa</b>', '🍺  santa was successfully installed!'], end: 'done' }; }
+  if (cmd.startsWith('sudo')) return { out: ['Password:'], end: 'waiting' };
+  if (!installed) return { out: ['<span class="err">zsh: command not found: santactl</span>'], end: 'failed' };
+  return { out: ['>>> Daemon Info', '  Mode                      | Monitor', '  File Logging              | Yes', 'osqueryi version 5.14.1'], end: 'done' };
+}
+
+function render() {
+  tabs.querySelectorAll('.tab').forEach(e => e.remove());
+  const grow = tabs.querySelector('.grow');
+  shells.forEach(s => {
+    const el = document.createElement('button');
+    el.className = 'tab'; el.setAttribute('role', 'tab'); el.setAttribute('aria-selected', s === active);
+    el.title = s.cmd;
+    el.innerHTML = `<span class="dot" data-s="${s.status}" aria-label="${s.status}"></span><span>${esc(middle(s.cmd.replace(/\n/g, ' && ')))}</span><span class="x" role="button" aria-label="Close shell">${X}</span>`;
+    el.onclick = e => {
+      if (e.target.closest('.x')) { shells = shells.filter(x => x !== s); if (active === s) active = shells.at(-1) || null; if (!shells.length) openDrawer(false); }
+      else active = s;
+      render();
+    };
+    tabs.insertBefore(el, grow);
+  });
+  term.innerHTML = active ? active.html + (active.caret ? '<span class="caret"></span>' : '') : '';
+  term.scrollTop = 1e6;
+}
+
+function run(cmd, trigger) {
+  const s = { id: ++n, cmd, status: 'running', html: `<span class="dim">Shell ${n}</span>\n`, caret: true };
+  shells.push(s); active = s; openDrawer(true);
+  trigger.set('running'); render();
+  const line = cmd.replace(/\n/g, ' && ');
+  let i = 0;
+  const base = s.html;
+  const type = setInterval(() => {
+    s.html = base + PROMPT + esc(line.slice(0, ++i));
+    if (active === s) render();
+    if (i < line.length) return;
+    clearInterval(type);
+    const { out, end } = script(cmd);
+    s.html += '\n'; s.caret = false;
+    let j = 0;
+    const emit = setInterval(() => {
+      if (j < out.length) { s.html += out[j] + (end === 'waiting' && j === out.length - 1 ? ' ' : '\n'); j++; if (active === s) render(); return; }
+      clearInterval(emit);
+      if (end === 'waiting') { s.caret = true; trigger.set('ran'); }
+      else { s.status = end; s.html += PROMPT; s.caret = true; trigger.set(end === 'failed' ? 'failed' : 'ran'); }
+      render();
+    }, 220);
+  }, 12);
+}
+
+/* ---------- controls ---------- */
+document.querySelectorAll('[data-mode]').forEach(b => b.tagName === 'BUTTON' && (b.onclick = () => {
+  document.body.dataset.mode = b.dataset.mode;
+  document.querySelectorAll('button[data-mode]').forEach(x => x.setAttribute('aria-pressed', x === b));
+}));
+document.querySelectorAll('button[data-motion]').forEach(b => b.onclick = () => {
+  document.body.dataset.motion = b.dataset.motion;
+  document.querySelectorAll('button[data-motion]').forEach(x => x.setAttribute('aria-pressed', x === b));
+});
+if (matchMedia('(prefers-reduced-motion: reduce)').matches) document.querySelector('button[data-motion="reduced"]').click();
+document.getElementById('reset').onclick = () => {
+  shells = []; active = null; n = 0; installed = false; openDrawer(false); render(); triggers.forEach(t => t.set('idle'));
+};
+</script>
+</body>
+</html>

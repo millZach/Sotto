@@ -232,11 +232,28 @@ public struct AgentsRow: Identifiable, Equatable, Sendable {
     public var spokenLabel: String {
         switch kind {
         case .thread:
-            let provider = providerID.map { ", delegated thread on \(AgentNames.name($0))" } ?? ", delegated thread"
-            return title + provider + (status.map { ", \($0)" } ?? "") + (waitingFor != nil ? ". Opens it to answer" : ". Opens it")
+            let what = providerID.map {
+                String(localized: "\(title), delegated thread on \(AgentNames.name($0))", bundle: .module,
+                       comment: "A delegated thread's row for VoiceOver; the first %@ is its title, the second its agent's name, such as Codex")
+            } ?? String(localized: "\(title), delegated thread", bundle: .module, comment: "A delegated thread's row for VoiceOver; %@ is its title")
+            let said = Self.withStatus(what, status)
+            return waitingFor != nil
+                ? String(localized: "\(said). Opens it to answer", bundle: .module,
+                         comment: "A delegated thread's row for VoiceOver; %@ is what the row is and what it is doing")
+                : String(localized: "\(said). Opens it", bundle: .module,
+                         comment: "A delegated thread's row for VoiceOver; %@ is what the row is and what it is doing")
         case .agent:
-            return title + (workflow ? ", workflow" : ", agent") + (status.map { ", \($0)" } ?? "")
+            let what = workflow
+                ? String(localized: "\(title), workflow", bundle: .module, comment: "A workflow's row for VoiceOver; %@ is its title")
+                : String(localized: "\(title), agent", bundle: .module, comment: "A sub-agent's row for VoiceOver; %@ is its title")
+            return Self.withStatus(what, status)
         }
+    }
+    /// What the row is, then what it is doing where that is known.
+    private static func withStatus(_ what: String, _ status: String?) -> String {
+        guard let status else { return what }
+        return String(localized: "\(what), \(status)", bundle: .module,
+                      comment: "A row for VoiceOver; the first %@ is what the row is, the second what it is doing, such as Working")
     }
 }
 
@@ -246,30 +263,55 @@ public enum AgentsRoster {
 
     /// The kind of work a delegation is for, as the desktop names it (`DELEGATION_WORK_TITLES`).
     public static func workTitle(_ work: String?) -> String? {
-        ["building": "Building", "ui": "UI work", "code-review": "Code review", "research": "Research", "computer-use": "Computer use"][work ?? ""]
+        let titles: [String: String] = [
+            "building": String(localized: "Building", bundle: .module, comment: "A kind of delegated work: writing and changing code"),
+            "ui": String(localized: "UI work", bundle: .module, comment: "A kind of delegated work: screens, styles and how they look"),
+            "code-review": String(localized: "Code review", bundle: .module, comment: "A kind of delegated work"),
+            "research": String(localized: "Research", bundle: .module, comment: "A kind of delegated work: reading and reporting back"),
+            "computer-use": String(localized: "Computer use", bundle: .module, comment: "A kind of delegated work: driving apps on the computer"),
+        ]
+        return titles[work ?? ""]
     }
     /// A delegation's outcome in the glossary's words (`DELEGATION_OUTCOME_WORDS`).
     public static func outcomeWord(_ outcome: String) -> String {
-        ["working": "Working", "background": "Background work", "answered": "Answered", "failed": "Failed", "stopped": "Stopped",
-         "paused": "Paused", "unknown": "Unknown", "refused": "Refused"][outcome] ?? "Unknown"
+        let unknown = String(localized: "Unknown", bundle: .module, comment: "A delegated thread's outcome when the computer can't say it")
+        let words: [String: String] = [
+            "working": String(localized: "Working", bundle: .module, comment: "A delegated thread's outcome or a sub-agent's status: it is running"),
+            "background": String(localized: "Background work", bundle: .module, comment: "A delegated thread's outcome: work goes on after its turn"),
+            "answered": String(localized: "Answered", bundle: .module, comment: "A delegated thread's outcome: it replied"),
+            "failed": String(localized: "Failed", bundle: .module, comment: "A delegated thread's outcome or a sub-agent's status"),
+            "stopped": String(localized: "Stopped", bundle: .module, comment: "A delegated thread's outcome: it was stopped"),
+            "paused": String(localized: "Paused", bundle: .module, comment: "A delegated thread's outcome"),
+            "unknown": unknown,
+            "refused": String(localized: "Refused", bundle: .module, comment: "A delegated thread's outcome: the delegation was refused"),
+        ]
+        return words[outcome] ?? unknown
     }
     /// A sub-agent's status as Tools › Agents words it.
     public static func agentWord(_ status: String) -> String {
-        ["running": "Working", "completed": "Finished", "failed": "Failed", "interrupted": "Interrupted"][status] ?? "Last seen working"
+        let words: [String: String] = [
+            "running": String(localized: "Working", bundle: .module, comment: "A delegated thread's outcome or a sub-agent's status: it is running"),
+            "completed": String(localized: "Finished", bundle: .module, comment: "A sub-agent's status"),
+            "failed": String(localized: "Failed", bundle: .module, comment: "A delegated thread's outcome or a sub-agent's status"),
+            "interrupted": String(localized: "Interrupted", bundle: .module, comment: "A sub-agent's status: it was stopped before it finished"),
+        ]
+        return words[status] ?? String(localized: "Last seen working", bundle: .module,
+                                       comment: "A sub-agent's status when the computer can no longer confirm it, last seen running")
     }
     /// The heading over an opened agent's latest words, by its run's status, as Tools › Agents heads them.
     public static func resultHeading(_ status: String) -> String {
         switch status {
-        case "running": return "Latest update"
-        case "unknown": return "Last update"
-        case "failed": return "What happened"
-        default: return "Result"
+        case "running": return String(localized: "Latest update", bundle: .module, comment: "Heads a running agent's newest words")
+        case "unknown": return String(localized: "Last update", bundle: .module, comment: "Heads the last words of an agent the computer can no longer confirm")
+        case "failed": return String(localized: "What happened", bundle: .module, comment: "Heads a failed agent's last words")
+        default: return String(localized: "Result", bundle: .module, comment: "Heads a finished agent's result")
         }
     }
     /// An opened agent's latest words, or what to say when it reported none.
     public static func resultWords(_ assignment: SubagentAssignment) -> String {
         if let result = assignment.result, !result.isEmpty { return result }
-        return assignment.status == "running" ? "No result reported yet." : "No result was reported."
+        return assignment.status == "running" ? String(localized: "No result reported yet.", bundle: .module)
+            : String(localized: "No result was reported.", bundle: .module)
     }
     /// What a delegated thread waits on the user for: a permission ahead of a question. A settled thread still waits, as it
     /// stays in Needs you on the Threads tab: only the user can answer it (ADR-0081 decision 11, ADR-0004).
@@ -394,12 +436,19 @@ public enum AgentsRoster {
         let threads = rows.filter { $0.kind == .thread }
         let agentRows = rows.filter { $0.kind == .agent && !$0.workflow }
         let agents = max(summary?.total ?? 0, agentRows.count)
-        let title = [threads.isEmpty ? nil : plural(threads.count, "delegated thread"), agents == 0 ? nil : plural(agents, "agent")]
+        let title = [threads.isEmpty ? nil : delegatedThreads(threads.count), agents == 0 ? nil : agentCount(agents)]
             .compactMap { $0 }.joined(separator: " · ")
         let needs = threads.filter { $0.tone == .needs }.count
         let working = threads.filter { $0.tone == .working }.count + max(summary?.working ?? 0, agentRows.filter { $0.tone == .working }.count)
-        let detail = [needs > 0 ? "\(needs) needs you" : nil, working > 0 ? "\(working) working" : nil].compactMap { $0 }.joined(separator: " · ")
-        return (title.isEmpty ? "Agents" : title, detail.isEmpty ? ((summary?.unknown ?? 0) > 0 ? "Activity not confirmed" : "None working") : detail)
+        let needing = needs == 1 ? String(localized: "1 needs you", bundle: .module, comment: "How many delegated threads need the user")
+            : String(localized: "\(needs) needs you", bundle: .module, comment: "How many delegated threads need the user")
+        let busy = working == 1 ? String(localized: "1 working", bundle: .module, comment: "How many delegated threads and agents are working")
+            : String(localized: "\(working) working", bundle: .module, comment: "How many delegated threads and agents are working")
+        let detail = [needs > 0 ? needing : nil, working > 0 ? busy : nil].compactMap { $0 }.joined(separator: " · ")
+        let idle = (summary?.unknown ?? 0) > 0
+            ? String(localized: "Activity not confirmed", bundle: .module, comment: "The computer can't confirm what its agents are doing")
+            : String(localized: "None working", bundle: .module, comment: "No delegated thread or agent is working")
+        return (title.isEmpty ? String(localized: "Agents", bundle: .module) : title, detail.isEmpty ? idle : detail)
     }
 
     /// Reported agents newest start first, each followed by the agents reported under it, newest first too, so a
@@ -449,9 +498,12 @@ public enum AgentsRoster {
         else { outcome = read ? "unknown" : nil }
         let working = outcome == "working" || outcome == "background"
         let status: String?
-        if let waiting { status = waiting == "question" ? "Needs your answer" : "Needs your approval" }
-        else if attention { status = "Needs attention" }
-        else if thread.finishedUnread == true && !working && !settled { status = "Just finished" }
+        if let waiting {
+            status = waiting == "question" ? String(localized: "Needs your answer", bundle: .module)
+                : String(localized: "Needs your approval", bundle: .module)
+        }
+        else if attention { status = String(localized: "Needs attention", bundle: .module) }
+        else if thread.finishedUnread == true && !working && !settled { status = String(localized: "Just finished", bundle: .module) }
         else if let outcome { status = outcomeWord(outcome) }
         else { status = nil }
         let tone: AgentsRow.Tone
@@ -487,11 +539,14 @@ public enum AgentsRoster {
         else if running { tone = .working }
         else if row.status == "failed" { tone = .failed }
         else { tone = .done }
-        let title = row.title.isEmpty ? (row.kind == "workflow" ? "Workflow" : "Agent task") : row.title
+        let title = row.title.isEmpty
+            ? (row.kind == "workflow" ? String(localized: "Workflow", bundle: .module, comment: "Stands in for a workflow's title when it has none")
+                : String(localized: "Agent task", bundle: .module, comment: "Stands in for a sub-agent's title when it has none"))
+            : row.title
         let preview: String? = row.description.isEmpty || row.description == row.title ? nil : row.description
         let model = row.model ?? ""
         var result = AgentsRow(id: "agent:" + row.id, kind: .agent, level: depth + 1, title: title, threadID: nil, agentID: row.id, providerID: nil,
-                               delegatedBy: nil, preview: preview, facts: [model.isEmpty ? "Model not reported" : model],
+                               delegatedBy: nil, preview: preview, facts: [model.isEmpty ? String(localized: "Model not reported", bundle: .module) : model],
                                startedAt: start, elapsed: elapsed, status: agentWord(row.status), tone: tone, waitingFor: nil)
         result.workflow = row.kind == "workflow"
         result.detailsKey = [row.assignmentId ?? "", row.revision.map { String($0) } ?? "", row.status].joined(separator: "#")
@@ -502,14 +557,19 @@ public enum AgentsRoster {
     static func newer(_ first: Date?, _ second: Date?) -> Bool {
         (first ?? .distantPast) > (second ?? .distantPast)
     }
-    static func plural(_ count: Int, _ noun: String) -> String { "\(count) \(noun)\(count == 1 ? "" : "s")" }
+    static func delegatedThreads(_ count: Int) -> String {
+        count == 1 ? String(localized: "1 delegated thread", bundle: .module) : String(localized: "\(count) delegated threads", bundle: .module)
+    }
+    static func agentCount(_ count: Int) -> String {
+        count == 1 ? String(localized: "1 agent", bundle: .module) : String(localized: "\(count) agents", bundle: .module)
+    }
 }
 
 public extension AgentNames {
     /// A provider's name, or nil for one Sotto doesn't know.
     static func known(_ providerID: String?) -> String? {
         let name = Self.name(providerID)
-        return name == "The agent" ? nil : name
+        return name == Self.name(nil) ? nil : name
     }
 }
 

@@ -1,6 +1,10 @@
-import { THINKING_TITLE, type AgentActivity } from '../../../shared/agentActivity'
+import { i18n, type MessageDescriptor } from '@lingui/core'
+import { msg, plural, t } from '@lingui/core/macro'
+
+import { isTerminalActivity, THINKING_TITLE, type AgentActivity } from '../../../shared/agentActivity'
 import { isVisualMessage, type AgentMessage, type AgentThread } from '../../../shared/agents'
 import { formatTokenCount } from '../../../shared/threadUsage'
+import { shownCount } from '../state/interfaceNumbers'
 
 /**
  * Where a thread's activity records sit in its transcript and how they read. Provider neutral:
@@ -32,6 +36,12 @@ export interface ActivityPlacement {
   readonly leading: readonly ActivityGroup[]
   /** Follows the last message: records with no anchor Sotto can show. */
   readonly trailing: readonly ActivityGroup[]
+  /**
+   * The newest turn of the messages the window holds, drawn or not, ended, and another turn is running: its own lifecycle
+   * completed, failed or stopped, and a lifecycle record of a turn that is not its own says it runs. Only then is the work
+   * going on not the newest turn's, such as Watcher's news turn, whose wake-up the conversation leaves out. Absent otherwise.
+   */
+  readonly newestTurnEnded?: true
 }
 
 const EMPTY: ActivityPlacement = { after: new Map(), unshown: new Map(), before: new Map(), leading: [], trailing: [] }
@@ -167,8 +177,34 @@ export function placeActivities(
   }
   // A reply opens its unshown turn even when none of the turn's work is shown, or the work is gone from the records.
   for (const id of [...named, ...[...places.values()].flatMap(place => place.reply ?? [])]) if (visible.has(id) && !unshown.has(id)) unshown.set(id, [])
-  return { after, unshown, before, leading, trailing }
+  return { after, unshown, before, leading, trailing, ...newestTurnEnded(messages, sorted, anchors, named, places) ? { newestTurnEnded: true as const } : {} }
 }
+
+/**
+ * Whether the newest turn ended while another runs (`ActivityPlacement.newestTurnEnded`), read over every message the
+ * window holds, so a window that starts inside the turn still finds the records that follow its first message. The turn
+ * runs from its opening, the last user message or reply that opens an unshown turn, to the end. Its own turns are the ones
+ * whose records follow those messages, the unshown turn a reply of it opens, and the ones its messages' IDs, or the message
+ * its replies name as the start of their turn, stand for. Only lifecycle records count: work a provider leaves running
+ * after its turn ended, such as a background agent or a plan, says nothing about which turn is going.
+ */
+function newestTurnEnded(messages: readonly AgentMessage[], sorted: readonly AgentActivity[], anchors: ReadonlyMap<AgentActivity, string | null>,
+  named: ReadonlySet<string>, places: ReadonlyMap<string, { readonly reply?: string; readonly next?: string }>): boolean {
+  const opens = new Set([...named, ...[...places.values()].flatMap(place => place.reply ?? [])])
+  const from = Math.max(0, messages.findLastIndex(message => message.role === 'user' || opens.has(message.id)))
+  const ids = new Set(messages.slice(from).flatMap(message => message.turnMessageId === undefined ? [message.id] : [message.id, message.turnMessageId]))
+  const own = new Set(ids)
+  for (const record of sorted) { const anchor = anchors.get(record); if (anchor && ids.has(anchor)) own.add(record.turnId) }
+  for (const [turnId, place] of places) if (place.reply !== undefined && ids.has(place.reply)) own.add(turnId)
+  const lifecycles = new Map(sorted.filter(isTurnRecord).map(record => [record.turnId, record.status] as const))
+  let ended = false, going = false, another = false
+  for (const [turnId, status] of lifecycles) {
+    if (own.has(turnId)) { if (status === 'running') going = true; else if (isTerminalActivity(status)) ended = true }
+    else if (status === 'running') another = true
+  }
+  return ended && !going && another
+}
+
 
 /**
  * The first reply of each turn whose message the conversation leaves out, told by the turn the reply names (`turnMessageId`).
@@ -276,6 +312,16 @@ export function liveTurnId(thread: Pick<AgentThread, 'status' | 'activities' | '
   return turns.at(-1)?.turnId ?? thread.messages.findLast(message => message.role === 'user')?.id ?? null
 }
 
+/**
+ * A turn's steps: every record its work draws as a row, in the order they were reported. Its lifecycle record says how
+ * the turn went rather than what it did, and a compaction is a boundary drawn across the transcript, so neither counts.
+ */
+export function turnSteps(thread: Pick<AgentThread, 'activities'>, turnId: string): AgentActivity[] {
+  return (thread.activities ?? []).filter(record => record.turnId === turnId && isStep(record)).sort(bySequence)
+}
+export const isStep = (record: AgentActivity): boolean => !isTurnRecord(record) && record.kind !== 'compaction'
+export const stepsLabel = (count: number): string => plural(count, { one: `${{ stepCount: shownCount(count) }} step`, other: `${{ stepCount: shownCount(count) }} steps` })
+
 /** The most recent record of the live turn that is still running: the current action. */
 export function currentAction(thread: Pick<AgentThread, 'activities'>, turnId: string): AgentActivity | undefined {
   return (thread.activities ?? []).filter(record => record.turnId === turnId && !isTurnRecord(record) && record.status === 'running').sort(bySequence).at(-1)
@@ -340,7 +386,7 @@ export function heldLongEnough(action: Pick<AgentActivity, 'startedAt'>, now: nu
 
 /** What the readout calls the action: the command as it was run, else the provider's own title. */
 export function heldLabel(action: Pick<AgentActivity, 'command' | 'title'>): string {
-  return oneLine(action.command ?? '') || oneLine(action.title) || 'Running'
+  return oneLine(action.command ?? '') || oneLine(action.title) || t({ message: 'Running', comment: 'An action that is running, when it has no name of its own.' })
 }
 
 export function formatDuration(ms: number): string {
@@ -369,17 +415,17 @@ function recordDuration(record: Pick<AgentActivity, 'durationMs' | 'startedAt' |
 export function timingNote(record: AgentActivity, provider: string): string {
   if (record.status === 'running') return ''
   const duration = recordDuration(record)
-  if (duration === undefined) return 'Time not recorded'
-  if (record.timingSource === 'provider') return `Reported by ${provider}`
+  if (duration === undefined) return t`Time not recorded`
+  const reported = t({ message: `Reported by ${provider}`, comment: 'Where an action\'s time came from; {provider} is the provider\'s name.' })
+  if (record.timingSource === 'provider') return reported
   const span = record.startedAt && record.completedAt ? recordDuration({ startedAt: record.startedAt, completedAt: record.completedAt }) : undefined
-  return record.timingSource === 'observed' && span !== undefined && (record.durationMs === undefined || record.durationMs === span) ? 'Timed by Sotto' : `Reported by ${provider}`
+  return record.timingSource === 'observed' && span !== undefined && (record.durationMs === undefined || record.durationMs === span) ? t`Timed by Sotto` : reported
 }
 
 const firstLine = (value: string | undefined): string => (value ?? '').split(/\r?\n/u).map(line => line.trim()).find(Boolean) ?? ''
 /** A one-line preview reads as words: heading marks, emphasis and code ticks belong to the Markdown, not the text. */
 const plainLine = (value: string | undefined): string => firstLine(value).replace(/^#{1,6}\s+/u, '').replace(/(\*\*|__)(.+?)\1/gu, '$2').replace(/`([^`]+)`/gu, '$1')
 const oneLine = (value: string): string => value.replace(/\s+/gu, ' ').trim()
-const plural = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`
 
 /** "spawnAgent" and "wait_agents" read as words; anything else stays as the provider named it. */
 function toolName(title: string): string {
@@ -401,8 +447,12 @@ export interface ActivityLabel {
 /** An open multi-file change lists every file below, so its row names the count instead of repeating the first path. */
 export function openActivityLabel(record: AgentActivity): ActivityLabel {
   const changes = record.changes ?? []
-  return record.kind === 'file-change' && changes.length > 1
-    ? { lead: 'Changed', subject: plural(changes.length, 'file', 'files'), mono: false, preview: '' }
+  const count = changes.length
+  return activityLeadKind(record, true) === 'changed'
+    ? {
+        lead: t({ message: 'Changed', comment: 'Before a count of files: Changed 3 files.' }),
+        subject: plural(count, { one: `${{ files: shownCount(count) }} file`, other: `${{ files: shownCount(count) }} files` }), mono: false, preview: '',
+      }
     : { ...activityLabel(record), preview: '' }
 }
 
@@ -436,12 +486,56 @@ function inputPreview(input: Record<string, unknown> | null): string {
   return ''
 }
 
-const CHANGE_VERBS: Record<string, string> = {
-  add: 'Created', create: 'Created', delete: 'Deleted', update: 'Edited', edit: 'Edited', move: 'Moved',
-  Write: 'Wrote', Edit: 'Edited', MultiEdit: 'Edited', NotebookEdit: 'Edited',
+type ChangeVerb = 'created' | 'deleted' | 'edited' | 'moved' | 'wrote'
+const CHANGE_VERBS: Record<string, ChangeVerb> = {
+  add: 'created', create: 'created', delete: 'deleted', update: 'edited', edit: 'edited', move: 'moved',
+  Write: 'wrote', Edit: 'edited', MultiEdit: 'edited', NotebookEdit: 'edited',
+}
+/** Before a file's path, such as "Edited src/app.ts". */
+const CHANGE_VERB_WORDS: Record<ChangeVerb, MessageDescriptor> = {
+  created: msg({ message: 'Created', comment: 'A file change, before the file\'s path.' }),
+  deleted: msg({ message: 'Deleted', context: 'file change', comment: 'A file change, before the file\'s path.' }),
+  edited: msg({ message: 'Edited', comment: 'A file change, before the file\'s path.' }),
+  moved: msg({ message: 'Moved', comment: 'A file change, before the file\'s path.' }),
+  wrote: msg({ message: 'Wrote', comment: 'A file change, before the file\'s path.' }),
+}
+const changeVerbOf = (kind: string): ChangeVerb | undefined => Object.hasOwn(CHANGE_VERBS, kind) ? CHANGE_VERBS[kind] : undefined
+
+/** The verb that leads a row's subject: a file change's, or "Changed" over an open change of several files. */
+export type ActivityLeadKind = ChangeVerb | 'changed'
+
+/**
+ * Which verb leads a row, if any, so the window draws the verb and its subject as one message: a language puts the
+ * path where its grammar wants it (ADR-0123). `open` is the row of an open change, which names its count instead.
+ */
+export function activityLeadKind(record: AgentActivity, open = false): ActivityLeadKind | null {
+  if (record.kind !== 'file-change') return null
+  const changes = record.changes ?? []
+  if (!changes.length) return null
+  if (open && changes.length > 1) return 'changed'
+  const verbs = new Set(changes.map(change => changeVerbOf(change.kind) ?? change.kind))
+  const only = verbs.size === 1 ? [...verbs][0]! : ''
+  return only === 'created' || only === 'deleted' || only === 'wrote' || only === 'moved' ? only : 'edited'
+}
+
+/** A row's verb and subject as one sentence to read aloud, such as "Edited src/app.ts". */
+export function spokenActivity(kind: ActivityLeadKind | null, label: Pick<ActivityLabel, 'lead' | 'subject'>): string {
+  const subject = label.subject
+  switch (kind) {
+    case 'created': return t({ message: `Created ${subject}`, comment: 'A file change; {subject} is the file\'s path.' })
+    case 'deleted': return t({ message: `Deleted ${subject}`, comment: 'A file change; {subject} is the file\'s path.' })
+    case 'edited': return t({ message: `Edited ${subject}`, comment: 'A file change; {subject} is the file\'s path.' })
+    case 'moved': return t({ message: `Moved ${subject}`, comment: 'A file change; {subject} is the file\'s path.' })
+    case 'wrote': return t({ message: `Wrote ${subject}`, comment: 'A file change; {subject} is the file\'s path.' })
+    case 'changed': return t({ message: `Changed ${subject}`, comment: 'An open change of several files; {subject} is how many, such as 3 files.' })
+    default: return label.lead ? `${label.lead} ${subject}` : subject
+  }
 }
 /** Codex, Claude and Grok name the same changes differently; an unrecognized kind is shown as reported. */
-export const changeVerb = (kind: string): string => CHANGE_VERBS[kind] ?? kind
+export const changeVerb = (kind: string): string => {
+  const verb = changeVerbOf(kind)
+  return verb === undefined ? kind : i18n._(CHANGE_VERB_WORDS[verb])
+}
 
 const BEFORE = '--- before\n'
 const AFTER = '\n+++ after\n'
@@ -495,9 +589,10 @@ export function inputDetail(record: AgentActivity): string {
 /** What a compaction reclaimed, naming only the sides the provider actually reported. */
 export function compactionSummary(record: AgentActivity): string {
   const before = record.context?.before, after = record.context?.after
-  if (before !== undefined && after !== undefined) return `${formatTokenCount(before)} → ${formatTokenCount(after)} tokens`
-  if (after !== undefined) return `now ${formatTokenCount(after)} tokens`
-  if (before !== undefined) return `was ${formatTokenCount(before)} tokens`
+  const from = before === undefined ? '' : formatTokenCount(before), to = after === undefined ? '' : formatTokenCount(after)
+  if (before !== undefined && after !== undefined) return t({ message: `${from} → ${to} tokens`, comment: 'The context\'s size before and after a compaction, such as 120k → 30k tokens.' })
+  if (after !== undefined) return t({ message: `now ${to} tokens`, comment: 'The context\'s size after a compaction.' })
+  if (before !== undefined) return t({ message: `was ${from} tokens`, comment: 'The context\'s size before a compaction.' })
   return ''
 }
 
@@ -514,10 +609,10 @@ export function activityLabel(record: AgentActivity): ActivityLabel {
     case 'file-change': {
       const changes = record.changes ?? []
       if (!changes.length) return { lead: '', subject: record.title, mono: false, preview: '' }
-      const verbs = new Set(changes.map(change => changeVerb(change.kind)))
-      const only = verbs.size === 1 ? [...verbs][0]! : ''
-      const lead = ['Created', 'Deleted', 'Wrote', 'Moved'].includes(only) ? only : 'Edited'
-      return { lead, subject: changes[0]!.path, mono: true, preview: changes.length > 1 ? `and ${plural(changes.length - 1, 'more file', 'more files')}` : '' }
+      const kind = activityLeadKind(record)
+      const lead = i18n._(CHANGE_VERB_WORDS[kind === null || kind === 'changed' ? 'edited' : kind])
+      const more = changes.length - 1
+      return { lead, subject: changes[0]!.path, mono: true, preview: more > 0 ? plural(more, { one: `and ${{ files: shownCount(more) }} more file`, other: `and ${{ files: shownCount(more) }} more files` }) : '' }
     }
     case 'subagent': {
       const input = activityInput(record)
@@ -525,12 +620,13 @@ export function activityLabel(record: AgentActivity): ActivityLabel {
       const agents = record.agents?.filter(agent => agent.kind !== 'workflow').length ?? 0
       const described = typeof input?.description === 'string' && input.description.trim() ? oneLine(input.description) : ''
       return { lead: '', subject: described || toolName(record.title), mono: false,
-        preview: agents ? plural(agents, 'agent', 'agents') : input ? '' : plainLine(record.text) }
+        preview: agents ? plural(agents, { one: '# agent', other: '# agents' }) : input ? '' : plainLine(record.text) }
     }
     case 'plan': {
       const steps = record.steps ?? []
+      const done = steps.filter(step => step.status === 'completed').length, total = steps.length
       return { lead: '', subject: record.title, mono: false,
-        preview: steps.length ? `${steps.filter(step => step.status === 'completed').length} of ${steps.length} done` : plainLine(record.text) }
+        preview: total ? t({ message: `${{ done: shownCount(done) }} of ${{ total: shownCount(total) }} done`, comment: 'A plan\'s steps: 2 of 5 done.' }) : plainLine(record.text) }
     }
     case 'compaction':
       return { lead: '', subject: record.title, mono: false, preview: compactionSummary(record) }
@@ -571,10 +667,13 @@ export function nestActivities(records: readonly AgentActivity[]): readonly Acti
 /** The one fact beside a row. Running rows add their clock separately. */
 export function statusText(record: AgentActivity, connected: boolean): string {
   switch (record.status) {
-    case 'running': return connected ? 'Running' : 'Last seen running'
-    case 'failed': return record.exitCode !== undefined && record.exitCode !== 0 ? `Exit ${record.exitCode}` : 'Failed'
-    case 'interrupted': return 'Stopped'
-    case 'unknown': return 'Outcome unknown'
+    case 'running': return connected ? t({ message: 'Running', comment: 'An action that is running, beside its row.' }) : t`Last seen running`
+    case 'failed': {
+      const code = record.exitCode
+      return code !== undefined && code !== 0 ? t({ message: `Exit ${code}`, comment: 'A command that ended with this exit code.' }) : t({ message: 'Failed', comment: 'An action or turn that failed.' })
+    }
+    case 'interrupted': return t({ message: 'Stopped', comment: 'An action or turn that was stopped.' })
+    case 'unknown': return t`Outcome unknown`
     default: {
       const duration = recordDuration(record)
       return duration === undefined ? '' : formatDuration(duration)
@@ -582,11 +681,19 @@ export function statusText(record: AgentActivity, connected: boolean): string {
   }
 }
 
-const AGENT_STATUS: Record<string, string> = {
-  pendingInit: 'Starting', running: 'Running', active: 'Running', completed: 'Completed', errored: 'Failed', failed: 'Failed',
-  shutdown: 'Closed', notFound: 'Not found', interrupted: 'Stopped', unknown: 'Unknown',
+const AGENT_STATUS: Record<string, MessageDescriptor> = {
+  pendingInit: msg({ message: 'Starting', comment: 'A background agent\'s status.' }),
+  running: msg({ message: 'Running', comment: 'An action that is running, beside its row.' }),
+  active: msg({ message: 'Running', comment: 'An action that is running, beside its row.' }),
+  completed: msg({ message: 'Completed', comment: 'A background agent\'s status.' }),
+  errored: msg({ message: 'Failed', comment: 'An action or turn that failed.' }),
+  failed: msg({ message: 'Failed', comment: 'An action or turn that failed.' }),
+  shutdown: msg({ message: 'Closed', comment: 'A background agent\'s status.' }),
+  notFound: msg({ message: 'Not found', comment: 'A background agent\'s status.' }),
+  interrupted: msg({ message: 'Stopped', comment: 'An action or turn that was stopped.' }),
+  unknown: msg({ message: 'Unknown', comment: 'A background agent\'s status.' }),
 }
-export const agentStatusLabel = (status: string): string => AGENT_STATUS[status] ?? status
+export const agentStatusLabel = (status: string): string => Object.hasOwn(AGENT_STATUS, status) ? i18n._(AGENT_STATUS[status]!) : status
 
 /** "Ran 3 commands, changed 2 files": counts of what the provider reported, nothing estimated. */
 export function groupSummary(records: readonly AgentActivity[]): string {
@@ -595,16 +702,19 @@ export function groupSummary(records: readonly AgentActivity[]): string {
   // Thinking a provider streamed and Codex's reasoning summaries share a row, but not a name.
   const thoughts = count('reasoning').filter(record => record.title === THINKING_TITLE).length
   const summaries = count('reasoning').length - thoughts
+  const commands = count('command').length, changed = files.size, tools = count('tool').length, actions = count('subagent').length
+  const notices = count('status').length
+  // Each part starts lowercase: they are joined with commas, and the first letter of the whole is made a capital.
   const parts = [
-    count('command').length ? `ran ${plural(count('command').length, 'command', 'commands')}` : '',
-    files.size ? `changed ${plural(files.size, 'file', 'files')}` : '',
-    count('tool').length ? `used ${plural(count('tool').length, 'tool', 'tools')}` : '',
-    count('subagent').length ? plural(count('subagent').length, 'agent action', 'agent actions') : '',
-    count('plan').length ? 'updated the plan' : '',
-    summaries ? plural(summaries, 'reasoning summary', 'reasoning summaries') : '',
-    thoughts ? thoughts === 1 ? 'thought once' : `thought ${thoughts} times` : '',
-    count('status').length ? plural(count('status').length, 'notice', 'notices') : '',
-    count('compaction').length ? 'compacted the context' : '',
+    commands ? plural(commands, { one: `ran ${{ commandCount: shownCount(commands) }} command`, other: `ran ${{ commandCount: shownCount(commands) }} commands` }) : '',
+    changed ? plural(changed, { one: `changed ${{ fileCount: shownCount(changed) }} file`, other: `changed ${{ fileCount: shownCount(changed) }} files` }) : '',
+    tools ? plural(tools, { one: `used ${{ toolCount: shownCount(tools) }} tool`, other: `used ${{ toolCount: shownCount(tools) }} tools` }) : '',
+    actions ? plural(actions, { one: `${{ actionCount: shownCount(actions) }} agent action`, other: `${{ actionCount: shownCount(actions) }} agent actions` }) : '',
+    count('plan').length ? t({ message: 'updated the plan', comment: 'One part of a list of what a turn did, starting lowercase.' }) : '',
+    summaries ? plural(summaries, { one: `${{ summaryCount: shownCount(summaries) }} reasoning summary`, other: `${{ summaryCount: shownCount(summaries) }} reasoning summaries` }) : '',
+    thoughts ? plural(thoughts, { one: 'thought once', other: `thought ${{ times: shownCount(thoughts) }} times` }) : '',
+    notices ? plural(notices, { one: `${{ noticeCount: shownCount(notices) }} notice`, other: `${{ noticeCount: shownCount(notices) }} notices` }) : '',
+    count('compaction').length ? t({ message: 'compacted the context', comment: 'One part of a list of what a turn did, starting lowercase.' }) : '',
   ].filter(Boolean)
   const text = parts.join(', ')
   return text.charAt(0).toUpperCase() + text.slice(1)
@@ -671,14 +781,13 @@ export function turnHeadline(turn: AgentActivity | undefined, threadRunning: boo
   const duration = recordDuration(turn)
   const took = duration === undefined ? '' : formatDuration(duration)
   switch (turn.status) {
-    case 'completed': return took ? `Worked for ${took}` : 'Worked'
-    case 'failed': return took ? `Failed after ${took}` : 'Failed'
-    case 'interrupted': {
-      const ended = turn.steered === true ? 'Steered' : 'Stopped'
-      return took ? `${ended} after ${took}` : ended
-    }
-    case 'running': return threadRunning ? 'Working' : 'Last seen working'
-    default: return 'Outcome unknown'
+    case 'completed': return took ? t`Worked for ${took}` : t({ message: 'Worked', comment: 'A turn that finished, when its time was not recorded.' })
+    case 'failed': return took ? t`Failed after ${took}` : t({ message: 'Failed', comment: 'An action or turn that failed.' })
+    case 'interrupted':
+      if (turn.steered === true) return took ? t`Steered after ${took}` : t({ message: 'Steered', comment: 'A turn the user redirected with a new message while it ran.' })
+      return took ? t`Stopped after ${took}` : t({ message: 'Stopped', comment: 'An action or turn that was stopped.' })
+    case 'running': return threadRunning ? t({ message: 'Working', comment: 'A turn that is running.' }) : t`Last seen working`
+    default: return t`Outcome unknown`
   }
 }
 
@@ -719,9 +828,14 @@ export function splitTurns(messages: readonly AgentMessage[], unshown: ReadonlyM
  */
 export function newsWorkLabel(turn: AgentActivity | undefined, threadRunning: boolean, startedAt: string | undefined, moments: readonly (string | undefined)[]): string {
   const durationMs = workDuration(turn, startedAt, moments)
-  if ((turn?.status ?? 'completed') === 'completed') return durationMs === undefined ? 'After news' : `After news · ${formatDuration(durationMs)}`
-  const headline = workHeadline(turn, threadRunning, startedAt, moments)
-  return `After news · ${headline.charAt(0).toLowerCase()}${headline.slice(1)}`
+  if ((turn?.status ?? 'completed') === 'completed') {
+    if (durationMs === undefined) return t({ message: 'After news', comment: 'Watcher\'s work in reply to news Sotto told it.' })
+    const took = formatDuration(durationMs)
+    return t({ message: `After news · ${took}`, comment: 'Watcher\'s work in reply to news Sotto told it, and how long it took.' })
+  }
+  const full = workHeadline(turn, threadRunning, startedAt, moments)
+  const headline = `${full.charAt(0).toLowerCase()}${full.slice(1)}`
+  return t({ message: `After news · ${headline}`, comment: 'Watcher\'s work in reply to news, and how it ended, such as "failed after 4s", starting lowercase.' })
 }
 
 /**

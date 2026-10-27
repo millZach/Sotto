@@ -1,4 +1,5 @@
 import React, { memo, useMemo, type ReactNode } from 'react'
+import { useLingui } from '@lingui/react/macro'
 import { isVisualMessage, type AgentMessage } from '../../../shared/agents'
 import { isKnownVisualKind, type AgentVisual } from '../../../shared/visuals'
 import { DiagramExpanded, DiagramStage, diagramFrameState, useDiagramFrame } from './diagrams/DiagramFrame'
@@ -31,20 +32,22 @@ export const VisualCard = memo(function VisualCard({ visual, threadId }: { reado
 })
 
 function DiagramVisualCard({ visual }: { readonly visual: AgentVisual }): ReactNode {
+  const { t } = useLingui()
   const rendering = useMermaidRendering(visual.source, true)
   const frame = useDiagramFrame(visual.source, rendering)
   const [place, movePlace] = useWalkthroughPlace(visual.id)
   // The label is "Diagram" when the checks cannot name the kind.
   const kind = rendering.inspection.label
-  const name = `${kind}: ${visual.title}`
+  const title = visual.title
+  const name = t({ message: `${kind}: ${title}`, comment: 'The kind of a diagram, such as Flowchart, then its title.' })
   const steps = visual.steps ?? []
   const { highlight } = walkthroughView(steps, place)
   const drawn = rendering.drawing
   // The step's picture, lit for it and cross-fading in from the last, in the card and in Expand.
   const stepPicture = useMemo(() => drawn ? stepImage(drawn, highlight) : undefined, [drawn, highlight])
 
-  return <VisualCardShell visual={visual} kind={kind} state={diagramFrameState(rendering)} frame={frame} showing={Boolean(drawn)} shownTitle="Show diagram"
+  return <VisualCardShell visual={visual} kind={kind} state={diagramFrameState(rendering)} frame={frame} showing={Boolean(drawn)} shownTitle={t`Show diagram`}
     place={place} movePlace={movePlace}
-    stage={<DiagramStage frame={frame} name={name} sourceLabel={`${visual.title} source`} block="visual-card" stage="visual-card__stage" picture={stepPicture} />}
+    stage={<DiagramStage frame={frame} name={name} sourceLabel={t({ message: `${title} source`, comment: '{title} is the title of a diagram: its Mermaid source.' })} block="visual-card" stage="visual-card__stage" picture={stepPicture} />}
     expandedView={<DiagramExpanded frame={frame} name={name} picture={stepPicture} />} />
 }

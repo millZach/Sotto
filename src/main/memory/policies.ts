@@ -97,6 +97,27 @@ export class PolicyStore {
       WHERE action = 'remote-answer' AND scope = ? AND resource = ?
       ORDER BY grantedAt DESC, id DESC`).all(remoteAnswerScope(client.clientId), client.clientId)
     const records = rows.map(row => policyRecordSchema.parse(row))
+    return this.grantVerdict(records, at)
+  }
+
+  /**
+   * Whether this remote client's answers were taken away: its newest remote-answer record was revoked, and nothing active
+   * grants it or holds it behind an always-confirm boundary. An expired grant, or one held behind a boundary, is not
+   * revoked, since renewing or lifting it restores the answers (#1310).
+   */
+  remoteAnswersRevoked(clientId: string, at = new Date().toISOString()): boolean {
+    z.iso.datetime().parse(at)
+    const rows = this.memoryStore.database().prepare(`SELECT * FROM policies
+      WHERE action = 'remote-answer' AND scope = ? AND resource = ?
+      ORDER BY grantedAt DESC, id DESC`).all(remoteAnswerScope(clientId), clientId)
+    const records = rows.map(row => policyRecordSchema.parse(row))
+    if (this.grantVerdict(records, at).reason !== 'unpaired') return false
+    if (records.some(record => record.effect === 'always-confirm' && !isInactiveAt(record, at))) return false
+    const newest = records[0]!
+    return newest.revokedAt !== null && Date.parse(newest.revokedAt) <= Date.parse(at)
+  }
+
+  private grantVerdict(records: readonly PolicyRecord[], at: string): ClientGrantResult {
     if (records.length === 0) return { allowed: false, reason: 'no-policy' }
     const active = records.filter(record => !isInactiveAt(record, at))
     const boundary = active.find(record => record.effect === 'always-confirm')

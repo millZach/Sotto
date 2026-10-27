@@ -20,9 +20,8 @@ afterEach(() => {
 })
 
 describe('RoomSwitch with dictation off', () => {
-  it('draws owl and Threads, laid out as the owl pair', () => {
+  it('draws owl and Threads', () => {
     render(<RoomSwitch className="thread-nav__seg" />)
-    expect(screen.getByRole('tablist', { name: 'Page' })).toHaveAttribute('data-rooms', 'owl')
     expect(screen.getAllByRole('tab').map(tab => tab.getAttribute('data-room'))).toEqual(['watcher', 'threads'])
   })
 
@@ -32,9 +31,27 @@ describe('RoomSwitch with dictation off', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('keeps the three-room layout while dictation is on', () => {
+  it('draws all three rooms while dictation is on', () => {
     rooms.dictation = true
     render(<RoomSwitch className="thread-nav__seg" />)
-    expect(screen.getByRole('tablist', { name: 'Page' })).toHaveAttribute('data-rooms', '3')
+    expect(screen.getAllByRole('tab').map(tab => tab.getAttribute('data-room'))).toEqual(['dictate', 'watcher', 'threads'])
+  })
+})
+
+describe('RoomSwitch drawn iconOnly, as the sidebar foot draws it', () => {
+  it('shows no name on any tile, the lit one too, and names every tile on hover', () => {
+    rooms.dictation = true
+    const { container } = render(<RoomSwitch className="thread-nav__seg" iconOnly />)
+    expect(container.querySelectorAll('.room-tab__name')).toHaveLength(0)
+    expect(screen.getAllByRole('tab').map(tab => [tab.getAttribute('aria-label'), tab.getAttribute('title')])).toEqual([
+      ['Dictate', 'Dictate'], ['Watcher', 'Watcher'], ['Threads', 'Threads'],
+    ])
+    expect(screen.getByRole('tab', { selected: true })).toHaveAttribute('data-room', 'threads')
+  })
+
+  it('keeps the lit name where it is not iconOnly, as in Watcher\'s floating switch', () => {
+    const { container } = render(<RoomSwitch className="thread-nav__seg" />)
+    expect(container.querySelectorAll('.room-tab__name')).toHaveLength(2)
+    expect(screen.getByRole('tab', { selected: true })).not.toHaveAttribute('title')
   })
 })

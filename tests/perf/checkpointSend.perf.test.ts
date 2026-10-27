@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
-import { build } from 'esbuild'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { bundleDesktopMain } from '../fixtures/desktopMainBundle'
 import { median, PERF_BENCH, round } from '../fixtures/perfBench'
 
 /**
@@ -23,7 +23,7 @@ const SENDS = 6
 const RUNS = 3
 const exec = promisify(execFile)
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, windowsHide: true, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
-interface Row { beforeMs: number; afterMs: number; beforeReads: number; beforeReadBytes: number; beforeListings: number; afterReads: number; rewrote: boolean }
+interface Row { beforeMs: number; afterMs: number; beforeReads: number; beforeReadBytes: number; beforeListings: number; beforeStats?: number; afterReads: number; rewrote: boolean }
 
 describe.skipIf(!PERF_BENCH)("the checkpoint step of a send (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   let root: string
@@ -33,19 +33,24 @@ describe.skipIf(!PERF_BENCH)("the checkpoint step of a send (timing benchmark; r
     root = await mkdtemp(join(tmpdir(), 'sotto-checkpoint-send-'))
     for (const label of ['before', 'after']) {
       const outfile = join(root, `${label}.mjs`)
-      await build({ entryPoints: ['tests/fixtures/checkpointSendBench.ts'], bundle: true, platform: 'node', format: 'esm', outfile,
-        plugins: label === 'before' ? [{ name: 'fixed-baseline', setup(builder) {
-          builder.onLoad({ filter: /\.[cm]?tsx?$/ }, args => {
-            const path = relative(resolve('.'), args.path).replaceAll('\\', '/')
-            if (!path.startsWith('src/')) return undefined
-            return { contents: execFileSync('git', ['show', `${BASE}:${path}`], { encoding: 'utf8' }), loader: 'ts' }
-          })
+      // The bench runs main's checkpoint code, whose words are messages, so it is built as main is (desktopMainBundle.ts).
+      await bundleDesktopMain('tests/fixtures/checkpointSendBench.ts', outfile, { format: 'es',
+        // Main's modules name their own folder as CommonJS does; an ES module has to define it.
+        banner: "import { fileURLToPath as sottoFileUrl } from 'node:url'; import { dirname as sottoDirname } from 'node:path'; const __filename = sottoFileUrl(import.meta.url); const __dirname = sottoDirname(__filename);",
+        plugins: label === 'before' ? [{ name: 'fixed-baseline', enforce: 'pre', load(id) {
+          const path = relative(resolve('.'), id.split('?')[0]!).replaceAll('\\', '/')
+          if (!path.startsWith('src/') || !/\.[cm]?tsx?$/u.test(path)) return null
+          // A file the baseline did not have yet, such as main's interface language, is read as it is now.
+          try { return execFileSync('git', ['show', `${BASE}:${path}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) } catch { return null }
         } }] : [],
       })
       bundles[label] = outfile
     }
-    const synthetic = async (name: string, count: number, bytes: number, repository = true): Promise<string> => {
+    const synthetic = async (name: string, count: number, bytes: number, repository = true, large = 0): Promise<string> => {
       const folder = join(root, name); await mkdir(folder)
+      // Large files of 7.5 MiB, each under the per-file limit, as a checkout's committed screenshots are.
+      if (large) await mkdir(join(folder, 'artifacts'))
+      for (let index = 0; index < large; index++) await writeFile(join(folder, 'artifacts', `capture-${index}.png`), Buffer.alloc(7.5 * 1024 * 1024, index))
       for (let index = 0; index < count; index++) {
         const directory = join(folder, `area-${index % 40}`, `part-${index % 7}`)
         await mkdir(directory, { recursive: true })
@@ -65,12 +70,14 @@ describe.skipIf(!PERF_BENCH)("the checkpoint step of a send (timing benchmark; r
     copies['over the limits, 40 saved checkpoints of 2,000 files'] = { path: copies['over the limits']!.path, mode: 'unchanged', seeded: 'history' }
     // Its own copy, since each turn commits to it.
     copies['over the limits, a commit each turn'] = { path: await synthetic('over-committed', 3_000, 32 * 1024), mode: 'commit' }
+    // The shape of Sotto's own checkout: thousands of small files, and a few large ones that alone exceed the total.
+    copies['a few large files over the limits, a commit each turn'] = { path: await synthetic('few-large-committed', 7_000, 4 * 1024, true, 9), mode: 'commit' }
     copies['not a Git repository'] = { path: await synthetic('plain', 200, 1024, false), mode: 'unchanged' }
     copies['this repository'] = { path: resolve(process.env.SOTTO_PERF_CHECKPOINT_REPO ?? '.'), mode: 'unchanged' }
     // A file written in the last few seconds is read again whatever its lstat says, so the copies settle first.
     await delay(3_500)
   }, 600_000)
-  afterAll(async () => { if (root) await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }) })
+  afterAll(async () => { if (root) await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }) }, 300_000)
 
   it('times each send\'s checkpoint, first send and later ones', async () => {
     const table: string[] = []
@@ -95,6 +102,7 @@ describe.skipIf(!PERF_BENCH)("the checkpoint step of a send (timing benchmark; r
           laterSendReadMiB: round(median(later.map(row => row.beforeReadBytes)) / 1024 / 1024, 2),
           turnEndMs: round(median(later.map(row => row.afterMs))),
           laterSendListings: later.reduce((sum, row) => sum + row.beforeListings, 0),
+          laterSendStats: median(later.map(row => row.beforeStats ?? 0)),
           laterSends: later.length,
           turnEndReads: median(later.map(row => row.afterReads)),
           fileRewritesPerSend: round(later.filter(row => row.rewrote).length / later.length, 2),

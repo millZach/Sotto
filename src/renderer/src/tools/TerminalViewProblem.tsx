@@ -1,9 +1,11 @@
 import React, { useState, type ReactNode } from 'react'
+import { useLingui } from '@lingui/react/macro'
 import { useOptionalAgents } from '../agents/AgentContext'
 import { requestAnswerStore } from '../agents/requests/requestAnswers'
 
 /** Reloading the renderer leaves main's terminal processes and output intact. */
 export function TerminalViewProblem(): ReactNode {
+  const { t } = useLingui()
   const agents = useOptionalAgents()
   const [saving, setSaving] = useState(false)
   const [failure, setFailure] = useState<'drafts' | 'reload' | null>(null)
@@ -25,8 +27,8 @@ export function TerminalViewProblem(): ReactNode {
     }
   }
   return <div className="files-problem" role="status">
-    <strong>{failure === 'reload' ? 'The window could not reload. Your terminal and drafts are still here. Try again.' : failure === 'drafts' ? 'Some drafts could not be saved. The window was not reloaded, and your drafts are still here. Try again.'
-      : 'The terminal view could not load. Your terminal and its output are still here.'}</strong>
-    <button type="button" className="files-link tt-focusable" disabled={saving} onClick={() => void reload()}>Reload window</button>
+    <strong>{failure === 'reload' ? t`The window could not reload. Your terminal and drafts are still here. Try again.` : failure === 'drafts' ? t`Some drafts could not be saved. The window was not reloaded, and your drafts are still here. Try again.`
+      : t`The terminal view could not load. Your terminal and its output are still here.`}</strong>
+    <button type="button" className="files-link tt-focusable" disabled={saving} onClick={() => void reload()}>{t`Reload window`}</button>
   </div>
 }

@@ -3,6 +3,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mixHex, readDiagramPalette } from '../../../../../src/renderer/src/agents/diagrams/diagramPalette'
 import { svgDataUrl, toInertDiagramSvg } from '../../../../../src/renderer/src/agents/diagrams/diagramSvg'
 import { clampPan, clampScale, fitScale } from '../../../../../src/renderer/src/agents/diagrams/DiagramViewer'
+import { shownWords } from '../../../../../src/renderer/src/agents/interfaceWords'
+import type { DiagramRenderResult } from '../../../../../src/renderer/src/agents/diagrams/diagramRenderer'
+
+/** A render's result with its reason as shown now. */
+const said = async (result: Promise<DiagramRenderResult>): Promise<unknown> => { const settled = await result; return settled.ok ? settled : { ok: false, reason: shownWords(settled.reason) } }
 
 const mermaid = vi.hoisted(() => ({ initialize: vi.fn(), mermaidAPI: { getDiagramFromText: vi.fn() }, render: vi.fn() }))
 vi.mock('mermaid', () => ({ default: mermaid }))
@@ -155,10 +160,10 @@ describe('diagram renderer', () => {
   it('turns grammar errors into a short line reason', async () => {
     const { renderDiagram, readableDiagramError } = await renderer()
     mermaid.mermaidAPI.getDiagramFromText.mockRejectedValue(new Error("Parse error on line 3:\n...B -->> C((\n-----^\nExpecting 'SQE', 'PIPE', got 'PS'"))
-    await expect(renderDiagram('flowchart TD\n  bad', palette)).resolves.toEqual({ ok: false, reason: 'The source has a syntax error on line 3.' })
+    await expect(said(renderDiagram('flowchart TD\n  bad', palette))).resolves.toEqual({ ok: false, reason: 'The source has a syntax error on line 3.' })
     expect(mermaid.render).not.toHaveBeenCalled()
-    expect(readableDiagramError(new Error('Maximum text size in diagram exceeded'))).toBe('Maximum text size in diagram exceeded.')
-    expect(readableDiagramError({})).toBe('Mermaid could not read this diagram.')
+    expect(shownWords(readableDiagramError(new Error('Maximum text size in diagram exceeded')))).toBe('Maximum text size in diagram exceeded.')
+    expect(shownWords(readableDiagramError({}))).toBe('Mermaid could not read this diagram.')
   })
 
   it('reports a slow render, keeps renders one at a time, and retries a slow source later', async () => {
@@ -173,7 +178,7 @@ describe('diagram renderer', () => {
     const slow = renderDiagram('stateDiagram-v2\n  slow', palette, 30)
     const next = renderDiagram('stateDiagram-v2\n  next', palette, 30)
     await vi.advanceTimersByTimeAsync(31)
-    await expect(slow).resolves.toEqual({ ok: false, reason: 'Took too long to draw.' })
+    await expect(said(slow)).resolves.toEqual({ ok: false, reason: 'Took too long to draw.' })
     expect(mermaid.render).toHaveBeenCalledTimes(1)
     mermaid.render.mockResolvedValue({ svg: `<svg xmlns="${SVG_NS}" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>` })
     finishSlow({ svg: `<svg xmlns="${SVG_NS}" viewBox="0 0 10 10"/>` })

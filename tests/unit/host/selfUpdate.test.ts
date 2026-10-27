@@ -314,7 +314,7 @@ describe('the restart and its status file', () => {
     expect(await host.run({ action: 'restart', version: '1.2.4' }, context())).toEqual({ type: 'error', reason: 'update-busy' })
     expect(calls).toHaveLength(1)
     expect(await readFile(statusFile(place), 'utf8')).toBe(first)
-    expect(await host.run({ action: 'outcome' }, context())).toEqual({ type: 'update-outcome', running: '1.2.3', restart: { state: 'restarting', version: '1.2.4' } })
+    expect(await host.run({ action: 'outcome' }, context())).toEqual({ type: 'update-outcome', running: '1.2.3', restart: { state: 'restarting', version: '1.2.4', attempt: JSON.parse(first).attempt } })
     // Once that process has gone without finishing, the next restart may go ahead.
     const status = JSON.parse(first) as Record<string, unknown>
     await writeFile(statusFile(place), JSON.stringify({ ...status, pid: goneProcess() }))
@@ -348,9 +348,9 @@ describe('the restart and its status file', () => {
     expect(await host.run({ action: 'outcome' }, context())).toEqual({ type: 'update-outcome', running: '1.2.3', restart: { state: 'none' } })
     // A restart still running: its process is alive, and it is well inside a restart's time.
     await writeFile(statusFile(place), JSON.stringify({ v: 1, attempt, version: '1.2.4', state: 'restarting', pid: process.pid }))
-    expect(await host.run({ action: 'outcome' }, context())).toEqual({ type: 'update-outcome', running: '1.2.3', restart: { state: 'restarting', version: '1.2.4' } })
+    expect(await host.run({ action: 'outcome' }, context())).toEqual({ type: 'update-outcome', running: '1.2.3', restart: { state: 'restarting', version: '1.2.4', attempt } })
     // One whose process has gone, killed or lost with a restart of the machine, can no longer say how it ended.
-    const lost = { type: 'update-outcome', running: '1.2.3', restart: { state: 'finished', version: '1.2.4', result: { type: 'error', reason: 'update-lost' } } }
+    const lost = { type: 'update-outcome', running: '1.2.3', restart: { state: 'finished', version: '1.2.4', attempt, result: { type: 'error', reason: 'update-lost' } } }
     await writeFile(statusFile(place), JSON.stringify({ v: 1, attempt, version: '1.2.4', state: 'restarting', pid: goneProcess() }))
     expect(await host.run({ action: 'outcome' }, context())).toEqual(lost)
     // Nor can one written longer ago than any restart takes, whatever process now has its number.
@@ -360,7 +360,7 @@ describe('the restart and its status file', () => {
     expect(await host.run({ action: 'outcome' }, context())).toEqual(lost)
     await writeFile(statusFile(place), JSON.stringify({ v: 1, attempt, version: '1.2.4', state: 'finished', result: { type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' } }))
     expect(await host.run({ action: 'outcome' }, context())).toEqual({ type: 'update-outcome', running: '1.2.3',
-      restart: { state: 'finished', version: '1.2.4', result: { type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' } } })
+      restart: { state: 'finished', version: '1.2.4', attempt, result: { type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' } } })
     // A file it did not write, or one too large to be one, reads as none.
     await writeFile(statusFile(place), JSON.stringify({ v: 1, attempt, state: 'finished', version: '1.2.4', result: { type: 'error', reason: 'x', padding: 'y'.repeat(5000) } }))
     expect(await host.run({ action: 'outcome' }, context())).toEqual({ type: 'update-outcome', running: '1.2.3', restart: { state: 'none' } })
