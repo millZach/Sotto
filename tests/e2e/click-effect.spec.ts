@@ -57,6 +57,13 @@ test.describe('the click effect', () => {
         const calm = await frames(page)
         await page.waitForTimeout(400)
         expect(await frames(page)).toBe(calm)
+        // A press in the composer sends no waves.
+        const composer = page.locator('.thread-prompt :is(.prompt-editor, textarea)').first()
+        await composer.click()
+        await page.locator('.thread-prompt').first().click({ position: { x: 8, y: 8 } })
+        await page.waitForTimeout(400)
+        expect(await running(page)).toBe(false)
+        expect(await frames(page)).toBe(calm)
 
         await mkdir(evidence, { recursive: true })
         for (const [index, share] of [0.3, 0.55, 0.42].entries()) {

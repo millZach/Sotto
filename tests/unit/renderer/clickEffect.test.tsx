@@ -83,6 +83,18 @@ describe('the click effect', () => {
     expect(drawn).toBeGreaterThan(0)
   })
 
+  it('sends no waves for a press in a composer', async () => {
+    const { container } = render(<><ClickEffect /><form className="thread-prompt"><textarea aria-label="Message" /><button type="button">Send</button></form></>)
+    pressAt(container.querySelector('textarea')!, 300, 600)
+    pressAt(container.querySelector('button')!, 320, 620)
+    pressAt(container.querySelector('form')!, 340, 640)
+    await frames(6)
+    expect(drawn).toBe(0)
+    pressAt(document.body, 300, 200)
+    await frames(6)
+    expect(drawn).toBeGreaterThan(0)
+  })
+
   it('stops and clears when it goes, and a press afterwards draws nothing', async () => {
     const { unmount } = render(<ClickEffect />)
     pressAt(document.body, 300, 200)

@@ -10,6 +10,8 @@ import './clickEffect.css'
 /** The most steps one frame runs, so a frame that came late does not stall the next; it ages the water by the rest. */
 const MAX_STEPS = 4
 const STEP_MS = 1000 / STEP_HZ
+/** Where a press sends no waves: every composer, the thread's, Watcher's and a new thread's draft (Zach, October 27). */
+const QUIET = '.thread-prompt'
 
 /** What a run draws with: a 0 and a 1 in the accent, and the strongest any glyph may be. */
 interface Ink {
@@ -21,7 +23,7 @@ interface Ink {
 
 /**
  * The click effect (ADR-0154): a press anywhere in the main window sends waves of 0s and 1s in the theme's accent through
- * the room behind it. The canvas lies under the window's content, over only the room's own background, so a card, a
+ * the room behind it; a press in a composer sends none. The canvas lies under the window's content, over only the room's own background, so a card, a
  * bubble or the composer sits over the waves and nothing pressed is ever covered; it never takes the pointer either. Its
  * glyphs are never stronger than leaves every word written over them at 4.5:1 against the room. It exists only while the
  * effect is on, draws only while the water moves, and clears itself and stops when the water is calm, the window is
@@ -136,6 +138,7 @@ function ClickEffectLayer(): ReactNode {
     // wait on it. Many fast presses only add drops to the same water; the work per frame stays the same.
     const press = (event: PointerEvent): void => {
       if (event.button !== 0 || document.visibilityState === 'hidden') return
+      if (event.target instanceof Element && event.target.closest(QUIET) !== null) return
       waterNow().press(event.clientX, event.clientY)
       if (request !== null) return
       inkNow()

@@ -23,6 +23,7 @@ The full suite runs in CI on the pull request, not on this machine.
 The spec also checks, in dark and light:
 
 - nothing runs before a press, and opening a thread, itself a press, calms and stops on its own;
+- a press in the composer, on its field and on its card, starts nothing;
 - while waves run, a press still reaches its target: the composer takes focus and another thread opens;
 - the water calms, the canvas is cleared, and no frame is drawn after that;
 - the canvas is hidden from assistive technology.
