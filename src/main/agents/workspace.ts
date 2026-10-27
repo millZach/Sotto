@@ -136,6 +136,20 @@ async function skillInWorkingCopy(selected: AgentSkillReference, projectPath: st
 function settledHeadMovers(activities: readonly AgentActivity[] | undefined): Set<string> {
   return new Set((activities ?? []).filter(activity => HEAD_MOVING_KINDS.has(activity.kind) && isTerminalActivity(activity.status)).map(activity => activity.id))
 }
+/** Whether `after` settled a record that may move a branch which `before` had not, so the worktree is read again. */
+function settledHeadMoved(before: readonly AgentActivity[] | undefined, after: readonly AgentActivity[] | undefined): boolean {
+  if (before === after) return false
+  const settled = settledHeadMovers(before)
+  return [...settledHeadMovers(after)].some(id => !settled.has(id))
+}
+
+/** A stored thread's records on their way back from the store worker for a window (`readBack`). */
+interface ActivityRead {
+  /** Each record the thread's provider published meanwhile, merged onto the list in the order it came once it is here. */
+  readonly held: AgentThread[]
+  /** Settles once the read has been dealt with: arrived, let go, or waited out behind a clear. */
+  readonly done: Promise<void>
+}
 
 /**
  * The turn still being worked: the latest running turn record's, or, with none and the thread running, the
@@ -939,9 +953,18 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * not told they are observed until the list arrives, and each record it publishes for them meanwhile waits in `held`,
    * merged onto the list once it is here, so it keeps its sequence. `done` settles once the read has been dealt with.
    */
-  private readonly activityReads = new Map<string, { readonly held: AgentThread[]; readonly done: Promise<void> }>()
+  private readonly activityReads = new Map<string, ActivityRead>()
   /** The threads the window last said it looks at, which their provider is told once no read holds one back. */
   private observation: ReadonlySet<string> = new Set()
+  /**
+   * How many reads in `activityReads` are of threads in `observation`. The provider is told the observation once this
+   * comes to nought, so a window opening many stored threads tells it once for them all, not once for each (`endRead`).
+   */
+  private observedReads = 0
+  /** Whether telling the provider waits for the task an accept runs in to end (`endRead`). */
+  private observationQueued = false
+  /** Reads whose list arrived while their thread was being cleared, each waiting to hear whether the clear went through. */
+  private readonly readsAwaitingForget = new Map<string, () => void>()
   /** Whether this start read every record because the store had not yet said the roster holds their words. */
   private subagentWordsPending = false
   /** Set when legacy activity was moved into the roster, which the next save puts on the disk before anything drops it. */
@@ -2059,6 +2082,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       // Kept: their held words go once the store takes them, and their records are saved again.
       // A history held for them while they were being cleared is compared now, and the answers behind it follow it.
       for (const threadId of deleted) { this.forgetting.delete(threadId); this.unsaved.add(threadId); this.recordOwed(threadId) }
+      this.forgetEnded(deleted)
       throw new Error(`Sotto could not erase these threads' history, so it kept them, but their sub-agent lists are gone. ${DELETION_FOLDERS_WORDS} Restore access to local storage and try again.`)
     }
     for (const threadId of deleted) {
@@ -2066,6 +2090,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       this.forgetting.delete(threadId)
       this.pendingEvents.delete(threadId); this.inFlight.delete(threadId); this.failedEventThreads.delete(threadId); this.recordsFailed.delete(threadId); this.recordsOwed.delete(threadId); this.invalidEventThreads.delete(threadId); this.eventChanged.delete(threadId)
     }
+    this.forgetEnded(deleted)
     this.state.snapshot.threads = this.state.snapshot.threads.flatMap(thread => {
       if (gone.has(thread.id)) return []
       const unlinked = unlinkedFrom(thread, gone)
@@ -2087,7 +2112,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Every record this host holds in memory for one deleted thread, beside its record. */
   private forgetThreadState(threadId: string): void {
     this.babysitRecords.delete(threadId); this.wakeUpRecords.delete(threadId); this.hiddenWakeUpRecords.delete(threadId); this.wakeUpAskRecords.delete(threadId)
-    this.privateLegacyMessages.delete(threadId); this.storedActivity.delete(threadId); this.storedInputs.delete(threadId); this.heldForInput.delete(threadId)
+    this.privateLegacyMessages.delete(threadId); this.storedActivity.delete(threadId); this.storedInputs.delete(threadId); this.heldForInput.delete(threadId); this.letReadGo(threadId)
     this.activityInputs.delete(threadId); this.known.delete(threadId); this.watched.delete(threadId); this.hidden.delete(threadId)
     this.storedAnchors.delete(threadId); this.inspectionsQueued.delete(threadId); this.fullCheckDue.delete(threadId)
     this.subagentSummaries.delete(threadId); this.subagentInputs.delete(threadId); this.subagentChanges.delete(threadId); this.subagentLiveSince.delete(threadId)
@@ -2770,26 +2795,57 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const answer = this.writes.readActivities?.(thread.id)
     if (!answer) { this.holdActivities(thread); return }
     const held: AgentThread[] = []
-    const read: { readonly held: AgentThread[]; readonly done: Promise<void> } = { held, done: answer.then(result => this.activitiesArrived(thread.id, read, result)).catch(() => { console.warn('thread-activity-read-back-failed') }) }
+    const read: ActivityRead = { held, done: answer.then(result => this.activitiesArrived(thread.id, read, result)).catch(() => { console.warn('thread-activity-read-back-failed') }) }
     this.activityReads.set(thread.id, read)
+  }
+  /**
+   * A read that will not be used. The provider is told the observation once no observed thread's read is on its way: the
+   * last of a batch tells it, once, and every read ends (arrived, let go or lost), so none waits for good. `soon` waits for
+   * the task under way to end, for a read let go inside an accept, which telling the provider must not run inside.
+   */
+  private endRead(threadId: string, read: ActivityRead, soon = false): void {
+    if (this.activityReads.get(threadId) !== read) return
+    this.activityReads.delete(threadId)
+    if (!this.observation.has(threadId) || --this.observedReads > 0 || this.stopping) return
+    if (!soon) { this.tellObservation(); return }
+    if (this.observationQueued) return
+    this.observationQueued = true
+    queueMicrotask(() => { this.observationQueued = false; if (this.observedReads === 0 && !this.stopping) this.tellObservation() })
+  }
+  /**
+   * A stored thread's list stops being the one a read on its way was asked for: a new history epoch's list replaced it,
+   * Keep local history turning off emptied it, or the thread was cleared. The read is let go for good, so it takes
+   * nothing when it arrives, and a later read of whatever the thread holds then starts afresh.
+   */
+  private letReadGo(threadId: string): void {
+    const read = this.activityReads.get(threadId)
+    if (read) this.endRead(threadId, read, true)
+  }
+  /** A clear of these threads is over, whether or not it went through: lists that arrived meanwhile go on (`activitiesArrived`). */
+  private forgetEnded(threadIds: readonly string[]): void {
+    for (const threadId of threadIds) {
+      const go = this.readsAwaitingForget.get(threadId)
+      if (go) { this.readsAwaitingForget.delete(threadId); go() }
+    }
   }
   /**
    * A stored thread's records are back from the store worker. They are held as a read on main holds them, then each record
    * its provider published meanwhile is merged onto them in the order it came, and the provider is told the window looks
    * at the thread. A window that stopped looking meanwhile leaves them held, as a read on main had, until a save lets them
-   * go. A thread no longer stored (cleared, or its list replaced by a new history epoch's or emptied by Keep local history
-   * turning off) takes nothing from the read. A worker that went first answers lost, and the records are read on main
-   * behind what it left unanswered.
+   * go. A read let go (`letReadGo`) takes nothing. A list that arrives while its thread is being cleared waits to hear
+   * whether the clear went through: a clear that fails keeps the thread, and what was published behind the list with it.
+   * A worker that went first answers lost, and the records are read on main behind what it left unanswered, closing
+   * included, so the last save keeps what was published behind them.
    */
-  private async activitiesArrived(threadId: string, read: { readonly held: AgentThread[] }, result: ActivityReadBack): Promise<void> {
+  private async activitiesArrived(threadId: string, read: ActivityRead, result: ActivityReadBack): Promise<void> {
     if (this.activityReads.get(threadId) !== read) return
-    if ('lost' in result && !this.stopping) await this.writes.confirmed(threadId)
-    this.activityReads.delete(threadId)
-    const wanted = this.observation.has(threadId) && !this.stopping
+    if ('lost' in result) await this.writes.confirmed(threadId)
+    if (this.forgetting.has(threadId) && this.activityReads.get(threadId) === read) await new Promise<void>(resolve => { this.readsAwaitingForget.set(threadId, resolve) })
+    if (this.activityReads.get(threadId) !== read) return
+    const wanted = this.observation.has(threadId)
     const thread = this.threadById(threadId)
     // While closing, a read matters only for what was published behind it, which the save closing makes then keeps.
-    const keeps = thread !== undefined && this.storedActivity.has(threadId) && !this.forgetting.has(threadId) && !this.clearedIds.has(threadId)
-      && (!this.stopping || (read.held.length > 0 && !('lost' in result)))
+    const keeps = thread !== undefined && this.storedActivity.has(threadId) && !this.clearedIds.has(threadId) && (!this.stopping || read.held.length > 0)
     if (keeps) {
       const stored = 'activities' in result ? (): readonly AgentActivity[] => result.activities
         : 'unreadable' in result ? (): never => { throw new Error('Thread activity could not be read') } : undefined
@@ -2798,16 +2854,16 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         const current = this.threadById(threadId)!
         this.touched(current).activities = this.mergeActivities(record, current)
       }
-      // A record the provider settled while the list was on its way may have moved the thread's branch (`refreshIfHeadMoved`).
       if (read.held.length) {
-        const settled = settledHeadMovers(before)
-        if ([...settledHeadMovers(this.threadById(threadId)!.activities)].some(id => !settled.has(id))) this.scheduleWorktreeRefresh(threadId)
+        // A record the provider settled while the list was on its way may have moved the thread's branch (`refreshIfHeadMoved`).
+        if (settledHeadMoved(before, this.threadById(threadId)!.activities)) this.scheduleWorktreeRefresh(threadId)
         this.dirty = true
         this.writeSoon()
       }
     }
-    if (wanted) this.tellObservation()
-    if (keeps && !this.stopping) this.publish()
+    this.endRead(threadId, read)
+    // A window opening many stored threads publishes their records as a burst does, not once for each.
+    if (keeps && !this.stopping) this.publishSoon(wanted)
   }
   /** The provider hears which threads the window looks at, less those whose records are still on their way. */
   private tellObservation(): void {
@@ -4049,7 +4105,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // it, so sequence, anchors and finished states are kept; merging onto nothing would renumber every record.
     if (old && this.storedActivity.has(thread.id)) {
       const reading = this.activityReads.get(thread.id)
-      if (old.historyEpoch !== thread.historyEpoch) this.storedActivity.delete(thread.id)
+      if (old.historyEpoch !== thread.historyEpoch) { this.storedActivity.delete(thread.id); this.letReadGo(thread.id) }
       else if (input !== undefined && input.length > 0 && this.storedInputs.get(thread.id) !== input) {
         // While the store worker reads the list back, the record waits to merge onto it (`activitiesArrived`); the same
         // array published again is the same input.
@@ -4386,10 +4442,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     let moved = old.status === 'running' && thread.status !== 'running'
     // A stored list read back in this accept is what the thread held before it, not nothing (#918).
     const base = this.heldForInput.has(thread.id) ? this.heldForInput.get(thread.id) : old.activities
-    if (!moved && base !== thread.activities) {
-      const before = settledHeadMovers(base)
-      moved = [...settledHeadMovers(thread.activities)].some(id => !before.has(id))
-    }
+    if (!moved) moved = settledHeadMoved(base, thread.activities)
     if (moved) this.scheduleWorktreeRefresh(thread.id)
   }
   /** Whether a Watcher thread has something an accept must capture before it can be lost (`accept`). */
@@ -4687,6 +4740,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         for (const thread of this.state.snapshot.threads) if (this.storedActivity.has(thread.id) && thread.summary) thread.summary = { ...thread.summary, activityCount: 0 }
         dropped = this.storedActivity.size > 0
         this.storedActivity.clear()
+        for (const threadId of [...this.activityReads.keys()]) this.letReadGo(threadId)
         this.storedInputs.clear()
         // A visual has no copy but the store's (ADR-0056), so the windows stop showing the ones it no longer holds.
         for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
@@ -5369,6 +5423,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (thread) this.readBack(thread)
     }
     this.observation = new Set(ids)
+    this.observedReads = 0
+    for (const id of this.observation) if (this.activityReads.has(id)) this.observedReads++
     this.tellObservation()
     if (!this.ready) return
     const wanted = new Set(ids)

@@ -17,7 +17,6 @@
  * `SOTTO_PERF_RECORD_SCALE` multiplies every body's size (5 by default, about 10 MB across the limit). Every word is
  * random; no user profile is opened.
  */
-import { randomBytes } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -29,30 +28,14 @@ import { READ_PIECE_RECORDS, type WorkerMessage } from '../../src/main/agents/st
 import { ThreadStore } from '../../src/main/agents/threadStore'
 import { ThreadStoreWriterOnWorker } from '../../src/main/agents/threadStoreWriter'
 import { agentActivitySchema, MAX_AGENT_ACTIVITIES, type AgentActivity } from '../../src/shared/agentActivity'
+import { activityRecordMix } from '../fixtures/activityRecordMix'
 import { median, PERF_BENCH, round } from '../fixtures/perfBench'
 import { builtStoreWorker } from '../fixtures/storeWorker'
 
 const SAMPLES = 9
 const SCALE = Number(process.env.SOTTO_PERF_RECORD_SCALE ?? 5)
-const at = '2026-10-26T10:00:00.000Z'
-const words = (size: number): string => { const bytes = Math.round(size * SCALE); return randomBytes(Math.ceil(bytes * 0.75)).toString('base64').slice(0, bytes) }
 
-/** A busy thread's mix, as `storedActivityRead.perf.test.ts` has it: commands, file changes, thinking, plans, tools and subagents. */
-function record(index: number): AgentActivity {
-  const base = { id: `activity-${index}`, turnId: `turn-${index >> 4}`, sequence: index, afterMessageId: `message-${index >> 4}`,
-    startedAt: at, completedAt: at, timingSource: 'observed' as const, durationMs: 1_250 }
-  switch (index % 6) {
-    case 0: return { ...base, kind: 'command', status: 'completed', title: 'npm test', command: `npm test -- ${words(40)}`, cwd: 'D:/project', output: words(2_000), exitCode: 0 }
-    case 1: return { ...base, kind: 'file-change', status: 'completed', title: 'Edited 2 files',
-      changes: [{ path: 'src/a.ts', kind: 'update', diff: words(1_500) }, { path: 'src/b.ts', kind: 'update', diff: words(800) }] }
-    case 2: return { ...base, kind: 'reasoning', status: 'completed', title: 'Thinking', text: words(1_000) }
-    case 3: return { ...base, kind: 'plan', status: 'completed', title: 'Plan',
-      steps: Array.from({ length: 6 }, (_, step) => ({ text: words(80), status: step < 3 ? 'completed' as const : 'pending' as const })) }
-    case 4: return { ...base, kind: 'subagent', status: 'completed', title: 'Subagent',
-      agents: [{ id: `agent-${index}`, status: 'completed', assignmentId: `assignment-${index}`, model: 'model', startedAt: at, completedAt: at }] }
-    default: return { ...base, kind: 'tool', status: 'completed', title: 'Read file', output: words(600) }
-  }
-}
+const record = activityRecordMix(SCALE)
 
 /** What the workspace does with a list once it is in hand (`savedRecord`): a record still running in the store was not live. */
 const held = (activities: readonly AgentActivity[]): AgentActivity[] => activities.map(activity => activity.status === 'running' ? { ...activity, status: 'unknown' } : activity)

@@ -1,15 +1,17 @@
 // @vitest-environment node
 import { mkdtemp, rm } from 'node:fs/promises'
+import { DatabaseSync } from 'node:sqlite'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import type { StoreWorker, WorkerMessage } from '../../src/main/agents/storeWorker'
+import type { StoreWorker, StoreWorkerOptions, WorkerMessage } from '../../src/main/agents/storeWorker'
 import { READ_PIECE_RECORDS } from '../../src/main/agents/storeWorkerProtocol'
 import { ThreadStore } from '../../src/main/agents/threadStore'
+import type { ThreadStoreWriter } from '../../src/main/agents/threadStoreWriter'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import type { AgentActivity } from '../../src/shared/agentActivity'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
-import { readsArrived, readsInFlight } from '../fixtures/storeWriterEquivalence'
+import { readsArrived, readsInFlight, storedIn } from '../fixtures/storeWriterEquivalence'
 import { builtStoreWorker } from '../fixtures/storeWorker'
 
 /**
@@ -36,20 +38,25 @@ describe('a stored thread read back on the store worker', () => {
    * A workspace whose first run saved `saved` for the workshop thread, reopened over the worker with a provider that has
    * not read it, so the thread is stored. Every observation its provider hears is kept with what the thread held then.
    */
-  async function stored(saved: AgentActivity[], history: () => boolean = () => true) {
+  async function stored(saved: AgentActivity[], history: () => boolean = () => true, options: { timing?: StoreWorkerOptions['timing']; threads?: number } = {}) {
     const directory = await mkdtemp(join(tmpdir(), 'sotto-read-back-'))
     cleanup.push(async () => {
       if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-read-back-')) throw new Error('Unexpected test directory')
       await rm(directory, { recursive: true, force: true })
     })
     const provider = new FakeProviderHost()
+    // More stored threads beside the workshop, each with a record of its own.
+    for (let index = 0; index < (options.threads ?? 0); index++) {
+      provider.state.threads.push({ id: `session-more-${index}`, projectId: 'project', title: `More ${index}`, modelId: 'fake:model', status: 'idle', messages: [], requests: [],
+        activities: [record(`more-${index}`, 0)] })
+    }
     provider.state.threads[0]!.activities = structuredClone(saved)
     const first = new WorkspaceHost(provider, directory, history, undefined, false, false, false, undefined, null)
     await first.initialize()
     await first.connect()
     first.disconnect(); await first.privacyChanged(); first.dispose()
-    delete provider.state.threads[0]!.activities
-    const host = new WorkspaceHost(provider, directory, history, undefined, false, false, false, undefined, worker.path)
+    for (const thread of provider.state.threads) delete thread.activities
+    const host = new WorkspaceHost(provider, directory, history, undefined, false, false, false, undefined, options.timing ? { path: worker.path, timing: options.timing } : worker.path)
     cleanup.push(async () => { host.disconnect(); await host.close().catch(() => undefined) })
     const told: { ids: readonly string[]; activities: string[] | undefined }[] = []
     provider.observeThreads = ids => {
@@ -66,7 +73,31 @@ describe('a stored thread read back on the store worker', () => {
       reader.open()
       try { return reader.readActivities(threadId) } finally { reader.close() }
     }
-    return { directory, provider, host, told, store, disk }
+    const writes = (host as unknown as { writes: ThreadStoreWriter }).writes
+    return { directory, provider, host, told, store, disk, writes }
+  }
+
+  /**
+   * Holds back the worker's answers to reads until the test lets them through, or until the answer to the write of the kind
+   * named arrives, which they are then heard just before. Writes' answers are heard as they come.
+   */
+  function holdReads(store: { readonly worker: StoreWorker | undefined }, before?: string) {
+    const handle = store.worker! as unknown as { heard(message: WorkerMessage): void; post: StoreWorker['post'] }
+    const heard = handle.heard.bind(handle), post = handle.post.bind(handle)
+    const held: WorkerMessage[] = []
+    let holding = true, beforeId: number | undefined
+    vi.spyOn(handle, 'post').mockImplementation((write, settle, preserved) => {
+      const id = post(write, settle, preserved)
+      if (write.kind === before) beforeId = id
+      return id
+    })
+    const release = (): void => { holding = false; for (const message of held.splice(0)) heard(message) }
+    vi.spyOn(handle, 'heard').mockImplementation(message => {
+      if ('read' in message && holding) { held.push(message); return }
+      if (!('read' in message) && message.id === beforeId) release()
+      heard(message)
+    })
+    return { release, held: () => held.length }
   }
   const shown = (host: WorkspaceHost, threadId = THREAD) => host.workspaceSnapshot().threads.find(thread => thread.id === threadId)
 
@@ -231,6 +262,83 @@ describe('a stored thread read back on the store worker', () => {
     expect(read).toHaveBeenCalledWith(THREAD, { shared: true })
     expect(shown(f.host)!.activities?.map(item => item.id)).toEqual(many.map(item => item.id))
     expect(f.provider.observed).toEqual([THREAD])
+  })
+
+  it('takes nothing from a read asked for before a new history epoch\'s list replaced it and was let go', async () => {
+    const f = await stored([record('a', 0)])
+    const reads = holdReads(f.store)
+    f.host.observeThreads([THREAD])
+    f.host.observeThreads([])
+    f.provider.state.threads[0]!.historyEpoch = 'rewound'
+    f.provider.state.threads[0]!.activities = [record('z', 0)]
+    f.provider.emit()
+    // The new epoch's list is saved and let go while the old read is still held back: the thread is stored again.
+    for (let save = 0; save < 2; save++) { await f.host.flush(); await f.writes.confirmed() }
+    expect(storedIn(f.host, THREAD)).toBe(true)
+    expect(reads.held()).toBe(1)
+    reads.release()
+    await readsArrived(f.host)
+    expect(shown(f.host)!.activities).toBeUndefined()
+    // Looked at again, the thread reads what it holds now.
+    f.host.observeThreads([THREAD])
+    await readsArrived(f.host)
+    expect(shown(f.host)!.activities?.map(item => item.id)).toEqual(['z'])
+    f.host.disconnect()
+    await f.host.close()
+    expect(f.disk().map(item => item.id)).toEqual(['z'])
+  })
+
+  it('keeps what the provider published behind a list that arrives while a clear that fails is under way', async () => {
+    const f = await stored([record('a', 0)], () => true, { timing: { busyTimeoutMs: 50 } })
+    await f.writes.confirmed()
+    const reads = holdReads(f.store, 'forget')
+    f.host.observeThreads([THREAD])
+    f.provider.state.threads[0]!.activities = [record('c', 0)]
+    f.provider.emit()
+    // Another connection holds the write lock, so the forget fails; the list is heard just before it does.
+    const holder = new DatabaseSync(join(f.directory, 'threads.sqlite'), { timeout: 5_000 })
+    holder.exec('BEGIN IMMEDIATE')
+    try {
+      await expect(f.host.deleteThreads([THREAD], { automatic: false, hold: () => null })).rejects.toThrow(/kept them/)
+    } finally { holder.exec('COMMIT'); holder.close() }
+    expect(reads.held()).toBe(0)
+    await readsArrived(f.host)
+    expect(shown(f.host)!.activities?.map(item => item.id)).toEqual(['a', 'c'])
+    expect(f.provider.observed).toEqual([THREAD])
+    f.host.disconnect()
+    await f.host.close().catch(() => undefined)
+    expect(f.disk().map(item => item.id)).toEqual(['a', 'c'])
+  })
+
+  it('reads on main while closing when the worker goes with a list on its way, so the last save keeps what was published behind it', async () => {
+    const f = await stored([record('a', 0)])
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const read = vi.spyOn(ThreadStore.prototype, 'readActivities')
+    void f.store.worker!.terminate()
+    f.host.observeThreads([THREAD])
+    f.provider.state.threads[0]!.activities = [record('c', 0)]
+    f.provider.emit()
+    f.host.disconnect()
+    await f.host.close()
+    expect(read).toHaveBeenCalledWith(THREAD, { shared: true })
+    expect(f.disk().map(item => item.id)).toEqual(['a', 'c'])
+  })
+
+  it('tells the provider once for many stored threads opened together, not once for each', async () => {
+    const MANY = 40
+    const f = await stored([record('a', 0)], () => true, { threads: MANY })
+    const ids = [THREAD, ...Array.from({ length: MANY }, (_, index) => `session-more-${index}`)]
+    for (const id of ids) expect(storedIn(f.host, id), id).toBe(true)
+    const tells = vi.spyOn(f.host as unknown as { tellObservation(): void }, 'tellObservation')
+    const before = f.told.length
+    f.host.observeThreads(ids)
+    expect(readsInFlight(f.host).size).toBe(ids.length)
+    await readsArrived(f.host)
+    // Once as the window looked, with none of them, and once when the last list was in, with all of them.
+    expect(tells).toHaveBeenCalledTimes(2)
+    const heard = f.told.slice(before)
+    expect(heard.map(call => call.ids.length)).toEqual([0, ids.length])
+    for (const id of ids) expect(shown(f.host, id)!.activities?.length, id).toBe(1)
   })
 
   it('waits for a list on its way before closing, so what the provider published behind it is saved', async () => {
