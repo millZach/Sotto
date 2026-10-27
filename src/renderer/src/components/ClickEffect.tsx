@@ -65,7 +65,7 @@ function ClickEffectLayer(): ReactNode {
     }
 
     /**
-     * The ink for the theme in force, read once as a run starts: the accent (the canvas's colour), the words' colours (its
+     * The ink for the theme in force, read once as a run starts: the accent (the canvas's outline), the words' colours (its
      * borders: the text, its secondary and muted tiers, and links) and the room's surface under them, as the night scene
      * reads its own (ADR-0126). The glyphs go no stronger than leaves every one of those words at 4.5:1 over a glyph.
      */
@@ -73,10 +73,10 @@ function ClickEffectLayer(): ReactNode {
       const style = getComputedStyle(canvas)
       const scale = dpr()
       const shell = canvas.parentElement ?? document.body
-      const key = [style.color, style.borderTopColor, style.borderRightColor, style.borderBottomColor, style.borderLeftColor,
+      const key = [style.outlineColor, style.borderTopColor, style.borderRightColor, style.borderBottomColor, style.borderLeftColor,
         getComputedStyle(shell).backgroundColor, style.fontFamily, scale].join('|')
       if (ink?.key === key) return ink
-      const accent = pixel === null ? null : toRgb(style.color, pixel)
+      const accent = pixel === null ? null : toRgb(style.outlineColor, pixel)
       const words = pixel === null ? [] : [style.borderTopColor, style.borderRightColor, style.borderBottomColor, style.borderLeftColor]
         .map(value => toWord(value, pixel)).filter((word): word is Word => word !== null)
       const surface = pixel === null || words[0] === undefined ? null : surfaceOf(shell, pixel, words[0])
@@ -90,7 +90,7 @@ function ClickEffectLayer(): ReactNode {
         if (pen !== null) {
           pen.scale(scale, scale)
           pen.font = `500 11px ${style.fontFamily}`
-          pen.fillStyle = style.color
+          pen.fillStyle = style.outlineColor
           pen.textAlign = 'center'
           pen.textBaseline = 'middle'
           pen.fillText(digit, sprite.width / scale / 2, GLYPH_H / 2)
