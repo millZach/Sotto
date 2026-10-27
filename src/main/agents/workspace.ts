@@ -1011,11 +1011,15 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private readonly answersInFlight = new Map<string, number>()
   /** A history-publishing host's write per thread that is not yet confirmed (`record`), as `inFlight` is for events. */
   private readonly recordsInFlight = new Set<string>()
-  /** What such a host published while its thread's write was in flight, recorded once that write is confirmed. */
-  private readonly recordsOwed = new Map<string, { readonly messages: readonly AgentMessage[]; readonly previousEpoch: string | undefined }>()
   /**
-   * Threads whose last whole-history write failed. Its retry is the next comparison of what the host publishes, and an
-   * answer waits for it, so nothing of the thread commits ahead of the words that failed.
+   * What such a host published while its thread's writes were held, or the history whose write failed, compared again once
+   * nothing holds it; with the answers given since, which follow that comparison's write, so each commits after the words
+   * it answers.
+   */
+  private readonly recordsOwed = new Map<string, { readonly messages: readonly AgentMessage[]; readonly previousEpoch: string | undefined; readonly answers: AnswerGivenEvent[] }>()
+  /**
+   * Threads whose last whole-history write failed. Its retry is the next comparison, at the next publication or the history
+   * retry, whichever comes first; answers already waiting wait for it, so nothing commits ahead of the words that failed.
    */
   private readonly recordsFailed = new Set<string>()
   /** When closing must be done by, once `close` began (`CLOSE_LIMIT_MS`). */
@@ -2827,7 +2831,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   /** A batch that failed is retried at one second, doubling to thirty, until it commits (ADR-0016, September 27). */
   private scheduleHistoryRetry(): void {
-    if (this.failedEventThreads.size === 0) {
+    if (this.failedEventThreads.size === 0 && this.recordsFailed.size === 0) {
       clearTimeout(this.historyRetryTimer)
       this.historyRetryTimer = undefined
       this.historyRetryDelay = 1_000
@@ -2835,6 +2839,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       this.historyRetryTimer = setTimeout(() => {
         this.historyRetryTimer = undefined
         this.applyEvents()
+        // A failed whole-history write is compared again, with nothing from its host needed to start it.
+        for (const threadId of [...this.recordsFailed]) this.recordOwed(threadId)
+        this.scheduleHistoryRetry()
         this.publish()
       }, this.historyRetryDelay)
       this.historyRetryTimer.unref?.()
@@ -3116,7 +3123,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    */
   private recordHistory(thread: AgentThread, messages: readonly AgentMessage[], previousEpoch: string | undefined): boolean {
     // Behind its own write in flight, an answer or a batch in flight, or a batch that failed: kept, and compared once it lands.
-    if (this.historyHeld(thread.id)) { this.recordsOwed.set(thread.id, { messages, previousEpoch }); return true }
+    if (this.historyHeld(thread.id)) {
+      this.recordsOwed.set(thread.id, { messages, previousEpoch, answers: this.recordsOwed.get(thread.id)?.answers ?? [] })
+      return true
+    }
+    // This comparison takes the place of any history held for the thread, and the answers that waited for it follow it.
+    const owed = this.recordsOwed.get(thread.id)
+    this.recordsOwed.delete(thread.id)
     const events = this.differences(thread.id, messages, thread.historyEpoch, previousEpoch)
     if (events.length) {
       let failed = false
@@ -3133,8 +3146,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
           if (late && !this.stopping) this.publishSoon()
           return
         }
-        this.recordsOwed.delete(thread.id)
+        // The history is compared again, at the next publication or the history retry; answers given meanwhile follow it.
         this.recordsFailed.add(thread.id)
+        const later = this.recordsOwed.get(thread.id)
+        this.recordsOwed.set(thread.id, later ?? { messages, previousEpoch, answers: [] })
+        this.scheduleHistoryRetry()
         failed = true
         // The whole history goes to the pane as it is, so nothing is above a window any more.
         this.saveError = HISTORY_SAVE_ERROR; this.hidden.delete(thread.id); this.storedAnchors.delete(thread.id)
@@ -3143,23 +3159,42 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         // A failure heard after the post: the store is compared afresh, and the thread published again.
         if (late) { this.known.delete(thread.id); this.touch(thread.id); if (!this.stopping) this.publishSoon() }
       })
+      this.follow(thread.id, owed?.answers)
       if (failed) return false
       if (events[0]?.kind === 'messages-reset') this.hidden.delete(thread.id)
       this.known.set(thread.id, { epoch: thread.historyEpoch, messages: messages.map(markOf) })
+      return true
     }
+    // Nothing to write: the store already holds this history, so a write that failed before it needs no retry.
+    this.recordsFailed.delete(thread.id)
+    this.follow(thread.id, owed?.answers)
     return true
+  }
+  /**
+   * Answers that waited for a history now compared go to the thread's waiting events, behind its write if it posted one,
+   * and are posted as soon as nothing of the thread holds them: at once when the store already held that history.
+   */
+  private follow(threadId: string, answers: readonly AnswerGivenEvent[] | undefined): void {
+    if (answers?.length) {
+      const waiting = this.pendingEvents.get(threadId)
+      if (waiting) waiting.push(...answers)
+      else this.pendingEvents.set(threadId, [...answers])
+    }
+    if (this.pendingEvents.has(threadId) && !this.recordsInFlight.has(threadId) && !this.recordsFailed.has(threadId)) this.writeEvents(false, true)
   }
   /** Whether a thread's next whole-history write waits: behind its own, an answer or a batch in flight, or a batch that failed. */
   private historyHeld(threadId: string): boolean {
     return this.recordsInFlight.has(threadId) || this.answersInFlight.has(threadId) || this.inFlight.has(threadId) || this.failedEventThreads.has(threadId)
   }
-  /** Compares and posts the history a host published while the thread's writes were held, once nothing holds it. */
+  /** Compares and posts the history held for a thread, once nothing holds it; its answers follow (`recordHistory`). */
   private recordOwed(threadId: string): void {
     const owed = this.recordsOwed.get(threadId)
     if (!owed || this.historyHeld(threadId)) return
-    this.recordsOwed.delete(threadId)
     const thread = this.threadById(threadId)
-    if (thread && this.historyWritable() && !this.forgetting.has(threadId)) this.recordHistory(thread, owed.messages, owed.previousEpoch)
+    if (thread && this.historyWritable() && !this.forgetting.has(threadId)) { this.recordHistory(thread, owed.messages, owed.previousEpoch); return }
+    // Nothing more of the thread is written now; its answers wait with whatever else it holds.
+    this.recordsOwed.delete(threadId)
+    this.follow(threadId, owed.answers)
   }
   private legacyMessages(thread: AgentThread, messages: readonly AgentMessage[]): readonly AgentMessage[] {
     let privateMessages = this.privateLegacyMessages.get(thread.id)
@@ -3392,6 +3427,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (this.streamingPublishCostEnabled) this.writeEvents(false, true)
     // Behind words still held, in flight, waiting for a failed batch's retry or held while the thread is cleared, the
     // answer waits with them, so it is posted after them and its batch is retried with theirs.
+    // A history-publishing host's history held for the thread is what this answers: the answer follows its write.
+    const owed = this.recordsOwed.get(threadId)
+    if (owed) {
+      if (!this.historyEnabled()) this.pendingEventsPrivate = true
+      owed.answers.push(event)
+      return
+    }
     const waiting = this.pendingEvents.get(threadId)
     // A history-publishing host's write in flight, or one that failed and waits for its retry, holds the answer the same way.
     if (waiting || this.forgetting.has(threadId) || this.recordsInFlight.has(threadId) || this.recordsFailed.has(threadId)) {
@@ -4321,6 +4363,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       this.inFlight.clear()
       this.failedEventThreads.clear()
       this.recordsFailed.clear()
+      this.recordsOwed.clear()
       clearTimeout(this.historyRetryTimer)
       this.historyRetryTimer = undefined
       this.historyRetryDelay = 1_000

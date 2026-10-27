@@ -288,6 +288,56 @@ describe('a provider that publishes whole histories', () => {
     expect(publishes).toBeGreaterThan(0)
     expect(f.host.eventsAfter(0, WORKSHOP).map(item => item.event.kind)).toContain('message-added')
   })
+  it('holds a second answer behind the history it answers when that history waits behind the first answer', async () => {
+    const f = await fixture({ deferred: true, wholeHistories: true })
+    const thread = f.adapter.state.threads.find(item => item.id === WORKSHOP)!
+    thread.messages = [message('ask', 'user', 'First question')]
+    f.adapter.emit()
+    settle(f)
+    f.host.recordAnswer(WORKSHOP, answer('request-a'))
+    // The provider asks again while the first answer is in flight, so its history waits; then the second answer comes.
+    thread.messages = [...thread.messages, message('ask-b', 'assistant', 'Second question')]
+    f.adapter.emit()
+    f.host.recordAnswer(WORKSHOP, answer('request-b'))
+    settle(f)
+    const order = f.writer!.attempted.flatMap(write => eventsOfWrite(write, WORKSHOP))
+      .flatMap(event => event.kind === 'answer-given' ? [event.requestId] : event.kind === 'message-added' ? [event.message.id] : [])
+    expect(order).toEqual(['ask', 'request-a', 'ask-b', 'request-b'])
+  })
+
+  it('lets answers go once a comparison finds the store already holds the history whose write failed', async () => {
+    const f = await fixture({ deferred: true, wholeHistories: true })
+    const thread = f.adapter.state.threads.find(item => item.id === WORKSHOP)!
+    thread.messages = [message('ask', 'user', 'Asked')]
+    f.adapter.emit()
+    settle(f)
+    // An append that fails, an answer behind it, then the provider back at the history the store already holds.
+    thread.messages = [message('ask', 'user', 'Asked, and more')]
+    f.adapter.emit()
+    f.writer!.failing = write => eventsOfWrite(write, WORKSHOP).some(event => event.kind === 'message-text-appended')
+    f.writer!.release()
+    f.writer!.failing = undefined
+    f.host.recordAnswer(WORKSHOP, answer('request-1'))
+    thread.messages = [message('ask', 'user', 'Asked')]
+    f.adapter.emit()
+    settle(f)
+    expect(f.host.eventsAfter(0, WORKSHOP).map(item => item.event.kind)).toEqual(['message-added', 'answer-given'])
+  })
+
+  it('retries a failed history write on its own a second later, and the answer behind it follows', async () => {
+    const f = await fixture({ deferred: true, wholeHistories: true })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] })
+    const thread = f.adapter.state.threads.find(item => item.id === WORKSHOP)!
+    thread.messages = [message('ask', 'user', 'Asked before a failed save')]
+    f.adapter.emit()
+    f.writer!.failing = () => true
+    f.writer!.release()
+    f.writer!.failing = undefined
+    f.host.recordAnswer(WORKSHOP, answer('request-1'))
+    // The provider says nothing more: the retry is the workspace's own.
+    for (let second = 0; second < 5; second++) { await vi.advanceTimersByTimeAsync(1_000); settle(f) }
+    expect(f.host.eventsAfter(0, WORKSHOP).map(item => item.event.kind)).toEqual(['message-added', 'answer-given'])
+  })
 })
 
 describe('order, failure and durability through the seam', () => {

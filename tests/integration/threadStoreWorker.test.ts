@@ -123,15 +123,16 @@ describe('the store worker', () => {
   })
 
   it('lays a write the worker has not committed over the window', async () => {
-    const { store, writer, path } = await open({ busyTimeoutMs: 30_000 })
-    // The worker has opened its connection, whose start takes the write lock a moment.
-    while (Atomics.load(internals(store).worker!.controlArray, CONTROL.LIFE) !== 3) await delay(5)
+    const { store, writer, path, post } = await open({ busyTimeoutMs: 30_000 })
+    // A first write lands, so the worker's connection has opened: its start takes the write lock a moment, which it must
+    // not meet held below.
+    await post({ kind: 'events', threadId: 'other', events: [added('first', 'First')] })
     // Another connection holds the write lock, so the worker waits inside the write.
     const holder = new DatabaseSync(path, { timeout: 5_000 })
     holder.exec('BEGIN IMMEDIATE')
     try {
       writer.post({ kind: 'events', threadId: 'thread', events: [added('reply', 'Held')] })
-      while (!internals(store).worker!.started(1)) await delay(5)
+      while (!internals(store).worker!.started(2)) await delay(5)
       expect(shown(store, writer, 'thread').map(item => item.text)).toEqual(['Held'])
     } finally { holder.exec('COMMIT'); holder.close() }
     await writer.confirmed()
@@ -188,7 +189,9 @@ describe('the store worker', () => {
   })
 
   it('commits on main what it was posted once the worker goes mid-batch, and goes on writing there', async () => {
-    const { store, writer, path } = await open({ busyTimeoutMs: 2_000 })
+    // The worker waits for the lock as long as it needs: under load the release below can come seconds late, and a write
+    // that gave up on the lock first would be a failure, not the worker going.
+    const { store, writer, path } = await open({ busyTimeoutMs: 30_000 })
     await new Promise<void>(resolve => { writer.post({ kind: 'events', threadId: 'thread', events: [added('first', 'First')] }, () => resolve()) })
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     const holder = new DatabaseSync(path, { timeout: 5_000 })
@@ -239,12 +242,16 @@ describe('the store worker', () => {
 
   it('fails a write whose commit cannot get the lock, and commits it when it is posted again', async () => {
     const { store, path, post } = await open({ busyTimeoutMs: 50 })
+    // The worker's connection has opened before the lock is taken, so it is the write that meets it.
+    await post({ kind: 'events', threadId: 'other', events: [added('first', 'First')] })
     const holder = new DatabaseSync(path, { timeout: 5_000 })
     holder.exec('BEGIN IMMEDIATE')
     let failed: ThreadStoreWriteOutcome
     try { failed = await post({ kind: 'events', threadId: 'thread', events: [added('one', 'One')] }) } finally { holder.exec('COMMIT'); holder.close() }
     expect(failed.failed.has('thread')).toBe(true)
     expect(failed.error).toBeInstanceOf(Error)
+    // The worker failed it and goes on writing; nothing fell back to main.
+    expect(internals(store).worker).toBeDefined()
     expect(store.readMessages('thread').messages).toEqual([])
     expect((await post({ kind: 'events', threadId: 'thread', events: [added('one', 'One')] })).failed.size).toBe(0)
     expect(store.readMessages('thread').messages.map(item => item.text)).toEqual(['One'])
