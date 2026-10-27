@@ -623,6 +623,20 @@ describe('a thread file page (ADR-0085, October 27 amendment)', () => {
     const served = await fetch(url)
     expect([served.status, await served.text()]).toEqual([200, expect.stringContaining('<h1>Picker</h1>')])
   })
+  it('closes a thread\'s file pages as soon as Sotto no longer lists the thread, before the browser hears of it (review finding)', async () => {
+    const gone = new Set<string>()
+    const { service, target } = await browserFixture(false, gone, () => true)
+    const folder = unwrap(await service.list({ threadId: 'a' })).workspace.workingDirectory
+    await writeFile(join(folder, 'prototype.html'), '<h1>Picker</h1>')
+    const opened = unwrap(await service.agentOpen({ threadId: target.threadId, workspaceId: target.workspaceId, url: 'prototype.html', description: 'Show it' }))
+    const url = unwrap(await service.list({ threadId: 'a' })).pages.find(page => page.id === opened.task.pageId)!.url
+    expect((await fetch(url)).status).toBe(200)
+    // The thread is removed; no browser call follows, so only the page request itself can notice.
+    gone.add('a')
+    const closed = await fetch(url)
+    expect(closed.status).toBe(404)
+    expect(await closed.text()).toContain('This page has closed')
+  })
   it('refuses a file outside the thread\'s folder, or one that is not HTML, in plain words and opens nothing', async () => {
     const { service, target: { threadId, workspaceId }, folder } = await openFrom()
     const target = { threadId, workspaceId }

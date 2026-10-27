@@ -6,7 +6,7 @@ October 27, 2026, on `fix/browser-opens-thread-files`, from `main` at d717248d4,
 
 `tests/e2e/browser-thread-files.spec.ts` launched the built app with phone access off and **Let agents use the browser without asking** on, its default. It wrote `docs/prototypes/trail-prototype.html` into the Workshop thread's working folder, with `assets/look.css` and `assets/variant.js` beside it. Then, as the Workshop thread's agent, it called the browser tools through the same dispatcher a provider reaches.
 
-- `browser_open` with a `file://` URL to a file in a temporary folder outside the thread's folder returned an error: "Only HTML files inside this thread's folder can open in Sotto's browser. …\elsewhere.html is outside it. Nothing was opened. Copy the page into …, or serve it and open its http address." No page opened.
+- `browser_open` with a `file://` URL to a file in a temporary folder outside the thread's folder returned an error: "Only HTML files inside this thread's folder can open in Sotto's browser. …\elsewhere.html is outside it. Nothing was opened. Copy the page into the thread's folder, or serve it and open its http address." (wording after the review fixes) No page opened.
 - `browser_open` with `file:///…/docs/prototypes/trail-prototype.html?variant=B` opened the page at `http://127.0.0.1:<port>/page/<token>/trail-prototype.html?variant=B`. Its own script ran in the sandbox, read `variant=B` from the query string, and found the style sheet beside the page applied, so the page title read `Trail picker, variant B, styled`. The agent's `inspect` on it ran, because the thread's browser grant shared the page as it shares any other.
 - `artifacts/browser-thread-files/thread-file-player.png` is the window at 1280x800 with the browser player over the Workshop thread. The player is titled `Trail picker, variant …` with a `127.0.0.1` address, the page shows its **Variant B** badge, and the task line reads "Show the trail picker prototype, variant…".
 - `artifacts/browser-thread-files/thread-file-tools.png` is the same page in Tools > Browser. The address bar holds the `http://127.0.0.1:<port>/page/…` address, and the page is drawn in full with the sibling style sheet's colours: the **Variant B** badge, the "Take the long way home." heading, the landscape band and **Save trail**.
@@ -24,5 +24,18 @@ Each was run with its fix undone and failed, and passes with it.
 - `tests/unit/main/browserAgentTools.test.ts`: the dispatcher passes a `file://` URL on to the browser service instead of answering "invalid", returns the service's own words, and the `browser_open` and `iphone_open` descriptions and input schema tell agents they can pass a file.
 
 `tests/unit/host/questionPageRoute.test.ts` still passes with the route's new option and its reworded refusal line.
+
+## Review fixes
+
+Sol's two-axis review of the first commit found six things, fixed in the commit after it. Each new test was run against the first commit's code, and with its own fix undone in the current code, and failed both times.
+
+- **Links are judged before they are followed.** `tests/unit/main/threadFilePagesProbes.test.ts` records every path the file system is asked about, and every path `realpath` answers with. A page behind a folder link that leads out of the thread's folder is refused, and so is a page's style behind such a link. Neither touches anything where the link leads. A share or device path (`file://server/share/…`, `\\server\share\…`, `//server/…`, `\\?\UNC\…`, `\\.\pipe\…`) is refused before anything at all is looked at. The links are junctions, which stand in for a link to a share: no share was reachable from this laptop, and a file link needs Developer Mode.
+- **Hidden folders.** `.private/page.html` and `docs/.drafts/inner/page.html` are refused at open (`threadFilePages.test.ts`). The route refuses a thread file page's files when a folder on the way from the thread's folder is hidden (`questionPageRoute.test.ts`).
+- **A removed thread's pages close at once.** Through the browser service, a page served while its thread is listed answers 404 "This page has closed" as soon as the thread is not, with no browser call in between (`browserTools.test.ts`).
+- **The page budget.** With the budget lowered to 3, the fourth request answers 429 with "Wait a minute, then reload the page." (`threadFilePages.test.ts`).
+- **The missing-folder message** now says to check that the folder is still there and open the file again, or serve the page.
+- **README** says what the agent can open, and in Privacy and cost that the file is served on `127.0.0.1` only.
+
+The question page tests (`questionPageRoute.test.ts`, `tests/unit/main/questionPages*.test.ts`) and the socket server's tests pass on the shared admission and budget code.
 
 Not checked here: macOS and Linux, and a real provider turn. The spec drives the tool dispatcher directly, as `agent-browser.spec.ts` does, so the agents' use of the new descriptions is not observed. The folder-link cases ran through a junction. File symbolic links need Developer Mode on this computer, so those cases skipped here and run where the system allows them.

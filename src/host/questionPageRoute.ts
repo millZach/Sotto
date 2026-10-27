@@ -2,7 +2,7 @@ import { createReadStream } from 'node:fs'
 import { realpath, stat } from 'node:fs/promises'
 import { request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http'
 import path from 'node:path'
-import { inside, type QuestionPageTarget } from '../main/agents/questionPages'
+import { inside, walkInside, type QuestionPageTarget } from '../main/agents/questionPages'
 
 /** A page route's path: the token and whatever follows it. */
 export const QUESTION_PAGE_PATH = /^\/page\/([A-Za-z0-9_-]{32})(\/[^?#]*)?$/u
@@ -68,6 +68,18 @@ const finished = (response: ServerResponse): Promise<void> => new Promise(resolv
 /** A web file in the folder, as it is after links are followed: no hidden part on the way to it, and a kind a page is made of. */
 const servable = (root: string, file: string): boolean => file !== root && inside(root, file)
   && !path.relative(root, file).split(path.sep).some(part => part.startsWith('.')) && CONTENT_TYPES[path.extname(file).toLowerCase()] !== undefined
+/** For a thread file page, no part of the way from the thread's folder to the file is hidden either (ADR-0085, October 27). */
+const unhiddenFrom = (folder: string | undefined, file: string): boolean => folder === undefined
+  || (inside(folder, file) && !path.relative(folder, file).split(path.sep).some(part => part.startsWith('.')))
+
+/** How many page requests a minute one listener answers, all pages together (ADR-0085): a page loads many files. */
+export const PAGE_REQUESTS_PER_MINUTE = 1200
+
+/** The answer to a page request past the listener's budget, in words. */
+export function refuseBusyPage(response: ServerResponse): void {
+  explain(response, 429, 'Too many requests for this page', ['Sotto answers at most 1,200 page requests a minute here, and this minute’s are spent. Nothing was lost.',
+    'Wait a minute, then reload the page.'])
+}
 
 /**
  * Answers one request on a question page's route (ADR-0085): `/page/<token>/<path>`. A file page serves its folder
@@ -117,9 +129,11 @@ async function serveFile(request: IncomingMessage, response: ServerResponse, tar
   // The folder is the one found when the question was asked, after links were followed. If it has since become a link to
   // somewhere else, it is not that folder any more, and nothing in it is served.
   const root = await realpath(target.root).catch(() => undefined) === target.root ? target.root : undefined
-  const file = root ? await realpath(path.join(root, ...parts)).catch(() => undefined) : undefined
   // A link in the folder is followed before it is judged, so `look.css` that leads to `.env` is refused as `.env` would be.
-  if (file && root && !servable(root, file)) {
+  // It is followed without leaving the folder: a link to a share or outside is refused before anything there is touched.
+  const walked = root ? await walkInside(root, path.join(root, ...parts)) : undefined
+  const file = walked && 'file' in walked ? walked.file : undefined
+  if ((walked && 'reason' in walked && walked.reason === 'outside') || (file && root && (!servable(root, file) || !unhiddenFrom(target.folder, file)))) {
     explain(response, 403, 'Sotto does not serve this file', [REFUSED_LINE])
     return
   }

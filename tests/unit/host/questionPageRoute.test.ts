@@ -11,7 +11,7 @@ import { serveQuestionPage } from '../../../src/host/questionPageRoute'
 // A question page's route (ADR-0085): its token opens one HTML file's folder read-only, or passes reads on to the
 // loopback page an agent serves, and says in plain words when the page is gone.
 
-const FILE = 'f'.repeat(32), SERVER = 's'.repeat(32), SELF = 'o'.repeat(32), STOPPED = 'x'.repeat(32)
+const FILE = 'f'.repeat(32), HIDDEN = 'h'.repeat(32), SERVER = 's'.repeat(32), SELF = 'o'.repeat(32), STOPPED = 'x'.repeat(32)
 let folder: string, listener: Server, upstream: Server, base: string
 const targets = new Map<string, QuestionPageTarget>()
 const opened: string[] = []
@@ -44,6 +44,11 @@ beforeEach(async () => {
   const port = await listen(listener)
   base = `http://127.0.0.1:${port}`
   targets.set(FILE, { kind: 'file', root: join(folder, 'page'), file: join(folder, 'page', 'greeting.html') })
+  await mkdir(join(folder, '.private', 'page'), { recursive: true })
+  await writeFile(join(folder, '.private', 'page', 'index.html'), 'SECRET private page')
+  await writeFile(join(folder, '.private', 'page', 'look.css'), 'SECRET private style')
+  // A thread file page names its thread's folder, and nothing on the way from it may be hidden.
+  targets.set(HIDDEN, { kind: 'file', root: join(folder, '.private', 'page'), file: join(folder, '.private', 'page', 'index.html'), folder })
   targets.set(SERVER, { kind: 'server', origin: `http://localhost:${upstreamPort}` })
   targets.set(SELF, { kind: 'server', origin: `http://127.0.0.1:${port}` })
   // A port nothing listens on: taken, then let go.
@@ -151,4 +156,12 @@ it('judges a linked file by what it leads to, so a page’s style that leads to 
   const response = await get(`/page/${FILE}/assets/linked.css`)
   expect(response.status).toBe(403)
   expect(await response.text()).not.toContain('SECRET')
+})
+
+it('refuses a thread file page’s files when a folder on the way from the thread’s folder is hidden (ADR-0085, October 27)', async () => {
+  for (const path of ['index.html', 'look.css']) {
+    const response = await get(`/page/${HIDDEN}/${path}`)
+    expect(response.status, path).toBe(403)
+    expect(await response.text(), path).not.toContain('SECRET')
+  }
 })

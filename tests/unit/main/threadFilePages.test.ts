@@ -103,11 +103,11 @@ it('refuses a file outside the thread\'s folder in plain words, and looks at not
 })
 
 it('refuses a file that is not HTML, one that is not there, a hidden one and one in .git', async () => {
-  expect(refusal(await pages.open('docs/prototypes/data.json', 'thread', folder))).toContain('is not one. Nothing was opened.')
+  expect(refusal(await pages.open('docs/prototypes/data.json', 'thread', folder))).toContain('is not one, or leads to one that is not. Nothing was opened.')
   expect(refusal(await pages.open('docs/prototypes/assets/look.css', 'thread', folder))).toContain('Only HTML files can open')
   expect(refusal(await pages.open('docs/prototypes/missing.html', 'thread', folder))).toContain('is not in this thread\'s folder, so nothing was opened')
-  expect(refusal(await pages.open('docs/prototypes/.hidden.html', 'thread', folder))).toContain('does not open hidden files or anything in .git')
-  expect(refusal(await pages.open('.git/page.html', 'thread', folder))).toContain('does not open hidden files or anything in .git')
+  expect(refusal(await pages.open('docs/prototypes/.hidden.html', 'thread', folder))).toContain('does not open a file in a hidden folder or in .git')
+  expect(refusal(await pages.open('.git/page.html', 'thread', folder))).toContain('does not open a file in a hidden folder or in .git')
 })
 
 it('judges a linked page by where it leads, so a page that leads out of the folder does not open', async () => {
@@ -130,4 +130,30 @@ it('closes a thread\'s pages when the thread has gone, and says so in words', as
   expect(body).toContain('This page has closed')
   expect(body).toContain('Ask the agent to open the page again.')
   expect(body).not.toContain('question')
+})
+
+it('refuses a page in a hidden folder, which would otherwise become the folder it serves (review finding)', async () => {
+  await mkdir(join(folder, '.private'), { recursive: true })
+  await writeFile(join(folder, '.private', 'page.html'), 'SECRET private page')
+  await mkdir(join(folder, 'docs', '.drafts', 'inner'), { recursive: true })
+  await writeFile(join(folder, 'docs', '.drafts', 'inner', 'page.html'), 'SECRET draft page')
+  for (const written of ['.private/page.html', join(folder, '.private', 'page.html'), pathToFileURL(join(folder, 'docs', '.drafts', 'inner', 'page.html')).href]) {
+    expect(refusal(await pages.open(written, 'thread', folder)), written).toContain('does not open a file in a hidden folder or in .git')
+  }
+})
+
+it('answers at most its budget of page requests a minute, all pages together, and says so in words (review finding)', async () => {
+  pages.dispose()
+  pages = new ThreadFilePages({ pageBudget: 3 })
+  const url = served(await pages.open(page, 'thread', folder))
+  const folderUrl = url.slice(0, url.lastIndexOf('/') + 1)
+  for (const path of ['x-prototype.html', 'assets/look.css', 'assets/run.js']) expect((await fetch(folderUrl + path)).status, path).toBe(200)
+  const refused = await fetch(folderUrl + 'assets/logo.png')
+  expect(refused.status).toBe(429)
+  expect(await refused.text()).toContain('Wait a minute, then reload the page.')
+})
+
+it('says what to do next when the thread\'s folder is not there (review finding)', async () => {
+  const message = refusal(await pages.open(page, 'thread', join(base, 'gone')))
+  expect(message).toContain('Nothing was opened. Check that the thread\'s folder is still there, then open the file again')
 })

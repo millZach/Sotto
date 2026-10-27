@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { readdir, realpath, stat } from 'node:fs/promises'
+import { lstat, readdir, readlink, realpath, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { AGENT_THREAD_EXCERPT_MAX, isVisualMessage, QUESTION_PAGES_MAX, type AgentHostSnapshot, type AgentMessage, type AgentRequest, type AgentThread, type QuestionPage } from '../../shared/agents'
@@ -12,7 +12,8 @@ import { isSottoRequest } from './sottoRequests'
  * address of a page the agent serves on this machine.
  */
 export type QuestionPageTarget =
-  | { readonly kind: 'file'; readonly root: string; readonly file: string }
+  /** `folder`, for a thread file page: the thread's folder, from which no part of the way to a served file may be hidden. */
+  | { readonly kind: 'file'; readonly root: string; readonly file: string; readonly folder?: string }
   | { readonly kind: 'server'; readonly origin: string }
 
 /** A page named in a question's words or the message before it, before Sotto has checked that it is there. */
@@ -85,6 +86,68 @@ export const inside = (root: string, target: string): boolean => {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
 }
 
+/** A network share or device path (`\\server\share`, `\\?\…`, `\\.\…`, `//server`): never looked at, whatever names it. */
+export const onShareOrDevice = (value: string): boolean => /^[\\/]{2}/u.test(value)
+
+/** How many links one path may pass through before it is given up on, so a loop of links ends. */
+const LINK_HOPS_MAX = 32
+
+/**
+ * Where `target` really is, when it is inside `root` once its links are followed; undefined otherwise. `root` must be a
+ * real path already. Each part of the way is looked at with `lstat` only after it is known to be inside the folder, and a
+ * link's own words are judged before it is followed, so a link to a network share or outside the folder is refused
+ * without the share, or anything else outside, ever being touched. `realpath` would open the link's target to find out.
+ */
+export async function resolveInside(root: string, target: string): Promise<string | undefined> {
+  const walked = await walkInside(root, target, LINK_HOPS_MAX)
+  return 'file' in walked ? walked.file : undefined
+}
+
+/** `resolveInside`, saying why it stopped: a part of the way that is not there, or a way that leaves the folder. */
+export async function walkInside(root: string, target: string, hops = LINK_HOPS_MAX): Promise<{ readonly file: string } | { readonly reason: 'outside' | 'missing' }> {
+  if (onShareOrDevice(target) || !path.isAbsolute(target) || !inside(root, target)) return { reason: 'outside' }
+  let current = root
+  for (const part of path.relative(root, target).split(path.sep).filter(Boolean)) {
+    // `current` is always a real path inside the folder, so `next` names one entry of a folder inside it.
+    const next = path.join(current, part)
+    const info = await lstat(next).catch(() => undefined)
+    if (!info) return { reason: 'missing' }
+    if (!info.isSymbolicLink()) { current = next; continue }
+    if (hops <= 0) return { reason: 'missing' }
+    // A Windows junction may read back with the `\\?\` prefix before its drive; anything else after `\\` is a share or device.
+    const link = (await readlink(next).catch(() => undefined))?.replace(/^\\\\\?\\(?=[A-Za-z]:\\)/u, '')
+    if (link === undefined) return { reason: 'missing' }
+    if (onShareOrDevice(link)) return { reason: 'outside' }
+    const followed = await walkInside(root, path.resolve(current, link), hops - 1)
+    if (!('file' in followed)) return followed
+    current = followed.file
+  }
+  return { file: current }
+}
+
+/** Why a file is not admitted as a page: the reasons a thread file page tells its agent in words. */
+export type PageFileRefusal = 'outside' | 'missing' | 'not-html' | 'hidden'
+
+/**
+ * Whether `candidate` is an HTML page Sotto may open from the folder `root` (a real path), and where it really is: an
+ * `.html` or `.htm` file inside the folder once links are followed, by `resolveInside`, and outside `.git`. A question's
+ * page may sit in another hidden folder, as `.superpowers/` prototypes do (ADR-0085); a thread file page may not, so
+ * `hidden: 'refused'` refuses any hidden part of the way from the folder, and a hidden file.
+ */
+export async function admitPageFile(root: string, candidate: string, options: { readonly hidden: 'refused' | 'git-only' }): Promise<{ readonly ok: true; readonly file: string } | { readonly ok: false; readonly reason: PageFileRefusal }> {
+  if (onShareOrDevice(candidate) || !inside(root, candidate)) return { ok: false, reason: 'outside' }
+  if (!HTML.test(candidate)) return { ok: false, reason: 'not-html' }
+  const walked = await walkInside(root, candidate, LINK_HOPS_MAX)
+  if (!('file' in walked)) return { ok: false, reason: walked.reason }
+  // Only now, with its real path known to be inside the folder, is the file itself looked at.
+  const file = walked.file
+  if (!await stat(file).then(info => info.isFile(), () => false)) return { ok: false, reason: 'missing' }
+  if (!HTML.test(file)) return { ok: false, reason: 'not-html' }
+  const parts = path.relative(root, file).split(path.sep)
+  if (parts.some(part => part.toLowerCase() === '.git') || (options.hidden === 'refused' && parts.some(part => part.startsWith('.')))) return { ok: false, reason: 'hidden' }
+  return { ok: true, file }
+}
+
 /** The one file under `root` with this name, read breadth first and without hidden or dependency folders. */
 async function findByName(root: string, name: string, suffix: string): Promise<string | undefined> {
   const matches: string[] = []
@@ -144,12 +207,16 @@ export async function foundPages(mentions: readonly PageMention[], folder: strin
     const named = path.isAbsolute(written) ? written : path.resolve(root, written)
     // Nothing outside the folder is looked at, so a network path in what the agent wrote never reaches the network; a
     // path elsewhere is looked for by its name inside the folder instead, as one that is not there is.
-    let candidate: string | undefined = inside(root, named) && await stat(named).then(info => info.isFile(), () => false) ? named : undefined
-    candidate ??= await findByName(root, path.basename(written.replaceAll('\\', '/')), written.replaceAll('\\', '/').replace(/^\.?\/+/u, ''))
-    if (!candidate) continue
-    const file = await realpath(candidate).catch(() => undefined)
-    if (!file || !HTML.test(file) || !inside(root, file) || files.has(file)) continue
-    if (path.relative(root, file).split(path.sep).some(part => part.toLowerCase() === '.git')) continue
+    // Admission (shared with a thread file page) follows links without leaving the folder, so a link to a share is not followed.
+    const direct = await admitPageFile(root, named, { hidden: 'git-only' })
+    let file: string | undefined
+    if (direct.ok) file = direct.file
+    else if (direct.reason === 'outside' || direct.reason === 'missing') {
+      const found = await findByName(root, path.basename(written.replaceAll('\\', '/')), written.replaceAll('\\', '/').replace(/^\.?\/+/u, ''))
+      const admitted = found ? await admitPageFile(root, found, { hidden: 'git-only' }) : undefined
+      if (admitted?.ok) file = admitted.file
+    }
+    if (!file || files.has(file)) continue
     files.add(file)
     pages.push({ page: { kind: 'file', name: path.basename(file), start: encodeURIComponent(path.basename(file)) }, target: { kind: 'file', root: path.dirname(file), file } })
   }

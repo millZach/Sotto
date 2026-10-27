@@ -57,7 +57,7 @@ export class BrowserService extends ToolOperations {
   private readonly mountVersion: Record<MountSlot, number> = { pane: 0, phone: 0 }
   private readonly desiredPageId: Record<MountSlot, string | null> = { pane: null, phone: null }
   private readonly filePages: ThreadFilePages
-  constructor(private readonly dependencies: BrowserDependencies) { super(); this.filePages = dependencies.filePages ?? new ThreadFilePages() }
+  constructor(private readonly dependencies: BrowserDependencies) { super(); this.filePages = dependencies.filePages ?? new ThreadFilePages({ live: threadId => dependencies.files.hasThread(threadId) }) }
   private publish(record: PageRecord): BrowserPage {
     if (!record.view.webContents.isDestroyed()) {
       const contents = record.view.webContents
