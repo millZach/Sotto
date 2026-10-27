@@ -69,6 +69,7 @@ import { WatcherProfileRefusal } from './watcherProfile'
 import { assertWatcherPermission } from './watcherProviderTools'
 import type { WatcherProfileTools, WorkerRoleSource } from './host'
 import type { ThreadClearKeptReason } from '../../shared/threadClear'
+import type { MergedSettleExpectation } from './worktreeCleanup'
 
 /**
  * Fold a run of appends to one message into the first of them, so a reply streamed over one write
@@ -4814,7 +4815,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (this.eventSourced) return { ...purpose, historyFromEvents: true } as T
     return purpose?.historyFromEvents ? { ...purpose, historyFromEvents: false } : purpose
   }
-  async setWorkspaceSettled(kind: 'project' | 'thread', id: string, settled: boolean, options?: { expectedMergedTip: string; expectedMergedBranch: string }, watcherGuard?: () => void): Promise<AgentHostSnapshot> {
+  async setWorkspaceSettled(kind: 'project' | 'thread', id: string, settled: boolean, options?: MergedSettleExpectation, watcherGuard?: () => void): Promise<AgentHostSnapshot> {
     if (kind === 'thread' && settled && options) return this.onLane(id, async () => {
       const thread = this.thread(id)
       const work = this.checkoutWorkHolder(thread, 'settle')
@@ -4822,9 +4823,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       const release = await this.checkoutMutations.acquire(this.threadCheckoutFolder(id), 'send', { kind: 'settle' })
       try {
         const worktree = this.thread(id).worktree
-        const branch = worktree?.mode === 'independent' ? worktree.sentBranch ?? worktree.branch : worktree?.sentBranch
-        if (!worktree?.repositoryRoot || branch !== options.expectedMergedBranch
-          || (await runWorktreeGit(worktree.repositoryRoot, ['rev-parse', '--verify', '--end-of-options', `refs/heads/${branch}^{commit}`])).trim() !== options.expectedMergedTip) {
+        const branch = (worktree?.mode === 'independent' ? worktree.sentBranch ?? worktree.branch : worktree?.sentBranch) ?? null
+        // The branch's tip as it stands, or null when it is gone from a repository Git can read; a branch with no
+        // repository to read it in, or one Git cannot read, refuses.
+        const root = worktree?.repositoryRoot
+        const tip = branch === null ? null : root
+          ? await runWorktreeGit(root, ['rev-parse', '--verify', '--end-of-options', `refs/heads/${branch}^{commit}`]).then(value => value.trim(),
+            () => runWorktreeGit(root, ['rev-parse', '--git-dir']).then(() => null, () => undefined)) : undefined
+        if (branch !== options.expectedMergedBranch || tip !== options.expectedMergedTip) {
           throw new Error('This branch changed after its merged pull request was checked. Its thread stays unsettled.')
         }
         return await this.setWorkspaceSettled(kind, id, settled)

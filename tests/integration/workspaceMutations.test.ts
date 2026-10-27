@@ -114,6 +114,26 @@ it('auto-settles a checked merged tip despite the thread history error', async (
   } finally { await f.stop(); await f.remove() }
 })
 
+it('auto-settles a thread whose merged branch is gone only while it stays gone', async () => {
+  const f = await fixture()
+  try {
+    await f.host.execute(send('a'))
+    const native = f.adapters.codex.state.threads.at(-1)!
+    native.status = 'idle'; f.adapters.codex.emit()
+    const tip = (await git(f.project.path, ['rev-parse', 'HEAD'])).trim()
+    // The sweep saw the branch gone, or never recorded, but the thread still sends on `main` as it stands.
+    await expect(f.host.setWorkspaceSettled('thread', 'a', true, { expectedMergedTip: null, expectedMergedBranch: 'main' })).rejects.toThrow('This branch changed')
+    await expect(f.host.setWorkspaceSettled('thread', 'a', true, { expectedMergedTip: null, expectedMergedBranch: null })).rejects.toThrow('This branch changed')
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'a')?.workspaceSettledAt).toBeFalsy()
+    // Deleted after its pull request merged, as the merge flow does.
+    await git(f.project.path, ['checkout', '--detach'])
+    await git(f.project.path, ['branch', '-D', 'main'])
+    const after = await f.host.setWorkspaceSettled('thread', 'a', true, { expectedMergedTip: null, expectedMergedBranch: 'main' })
+    expect(after.threads.find(thread => thread.id === 'a')?.workspaceSettledAt).toBeTruthy()
+    expect((await git(f.project.path, ['rev-parse', 'HEAD'])).trim()).toBe(tip)
+  } finally { await f.stop(); await f.remove() }
+})
+
 it('holds a checkout throughout a Git action and refuses a sibling send and branch restore without desktop checkpoint wiring', async () => {
   const f = await fixture(), pause = barrier()
   let action: Promise<unknown> | undefined
