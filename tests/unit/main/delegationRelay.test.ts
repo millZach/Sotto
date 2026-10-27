@@ -10,7 +10,7 @@ import { DesktopDelegationRelay, RELAY_THIS_COMPUTER_ONLY, type RelayHostConnect
 import { hostDelegationMachines, RELAYED_HOST } from '../../../src/main/agents/hostDelegation'
 import { delegationToolDefinitions } from '../../../src/main/agents/delegationTools'
 import type { HostFactsSource } from '../../../src/main/agents/hostFacts'
-import { relayAwayWords, type DelegationRelayAsk } from '../../../src/shared/delegationRelay'
+import { DELEGATION_RELAY_RECORDS_MAX, relayAwayWords, type DelegationRelayAsk } from '../../../src/shared/delegationRelay'
 import { hostRequestSchema, hostPushSchema, HOST_DESKTOP_FEATURES, HOST_FEATURES } from '../../../src/shared/hostProtocol'
 import type { DelegationNews } from '../../../src/shared/delegation'
 
@@ -121,6 +121,17 @@ describe('the host side of the relay', () => {
     expect(told).toEqual([{ source: 'delegation', items: [{ delegationId: DELEGATION, threadId: 'child-1', outcome: 'unknown' }] }])
   })
 
+  it('never forgets an open relayed delegation to keep its record small, only settled ones', async () => {
+    const relay = new HostDelegationRelay(await folder(), { here: () => 'forge' })
+    await relay.load()
+    let made = 0
+    const { handle } = desktop(relay, () => ({ status: 'ok', delegation: { id: `00000000-0000-4000-8000-${String(++made).padStart(12, '0')}`, thread: `child-${made}`, outcome: made === 1 ? 'working' : 'answered' } }))
+    relay.desktopConnected(handle)
+    for (let index = 0; index < DELEGATION_RELAY_RECORDS_MAX + 5; index++) await relay.start('thread-a', 'code-review', startAsk)
+    expect(relay.holds('thread-a', '00000000-0000-4000-8000-000000000001')).toBe(true)
+    expect(relay.holds('thread-a', '00000000-0000-4000-8000-000000000002')).toBe(false)
+  })
+
   it('says Stop could not reach a delegation while the desktop is away', async () => {
     const relay = new HostDelegationRelay(await folder(), { here: () => 'forge' })
     await relay.load()
@@ -184,7 +195,7 @@ describe('the desktop side of the relay', () => {
     relay.useHosts({ subscribeConnected: () => () => undefined, remoteConnections: () => [{ hostId: HOST, kind: 'remote', service: { shell: () => ({ host: { threads } }) } }] })
     const calls: { threadId: string; args: unknown; waitMs?: number | undefined }[] = []
     relay.useDelegation({ delegate: async (threadId, args, context) => { calls.push({ threadId, args, waitMs: context?.waitMs }); return { status: 'ok', delegation: { id: DELEGATION, outcome: 'working' } } },
-      read: async () => ({ status: 'ok', delegation: { id: DELEGATION, outcome: 'answered' } }), cancel: async () => ({ status: 'ok' }), retriedDelegation: () => undefined })
+      read: async () => ({ status: 'ok', delegation: { id: DELEGATION, outcome: 'answered' } }), cancel: async () => ({ status: 'ok' }), retriedDelegation: () => undefined, isOpen: () => true, hasOpen: () => true })
     const answer = await relay.answer(HOST, ask())
     expect(answer).toMatchObject({ status: 'ok', placement: { hostId: DESKTOP, name: 'This computer' } })
     const key = `host:${HOST}:thread-a`
@@ -215,7 +226,7 @@ describe('the desktop side of the relay', () => {
     const reads: unknown[] = []
     const delegation = { delegate: (threadId: string, args: unknown) => { admitted.set(`${threadId}\n${(args as { retry_key: string }).retry_key}`, DELEGATION); return new Promise<unknown>(() => undefined) },
       read: async (_threadId: string, args: unknown) => { reads.push(args); return { status: 'ok', delegation: { id: DELEGATION, outcome: 'working' } } }, cancel: async () => ({}),
-      retriedDelegation: (callerId: string, retryKey: string) => admitted.get(`${callerId}\n${retryKey}`) }
+      retriedDelegation: (callerId: string, retryKey: string) => admitted.get(`${callerId}\n${retryKey}`), isOpen: () => true, hasOpen: () => true }
     const relay = new DesktopDelegationRelay(root, { placement: placement(DESKTOP), localHostId: () => DESKTOP })
     relay.useDelegation(delegation)
     // The start waits for its outcome; its answer never goes.
@@ -232,7 +243,7 @@ describe('the desktop side of the relay', () => {
 
   it('refuses a start placed back on the asking machine or on a third machine, and starts nothing', async () => {
     const started: unknown[] = []
-    const delegation = { delegate: async (...args: unknown[]) => { started.push(args); return {} }, read: async () => ({}), cancel: async () => ({}), retriedDelegation: () => undefined }
+    const delegation = { delegate: async (...args: unknown[]) => { started.push(args); return {} }, read: async () => ({}), cancel: async () => ({}), retriedDelegation: () => undefined, isOpen: () => true, hasOpen: () => true }
     const home = new DesktopDelegationRelay(await folder(), { placement: placement(HOST), localHostId: () => DESKTOP }); home.useDelegation(delegation)
     expect(await home.answer(HOST, ask())).toMatchObject({ status: 'refused', code: 'MACHINE_UNAVAILABLE', message: expect.stringContaining('That is forge, where this thread runs') })
     const third = new DesktopDelegationRelay(await folder(), { placement: placement(MAC), localHostId: () => DESKTOP }); third.useDelegation(delegation)
@@ -242,7 +253,7 @@ describe('the desktop side of the relay', () => {
 
   it('answers each ask a relaying host pushes, and sends news back to the asking host', async () => {
     const relay = new DesktopDelegationRelay(await folder(), { placement: placement(DESKTOP), localHostId: () => DESKTOP })
-    relay.useDelegation({ delegate: async () => ({ status: 'ok', delegation: { id: DELEGATION, outcome: 'working' } }), read: async () => ({}), cancel: async () => ({}), retriedDelegation: () => undefined })
+    relay.useDelegation({ delegate: async () => ({ status: 'ok', delegation: { id: DELEGATION, outcome: 'working' } }), read: async () => ({}), cancel: async () => ({}), retriedDelegation: () => undefined, isOpen: () => true, hasOpen: () => true })
     let push: ((askId: string, ask: DelegationRelayAsk) => void) | undefined
     const answers: unknown[] = [], news: unknown[] = []
     const connection: RelayHostConnection = { hostId: HOST, kind: 'remote', service: { supportsDelegationRelay: true,

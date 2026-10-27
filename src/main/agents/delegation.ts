@@ -520,6 +520,9 @@ export class DelegationService {
    * (#1316): how the desktop relay finds what a relayed start made after its answer was lost, or after a restart.
    */
   retriedDelegation(callerId: string, retryKey: string): string | undefined { return this.retried(callerId, retryKey)?.id }
+  /** Whether a delegation is still open, or a thread has one open: what the relay's record keeps whatever its size (#1316). */
+  isOpen(delegationId: string): boolean { const record = this.record(delegationId); return record !== undefined && this.open(record) }
+  hasOpen(delegatingThreadId: string): boolean { return (this.byDelegating.get(delegatingThreadId) ?? []).some(record => this.open(record)) }
   /** Whether this thread is offered `sotto_delegate` (decisions 1 and 2), asked at every launch and every call. */
   admits(threadId: string): boolean {
     if (this.closed) return false

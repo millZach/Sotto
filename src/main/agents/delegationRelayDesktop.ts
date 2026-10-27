@@ -47,9 +47,9 @@ const NOT_HELD = 'This computer holds no delegation for that ask, so Sotto canno
 const id = z.string().min(1).max(512)
 const callerSchema = z.object({ id, projectId: id, runtimeMode: agentRuntimeModeSchema, levels: z.number().int().min(0).max(8), rootUserMessageId: id,
   callerMessageId: id.optional() }).strict()
-const fileSchema = z.object({ version: z.literal(1), callers: z.array(callerSchema).max(1_000),
+const fileSchema = z.object({ version: z.literal(1), callers: z.array(callerSchema).max(100_000),
   /** Each host's ask, by its `relayId` under the host's thread key, to the delegation it made here. */
-  asks: z.array(z.object({ key: id, relayId: z.uuid(), retryKey: z.uuid(), delegation: z.uuid().optional() }).strict()).max(2_000) }).strict()
+  asks: z.array(z.object({ key: id, relayId: z.uuid(), retryKey: z.uuid(), delegation: z.uuid().optional() }).strict()).max(100_000) }).strict()
 type RelayFile = z.infer<typeof fileSchema>
 const CALLERS_MAX = 1_000, ASKS_MAX = 2_000
 const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -73,7 +73,7 @@ export class DesktopDelegationRelay {
   private readonly followed = new WeakSet<object>()
   private source: RelayHostSource | undefined
   private unfollow: (() => void) | undefined
-  private delegation: Pick<DelegationService, 'delegate' | 'read' | 'cancel' | 'retriedDelegation'> | undefined
+  private delegation: Pick<DelegationService, 'delegate' | 'read' | 'cancel' | 'retriedDelegation' | 'isOpen' | 'hasOpen'> | undefined
 
   constructor(directory: string, private readonly options: {
     readonly placement: RelayPlacement
@@ -88,7 +88,7 @@ export class DesktopDelegationRelay {
     this.asks = file.asks
   }
   /** The delegation that admits relayed starts: this computer's own. */
-  useDelegation(delegation: Pick<DelegationService, 'delegate' | 'read' | 'cancel' | 'retriedDelegation'>): void { this.delegation = delegation }
+  useDelegation(delegation: Pick<DelegationService, 'delegate' | 'read' | 'cancel' | 'retriedDelegation' | 'isOpen' | 'hasOpen'>): void { this.delegation = delegation }
   /** Follows the router: every connection it takes whose host relays through this desktop is heard from then on. */
   useHosts(source: RelayHostSource): void {
     this.source = source
@@ -183,9 +183,29 @@ export class DesktopDelegationRelay {
     }
     return Math.max(level, claimed)
   }
+  /**
+   * Keeps the newest callers and asks, dropping only those with nothing open: a caller with an open delegation, and an ask
+   * whose delegation is open or not yet known, stay whatever the count, so an open one can always be read and told (#1316 review).
+   */
+  private trim(): void {
+    const delegation = this.delegation
+    let excess = this.callers.size - CALLERS_MAX
+    if (excess > 0) for (const key of [...this.callers.keys()]) {
+      if (excess <= 0) break
+      if (delegation?.hasOpen(key) !== false) continue
+      this.callers.delete(key); excess--
+    }
+    excess = this.asks.length - ASKS_MAX
+    if (excess > 0) this.asks = this.asks.filter(item => {
+      if (excess <= 0) return true
+      const made = item.delegation ?? delegation?.retriedDelegation(item.key, item.retryKey)
+      const open = !delegation || (made === undefined ? this.callers.has(item.key) && delegation.hasOpen(item.key) : delegation.isOpen(made))
+      if (open) return true
+      excess--; return false
+    })
+  }
   private save(): Promise<void> {
-    if (this.callers.size > CALLERS_MAX) for (const key of [...this.callers.keys()].slice(0, this.callers.size - CALLERS_MAX)) this.callers.delete(key)
-    if (this.asks.length > ASKS_MAX) this.asks = this.asks.slice(-ASKS_MAX)
+    this.trim()
     return this.store.writeLatest(() => ({ version: 1, callers: [...this.callers.values()].map(caller => ({ ...caller })), asks: this.asks }))
   }
 }

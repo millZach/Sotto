@@ -35,7 +35,8 @@ const recordSchema = z.object({
   createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(),
 }).strict()
 type RelayedRecord = z.infer<typeof recordSchema>
-const fileSchema = z.object({ version: z.literal(1), delegations: z.array(recordSchema).max(DELEGATION_RELAY_RECORDS_MAX) }).strict()
+/** The record's bound on disk: settled ones go past `DELEGATION_RELAY_RECORDS_MAX`, open ones never do, so this is far above it. */
+const fileSchema = z.object({ version: z.literal(1), delegations: z.array(recordSchema).max(100_000) }).strict()
 type RelayFile = z.infer<typeof fileSchema>
 
 /** Outcomes after which a relayed delegation is read no more, unless its read was lost. */
@@ -297,13 +298,12 @@ export class HostDelegationRelay {
   }
   private update(record: RelayedRecord, change: (record: RelayedRecord) => void): void { change(record); record.updatedAt = now() }
   private forget(record: RelayedRecord): void { this.records = this.records.filter(item => item !== record) }
-  /** Keeps the newest, dropping settled ones first, so nothing still open is forgotten while there is room. */
+  /** Keeps the newest, dropping only settled ones, oldest first: one still open, or whose read was lost, is never forgotten (#1316 review). */
   private trim(): void {
     let excess = this.records.length - DELEGATION_RELAY_RECORDS_MAX
     if (excess <= 0) return
     this.records = this.records.filter(record => excess <= 0 || !SETTLED.has(record.outcome) || record.unread === true || excess-- <= 0)
-    if (this.records.length > DELEGATION_RELAY_RECORDS_MAX) this.records = this.records.slice(-DELEGATION_RELAY_RECORDS_MAX)
   }
-  private save(): Promise<void> { return this.store.writeLatest(() => ({ version: 1, delegations: this.records.slice(-DELEGATION_RELAY_RECORDS_MAX) })) }
+  private save(): Promise<void> { return this.store.writeLatest(() => ({ version: 1, delegations: this.records })) }
   private persist(): Promise<void> { return this.save().catch(() => undefined) }
 }
