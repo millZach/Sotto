@@ -26,6 +26,7 @@ const restingWheel = (): RailWheelTurn => ({ at: -Infinity, direction: 0, travel
 /** The Favorites tile's place among the rail's provider names; no provider is called this. */
 const FAVORITES = '\u0000favorites'
 const noFavorites: readonly ModelFavorite[] = []
+const noUnavailable: readonly UnavailablePickerProvider[] = []
 
 /**
  * Newest first, with the model the provider itself recommends kept at the top whatever it is called. The
@@ -122,7 +123,7 @@ export interface PickerContinuation { readonly providers: ReadonlySet<string>; r
  * Favorites while any exist. A favorite whose provider or model has gone stays listed, unavailable, and can be unstarred.
  * Typing there searches every provider's models.
  */
-export function ModelPicker({ models, modelId, disabled, onChange, note, unavailable = [], continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false, pending = false, describedBy, ownServers }: {
+export function ModelPicker({ models, modelId, disabled, onChange, note, unavailable = noUnavailable, continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false, pending = false, describedBy, ownServers }: {
   readonly models: AgentModel[]; readonly modelId: string; readonly disabled: boolean; readonly onChange: (id: string) => void
   /** A model the provider gave no result for: marked as the permission chip's is, and described by the line that says so. */
   readonly pending?: boolean | undefined; readonly describedBy?: string | undefined
@@ -144,7 +145,13 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   const [addingServer, setAddingServer] = useState(false)
   const favoritesOn = useOwlFeature('model-favorites')
   const stored = useModelFavorites()
-  const favorites = favoritesOn ? stored : noFavorites
+  // Only the favorites of providers this menu offers: a menu that lists some providers (continuing a thread, a worker role)
+  // leaves the rest out rather than calling them unavailable.
+  const favorites = useMemo(() => {
+    if (!favoritesOn) return noFavorites
+    const offered = new Set([...models.map(model => model.provider), ...unavailable.map(item => item.name)])
+    return stored.filter(favorite => offered.has(favorite.provider))
+  }, [favoritesOn, stored, models, unavailable])
   const [provider, setProvider] = useState('')
   /** Whether Favorites is the rail's chosen tile, which it is only while the menu has a rail. */
   const [onFavorites, setOnFavorites] = useState(() => favorites.length > 0)

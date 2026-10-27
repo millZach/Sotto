@@ -94,7 +94,7 @@ describe('model favorites', () => {
   it('keeps a favorite whose model has gone, unavailable, and lets its star come off with focus on the next row', async () => {
     const user = userEvent.setup()
     const onChange = vi.fn()
-    act(() => { toggleModelFavorite({ id: 'gone', name: 'Old Model', provider: 'Grok', providerId: 'grok', ready: true }); toggleModelFavorite(model('sonnet')) })
+    act(() => { toggleModelFavorite({ id: 'gone', name: 'Old Model', provider: 'Claude', providerId: 'claude', ready: true }); toggleModelFavorite(model('sonnet')) })
     render(<ModelPicker models={models} modelId="astra" disabled={false} onChange={onChange} />)
     await user.click(screen.getByRole('combobox', { name: 'Thread model' }))
     const gone = screen.getByRole('option', { name: /Old Model/ })
@@ -105,6 +105,17 @@ describe('model favorites', () => {
     await user.keyboard('f')
     expect(screen.queryByRole('option', { name: /Old Model/ })).not.toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Claude Sonnet 4.6' })).toHaveFocus()
+  })
+
+  it('leaves out favorites of providers this menu does not offer, and then opens as before', async () => {
+    const user = userEvent.setup()
+    act(() => toggleModelFavorite(model('astra')))
+    render(<ModelPicker models={models.filter(item => item.provider !== 'Codex')} modelId="sonnet" disabled={false} onChange={vi.fn()} />)
+    await user.click(screen.getByRole('combobox', { name: 'Thread model' }))
+    expect(screen.getByRole('tab', { name: 'Claude' })).toHaveAttribute('aria-selected', 'true')
+    await user.click(screen.getByRole('tab', { name: 'Favorites' }))
+    expect(screen.queryByRole('option', { name: /GPT-6-Astra/ })).not.toBeInTheDocument()
+    expect(screen.getByText('Star a model to keep it here.')).toBeInTheDocument()
   })
 
   it('searches every provider’s models from Favorites, and Escape clears the search first', async () => {

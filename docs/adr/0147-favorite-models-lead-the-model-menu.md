@@ -18,7 +18,7 @@ The model menu lists models by provider, and OpenCode's and Cursor's by model so
 
 **4. The menu opens on Favorites while any exist.** It opens there with the current model marked chosen when it is a favorite; with none, it opens on the current model's provider as before, and the Favorites tile holds one line: "Star a model to keep it here." Typing on Favorites searches every provider's models, under each provider's name, not only the favorites. Escape clears that search first, then closes the menu.
 
-**5. A favorite that cannot be chosen stays listed.** One whose provider is not connected, or whose model the provider no longer lists, reads Unavailable the way an unready model does, and choosing it does nothing. Unlike an unavailable row elsewhere it can still take focus, so its star can come off from the keyboard; taking a star off on Favorites moves focus to the row that takes its place.
+**5. A favorite that cannot be chosen stays listed.** A menu lists only the favorites of providers it offers, so one that offers some providers, such as continuing a thread or a worker role's, leaves the others out rather than calling them unavailable, and opens on Favorites only when it lists one. Within that, one whose provider is turned on but not connected, or whose model the provider no longer lists, reads Unavailable the way an unready model does, and choosing it does nothing. Unlike an unavailable row elsewhere it can still take focus, so its star can come off from the keyboard; taking a star off on Favorites moves focus to the row that takes its place.
 
 ## Consequences
 
