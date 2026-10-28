@@ -23,7 +23,10 @@ public struct FocusThreads {
     /// A settled thread is never marked, so the Settled shelf has nothing to count.
     public var unreadFinishedCount: Int { recent.filter { isUnreadFinish($0) }.count }
 
-    public init(_ computers: [ComputerThreads], show: ComputerFilter = .all, query: String = "", opened: ThreadRef? = nil) {
+    /// `holding` names the unsent threads this iPhone holds something for, by row ID. Any other unsent thread has no row
+    /// unless it is open here: opening New thread and backing out leaves nothing behind, as on the desktop.
+    public init(_ computers: [ComputerThreads], show: ComputerFilter = .all, query: String = "", opened: ThreadRef? = nil,
+                holding: Set<String> = []) {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         searching = !query.isEmpty
         self.opened = opened
@@ -40,6 +43,7 @@ public struct FocusThreads {
             }
         }
         for row in rows where tops[row.id] == nil {
+            if !row.settled && ThreadGroups.isUnsent(row.thread) && row.ref != opened && !holding.contains(row.id) { continue }
             let delegated = below[row.id]
             guard query.isEmpty || Self.searchable(row, delegated).localizedStandardContains(query) else { continue }
             let state = ThreadState(row.thread)

@@ -8,6 +8,7 @@ import type { FilesService } from '../files/service'
 import { BrowserAutomation, type PointTarget } from './browserAutomation'
 import { BrowserGrants, grantCovers } from './browserGrants'
 import { ToolOperations, fail, parse, workspace } from './common'
+import { ThreadFilePages } from './threadFilePages'
 import { blockSpellcheckDictionaryDownloads } from '../security'
 
 interface CaptureLease { count: number; window: BaseWindow; bounds: BrowserBounds; throttling: boolean; temporary: boolean }
@@ -43,6 +44,8 @@ export interface BrowserDependencies {
   byDefault(): boolean
   /** Point at something is on: the `quiet-browser` Owl answer, read once at start (ADR-0072). Off, it is refused. */
   readonly pointAtSomething?: boolean
+  /** Where a thread's own HTML files are served for its agent to open (ADR-0085's October 27 amendment); one is made when absent. */
+  filePages?: ThreadFilePages
 }
 
 /** Untrusted browsing is wholly separate from the application renderer and its session. */
@@ -65,7 +68,8 @@ export class BrowserService extends ToolOperations {
   /** Point sessions, and the newest point request per page, so an Off that overtakes an On wins. */
   private pointSessions = 0
   private readonly pointRequests = new Map<string, number>()
-  constructor(private readonly dependencies: BrowserDependencies) { super() }
+  private readonly filePages: ThreadFilePages
+  constructor(private readonly dependencies: BrowserDependencies) { super(); this.filePages = dependencies.filePages ?? new ThreadFilePages({ live: threadId => dependencies.files.hasThread(threadId) }) }
   private publish(record: PageRecord): BrowserPage {
     if (!record.view.webContents.isDestroyed()) {
       const contents = record.view.webContents
@@ -126,7 +130,7 @@ export class BrowserService extends ToolOperations {
   }
   private forgetThread(threadId: string): void {
     const had = this.grants.active(threadId) !== null
-    this.grants.forget(threadId); this.listed.delete(threadId)
+    this.grants.forget(threadId); this.listed.delete(threadId); this.filePages.forget(threadId)
     if (had && !this.disposed) this.dependencies.emit({ type: 'browser-grant', threadId, grant: null })
   }
   list(payload: unknown) { return this.run(async () => {
@@ -697,14 +701,30 @@ export class BrowserService extends ToolOperations {
     this.shared(record)
     return this.begin(record, request.description)
   }) }
-  agentOpen(payload: unknown) { return this.run(async (): Promise<BrowserAgentResult> => this.open(parse(browserAgentOpenSchema, payload))) }
+  agentOpen(payload: unknown) { return this.run(async (): Promise<BrowserAgentResult> => this.open(await this.agentRequest(payload))) }
+  /**
+   * What an agent asked to open, as an address: a web address as it is, or an HTML file in the thread's folder at the
+   * loopback address Sotto serves it on (ADR-0085's October 27 amendment). Anything else is refused in words that say what
+   * happened and what to do, and opens nothing.
+   */
+  private async agentRequest(payload: unknown): Promise<ReturnType<typeof browserCreateSchema.parse> & { description: string }> {
+    const request = parse(browserAgentOpenSchema, payload)
+    const url = safeBrowserUrl(request.url)
+    if (url) return { ...request, url }
+    const owner = await this.owner(request.threadId, request.workspaceId)
+    const opening = await this.filePages.open(request.url, owner.threadId, owner.workingDirectory)
+    if (!opening) return fail('invalid-request', 'Sotto\'s browser opens an http or https address without a user name or password, or an HTML file in this thread\'s folder. Nothing was opened.')
+    if (!opening.ok) return fail('blocked', opening.message)
+    return { ...request, url: opening.url }
+  }
   /**
    * `iphone_open`: the agent opens a URL on the thread's test iPhone (ADR-0045). A thread has one phone, so a phone
    * it already has is replaced by the new one, which asks or is granted exactly as a new page is; one with a task
    * still working or paused on it is left alone.
    */
   phoneOpen(payload: unknown) { return this.run(async (): Promise<BrowserAgentResult> => {
-    const request = parse(browserAgentOpenSchema, payload)
+    // A file that cannot open is refused before the phone it would replace is closed.
+    const request = await this.agentRequest(payload)
     const owner = await this.owner(request.threadId, request.workspaceId)
     const existing = this.phoneOf(owner)
     if (existing) {
@@ -888,6 +908,7 @@ export class BrowserService extends ToolOperations {
     this.sessions.clear()
     this.taskRecords.clear(); this.pending.clear()
     this.grants.clear()
+    this.filePages.dispose()
     for (const listener of this.taskListeners) listener()
     this.taskListeners.clear()
   }

@@ -4862,6 +4862,8 @@ export class AgentControl {
           || command.madeFrom !== undefined && command.startFromMove === undefined) {
           throw new Error('A thread starts from a moved branch only in a new worktree that Watcher or a delegation makes. Nothing was made.')
         }
+        // Only a check its machine's queue started takes the check worktree (#1312).
+        if (command.check !== undefined && !origin) throw new Error('Only a check that Watcher or a delegation starts works in the check worktree. Nothing was made.')
         const threadId = command.threadId ?? randomUUID()
         if (turn) { turn.threadId = threadId; turn.projectId = command.projectId }
         await this.dispatch({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: command.projectId, title: command.title, modelId: command.modelId,
@@ -4871,6 +4873,7 @@ export class AgentControl {
           ...(command.baseBranch ? { baseBranch: command.baseBranch } : {}),
           ...(command.startFromOrigin !== undefined ? { startFromOrigin: command.startFromOrigin } : {}),
           ...(command.existingWorktreePath ? { existingWorktreePath: command.existingWorktreePath } : {}),
+          ...(command.check ? { check: true as const } : {}),
           ...defaults }, turn, validatePermission, undefined, client, undefined, origin)
         if (!origin && selectionRevision === this.selectionRevision) {
           this.state.activeThreadId = threadId; this.state.activeProjectId = command.projectId

@@ -7,7 +7,7 @@ import { type AgentHostSnapshot } from '../../../src/shared/agents'
 import { ThreadWorktrees } from '../../../src/main/agents/threadWorktrees'
 
 import type { GitStatus } from '../../../src/shared/gitStatus'
-import { fixture, send } from '../../fixtures/workspaceTestFixture'
+import { cleanup, fixture, send } from '../../fixtures/workspaceTestFixture'
 import { deferred } from '../../fixtures/deferred'
 
 describe("durable project/thread organization", () => {
@@ -431,4 +431,32 @@ describe("durable project/thread organization", () => {
     expect(worktree()).toMatchObject({ branch: 'feature', sentBranch: 'feature', git: { branch: 'feature' } })
   })
 
+})
+
+describe('closing while a folder\'s remote status is read (#1664)', () => {
+  it('stops the fetch and GitHub lookup and closes without waiting for them, still saving history', async () => {
+    const f = await fixture()
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    const record = { mode: 'shared' as const, status: 'ready' as const, path: project.path, repositoryRoot: project.path, baseCommit: 'fixture', branch: 'main' }
+    vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue({ ...record, status: 'pending' })
+    vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockImplementation(async () => record)
+    vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => ({ ...metadata, status: 'ready', branch: 'main' }))
+    const status: GitStatus = { isRepository: true, branch: 'main', upstream: null, hasRemote: true, defaultBranch: 'main', isDefaultBranch: true, dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-10-27T00:00:00.000Z' }
+    // A remote half that never ends on its own, as a fetch against a remote that hangs does.
+    const fetching = deferred<void>()
+    const readRemote = vi.fn(() => { fetching.resolve(); return new Promise<boolean>(() => undefined) })
+    const stop = vi.fn()
+    f.host.setGitStatus({ read: vi.fn(async () => status), readRemote, invalidate: vi.fn(), stop }, { pollIntervalMs: () => 0 })
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    await f.host.execute(send())
+    void f.host.updateThreadWorktree('local', false)
+    await fetching.promise
+    // Closing stops the remote half, and no longer waits for it: it would otherwise hold closing for its whole minute and
+    // then report history as not saved. The host is closed here, so cleaning up only removes its folder.
+    cleanup.splice(-1, 1, () => f.remove())
+    await f.host.close()
+    expect(stop).toHaveBeenCalledTimes(1)
+  })
 })

@@ -3,7 +3,7 @@ import { dirname, join, resolve, sep } from 'node:path'
 import type { GitPullRequestSummary, GitStatus } from '../../shared/gitStatus'
 import { GIT_REFS_MAX_LIMIT, type GitRef, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
 import { GIT_CHANGED_FILES_MAX, type GitChangedFile, type GitChangedFiles } from '../../shared/gitChangedFiles'
-import { launchProcess } from './gitLauncher'
+import { launchProcess, stopProcessTree } from './gitLauncher'
 import { baseRepository, GitHubHosts, GitHubRateLimit, GitHubRateLimited, isOwnHead, readGitHubRemotes, sameRepository, type GitHubAsk, type GitHubRepository } from './github'
 import { HEAD_GATHER_MS, PullRequestHeads } from './githubPullRequestHeads'
 
@@ -14,6 +14,8 @@ export interface GitCommandOptions {
   readonly onLine?: (text: string, stream: 'stdout' | 'stderr') => void
   /** Text handed to the command on its standard input, so a message never appears in an argument list or a file. */
   readonly stdin?: string
+  /** Stops the command when it aborts, as when Sotto closes: its process tree is ended, then the call rejects (#1664). */
+  readonly signal?: AbortSignal
 }
 const OUTPUT_MAX_BYTES = 8_000_000
 /** Runs `git` or `gh` in a folder and resolves with stdout; rejects with stderr as the message. */
@@ -45,6 +47,7 @@ export function runWithGhStandIn(standIn: { readonly executable: string; readonl
 }
 
 function spawnCommand(cwd: string, command: string, args: readonly string[], options: GitCommandOptions): Promise<string> { return new Promise((accept, reject) => {
+  if (options.signal?.aborted) { reject(stoppedError(command)); return }
   const env: NodeJS.ProcessEnv = { ...process.env, LC_ALL: 'C', GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1', GCM_INTERACTIVE: 'never' }
   // Variables Sotto inherited that would point Git at another repository or index are dropped; the ones that
   // carry the user's own transport and configuration (GIT_SSH_COMMAND, GIT_CONFIG_GLOBAL, proxies) stay, so a
@@ -53,7 +56,14 @@ function spawnCommand(cwd: string, command: string, args: readonly string[], opt
   for (const key of REDIRECTING_GIT_VARIABLES) delete env[key]
   Object.assign(env, options.env)
   // Launched off main's thread, where a Windows launch would hold the window (`gitLauncher.ts`).
-  const child = launchProcess(command, args, { cwd, env, ...options.stdin !== undefined ? { stdin: options.stdin } : {} })
+  // A command that may be stopped leads its own process group off Windows, so stopping it reaches what it started.
+  const child = launchProcess(command, args, { cwd, env, ...options.stdin !== undefined ? { stdin: options.stdin } : {},
+    ...options.signal && process.platform !== 'win32' ? { detached: true } : {} })
+  // Its pid once it has started; undefined for one that never did. A stop that comes first waits for it.
+  const started = new Promise<number | undefined>(resolve => {
+    child.once('spawn', () => resolve(child.pid)); child.on('error', () => resolve(undefined)); child.on('close', () => resolve(undefined))
+  })
+  let stopping: Promise<void> | undefined
   let stdout = '', stderr = '', timedOut = false, settled = false
   const partial = { stdout: '', stderr: '' }
   const feed = (stream: 'stdout' | 'stderr', chunk: string): void => {
@@ -69,17 +79,31 @@ function spawnCommand(cwd: string, command: string, args: readonly string[], opt
   err.setEncoding('utf8').on('data', chunk => feed('stderr', String(chunk)))
   const finish = (error: Error | null): void => {
     if (settled) return
-    settled = true; clearTimeout(timer)
+    settled = true; clearTimeout(timer); options.signal?.removeEventListener('abort', stop)
     if (error) reject(error); else accept(stdout)
   }
+  // Stopped from outside: its whole process tree is ended, since on Windows a fetch's own children, such as
+  // git-remote-https, outlive git and keep the folder open. From then on the stop alone settles the call, once that tree
+  // is gone, so neither the process's own close nor a grandchild holding the pipes decides it.
+  const stop = (): void => {
+    if (settled || stopping) return
+    stopping = (async () => {
+      const pid = child.pid ?? await started
+      if (pid === undefined) return
+      try { await stopProcessTree(pid) } catch { child.kill('SIGKILL') }
+    })()
+    void stopping.finally(() => { out.destroy(); err.destroy(); finish(stoppedError(command)) })
+  }
+  options.signal?.addEventListener('abort', stop, { once: true })
   // A hook or an ssh the command started can hold the pipes open after the command itself is gone, so a
   // timeout settles on its own grace rather than waiting for a close that a grandchild may never allow.
   const timer = setTimeout(() => {
     timedOut = true; child.kill()
     setTimeout(() => { out.destroy(); err.destroy(); finish(Object.assign(new Error(`${command} did not finish in time.`), { code: 'ETIMEDOUT' })) }, 2_000).unref?.()
   }, options.timeoutMs ?? 30_000)
-  child.on('error', error => finish((error as NodeJS.ErrnoException).code === 'ENOENT' ? new GitUnavailableError(`${command} is not installed or is not on PATH.`) : error))
+  child.on('error', error => stopping ? undefined : finish((error as NodeJS.ErrnoException).code === 'ENOENT' ? new GitUnavailableError(`${command} is not installed or is not on PATH.`) : error))
   child.on('close', code => {
+    if (stopping) return
     if (options.onLine) for (const stream of ['stdout', 'stderr'] as const) if (partial[stream]) options.onLine(partial[stream], stream)
     if (timedOut) finish(Object.assign(new Error(`${command} did not finish in time.`), { code: 'ETIMEDOUT' }))
     // What it printed rides along, out of sight of anything that prints the error: `gh api graphql` prints GitHub's
@@ -88,6 +112,11 @@ function spawnCommand(cwd: string, command: string, args: readonly string[], opt
     else finish(null)
   })
 }) }
+
+/** The longest `GitStatusReader.stop` waits for what was running to end once it is stopped (#1664). */
+const STOP_WAIT_MS = 5_000
+/** What a command stopped from outside rejects with. */
+function stoppedError(command: string): Error { return Object.assign(new Error(`${command} was stopped.`), { code: 'ABORT_ERR' }) }
 
 export interface GitStatusReaderOptions {
   readonly run?: RunGitCommand
@@ -133,6 +162,11 @@ export interface GitStatusSource {
    * could leave the folder part-deleted (issue #766).
    */
   hold?(cwd: string): () => void
+  /**
+   * Stops the remote half's processes, a `git fetch` or a GitHub lookup, and refuses any more: for closing, so neither
+   * holds Sotto open (#1664). Local reads go on. Absent on a source with no remote half.
+   */
+  stop?(): Promise<void>
   /** Resolves once no Git or gh process this source started runs in `cwd` or a folder inside it. */
   idle?(cwd: string): Promise<void>
   /**
@@ -252,12 +286,21 @@ export class GitStatusReader implements GitStatusSource {
   private readonly invalidated = new Map<string, number>()
   /** The number of the last `invalidate` of each folder last read as no repository, by `folderKey`. */
   private readonly invalidatedFolders = new Map<string, number>()
+  /**
+   * Aborts once `stop` is called. Every command of the remote half carries it, the fetch and each GitHub lookup, and none
+   * starts after it; a local read does not, so a Git action that closing waits for still reads its folder.
+   */
+  private readonly stopped = new AbortController()
+  /** `run` for the remote half: stopped with the reader (#1664). */
+  private readonly remoteRun: RunGitCommand
   constructor(private readonly options: GitStatusReaderOptions) {
     this.run = options.run ?? runGitStatusCommand
+    this.remoteRun = (cwd, command, args, runOptions) => this.stopped.signal.aborted ? Promise.reject(stoppedError(command))
+      : this.run(cwd, command, args, { ...runOptions, signal: this.stopped.signal })
     this.now = options.now ?? (() => Date.now())
     this.rateLimit = options.rateLimit ?? new GitHubRateLimit({ now: this.now })
-    this.hosts = options.hosts ?? new GitHubHosts({ run: this.run, now: this.now })
-    this.heads = new PullRequestHeads({ run: this.run, rateLimit: this.rateLimit, env: QUIET_GIT_ENV, gatherMs: options.headGatherMs ?? HEAD_GATHER_MS,
+    this.hosts = options.hosts ?? new GitHubHosts({ run: this.remoteRun, now: this.now })
+    this.heads = new PullRequestHeads({ run: this.remoteRun, rateLimit: this.rateLimit, env: QUIET_GIT_ENV, gatherMs: options.headGatherMs ?? HEAD_GATHER_MS,
       held: cwd => this.isHeld(this.folderKey(cwd)), track: (cwds, work) => { for (const cwd of cwds) this.tracked(cwd, work) } })
   }
   private git(cwd: string, args: readonly string[], options?: GitCommandOptions): Promise<string> { return this.tracked(cwd, this.run(cwd, 'git', args, options)) }
@@ -293,6 +336,19 @@ export class GitStatusReader implements GitStatusSource {
       if (!inside.length) return
       await Promise.allSettled(inside)
     }
+  }
+  /** Stops the remote half's processes, the fetch and the GitHub lookups, and refuses any more, for closing (#1664). */
+  async stop(): Promise<void> {
+    this.stopped.abort()
+    // The hosts gh is signed in to are looked up by the shared GitHubHosts, which runs its own commands.
+    this.hosts.stop()
+    // Settles once what was running has ended, each stopped command's tree included, so nothing it started is still
+    // writing in a folder closing goes on to leave or remove. Local reads, not stopped, end on their own. A command that
+    // does not carry the signal, such as a lookup of the GitHub hosts a caller handed in, is waited for no longer than
+    // STOP_WAIT_MS.
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const late = new Promise<void>(resolve => { timer = setTimeout(resolve, STOP_WAIT_MS); timer.unref?.() })
+    try { await Promise.race([Promise.allSettled([...this.running.values()].flatMap(running => [...running])), late]) } finally { clearTimeout(timer) }
   }
   /** Whether `key` is a held folder or inside one. */
   private isHeld(key: string): boolean { return [...this.held.keys()].some(held => within(key, held)) }
@@ -608,8 +664,8 @@ export class GitStatusReader implements GitStatusSource {
     if (record.inFlight) return this.epochOf(common) <= record.inFlight.epoch ? record.inFlight.done : record.inFlight.done.then(() => this.fetchIfStale(common, cwd, options))
     if (this.now() < record.nextAt && !(options.evenIfFresh === true && record.failures === 0)) return Promise.resolve()
     const epoch = this.counter
-    const fetch = (): Promise<string> => this.git(cwd, ['fetch', '--quiet', '--no-tags', ...this.fetchHeadFlag ? ['--no-write-fetch-head'] : [], 'origin'],
-      { timeoutMs: FETCH_TIMEOUT_MS, env: QUIET_GIT_ENV })
+    const fetch = (): Promise<string> => this.tracked(cwd, this.remoteRun(cwd, 'git', ['fetch', '--quiet', '--no-tags', ...this.fetchHeadFlag ? ['--no-write-fetch-head'] : [], 'origin'],
+      { timeoutMs: FETCH_TIMEOUT_MS, env: QUIET_GIT_ENV }))
     const done: Promise<void> = fetch().catch((error: unknown) => {
       // A Git older than 2.29 does not know the flag; it fetches without it from then on.
       if (!this.fetchHeadFlag || !/no-write-fetch-head/u.test(error instanceof Error ? error.message : String(error))) throw error
@@ -706,7 +762,7 @@ export class GitStatusReader implements GitStatusSource {
       else if (refname.startsWith('refs/remotes/') && refname.endsWith(`/${branch}`)) published.push(refname.slice('refs/remotes/'.length, -branch.length - 1))
     }
     if (!upstream && !published.length) return null
-    const remotes = await readGitHubRemotes((folder, command, args, options) => this.tracked(folder, this.run(folder, command, args, options)), cwd, this.hosts)
+    const remotes = await readGitHubRemotes((folder, command, args, options) => this.tracked(folder, this.remoteRun(folder, command, args, options)), cwd, this.hosts)
     const repository = baseRepository(remotes)
     if (!repository) return null
     const remote = pushRemote || (published.includes('origin') ? 'origin' : published[0]) || 'origin'

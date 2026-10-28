@@ -531,6 +531,10 @@ export const agentWorktreeSchema = z.object({
   /** A worker started from a thread's branch (#1033): that thread, so this worktree's commits can be brought back to its
    * branch (#1030). Absent for any other worktree, and from older hosts. */
   madeFrom: worktreeMadeFromSchema.optional().catch(undefined),
+  /** A check's thread (#1312, third part): its working copy is the machine's one check worktree for the repository, moved to
+   * the check's commit, unless that could not be taken and it got a worktree of its own. `install` is `running` while
+   * `npm ci` runs there first, and `failed` when it did not finish; the check's first message waits for it. */
+  check: z.object({ install: z.enum(['running', 'failed']).optional() }).strict().optional().catch(undefined),
 })
 export type AgentWorktree = z.infer<typeof agentWorktreeSchema>
 export const agentWorkingCopySelectionSchema = z.object({
@@ -1346,6 +1350,9 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
     /** With `startFromMove`, the thread whose branch it was, kept on the new worktree so its commits can be brought back to
      * that branch (#1030). Watcher's own starts only. */
     madeFrom: worktreeMadeFromSchema.optional(),
+    /** A check its machine's queue started (#1312): a new worktree it gets is the machine's one check worktree for the
+     * repository, moved to the check's commit. Watcher's and delegation's own starts only; a person's create-thread is refused. */
+    check: z.literal(true).optional(),
     reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional() }).strict(),
   /**
    * One of a thread's agents continued as a thread of its own (#1028). `threadId` is the agent's thread, so the command goes

@@ -77,7 +77,14 @@ export const browserActionSchema = z.discriminatedUnion('type', [
 export const browserTaskRequestSchema = browserRequestSchema.extend({ taskId: z.string().uuid() })
 export const browserStartTaskSchema = browserRequestSchema.extend({ description: z.string().min(1).max(300) })
 /** `browser_open` and `iphone_open` take the same input; which tool was called decides the kind of page. */
-export const browserAgentOpenSchema = toolTargetSchema.extend({ url: browserUrlSchema, description: z.string().min(1).max(300) })
+/**
+ * What an agent opens: a web address, or an HTML file in its thread's folder, which Sotto serves on this computer's loopback
+ * (ADR-0085, October 27, 2026 amendment). The browser service tells them apart and says in words what it will not open.
+ */
+export const browserAgentOpenSchema = toolTargetSchema.extend({
+  url: z.string().min(1).max(8192).describe('The page to open: an http or https address, or an HTML file in this thread\'s folder as a file:// URL, an absolute path or a path relative to the folder. A query string and #fragment are kept.'),
+  description: z.string().min(1).max(300),
+})
 export const browserAgentActionSchema = browserTaskRequestSchema.extend({ action: browserActionSchema })
 export const browserControlTaskSchema = browserTaskRequestSchema.extend({ control: z.enum(['pause', 'resume']) })
 /** `forThread` answers with a browser grant (ADR-0029) for the rest of the session, not just this once. */
