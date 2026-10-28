@@ -763,6 +763,26 @@ export class AgentControl {
   /** Where new projects go by default, as the user configured it; empty for none. Read without copying the state. */
   projectsDirectory(): string { return this.state.configuration.projectsDirectory }
   hasWatcherQueue(operationIds: ReadonlySet<string>): boolean { return this.followupStore.peek().items.some(item => item.watcherOperationId && operationIds.has(item.watcherOperationId)) }
+  /**
+   * Holds the user's own messages waiting for a Watcher that is about to be replaced (#1735), so none goes to it once its
+   * turn ends; `moveWatcherQueue` then moves them to the new one. Should the replacement not happen, they say how to send them.
+   */
+  async holdWatcherQueue(threadId: string): Promise<void> {
+    await this.followupStore.pauseUserPrompts(threadId, 'Paused while a new Watcher started. If none started, resume the queue to send it.', () => true)
+    this.syncFollowups(); this.publish()
+  }
+  /**
+   * A new Watcher takes the user's messages to the one it replaced that have not gone (#1735): queued, paused, failed or
+   * not confirmed, each moved to its queue, paused, so the user sends or removes it there and nothing goes twice. Says
+   * how many moved.
+   */
+  async moveWatcherQueue(from: string, to: string): Promise<number> {
+    const moved = await this.followupStore.moveUserPrompts(from, to,
+      'This was waiting for the last Watcher. Resume the queue to send it to this one, or remove it.',
+      'The last Watcher did not confirm this message, so it may have reached it. Check that conversation in Watcher history before you resume the queue.')
+    if (moved) { this.syncFollowups(); this.observe(); await this.persist(); this.publish() }
+    return moved
+  }
   async cancelWatcherQueue(operationIds: ReadonlySet<string>): Promise<void> {
     const failed = await this.followupStore.cancelWatcher(operationIds)
     // Watcher reads a queued send's failure from its item, which is gone now, so it hears the failure here instead.
@@ -2945,22 +2965,6 @@ export class AgentControl {
    */
   private queuedThreadIds(): string[] {
     return this.followupStore.peek().items.filter(item => !isWaitingWakeUp(item)).map(item => item.threadId)
-  }
-  /**
-   * The Watcher sends whose prompts still wait in their threads' queues for those threads' turns, which only the turn
-   * holds, by operation, in one pass over the queue. Not one that has left the queue or whose send is unconfirmed, nor one
-   * that waits instead on the user, its queue holding a paused or failed item, a wake-up included, nor one for a thread
-   * settled or archived. A provider change waits only for these (#1325).
-   */
-  watcherQueuedSendsWaiting(): ReadonlySet<string> {
-    const items = this.followupStore.peek().items, blocked = new Set<string>(), waiting = new Set<string>()
-    for (const item of items) if (item.status === 'paused' || item.status === 'failed') blocked.add(item.threadId)
-    for (const item of items) {
-      if (!item.watcherOperationId || (item.status !== 'queued' && item.status !== 'dispatching') || blocked.has(item.threadId)) continue
-      const thread = this.threadById(item.threadId)
-      if (thread && !isThreadClosed(thread) && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))) waiting.add(item.watcherOperationId)
-    }
-    return waiting
   }
   canDeliverWatcherNews(target: WatcherThreadTarget): boolean {
     if (this.disposed || this.dependencies.watcherEnabled !== true || !this.watcherHooks

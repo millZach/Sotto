@@ -28,7 +28,10 @@ export const watcherHostReadSchema = z.object({ master: watcherHostScopeSchema,
     z.object({ name: z.literal('read_operation'), input: watcherToolSchemas.read_operation.input }).strict(),
   ]).optional(),
   // Sent only to a host that lists watcher-outcomes: its read_operation then carries the delegation's outcome and reply.
-  outcomes: z.literal(true).optional() }).strict()
+  outcomes: z.literal(true).optional(),
+  // Sent only to a host that lists watcher-new-owner, on every read: before it answers, the host moves the requests an older
+  // Watcher of the same desktop made there to this one (#1735).
+  adopt: z.literal(true).optional() }).strict()
 export const watcherHostProjectionSchema = z.object({ hostId: z.uuid(), master: watcherHostScopeSchema,
   standingWatches: z.array(watcherStandingWatchSchema).optional(),
   revision: z.string().min(1).max(512), observedAt: z.string().datetime(),
@@ -52,7 +55,7 @@ export interface WatcherRemoteHosts {
    * `permissionCeiling` is the widest mode the host lets this computer give a thread there: Full access where this
    * computer may answer on it, Ask for approval where it may not.
    */
-  hosts(): { hostId: string; name?: string; control: boolean; reads: boolean; standingWatch?: boolean; workSettled?: boolean; outcomes?: boolean; facts?: boolean; origins?: boolean; setUp?: boolean; checks?: boolean; checkStop?: boolean; muse?: boolean; cursor?: boolean; connected: boolean; permissionCeiling: AgentRuntimeMode }[]
+  hosts(): { hostId: string; name?: string; control: boolean; reads: boolean; standingWatch?: boolean; workSettled?: boolean; outcomes?: boolean; facts?: boolean; origins?: boolean; setUp?: boolean; checks?: boolean; checkStop?: boolean; newOwner?: boolean; muse?: boolean; cursor?: boolean; connected: boolean; permissionCeiling: AgentRuntimeMode }[]
   read(hostId: string, request: WatcherHostRead): Promise<unknown>
   control(hostId: string, request: WatcherHostControl): Promise<unknown>
   snapshot(hostId: string): AgentHostSnapshot | undefined

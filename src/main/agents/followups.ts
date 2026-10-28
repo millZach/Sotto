@@ -406,6 +406,31 @@ export class FollowupStore {
       state.items = kept
     })
   }
+  /**
+   * Moves the user's own follow-ups that have not gone from one thread's queue to the end of another's, paused, with
+   * `error` saying why: what a new Watcher takes from the one it replaced (#1735). One whose send was not confirmed says
+   * so with `unconfirmed`, since it may have arrived. Sotto's wake-ups, Watcher's sends and one already sending stay where
+   * they are. Says how many moved; none past the other queue's hundred move.
+   */
+  async moveUserPrompts(from: string, to: string, error: string, unconfirmed: string): Promise<number> {
+    let moved = 0
+    await this.change(state => {
+      const room = 100 - state.items.filter(item => item.threadId === to).length
+      const items = state.items.filter(item => item.threadId === from && !item.wakeUp && !item.watcherOperationId && item.status !== 'dispatching').slice(0, Math.max(0, room))
+      if (!items.length) return false
+      const now = new Date().toISOString()
+      for (const item of items) {
+        const sent = item.status === 'uncertain'
+        Object.assign(item, { threadId: to, status: 'paused', error: sent ? unconfirmed : error, updatedAt: now })
+        delete item.pausedBy; delete item.commandId; delete item.resumeAfterTurnId
+        state.receipts.push({ threadId: to, draftId: item.draftId, digest: followupDigest(item) })
+      }
+      // Moved to the end of the new queue, in the order they had.
+      state.items = [...state.items.filter(item => !items.includes(item)), ...items]
+      moved = items.length
+    })
+    return moved
+  }
   /** Pauses the thread's queued follow-ups. A hidden wake-up never pauses: no one could resume it. */
   pause(threadId: string, error: string, by?: 'watcher'): Promise<void> {
     return this.change(state => {

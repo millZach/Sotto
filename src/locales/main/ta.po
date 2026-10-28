@@ -2730,6 +2730,10 @@ msgid "Update the host before sending this draft. Your draft is kept on this com
 msgstr ""
 
 #: src/main/agents/socketHostService.ts
+msgid "Update this host before a new Watcher takes over its threads. Nothing was changed."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
 msgid "Update this host before Watcher directs its threads. Nothing was sent."
 msgstr ""
 

@@ -128,41 +128,76 @@ describe('New Watcher', () => {
     expect(await fresh.service.startNew()).toMatchObject({ status: 'refused', code: 'NOT_CURRENT_WATCHER' })
   })
 
-  it('waits only for Watcher’s own work and says what holds it, while a worker still working and an unconfirmed delivery carry on (#1325)', async () => {
+  it('waits only for Watcher’s own turn, and hands its queued send and its worker still working to the new Watcher (#1325, #1735)', async () => {
     const f = await fixture()
     await f.send('Check the release.')
     const started = { target: await f.startWorker('Release check') }
-    await f.reply('Started Release check.')
-    const unchanged = async (message: string) => {
-      const creates = f.creates()
-      expect(await f.service.startNew()).toMatchObject({ status: 'refused', code: 'THREAD_BUSY', message })
-      expect(f.service.state()).toMatchObject({ current: { target: f.first }, history: [], handover: null })
-      expect(f.creates()).toBe(creates)
-      expect(f.revoke).not.toHaveBeenCalled()
-    }
-    // Watcher's own turn.
+    const queued = await f.call('send_to_thread', { requestId: f.service.state().requests.at(-1)!.id, retryKey: randomUUID(), target: started.target,
+      delivery: 'queue', text: 'Add the release notes too.' })
+    if (queued.status !== 'ok' || !('receipt' in queued)) throw new Error(`queue refused: ${JSON.stringify(queued)}`)
+    expect(queued.receipt.deliveryState).toBe('queued')
+    // Watcher's own turn holds it, and the refusal says to stop it.
     f.native(f.first.threadId).status = 'running'; await f.refresh()
-    await unchanged('Watcher is working. Wait for this turn to finish, or stop it, then start a new Watcher. Nothing was changed.')
-    await f.finish(f.first.threadId)
-    // A send queued behind a working thread, in the record main reads: a new Watcher could not send it.
-    const read = f.control.watcherRecord.bind(f.control)
-    const queued = vi.spyOn(f.control, 'watcherRecord').mockImplementation(() => {
-      const record = read(); record.operations.at(-1)!.deliveryState = 'queued'; return record
-    })
-    const waits = vi.spyOn(f.control, 'watcherQueuedSendsWaiting').mockImplementation(() => new Set(read().operations.map(operation => operation.id)))
-    await unchanged('Watcher has a message queued for a thread that is still working, which a new Watcher could not send. Wait until it has gone, or stop it with Stop all, then start a new Watcher. Nothing was changed.')
-    queued.mockRestore(); waits.mockRestore()
-    // A start still working, whose delivery is not confirmed yet either, holds nothing: it carries on after the replacement.
+    const creates = f.creates()
+    expect(await f.service.startNew()).toMatchObject({ status: 'refused', code: 'THREAD_BUSY',
+      message: 'Watcher is working. Stop its turn, then start a new Watcher. Nothing was changed.' })
+    expect(f.service.state()).toMatchObject({ current: { target: f.first }, history: [], handover: null, newWatcher: 'busy' })
+    expect(f.creates()).toBe(creates)
+    expect(f.revoke).not.toHaveBeenCalled()
+    await f.reply('Started Release check and queued the notes.')
+    // Resting, nothing else holds it: the send queued behind the worker's turn and the worker still working go with it.
+    expect(f.service.state().newWatcher).toBe('available')
     expect(f.service.startsInFlight()).toBe(1)
-    const uncertain = vi.spyOn(f.control, 'watcherRecord').mockImplementation(() => {
-      const record = read(); record.operations.at(-1)!.deliveryState = 'uncertain'; return record
-    })
     expect(await f.service.startNew()).toMatchObject({ status: 'ok', state: { history: [{ target: f.first }] } })
-    uncertain.mockRestore()
     expect(f.service.state().current!.target).not.toEqual(f.first)
     expect(f.service.startsInFlight()).toBe(1)
+    // The handover names the send still to go, which the new Watcher can read by its operation.
+    const handover = f.service.readHandover()
+    if (handover.status !== 'ok') throw new Error('handover unreadable')
+    expect(handover.text).toContain('Starts and sends made before you that have not gone yet')
+    expect(handover.text).toContain(`A send to “Release check”, queued behind its turn (operation ${queued.receipt.operationId})`)
+    expect(handover.text).toContain('The threads you watch and what each waits on:')
+    // When the worker's turn ends, the send goes once, from the new Watcher, under the receipt it was queued with.
+    await f.finish(started.target.threadId)
+    await vi.waitFor(() => expect(f.control.watcherRecord().operations.find(item => item.id === queued.receipt.operationId)!.deliveryState).toBe('accepted'))
+    expect(f.native(started.target.threadId).messages.filter(message => message.role === 'user' && message.text.includes('Add the release notes too.'))).toHaveLength(1)
     await f.finish(started.target.threadId)
     expect(f.service.startsInFlight()).toBe(0)
+  })
+
+  it('starts while Watcher waits on its own card: stops that turn, hands the question over and moves the user’s queued message, paused (#1735)', async () => {
+    const f = await fixture()
+    await f.exchange('Watch the release.', 'Watching it.')
+    await f.send('Which branch should the release use?')
+    const request = f.service.state().requests.at(-1)!
+    // Watcher asks the user on a card of its own, and the user queues another message behind that turn.
+    const native = f.native(f.first.threadId)
+    native.status = 'running'
+    native.requests = [{ id: 'watcher-card', kind: 'question', text: 'Which branch?', options: [],
+      questions: [{ id: 'branch', question: 'Release from main or from release/1.4?', options: [{ id: 'main', label: 'main' }], multiSelect: false, allowFreeText: true }] }]
+    await f.refresh()
+    expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.first.threadId, draftId: randomUUID(), text: 'Also tag it.' })).error).toBeNull()
+    expect(f.service.state().newWatcher).toBe('available')
+    const interrupts = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'interrupt').length
+    const before = interrupts()
+    expect(await f.service.startNew()).toMatchObject({ status: 'ok', state: { history: [{ target: f.first }] } })
+    const next = f.service.state().current!.target
+    // The last Watcher's turn was stopped, which closes its card. That is not the user's Stop: the request it worked on ends
+    // as a finished turn's does, and nothing it queued is fenced.
+    expect(interrupts()).toBe(before + 1)
+    expect(f.service.state().requests.find(item => item.id === request.id)!.state).not.toBe('stopped')
+    // The user's queued message moved to the new Watcher's queue, paused, and nothing went to the last one.
+    const queue = f.control.shell().followups ?? []
+    expect(queue.filter(item => item.threadId === f.first.threadId && !item.wakeUp)).toEqual([])
+    expect(queue.find(item => item.text === 'Also tag it.')).toMatchObject({ threadId: next.threadId, status: 'paused',
+      error: 'This was waiting for the last Watcher. Resume the queue to send it to this one, or remove it.' })
+    expect(native.messages.some(message => message.text.includes('Also tag it.'))).toBe(false)
+    // The new Watcher's note says both, and the handover carries the question in its own words.
+    expect(f.service.state().carried).toEqual({ questionClosed: true, moved: 1, unconfirmed: false, cannotStop: [] })
+    const handover = f.service.readHandover()
+    if (handover.status !== 'ok') throw new Error('handover unreadable')
+    expect(handover.text).toContain('Its turn was stopped and the card closed unanswered, so ask again if it still matters:\n- Release from main or from release/1.4?')
+    expect(handover.text).toContain('One message the user wrote to the last Watcher had not gone. It waits, paused, in your queue')
   })
 
   it('refuses when Watcher’s model is not ready or its permission mode is not the one in force', async () => {

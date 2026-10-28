@@ -794,6 +794,7 @@ export class SocketHostService implements HostService {
   /** A stable desktop never marks a start as a check, so it uses no host's queue (#1312, ADR-0072). */
   get supportsWatcherCheckQueue(): boolean { return this.options.crossMachineEnabled === true && this.supportsWatcherControl && this.features.includes('watcher-check-queue') }
   /** Only a desktop that uses the host's queue stops a check waiting in it (#1637). */
+  get supportsWatcherNewOwner(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-new-owner') }
   get supportsWatcherCheckStop(): boolean { return this.supportsWatcherCheckQueue && this.features.includes('watcher-check-stop') }
   get supportsWatcherMuse(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-muse') }
   get supportsWatcherCursor(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-cursor') }
@@ -817,6 +818,7 @@ export class SocketHostService implements HostService {
   async watcherRead(request: WatcherHostRead): Promise<unknown> {
     if (!this.supportsWatcherReads) throw new HostConnectionError(t`Update this host before Watcher reads its threads.`, 'invalid_request')
     if (request.standingWatches !== undefined && !this.supportsWatcherStandingWatch) throw new HostConnectionError(t`Update this host before Watcher watches its threads. Nothing was changed.`, 'invalid_request')
+    if (request.adopt !== undefined && !this.supportsWatcherNewOwner) throw new HostConnectionError(t`Update this host before a new Watcher takes over its threads. Nothing was changed.`, 'invalid_request')
     const held = this.heldWatcherProvider(request)
     if (held) return heldWatcherRefusal(held)
     const result = await this.call({ op: 'watcher-read', request })

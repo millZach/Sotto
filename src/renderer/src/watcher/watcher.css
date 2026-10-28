@@ -615,3 +615,7 @@
   :root:not([data-reduced-motion='on']) [aria-pressed='true'] > .watcher-owl .watcher-owl__eyes { animation: watch-eyes-glow 2.4s ease-in-out infinite; }
 }
 @keyframes watch-eyes-glow { 50% { opacity: .7; } }
+/* What a New Watcher press carried over (#1735): one line each, the fact first (Zach's pick B, October 28, 2026). */
+.watcher-new-note__carried { display: flex; flex-direction: column; width: min(460px, 100%); margin: 4px 0 0; padding: 0; list-style: none; text-align: left; font-size: 13px; color: var(--tt-text-2); }
+.watcher-new-note__carried li { padding: 7px 0; border-top: 1px solid var(--tt-hairline); overflow-wrap: anywhere; }
+.watcher-new-note__carried strong { color: var(--tt-text); font-weight: 600; }

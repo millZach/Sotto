@@ -283,6 +283,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'watcher-standing-watch' || service.supportsWatcherStandingWatch === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-work-settled' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-outcomes' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
+    // A new Watcher takes over the requests an older one of the same desktop made here (#1735).
+    && (feature !== 'watcher-new-owner' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-muse' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-cursor' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
     // A host keeps its own check queue (#1312) only where its Owl answer turns on Work across machines.
@@ -1020,6 +1022,7 @@ export async function startSocketServer(options: SocketServerOptions) {
       refuseHiddenWatcherInput(peer, request.op === 'watcher-control' ? request.request.call.input : request.request.call?.input)
       if (request.op === 'watcher-control') return watcherFor(peer, await service.watcherControl!(request.request, peer.client, guard, () => options.mayAnswer?.(peer.client) ?? false))
       if (request.request.standingWatches !== undefined && !offers(peer, 'watcher-standing-watch')) throw new Refusal('invalid_request')
+      if (request.request.adopt !== undefined && !offers(peer, 'watcher-new-owner')) throw new Refusal('invalid_request')
       if (!request.request.call && peer.watcherReads) watcherScopes.set(peer, request.request)
       const read = await service.watcherRead!(request.request, peer.client, guard, () => options.mayAnswer?.(peer.client) ?? false)
       // A desktop that does not know a provider is sent no Watcher row of it (#1107).

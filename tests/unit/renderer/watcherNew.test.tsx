@@ -116,7 +116,7 @@ describe('New Watcher in Watcher’s composer', () => {
     expect(attach.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('is unavailable with its reason while Watcher works or waits on a card, and a press does nothing', async () => {
+  it('is unavailable with its reason only while Watcher’s own turn runs, and a press does nothing (#1735)', async () => {
     const user = userEvent.setup()
     const startNew = vi.fn(async (): Promise<WatcherRoomResult> => ({ status: 'ok', state: roomState('watcher-b') }))
     const { bridge } = renderRoom(roomState('watcher-a'), stateWith(watcherThread('watcher-a', { messages: said, status: 'running' })), startNew)
@@ -128,6 +128,15 @@ describe('New Watcher in Watcher’s composer', () => {
     expect(button).not.toBeDisabled()
     await user.click(button)
     expect(bridge.startNew).not.toHaveBeenCalled()
+    expect(NEW_WATCHER_BUSY).toBe('Watcher is working. Stop its turn to start a new one.')
+  })
+
+  it('is available while Watcher’s turn waits on a card of its own (#1735)', async () => {
+    const card = { id: 'card', kind: 'question' as const, text: 'Which branch?', options: [] }
+    renderRoom(roomState('watcher-a'), stateWith(watcherThread('watcher-a', { messages: said, status: 'running', requests: [card] })), vi.fn())
+    const button = await newButton()
+    expect(button).not.toHaveAttribute('aria-disabled')
+    expect(button).toHaveAttribute('title', NEW_WATCHER_TITLE)
   })
 
   it('is unavailable while main says Watcher is busy, though its thread is at rest', async () => {
@@ -234,6 +243,24 @@ describe('the new Watcher’s empty conversation', () => {
     const note = await within(pane).findByRole('heading', { level: 3, name: /^New Watcher on /u })
     expect(note.closest('.watcher-new-note')).toHaveTextContent(/The last conversation is in Watcher history on the Threads page\. Watcher still watches your 2 threads, and the thread it started keeps working\.$/u)
     expect(pane).not.toHaveTextContent('What is next for this thread?')
+  })
+
+  it('says on a line each what the press carried over, the fact first, and only what is so (#1735)', async () => {
+    renderRoom(roomState('watcher-b', { history: [identity('watcher-a')],
+      carried: { questionClosed: true, moved: 2, unconfirmed: false, cannotStop: [{ host: 'forge', count: 2 }] } }), stateWith(watcherThread('watcher-b')), vi.fn())
+    const pane = await watcherPane()
+    await within(pane).findByRole('heading', { level: 3, name: /^New Watcher on /u })
+    const lines = within(pane.querySelector('.watcher-new-note__carried') as HTMLElement).getAllByRole('listitem').map(item => item.textContent)
+    expect(lines).toEqual(['Its question to you was closed. The handover carries it.', '2 messages you wrote had not sent. They are in the queue below, paused.',
+      'It can’t stop 2 threads on forge until forge is updated.'])
+    expect(within(pane).getByText('Its question to you was closed.').tagName).toBe('STRONG')
+  })
+
+  it('adds no lines when the press carried nothing over', async () => {
+    renderRoom(roomState('watcher-b', { history: [identity('watcher-a')] }), stateWith(watcherThread('watcher-b')), vi.fn())
+    const pane = await watcherPane()
+    await within(pane).findByRole('heading', { level: 3, name: /^New Watcher on /u })
+    expect(pane.querySelector('.watcher-new-note__carried')).toBeNull()
   })
 
   it('is the plain empty line for a first Watcher that replaced nothing', async () => {

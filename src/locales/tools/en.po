@@ -28,25 +28,6 @@ msgstr ", loading"
 msgid ", waiting for your answer"
 msgstr ", waiting for your answer"
 
-#. {label} is a browser page’s title or host.
-#: src/renderer/src/tools/BrowserPane.tsx
-msgid "Agent is browsing {label}"
-msgstr "Agent is browsing {label}"
-
-#: src/renderer/src/tools/BrowserPane.tsx
-msgid "Show page"
-msgstr "Show page"
-
-#. {label} is a browser page’s title or host.
-#: src/renderer/src/tools/BrowserPane.tsx
-msgid "Show page: {label}"
-msgstr "Show page: {label}"
-
-#. {label} is a browser page’s title or host.
-#: src/renderer/src/tools/BrowserPane.tsx
-msgid "Waiting for your answer on {label}"
-msgstr "Waiting for your answer on {label}"
-
 #. {runs} counts how many times this subagent has been given work.
 #: src/renderer/src/tools/AgentsSurface.tsx
 msgid "· Run {runs}"
@@ -477,6 +458,11 @@ msgstr "Agent"
 #: src/renderer/src/tools/browserSteps.ts
 msgid "Agent is browsing"
 msgstr "Agent is browsing"
+
+#. {label} is a browser page’s title or host.
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Agent is browsing {label}"
+msgstr "Agent is browsing {label}"
 
 #: src/renderer/src/tools/AgentsSurface.tsx
 msgid "Agent task"
@@ -2817,6 +2803,15 @@ msgstr "Show in Finder"
 msgid "Show in Tools"
 msgstr "Show in Tools"
 
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Show page"
+msgstr "Show page"
+
+#. {label} is a browser page’s title or host.
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Show page: {label}"
+msgstr "Show page: {label}"
+
 #: src/renderer/src/tools/IPhoneSurface.tsx
 msgid "Show phone"
 msgstr "Show phone"
@@ -3691,6 +3686,11 @@ msgstr "Waiting"
 #: src/renderer/src/tools/PhonePlayer.tsx
 msgid "Waiting for your answer"
 msgstr "Waiting for your answer"
+
+#. {label} is a browser page’s title or host.
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Waiting for your answer on {label}"
+msgstr "Waiting for your answer on {label}"
 
 #: src/renderer/src/tools/IPhoneSurface.tsx
 msgid "Web build"
