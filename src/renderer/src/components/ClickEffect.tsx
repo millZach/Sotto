@@ -10,6 +10,8 @@ import './clickEffect.css'
 /** The most steps one frame runs, so a frame that came late does not stall the next; it ages the water by the rest. */
 const MAX_STEPS = 4
 const STEP_MS = 1000 / STEP_HZ
+/** A digit's sprite: a little wider than its cell, so a glyph nudged along the water's slope keeps its edges. */
+const SPRITE_W = GLYPH_W * 1.4
 /** Where a press sends no waves: every composer, the thread's, Watcher's and a new thread's draft (Zach, October 27). */
 const QUIET = '.thread-prompt'
 
@@ -167,7 +169,7 @@ export function ClickEffect(): ReactNode {
       const ceiling = accent === null || surface === null ? 0 : waveCeiling(surface, accent, words, tints)
       const draw = (digit: string): HTMLCanvasElement => {
         const sprite = document.createElement('canvas')
-        sprite.width = Math.ceil(GLYPH_W * 1.4 * scale)
+        sprite.width = Math.ceil(SPRITE_W * scale)
         sprite.height = Math.ceil(GLYPH_H * scale)
         const pen = sprite.getContext('2d')
         if (pen !== null) {
@@ -191,7 +193,11 @@ export function ClickEffect(): ReactNode {
       if (request !== null) cancelAnimationFrame(request)
       request = null
       water?.clear()
+      // In the canvas's own pixels, whatever its scale, so a ratio under 1 clears the whole of it too.
+      ctx.save()
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
       ctx.clearRect(0, 0, canvas.width, canvas.height)
+      ctx.restore()
       if (counted) { canvas.dataset.clickEffectRunning = 'false'; canvas.dataset.clickEffectGlyphs = '0' }
     }
 
@@ -217,7 +223,7 @@ export function ClickEffect(): ReactNode {
       if (ink.ceiling <= 0) { stop(); return }
       quiet = sceneColumn()
       const { digits } = ink
-      const width = GLYPH_W * 1.4, height = GLYPH_H
+      const width = SPRITE_W, height = GLYPH_H
       ctx.clearRect(0, 0, water.width, water.height)
       const stamped = water.draw((digit, x, y, alpha) => {
         // A glyph whose box reaches into a quiet part is not drawn, so none spills over its edge.
