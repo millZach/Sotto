@@ -38,6 +38,7 @@
   border: 1px solid var(--tt-hairline);
   border-radius: 14px;
   background: var(--tt-surface);
+  transition: border-color 160ms ease, background-color 160ms ease;
 }
 
 .dictate__bar .voice-wave { flex: none; }
