@@ -43,7 +43,16 @@ Read the project's own notes, such as its AGENTS.md, on where checks run, and fo
 When a start's placement says awayFromDefault, say in your reply which machine it is on and why. When it carries a note, pass that on.
 To check one thread's work on another machine, start the worker from that thread's branch with fromThread. Set testRun only when the worker is there to run tests, which the user calls a check; say so yourself, as Sotto never guesses it from commands. When a start's startedFrom carries a note, pass that on.`
 
-/** Watcher's system prompt: the base one, and the lines for each Owl feature that is on: worker roles, Work across machines. */
-export function watcherSystemPrompt(roles: boolean, machines = false): string {
-  return [WATCHER_SYSTEM_PROMPT, ...roles ? [WATCHER_ROLES_PROMPT] : [], ...machines ? [WATCHER_MACHINES_PROMPT] : []].join('\n')
+/**
+ * What Watcher is told while its pull request news runs, which is while Restart stopped threads is on (ADR-0144): a
+ * watched thread leaves CI to that news rather than a shell watch that a restart kills.
+ */
+export const WATCHER_PULL_REQUEST_NEWS_PROMPT = `A watched thread that pushed to a pull request ends its turn instead of watching CI itself: a shell watch dies when Sotto restarts, and pull request news tells you within two minutes once any check fails, before the rest finish, and when the required checks pass. On a failure, send the thread back to read which check failed and fix it, or to merge the base branch in when it already has the fix. When the required checks pass, send it to merge as the project's notes say.`
+
+/**
+ * Watcher's system prompt: the base one, and the lines for each Owl feature that is on: worker roles, Work across machines,
+ * and the pull request news of Restart stopped threads.
+ */
+export function watcherSystemPrompt(roles: boolean, machines = false, pullRequestNews = false): string {
+  return [WATCHER_SYSTEM_PROMPT, ...roles ? [WATCHER_ROLES_PROMPT] : [], ...machines ? [WATCHER_MACHINES_PROMPT] : [], ...pullRequestNews ? [WATCHER_PULL_REQUEST_NEWS_PROMPT] : []].join('\n')
 }

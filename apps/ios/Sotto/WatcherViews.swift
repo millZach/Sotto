@@ -626,7 +626,7 @@ private struct WatcherConversationPane: View {
     var body: some View {
         let page = model.watcherPage(hostID)
         let sending = model.watcherSendingShown(hostID)?.text
-        let sendingPhotos = model.watcherSendingPhotos[hostID] ?? []
+        let sendingPhotos = model.watcherSendingPhotos[hostID] ?? [], sendingFiles = model.watcherSendingFiles[hostID] ?? []
         // The photos of Watcher's messages are its thread's, read through Watcher's page.
         let ref = page?.current.map { ThreadRef(hostID: hostID, threadID: $0.target.threadId) }
         let items = page.map { WatcherConversation.items($0) } ?? []
@@ -653,7 +653,7 @@ private struct WatcherConversationPane: View {
                                 }
                                 .id(item.id)
                             }
-                            if let sending { SendingBubble(text: sending, photos: sendingPhotos).id(Self.sendingID) }
+                            if let sending { SendingBubble(text: sending, photos: sendingPhotos, files: sendingFiles).id(Self.sendingID) }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(reader { follow.newest = $0.maxY })
@@ -978,6 +978,7 @@ private struct WatcherMessage: View, Equatable {
 private struct SendingBubble: View {
     let text: String
     let photos: [DraftPhoto]
+    var files: [DraftFile] = []
     private static let shown = 4
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
@@ -1002,6 +1003,7 @@ private struct SendingBubble: View {
                 .accessibilityElement()
                 .accessibilityLabel(photos.count == 1 ? String(localized: "1 photo") : String(localized: "\(photos.count) photos"))
             }
+            ForEach(files) { file in FilePill(name: file.name, sizeBytes: file.sizeBytes).opacity(0.6) }
             if !text.isEmpty {
                 Text(text).font(.sotto(.body)).foregroundStyle(Palette.bubbleInk)
                     .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
@@ -1565,10 +1567,10 @@ private struct WatcherDock: View {
 
     private var field: some View {
         let box = PhotoBox.watcher(hostID: hostID)
-        let photos = model.photos(box)
-        // Locked from the press of a message with photos until Watcher answers, so nothing typed meanwhile joins it.
+        let photos = model.photos(box), files = model.files(box)
+        // Locked from the press of a message with photos or files until Watcher answers, so nothing typed meanwhile joins it.
         let preparing = model.preparingSends.contains(box.id)
-        let shape = RoundedRectangle(cornerRadius: photos.isEmpty ? 26 : 22, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: photos.isEmpty && files.isEmpty ? 26 : 22, style: .continuous)
         let working = model.watcherPage(hostID)?.working == true
         let canSend = model.canSendToWatcher(hostID)
         // While Watcher's turn runs on a computer that takes it, Send steers into that turn, or queues when its provider
@@ -1580,9 +1582,10 @@ private struct WatcherDock: View {
         let label = queueing ? String(localized: "Queue for after this turn") : steering ? String(localized: "Steer into Watcher’s turn") : String(localized: "Send to Watcher")
         return HStack(alignment: .bottom, spacing: Space.s2) {
             AttachPhotosButton(box: box)
-            // Photos wait inside the box, above the words, as in a thread's reply box.
+            // Photos wait inside the box, above the words, and files under them as pills, as in a thread's reply box.
             VStack(alignment: .leading, spacing: Space.s2) {
                 if !photos.isEmpty { DraftPhotoStrip(box: box).padding(.top, Space.s1) }
+                if !files.isEmpty { DraftFilePills(box: box).padding(.top, photos.isEmpty ? Space.s1 : 0) }
                 if let notice = model.photoNotices[box.id] {
                     Text(notice).font(.sotto(.small)).foregroundStyle(Palette.dangerText).fixedSize(horizontal: false, vertical: true)
                         .paragraphDirection()
@@ -1598,6 +1601,8 @@ private struct WatcherDock: View {
                     .padding(.vertical, 11)
                     .accessibilityLabel("Ask Watcher")
                     .accessibilityIdentifier("watcher-reply")
+                    .pasteAttaches(to: box)
+                    .onChange(of: model.focusRequest, initial: true) { if model.focusRequest == box.id { model.focusRequest = nil; focused = true } }
                     .disabled(preparing)
             }
             .frame(maxWidth: .infinity, alignment: .leading)

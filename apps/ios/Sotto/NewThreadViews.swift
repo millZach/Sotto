@@ -42,6 +42,11 @@ struct NewThreadSheet: View {
                 .font(.sotto(.caption, .semibold)).foregroundStyle(Palette.muted)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, Space.gutter).padding(.top, Space.s2)
+            if let notice = model.shareNotice {
+                Text(notice).font(.sotto(.small)).foregroundStyle(Palette.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, Space.gutter).padding(.top, Space.s1)
+            }
             ZStack { page }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()

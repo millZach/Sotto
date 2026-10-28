@@ -31571,197 +31571,6 @@
         }
       }
     },
-    "Attach photos" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "إرفاق صور"
-          }
-        },
-        "bn" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ছবি যোগ করুন"
-          }
-        },
-        "cs" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Přiložit fotky"
-          }
-        },
-        "da" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vedhæft billeder"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fotos anhängen"
-          }
-        },
-        "el" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Επισύναψη φωτογραφιών"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Attach photos"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Adjuntar fotos"
-          }
-        },
-        "es-419" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Adjuntar fotos"
-          }
-        },
-        "es-MX" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Adjuntar fotos"
-          }
-        },
-        "fi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Liitä kuvia"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Joindre des photos"
-          }
-        },
-        "hi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "फ़ोटो अटैच करें"
-          }
-        },
-        "hu" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fotók csatolása"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Allega foto"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "写真を添付"
-          }
-        },
-        "mr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "फोटो जोडा"
-          }
-        },
-        "nb" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Legg ved bilder"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Voeg foto’s toe"
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Załącz zdjęcia"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Anexar fotos"
-          }
-        },
-        "pt-PT" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Anexar fotografias"
-          }
-        },
-        "ro" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Atașează fotografii"
-          }
-        },
-        "sv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bifoga bilder"
-          }
-        },
-        "ta" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "படங்களைச் சேர்"
-          }
-        },
-        "te" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ఫోటోలను జోడించండి"
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fotoğraf Ekle"
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Додати фото"
-          }
-        },
-        "ur" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "تصاویر منسلک کریں"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "附加照片"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "附加照片"
-          }
-        }
-      }
-    },
     "Attach photos or files" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -40175,197 +39984,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選擇推理強度"
-          }
-        }
-      }
-    },
-    "Choose photos from the library, or take one with the camera." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "اختر صورًا من المكتبة، أو التقط صورة بالكاميرا."
-          }
-        },
-        "bn" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "লাইব্রেরি থেকে ছবি বেছে নিন, অথবা ক্যামেরা দিয়ে একটি তুলুন।"
-          }
-        },
-        "cs" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vyberte fotky z knihovny nebo pořiďte novou fotoaparátem."
-          }
-        },
-        "da" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vælg billeder fra biblioteket, eller tag et med kameraet."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wähle Fotos aus der Mediathek oder nimm eines mit der Kamera auf."
-          }
-        },
-        "el" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Επιλέξτε φωτογραφίες από τη βιβλιοθήκη ή τραβήξτε μία με την κάμερα."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose photos from the library, or take one with the camera."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Elige fotos de la fototeca o haz una con la cámara."
-          }
-        },
-        "es-419" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Elige fotos de la fototeca o toma una con la cámara."
-          }
-        },
-        "es-MX" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Elige fotos de la fototeca o toma una con la cámara."
-          }
-        },
-        "fi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Valitse kuvia kirjastosta tai ota kuva kameralla."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choisissez des photos dans la photothèque ou prenez-en une avec l’appareil photo."
-          }
-        },
-        "hi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "लाइब्रेरी से फ़ोटो चुनें, या कैमरे से एक फ़ोटो लें।"
-          }
-        },
-        "hu" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Válassz fotókat a könyvtárból, vagy készíts egyet a kamerával."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Scegli le foto dalla libreria o scattane una con la fotocamera."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ライブラリから写真を選ぶか、カメラで撮影します。"
-          }
-        },
-        "mr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "लायब्ररीतून फोटो निवडा, किंवा कॅमेऱ्याने एक फोटो घ्या."
-          }
-        },
-        "nb" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Velg bilder fra biblioteket, eller ta et med kameraet."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kies foto’s uit de bibliotheek, of maak er een met de camera."
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wybierz zdjęcia z biblioteki albo zrób zdjęcie aparatem."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Escolha fotos da fototeca ou tire uma com a câmera."
-          }
-        },
-        "pt-PT" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Escolha fotografias da fototeca ou tire uma com a câmara."
-          }
-        },
-        "ro" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alege fotografii din bibliotecă sau fă una cu camera."
-          }
-        },
-        "sv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Välj bilder från biblioteket eller ta en med kameran."
-          }
-        },
-        "ta" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "தொகுப்பிலிருந்து படங்களைத் தேர்வுசெய்யவும், அல்லது கேமராவில் ஒன்றை எடுக்கவும்."
-          }
-        },
-        "te" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "లైబ్రరీ నుండి ఫోటోలను ఎంచుకోండి, లేదా కెమెరాతో ఒకటి తీయండి."
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Arşivden fotoğraf seçin ya da kamerayla bir fotoğraf çekin."
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Виберіть фото з медіатеки або зробіть знімок камерою."
-          }
-        },
-        "ur" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "لائبریری سے تصاویر منتخب کریں، یا کیمرے سے ایک لیں۔"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "从图库中选择照片，或用相机拍一张。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "從圖庫中選擇照片，或用相機拍一張。"
           }
         }
       }
@@ -51086,6 +50704,198 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Watcher 變更的檔案"
+          }
+        }
+      }
+    },
+    "Files in this message" : {
+      "comment" : "The files waiting in the box to Watcher",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الملفات في هذه الرسالة"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "এই বার্তার ফাইল"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Soubory v této zprávě"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filer i denne besked"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dateien in dieser Nachricht"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αρχεία σε αυτό το μήνυμα"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Files in this message"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archivos de este mensaje"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archivos de este mensaje"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archivos de este mensaje"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tämän viestin tiedostot"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fichiers de ce message"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "इस संदेश की फ़ाइलें"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az üzenet fájljai"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "File in questo messaggio"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このメッセージのファイル"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "या संदेशातील फाइल्स"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filer i denne meldingen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bestanden in dit bericht"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pliki w tej wiadomości"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arquivos nesta mensagem"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ficheiros nesta mensagem"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fișiere din acest mesaj"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filer i det här meddelandet"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "இந்தச் செய்தியில் உள்ள கோப்புகள்"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఈ సందేశంలోని ఫైల్‌లు"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu mesajdaki dosyalar"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Файли в цьому повідомленні"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اس پیغام کی فائلیں"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此消息中的文件"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此訊息中的檔案"
           }
         }
       }
@@ -128832,6 +128642,198 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Watcher 每次都會詢問。無法給予它持久的權限。"
+          }
+        }
+      }
+    },
+    "Watcher can’t take messages on this iPhone now, so what you shared goes in a new thread." : {
+      "comment" : "Shown on the New thread sheet when something was shared to Sotto and no computer's Watcher can take it",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يستطيع Watcher استقبال الرسائل على هذا الـ iPhone الآن، لذا ستذهب مشاركتك إلى محادثة جديدة."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher এখন এই iPhone-এ বার্তা নিতে পারছে না, তাই আপনি যা শেয়ার করেছেন তা একটি নতুন থ্রেডে যাবে।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher teď na tomto iPhonu nemůže přijímat zprávy, takže to, co jste sdíleli, půjde do nového vlákna."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher kan ikke tage imod beskeder på denne iPhone lige nu, så det, du delte, kommer i en ny tråd."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher kann auf diesem iPhone gerade keine Nachrichten annehmen, daher kommt das Geteilte in einen neuen Thread."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Το Watcher δεν μπορεί να δεχτεί μηνύματα σε αυτό το iPhone τώρα, οπότε ό,τι μοιραστήκατε πηγαίνει σε νέο νήμα."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher can’t take messages on this iPhone now, so what you shared goes in a new thread."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher no puede recibir mensajes en este iPhone ahora, así que lo que has compartido irá a un hilo nuevo."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher no puede recibir mensajes en este iPhone ahora, así que lo que compartiste irá a un hilo nuevo."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher no puede recibir mensajes en este iPhone ahora, así que lo que compartiste irá a un hilo nuevo."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher ei voi nyt ottaa viestejä vastaan tässä iPhonessa, joten jakamasi menee uuteen ketjuun."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher ne peut pas recevoir de messages sur cet iPhone pour l’instant : ce que vous avez partagé ira dans un nouveau fil."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher अभी इस iPhone पर संदेश नहीं ले सकता, इसलिए आपने जो शेयर किया वह नए थ्रेड में जाएगा।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Watcher most nem fogad üzeneteket ezen az iPhone-on, ezért a megosztott tartalom új szálba kerül."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher ora non può ricevere messaggi su questo iPhone, quindi ciò che hai condiviso andrà in un nuovo thread."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher は今この iPhone でメッセージを受け取れないため、共有した内容は新しいスレッドに入ります。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher आत्ता या iPhone वर संदेश घेऊ शकत नाही, म्हणून तुम्ही शेअर केलेले नवीन थ्रेडमध्ये जाईल."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher kan ikke ta imot meldinger på denne iPhonen nå, så det du delte, havner i en ny tråd."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher kan nu geen berichten ontvangen op deze iPhone, dus wat je deelde komt in een nieuwe thread."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher nie może teraz przyjmować wiadomości na tym iPhonie, więc udostępnione treści trafią do nowego wątku."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Watcher não pode receber mensagens neste iPhone agora, então o que você compartilhou vai para uma nova conversa."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Watcher não pode receber mensagens neste iPhone agora, por isso o que partilhou vai para uma nova conversa."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher nu poate primi mesaje pe acest iPhone acum, așa că ce ai partajat merge într-un fir nou."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher kan inte ta emot meddelanden på den här iPhonen just nu, så det du delade hamnar i en ny tråd."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher இப்போது இந்த iPhone-இல் செய்திகளை ஏற்க முடியாது, எனவே நீங்கள் பகிர்ந்தது புதிய த்ரெட்டில் செல்லும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher ఇప్పుడు ఈ iPhoneలో సందేశాలను తీసుకోలేదు, కాబట్టి మీరు షేర్ చేసింది కొత్త థ్రెడ్‌లోకి వెళ్తుంది."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher şu anda bu iPhone’da mesaj alamıyor, bu yüzden paylaştığınız şey yeni bir sohbete gidecek."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher зараз не може приймати повідомлення на цьому iPhone, тож те, чим ви поділилися, піде в новий тред."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher اس وقت اس iPhone پر پیغامات نہیں لے سکتا، اس لیے آپ نے جو شیئر کیا وہ نئے تھریڈ میں جائے گا۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher 目前无法在此 iPhone 上接收消息，你分享的内容将放入新会话。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher 目前無法在此 iPhone 上接收訊息，你分享的內容將放入新對話。"
           }
         }
       }

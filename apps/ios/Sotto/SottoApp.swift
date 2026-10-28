@@ -36,11 +36,15 @@ import SottoCore
                     // Local alerts while Sotto runs (ADR-0051); the model decides what is news.
                     AlertCenter.shared.attach(model)
                     model.phase(phase)
+                    if phase == .active { model.takeShares() }
                 }
                 .onChange(of: phase) { _, value in
                     model.phase(value)
+                    if value == .active { model.takeShares() }
                     if value == .background { files.background() }
                 }
+                // Share to Sotto opens the app with this when it has left something in the inbox (ADR-0157).
+                .onOpenURL { url in if url.scheme == ShareInbox.openURL.scheme { model.takeShares() } }
                 .modifier(PhoneDisplayPreferences())
                 // In Arabic and Urdu the window keeps its English layout; only paragraph text runs right to left,
                 // inside its own box (`paragraphDirection()`). Fonts follow the interface language, so Chinese and

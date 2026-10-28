@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -30,7 +30,7 @@ const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 /** `steers`: Watcher's provider takes a steer into its running turn, as Codex and Claude Code do and Grok Build does not. */
 /** `writingClock`: the monotonic clock the listener times a phone's Watcher window on. */
-async function fixture(phoneFeature = true, usageEnabled = false, steers = false, machines = false, writingClock?: () => number) {
+async function fixture(phoneFeature = true, usageEnabled = false, steers = false, machines = false, writingClock?: () => number, files = false) {
   const workspace = await workspaceFixture()
   cleanups.push(workspace.remove)
   if (steers) workspace.adapters.codex.state.capabilities.steer = true
@@ -39,7 +39,7 @@ async function fixture(phoneFeature = true, usageEnabled = false, steers = false
   usage?.start()
   let canAnswer = false
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
-    control: { watcherEnabled: true, ...(usage ? { usage } : {}), authority: { authorizes: () => ({ allowed: false, reason: 'no-policy' }),
+    control: { watcherEnabled: true, ...(usage ? { usage } : {}), ...(files ? { attachAnyFile: true } : {}), authority: { authorizes: () => ({ allowed: false, reason: 'no-policy' }),
       mayGrant: client => ({ allowed: client.transport === 'ipc' || canAnswer, reason: 'paired-client' }) } } })
   const watcher = new WatcherService({ directory: workspace.root, host: workspace.host, control: f.control, historyEnabled: () => true,
     ...machines ? { crossMachine: true, machineFacts: async () => MACHINE_REPORT, workerMachine: () => 'this-computer' as const } : {} })
@@ -52,7 +52,7 @@ async function fixture(phoneFeature = true, usageEnabled = false, steers = false
   expect(await watcher.open({ provider: 'codex', modelId: model.id })).toMatchObject({ status: 'ok' })
   const target = watcher.state().current!.target
   const phone = new WatcherPhoneService(f.control, watcher, machines)
-  const service = new LocalHostService({ control: f.control, ...(phoneFeature ? { watcherPhone: phone } : {}) })
+  const service = new LocalHostService({ control: f.control, ...(phoneFeature ? { watcherPhone: phone } : {}), ...(files ? { fileStaging: true } : {}) })
   const pairing = new PairedClients(workspace.root); await pairing.load()
   const server = await startSocketServer({ service, pairing, admin: false, mayAnswer: () => canAnswer, ...writingClock ? { watcherWritingClock: writingClock } : {} })
   cleanups.push(() => server.close())
@@ -773,6 +773,28 @@ it('sends a phone’s photos to Watcher with or without words, now or next, and 
     state: { followups: [{ draftId: nextDraft, text: nextText, status: 'queued' }] } } })
   expect(f.control.shell().followups).toContainEqual(expect.objectContaining({ draftId: nextDraft, text: nextText,
     attachments: [expect.objectContaining({ id: second.id, digest: second.digest })] }))
+})
+
+// Files for Watcher from the phone (ADR-0131, October 28 amendment): staged as a thread's reply's are, named in `images`.
+it('sends a phone’s staged file to Watcher only where the host keeps files, and refuses one elsewhere', async () => {
+  const f = await fixture(true, false, false, false, undefined, true), peer = await f.pair(STEER), clientId = peer.paired.clientId
+  expect(peer.hello).toMatchObject({ ok: true, result: { features: expect.arrayContaining(['watcher-phone-files', 'file-staging']) } })
+  const bytes = Buffer.from('Synthetic shared notes'), digest = createHash('sha256').update(bytes).digest('hex')
+  const staged = await peer.call('stage-file', { op: 'stage-file-part', part: { uploadId: randomUUID(), index: 0, count: 1, name: 'notes.txt',
+    mimeType: 'text/plain', sizeBytes: bytes.length, digest, data: bytes.toString('base64') } })
+  const handle = staged.result as { id: string; digest: string }
+  expect(handle).toMatchObject({ digest })
+  const packet = f.send(clientId, randomUUID(), 'Read this')
+  expect(await peer.call('file', { ...packet, request: { ...packet.request, images: [handle] } })).toMatchObject({ ok: true, result: { status: 'ok' } })
+  expect(f.workspace.adapters.codex.commands.findLast(command => command.type === 'send')).toMatchObject({
+    attachments: [expect.objectContaining({ id: handle.id, digest })] })
+
+  // A host that keeps no files neither offers it nor takes a file's handle.
+  const without = await fixture(), old = await without.pair(STEER)
+  expect((old.hello.result as { features: string[] }).features).not.toContain('watcher-phone-files')
+  const refused = without.send(old.paired.clientId, randomUUID(), 'Read this')
+  expect(await old.call('refused', { ...refused, request: { ...refused.request, images: [{ ...handle, name: 'notes.txt', mimeType: 'text/plain', sizeBytes: bytes.length }] } }))
+    .toMatchObject({ ok: false, error: { code: 'invalid_request' } })
 })
 
 it('queues a phone message to go next when Watcher’s provider takes no steer, shows it on the page and removes it (#1229)', async () => {

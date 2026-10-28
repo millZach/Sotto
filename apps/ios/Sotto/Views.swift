@@ -84,8 +84,10 @@ struct MainTabs: View {
         // A tapped alert opens its thread on Threads (ADR-0051), and Watcher's own opens the Watcher tab.
         .onChange(of: model.alertOpened) { _, ref in openAlerted(ref) }
         .onChange(of: model.watcherAlertOpened) { _, hostID in openWatcher(hostID) }
+        // Something shared to Sotto opens where it went: Watcher, or Threads, whose new thread's sheet takes it (ADR-0157).
+        .onChange(of: model.shareOpened) { _, destination in openShared(destination) }
         .onAppear {
-            openAlerted(model.alertOpened); openWatcher(model.watcherAlertOpened)
+            openAlerted(model.alertOpened); openWatcher(model.watcherAlertOpened); openShared(model.shareOpened)
             #if DEBUG
             openForCapture()
             #endif
@@ -116,6 +118,17 @@ struct MainTabs: View {
         model.alertOpened = nil
         tab = .threads
         threadPath = NavigationPath([ThreadRoute(ref: ref)])
+    }
+    private func openShared(_ destination: ShareDestination?) {
+        switch destination {
+        case .watcher?:
+            model.shareOpened = nil
+            guard model.watcherHostID != nil else { return }
+            tab = .watcher; watcherPath = NavigationPath()
+        case .newThread?:
+            tab = .threads; threadPath = NavigationPath()
+        case nil: return
+        }
     }
     private func openWatcher(_ hostID: String?) {
         guard hostID != nil else { return }

@@ -257,16 +257,15 @@ private struct DraftPhotoView: View {
 
 // MARK: Choosing photos
 
-/// The reply box's + button: Photo library or Camera, and in a thread's box Files (ADR-0131). When the box can't take
-/// photos, or files, those choices stay in the menu, unavailable, with the reason beneath them. A thread's box and
-/// Watcher's work the same way for photos; Watcher's takes no files yet.
+/// The reply box's + button: Photo library, Camera and Files (ADR-0131). When the box can't take photos, or files, those
+/// choices stay in the menu, unavailable, with the reason beneath them. A thread's box and Watcher's work the same way.
+/// Whatever goes into the box, from here, a paste or the share sheet, answers with the same tap.
 struct AttachPhotosButton: View {
     @EnvironmentObject var model: AppModel
     let box: PhotoBox
     @State private var choosing = false
     @State private var shooting = false
     @State private var choosingFiles = false
-    @State private var attached = 0
     @State private var picked: [PhotosPickerItem] = []
     var body: some View {
         let reason = self.reason, fileReason = self.fileReason
@@ -278,28 +277,24 @@ struct AttachPhotosButton: View {
                     .disabled(reason != nil || !CameraPicker.available)
                 if let reason { Text(reason) }
             }
-            if !watcher {
-                Section {
-                    Button { choosingFiles = true } label: { Label("Files", systemImage: "folder") }
-                        .disabled(fileReason != nil)
-                    if let fileReason { Text(fileReason) }
-                }
+            Section {
+                Button { choosingFiles = true } label: { Label("Files", systemImage: "folder") }
+                    .disabled(fileReason != nil)
+                if let fileReason { Text(fileReason) }
             }
         } label: {
             Image(systemName: "plus").fontWeight(.semibold).frame(width: 44, height: 44)
-                .foregroundStyle(reason == nil || (!watcher && fileReason == nil) ? Palette.ink : Palette.muted)
+                .foregroundStyle(reason == nil || fileReason == nil ? Palette.ink : Palette.muted)
                 .background(Palette.raised, in: Circle())
         }
-        .accessibilityLabel(watcher ? String(localized: "Attach photos") : String(localized: "Attach photos or files"))
-        .accessibilityHint(watcher ? reason ?? String(localized: "Choose photos from the library, or take one with the camera.")
-            : [reason, fileReason].compactMap { $0 }.first ?? String(localized: "Choose photos from the library, take one with the camera, or choose files."))
+        .accessibilityLabel(String(localized: "Attach photos or files"))
+        .accessibilityHint([reason, fileReason].compactMap { $0 }.first ?? String(localized: "Choose photos from the library, take one with the camera, or choose files."))
         .accessibilityIdentifier(watcher ? "watcher-attach-photos" : "thread-attach-photos")
         .photosPicker(isPresented: $choosing, selection: $picked, maxSelectionCount: max(1, room),
                       selectionBehavior: .ordered, matching: .images, preferredItemEncoding: .current)
         .onChange(of: picked) { _, items in
             guard !items.isEmpty else { return }
             let start = model.photos(box).count
-            attached += 1
             model.attachPhotos(box, from: items.enumerated().map { offset, item in
                 PhotoSource(name: "Photo \(start + offset + 1)") {
                     guard let data = try await item.loadTransferable(type: Data.self) else { throw PhotoPipelineError.unreadable }
@@ -314,14 +309,13 @@ struct AttachPhotosButton: View {
         }
         .fullScreenCover(isPresented: $shooting) {
             CameraPicker(shown: $shooting) { image in
-                attached += 1
                 model.attachPhotos(box, from: [PhotoSource(name: "Camera photo") {
                     guard let data = image.jpegData(compressionQuality: 0.95) else { throw PhotoPipelineError.unreadable }
                     return data
                 }])
             }.ignoresSafeArea()
         }
-        .sensoryFeedback(.selection, trigger: attached)
+        .sensoryFeedback(.selection, trigger: model.attachHaptics[box.id] ?? 0)
     }
     private var watcher: Bool { if case .watcher = box { return true }; return false }
     /// Photos and files count toward the same eight.
@@ -336,33 +330,18 @@ struct AttachPhotosButton: View {
         return model.files(box).isEmpty ? box.photoLimitWords : FileWords.full
     }
     private var fileReason: String? {
-        guard case .thread(let ref) = box else { return nil }
-        if let reason = model.fileSupport(ref).reason(computer: model.name(box.hostID)) { return reason }
-        if model.preparingSends.contains(box.id) { return String(localized: "Your reply is being sent.") }
+        if let reason = model.fileSupport(box).reason(computer: model.name(box.hostID)) { return reason }
+        if model.preparingSends.contains(box.id) {
+            return watcher ? String(localized: "Your message is being sent.", comment: "A message to Watcher is on its way, so its photos can't change")
+                : String(localized: "Your reply is being sent.")
+        }
         return room > 0 ? nil : FileWords.full
     }
-    /// A photo chosen in Files goes as a photo, made ready as one from the library is, and is refused in the photos' own
-    /// words where the thread's model can't take photos. Everything else goes as a file. The whole choice is checked
-    /// first: when its files are past the limits, counting the photos chosen with them, nothing of it is attached.
     private func pickedFiles(_ urls: [URL]) {
-        guard case .thread(let ref) = box, !urls.isEmpty else { return }
         let photos = urls.filter { PhotoLimits.mimeTypes.contains(Files.mimeType(forName: $0.lastPathComponent)) }
-        let files = urls.filter { !photos.contains($0) }.map(PickedFile.source)
-        let photoRefusal = photos.isEmpty ? nil : model.photoSupport(box).reason(computer: model.name(box.hostID))
-        let chosenPhotos = photoRefusal == nil ? photos.count : 0
-        let others = model.photos(box).map { $0.prepared?.byteCount ?? 0 } + model.files(box).map(\.sizeBytes) + Array(repeating: 0, count: chosenPhotos)
-        if !files.isEmpty, let refusal = Files.refusal(adding: files.map { $0.sizeBytes ?? 0 }, to: others) {
-            model.photoNotices[box.id] = refusal
-            return
-        }
-        if !files.isEmpty { model.attachFiles(ref, from: files) }
-        if let photoRefusal { model.photoNotices[box.id] = photoRefusal }
-        else if !photos.isEmpty {
-            model.attachPhotos(box, from: photos.map { url in
-                PhotoSource(name: url.deletingPathExtension().lastPathComponent) { try await Task.detached { try PickedFile.read(url) }.value }
-            })
-        }
-        if !files.isEmpty || !photos.isEmpty { attached += 1 }
+        model.attach(box, photos: photos.map { url in
+            PhotoSource(name: url.deletingPathExtension().lastPathComponent) { try await Task.detached { try PickedFile.read(url) }.value }
+        }, files: urls.filter { !photos.contains($0) }.map(PickedFile.source))
     }
     /// The camera asks for access the first time. Once it has been refused, iOS won't ask again, so say where to turn it on.
     private func openCamera() {
