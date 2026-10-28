@@ -2459,11 +2459,13 @@ it('has Watcher’s stop_thread take a check out of a paired host’s queue: it 
 it('has Watcher’s stop of a check whose thread is made but whose first prompt has not gone stop it as any thread, cancelling that prompt (#1637)', async () => {
   const f = await waitingOnHost()
   // The host makes the waiting check's thread when its turn comes; its first prompt is held on the way.
-  const commandFromWatcher = Object.getPrototypeOf(f.control).commandFromWatcher as (this: unknown, command: { type: string; threadId?: string }, origin: unknown) => Promise<unknown>
+  const control = Object.getPrototypeOf(f.control) as { commandFromWatcher: (...args: unknown[]) => Promise<unknown> }
+  const commandFromWatcher = control.commandFromWatcher
   const reached = deferred<void>(), held = deferred<void>()
-  vi.spyOn(Object.getPrototypeOf(f.control), 'commandFromWatcher').mockImplementation(async function (this: unknown, command: { type: string; threadId?: string }, origin: unknown) {
+  vi.spyOn(control, 'commandFromWatcher').mockImplementation(async function (this: unknown, ...args: unknown[]) {
+    const command = args[0] as { type: string; threadId?: string }
     if (command.type === 'manual-send' && command.threadId === f.waiting.target.threadId) { reached.resolve(); await held.promise }
-    return commandFromWatcher.call(this, command, origin)
+    return commandFromWatcher.apply(this, args)
   })
   const native = (await remote.native.snapshot()).threads.find(item => item.title === 'Synthetic first remote check')!
   const brief = native.messages.find(message => message.role === 'user')!
