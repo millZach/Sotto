@@ -158,9 +158,7 @@ export class FollowupStore {
       // The user's follow-ups go before a wake-up that waits, which goes when the queue would send the next one (decision 8).
       const wakeUp = state.items.findIndex(item => waitingWakeUp(item, input.threadId) && !leadsQueue(item, input.threadId))
       state.items.splice(wakeUp === -1 ? state.items.length : wakeUp, 0, queuedSchema.parse({ ...input, id: randomUUID(), status: 'queued', createdAt: now, updatedAt: now }))
-      const receipts = [...state.receipts, { threadId: input.threadId, draftId: input.draftId, digest }]
-      const ordinary = new Set(receipts.filter(receipt => this.active(receipt.threadId)).slice(-MAX_DELIVERED_DRAFTS))
-      state.receipts = receipts.filter(receipt => !this.active(receipt.threadId) || ordinary.has(receipt))
+      this.keepReceipts(state, [{ threadId: input.threadId, draftId: input.draftId, digest }])
     })
   }
   async privacyChanged(): Promise<void> { await this.change(() => undefined); await this.cleanPrivateCopies() }
@@ -410,29 +408,37 @@ export class FollowupStore {
    * Moves the user's own follow-ups that have not gone from one thread's queue to the end of another's, paused, with
    * `error` saying why: what a new Watcher takes from the one it replaced (#1735). One whose send was not confirmed says
    * so with `unconfirmed`, since it may have arrived. Sotto's wake-ups, Watcher's sends and one already sending stay where
-   * they are. Says which drafts moved; none past the other queue's hundred move.
+   * they are. Says which drafts moved, when each was queued and whether it may have arrived; none past the other queue's
+   * hundred move.
    */
-  async moveUserPrompts(from: string, to: string, error: string, unconfirmed: string): Promise<string[]> {
-    let moved: string[] = []
+  async moveUserPrompts(from: string, to: string, error: string, unconfirmed: string): Promise<{ readonly draftId: string; readonly createdAt: string; readonly unconfirmed: boolean }[]> {
+    let moved: { readonly draftId: string; readonly createdAt: string; readonly unconfirmed: boolean }[] = []
     await this.change(state => {
       const room = 100 - state.items.filter(item => item.threadId === to).length
       const items = state.items.filter(item => item.threadId === from && !item.wakeUp && !item.watcherOperationId && item.status !== 'dispatching').slice(0, Math.max(0, room))
       if (!items.length) return false
       const now = new Date().toISOString()
+      const doubts = new Set<string>()
       for (const item of items) {
-        const sent = item.status === 'uncertain'
+        // One that may have arrived says so wherever it moves, a second replacement included.
+        const sent = item.status === 'uncertain' || item.error === unconfirmed
+        if (sent) doubts.add(item.draftId)
         Object.assign(item, { threadId: to, status: 'paused', error: sent ? unconfirmed : error, updatedAt: now })
         delete item.pausedBy; delete item.commandId; delete item.resumeAfterTurnId
       }
       // Each is a revision the new thread now holds, kept as `enqueue` keeps receipts, so the file stays within its limit.
-      const receipts = [...state.receipts, ...items.map(item => ({ threadId: to, draftId: item.draftId, digest: followupDigest(item) }))]
-      const ordinary = new Set(receipts.filter(receipt => this.active(receipt.threadId)).slice(-MAX_DELIVERED_DRAFTS))
-      state.receipts = receipts.filter(receipt => !this.active(receipt.threadId) || ordinary.has(receipt))
+      this.keepReceipts(state, items.map(item => ({ threadId: to, draftId: item.draftId, digest: followupDigest(item) })))
       // Moved to the end of the new queue, in the order they had.
       state.items = [...state.items.filter(item => !items.includes(item)), ...items]
-      moved = items.map(item => item.draftId)
+      moved = items.map(item => ({ draftId: item.draftId, createdAt: item.createdAt, unconfirmed: doubts.has(item.draftId) }))
     })
     return moved
+  }
+  /** Adds receipts and keeps the newest of the threads still open, as many as the saved file holds (`MAX_DELIVERED_DRAFTS`). */
+  private keepReceipts(state: State, added: State['receipts']): void {
+    const receipts = [...state.receipts, ...added]
+    const ordinary = new Set(receipts.filter(receipt => this.active(receipt.threadId)).slice(-MAX_DELIVERED_DRAFTS))
+    state.receipts = receipts.filter(receipt => !this.active(receipt.threadId) || ordinary.has(receipt))
   }
   /** Pauses the thread's queued follow-ups. A hidden wake-up never pauses: no one could resume it. */
   pause(threadId: string, error: string, by?: 'watcher'): Promise<void> {

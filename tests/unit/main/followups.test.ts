@@ -903,3 +903,13 @@ it('moves a replaced Watcher’s unsent messages to the new one paused, keeping 
   expect(reloaded.peek().items).toHaveLength(100)
   expect(reloaded.peek().items).toEqual(queue.peek().items)
 })
+
+it('keeps saying a moved message may have arrived, however many times it moves (#1735)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-followups-')); roots.push(root)
+  const queue = new FollowupStore(root); await queue.load()
+  await queue.enqueue({ threadId: 'watcher-a', draftId: randomUUID(), text: 'Ship it', attachments: [] })
+  await (queue as unknown as { change(update: (state: { items: { status: string }[] }) => void): Promise<void> }).change(state => { state.items[0]!.status = 'uncertain' })
+  expect((await queue.moveUserPrompts('watcher-a', 'watcher-b', 'Moved.', 'Maybe arrived.'))[0]).toMatchObject({ unconfirmed: true })
+  expect((await queue.moveUserPrompts('watcher-b', 'watcher-c', 'Moved.', 'Maybe arrived.'))[0]).toMatchObject({ unconfirmed: true })
+  expect(queue.peek().items[0]).toMatchObject({ threadId: 'watcher-c', status: 'paused', error: 'Maybe arrived.' })
+})

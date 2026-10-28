@@ -774,9 +774,9 @@ export class AgentControl {
   /**
    * A new Watcher takes the user's messages to the one it replaced that have not gone (#1735): queued, paused, failed or
    * not confirmed, each moved to its queue, paused, so the user sends or removes it there and nothing goes twice. Says
-   * which drafts moved.
+   * which drafts moved, when each was queued and whether it may have arrived.
    */
-  async moveWatcherQueue(from: string, to: string): Promise<string[]> {
+  async moveWatcherQueue(from: string, to: string): Promise<{ readonly draftId: string; readonly createdAt: string; readonly unconfirmed: boolean }[]> {
     const moved = await this.followupStore.moveUserPrompts(from, to,
       'This was waiting for the last Watcher. Resume the queue to send it to this one, or remove it.',
       'The last Watcher did not confirm this message, so it may have reached it. Check that conversation in Watcher history before you resume the queue.')
@@ -794,6 +794,14 @@ export class AgentControl {
     this.discardThreadDraft(from)
     await this.persist(); this.publish()
     return true
+  }
+  /**
+   * Whether the user's message to this thread sent straight to its provider, not through its queue, was never confirmed
+   * and not set aside: main keeps only its digest, so a new Watcher can say so but not carry it (#1735).
+   */
+  unconfirmedDirectSend(threadId: string): boolean {
+    const queued = new Set(this.followupStore.peek().items.filter(item => item.threadId === threadId).map(item => item.draftId))
+    return (this.state.deliveries ?? []).some(item => item.threadId === threadId && item.status === 'uncertain' && item.setAside !== true && !queued.has(item.draftId))
   }
   /** Whether a message of the user's to this thread is being written to its provider now. */
   watcherFollowupSending(threadId: string): boolean {

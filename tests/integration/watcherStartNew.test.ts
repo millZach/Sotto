@@ -215,6 +215,29 @@ describe('New Watcher', () => {
     expect(handover.text).toContain('One message the user wrote to the last Watcher had not gone. It waits, paused, in your queue')
   })
 
+  it('keeps the closed card’s question for the handover when the first try fails before saving anything (#1735)', async () => {
+    const f = await fixture()
+    await f.exchange('Watch the release.', 'Watching it.')
+    await f.send('Which branch should the release use?')
+    const native = f.native(f.first.threadId)
+    native.status = 'running'
+    native.requests = [{ id: 'watcher-card', kind: 'question', text: 'Release from main?', options: [] }]
+    await f.refresh()
+    // The first try stops the turn, which closes the card, then fails before the new Watcher is saved.
+    const update = f.control.updateWatcher.bind(f.control)
+    const failing = vi.spyOn(f.control, 'updateWatcher').mockImplementationOnce(async () => { throw new Error('synthetic-write-failure') })
+    expect(await f.service.startNew()).toMatchObject({ status: 'refused' })
+    failing.mockImplementation(update)
+    native.requests = []; native.status = 'idle'; native.lastTurn = { id: randomUUID(), status: 'interrupted' }; await f.refresh()
+    expect(f.control.watcherRecord().creation).toBeNull()
+    // The second try finds no card, and still hands the first one's question over.
+    expect(await f.service.startNew()).toMatchObject({ status: 'ok', state: { history: [{ target: f.first }] } })
+    expect(f.service.state().carried).toMatchObject({ questionClosed: true })
+    const handover = f.service.readHandover()
+    if (handover.status !== 'ok') throw new Error('handover unreadable')
+    expect(handover.text).toContain('- Release from main?')
+  })
+
   it('refuses when Watcher’s model is not ready or its permission mode is not the one in force', async () => {
     const f = await fixture()
     await f.exchange('Watch the release.', 'Watching it.')

@@ -1499,19 +1499,32 @@ it('hands a replaced Watcher’s threads on a host that lists watcher-new-owner 
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   await f.control.commandShell({ type: 'connect', provider: 'claude' })
   const claude = f.control.watcherSnapshot().models.find(item => item.providerId === 'claude' && item.ready)!
+  // The host hears of the thread's standing watch under the Watcher that started it.
+  const last = f.watcher.state().current!
+  reads.mockImplementation(read)
+  await vi.waitFor(async () => {
+    await (f.watcher as unknown as { reconcileRemote(): Promise<void> }).reconcileRemote()
+    expect((await read({ master: last, adopt: true }) as WatcherHostProjection).standingWatches?.map(watch => watch.target)).toContainEqual(packet!.operation.target)
+  })
+  reads.mockRejectedValue(new Error('synthetic-read-held'))
   // Its thread there may still be working, and nothing of that holds the change any more.
   expect(f.control.watcherRecord().reservations.some(item => item.target.hostId === f.pairing.hostId)).toBe(true)
   expect(await f.watcher.open({ provider: 'claude', modelId: claude.id })).toMatchObject({ status: 'ok', state: { current: { provider: 'claude' } } })
   expect(f.watcher.state().history.at(-1)!.target.threadId).toBe(f.id)
   // The host can take the last Watcher's requests over, so the new Watcher's note names nothing it cannot stop.
   expect(f.watcher.state().carried).toBeUndefined()
+  // A bare read that asks the host to move them moves the standing watch of the thread it started too, in the same write,
+  // so nothing queued for it is refused in between for an older watch.
+  const current = f.watcher.state().current!
+  const bare = await read({ master: current, adopt: true }) as WatcherHostProjection
+  expect(bare.requests.find(request => request.id === packet!.request.id)?.watcher).toEqual(current.target)
+  expect(bare.standingWatches?.map(watch => watch.target)).toContainEqual(packet!.operation.target)
   // Every read now asks the host to move them first, and the start is read under the new Watcher.
   reads.mockImplementation(read)
   await (f.watcher as unknown as { reconcileRemote(): Promise<void> }).reconcileRemote()
   expect(reads.mock.calls.every(([request]) => request.adopt === true)).toBe(true)
   expect(f.control.watcherRecord().operations.find(item => item.id === packet!.operation.id)!.deliveryState).toBe('accepted')
   // The host now keeps that request under the new Watcher: its projection for the new one lists it.
-  const current = f.watcher.state().current!
   const projection = await read({ master: current, adopt: true }) as WatcherHostProjection
   expect(projection.requests.find(request => request.id === packet!.request.id)?.watcher).toEqual(current.target)
   // The last Watcher can no longer direct anything there: its own packet, sent again, is refused as replaced.
