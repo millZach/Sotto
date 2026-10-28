@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
@@ -29,7 +29,8 @@ const MACHINE_REPORT = { facts: { observedAt: new Date().toISOString(), os: { fa
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 /** `steers`: Watcher's provider takes a steer into its running turn, as Codex and Claude Code do and Grok Build does not. */
-async function fixture(phoneFeature = true, usageEnabled = false, steers = false, machines = false) {
+/** `writingWindowMs`: how long the listener holds a phone's shell whose only news is Watcher's conversation. */
+async function fixture(phoneFeature = true, usageEnabled = false, steers = false, machines = false, writingWindowMs?: number) {
   const workspace = await workspaceFixture()
   cleanups.push(workspace.remove)
   if (steers) workspace.adapters.codex.state.capabilities.steer = true
@@ -53,7 +54,7 @@ async function fixture(phoneFeature = true, usageEnabled = false, steers = false
   const phone = new WatcherPhoneService(f.control, watcher, machines)
   const service = new LocalHostService({ control: f.control, ...(phoneFeature ? { watcherPhone: phone } : {}) })
   const pairing = new PairedClients(workspace.root); await pairing.load()
-  const server = await startSocketServer({ service, pairing, admin: false, mayAnswer: () => canAnswer })
+  const server = await startSocketServer({ service, pairing, admin: false, mayAnswer: () => canAnswer, ...writingWindowMs === undefined ? {} : { watcherWritingMs: writingWindowMs } })
   cleanups.push(() => server.close())
   const pair = async (accepts: string[] = ['watcher-phone', 'watcher-phone-stop-all']) => {
     const paired = await pairing.redeem(pairing.issuePairingCode().code, 'Synthetic phone')
@@ -946,6 +947,67 @@ it('pushes a phone no shell whose only news is when Watcher\'s page was read, an
     await publish(); await received()
     expect(shells()).toHaveLength(3)
   } finally { vi.useRealTimers() }
+})
+
+/**
+ * Watcher writing its reply changes its page with every word, and its page rides on every shell a phone with Watcher is
+ * pushed. Before October 28, 2026 that sent the phone its whole shell with every publish while Watcher wrote, about twenty
+ * a second, and the iPhone read each one whole and drew Watcher's page again.
+ */
+describe('a phone while Watcher writes its reply', () => {
+  type Pushed = { state: { watcher?: { working: boolean; conversation: { messages: { id: string; text: string }[] } }; clientCapabilities?: { mayAnswer: boolean } } }
+  const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+  async function writing(f: Awaited<ReturnType<typeof fixture>>) {
+    const peer = await f.pair()
+    await peer.call('send', f.send(peer.paired.clientId))
+    const shells = () => peer.messages.filter(message => message.event === 'shell') as unknown as Pushed[]
+    const native = f.native(f.target.threadId)
+    const reply = { id: 'synthetic-streamed-reply', role: 'assistant' as const, text: 'Synthetic', createdAt: new Date().toISOString() }
+    native.status = 'running'; native.messages.push(reply); f.workspace.adapters.codex.emit()
+    const shown = () => shells().at(-1)?.state.watcher?.conversation.messages.find(message => message.id === reply.id)?.text
+    // Watcher working is news of its own, so it goes at once; its first words may follow in the next window.
+    await expect.poll(() => shells().at(-1)?.state.watcher?.working).toBe(true)
+    const write = async (ms: number) => {
+      const began = Date.now()
+      while (Date.now() - began < ms) { reply.text += ' word'; f.workspace.adapters.codex.emit(); await wait(10) }
+      return Date.now() - began
+    }
+    return { peer, shells, native, reply, shown, write }
+  }
+
+  it('is pushed a shell at most once a window while only Watcher\'s conversation changes, and the newest words once it stops', async () => {
+    const f = await fixture(), { shells, reply, shown, write } = await writing(f)
+    // A second phone holds its own window, and both are sent from the timer that closes them.
+    const other = await f.pair()
+    const otherShells = () => other.messages.filter(message => message.event === 'shell') as unknown as Pushed[]
+    const before = shells().length, otherBefore = otherShells().length
+    const wrote = await write(1_500)
+    // Watcher's words reach the phone while it writes, not only once it stops.
+    const during = shells().slice(before).map(push => push.state.watcher?.conversation.messages.find(message => message.id === reply.id)?.text)
+    expect(during.filter(text => text !== undefined && text !== 'Synthetic' && text !== reply.text).length).toBeGreaterThanOrEqual(2)
+    await expect.poll(shown).toBe(reply.text)
+    await expect.poll(() => otherShells().at(-1)?.state.watcher?.conversation.messages.find(message => message.id === reply.id)?.text).toBe(reply.text)
+    // Before, one shell went with every publish: about thirty in this time.
+    expect(shells().length - before).toBeLessThanOrEqual(Math.ceil(wrote / 250) + 2)
+    expect(otherShells().length - otherBefore).toBeLessThanOrEqual(Math.ceil(wrote / 250) + 2)
+  })
+
+  it('is pushed anything else at once, with the newest words', async () => {
+    // A window longer than any poll here: a push held for it would never arrive in time.
+    const f = await fixture(true, false, false, false, 60_000)
+    const { shells, native, reply, write } = await writing(f)
+    await write(300)
+    // Watcher finishing goes at once and carries what it wrote.
+    native.status = 'idle'; f.workspace.adapters.codex.emit()
+    await expect.poll(() => shells().at(-1)?.state.watcher?.working).toBe(false)
+    expect(shells().at(-1)!.state.watcher!.conversation.messages.find(message => message.id === reply.id)?.text).toBe(reply.text)
+    // So does a change to the phone's own standing, and an answer that carried a page lets the next push through.
+    native.status = 'running'; f.workspace.adapters.codex.emit()
+    await expect.poll(() => shells().at(-1)?.state.watcher?.working).toBe(true)
+    await write(100)
+    f.canAnswer(true); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+    await expect.poll(() => shells().at(-1)?.state.clientCapabilities?.mayAnswer).toBe(true)
+  })
 })
 
 it('knows the threads Watcher started from an index of its record, for the phone’s machines line (#1032)', async () => {

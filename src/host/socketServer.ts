@@ -146,6 +146,8 @@ export interface SocketServerOptions {
   onRevoked?: (clientId: string) => void
   /** Tests stand in for a host of another Sotto version; the host advertises its own. */
   sottoVersion?: string
+  /** Tests hold a phone's Watcher conversation for longer than `WATCHER_WRITING_WINDOW_MS`, to tell held from sent. */
+  watcherWritingMs?: number
   /**
    * False turns the administrative routes off. The desktop administers its phone listener in-process, so
    * it has no admin token to keep; only the headless host, whose own command line uses them, needs them.
@@ -233,6 +235,13 @@ const answerDecisionId = (clientId: string, commandId: string): string =>
  */
 const MESSAGES_PER_SECOND = 100
 const EVENT_PAGES_PER_SECOND = 100
+/**
+ * How long a phone's shell whose only news is Watcher's conversation waits after the last shell to that phone. Watcher
+ * writing its reply changes its page with every word, and its page rides on every shell a phone with Watcher is pushed,
+ * so without this a phone was pushed its whole shell with every publish while Watcher wrote, about twenty a second
+ * (October 28, 2026). A phone shows Watcher's words four times a second instead; anything else still goes at once.
+ */
+const WATCHER_WRITING_WINDOW_MS = 250
 /**
  * HTTP requests a minute, per endpoint class, so no caller can spend another's budget. Health is not
  * counted: refusing it costs as much as answering it, and the launch script polls it while a host starts.
@@ -541,17 +550,54 @@ export async function startSocketServer(options: SocketServerOptions) {
   }
   const recordCatalog = (peer: Peer, shell: WireShell): void => { if (shell.carries !== null) peer.catalogSent = shell.carries }
   /**
-   * A shell's state as it is written, and the text that says whether it repeats the last one pushed. Watcher's page on a
+   * A shell's state as it is written, and the digests that say whether it repeats the last one pushed. Watcher's page on a
    * phone's shell says when it was read (`observedAt`), a new time on every read, so with it no phone's shell ever
    * repeated: every publish sent a phone its whole shell and Watcher's conversation again. The comparison leaves that
-   * time out, so a page with nothing new but its time is not pushed again. Each part is serialized once.
+   * time out, so a page with nothing new but its time is not pushed again. `withoutConversation` leaves Watcher's
+   * conversation out too, so a shell whose only news is Watcher writing can wait its window. Each part is serialized and
+   * hashed once.
    */
-  const shellText = (state: HostWireShell): { text: string; compared: string } => {
+  const shellText = (state: HostWireShell): { text: string; digest: string; withoutConversation: string } => {
     const page = state.watcher
-    if (!page) { const text = JSON.stringify(state); return { text, compared: text } }
+    const hash = (text: string): string => createHash('sha1').update(text).digest('base64')
+    if (!page) { const text = JSON.stringify(state), digest = hash(text); return { text, digest, withoutConversation: digest } }
     const rest = JSON.stringify({ ...state, watcher: undefined }), untimed = JSON.stringify({ ...page, observedAt: undefined })
     const text = rest.slice(0, -1) + ',"watcher":' + untimed.slice(0, -1) + ',"observedAt":' + JSON.stringify(page.observedAt) + '}}'
-    return { text, compared: rest + untimed }
+    const restDigest = hash(rest), pageWithoutConversation = JSON.stringify({ ...page, observedAt: undefined, conversation: undefined })
+    return { text, digest: restDigest + hash(untimed), withoutConversation: restDigest + hash(pageWithoutConversation) }
+  }
+  /**
+   * What the last shell pushed to each phone carried apart from Watcher's conversation, and when it went. A shell that
+   * differs from it only there waits until `watcherWritingMs` after it, and the newest then goes (`WATCHER_WRITING_WINDOW_MS`).
+   * It counts only while `shellSent` stands: once an answer gave the client another picture, the next push goes at once.
+   * Its time is the monotonic clock's, so the computer's clock being set back holds no shell longer. Every phone whose
+   * window has closed is sent from one read of the service's shell, as a publish sends them.
+   */
+  const watcherWritingMs = options.watcherWritingMs ?? WATCHER_WRITING_WINDOW_MS
+  const lastShell = new WeakMap<Peer, { withoutConversation: string; at: number }>()
+  /** Each phone holding a shell, and when its window closes; one timer, for the first of them. */
+  const writingHeld = new Map<Peer, number>()
+  let writingTimer: { due: number; timer: ReturnType<typeof setTimeout> } | undefined
+  const holdWriting = (peer: Peer, due: number): void => {
+    if (!writingHeld.has(peer)) writingHeld.set(peer, due)
+    const first = Math.min(...writingHeld.values())
+    if (writingTimer && writingTimer.due <= first) return
+    if (writingTimer) clearTimeout(writingTimer.timer)
+    writingTimer = { due: first, timer: setTimeout(sendWriting, Math.max(0, first - performance.now())) }
+  }
+  const sendWriting = (): void => {
+    writingTimer = undefined
+    if (closing) return
+    let original: AgentState | undefined
+    const read = () => original ??= service.shell()
+    const now = performance.now()
+    for (const [peer, due] of [...writingHeld]) {
+      if (due > now) continue
+      writingHeld.delete(peer)
+      if (!peer.frames.isClosed && peer.ready) sendShell(peer, read)
+    }
+    const [next] = writingHeld
+    if (next && !writingTimer) holdWriting(...next)
   }
   const authenticated = (peer: Peer): boolean => pairing.verifySession(peer.session) === peer.client.clientId
   const fits = (text: string): boolean => Buffer.byteLength(text) <= HOST_MAX_FRAME_BYTES
@@ -650,16 +696,21 @@ export async function startSocketServer(options: SocketServerOptions) {
     }
     const wire = wireShell(peer, shell(peer, read?.())), state = wire.state, eventPage = events(peer, peer.afterSeq)
     // The frame is written out by hand so its state, serialized once, can also be compared with the last one pushed.
-    const { text: stateText, compared } = shellText(state)
+    const { text: stateText, digest, withoutConversation } = shellText(state)
     const full = '{"v":1,"event":"shell","state":' + stateText + ',"eventPage":' + JSON.stringify(eventPage) + '}'
     if (fits(full)) {
       // A shell whose state is byte for byte the last one this client was pushed, with no events to bring, would only
       // cost the link its bytes again. It is not written; the cursor still moves past what the page left out for this
       // client, so those events are not read again on every publish. The catalog it would have carried is the one that
       // shell carried.
-      const digest = createHash('sha1').update(compared).digest('base64')
-      if (digest === peer.shellSent && eventPage.events.length === 0 && !eventPage.hasMore) { peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire) }
-      else { peer.frames.sendText(full); peer.shellSent = digest; peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire) }
+      const noEvents = eventPage.events.length === 0 && !eventPage.hasMore, last = lastShell.get(peer), now = performance.now()
+      if (digest === peer.shellSent && noEvents) { peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire) }
+      // One whose only news is Watcher's conversation waits out its window, and is read again when the window closes.
+      else if (noEvents && peer.shellSent !== null && last?.withoutConversation === withoutConversation && now < last.at + watcherWritingMs) holdWriting(peer, last.at + watcherWritingMs)
+      else {
+        peer.frames.sendText(full); peer.shellSent = digest; lastShell.set(peer, { withoutConversation, at: now }); writingHeld.delete(peer)
+        peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire)
+      }
     } else {
       peer.shellSent = null
       if (push(peer, { v: 1, event: 'shell', state, eventPage: { events: [], latestSeq: peer.afterSeq, hasMore: true } })) { peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire) }
@@ -1597,7 +1648,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, delegationViews: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherPhoneMachines: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, clientUpdateNotListed: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map() }
     peers.add(peer)
     frames.startHeartbeat()
-    frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); peers.delete(peer); if (peer.delegationRelay) options.delegationRelay?.desktopGone(peer.delegationRelay); if (!connected(peer.client.clientId)) uploads.drop(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
+    frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); peers.delete(peer); writingHeld.delete(peer); if (peer.delegationRelay) options.delegationRelay?.desktopGone(peer.delegationRelay); if (!connected(peer.client.clientId)) uploads.drop(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
     frames.feed(head)
     options.onPeersChanged?.()
   }
@@ -1632,6 +1683,8 @@ export async function startSocketServer(options: SocketServerOptions) {
   const stopServing = (): void => {
     if (closing) return
     closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeDelegations?.(); unsubscribeChecks?.(); releasePhoneAdmission?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
+    if (writingTimer) clearTimeout(writingTimer.timer)
+    writingHeld.clear()
     server.removeAllListeners('request')
     server.removeAllListeners('upgrade')
     server.removeAllListeners('connection')
