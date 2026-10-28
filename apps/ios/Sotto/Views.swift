@@ -245,6 +245,7 @@ struct FeedbackBanner: View {
             .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .accessibilityAddTraits(.updatesFrequently)
             .transition(.opacity)
+            .sensoryFeedback(trigger: model.feedback) { _, now in now == nil ? nil : .warning }
             .task(id: model.passing) {
                 if let id = model.passing, model.confirmationShown(id) { UIAccessibility.post(notification: .announcement, argument: feedback) }
             }
