@@ -130,6 +130,7 @@ export default tseslint.config(
       'artifacts/composer-shrink/**',
       'artifacts/needs-you-queue/**',
       'artifacts/watcher-column/**',
+      'artifacts/iphone-reply-quote/**',
       'artifacts/composer-slim-steady/**',
       'artifacts/scene-under-column/**',
       'artifacts/click-effect/**',

@@ -43,6 +43,7 @@ struct ThreadView: View {
                     if model.compactionOffered(ref) || model.shelfAction(ref) != nil { ThreadMenu(ref: ref) }
                 }
             }
+            .horizontalOnly()
         }
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbarBackground(stuck ? .visible : .hidden, for: .navigationBar)
@@ -82,6 +83,19 @@ struct ThreadView: View {
         guard open == nil, !agentsOpen, !agentsCovered, let request = thread?.requests.first(where: { !setAside.contains($0.id) }) else { return }
         shown = request.id
         open = request
+    }
+}
+
+extension ToolbarContent {
+    /// Keeps an item in the bar over the page. Where iOS 27.1 stands a vertical bar beside the page, as in the iPhone
+    /// Duo cover screen's strip, it would otherwise move the item there, where only an icon fits (ADR-0151, amended).
+    /// CI's Xcode 26.6 has no iOS 27.1 SDK, hence the compiler check (Swift 6.4 came with Xcode 27).
+    @ToolbarContentBuilder func horizontalOnly() -> some ToolbarContent {
+        #if compiler(>=6.4)
+        if #available(iOS 27.1, *) { axisBehavior(.horizontalOnly) } else { self }
+        #else
+        self
+        #endif
     }
 }
 
@@ -335,6 +349,7 @@ private struct Conversation: View {
         ScrollViewReader { proxy in
             ScrollView {
                 page(detail: detail, rows: rows, pending: pending, scroll: proxy).readingWidth()
+                    .environment(\.replyQuoteBox, ReplyQuoteBox(key: ref.id) { [model, ref] in model.quoteReply($0, into: ref.id) })
             }
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
@@ -816,7 +831,7 @@ private struct MessageView: View, Equatable {
     private func content(ink: ThemeRole, drawn: Set<String> = []) -> some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             if !message.text.isEmpty {
-                MarkdownText(text: message.text).equatable().foregroundStyle(ink)
+                MarkdownText(text: message.text, quotable: message.role == "assistant").equatable().foregroundStyle(ink)
             }
             // A user's photo its computer keeps is drawn above; any other photo is named, and so is a file, with a
             // document symbol (ADR-0131). Only the four photo types are photos: an SVG or a HEIC is a file here.
@@ -835,13 +850,15 @@ private struct MessageView: View, Equatable {
 /// Drawn again only when its words change; a message streaming in draws again only the blocks its new words changed.
 struct MarkdownText: View, Equatable {
     let text: String
+    /// An agent's reply, whose selected words offer Add to prompt when the page has a reply box (ADR-0129).
+    var quotable = false
     @Environment(\.sottoDensity) private var density
-    static func == (a: Self, b: Self) -> Bool { a.text == b.text }
+    static func == (a: Self, b: Self) -> Bool { a.text == b.text && a.quotable == b.quotable }
     var body: some View {
         let blocks = SottoCore.Markdown.cachedBlocks(text)
         VStack(alignment: .leading, spacing: Space.dense(Space.s3, density)) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
-                MarkdownBlockView(block: block, first: index == 0).equatable()
+                MarkdownBlockView(block: block, first: index == 0, quotable: quotable).equatable()
             }
         }
     }
@@ -850,7 +867,9 @@ struct MarkdownText: View, Equatable {
 private struct MarkdownBlockView: View, Equatable {
     let block: MarkdownBlock
     let first: Bool
-    static func == (a: Self, b: Self) -> Bool { a.first == b.first && a.block == b.block }
+    let quotable: Bool
+    static func == (a: Self, b: Self) -> Bool { a.first == b.first && a.block == b.block && a.quotable == b.quotable }
+    @Environment(\.replyQuoteBox) private var quoteBox
     @Environment(\.sottoTheme) private var theme
     @Environment(\.sottoDensity) private var density
     var body: some View {
@@ -862,22 +881,32 @@ private struct MarkdownBlockView: View, Equatable {
                 .padding(.top, first ? 0 : Space.dense(Space.s2, density))
                 .accessibilityAddTraits(.isHeader)
         case .paragraph(let text):
-            Text(InlineStyle.render(text, theme: theme))
-                .font(.sotto(.body))
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
+            if quotable, let quoteBox {
+                ReplyText(inline: text, ink: .ink, box: quoteBox)
+            } else {
+                Text(InlineStyle.render(text, theme: theme))
+                    .font(.sotto(.body))
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
         case .list(let items):
-            MarkdownListView(items: items)
+            MarkdownListView(items: items, quoteBox: quotable ? quoteBox : nil)
         case .code(let language, let code):
             CodeBlockView(language: language, code: code)
         case .quote(let text):
-            Text(InlineStyle.render(text, theme: theme))
-                .font(.sotto(.body))
-                .foregroundStyle(Palette.muted)
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
+            Group {
+                if quotable, let quoteBox {
+                    ReplyText(inline: text, ink: .muted, box: quoteBox)
+                } else {
+                    Text(InlineStyle.render(text, theme: theme))
+                        .font(.sotto(.body))
+                        .foregroundStyle(Palette.muted)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+            }
                 .padding(.leading, Space.s3)
                 .overlay(alignment: .leading) { Capsule().fill(Palette.border).frame(width: 3) }
         case .rule:
@@ -1054,6 +1083,8 @@ private struct CappedWidth: Layout {
 /// A list with hanging indents: the marker in its own column, muted, and the words aligned after it.
 private struct MarkdownListView: View {
     let items: [MarkdownListItem]
+    /// Set when the list is in an agent's reply on a page with a reply box (ADR-0129).
+    let quoteBox: ReplyQuoteBox?
     @Environment(\.sottoTheme) private var theme
     @Environment(\.sottoDensity) private var density
     @ScaledMetric(relativeTo: .body) private var digit: CGFloat = 9
@@ -1063,11 +1094,15 @@ private struct MarkdownListView: View {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
                     marker(item.marker, width: width)
-                    Text(InlineStyle.render(item.text, theme: theme))
-                        .font(.sotto(.body))
-                        .lineSpacing(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
+                    if let quoteBox {
+                        ReplyText(inline: item.text, ink: .ink, box: quoteBox)
+                    } else {
+                        Text(InlineStyle.render(item.text, theme: theme))
+                            .font(.sotto(.body))
+                            .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
                 }
                 .padding(.leading, CGFloat(item.depth) * (width + Space.s2))
             }
@@ -1167,6 +1202,38 @@ private enum InlineStyle {
         }
         return out
     }
+    /// The words as `render` draws them at the body step, for a text view: Figtree in the ink given, code on the code
+    /// surface, a key chord on the raised one, scaled to the text size in `traits`.
+    static func attributed(_ inline: MarkdownInline, ink: ThemeRoleName, theme: ThemeSwatch, traits: UITraitCollection) -> NSAttributedString {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 3
+        let regular = UIFont.figtree(TextScale.body.size, .body, traits: traits)
+        let bold = UIFont.figtree(TextScale.body.size, .body, .bold, traits: traits)
+        let parsed = inline.cachedAttributed()
+        let out = NSMutableAttributedString()
+        for run in parsed.runs {
+            var words = String(parsed[run.range].characters)
+            let intent = run.inlinePresentationIntent ?? []
+            var style: [NSAttributedString.Key: Any] = [.paragraphStyle: paragraph, .foregroundColor: UIColor(theme.color(ink)),
+                                                        .font: intent.contains(.stronglyEmphasized) ? bold : regular]
+            if run.attributes[KeyChordAttribute.self] == true {
+                words = "\u{202F}" + words + "\u{202F}"
+                style[.font] = UIFont.figtree(12.5, .footnote, .semibold, traits: traits)
+                style[.foregroundColor] = UIColor(theme.color(.ink))
+                style[.backgroundColor] = UIColor(theme.color(.raised))
+            } else if intent.contains(.code) {
+                style[.font] = UIFont.monospacedSystemFont(ofSize: UIFont.preferredFont(forTextStyle: .footnote, compatibleWith: traits).pointSize, weight: .regular)
+                style[.foregroundColor] = UIColor(theme.color(.codeInk))
+                style[.backgroundColor] = UIColor(theme.color(.code))
+            }
+            // Figtree has no italic face; the slant stands in for it.
+            if intent.contains(.emphasized) { style[.obliqueness] = 0.18 }
+            if intent.contains(.strikethrough) { style[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
+            if let link = run.link { style[.link] = link }
+            out.append(NSAttributedString(string: words, attributes: style))
+        }
+        return out
+    }
     private static func codeStyle(_ theme: ThemeSwatch) -> AttributeContainer {
         var style = AttributeContainer()
         style[AttributeScopes.SwiftUIAttributes.FontAttribute.self] = Font.system(.footnote, design: .monospaced)
@@ -1180,6 +1247,95 @@ private enum InlineStyle {
         style[AttributeScopes.SwiftUIAttributes.ForegroundColorAttribute.self] = theme.color(.ink)
         style[AttributeScopes.SwiftUIAttributes.BackgroundColorAttribute.self] = theme.color(.raised)
         return style
+    }
+}
+
+// MARK: - Reply quotes
+
+/// Where words quoted from an agent's reply go: the reply box on the reply's page, by its draft key (ADR-0129). Nil
+/// where no box takes them. Equal by the box, so a page drawing again draws no reply again.
+struct ReplyQuoteBox: Equatable {
+    let key: String
+    /// Adds the words to the box and focuses it; false when they are only white space.
+    let add: @MainActor (String) -> Bool
+    static func == (a: Self, b: Self) -> Bool { a.key == b.key }
+}
+
+private struct ReplyQuoteBoxKey: EnvironmentKey { static let defaultValue: ReplyQuoteBox? = nil }
+
+extension EnvironmentValues {
+    var replyQuoteBox: ReplyQuoteBox? {
+        get { self[ReplyQuoteBoxKey.self] }
+        set { self[ReplyQuoteBoxKey.self] = newValue }
+    }
+}
+
+/// A block of an agent's reply in a read-only text view, so a selection of any part of it offers **Add to prompt**
+/// before Copy, as the desktop's button above a selection does (ADR-0129). SwiftUI's selectable `Text` takes no action
+/// of the app's own. The words are drawn as `InlineStyle` draws them.
+private struct ReplyText: UIViewRepresentable {
+    let inline: MarkdownInline
+    let ink: ThemeRoleName
+    let box: ReplyQuoteBox
+    @Environment(\.sottoTheme) private var theme
+    /// Read so a change of text size draws the words again.
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    func makeCoordinator() -> Coordinator { Coordinator(box: box) }
+
+    func makeUIView(context: Context) -> UITextView {
+        let view = Words()
+        view.isEditable = false
+        view.isScrollEnabled = false
+        view.backgroundColor = .clear
+        view.textContainerInset = .zero
+        view.textContainer.lineFragmentPadding = 0
+        view.dataDetectorTypes = []
+        view.delegate = context.coordinator
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return view
+    }
+
+    func updateUIView(_ view: UITextView, context: Context) {
+        context.coordinator.box = box
+        // Set only when the words or their look change, so a selection survives the page drawing again.
+        let words = InlineStyle.attributed(inline, ink: ink, theme: theme, traits: view.traitCollection)
+        if view.attributedText != words { view.attributedText = words }
+        view.linkTextAttributes = [.foregroundColor: UIColor(theme.color(.accentText))]
+        view.tintColor = UIColor(theme.color(.accent))
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        // Asked without a width, or with an unbounded one, it answers as Text does: its words on one line.
+        let bounded = proposal.width.flatMap { $0.isFinite ? $0 : nil }
+        let fitted = uiView.sizeThatFits(CGSize(width: bounded ?? .greatestFiniteMagnitude, height: .greatestFiniteMagnitude))
+        return CGSize(width: bounded ?? ceil(fitted.width), height: fitted.height)
+    }
+
+    /// Reads to VoiceOver, and to the UI journeys, as the words themselves, the way a selectable `Text` does.
+    final class Words: UITextView {
+        override var accessibilityLabel: String? { get { text } set {} }
+        override var accessibilityValue: String? { get { nil } set {} }
+        override var accessibilityTraits: UIAccessibilityTraits { get { .staticText } set {} }
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var box: ReplyQuoteBox
+        init(box: ReplyQuoteBox) { self.box = box }
+
+        func textView(_ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
+            // A key chord's narrow spaces are drawing, not words.
+            let words = (textView.text as NSString).substring(with: range).replacingOccurrences(of: "\u{202F}", with: "")
+            guard !words.allSatisfy(\.isWhitespace) else { return nil }
+            let box = box
+            let add = UIAction(title: String(localized: "Add to prompt", comment: "Edit menu action on words selected in an agent's reply: adds them to the reply box as a quote"),
+                               image: UIImage(systemName: "text.quote")) { _ in
+                guard box.add(words) else { return }
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                textView.selectedRange = NSRange(location: 0, length: 0)
+            }
+            return UIMenu(children: [add] + suggestedActions)
+        }
     }
 }
 
@@ -1833,6 +1989,8 @@ private struct ReplyDock: View, Equatable {
                     .foregroundStyle(Palette.ink)
                     .lineLimit(1...6)
                     .focused($focused)
+                    // Words added from a reply put the caret after them, here (ADR-0129).
+                    .onChange(of: draftStore.focus) { _, focus in if focus?.key == ref.id { focused = true } }
                     .padding(.vertical, 11)
                     .accessibilityLabel("Reply to this thread")
                     .accessibilityIdentifier("thread-reply")

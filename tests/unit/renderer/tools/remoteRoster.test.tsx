@@ -276,4 +276,102 @@ describe('Tools › Agents for a remote parent', () => {
     expect(within(panel()).queryByText(/when last read/u)).toBeNull()
     expect(panel().querySelector('.roster-notice')).toBeNull()
   })
+
+  /**
+   * #1316 part 3: a delegated thread on another machine than the thread that delegated to it. A thread on this computer
+   * delegated a check to forge, whose delegation is forge's record, read there as the thread's own briefs.
+   */
+  const ON_FORGE = 'forge-check', HERE = 'here-review'
+  function desktopParentState(connected = true): AgentState {
+    const state = threadsStateFixture()
+    const thread = (id: string, title: string, status: AgentThread['status'], extra: Partial<AgentThread>): AgentThread => ({ id, title, projectId: 'workshop', modelId: 'codex:gpt',
+      providerId: 'codex', status, delegatedBy: PARENT, requests: [], updatedAt: at(5), messages: [{ id: `${id}-brief`, role: 'user', text: `Brief for ${title}`, createdAt: at(5) }], ...extra })
+    state.host.threads.push(thread(ON_FORGE, 'Run the checks on forge', 'running', { remoteHost: true, hostId: FORGE, hostLabel: 'forge' }), thread(HERE, 'Review the parser', 'idle', {}))
+    state.connections = [{ hostId: LOCAL, name: 'This computer', kind: 'local', connected: true }, { hostId: FORGE, name: 'forge', kind: 'remote', connected }]
+    return state
+  }
+  const desktopReads = (threadId: string): Partial<DelegationsRead> => threadId === PARENT ? { delegations: [view(HERE, 9, { outcome: 'answered', outcomeAt: at(7) })] }
+    : threadId === ON_FORGE ? { delegations: [], received: [view(ON_FORGE, 5)] } : {}
+
+  it('lists a thread on this computer\'s delegated thread on forge under forge, read on forge (#1316 part 3)', async () => {
+    owl(true)
+    setup(desktopParentState(), desktopReads)
+    const forge = await screen.findByRole('region', { name: /^forge/u })
+    await waitFor(() => expect(within(forge).getByRole('heading', { level: 3 })).toHaveTextContent('forge1 thread · 1 working'))
+    expect(forge.querySelector(`[data-thread-id="${ON_FORGE}"]`)).not.toBeNull()
+    const here = screen.getByRole('region', { name: /^This computer/u })
+    expect(here.querySelector(`[data-thread-id="${HERE}"]`)).not.toBeNull()
+    expect(here.querySelector(`[data-thread-id="${ON_FORGE}"]`)).toBeNull()
+  })
+
+  it('keeps it greyed with its last outcome while forge is away, and reads it again when forge is back (#1316 part 3)', async () => {
+    owl(true)
+    let away = true
+    const { bridge, rerender, change } = setup(desktopParentState(false), threadId => ({ ...desktopReads(threadId), ...away && threadId === ON_FORGE ? { lastRead: new Date(LOST).toISOString() } : {} }))
+    const forge = await screen.findByRole('region', { name: /^forge/u })
+    await waitFor(() => expect(within(forge).getByText('Working when last read')).toBeInTheDocument())
+    expect(within(forge).getByRole('heading', { level: 3 })).toHaveTextContent('forge1 threadnot connected')
+    expect(panel().querySelector('.roster-notice')).toHaveTextContent('Losing the connection stops nothing on forge.')
+    // Forge connects again: main names the thread as changed, and the window reads it afresh there.
+    away = false
+    const reads = vi.mocked(bridge.read).mock.calls.length
+    rerender(desktopParentState(true))
+    act(() => { change([ON_FORGE]) })
+    await waitFor(() => expect(vi.mocked(bridge.read).mock.calls.length).toBeGreaterThan(reads))
+    await waitFor(() => expect(within(screen.getByRole('region', { name: /^forge/u })).getByRole('heading', { level: 3 })).toHaveTextContent('forge1 thread · 1 working'))
+  })
+})
+
+describe('a roster whose delegated threads run on several machines (#1316 part 3)', () => {
+  const MAC = '55555555-5555-4555-8555-555555555555', HERE = 'here-build', ON_MAC = 'mac-check'
+  /** The parent runs on forge; it delegated a build to this computer, which delegated a check to the Mac. */
+  function relayedState(): AgentState {
+    const state = remoteState()
+    const thread = (id: string, title: string, delegatedBy: string, minutes: number, extra: Partial<AgentThread>): AgentThread => ({ id, title, projectId: 'workshop', modelId: 'codex:gpt',
+      providerId: 'codex', status: 'running', delegatedBy, requests: [], updatedAt: at(minutes), messages: [], ...extra })
+    state.host.threads = state.host.threads.filter(item => item.delegatedBy === undefined)
+    state.host.threads.push(thread(HERE, 'Build on Windows', PARENT, 9, {}), thread(ON_MAC, 'Check on the Mac', HERE, 6, { remoteHost: true, hostId: MAC, hostLabel: 'the Mac' }))
+    state.connections = [...state.connections!, { hostId: MAC, name: 'the Mac', kind: 'remote', connected: true }]
+    return state
+  }
+
+  it('puts each delegated thread under its own machine, a second-level one too, still naming who delegated to it', () => {
+    const state = relayedState()
+    const machineOf = (thread: AgentThread) => rosterMachine(state.connections, thread)
+    const read = new Map<string, DelegationReadOf>([[PARENT, { made: [], received: [] }], [HERE, { made: [view(ON_MAC, 6)], received: [view(HERE, 9)] }]])
+    const families = delegatedRoster(PARENT, state.host.threads, read, state.host, machineOf)
+    const groups = rosterByMachine(machineOf(state.host.threads.find(thread => thread.id === PARENT)!), families, read, read.get(PARENT), true)!
+    expect(groups.map(group => [group.machine.name, group.own, group.families.map(family => family.map(row => [row.thread.id, row.level, row.delegatedBy]))])).toEqual([
+      ['forge', true, []],
+      ['the Mac', false, [[[ON_MAC, 2, 'Build on Windows']]]],
+      ['This computer', false, [[[HERE, 1, undefined]]]]])
+    expect(groups.map(group => machineCount(group, undefined))).toEqual(['0 threads', '1 thread · 1 working', '1 thread · 1 working'])
+  })
+
+  it('takes how fresh a row is from its own machine, not from the machine of the thread that delegated to it', () => {
+    // The parent runs on forge, which is not connected; it delegated a check to the Mac, which is.
+    const state = remoteState(false)
+    state.host.threads = state.host.threads.filter(item => item.delegatedBy === undefined)
+    state.host.threads.push({ id: ON_MAC, title: 'Check on the Mac', projectId: 'workshop', modelId: 'codex:gpt', providerId: 'codex', status: 'idle', delegatedBy: PARENT,
+      requests: [], updatedAt: at(6), messages: [], remoteHost: true, hostId: MAC, hostLabel: 'the Mac' })
+    state.connections = [...state.connections!, { hostId: MAC, name: 'the Mac', kind: 'remote', connected: true }]
+    const machineOf = (thread: AgentThread) => rosterMachine(state.connections, thread)
+    const started = view(ON_MAC, 6)
+    // Forge's read is as Sotto last read it there, the check still working; the Mac's own read is current: it answered.
+    const read = new Map<string, DelegationReadOf>([[PARENT, { made: [started], received: [], lastReadAt: LOST }],
+      [ON_MAC, { made: [], received: [{ ...started, outcome: 'answered', outcomeAt: at(1) }] }]])
+    const row = delegatedRoster(PARENT, state.host.threads, read, state.host, machineOf).flat()[0]!
+    expect(row).toMatchObject({ lastRead: false, status: 'answered', machine: { name: 'the Mac', connected: true } })
+    expect(delegatedStatusWord(row)).toBe('Answered')
+    // The Mac away too: greyed, as of when Sotto last read it there.
+    const away = remoteState(false)
+    away.host.threads = state.host.threads
+    away.connections = [...away.connections!, { hostId: MAC, name: 'the Mac', kind: 'remote', connected: false }]
+    const awayRead = new Map<string, DelegationReadOf>([[PARENT, read.get(PARENT)!], [ON_MAC, { ...read.get(ON_MAC)!, lastReadAt: Date.parse(at(3)) }]])
+    const greyed = delegatedRoster(PARENT, away.host.threads, awayRead, away.host, thread => rosterMachine(away.connections, thread)).flat()[0]!
+    expect(greyed).toMatchObject({ lastRead: true, asOf: Date.parse(at(3)), status: 'answered' })
+    // On the same machine as the thread that delegated, that thread's read still says how fresh the row is.
+    const forgeRows = delegatedRoster(PARENT, remoteState(false).host.threads, reads(LOST), remoteState(false).host, thread => rosterMachine(remoteState(false).connections, thread)).flat()
+    expect(forgeRows.find(item => item.thread.id === REVIEW)).toMatchObject({ lastRead: true, asOf: LOST })
+  })
 })
