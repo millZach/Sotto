@@ -283,28 +283,34 @@ describe('running an update of a mise install', () => {
 describe('a mise version list that lags what is published', () => {
   /**
    * A mise whose lists are cached: `upgrade` sees only what it knew, `ls-remote` sees the release once its cache is cleared.
-   * `install` fetches the one release it is named, as aqua does by its tag, unless the release is `missing` or the
-   * download drops.
+   * `install` resolves the version it is named as mise 2026.9.10 does: the listed version itself, else the newest listed
+   * version extending it (`^<version>([-.].+)?$`), else the version as named, fetching that one release. It fails when
+   * the release is `missing` or the download drops. `alsoListed` adds versions to the list, such as prereleases.
    */
   function staleMise(known: string, published: string, options: { readonly listsAfterClear?: boolean; readonly listFails?: boolean
-    readonly missing?: boolean; readonly downloadDrops?: boolean } = {}) {
+    readonly missing?: boolean; readonly downloadDrops?: boolean; readonly alsoListed?: readonly string[] } = {}) {
     const ran: string[][] = []
     let cleared = false, installed = known
+    const listed = (): string[] => [known, ...options.alsoListed ?? [], ...cleared && options.listsAfterClear !== false ? [published] : []]
+    const resolved = (version: string): string => {
+      if (listed().includes(version)) return version
+      const escaped = version.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+      return listed().filter(item => new RegExp(`^${escaped}([-.].+)?$`, 'u').test(item)).at(-1) ?? version
+    }
     const run: RunLike = async (_executable, args, _asNode, runOptions) => {
       ran.push([...args])
       if (args[0] === 'cache' && args[1] === 'clear') { cleared = true; return { ok: true, stdout: `mise cache cleared for ${args[2]}` } }
       if (args[0] === 'ls-remote') {
         if (options.listFails) return { ok: false, detail: 'mise ERROR error sending request for url' }
-        const versions = [known, ...cleared && options.listsAfterClear !== false ? [published] : []]
         // `ls-remote <tool> <prefix>` lists every version that starts with the prefix.
-        return { ok: true, stdout: `${versions.filter(version => version.startsWith(args[2]!)).join('\n')}\n` }
+        return { ok: true, stdout: `${listed().filter(version => version.startsWith(args[2]!)).join('\n')}\n` }
       }
       if (args[0] === 'upgrade') return { ok: true, stdout: 'mise All tools are up to date' }
       if (args[0] === 'install') {
         expect(runOptions?.cwd).toBe(homedir())
         if (options.downloadDrops) return { ok: false, detail: 'mise ERROR error sending request for url', printed: 'mise ERROR error sending request for url' }
         if (options.missing) return { ok: false, detail: 'mise ERROR HTTP status client error (404 Not Found)', printed: 'mise ERROR HTTP status client error (404 Not Found)' }
-        if (runOptions?.env?.MISE_MINIMUM_RELEASE_AGE === '0s') installed = args[1]!.slice(args[1]!.lastIndexOf('@') + 1)
+        if (runOptions?.env?.MISE_MINIMUM_RELEASE_AGE === '0s') installed = resolved(args[1]!.slice(args[1]!.lastIndexOf('@') + 1))
         return { ok: true }
       }
       if (args[0] === 'where') return { ok: true, stdout: `${join(homedir(), 'mise', 'installs', 'npm-xai-official-grok', installed)}\n` }
@@ -360,7 +366,7 @@ describe('a mise version list that lags what is published', () => {
   /**
    * October 27, 2026 on forge: GitHub's list of Codex releases timed out and mise's versions host stopped at
    * 0.164.0-alpha.12, so `mise ls-remote codex` ended at 0.163.0 with every cache cleared. `mise install codex@0.165.0`
-   * fetched that one release by its tag and installed it.
+   * installed that version as named, since nothing in its list extended it.
    */
   it.each([
     ['claude', 'claude', '2.1.309', '2.1.310', ['claude', 'latest', 'claude']],
@@ -377,14 +383,28 @@ describe('a mise version list that lags what is published', () => {
     expect(ran.map(args => args.slice(0, 2))).toEqual([['cache', 'clear'], ['ls-remote', tool], ['install', `${tool}@${published}`]])
   })
 
-  it('says mise does not list the version when its list lacks it and installing it anyway fails', async () => {
+  it.each([
+    ['a prerelease', '0.165.0-alpha.3'],
+    ['a longer version', '0.165.0.1'],
+  ])('installs nothing when mise’s list lacks the version but has %s that mise would install instead', async (_kind, build) => {
     const { data, installs } = await forgeMise()
-    // mise lists 2.1.3100, which starts with the version asked for but is not it.
+    const { run, ran, installed } = staleMise('0.164.0', '0.165.0', { listsAfterClear: false, alsoListed: ['0.164.0-alpha.12', build] })
+    const result = await new ProviderClients({ run, misePath: async () => '/usr/bin/mise', miseReleaseAgeFlag: async () => true })
+      .install('codex', join(installs, 'codex', 'latest', 'bin', 'codex'), { MISE_DATA_DIR: data }, undefined, '0.165.0')
+    expect(result).toEqual({ ok: false, step: 1, failure: 'not-listed',
+      detail: 'mise does not list Codex 0.165.0 yet, so Sotto could not install it. Nothing was changed. Try again later.' })
+    expect(installed()).toBe('0.164.0')
+    expect(ran.map(args => args[0])).toEqual(['cache', 'ls-remote'])
+  })
+
+  it('says mise does not list the version when its list lacks it and installing it as named fails', async () => {
+    const { data, installs } = await forgeMise()
+    // mise lists 2.1.3100, which starts with the version asked for but is neither it nor a build of it, so the install runs.
     const { run, ran, installed } = staleMise('2.1.309', '2.1.3100', { missing: true })
     const result = await new ProviderClients({ run, misePath: async () => '/usr/bin/mise', miseReleaseAgeFlag: async () => false })
       .install('claude', join(installs, 'claude', 'latest', 'claude'), { MISE_DATA_DIR: data }, undefined, '2.1.310')
     expect(result).toEqual({ ok: false, step: 1, failure: 'not-listed', printed: 'mise ERROR HTTP status client error (404 Not Found)',
-      detail: 'mise does not list Claude Code 2.1.310 yet, and installing it anyway did not work. Nothing was changed. Try again later.' })
+      detail: 'mise does not list Claude Code 2.1.310 yet, so Sotto could not install it. Nothing was changed. Try again later.' })
     expect(installed()).toBe('2.1.309')
     expect(ran.map(args => args[0])).toEqual(['cache', 'ls-remote', 'install'])
   })

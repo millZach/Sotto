@@ -336,7 +336,7 @@ describe('the client update line', () => {
       await control.command({ type: 'check-client-updates' })
       const update = await control.command({ type: 'update-client', provider: 'claude' })
       expect(asked).toEqual([PUBLISHED.claude])
-      expect(update.error).toBe(`mise does not list Claude Code ${PUBLISHED.claude} yet, and installing it anyway did not work. ${host.installed.claude} is still installed, and your threads kept working. Try again later.`)
+      expect(update.error).toBe(`mise does not list Claude Code ${PUBLISHED.claude} yet, so Sotto could not install it. ${host.installed.claude} is still installed, and your threads kept working. Try again later.`)
       expect(control.get().clientUpdates?.find(item => item.id === 'claude')).toMatchObject({ state: 'failed', failure: 'not-listed' })
     } finally { control.dispose() }
   })

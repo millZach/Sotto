@@ -96,7 +96,7 @@ export function ClientUpdateCard(): ReactNode {
     const to = published ?? t`the published version`
     const details = single.state === 'updated' || single.state === 'updating' ? undefined
       : single.state === 'failed' && single.failure === 'not-listed'
-        ? t`mise does not list ${name} ${to} yet, and installing it anyway did not work. ${installed} is still installed. Try again later.`
+        ? t`mise does not list ${name} ${to} yet, so Sotto could not install it. ${installed} is still installed. Try again later.`
       : single.state === 'failed'
       ? error
         ? t({ message: `The installer said: ${error}. Another app may be using ${name}. Close it, then try again.`, comment: '{error} is what the installer said; {name} is a provider\'s name.' })

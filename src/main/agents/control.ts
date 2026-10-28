@@ -2834,7 +2834,7 @@ export class AgentControl {
         throw new Error(result.failure === 'install-step'
           ? `mise installed ${label}${record.published ? ` ${record.published}` : ''}, but its install step did not finish${result.detail ? ` (${result.detail})` : ''}. Sotto still starts ${record.installed}, and your threads kept working.`
           : result.failure === 'not-listed'
-            ? `mise does not list ${label} ${record.published ?? 'the published version'} yet, and installing it anyway did not work. ${record.installed} is still installed, and your threads kept working. Try again later.`
+            ? `mise does not list ${label} ${record.published ?? 'the published version'} yet, so Sotto could not install it. ${record.installed} is still installed, and your threads kept working. Try again later.`
           : `${label} did not update${result.detail ? `. ${result.detail}` : '.'} Your installed version is unchanged, and your threads kept working.`)
       }
       // Each host finds the new client and reads its version. One that cannot says why, stays on the client it
