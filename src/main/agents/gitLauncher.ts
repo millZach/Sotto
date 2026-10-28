@@ -8,8 +8,8 @@ import type { Writable } from 'node:stream'
 import type { LaunchError, LauncherEvent, LauncherRequest } from './gitLauncherWorker'
 
 /**
- * Starts the Git and gh processes Sotto runs for itself (status reads, worktree Git, Git actions), and the Grok process
- * Usage starts to read Grok's limits, on a worker thread rather than on the thread that asks. On Windows a launch is CreateProcess, synchronous on the calling thread, and
+ * Starts the Git and gh processes Sotto runs for itself (status reads, worktree Git, Git actions), and the Grok and Claude
+ * Code processes Usage starts to read their limits, on a worker thread rather than on the thread that asks. On Windows a launch is CreateProcess, synchronous on the calling thread, and
  * in Electron main that thread is the browser UI thread: about 200 launches in 40 s of threads running held main for
  * 3.1 s, one of them for 2.2 s (`docs/perf/2026-10-19-git-launch-off-main.md`). macOS and Linux launch off main too,
  * and nothing else about a process changes on any of them.
@@ -113,8 +113,8 @@ class Output extends EventEmitter implements LaunchedOutput {
 /**
  * An interactive launch's standard input, written through the worker. What is written before the worker says it started
  * the process is kept, so a process started in this thread instead (`adopt`) is given all of it, in order. It applies no
- * backpressure: `write` always answers true and never waits on `drain`, so it suits a few small requests (Grok's limits
- * probe) and not a stream; a caller that writes much would want a bounded queue paced by the flush answers first.
+ * backpressure: `write` always answers true and never waits on `drain`, so it suits a few small requests (Grok's and Claude
+ * Code's limits probes) and not a stream; a caller that writes much would want a bounded queue paced by the flush answers first.
  */
 class Input extends EventEmitter implements LaunchedInput {
   private gone = false
