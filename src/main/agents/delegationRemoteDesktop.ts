@@ -9,7 +9,7 @@ import { DELEGATION_RELAY_ANSWER_GRACE_MS, DELEGATION_RELAY_READ_MS, DELEGATION_
 import { watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
 import type { WorkerPlacementReceipt } from '../../shared/workerMachine'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import { RelayUnanswered } from './delegationRelayHost'
+import { RelayUnanswered, type StopLeft } from './delegationRelayHost'
 import type { DelegationNewsDetail } from './delegationNews'
 
 /** A host connection as remote delegation uses it: the asks it takes and the news it pushes (`delegation-remote`). */
@@ -398,26 +398,27 @@ export class DesktopRemoteDelegations {
    * delegated on this computer (#1316 part 3): each delegated thread once per thread that delegated to it, by its newest open
    * delegation, cancelled on its host as `cancel_delegation` is, which stops it and what it delegated in turn. A stop they
    * asked for is not news to them. Reads only the live records, once for the whole Stop, so it does no more work for a
-   * longer history, and saves once. Answers the machines it could not reach, by the names this computer saved for them;
-   * nothing is queued for them.
+   * longer history, and saves once. Answers each delegated thread it did not see stop, by its host and the name this computer
+   * saved for that host: one on a host not connected, for which nothing is queued, and one whose cancel the host refused,
+   * whose delegation it never named, or whose answer was lost, which is not asked again.
    */
-  async stopFor(callerIds: Iterable<string>): Promise<string[]> {
+  async stopFor(callerIds: Iterable<string>): Promise<StopLeft[]> {
     const callers = new Set(callerIds), open: RemoteRecord[] = []
     if (callers.size) for (const records of this.live.values()) for (const record of records) if (callers.has(record.callerId) && this.open(record)) open.push(record)
     if (!open.length) return []
     open.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    const left = new Set<string>(), seen = new Set<string>()
+    const left: StopLeft[] = [], seen = new Set<string>()
     await Promise.all(open.map(async record => {
       const thread = `${record.callerId}\n${record.hostId}\n${record.thread ?? record.id}`
       if (seen.has(thread)) return
       seen.add(thread)
       const connection = this.connection(record.hostId)
       const answer = record.delegation && connection ? await this.cancelling(record, record.delegation, connection) : undefined
-      if (answer?.status !== 'ok') left.add(this.name(record))
+      if (answer?.status !== 'ok') left.push({ machine: this.name(record), hostId: record.hostId, ...record.thread ? { thread: record.thread } : {}, reason: connection ? 'unconfirmed' : 'away' })
     }))
     for (const record of open) if (this.open(record)) this.update(record, saved => { saved.told = 'stopped' })
     await this.persist()
-    return [...left]
+    return left
   }
   /**
    * A host's news of delegations it holds for `caller`: each moved outcome is kept, and told to the thread that delegated,

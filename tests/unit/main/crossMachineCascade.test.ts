@@ -8,6 +8,7 @@ import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import { desktopWindowClient } from '../../../src/main/agents/hostService'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
 import type { AgentCommand, AgentThread } from '../../../src/shared/agents'
+import type { StopLeft } from '../../../src/main/agents/delegationRelayHost'
 
 const LOCAL = '11111111-1111-4111-8111-111111111111', FORGE = '22222222-2222-4222-8222-222222222222', MAC = '33333333-3333-4333-8333-333333333333'
 const SETTLED_AT = '2026-10-28T10:00:00.000Z'
@@ -24,8 +25,9 @@ function host(hostId: string, kind: 'local' | 'remote', name: string, threads: P
   return { state, command, connection, away: () => { available = false } }
 }
 /** A thread on this computer that delegated a check to forge, which delegated in turn to the Mac through the relay. */
-function machines(crossMachineWork = true, parent: Partial<AgentThread> = {}, children: { forge?: Partial<AgentThread>; mac?: Partial<AgentThread> } = {}) {
-  const router = new DesktopHostRouter(emptyDesktopState, { crossMachineWork })
+function machines(crossMachineWork = true, parent: Partial<AgentThread> = {}, children: { forge?: Partial<AgentThread>; mac?: Partial<AgentThread> } = {},
+  options: ConstructorParameters<typeof DesktopHostRouter>[1] = {}) {
+  const router = new DesktopHostRouter(emptyDesktopState, { crossMachineWork, ...options })
   const local = host(LOCAL, 'local', 'This computer', [{ id: 'parent', status: 'running', ...parent }])
   const forge = host(FORGE, 'remote', 'forge', [{ id: 'check', status: 'running', delegatedBy: 'relay:desktop-a:parent', ...children.forge }])
   const mac = host(MAC, 'remote', 'the Mac', [{ id: 'mac-check', status: 'running', delegatedBy: `relay:desktop-a:${hostEntityKey(FORGE, 'check')}`, ...children.mac }])
@@ -60,6 +62,37 @@ describe('Stop, Settle and Restore across machines', () => {
     try {
       expect(other.router.get().host.threads.find(thread => thread.id === hostEntityKey(FORGE, 'check'))?.delegatedBy).toBe(hostEntityKey(FORGE, 'relay:desktop-b:parent'))
     } finally { other.router.dispose() }
+  })
+
+  it('says, once the cancels answer, which delegated threads it did not see stop, by machine', async () => {
+    let answer: (left: StopLeft[]) => void = () => undefined
+    const stopsLeft = vi.fn((_threadId: string) => { void _threadId; return new Promise<readonly StopLeft[]>(resolve => { answer = resolve }) })
+    const { router, forge, mac } = machines(true, {}, {}, { stopsLeft })
+    try {
+      mac.away()
+      const unreached = 'Sotto couldn\'t stop 1 delegated thread on the Mac, because the Mac isn\'t connected. It may still be working there. Open it from Tools › Agents and stop it once its machine is back.'
+      // What the window already knows is said at once; the thread's own delegation is asked what its cancels left.
+      expect((await router.command({ type: 'interrupt', threadId: parentKey }, desktopWindowClient())).error).toBe(unreached)
+      expect(stopsLeft).toHaveBeenCalledWith('parent')
+      const published: (string | null | undefined)[] = []
+      router.subscribe(state => { published.push(state.error) })
+      // Forge is connected, but its cancel's answer was lost; the Mac's thread is counted once.
+      answer([{ machine: 'forge', hostId: FORGE, thread: 'check', reason: 'unconfirmed' }, { machine: 'the Mac', hostId: MAC, thread: 'mac-check', reason: 'away' }])
+      await vi.waitFor(() => expect(published).toHaveLength(1))
+      expect(published[0]).toBe(`${unreached} Sotto couldn't confirm that 1 delegated thread on forge stopped. It may still be working there. Open it from Tools › Agents to see where it stands.`)
+      expect(forge.command).not.toHaveBeenCalled()
+    } finally { router.dispose() }
+    // A Stop whose cancels all answered says nothing more; a thread on another machine's Stop is that machine's to account for.
+    const quiet = machines(true, {}, {}, { stopsLeft: () => Promise.resolve([]) })
+    try {
+      expect((await quiet.router.command({ type: 'interrupt', threadId: parentKey }, desktopWindowClient())).error).toBeNull()
+      const asked = vi.fn(() => Promise.resolve([]))
+      const elsewhere = machines(true, {}, {}, { stopsLeft: asked })
+      try {
+        await elsewhere.router.command({ type: 'interrupt', threadId: hostEntityKey(FORGE, 'check') }, desktopWindowClient())
+        expect(asked).not.toHaveBeenCalled()
+      } finally { elsewhere.router.dispose() }
+    } finally { quiet.router.dispose() }
   })
 
   it('says nothing of a thread that was not working when last read', async () => {

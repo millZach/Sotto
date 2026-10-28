@@ -40,6 +40,10 @@ msgid "{count, plural, one {{list} is Voxtype’s again.} other {{list} are Voxt
 msgstr ""
 
 #: src/main/hosts/crossMachineCascade.ts
+msgid "{count, plural, one {Sotto couldn't confirm that # delegated thread on {name} stopped.} other {Sotto couldn't confirm that # delegated threads on {name} stopped.}}"
+msgstr ""
+
+#: src/main/hosts/crossMachineCascade.ts
 msgid "{count, plural, one {Sotto couldn't stop # delegated thread on {name}, because {name} isn't connected.} other {Sotto couldn't stop # delegated threads on {name}, because {name} isn't connected.}}"
 msgstr ""
 
@@ -236,6 +240,10 @@ msgstr ""
 
 #: src/main/hosts/crossMachineCascade.ts
 msgid "{total, plural, one {It may still be working there. Open it from Tools › Agents and stop it once its machine is back.} other {They may still be working there. Open them from Tools › Agents and stop them once their machine is back.}}"
+msgstr ""
+
+#: src/main/hosts/crossMachineCascade.ts
+msgid "{total, plural, one {It may still be working there. Open it from Tools › Agents to see where it stands.} other {They may still be working there. Open them from Tools › Agents to see where they stand.}}"
 msgstr ""
 
 #: src/main/tools/browser.ts

@@ -76,6 +76,23 @@ describe('a host thread\'s Stop through the relay', () => {
     } finally { writes.mockRestore() }
   })
 
+  it('says a cancel whose answer was lost may not have stopped it, and does not send it again', async () => {
+    const relay = new HostDelegationRelay(await folder(), { here: () => 'forge' })
+    await relay.load()
+    const asked: DelegationRelayAsk[] = []
+    const handle: RelayDesktop = { clientId: 'desktop-a', push: (askId, ask) => {
+      asked.push(ask)
+      // The start is answered; the cancel's answer is lost when the desktop's socket closes under it.
+      queueMicrotask(() => { if (ask.type === 'cancel') relay.desktopGone(handle); else relay.answered(handle, askId, { status: 'ok', delegation: { id: FIRST, thread: 'child-1', outcome: 'working' }, placement: { hostId: MAC, name: 'the Mac' } }) })
+      return true
+    } }
+    relay.desktopConnected(handle)
+    await relay.start('thread-a', 'code-review', startAsk)
+    expect(await relay.stopFor(['thread-a'])).toEqual([{ machine: 'the Mac', thread: 'child-1', reason: 'unconfirmed' }])
+    expect(asked.filter(ask => ask.type === 'cancel')).toHaveLength(1)
+    expect(relay.list('thread-a')[0]?.outcome).toBe('working')
+  })
+
   it('names the machine it could not reach while no desktop relays, and stops nothing there', async () => {
     const relay = new HostDelegationRelay(await folder(), { here: () => 'forge' })
     await relay.load()
@@ -83,7 +100,7 @@ describe('a host thread\'s Stop through the relay', () => {
     relay.desktopConnected(handle)
     await relay.start('thread-a', 'code-review', startAsk)
     relay.desktopGone(handle)
-    expect(await relay.stopFor(['thread-a'])).toEqual(['the Mac'])
+    expect(await relay.stopFor(['thread-a'])).toEqual([{ machine: 'the Mac', thread: 'child-1', reason: 'away' }])
     expect(asked.some(ask => ask.type === 'cancel')).toBe(false)
   })
 })
@@ -124,8 +141,28 @@ describe('a desktop thread\'s Stop on its paired hosts', () => {
     // While the Mac is away, nothing is asked there, and Stop names it.
     connected.splice(0)
     const before = mac.asked.length
-    expect(await remote.stopFor(['other'])).toEqual(['the Mac'])
+    expect(await remote.stopFor(['other'])).toEqual([{ machine: 'the Mac', hostId: MAC, thread: 'child-3', reason: 'away' }])
     expect(mac.asked.length).toBe(before)
+  })
+
+  it('says a cancel whose answer was lost may not have stopped it, and does not send it again', async () => {
+    const mac = host(() => 'working')
+    const remote = new DesktopRemoteDelegations(await folder(), { machineName: () => 'the Mac' })
+    await remote.load()
+    remote.useDelivery(async () => undefined)
+    remote.useHosts({ subscribeConnected: () => () => undefined, remoteConnections: () => [mac.connection] })
+    await remote.start('parent', 'code-review', placement, ask)
+    const asks = mac.connection.service.delegationRemoteAsk!
+    let cancels = 0
+    mac.connection.service.delegationRemoteAsk = async (given, timeoutMs) => {
+      if (given.type !== 'cancel') return await asks(given, timeoutMs)
+      cancels++
+      throw new Error('The connection closed.')
+    }
+    expect(await remote.stopFor(['parent'])).toEqual([{ machine: 'the Mac', hostId: MAC, thread: 'child-1', reason: 'unconfirmed' }])
+    expect(cancels).toBe(1)
+    // Its record still reads as it did: nothing claims it stopped.
+    expect(remote.list('parent')[0]?.outcome).toBe('working')
   })
 
   it('cancels the open ones of every thread it stops once, and saves once for the whole Stop', async () => {
@@ -147,6 +184,31 @@ describe('a desktop thread\'s Stop on its paired hosts', () => {
 })
 
 describe('Stop on a delegating thread', () => {
+  it('hands the window what its cancels on other machines did not see stop', async () => {
+    const root = await folder()
+    const parent = { id: 'parent', projectId: 'project', providerId: 'codex', title: 'p', modelId: 'model', status: 'running', messages: [], requests: [] } as unknown as AgentThread
+    const snapshot: AgentHostSnapshot = { ...EMPTY_AGENT_HOST, connected: true, threads: [parent] }
+    let hooks: DelegationControlHooks | undefined
+    const control: DelegationCoordinator = { hostId: () => DESKTOP, watcherSnapshot: () => snapshot, configuration: () => ({}),
+      useDelegation: given => { hooks = given; return () => undefined }, commandFromDelegation: async () => ({ host: snapshot }) as never,
+      hasPendingThreadWork: () => false, hasUserDraft: () => false, refreshDelegationObservation: () => undefined, deliverWakeUp: async () => undefined }
+    let answer: (left: unknown[]) => void = () => undefined
+    const remote = { stopFor: () => new Promise(resolve => { answer = resolve }), useDelivery: () => undefined, holds: () => false, holdsThread: () => false, list: () => [], hasOpen: () => false, isOpen: () => false }
+    const delegation = new DelegationService({ directory: root, control, host: { setDelegatedBy: async () => undefined, threadMessage: () => undefined }, historyEnabled: () => true,
+      remote: remote as unknown as NonNullable<DelegationServiceOptions['remote']> })
+    await delegation.recover()
+    hooks!.userCommand({ type: 'interrupt', threadId: 'parent' }, 'parent', false)
+    const left = delegation.stopsLeft('parent')!
+    let heard: unknown
+    void left.then(value => { heard = value })
+    await flush()
+    // Nothing is said until every cancel has answered.
+    expect(heard).toBeUndefined()
+    answer([{ machine: 'the Mac', hostId: MAC, thread: 'child-1', reason: 'unconfirmed' }])
+    await expect(left).resolves.toEqual([{ machine: 'the Mac', hostId: MAC, thread: 'child-1', reason: 'unconfirmed' }])
+    delegation.close()
+  })
+
   it('stops what it and the threads below it delegated on other machines, through the relay and the paired hosts', async () => {
     const root = await folder()
     const parent = { id: 'parent', projectId: 'project', providerId: 'codex', title: 'p', modelId: 'model', status: 'running', messages: [], requests: [] } as unknown as AgentThread
@@ -162,6 +224,9 @@ describe('Stop on a delegating thread', () => {
     await delegation.recover()
     hooks!.userCommand({ type: 'interrupt', threadId: 'parent' }, 'parent', false)
     await expect.poll(() => stopped).toEqual(['parent', 'parent'])
+    // What the Stop left elsewhere is the window's to ask for, once.
+    await expect(delegation.stopsLeft('parent')).resolves.toEqual([])
+    expect(delegation.stopsLeft('parent')).toBeUndefined()
     // A send is not a Stop.
     hooks!.userCommand({ type: 'manual-send', threadId: 'parent', draftId: FIRST, text: 'More.' } as never, 'parent', false)
     await flush()

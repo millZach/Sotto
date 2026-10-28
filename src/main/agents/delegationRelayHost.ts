@@ -19,6 +19,18 @@ export interface RelayDesktop {
   /** Its hello accepted `delegation-branch-starts` too: it takes starts from a thread's branch, and checks (#1316 part 2). */
   readonly branches?: boolean
 }
+/**
+ * A delegated thread on another machine that a Stop did not see stop (#1316 part 3, Owl `cross-machine-work`), as the side
+ * that asked says it: by its machine's name, its host's ID and its thread there where it knows them. `away`: no cancel
+ * went, because the machine that would take it was not connected. `unconfirmed`: a cancel went, or could not name the
+ * delegation, and no answer said it stopped; it may still be working, and nothing is sent again.
+ */
+export interface StopLeft {
+  readonly machine: string
+  readonly hostId?: string
+  readonly thread?: string
+  readonly reason: 'away' | 'unconfirmed'
+}
 /** Why an ask has no answer: no desktop was connected to send it to, or the answer never came. */
 export class RelayUnanswered extends Error {
   constructor(readonly stage: 'away' | 'lost') { super(stage === 'away' ? 'No desktop is connected.' : 'The desktop did not answer.') }
@@ -301,25 +313,27 @@ export class HostDelegationRelay {
    * Stops what these threads delegated through the relay that is still open, as the user's Stop on them stops what they
    * delegated on this machine (#1316 part 3): each delegated thread once per thread that delegated to it, by its newest open
    * delegation, cancelled on the desktop as `cancel_delegation` is, which stops it and what it delegated in turn. A stop
-   * they asked for is not news to them. Reads only their open delegations, and saves once for the whole Stop. Answers the
-   * machines it could not reach, all of them while no desktop that relays is connected; nothing is queued for them.
+   * they asked for is not news to them. Reads only their open delegations, and saves once for the whole Stop. Answers each
+   * delegated thread it did not see stop: every one while no desktop that relays is connected, when nothing is queued for
+   * them, and one whose cancel the desktop refused or whose answer was lost, which is not asked again.
    */
-  async stopFor(callerIds: Iterable<string>): Promise<string[]> {
+  async stopFor(callerIds: Iterable<string>): Promise<StopLeft[]> {
     const open: RelayedRecord[] = []
     for (const callerId of new Set(callerIds)) for (const record of this.openByCaller.get(callerId) ?? []) open.push(record)
     if (!open.length) return []
     open.sort((first, second) => second.createdAt.localeCompare(first.createdAt))
-    const left = new Set<string>(), seen = new Set<string>()
+    const left: StopLeft[] = [], seen = new Set<string>()
     await Promise.all(open.map(async record => {
       const thread = `${record.delegatingThreadId}\n${record.thread ?? record.id}`
       if (seen.has(thread)) return
       seen.add(thread)
-      const answer = record.delegation && this.reachable() ? await this.cancelling(record, record.delegation) : undefined
-      if (answer?.status !== 'ok') left.add(record.machine ?? 'This computer')
+      const reachable = this.reachable()
+      const answer = record.delegation && reachable ? await this.cancelling(record, record.delegation) : undefined
+      if (answer?.status !== 'ok') left.push({ machine: record.machine ?? 'This computer', ...record.thread ? { thread: record.thread } : {}, reason: reachable ? 'unconfirmed' : 'away' })
     }))
     for (const record of open) if (this.open(record)) record.told = 'stopped'
     await this.persist()
-    return [...left]
+    return left
   }
   /** `callerId`'s relayed delegations as `read_delegation` lists them, newest twenty, oldest first. */
   list(callerId: string): { id: string; thread?: string; work: DelegationWork; action: 'start' | 'send'; outcome: WatcherOutcome; machine?: string; createdAt: string }[] {

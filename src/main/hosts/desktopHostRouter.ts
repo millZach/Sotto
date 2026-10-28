@@ -1,5 +1,6 @@
 import { t } from '@lingui/core/macro'
-import { delegatedElsewhere, settledWithParent, stopUnreachedWords, type DelegatedElsewhere } from './crossMachineCascade'
+import { delegatedElsewhere, settledWithParent, stopLeftWords, StopTally, type DelegatedElsewhere } from './crossMachineCascade'
+import type { StopLeft } from '../agents/delegationRelayHost'
 import type { AgentThreadPrompts, AgentThreadPromptsRequest } from '../../shared/threadPrompts'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { startsThread, THREAD_STARTS_UNSUPPORTED } from '../../shared/threadStarts'
@@ -390,7 +391,12 @@ export class DesktopHostRouter {
      * This desktop's Owl answer for Work across machines, read once at start: with it, Stop, Settle and Restore of a thread
      * reach the threads it delegated to on other machines, and Stop says which it could not reach (#1316 part 3).
      */
-    crossMachineWork?: boolean } = {}) {
+    crossMachineWork?: boolean
+    /**
+     * This computer's delegation's account of the user's Stop on one of its own threads (#1316 part 3): the delegated threads
+     * on other machines its cancels did not see stop, once they have all answered. Asked once, right after the Stop went.
+     */
+    stopsLeft?: (threadId: string) => Promise<readonly StopLeft[]> | undefined } = {}) {
     this.held = heldProvidersOption(options)
   }
 
@@ -1432,7 +1438,7 @@ export class DesktopHostRouter {
       if (SELECTING_COMMANDS.has(command.type) && selections === this.selections) this.follow(connection, { activeThreadId, activeProjectId })
     }
     if (refused) for (const undo of unmark) undo()
-    if (across?.elsewhere.length && !refused && (command.type === 'interrupt' || command.type === 'settle-thread' || command.type === 'restore-thread')) await this.cascadeAcross(command.type, across, client)
+    if (across && !refused && (command.type === 'interrupt' || command.type === 'settle-thread' || command.type === 'restore-thread')) await this.cascadeAcross(command.type, across, connection, command.threadId, client)
     // Only while the window still shows what it did when the creation began: any other move meanwhile wins.
     const unmoved = selections === this.selections && this.selectedHostId === windowShowed.hostId && this.selectedThreadId === windowShowed.threadId
     if (command.type === 'create-thread' && command.threadId !== undefined && connection.kind === 'remote' && !refused && unmoved) {
@@ -1462,20 +1468,41 @@ export class DesktopHostRouter {
   /**
    * After the window's own Stop, Settle or Restore of a thread went through (#1316 part 3, Owl `cross-machine-work`). Stop: the
    * thread's delegation stops those on other machines through its own asks there, so here the window is told which working
-   * ones it could not reach, by machine. Settle: those still open on another machine are settled there, once, as the thread
-   * goes from open to settled. Restore: those settled with it there are restored. A machine not connected keeps its own.
+   * ones it could not reach, by machine, and, for a thread on this computer, which its cancels did not see stop once they
+   * answer. Settle: those still open on another machine are settled there, once, as the thread goes from open to settled.
+   * Restore: those settled with it there are restored. A machine not connected keeps its own.
    */
-  private async cascadeAcross(type: 'interrupt' | 'settle-thread' | 'restore-thread', across: { readonly settledAt: string | null; readonly elsewhere: readonly DelegatedElsewhere[] }, client: ClientIdentity): Promise<void> {
+  private async cascadeAcross(type: 'interrupt' | 'settle-thread' | 'restore-thread', across: { readonly settledAt: string | null; readonly elsewhere: readonly DelegatedElsewhere[] },
+    connection: DesktopHostConnection, threadId: string, client: ClientIdentity): Promise<void> {
     const reachable = (hostId: string): DesktopHostConnection | undefined => {
       const connection = this.hosts.get(hostId)?.connection
       return connection && connection.available?.() !== false ? connection : undefined
     }
     if (type === 'interrupt') {
-      const left = new Map<string, number>()
-      for (const child of across.elsewhere) if (child.running && !reachable(child.hostId)) left.set(child.hostId, (left.get(child.hostId) ?? 0) + 1)
-      if (left.size) this.notice = { message: stopUnreachedWords([...left].map(([hostId, count]) => ({ name: this.hosts.get(hostId)?.connection.name ?? t`Remote host`, count }))) }
+      const away = new StopTally(), unconfirmed = new StopTally()
+      const name = (hostId: string, saved?: string): string => this.hosts.get(hostId)?.connection.name ?? saved ?? t`Remote host`
+      for (const child of across.elsewhere) if (child.running && !reachable(child.hostId)) away.add(child.hostId, name(child.hostId), child.key)
+      const said = stopLeftWords(away, unconfirmed)
+      const notice = said === undefined ? undefined : { message: said }
+      if (notice) this.notice = notice
+      // What the thread's own delegation did not see stop comes after, once each cancel it sent has answered or been lost.
+      const later = connection.kind === 'local' ? this.options.stopsLeft?.(threadId) : undefined
+      if (later) void later.then(left => {
+        left.forEach((item, index) => {
+          const machine = item.hostId ?? `\n${item.machine}`, key = item.hostId !== undefined && item.thread !== undefined ? hostEntityKey(item.hostId, item.thread) : `${machine}\n${index}`
+          const named = item.hostId === undefined ? item.machine : name(item.hostId, item.machine)
+          if (item.reason === 'away' || item.hostId !== undefined && !reachable(item.hostId)) away.add(machine, named, key)
+          else if (!away.holds(machine, key)) unconfirmed.add(machine, named, key)
+        })
+        const message = stopLeftWords(away, unconfirmed)
+        // A notice another command set since, waiting on an answer or a compose, is not replaced.
+        if (message === undefined || message === said || this.notice !== notice && (this.notice?.answer !== undefined || this.notice?.unsupportedCompose !== undefined)) return
+        this.notice = { message }
+        this.emit()
+      }, () => undefined)
       return
     }
+    if (!across.elsewhere.length) return
     const targets = type === 'settle-thread' ? across.settledAt === null ? across.elsewhere.filter(child => child.settledAt === null) : []
       : across.settledAt === null ? [] : across.elsewhere.filter(child => settledWithParent(across.settledAt, child.settledAt))
     await Promise.allSettled(targets.map(async child => { await reachable(child.hostId)?.service.command({ type, threadId: child.id }, client) }))
