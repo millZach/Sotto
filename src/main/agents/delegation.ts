@@ -27,7 +27,7 @@ import { delegationNewsText, foldDelegationNews, heldWords, type DelegationNewsD
 import { WATCHER_QUIET_MS } from '../../shared/watcherOverview'
 import type { AgentState } from '../../shared/agents'
 import type { HostThreadsView } from './control'
-import { RELAY_SEND_LATER, RelayUnanswered, type HostDelegationRelay } from './delegationRelayHost'
+import { RELAY_SEND_LATER, RelayUnanswered, type HostDelegationRelay, type StopLeft } from './delegationRelayHost'
 import { DELEGATION_RELAY_ANSWER_GRACE_MS, DELEGATION_RELAY_WAIT_MAX_MS, type RelayedReply, type RemoteLandedBranch } from '../../shared/delegationRelay'
 import { parseHostEntityKey } from '../../shared/clientIdentity'
 import type { WorktreeMadeFrom } from '../../shared/bringChangesBack'
@@ -155,13 +155,13 @@ export interface DelegationServiceOptions {
    * A headless host's side of the relay (#1316, Owl `cross-machine-work`): a thread here delegates to a thread on another
    * machine through the desktop that relays, while one is connected.
    */
-  readonly relay?: Pick<HostDelegationRelay, 'start' | 'send' | 'holds' | 'holdsThread' | 'read' | 'cancel' | 'list' | 'useDelivery' | 'awayWords' | 'detail' | 'reachable' | 'carriesBranches' | 'answerLost'>
+  readonly relay?: Pick<HostDelegationRelay, 'start' | 'send' | 'holds' | 'holdsThread' | 'read' | 'cancel' | 'stopFor' | 'list' | 'useDelivery' | 'awayWords' | 'detail' | 'reachable' | 'carriesBranches' | 'answerLost'>
   /**
    * The desktop's delegations on its paired hosts (#1316 part 2, Owl `cross-machine-work`): a start placed on another machine
    * goes to that machine's host, which admits it with its own delegation and keeps its record, and every later brief, read
    * and cancel of it goes there too. Absent, a start placed elsewhere is refused, as on a host.
    */
-  readonly remote?: Pick<DesktopRemoteDelegations, 'start' | 'send' | 'holds' | 'holdsThread' | 'read' | 'cancel' | 'list' | 'useDelivery' | 'detail' | 'retried' | 'isOpen' | 'hasOpen' | 'takesBranches' | 'reservePlace' | 'releasePlace'>
+  readonly remote?: Pick<DesktopRemoteDelegations, 'start' | 'send' | 'holds' | 'holdsThread' | 'read' | 'cancel' | 'stopFor' | 'list' | 'useDelivery' | 'detail' | 'retried' | 'isOpen' | 'hasOpen' | 'takesBranches' | 'reservePlace' | 'releasePlace'>
   /**
    * This machine's own name, as a host says it to a thread on another machine that delegates here (#1316 part 2, Zach,
    * October 28): its refusals, notes and warning name it, "That model is not ready on the Mac", where a thread of its own
@@ -371,6 +371,8 @@ export const CHECK_RESERVATION_MS = 15 * 60 * 1000
 interface WaitingCheck { readonly brief: string; readonly start: DelegatedStart; readonly branch: LandedBranch | undefined }
 /** How many times news of a thread's delegations is offered to its queue before it is left untold. */
 const NEWS_ATTEMPTS_MAX = 5
+/** How many of the user's newest Stops keep what they left on other machines for the window to ask (#1316 part 3). */
+const STOPS_KEPT = 20
 /** The most ready models of one provider an answer lists. */
 const MODELS_LISTED = 20
 const fileSchema = z.object({ version: z.literal(1), delegations: z.array(recordSchema).max(RECORDS_MAX * 2), links: z.array(linkSchema).max(RECORDS_MAX),
@@ -494,6 +496,11 @@ export class DelegationService {
   private readonly waitingChecks = new Map<string, WaitingCheck>()
   /** Briefs a Stop fenced while they were on their way: their guard refuses them at the writer. */
   private readonly fenced = new Set<string>()
+  /**
+   * The user's newest Stops, by the thread stopped: what each left on other machines once their cancels answer (#1316 part
+   * 3), until the window that sent it asks (`stopsLeft`). Only the newest few are kept; one no window asks for is let go.
+   */
+  private readonly stops = new Map<string, Promise<readonly StopLeft[]>>()
   /** Delegations whose new outcome the delegating thread has not been told yet, by delegating thread, with attempts. */
   private readonly untold = new Map<string, { readonly ids: Set<string>; attempts: number }>()
   private readonly telling = new Set<string>()
@@ -592,6 +599,17 @@ export class DelegationService {
 
   /** Settles once `close` has let go of the branches its waiting checks would have started from. */
   drained(): Promise<void> { return this.lettingGo }
+
+  /**
+   * What the user's Stop on `threadId` left on other machines (#1316 part 3, Owl `cross-machine-work`): the delegated threads
+   * there it did not see stop, once every cancel it sent has answered or been lost. Asked once, by the window that sent the
+   * Stop, right after it went; undefined when no Stop of it is held.
+   */
+  stopsLeft(threadId: string): Promise<readonly StopLeft[]> | undefined {
+    const stopping = this.stops.get(threadId)
+    this.stops.delete(threadId)
+    return stopping
+  }
 
   /**
    * The delegation a caller's call with this retry key made, from the record admission saves before anything is sent
@@ -1700,7 +1718,11 @@ export class DelegationService {
       void this.persist()
       this.options.control.refreshDelegationObservation()
     }
-    if (command.type === 'interrupt') void this.stopThreads(this.below(threadId), new Set([threadId])).catch(() => undefined)
+    if (command.type === 'interrupt') {
+      const stopping = this.stopThreads(this.below(threadId), new Set([threadId])).catch((): StopLeft[] => [])
+      this.stops.delete(threadId); this.stops.set(threadId, stopping)
+      if (this.stops.size > STOPS_KEPT) this.stops.delete(this.stops.keys().next().value!)
+    }
   }
   /** The threads below this one, both levels, from the record's links. */
   private below(threadId: string): string[] {
@@ -1708,11 +1730,18 @@ export class DelegationService {
   }
   /**
    * Stops these delegated threads and everything they delegated to that is still working, without waking the thread the
-   * stop came from: news of a stop the user asked for is not news to the threads above it.
+   * stop came from: news of a stop the user asked for is not news to the threads above it. Answers what it left on other
+   * machines: the delegated threads there it did not see stop.
    */
-  private async stopThreads(threadIds: readonly string[], above: ReadonlySet<string>): Promise<void> {
+  private async stopThreads(threadIds: readonly string[], above: ReadonlySet<string>): Promise<StopLeft[]> {
     const targets = [...new Set(threadIds.flatMap(threadId => [threadId, ...this.below(threadId)]))]
-    if (!targets.length) return
+    // What these threads delegated to on other machines is stopped there too, through the asks each delegation already makes
+    // there, and each is a stop it asked for, so it is not news to them either (#1316 part 3, Owl `cross-machine-work`). A
+    // thread whose delegated threads are all on other machines has none here to stop.
+    // Each side is asked once for the whole Stop, and saves once.
+    const elsewhere = async (threads: ReadonlySet<string>): Promise<StopLeft[]> => (await Promise.allSettled([this.options.relay?.stopFor(threads), this.options.remote?.stopFor(threads)]))
+      .flatMap(stopped => stopped.status === 'fulfilled' ? stopped.value ?? [] : [])
+    if (!targets.length) return await elsewhere(above)
     const quiet = new Set([...above, ...targets])
     for (const record of this.records) if (targets.includes(record.delegatedThreadId) && quiet.has(record.delegatingThreadId)) {
       if (this.open(record)) record.told = 'stopped'
@@ -1722,8 +1751,10 @@ export class DelegationService {
     for (const delegatingId of quiet) for (const record of this.records) if (record.delegatingThreadId === delegatingId) this.waiters.get(record.id)?.forEach(wake => wake())
     await this.persist()
     const threads = new Map(this.snapshot().threads.map(thread => [thread.id, thread]))
-    await Promise.allSettled(targets.filter(threadId => { const thread = threads.get(threadId); return thread !== undefined && isThreadTurnRunning(thread) })
-      .map(threadId => this.options.control.commandFromDelegation({ type: 'interrupt', threadId }, () => { if (this.closed) throw new Error('Sotto is stopping.') })))
+    const [, left] = await Promise.all([Promise.allSettled(targets.filter(threadId => { const thread = threads.get(threadId); return thread !== undefined && isThreadTurnRunning(thread) })
+      .map(threadId => this.options.control.commandFromDelegation({ type: 'interrupt', threadId }, () => { if (this.closed) throw new Error('Sotto is stopping.') }))),
+    elsewhere(quiet)])
+    return left
   }
 
   /**

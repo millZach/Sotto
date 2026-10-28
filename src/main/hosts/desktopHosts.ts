@@ -1589,6 +1589,8 @@ export class DesktopHosts {
       gitChanges: request => socket.gitChanges(request), gitReview: request => socket.gitReview(request),
       subagentPage: request => socket.subagentPage(request), subagentAssignments: request => socket.subagentAssignments(request),
       subscribeDetail: listener => socket.subscribeThreadDetail(listener), available: () => connected,
+      // How this host names this computer's threads that delegated there (#1316 part 3).
+      clientId: hello.clientId,
     }
     // Back from an update's restart: the new connection takes the place its threads kept on the page.
     // A move to the tailnet takes the place the connection it leaves has on the page.
