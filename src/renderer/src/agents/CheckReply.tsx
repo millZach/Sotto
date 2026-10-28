@@ -67,7 +67,8 @@ export interface CheckNames { readonly title: string; readonly machine: string }
  * reply, and Read its reply; or, when its reply was not kept here, a sentence saying so, with no tray. Nothing while it
  * works, so a waiting check's card is today's. Read its reply reads the reply from main first, and opens the tray only
  * with it: a reply main no longer holds turns the line into the not-kept sentence, with the focus on it, never an empty
- * tray (Sol on #1312).
+ * tray (Sol on #1312). A read that fails proves nothing lost: the excerpt and Read its reply stay, with the focus, and a
+ * line under them says to try again, until a press reads it.
  */
 export function CheckReplyLine({ reply, delegation, names, read, onOpenCheck }: { readonly reply: CheckReplyExcerpt | undefined; readonly delegation: DelegatedView
   readonly names: CheckNames; readonly read: ((delegationId: string) => Promise<DelegationCheckReply>) | undefined; readonly onOpenCheck: (() => void) | undefined }): ReactNode {
@@ -76,6 +77,8 @@ export function CheckReplyLine({ reply, delegation, names, read, onOpenCheck }: 
   const trayId = useId()
   // The excerpt a press found no longer held, so the row says so until main's next read; and whether that press moves the focus.
   const [gone, setGone] = useState<CheckReplyExcerpt | undefined>(undefined)
+  // The last press's read failed, so main never answered: nothing is known lost, and a press tries again.
+  const [failed, setFailed] = useState(false)
   const asking = useRef(false), mounted = useRef(true), unkept = useRef<HTMLParagraphElement>(null), toUnkept = useRef(false)
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   const notKept = reply !== undefined && (gone === reply || 'unavailable' in reply)
@@ -108,12 +111,14 @@ export function CheckReplyLine({ reply, delegation, names, read, onOpenCheck }: 
         const answered = (answer: DelegationCheckReply): void => {
           asking.current = false
           if (!mounted.current) return
+          setFailed(false)
           if (answer) trays.show(id, opener, { text: answer.text, truncated: answer.truncated })
           else { toUnkept.current = opener === document.activeElement; setGone(shown) }
         }
-        read(id).then(answered, () => answered(null))
+        read(id).then(answered, () => { asking.current = false; if (mounted.current) setFailed(true) })
       }}>{t`Read its reply`}</button></> : null}
   </p>
+  {failed && canRead && !open ? <p className="check-failed tt-paragraph" role="status">{t`Sotto couldn't read its reply just now. Nothing was lost. Try Read its reply again, or open the check.`}</p> : null}
   {open ? <CheckReplyTray id={trayId} delegation={delegation} names={names} opener={held.opener} reply={held.reply}
     onClose={closeTray} onOpenCheck={onOpenCheck} /> : null}</>
 }

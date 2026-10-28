@@ -7401,6 +7401,10 @@ msgstr "Sotto could not tell how it stood when it last read it."
 msgid "Sotto couldn’t load skills."
 msgstr "Sotto couldn’t load skills."
 
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "Sotto couldn't read its reply just now. Nothing was lost. Try Read its reply again, or open the check."
+msgstr "Sotto couldn't read its reply just now. Nothing was lost. Try Read its reply again, or open the check."
+
 #. {provider} is a provider's name or "The provider"; {wanted} is the chosen model, effort or permission mode.
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Sotto did not get {provider}'s answer about {wanted}, so the chip shows what the thread last reported. Try again to send it once more."

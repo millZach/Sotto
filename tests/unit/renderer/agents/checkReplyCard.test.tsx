@@ -224,13 +224,32 @@ describe('the tray a check\'s reply opens in', () => {
     expect(check.querySelector('.check-excerpt')).toBeNull()
     expect(check).not.toHaveAttribute('data-tray-open')
     expect(check.querySelector('.check-unkept')).toHaveFocus()
-    // A read that fails says the same, rather than open nothing or an empty tray.
-    const failing = world({})
-    cleanup()
-    mount([cut], { ...failing.world, checkReply: async () => { throw new Error('No handler') } }).unfold()
-    fireEvent.click(screen.getByRole('button', { name: /^Read the reply from Full suite with logs/u }))
-    await waitFor(() => expect(row('Check: Full suite with logs, Answered').querySelector('.check-unkept')).toBeInTheDocument())
+  })
+
+  it('keeps the excerpt and Read its reply when the read fails, says so, and opens the tray when a press tries again (Sol on #1312)', async () => {
+    const answers: (() => Promise<DelegationCheckReply>)[] = [async () => { throw new Error('No handler') }, async () => ({ delegation: cut.id, text: 'Failed: 37 of 1,214 tests.', truncated: true })]
+    const asked: string[] = []
+    const failing: DelegationWorld = { ...world({}).world, checkReply: async id => { asked.push(id); return await answers.shift()!() } }
+    mount([cut], failing).unfold()
+    const check = row('Check: Full suite with logs, Answered')
+    const read = within(check).getByRole('button', { name: /^Read the reply from Full suite with logs/u })
+    read.focus()
+    fireEvent.click(read)
+    // Main never answered, so nothing is known lost: the quote and the control stay, with the focus, and no tray opens.
+    const failed = await within(check).findByRole('status')
+    expect(failed).toHaveTextContent(/^Sotto couldn't read its reply just now\. Nothing was lost\. Try Read its reply again, or open the check\.$/u)
+    expect(check.querySelector('.check-excerpt q')).toHaveTextContent('Failed: 37 of 1,214 tests.')
+    expect(check.querySelector('.check-unkept')).toBeNull()
     expect(screen.queryByRole('dialog')).toBeNull()
+    expect(read).toHaveFocus()
+    expect(read).toHaveAttribute('aria-expanded', 'false')
+    // A second press reads again; its reply opens the tray, and the line goes.
+    fireEvent.click(read)
+    const tray = await screen.findByRole('dialog', { name: /^Full suite with logs/u })
+    expect(asked).toEqual([cut.id, cut.id])
+    expect(tray.querySelector('.check-pre')).toHaveTextContent('Failed: 37 of 1,214 tests.')
+    expect(within(check).queryByRole('status')).toBeNull()
+    expect(check.querySelector('.check-failed')).toBeNull()
   })
 
   it('reads from the thread that delegated, with one reader however often the window\'s state moves, and none on stable', async () => {

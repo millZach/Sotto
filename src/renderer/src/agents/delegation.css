@@ -81,8 +81,8 @@
 .check-excerpt q { min-width: 0; overflow: hidden; color: var(--tt-text-2); text-overflow: ellipsis; white-space: nowrap; }
 .check-excerpt__cut { flex: none; color: var(--tt-text-muted); font-size: 12.5px; white-space: nowrap; }
 .check-excerpt .check-open { margin-left: 4px; }
-/* Its reply was not kept here: said in a sentence, with no tray. */
-.check-unkept { grid-column: 2 / -1; margin: 1px 0; color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
+/* Its reply was not kept here, or a press could not read it just now: said in a sentence. */
+.check-unkept, .check-failed { grid-column: 2 / -1; margin: 1px 0; color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
 .delegated-work__row[data-tray-open] { border-radius: 6px; box-shadow: 0 0 0 4px var(--tt-hover), inset 0 0 0 100vmax var(--tt-hover); }
 .check-tray { position: absolute; bottom: var(--thread-compose-height, 0px); left: max(24px, calc((100% - 760px) / 2)); right: max(24px, calc((100% - 760px) / 2)); z-index: 3;
   display: flex; flex-direction: column; max-height: min(400px, 74%); border: 1px solid var(--tt-field-border); border-bottom: 0; border-radius: var(--tt-radius-lg) var(--tt-radius-lg) 0 0;
