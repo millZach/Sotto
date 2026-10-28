@@ -4,7 +4,7 @@ import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { claudeDigest, claudeReadBack, ClaudeSessionLog, claudeText, claudeUserText } from '../../../src/main/agents/claudeSessionLog'
+import { claudeDigest, claudeReadBack, ClaudeSessionLog, claudeText, claudeUserText, firstUnread, type OriginBucket } from '../../../src/main/agents/claudeSessionLog'
 import { attachedFilesNote, browserFeedbackNote } from '../../../src/main/agents/attachedFiles'
 import type { ClaudeFrame } from '../../../src/main/agents/claudeProtocol'
 
@@ -149,19 +149,19 @@ describe('a Claude prompt read back with Point at something feedback (ADR-0154)'
     // The user's prompt is only a block they typed in the note's shape, then Sotto's note in a part of its own.
     const typedOnly = [image, { type: 'text', text: handwritten }, { type: 'text', text: note }]
     const typedOrigin = sent('typed-only', typedOnly, handwritten)
-    expect(claudeReadBack(typedOnly, undefined, lookup(typedOrigin).find)).toEqual({ text: handwritten, origin: typedOrigin })
+    expect(claudeReadBack(typedOnly, undefined, { delivered: lookup(typedOrigin).find })).toEqual({ text: handwritten, origin: typedOrigin })
     // A prompt sent as one text: words, the user's block, then Sotto's note.
     const words = `Look\n\n${handwritten}`
     const scalar = `${words}\n\n${note}`
     const scalarOrigin = { ...sent('scalar', [{ type: 'text', text: scalar }], words) }
-    expect(claudeReadBack(scalar, undefined, lookup(scalarOrigin).find)).toEqual({ text: words, origin: scalarOrigin })
+    expect(claudeReadBack(scalar, undefined, { delivered: lookup(scalarOrigin).find })).toEqual({ text: words, origin: scalarOrigin })
   })
 
   it('keeps the words of parts that end in a line break, which flattening joins to the note (review item 2)', () => {
     const note = browserFeedbackNote([picture])
     const content = [image, { type: 'text', text: 'Look\n' }, { type: 'text', text: note }]
     const origin = sent('line-break', content, 'Look\n')
-    expect(claudeReadBack(content, undefined, lookup(origin).find)).toEqual({ text: 'Look\n', origin })
+    expect(claudeReadBack(content, undefined, { delivered: lookup(origin).find })).toEqual({ text: 'Look\n', origin })
   })
 
   it('leaves native input alone when it only resembles a prompt Sotto sent with notes (review item 1)', () => {
@@ -170,14 +170,14 @@ describe('a Claude prompt read back with Point at something feedback (ADR-0154)'
     const origin = sent('pointed', [image, { type: 'text', text: words }, { type: 'text', text: note }], words)
     // Typed in Claude Code: the same words and block, then a second block the user wrote, with no picture sent.
     const typed = `${words}\n\n<sotto-browser-feedback>\nAnother block I typed.\n</sotto-browser-feedback>`
-    expect(claudeReadBack([{ type: 'text', text: typed }], undefined, lookup(origin).find)).toEqual({ text: typed, origin: undefined })
+    expect(claudeReadBack([{ type: 'text', text: typed }], undefined, { delivered: lookup(origin).find })).toEqual({ text: typed, origin: undefined })
   })
 
   it('looks the origin up once per frame, whatever blocks the text ends with (review item 3)', () => {
     const note = browserFeedbackNote([picture])
     const blocks = Array.from({ length: 6 }, () => handwritten).join('\n\n')
     const { find, calls } = lookup()
-    claudeReadBack([{ type: 'text', text: `${blocks}\n\n${note}` }], undefined, find)
+    claudeReadBack([{ type: 'text', text: `${blocks}\n\n${note}` }], undefined, { delivered: find })
     expect(calls).toHaveLength(1)
   })
 
@@ -187,7 +187,7 @@ describe('a Claude prompt read back with Point at something feedback (ADR-0154)'
     const legacy: { uuid: string; digest: string; attachments: { mimeType: string }[]; delivered?: { digest: string; suffixLength: number } } = { uuid: 'legacy', digest: claudeDigest('Read this'), attachments: [{ mimeType: 'application/pdf' }] }
     const calls: string[] = []
     const byWords = (digest: string) => { calls.push(digest); return digest === legacy.digest ? legacy : undefined }
-    expect(claudeReadBack([{ type: 'text', text: 'Read this' }, { type: 'text', text: note }], undefined, () => undefined, byWords)).toEqual({ text: 'Read this', origin: legacy })
+    expect(claudeReadBack([{ type: 'text', text: 'Read this' }, { type: 'text', text: note }], undefined, { delivered: () => undefined, legacy: byWords })).toEqual({ text: 'Read this', origin: legacy })
     expect(calls).toHaveLength(1)
   })
 
@@ -199,6 +199,42 @@ describe('a Claude prompt read back with Point at something feedback (ADR-0154)'
     // Taking every note-shaped block off leaves "Plan", whose digest is the origin's words; a words lookup that answers
     // this origin still cannot claim the native input, since the origin has a delivered digest.
     const { find } = lookup(origin)
-    expect(claudeReadBack(typed, undefined, find, find)).toEqual({ text: typed, origin: undefined })
+    expect(claudeReadBack(typed, undefined, { delivered: find, legacy: find })).toEqual({ text: typed, origin: undefined })
+  })
+
+  it('lets a newer prompt whose words are the text as read win over an older origin found by taking blocks off (review 6, item 1)', () => {
+    // An older origin, from before the delivered digest, sent "Plan" with a picture and not read back yet.
+    type Recorded = { uuid: string; digest: string; attachments?: { mimeType: string; pointed?: true }[] }
+    const legacy: Recorded = { uuid: 'legacy', digest: claudeDigest('Plan'), attachments: [{ mimeType: 'image/png', pointed: true as const }] }
+    // A newer prompt, with no attachments, whose words are "Plan" and a block the user typed in a note's shape.
+    const typed = `Plan\n\n${handwritten}`
+    const newer: Recorded = { uuid: 'newer', digest: claudeDigest(typed) }
+    const lookups = {
+      words: (digest: string) => [legacy, newer].find(origin => origin.digest === digest),
+      legacy: (digest: string) => digest === legacy.digest ? legacy : undefined,
+    }
+    expect(claudeReadBack(typed, undefined, lookups)).toEqual({ text: typed, origin: undefined })
+  })
+
+  it('takes exactly the delivered notes off for a frame its ID names, keeping the words\' own line break (review 6, item 3)', () => {
+    const note = browserFeedbackNote([picture])
+    const origin = sent('known', [image, { type: 'text', text: 'Look\n' }, { type: 'text', text: note }], 'Look\n')
+    // Read back as one text: the words' line break and the separator run together before the note.
+    expect(claudeReadBack(`Look\n\n${note}`, origin)).toEqual({ text: 'Look\n', origin })
+  })
+
+  it('passes origins already read back once and for all, so a lookup does not grow with them (review 6, item 2)', () => {
+    const origins = Array.from({ length: 10_000 }, (_, at) => ({ uuid: `sent-${at}` }))
+    let checks = 0
+    class Counted extends Set<string> { override has(value: string): boolean { checks++; return super.has(value) } }
+    const consumed = new Counted(origins.slice(0, 9_998).map(origin => origin.uuid))
+    const bucket: OriginBucket<{ uuid: string }> = { origins, start: 0, consumed: undefined }
+    expect(firstUnread(bucket, consumed)).toBe(origins[9_998])
+    checks = 0
+    consumed.add('sent-9998')
+    expect(firstUnread(bucket, consumed)).toBe(origins[9_999])
+    expect(checks).toBeLessThanOrEqual(3)
+    // The log read again from its start: a new set, and the cursor starts again.
+    expect(firstUnread(bucket, new Set())).toBe(origins[0])
   })
 })

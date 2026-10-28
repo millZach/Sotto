@@ -44,7 +44,7 @@ import { verifyFileMentions } from './promptFiles'
 import { ClaudeSubscriptionClient } from './subscriptionClaude'
 import { ClaudeProtocol, ClaudeRejected, ClaudeWritePending, object, type ClaudeFrame } from './claudeProtocol'
 import { claudeLimitStop, claudeTurnAborted, claudeTurnFailure } from './claudeTurnFailure'
-import { authoredClaudeUser, claudeDigest, claudeReadBack, ClaudeSessionLog, claudeText } from './claudeSessionLog'
+import { authoredClaudeUser, claudeDigest, claudeReadBack, ClaudeSessionLog, claudeText, firstUnread, type OriginBucket } from './claudeSessionLog'
 import { carriesAttachedFiles, deliverAttachments } from './attachedFiles'
 import { claudeAnswer, claudeDenial, claudePending, type ClaudePending } from './claudeRequests'
 import { unreadableRequest } from './nativeRequests'
@@ -65,9 +65,13 @@ import { markSendStage } from './sendStages'
  * ADR-0131, ADR-0154), the digest of the whole text it delivered, flattened as the session log reads it back, and the
  * length of the notes at its end. A digest and a length only, never the text. Records written before it have none.
  */
-/** A thread's origins by the digest of the text Sotto delivered with notes, and, for origins recorded before that digest
- * existed, by their words' digest when they carry notes. */
-interface OriginIndex { indexed: number; byDelivered: Map<string, Alias['origins'][number][]>; legacyByWords: Map<string, Alias['origins'][number][]> }
+/**
+ * A thread's origins by digest: of the text Sotto delivered with notes (`byDelivered`), of the user's words for every
+ * origin (`byWords`), and of the words for origins recorded before the delivered digest existed that carry notes
+ * (`legacyByWords`).
+ */
+type Bucket = OriginBucket<Alias['origins'][number]>
+interface OriginIndex { indexed: number; byDelivered: Map<string, Bucket>; byWords: Map<string, Bucket>; legacyByWords: Map<string, Bucket> }
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), uuid: z.string().uuid(), digest: z.string(), createdAt: z.string(), attachments: z.array(agentAttachmentReferenceSchema).optional(),
   delivered: z.object({ digest: z.string(), suffixLength: z.number().int().nonnegative() }).optional() })
 /**
@@ -1901,28 +1905,28 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private legacyOrigin(id: string, digest: string): Alias['origins'][number] | undefined {
     return this.indexedOrigin(id, 'legacyByWords', digest)
   }
-  private indexedOrigin(id: string, map: 'byDelivered' | 'legacyByWords', digest: string): Alias['origins'][number] | undefined {
+  /** A sent prompt the transcript has not yet given back, found by its words' digest, the first sent first. */
+  private unreadOrigin(id: string, digest: string): Alias['origins'][number] | undefined {
+    return this.indexedOrigin(id, 'byWords', digest)
+  }
+  private indexedOrigin(id: string, map: 'byDelivered' | 'byWords' | 'legacyByWords', digest: string): Alias['origins'][number] | undefined {
     const origins = this.aliases[id]?.origins
     if (!origins) return undefined
     let index = this.deliveredIndex.get(origins)
-    if (!index) { index = { indexed: 0, byDelivered: new Map(), legacyByWords: new Map() }; this.deliveredIndex.set(origins, index) }
-    const add = (into: Map<string, Alias['origins'][number][]>, key: string, origin: Alias['origins'][number]): void => {
-      const same = into.get(key)
-      if (same) same.push(origin); else into.set(key, [origin])
+    if (!index) { index = { indexed: 0, byDelivered: new Map(), byWords: new Map(), legacyByWords: new Map() }; this.deliveredIndex.set(origins, index) }
+    const add = (into: Map<string, Bucket>, key: string, origin: Alias['origins'][number]): void => {
+      const bucket = into.get(key)
+      if (bucket) bucket.origins.push(origin); else into.set(key, { origins: [origin], start: 0, consumed: undefined })
     }
     for (; index.indexed < origins.length; index.indexed++) {
       const origin = origins[index.indexed]!
+      add(index.byWords, origin.digest, origin)
       if (origin.delivered) add(index.byDelivered, origin.delivered.digest, origin)
       else if (carriesAttachedFiles(origin.attachments)) add(index.legacyByWords, origin.digest, origin)
     }
-    const consumed = this.logOrigins.get(id)
     // Origins only ever leave a thread by the list being replaced, so every origin indexed for this list is still in it.
-    return index[map].get(digest)?.find(origin => !consumed?.has(origin.uuid))
-  }
-  /** A sent prompt the transcript has not yet given back, found by its text. */
-  private unreadOrigin(id: string, digest: string): Alias['origins'][number] | undefined {
-    const consumed = this.logOrigins.get(id)
-    return this.aliases[id]?.origins.find(origin => !consumed?.has(origin.uuid) && origin.digest === digest)
+    const bucket = index[map].get(digest)
+    return bucket ? firstUnread(bucket, this.logOrigins.get(id)) : undefined
   }
   /** Claude Code writes a slash command it ran itself into the transcript as a local command, not as a prompt. One
    * Sotto sent is read back as that prompt. Any other stays out of the record, as its reply does. */
@@ -1951,7 +1955,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
     // A prompt's words without the notes Sotto appended, only when the origin it matches recorded an attached file or
     // a Point at something picture, and only the notes Sotto appended for that origin (ADR-0131, ADR-0154).
     if (frame.type === 'user') {
-      const read = claudeReadBack(message?.content, origin, fromLog ? digest => this.deliveredOrigin(id, digest) : undefined, fromLog ? digest => this.legacyOrigin(id, digest) : undefined)
+      const read = claudeReadBack(message?.content, origin, fromLog ? {
+        delivered: digest => this.deliveredOrigin(id, digest), words: digest => this.unreadOrigin(id, digest), legacy: digest => this.legacyOrigin(id, digest),
+      } : {})
       text = read.text; origin = read.origin
     }
     const digest = claudeDigest(text)

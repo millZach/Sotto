@@ -33,33 +33,66 @@ export function claudeUserText(content: unknown, attachments?: RecordedAttachmen
   return claudeText(content.filter(block => { const text = object(block); return !(text?.type === 'text' && typeof text.text === 'string' && isAttachedFilesNote(text.text)) }))
 }
 /**
- * A user prompt read back from Claude Code, and the origin Sotto recorded for it (ADR-0131, ADR-0154). `known` is the
- * origin the frame's own ID names; its recorded attachments then say which of the blocks at the end were Sotto's.
- * Without one, `byDelivered` finds the origin whose whole delivered text, the user's words and Sotto's notes flattened
- * as the log reads them back, has this frame's digest, and exactly that origin's recorded notes come off the end. Any
- * other text is left as it is, for the caller to match as the user's own: nothing is guessed from a block's shape, so a
- * block the user wrote in a note's shape is never taken for Sotto's.
+ * The origins one digest names, in the order they were sent. `start` is the first not yet read back from the log, so a
+ * lookup does not check the ones before it again; it counts against `consumed`, the thread's set of read-back origins,
+ * and goes back to the beginning when that set is replaced (the log read again from its start).
+ */
+export interface OriginBucket<T extends { readonly uuid: string }> { readonly origins: T[]; start: number; consumed: ReadonlySet<string> | undefined }
+/**
+ * The first origin in `bucket` not yet read back. Prompts are read back in the order they were sent, so the ones at the
+ * front are passed once and for all, and a lookup does not grow with how many were read before it.
+ */
+export function firstUnread<T extends { readonly uuid: string }>(bucket: OriginBucket<T>, consumed: ReadonlySet<string> | undefined): T | undefined {
+  if (bucket.consumed !== consumed) { bucket.consumed = consumed; bucket.start = 0 }
+  while (bucket.start < bucket.origins.length && consumed?.has(bucket.origins[bucket.start]!.uuid)) bucket.start++
+  for (let at = bucket.start; at < bucket.origins.length; at++) if (!consumed?.has(bucket.origins[at]!.uuid)) return bucket.origins[at]
+  return undefined
+}
+/** Where `claudeReadBack` finds an unread origin, each one map lookup: see the order there. */
+export interface ClaudeOriginLookups<T> {
+  /** By the digest of the whole text Sotto delivered with notes. */
+  readonly delivered?: ((digest: string) => T | undefined) | undefined
+  /** By the digest of the user's words, any origin. */
+  readonly words?: ((digest: string) => T | undefined) | undefined
+  /** By the digest of the user's words, only origins recorded before the delivered digest existed that carry notes. */
+  readonly legacy?: ((digest: string) => T | undefined) | undefined
+}
+/**
+ * A user prompt read back from Claude Code, and the origin Sotto recorded for it (ADR-0131, ADR-0154). In order:
+ *
+ * 1. `known`, the origin the frame's own ID names. With a delivered digest that matches, exactly its recorded notes
+ *    come off the end; an origin recorded before that digest existed has its notes taken off by its attachments.
+ * 2. The origin whose whole delivered text, the user's words and Sotto's notes flattened as the log reads them back,
+ *    has this frame's digest: exactly that origin's notes come off.
+ * 3. The origin whose words are this text as read, with nothing taken off: the text is the user's own, and the caller
+ *    matches it.
+ * 4. Only then, an origin recorded before the delivered digest existed, found as it was then: every note-shaped block
+ *    comes off, the words' digest names it, and its attachments say which blocks were Sotto's.
+ *
+ * Anything else is left as it is. The origin comes back only when notes came off; otherwise the caller matches the
+ * text as it is.
  */
 export function claudeReadBack<T extends { readonly attachments?: RecordedAttachments | undefined; readonly delivered?: { readonly digest: string; readonly suffixLength: number } | undefined }>(
-  content: unknown, known: T | undefined, byDelivered: ((digest: string) => T | undefined) | undefined,
-  byLegacyWords?: (digest: string) => T | undefined): { readonly text: string; readonly origin: T | undefined } {
+  content: unknown, known: T | undefined, lookups: ClaudeOriginLookups<T> = {}): { readonly text: string; readonly origin: T | undefined } {
   const text = claudeText(content)
+  const digest = claudeDigest(text)
+  const exact = (origin: T): string | undefined => origin.delivered && origin.delivered.digest === digest && origin.delivered.suffixLength <= text.length
+    ? text.slice(0, text.length - origin.delivered.suffixLength) : undefined
   if (known) {
+    if (known.delivered) return { text: exact(known) ?? text, origin: known }
     const words = carriesAttachedFiles(known.attachments) ? claudeUserText(content, known.attachments ?? []) : text
     return { text: words, origin: known }
   }
-  const digest = claudeDigest(text)
-  const owner = byDelivered?.(digest)
-  if (owner?.delivered && owner.delivered.digest === digest && owner.delivered.suffixLength <= text.length) return { text: text.slice(0, text.length - owner.delivered.suffixLength), origin: owner }
-  // An origin recorded before the delivered digest existed reads back as it did then: every note-shaped block comes off
-  // to find it by its words' digest, and its recorded attachments say which were Sotto's. One lookup, and never for an
-  // origin that has a delivered digest, which only the exact match above may claim.
-  const candidate = byLegacyWords ? claudeUserText(content) : text
+  const owner = lookups.delivered?.(digest)
+  const words = owner ? exact(owner) : undefined
+  if (owner && words !== undefined) return { text: words, origin: owner }
+  if (!lookups.legacy || lookups.words?.(digest)) return { text, origin: undefined }
+  const candidate = claudeUserText(content)
   if (candidate === text) return { text, origin: undefined }
-  const legacy = byLegacyWords?.(claudeDigest(candidate))
+  const legacy = lookups.legacy(claudeDigest(candidate))
   if (!legacy || legacy.delivered || !carriesAttachedFiles(legacy.attachments)) return { text, origin: undefined }
-  const words = claudeUserText(content, legacy.attachments ?? [])
-  return words === text ? { text, origin: undefined } : { text: words, origin: legacy }
+  const stripped = claudeUserText(content, legacy.attachments ?? [])
+  return stripped === text ? { text, origin: undefined } : { text: stripped, origin: legacy }
 }
 export function authoredClaudeUser(frame: ClaudeFrame): boolean {
   if (frame.type !== 'user' || frame.isMeta === true || frame.isSynthetic === true || frame.isCompactSummary === true || frame.is_compact_summary === true || frame.isSidechain === true || frame.parent_tool_use_id) return false
