@@ -3,7 +3,7 @@ import { open, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import { CLAUDE_MAX_FRAME_BYTES, object, type ClaudeFrame } from './claudeProtocol'
-import { carriesAttachedFiles, isAttachedFilesNote, stripAppendedNotes, stripAttachedFilesNote, withoutTrailingNotes, type RecordedAttachments } from './attachedFiles'
+import { carriesAttachedFiles, isAttachedFilesNote, stripAppendedNotes, stripAttachedFilesNote, type RecordedAttachments } from './attachedFiles'
 
 export const claudeDigest = (text: string): string => createHash('sha256').update(text).digest('hex')
 export function claudeText(content: unknown): string {
@@ -33,28 +33,24 @@ export function claudeUserText(content: unknown, attachments?: RecordedAttachmen
   return claudeText(content.filter(block => { const text = object(block); return !(text?.type === 'text' && typeof text.text === 'string' && isAttachedFilesNote(text.text)) }))
 }
 /**
- * A user prompt read back from Claude Code, and the origin Sotto recorded for it. `known` is the origin found by the
- * frame's own ID; without one, `byDigest` finds an origin by the digest of the user's words. Those words are tried as
- * read, then with one trailing note-shaped block taken off, then two, up to the most Sotto could have appended, and the
- * first whose digest names an origin wins, so a block the user wrote themselves does not hide the prompt from its
- * origin. A shorter candidate is accepted only when its origin recorded notes and taking exactly those off leaves that
- * candidate (ADR-0131, ADR-0154). With `known`, its recorded attachments say which blocks were Sotto's. The origin
- * comes back only when notes came off; otherwise the caller matches the text as it is.
+ * A user prompt read back from Claude Code, and the origin Sotto recorded for it (ADR-0131, ADR-0154). `known` is the
+ * origin the frame's own ID names; its recorded attachments then say which of the blocks at the end were Sotto's.
+ * Without one, `byDelivered` finds the origin whose whole delivered text, the user's words and Sotto's notes flattened
+ * as the log reads them back, has this frame's digest, and exactly that origin's recorded notes come off the end. Any
+ * other text is left as it is, for the caller to match as the user's own: nothing is guessed from a block's shape, so a
+ * block the user wrote in a note's shape is never taken for Sotto's.
  */
-export function claudeReadBack<T extends { readonly attachments?: RecordedAttachments | undefined }>(content: unknown, known: T | undefined,
-  byDigest: ((digest: string) => T | undefined) | undefined): { readonly text: string; readonly origin: T | undefined } {
+export function claudeReadBack<T extends { readonly attachments?: RecordedAttachments | undefined; readonly delivered?: { readonly digest: string; readonly suffixLength: number } | undefined }>(
+  content: unknown, known: T | undefined, byDelivered: ((digest: string) => T | undefined) | undefined): { readonly text: string; readonly origin: T | undefined } {
   const text = claudeText(content)
   if (known) {
     const words = carriesAttachedFiles(known.attachments) ? claudeUserText(content, known.attachments ?? []) : text
     return { text: words, origin: known }
   }
-  // The text as read comes first: a prompt whose own digest names an origin is that prompt, matched by the caller.
-  if (!byDigest || byDigest(claudeDigest(text))) return { text, origin: undefined }
-  for (const candidate of withoutTrailingNotes(text)) {
-    const owner = byDigest(claudeDigest(candidate))
-    if (owner && carriesAttachedFiles(owner.attachments) && claudeUserText(content, owner.attachments ?? []) === candidate) return { text: candidate, origin: owner }
-  }
-  return { text, origin: undefined }
+  const digest = claudeDigest(text)
+  const owner = byDelivered?.(digest)
+  if (!owner?.delivered || owner.delivered.digest !== digest || owner.delivered.suffixLength > text.length) return { text, origin: undefined }
+  return { text: text.slice(0, text.length - owner.delivered.suffixLength), origin: owner }
 }
 export function authoredClaudeUser(frame: ClaudeFrame): boolean {
   if (frame.type !== 'user' || frame.isMeta === true || frame.isSynthetic === true || frame.isCompactSummary === true || frame.is_compact_summary === true || frame.isSidechain === true || frame.parent_tool_use_id) return false

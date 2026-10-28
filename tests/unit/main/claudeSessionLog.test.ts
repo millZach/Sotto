@@ -4,7 +4,7 @@ import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { claudeDigest, claudeReadBack, ClaudeSessionLog, claudeUserText } from '../../../src/main/agents/claudeSessionLog'
+import { claudeDigest, claudeReadBack, ClaudeSessionLog, claudeText, claudeUserText } from '../../../src/main/agents/claudeSessionLog'
 import { browserFeedbackNote } from '../../../src/main/agents/attachedFiles'
 import type { ClaudeFrame } from '../../../src/main/agents/claudeProtocol'
 
@@ -130,23 +130,54 @@ describe('a Claude prompt read back with Point at something feedback (ADR-0154)'
     const content = [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AA==' } }, { type: 'text', text: `Look\n\n${handwritten}\n\n${note}` }]
     expect(claudeUserText(content, recorded)).toBe(`Look\n\n${handwritten}`)
   })
-  it('finds the origin by digest when the user wrote a note-shaped block themselves, and takes off only Sotto\'s', () => {
+  // An origin as the Claude adapter records it for a prompt sent with notes: the digest of the user's words, and the
+  // digest and notes' length of the whole text delivered, flattened as the log reads it back.
+  const sent = (uuid: string, content: unknown[], words: string) => {
+    const flattened = claudeText(content)
+    return { uuid, digest: claudeDigest(words), attachments: recorded, delivered: { digest: claudeDigest(flattened), suffixLength: flattened.length - words.length } }
+  }
+  // A lookup that answers both digests an origin holds, as a scan over every origin might, and counts its calls.
+  const lookup = (...origins: ReturnType<typeof sent>[]) => {
+    const calls: string[] = []
+    const find = (digest: string) => { calls.push(digest); return origins.find(origin => origin.digest === digest || origin.delivered.digest === digest) }
+    return { find, calls }
+  }
+  const image = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AA==' } }
+
+  it('finds an origin with no frame ID by the exact text Sotto delivered, and takes off exactly its notes', () => {
     const note = browserFeedbackNote([picture])
-    const image = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AA==' } }
-    // The user's prompt is only a block they typed in the note's shape, in a text part of its own, so taking off every
-    // note-shaped part leaves nothing that matches.
-    const typedOnly = { uuid: 'typed-only', digest: claudeDigest(handwritten), attachments: recorded }
-    expect(claudeReadBack([image, { type: 'text', text: handwritten }, { type: 'text', text: note }], undefined, (digest: string) => digest === typedOnly.digest ? typedOnly : undefined))
-      .toEqual({ text: handwritten, origin: typedOnly })
+    // The user's prompt is only a block they typed in the note's shape, then Sotto's note in a part of its own.
+    const typedOnly = [image, { type: 'text', text: handwritten }, { type: 'text', text: note }]
+    const typedOrigin = sent('typed-only', typedOnly, handwritten)
+    expect(claudeReadBack(typedOnly, undefined, lookup(typedOrigin).find)).toEqual({ text: handwritten, origin: typedOrigin })
     // A prompt sent as one text: words, the user's block, then Sotto's note.
     const words = `Look\n\n${handwritten}`
-    const origin = { uuid: 'sent', digest: claudeDigest(words), attachments: recorded }
-    const byDigest = (digest: string) => digest === origin.digest ? origin : undefined
-    expect(claudeReadBack(`${words}\n\n${note}`, undefined, byDigest)).toEqual({ text: words, origin })
-    // No frame ID matches, so only the digest of the user's words can find the origin.
-    const content = [image, { type: 'text', text: words }, { type: 'text', text: note }]
-    expect(claudeReadBack(content, undefined, byDigest)).toEqual({ text: words, origin })
-    // A prompt with no note of Sotto's is matched as it is, and nothing comes off.
-    expect(claudeReadBack([{ type: 'text', text: words }], undefined, byDigest)).toEqual({ text: words, origin: undefined })
+    const scalar = `${words}\n\n${note}`
+    const scalarOrigin = { ...sent('scalar', [{ type: 'text', text: scalar }], words) }
+    expect(claudeReadBack(scalar, undefined, lookup(scalarOrigin).find)).toEqual({ text: words, origin: scalarOrigin })
+  })
+
+  it('keeps the words of parts that end in a line break, which flattening joins to the note (review item 2)', () => {
+    const note = browserFeedbackNote([picture])
+    const content = [image, { type: 'text', text: 'Look\n' }, { type: 'text', text: note }]
+    const origin = sent('line-break', content, 'Look\n')
+    expect(claudeReadBack(content, undefined, lookup(origin).find)).toEqual({ text: 'Look\n', origin })
+  })
+
+  it('leaves native input alone when it only resembles a prompt Sotto sent with notes (review item 1)', () => {
+    const note = browserFeedbackNote([picture])
+    const words = `Plan\n\n${handwritten}`
+    const origin = sent('pointed', [image, { type: 'text', text: words }, { type: 'text', text: note }], words)
+    // Typed in Claude Code: the same words and block, then a second block the user wrote, with no picture sent.
+    const typed = `${words}\n\n<sotto-browser-feedback>\nAnother block I typed.\n</sotto-browser-feedback>`
+    expect(claudeReadBack([{ type: 'text', text: typed }], undefined, lookup(origin).find)).toEqual({ text: typed, origin: undefined })
+  })
+
+  it('looks the origin up once per frame, whatever blocks the text ends with (review item 3)', () => {
+    const note = browserFeedbackNote([picture])
+    const blocks = Array.from({ length: 6 }, () => handwritten).join('\n\n')
+    const { find, calls } = lookup()
+    claudeReadBack([{ type: 'text', text: `${blocks}\n\n${note}` }], undefined, find)
+    expect(calls).toHaveLength(1)
   })
 })

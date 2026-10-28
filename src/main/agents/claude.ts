@@ -60,7 +60,13 @@ import { ReadsBeforeSend } from './readsBeforeSend'
 import { MAX_AGENT_ACTIVITIES, type AgentActivity } from '../../shared/agentActivity'
 import { markSendStage } from './sendStages'
 
-const originSchema = z.object({ messageId: z.string(), commandId: z.string(), uuid: z.string().uuid(), digest: z.string(), createdAt: z.string(), attachments: z.array(agentAttachmentReferenceSchema).optional() })
+/**
+ * `delivered`: for a prompt Sotto sent with notes after the user's words (an attached file's, Point at something's;
+ * ADR-0131, ADR-0154), the digest of the whole text it delivered, flattened as the session log reads it back, and the
+ * length of the notes at its end. A digest and a length only, never the text. Records written before it have none.
+ */
+const originSchema = z.object({ messageId: z.string(), commandId: z.string(), uuid: z.string().uuid(), digest: z.string(), createdAt: z.string(), attachments: z.array(agentAttachmentReferenceSchema).optional(),
+  delivered: z.object({ digest: z.string(), suffixLength: z.number().int().nonnegative() }).optional() })
 /**
  * Transcript cursor: how far a thread's native transcript had been read when Sotto last stopped, whose
  * file that was, and what the reader had already matched there. Reconnecting seeks to it instead of
@@ -437,6 +443,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
   /** The classification on a turn's last assistant message, when Claude Code gave one for a failed API call. */
   private readonly assistantErrors = new Map<string, string>()
   private readonly logOrigins = new Map<string, Set<string>>()
+  /** Each thread's origins by the digest of the text Sotto delivered with notes, keyed by the origin list it indexes. */
+  private readonly deliveredIndex = new WeakMap<Alias['origins'], { indexed: number; byDigest: Map<string, Alias['origins'][number][]> }>()
   private readonly lastLogDigest = new Map<string, string>()
   /**
    * Threads whose transcript is read from its first byte into a log already told what the store holds.
@@ -1875,6 +1883,26 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const thread = this.threads.get(id)
     if (thread) { delete thread.monitoring; delete thread.backgroundWork; this.changed(id) }
   }
+  /**
+   * A sent prompt the transcript has not yet given back, found by the digest of the whole text Sotto delivered with its
+   * notes. One map lookup per frame: the index follows the thread's origins, adding the ones pushed since it was last
+   * read and rebuilt only when the list itself is replaced, so a frame's work does not grow with the thread's history.
+   */
+  private deliveredOrigin(id: string, digest: string): Alias['origins'][number] | undefined {
+    const origins = this.aliases[id]?.origins
+    if (!origins) return undefined
+    let index = this.deliveredIndex.get(origins)
+    if (!index) { index = { indexed: 0, byDigest: new Map() }; this.deliveredIndex.set(origins, index) }
+    for (; index.indexed < origins.length; index.indexed++) {
+      const origin = origins[index.indexed]!
+      if (!origin.delivered) continue
+      const same = index.byDigest.get(origin.delivered.digest)
+      if (same) same.push(origin); else index.byDigest.set(origin.delivered.digest, [origin])
+    }
+    const consumed = this.logOrigins.get(id)
+    // Origins only ever leave a thread by the list being replaced, so every origin indexed for this list is still in it.
+    return index.byDigest.get(digest)?.find(origin => !consumed?.has(origin.uuid))
+  }
   /** A sent prompt the transcript has not yet given back, found by its text. */
   private unreadOrigin(id: string, digest: string): Alias['origins'][number] | undefined {
     const consumed = this.logOrigins.get(id)
@@ -1907,7 +1935,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     // A prompt's words without the notes Sotto appended, only when the origin it matches recorded an attached file or
     // a Point at something picture, and only the notes Sotto appended for that origin (ADR-0131, ADR-0154).
     if (frame.type === 'user') {
-      const read = claudeReadBack(message?.content, origin, fromLog ? digest => this.unreadOrigin(id, digest) : undefined)
+      const read = claudeReadBack(message?.content, origin, fromLog ? digest => this.deliveredOrigin(id, digest) : undefined)
       text = read.text; origin = read.origin
     }
     const digest = claudeDigest(text)
@@ -2115,7 +2143,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
       ...(typeof nativePrompt === 'string' ? (nativePrompt ? [{ type: 'text', text: nativePrompt }] : []) : nativePrompt),
       ...(delivered.note ? [{ type: 'text', text: delivered.note }] : []),
     ] : nativePrompt
-    return { content, nativeText, origin }
+    // With notes after the user's words, the whole delivered text is what the log gives back, so its digest finds this
+    // origin exactly and the notes' length says what to take off; nothing is guessed from a block's shape.
+    const flattened = claudeText(content)
+    const notes = delivered.note && flattened.startsWith(nativeText) ? { delivered: { digest: claudeDigest(flattened), suffixLength: flattened.length - nativeText.length } } : {}
+    return { content, nativeText, origin: { ...origin, ...notes } }
   }
   /**
    * Steering: a prompt written to the CLI while its turn runs. Claude Code queues it and says so at once, which is the
