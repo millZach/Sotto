@@ -1,17 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import { ClickWater, GLYPH_ALPHA, LIFE_S, STEP_HZ } from '../../../src/renderer/src/components/clickWater'
-
-/** A seeded stand-in for Math.random, so the water is the same on every run. */
-function seeded(seed: number): () => number {
-  let a = seed >>> 0
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0
-    let t = Math.imul(a ^ (a >>> 15), 1 | a)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
+// The night scene's seeded source, so the water is the same on every run.
+import { seeded } from '../../../src/renderer/src/watcher/nightScene'
 
 function stamps(water: ClickWater): Array<{ digit: 0 | 1; x: number; y: number; alpha: number }> {
   const out: Array<{ digit: 0 | 1; x: number; y: number; alpha: number }> = []

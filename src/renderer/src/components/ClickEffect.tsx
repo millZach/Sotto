@@ -94,7 +94,8 @@ function ClickEffectLayer(): ReactNode {
 
     /**
      * The ink for the theme in force, read once as a run starts: the accent (the canvas's outline), the words' colours (its
-     * borders and column rule: the text, its secondary and muted tiers, and links at rest and pointed at) and the room's
+     * borders, column rule and text decoration: the text, its secondary and muted tiers, the accent's text tone, and links
+     * at rest and pointed at; the faint tier is left out, ADR-0156) and the room's
      * surface under them, as the night scene
      * reads its own (ADR-0126). The glyphs go no stronger than leaves every one of those words at 4.5:1 over a glyph.
      */
@@ -102,11 +103,11 @@ function ClickEffectLayer(): ReactNode {
       const style = getComputedStyle(canvas)
       const scale = dpr()
       const shell = canvas.parentElement ?? document.body
-      const key = [style.outlineColor, style.borderTopColor, style.borderRightColor, style.borderBottomColor, style.borderLeftColor, style.columnRuleColor,
+      const key = [style.outlineColor, style.borderTopColor, style.borderRightColor, style.borderBottomColor, style.borderLeftColor, style.columnRuleColor, style.textDecorationColor,
         getComputedStyle(shell).backgroundColor, style.fontFamily, scale].join('|')
       if (ink?.key === key) return ink
       const accent = pixel === null ? null : toRgb(style.outlineColor, pixel)
-      const words = pixel === null ? [] : [style.borderTopColor, style.borderRightColor, style.borderBottomColor, style.borderLeftColor, style.columnRuleColor]
+      const words = pixel === null ? [] : [style.borderTopColor, style.borderRightColor, style.borderBottomColor, style.borderLeftColor, style.columnRuleColor, style.textDecorationColor]
         .map(value => toWord(value, pixel)).filter((word): word is Word => word !== null)
       const surface = pixel === null || words[0] === undefined ? null : surfaceOf(shell, pixel, words[0])
       // Colours that cannot be read draw nothing rather than risk a word.

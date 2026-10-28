@@ -40,7 +40,14 @@ In one Owl run, turning `clickEffect` off through the settings bridge takes the 
 
 ## Contrast
 
-The glyphs go no stronger than leaves every word over them at 4.5:1 (ADR-0156, decision 2), links pointed at included (`--tt-primary-hover`), since the second review measured a hovered link at 4.38:1 without it. In one Owl run each built-in theme, dark and light (t3-code, hush, citrine, graphite, clay and fern), was saved in turn and a press read the ceiling the canvas took: 0.35 in all twelve, against the prototype's 0.65. The spec checks the ceiling is above nothing and no more than 0.65. The frames above are at that ceiling.
+The glyphs go no stronger than leaves every word over them at 4.5:1 (ADR-0156, decision 2): the text, its secondary and muted tiers, the accent's text tone, and links at rest and pointed at (`--tt-primary-hover`; the second review measured a hovered link at 4.38:1 before it was counted). In one Owl run each built-in theme was saved in turn and a press read the ceiling the canvas took:
+
+| | T3 Code | Hush | Citrine | Graphite | Clay | Fern |
+|---|---|---|---|---|---|---|
+| Dark | 0.35 | 0.20 | 0.15 | 0.20 | 0.30 | 0.30 |
+| Light | 0.15 | 0.20 | 0.20 | 0.20 | 0.25 | 0.25 |
+
+`spreading-light.png` is light T3 Code at 0.15, the weakest, and the waves still read. Zach chose this over a fixed 0.35 after seeing that frame. The faint tier is left out by his earlier choice: counted too, the ceiling measured 0.05 to 0.25 (0.05 in light T3 Code and dark Citrine), so faint words may dip under 4.5:1 for the second or two a wave passes. The spec checks the ceiling is above nothing and no more than 0.65, and that it is the canvas's computed opacity.
 
 ## Cost
 
