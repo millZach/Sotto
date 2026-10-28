@@ -360,6 +360,57 @@ describe('the browser pane opening on its own', () => {
     expect(screen.queryByRole('button', { name: /^Show page: / })).not.toBeInTheDocument()
   })
 
+  it('puts focus on the agent’s page tab after Show page, so the keyboard keeps its place', async () => {
+    owl(true)
+    const browser = fakeBrowser([page(PAGE_1), page(PAGE_2, { url: 'http://localhost:5173/other' })], { tasks: [task({ pageId: PAGE_1, status: 'working' })] })
+    const { store } = mount(browser)
+    await waitFor(() => expect(store.browser.thread('visual-gate')?.activePageId).toBe(PAGE_1))
+    act(() => store.browser.select('visual-gate', PAGE_2))
+    const show = await screen.findByRole('button', { name: /^Show page: / })
+    act(() => show.focus())
+    fireEvent.click(show)
+    await waitFor(() => expect(document.getElementById(`browser-tab-${PAGE_1}`)).toHaveFocus())
+  })
+
+  it('keeps the agent’s strip during New page without losing the typed address, and Show page leaves New page for it', async () => {
+    owl(true)
+    const browser = fakeBrowser([page(PAGE_1)], { tasks: [task({ pageId: PAGE_1, status: 'working' })] })
+    mount(browser)
+    const tools = panel()
+    await within(tools).findByRole('button', { name: 'Pause' })
+    fireEvent.click(within(tools).getByRole('button', { name: 'More browser actions' }))
+    fireEvent.click(within(tools).getByRole('menuitem', { name: 'New page' }))
+    const fresh = within(tools).getByRole('textbox', { name: 'Address for a new page' })
+    act(() => fresh.focus())
+    fireEvent.change(fresh, { target: { value: 'example.com' } })
+    // New page shows no page, so the agent's own page is offered here, not shown nowhere.
+    expect(await within(tools).findByRole('button', { name: /^Show page: / })).toBeInTheDocument()
+    expect(within(tools).getByText(/^Agent is browsing /)).toBeInTheDocument()
+    // A waiting request keeps its answers, and the typed address stays.
+    const pendingAction = { id: '44444444-4444-4444-8444-444444444444', action: { type: 'click' as const, x: 10, y: 10 }, description: 'Click in the page at 10, 10', expiresAt: Date.now() + 60_000 }
+    act(() => browser.emit({ type: 'task', task: task({ pageId: PAGE_1, pendingAction, updatedAt: 20 }) }))
+    const request = await within(tools).findByRole('group', { name: 'Browser action permission' })
+    expect(within(request).getByRole('button', { name: 'Allow once' })).toBeInTheDocument()
+    expect(within(tools).getByRole('textbox', { name: 'Address for a new page' })).toHaveValue('example.com')
+    act(() => browser.emit({ type: 'task', task: task({ pageId: PAGE_1, updatedAt: 30 }) }))
+    fireEvent.click(await within(tools).findByRole('button', { name: /^Show page: / }))
+    await waitFor(() => expect(within(tools).getByRole('textbox', { name: 'Address' })).toHaveValue(page(PAGE_1).url))
+    await waitFor(() => expect(within(tools).getByRole('textbox', { name: 'Address' })).toHaveFocus())
+  })
+
+  it('offers Float only while the player has the thread’s page to take', async () => {
+    owl(true)
+    const closed = fakeBrowser([page(PAGE_2, { url: 'http://localhost:5173/other' })], { tasks: [task({ pageId: PAGE_1, status: 'completed' })] })
+    const first = mount(closed)
+    fireEvent.click(await within(panel()).findByRole('button', { name: 'More browser actions' }))
+    expect(within(panel()).queryByRole('menuitem', { name: 'Float the browser over the thread' })).not.toBeInTheDocument()
+    first.view.unmount()
+    const open = fakeBrowser([page(PAGE_1)], { tasks: [task({ pageId: PAGE_1, status: 'completed' })] })
+    mount(open)
+    fireEvent.click(await within(panel()).findByRole('button', { name: 'More browser actions' }))
+    expect(within(panel()).getByRole('menuitem', { name: 'Float the browser over the thread' })).toBeInTheDocument()
+  })
+
   it('floats nothing for a task whose page has closed', async () => {
     owl(true)
     const browser = fakeBrowser([page(PAGE_2, { url: 'http://localhost:5173/other' })], { tasks: [task({ pageId: PAGE_1, status: 'completed' })] })

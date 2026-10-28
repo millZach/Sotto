@@ -317,9 +317,23 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
     <PaneMenu groups={menu} label={t`More browser actions`} buttonClassName="files-icon" className="browser-pane__more" icon={<MoreHorizontal size={16} aria-hidden="true" />} />
   </div>
 
+  // Show page leaves New page for the agent's page and puts focus where the eye goes next: its tab, or with one page
+  // and so no tab line, the address.
+  const showAgentPage = (pageId: string): void => {
+    setCreating(false); setDraft(null)
+    store.select(threadId, pageId)
+    requestAnimationFrame(() => { if (pages.length > 1) focusTab(pageId); else address.current?.focus() })
+  }
+  // With New page open no page shows, so the agent's page, the active one included, is offered from here, and a
+  // waiting request keeps its answers: the player stays away while Tools shows the thread's browser.
+  const agentWaiting = tasks.find(item => item.threadId === threadId && !item.device && item.pendingAction !== null && pages.some(other => other.id === item.pageId))
+  const agentWorking = tasks.find(item => item.threadId === threadId && !item.device && (item.status === 'working' || item.status === 'paused') && pages.some(other => other.id === item.pageId))
+  const offer = (task: BrowserTask): ReactNode => <ElsewhereStrip task={task} page={pages.find(other => other.id === task.pageId)!} onShow={() => showAgentPage(task.pageId)} />
   const strip = page && waiting?.pendingAction ? <RequestStrip key={waiting.id} task={waiting} store={store} bridge={bridge} onAnswered={focusAddress} />
     : page && working ? <AgentStrip task={working} pageUrl={page.url} store={store} bridge={bridge} onProblem={setProblem} />
-      : elsewhere ? <ElsewhereStrip task={elsewhere} page={pages.find(other => other.id === elsewhere.pageId)!} onShow={() => { setCreating(false); setDraft(null); store.select(threadId, elsewhere.pageId) }} /> : null
+      : page && elsewhere ? offer(elsewhere)
+        : !page && agentWaiting?.pendingAction ? <RequestStrip key={agentWaiting.id} task={agentWaiting} store={store} bridge={bridge} onAnswered={focusAddress} />
+          : !page && agentWorking ? offer(agentWorking) : null
 
   // Escape leaves point mode once the comment, which answers Escape first, is closed.
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
@@ -357,6 +371,7 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
           })}</ul>
         </section> : <p className="browser-pane__hint tt-paragraph">{t`Enter a website or local server address above. Pages keep their place while you work elsewhere.`}</p>}
       </div>}
+    {page ? null : strip}
   </div>
 }
 

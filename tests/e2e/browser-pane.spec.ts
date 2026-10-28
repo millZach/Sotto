@@ -219,6 +219,19 @@ test('the quiet browser pane opens on its own, speaks in one strip, and puts a s
         await expect(panel.getByRole('button', { name: /^Show page: / })).toBeVisible()
         await shot(launched, 'two-pages-1280x800-dark')
 
+        // New page shows no page, so the agent's page is still offered at the foot while the user types an address;
+        // Show page leaves New page for it and puts focus on its tab.
+        await panel.getByRole('button', { name: 'New page' }).click()
+        const typed = panel.getByRole('textbox', { name: 'Address for a new page' })
+        await expect(typed).toBeFocused()
+        await typed.fill('example.com')
+        await expect(panel.getByRole('button', { name: /^Show page: / })).toBeVisible()
+        await expect(page.getByRole('complementary', { name: /^Browser for/ })).toHaveCount(0)
+        await shot(launched, 'new-page-agent-offer-1280x800-dark')
+        await panel.getByRole('button', { name: /^Show page: / }).click()
+        await expect(panel.getByRole('textbox', { name: 'Address' })).toHaveValue(url)
+        await expect(panel.getByRole('tablist', { name: 'Pages' }).getByRole('tab', { selected: true })).toBeFocused()
+
         await agent('browser_finish', { taskId: task.id, pageId: task.pageId, status: 'completed', summary: 'Saved the trail.', unchecked: [] })
         await expect(panel.locator('.browser-pane__strip')).toHaveCount(0)
 
