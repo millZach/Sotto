@@ -146,8 +146,8 @@ export interface SocketServerOptions {
   onRevoked?: (clientId: string) => void
   /** Tests stand in for a host of another Sotto version; the host advertises its own. */
   sottoVersion?: string
-  /** Tests hold a phone's Watcher conversation for longer than `WATCHER_WRITING_WINDOW_MS`, to tell held from sent. */
-  watcherWritingMs?: number
+  /** Tests set the monotonic clock a phone's Watcher window is timed on (`WATCHER_WRITING_WINDOW_MS`), to tell held from sent. */
+  watcherWritingClock?: () => number
   /**
    * False turns the administrative routes off. The desktop administers its phone listener in-process, so
    * it has no admin token to keep; only the headless host, whose own command line uses them, needs them.
@@ -567,13 +567,6 @@ export async function startSocketServer(options: SocketServerOptions) {
     return { text, digest: restDigest + hash(untimed), withoutConversation: restDigest + hash(pageWithoutConversation) }
   }
   /**
-   * What the last shell pushed to each phone carried apart from Watcher's conversation, and when it went. A shell that
-   * differs from it only there waits until `watcherWritingMs` after it, and the newest then goes (`WATCHER_WRITING_WINDOW_MS`).
-   * It counts only while `shellSent` stands: once an answer gave the client another picture, the next push goes at once.
-   * Its time is the monotonic clock's, so the computer's clock being set back holds no shell longer. Every phone whose
-   * window has closed is sent from one read of the service's shell, as a publish sends them.
-   */
-  /**
    * One read of the service's shell for every phone sent together: each read copies the whole coordinator state. It is
    * read when the first phone sends, so phones that are all backed up read nothing.
    */
@@ -581,7 +574,14 @@ export async function startSocketServer(options: SocketServerOptions) {
     let original: AgentState | undefined
     return () => original ??= service.shell()
   }
-  const watcherWritingMs = options.watcherWritingMs ?? WATCHER_WRITING_WINDOW_MS
+  /**
+   * What the last shell pushed to each phone carried apart from Watcher's conversation, and when it went. A shell that
+   * differs from it only there waits until `WATCHER_WRITING_WINDOW_MS` after it, and the newest then goes. It counts only
+   * while `shellSent` stands: once an answer gave the client another picture, the next push goes at once. Its time is the
+   * monotonic clock's, so the computer's clock being set back holds no shell longer. Every phone whose window has closed
+   * is sent from one read of the service's shell, as a publish sends them.
+   */
+  const writingClock = options.watcherWritingClock ?? (() => performance.now())
   const lastShell = new WeakMap<Peer, { withoutConversation: string; at: number }>()
   /** Each phone holding a shell, and when its window closes; one timer, for the first of them. */
   const writingHeld = new Map<Peer, number>()
@@ -591,12 +591,12 @@ export async function startSocketServer(options: SocketServerOptions) {
     const first = Math.min(...writingHeld.values())
     if (writingTimer && writingTimer.due <= first) return
     if (writingTimer) clearTimeout(writingTimer.timer)
-    writingTimer = { due: first, timer: setTimeout(sendWriting, Math.max(0, first - performance.now())) }
+    writingTimer = { due: first, timer: setTimeout(sendWriting, Math.max(0, first - writingClock())) }
   }
   const sendWriting = (): void => {
     writingTimer = undefined
     if (closing) return
-    const read = sharedRead(), now = performance.now()
+    const read = sharedRead(), now = writingClock()
     for (const [peer, due] of [...writingHeld]) {
       if (due > now) continue
       writingHeld.delete(peer)
@@ -709,10 +709,10 @@ export async function startSocketServer(options: SocketServerOptions) {
       // cost the link its bytes again. It is not written; the cursor still moves past what the page left out for this
       // client, so those events are not read again on every publish. The catalog it would have carried is the one that
       // shell carried.
-      const noEvents = eventPage.events.length === 0 && !eventPage.hasMore, last = lastShell.get(peer), now = performance.now()
+      const noEvents = eventPage.events.length === 0 && !eventPage.hasMore, last = lastShell.get(peer), now = writingClock()
       if (digest === peer.shellSent && noEvents) { peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire) }
       // One whose only news is Watcher's conversation waits out its window, and is read again when the window closes.
-      else if (noEvents && peer.shellSent !== null && last?.withoutConversation === withoutConversation && now < last.at + watcherWritingMs) holdWriting(peer, last.at + watcherWritingMs)
+      else if (noEvents && peer.shellSent !== null && last?.withoutConversation === withoutConversation && now < last.at + WATCHER_WRITING_WINDOW_MS) holdWriting(peer, last.at + WATCHER_WRITING_WINDOW_MS)
       else {
         peer.frames.sendText(full); peer.shellSent = digest; lastShell.set(peer, { withoutConversation, at: now }); writingHeld.delete(peer)
         peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire)
