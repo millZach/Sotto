@@ -1,10 +1,10 @@
 import React, { createContext, useContext, useEffect, useId, useMemo, useState, type ReactNode } from 'react'
-import { Bot, GitFork, Laptop, Search, Server, ShieldCheck, Sparkle, type LucideIcon } from 'lucide-react'
+import { Bot, FlaskConical, GitFork, Laptop, Search, Server, ShieldCheck, Sparkle, type LucideIcon } from 'lucide-react'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import { BACKGROUND_WORK_LABELS, type AgentBackgroundWork } from '../../../shared/agentMonitoring'
 import { PROVIDER_LABELS, type AgentState, type AgentThread } from '../../../shared/agents'
-import { DELEGATION_WORK_TITLES, type DelegatedView, type DelegationView } from '../../../shared/delegation'
+import { DELEGATION_WORK_TITLES, type DelegatedView, type DelegationCheckReply, type DelegationView } from '../../../shared/delegation'
 import { isThreadClosed, isThreadTurnRunning } from '../../../shared/threadActivity'
 import type { AgentConnection } from './AgentContext'
 import { threadHostName } from './HostBadge'
@@ -13,6 +13,7 @@ import { askedFor, DELEGATION_OUTCOME_WORDS, delegatedKind, delegatedKindWord, d
 import { useDelegations, useDelegationsEnabled, useNewestBrief } from './delegations'
 import { openDelegatedThread, rosterMachine } from '../tools/delegatedRoster'
 import { useOwlFeature } from '../state/owlFeature'
+import { CheckReplyLine, CheckTraysProvider, useCheckTrayOpen } from './CheckReply'
 import './delegation.css'
 
 /** What a row of delegated work needs of the window besides its delegation: the threads it names, where they run, and a way to open one. */
@@ -30,6 +31,11 @@ export interface DelegationWorld {
   readonly away?: { readonly name: string; readonly connected: boolean; readonly lastReadAt: number } | undefined
   /** A machine by its host ID, as a refused start's row names what it asked for: "this computer", or a host's name. */
   readonly machineName?: ((hostId: string) => string | undefined) | undefined
+  /**
+   * An answered check's reply, read from main when the user presses Read its reply on its row (#1312, Zach's pick C on
+   * October 28, 2026). Absent where checks are not offered, and for a thread no delegating thread is named for.
+   */
+  readonly checkReply?: ((delegationId: string) => Promise<DelegationCheckReply>) | undefined
 }
 const DelegationWorldContext = createContext<DelegationWorld | null>(null)
 
@@ -45,6 +51,11 @@ export function useDelegationWorld(state: AgentState, command: AgentConnection['
   const crossMachine = useOwlFeature('cross-machine-work')
   const machine = crossMachine && from?.thread.remoteHost === true ? rosterMachine(connections, from.thread) : undefined
   const awayName = machine?.name, awayConnected = machine?.connected, lastReadAt = from?.lastReadAt
+  // A check's reply is read from the thread that delegated it, on a press, only where main offers the read (#1312). The
+  // same reader for every publish, so an open tray never reads its reply again because another thread moved.
+  const delegating = crossMachine ? from?.thread.id : undefined
+  const readReply = typeof window === 'undefined' ? undefined : window.sotto?.delegations?.checkReply
+  const checkReply = useMemo(() => delegating !== undefined && readReply ? (delegation: string) => readReply({ threadId: delegating, delegation }) : undefined, [delegating, readReply])
   return useMemo(() => {
     const byId = new Map(threads.map(thread => [thread.id, thread]))
     return { thread: id => byId.get(id), hostName: thread => threadHostName({ connections }, thread),
@@ -54,11 +65,13 @@ export function useDelegationWorld(state: AgentState, command: AgentConnection['
         else openDelegatedThread(command, id, from)
       }, liveClock: now === undefined, now,
       machineName: hostId => { const listed = connections?.find(item => item.hostId === hostId); return listed === undefined ? undefined : listed.kind === 'local' ? t`this computer` : listed.name },
-      ...(awayName !== undefined ? { away: { name: awayName, connected: awayConnected !== false, lastReadAt: lastReadAt ?? Number.NaN } } : {}) }
-  }, [threads, connections, command, now, awayName, awayConnected, lastReadAt, t])
+      ...(awayName !== undefined ? { away: { name: awayName, connected: awayConnected !== false, lastReadAt: lastReadAt ?? Number.NaN } } : {}),
+      ...(checkReply ? { checkReply } : {}) }
+  }, [threads, connections, command, now, awayName, awayConnected, lastReadAt, checkReply, t])
 }
+/** The transcript's world for its rows, and its check reply tray, one open at a time (#1312). */
 export function DelegationWorldProvider({ world, children }: { readonly world: DelegationWorld; readonly children: ReactNode }): ReactNode {
-  return <DelegationWorldContext.Provider value={world}>{children}</DelegationWorldContext.Provider>
+  return <DelegationWorldContext.Provider value={world}><CheckTraysProvider>{children}</CheckTraysProvider></DelegationWorldContext.Provider>
 }
 
 /** The outcome's ring and word, coloured by the outcome: what "Delegated by" shows of the newest brief. */
@@ -69,8 +82,8 @@ function Outcome({ view }: { readonly view: DelegatedView }): ReactNode {
   </span>
 }
 
-/** Each kind of delegated work's mark: a review, a Muse review, or any other kind of work handed to a delegated thread. */
-const KIND_GLYPHS: Record<DelegatedKind, LucideIcon> = { review: Search, 'muse-review': Sparkle, work: GitFork }
+/** Each kind of delegated work's mark: a review, a Muse review, a check (#1312), or any other kind of work handed to a delegated thread. */
+const KIND_GLYPHS: Record<DelegatedKind, LucideIcon> = { review: Search, 'muse-review': Sparkle, check: FlaskConical, work: GitFork }
 
 /**
  * As Sotto last read it (#1310): the delegating thread's machine is not connected, or main could not read it afresh there.
@@ -112,12 +125,16 @@ export function DelegatedWorkRow({ view }: { readonly view: DelegationView }): R
   const { t } = useLingui()
   const world = useContext(DelegationWorldContext)
   const lineId = useId(), metaId = useId()
+  // A check says Check, and once answered quotes its reply (#1312), only where Work across machines is on.
+  const checks = useOwlFeature('cross-machine-work')
+  const trayOpen = useCheckTrayOpen(view.id)
   // Its words are messages; reading the language draws the row again when it changes (ADR-0123).
   useInterfaceLanguageState()
   if (world === null) return null
   const thread = view.thread === undefined ? undefined : world.thread(view.thread)
   const provider = thread?.providerId ?? (view.outcome === 'refused' ? view.provider : undefined)
-  const kind = delegatedKind(view.work, provider)
+  const check = checks && view.outcome !== 'refused' && view.check === true ? view : undefined
+  const kind = delegatedKind(view.work, provider, check !== undefined)
   const Glyph = KIND_GLYPHS[kind]
   const request = pendingRequestOf(view, thread)
   const refused = view.outcome === 'refused'
@@ -136,7 +153,11 @@ export function DelegatedWorkRow({ view }: { readonly view: DelegationView }): R
   const shownMachine = thread !== undefined || !refused || world.away === undefined
   // Its start was held to Ask for approval on its machine (#1310), said as the roster says it.
   const held = view.outcome !== 'refused' && view.held && world.away ? heldLine(view.held, thread ? world.hostName(thread) : world.away.name) : undefined
-  return <li className="delegated-work__row" data-outcome={view.outcome} data-state={state.id} aria-label={label}>
+  // The check's names for its controls: "the check on this computer", or on a host by its name, as the prototype says them.
+  const checkMachine = thread?.remoteHost ? machine : t`this computer`
+  const reply = check?.outcome === 'answered' ? <CheckReplyLine reply={check.checkReply} delegation={check} names={{ title: name, machine: checkMachine }} read={world.checkReply}
+    onOpenCheck={thread ? () => world.open(thread.id) : undefined} /> : null
+  return <li className="delegated-work__row" data-outcome={view.outcome} data-state={state.id} data-check={check ? '' : undefined} data-tray-open={trayOpen || undefined} aria-label={label}>
     <Glyph size={14} aria-hidden="true" className="delegated-work__glyph" />
     <span className="delegated-work__name">
       <span className="delegated-work__kind">{kindWord}</span>
@@ -148,6 +169,7 @@ export function DelegatedWorkRow({ view }: { readonly view: DelegationView }): R
     <span className="delegated-work__state" data-state={state.id} data-last-read={lastRead || undefined}>
       <span className="delegation-ring" data-outcome={view.outcome} data-state={state.id} data-last-read={lastRead || undefined} aria-hidden="true" />{state.word}
     </span>
+    {reply}
     <p id={metaId} className="delegated-work__meta">
       {provider ? <><ProviderMark provider={provider} name={PROVIDER_LABELS[provider]} size={12} /><span>{PROVIDER_LABELS[provider]}</span>{shownMachine ? <span aria-hidden="true">·</span> : null}</> : null}
       {shownMachine ? <span className="delegated-work__machine" data-kind={thread?.remoteHost ? 'remote' : 'local'}><Machine size={12} aria-hidden="true" />{machine}</span> : null}
@@ -169,8 +191,9 @@ export function DelegatedWork({ views, label }: { readonly views: readonly Deleg
 export function DelegatedWorkSummary({ views }: { readonly views: readonly DelegationView[] | undefined }): ReactNode {
   useInterfaceLanguageState()
   const world = useContext(DelegationWorldContext)
+  const checks = useOwlFeature('cross-machine-work')
   if (!views?.length || world === null) return null
-  const words = delegatedSummary(views, view => view.thread === undefined ? undefined : world.thread(view.thread))
+  const words = delegatedSummary(views, view => view.thread === undefined ? undefined : world.thread(view.thread), checks)
   return words ? <span className="thread-work__delegated"> · {words}</span> : null
 }
 

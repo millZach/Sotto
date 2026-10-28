@@ -36,6 +36,11 @@ msgstr ""
 msgid "(recommended)"
 msgstr ""
 
+#. placeholder {0}: lines.left
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "{0, plural, one {# more line is in its thread.} other {# more lines are in its thread.}}"
+msgstr ""
+
 #. placeholder {0}: blocked.ahead
 #: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "{0, plural, one {a local commit blocks the update} other {{commits} local commits block the update}}"
@@ -123,6 +128,10 @@ msgstr ""
 
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "{changed, plural, one {changed {fileCount} file} other {changed {fileCount} files}}"
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "{checked, plural, one {# check} other {# checks}}"
 msgstr ""
 
 #. {choice} is the provider's words for an answer, such as Allow once; {title} is a thread's title.
@@ -2165,6 +2174,12 @@ msgstr ""
 msgid "Changes"
 msgstr ""
 
+#. A kind of delegated work: a thread started to run tests, which the user calls a check. Not a pull request's CI checks.
+#: src/renderer/src/agents/delegationWords.ts
+msgctxt "delegated work"
+msgid "Check"
+msgstr ""
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Check {name} again"
 msgstr ""
@@ -2415,6 +2430,10 @@ msgstr ""
 #: src/renderer/src/agents/ThreadPane.tsx
 #: src/renderer/src/agents/ThreadPanes.tsx
 msgid "Close pane"
+msgstr ""
+
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "Close the reply"
 msgstr ""
 
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
@@ -3277,6 +3296,11 @@ msgstr ""
 
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "Cursor’s sign-in is not available right now. Nothing was changed."
+msgstr ""
+
+#. Sotto passed on only the first {kib} KiB of a check's reply.
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "cut at {kib} KiB"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadOptions.tsx
@@ -4379,6 +4403,11 @@ msgstr ""
 msgid "It had stopped when Sotto last read it."
 msgstr ""
 
+#. Before a quote of the first line of a check's reply, in the check's own words.
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "It replied"
+msgstr ""
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "It runs with OpenCode."
 msgstr ""
@@ -4456,6 +4485,10 @@ msgstr ""
 msgid "Its delivery is still unknown. Sotto has not sent it again."
 msgstr ""
 
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "Its first {count} lines."
+msgstr ""
+
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Its host is restarting after an update. Your draft stays here."
 msgstr ""
@@ -4496,6 +4529,24 @@ msgstr ""
 msgid "Its provider did not confirm the brief arrived. Sotto has not sent it again. Open it to see whether it is working on it."
 msgstr ""
 
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "Its reply was longer than {kib} KiB, so this thread was given only the first {kib} KiB. All of it is in the check's thread."
+msgstr ""
+
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "Its reply wasn't kept here. Open the check to read it in its thread."
+msgstr ""
+
+#. Heads the tray with a check's reply. {machine} is "this computer" or a host's name.
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "Its reply, in its own words, on {machine}"
+msgstr ""
+
+#. Heads the tray with a check's reply. {machine} is "this computer" or a host's name; {time} is when it answered.
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "Its reply, in its own words, on {machine} · {time}"
+msgstr ""
+
 #: src/renderer/src/agents/InteractiveVisualCard.tsx
 msgid "Its steps are below."
 msgstr ""
@@ -4528,6 +4579,10 @@ msgstr ""
 #. {Who} is "This thread" or the title of the thread that delegated.
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Its turn ended with background work still running. {Who} hears when it settles."
+msgstr ""
+
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "Its whole reply"
 msgstr ""
 
 #: src/renderer/src/agents/threadClearWords.ts
@@ -5480,6 +5535,11 @@ msgstr ""
 msgid "Open {title} to answer"
 msgstr ""
 
+#. {title} is the check's thread; {machine} is "this computer" or a host's name.
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "Open {title}, the check on {machine}, to read all of its reply"
+msgstr ""
+
 #: src/renderer/src/agents/ContinueThread.tsx
 msgid "Open {title}, the thread this one continues"
 msgstr ""
@@ -5586,6 +5646,10 @@ msgstr ""
 
 #: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "Open the {title} folder"
+msgstr ""
+
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "Open the check"
 msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
@@ -6109,8 +6173,17 @@ msgstr ""
 msgid "Read it"
 msgstr ""
 
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "Read its reply"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadStart.tsx
 msgid "Read the handover, word for word"
+msgstr ""
+
+#. {title} is the check's thread; {machine} is "this computer" or a host's name.
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "Read the reply from {title}, the check on {machine}"
 msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
@@ -7737,6 +7810,10 @@ msgstr ""
 msgid "tapped the screen"
 msgstr ""
 
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "That is all of its reply."
+msgstr ""
+
 #: src/renderer/src/agents/movedWorktreeWords.ts
 msgid "That is not a branch Sotto moved here. Nothing was made."
 msgstr ""
@@ -8042,6 +8119,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ProviderUpgradeNotice.tsx
 msgid "The recovery record retention period has ended."
+msgstr ""
+
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "The reply's first {count} lines"
 msgstr ""
 
 #. Part of what a handover carried, inside a sentence.
