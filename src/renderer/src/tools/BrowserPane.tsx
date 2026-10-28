@@ -1,12 +1,13 @@
-import React, { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { ArrowLeft, ArrowRight, Check, ExternalLink, Globe, Hand, History, ImagePlus, MoreHorizontal, Pause, PictureInPicture2, Play, Plus, RotateCw, Share2, X } from 'lucide-react'
+import React, { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { ArrowLeft, ArrowRight, Check, ExternalLink, Globe, Hand, History, ImagePlus, MoreHorizontal, Pause, PictureInPicture2, Play, Plus, RotateCw, Share2, SquareDashedMousePointer, X } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
-import { BROWSER_WAITING_TO_OPEN, type BrowserBridge, type BrowserPage, type BrowserTask } from '../../../shared/browser'
+import { BROWSER_WAITING_TO_OPEN, type BrowserBridge, type BrowserPage, type BrowserPointPick, type BrowserTask } from '../../../shared/browser'
 import { threadTakesSottoTools } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { useOptionalAgents } from '../agents/AgentContext'
 import { PaneMenu, type PaneMenuItem } from '../agents/PaneMenu'
 import { appendBrowserFeedback } from './BrowserFeedback'
+import { outlinedCapture, PointComment, PointLine, pointedWords, themeRgb, type PointedName } from './BrowserPoint'
 import { browserPages, normalizeAddress, pageLabel, useBrowserTasks, useOpenedAddresses, useThreadBrowser, type BrowserStore } from './browserStore'
 import { changePage, listProblem, PageViewport } from './browserPageView'
 import { browsingWords, shortAddress } from './browserSteps'
@@ -20,9 +21,9 @@ const SIZES = ['1600x1000', '1280x800', '820x560', '390x844'] as const
 
 /**
  * Tools > Browser as the quiet browser pane (ADR-0154; Owl): one row above the page (Back, Forward, Reload, the
- * address with the page's title muted after it, Screenshot to message and More), tabs on a line above it only with
- * two or more pages, and while an agent works on the page, one strip at its foot. With no page, the pane is an
- * address field and the addresses this thread's browser opened this session.
+ * address with the page's title muted after it, Point at something, Screenshot to message and More), tabs on a line
+ * above it only with two or more pages, and while an agent works on the page, one strip at its foot. With no page, the
+ * pane is an address field and the addresses this thread's browser opened this session.
  */
 export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: BrowserSurfaceProps): ReactNode {
   const { t } = useLingui()
@@ -43,6 +44,61 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
   const activeId = active?.id ?? null
   const activeIdRef = useRef(activeId)
   activeIdRef.current = activeId
+  // Point at something: on while `pointing`; `hover` names the element under the pointer, and `picked` is the one
+  // clicked, its picture standing in the page's place with a comment until it is added or cancelled.
+  const [pointing, setPointing] = useState(false)
+  const [hover, setHover] = useState<PointedName | null>(null)
+  const [picked, setPicked] = useState<BrowserPointPick | null>(null)
+  const [pageShown, setPageShown] = useState(false)
+  const pointButton = useRef<HTMLButtonElement>(null)
+  const pickedRef = useRef(picked)
+  pickedRef.current = picked
+  const pointingRef = useRef(pointing)
+  pointingRef.current = pointing
+  const focusPoint = (): void => { requestAnimationFrame(() => pointButton.current?.focus()) }
+  const pointTarget = active ? { threadId, workspaceId: active.workspace.workspaceId, pageId: active.id } : null
+  const pointKey = pointTarget ? `${pointTarget.workspaceId}:${pointTarget.pageId}` : null
+  /** Leaves point mode. `tell` is false when main ended it itself, so there is nothing to turn off. */
+  const leavePoint = useCallback((tell = true): void => {
+    setPointing(false); setHover(null); setPicked(null)
+    const page = store.thread(threadId)?.pages.find(item => item.id === activeIdRef.current)
+    if (tell && bridge && page) void bridge.point({ threadId, workspaceId: page.workspace.workspaceId, pageId: page.id, on: false }).catch(() => undefined)
+  }, [bridge, store, threadId])
+  // Another page, or none, ends point mode; main ends it for the page that is going.
+  useEffect(() => { setPointing(false); setHover(null); setPicked(null) }, [activeId])
+  useEffect(() => {
+    if (!bridge || !activeId) return
+    return bridge.onEvent(event => {
+      if (event.type !== 'point' || event.pageId !== activeId || event.threadId !== threadId) return
+      const point = event.point
+      if (point.state === 'hover') setHover({ tag: point.tag, name: point.name })
+      else if (point.state === 'picked') { if (pointingRef.current) { setHover(null); setPicked(point) } }
+      else if (!pickedRef.current) {
+        // Escape pressed in the page leaves point mode as Escape in the pane does; navigating or hiding the page just ends it.
+        setPointing(false); setHover(null)
+        if (point.reason === 'escape') focusPoint()
+        if (point.reason === 'unavailable') setProblem(t`Point at something stopped because the page did not answer. Try again.`)
+      }
+    })
+  }, [bridge, activeId, threadId, t])
+  // While pointing and the live page shows, main's overlay is on; a click's picture covers the page, so it waits.
+  const armed = pointing && picked === null && pageShown && pointKey !== null
+  useEffect(() => {
+    if (!armed || !bridge || !pointTarget) return
+    let current = true
+    // The overlay is tinted in the theme's accent; a window that cannot read it does not point.
+    const color = themeRgb('--tt-accent')
+    if (!color) { setProblem(t`Point at something could not read the theme's colours. Try again.`); setPointing(false); return }
+    void bridge.point({ ...pointTarget, on: true, color }).then(result => {
+      if (!current) return
+      if (!result.ok) { setProblem(result.error.message); setPointing(false) }
+      else if (!result.value.pointing) setPointing(false)
+    }, () => { if (current) { setProblem(t`The browser did not answer. Try again.`); setPointing(false) } })
+    return () => { current = false }
+    // The target is read through its key, so a new object for the same page does not ask again.
+  }, [armed, bridge, pointKey])
+  // Leaving the pane turns the overlay off with it.
+  useEffect(() => () => { if (pointingRef.current) leavePoint() }, [leavePoint])
 
   // A different page, or a navigation the page made itself, shows its own address unless the reader is typing.
   useEffect(() => { setDraft(current => current !== null && current.pageId === activeId ? current : null); setProblem(null) }, [activeId])
@@ -211,6 +267,30 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
 
   const back = t({ message: 'Back', comment: 'Goes back a page in the browser.' }), forward = t({ message: 'Forward', comment: 'Goes forward a page in the browser.' })
   const screenshot = t`Screenshot to message`
+  const pointAtSomething = t({ message: 'Point at something', comment: 'Lets the user click an element on the browser page to tell the agent about it.' })
+  const togglePoint = (): void => {
+    setProblem(null)
+    if (pointing) leavePoint()
+    else setPointing(true)
+  }
+  // Add to message: the element, its picture with the element outlined, and the comment go into the draft.
+  const addPoint = async (pick: BrowserPointPick, comment: string, signal: AbortSignal): Promise<string | null> => {
+    if (!agents) return t`The draft for this thread is not available.`
+    const thread = agents.state?.host.threads.find(item => item.id === threadId)
+    const model = resolveModel(agents.state?.host.models ?? [], thread?.modelId)
+    const element = pick.capture.element
+    const label = element ? pointedWords(element) : t`Browser feedback`
+    const capture = await outlinedCapture(pick.capture, pick.box)
+    if (signal.aborted) return null
+    // One draft item: the picture named after the element, carrying the comment and the context until it is sent.
+    const error = await appendBrowserFeedback(agents.threadDrafts, threadId, capture, comment, model?.supportsImages === true, { signal, pointed: { label: label.slice(0, 200), box: pick.box } })
+    if (error || signal.aborted) return error
+    const threadTitle = thread?.title
+    onStatus(threadTitle !== undefined ? t({ message: `Added to the draft for ${threadTitle}`, comment: '{threadTitle} is a thread\'s title.' }) : t`Added to the draft for this thread`)
+    leavePoint(false)
+    focusPoint()
+    return null
+  }
   const row = <div className={pages.length > 1 ? 'browser-pane__row' : 'tools-chrome browser-pane__row'} data-loading={page?.status === 'loading' || undefined}>
     <button type="button" className="files-icon tt-focusable" aria-label={back} title={back} disabled={!page?.canGoBack || browser.busy} onClick={() => page && void store.history(bridge, threadId, page.id, 'back')}><ArrowLeft size={16} aria-hidden="true" /></button>
     <button type="button" className="files-icon tt-focusable" aria-label={forward} title={forward} disabled={!page?.canGoForward || browser.busy} onClick={() => page && void store.history(bridge, threadId, page.id, 'forward')}><ArrowRight size={16} aria-hidden="true" /></button>
@@ -231,6 +311,8 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
         <span className="browser-pane__url">{shortAddress(page.url)}</span>{title && title !== shortAddress(page.url) ? <span className="browser-pane__title">{title}</span> : null}
       </span> : null}
     </form>
+    <button ref={pointButton} type="button" className="files-icon tt-focusable browser-point__toggle" aria-label={pointAtSomething} aria-pressed={pointing}
+      title={pointing ? t`Stop pointing at the page` : t`Click something on the page to tell the agent about it`} disabled={!page || page.status === 'unavailable' || !bridge} onClick={togglePoint}><SquareDashedMousePointer size={16} aria-hidden="true" /></button>
     <button type="button" className="files-icon tt-focusable" aria-label={screenshot} title={t`Add a picture of this page to the message`} disabled={!page || busy || !agents || !bridge} onClick={() => void screenshotToMessage()}><ImagePlus size={16} aria-hidden="true" /></button>
     <PaneMenu groups={menu} label={t`More browser actions`} buttonClassName="files-icon" className="browser-pane__more" icon={<MoreHorizontal size={16} aria-hidden="true" />} />
   </div>
@@ -253,7 +335,16 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
         : !page && agentWaiting?.pendingAction ? <RequestStrip key={agentWaiting.id} task={agentWaiting} store={store} bridge={bridge} onAnswered={focusAddress} />
           : !page && agentWorking ? offer(agentWorking) : null
 
-  return <div className="browser-surface browser-pane">
+  // Escape leaves point mode once the comment, which answers Escape first, is closed.
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== 'Escape' || !pointing || picked || event.defaultPrevented) return
+    event.preventDefault(); event.stopPropagation()
+    leavePoint(); pointButton.current?.focus()
+  }
+  const cover = page && picked ? <PointComment key={picked.capture.captureId ?? 'pick'} pick={picked} onAdd={(comment, signal) => addPoint(picked, comment, signal)}
+    onCancel={() => { setPicked(null); focusPoint() }} /> : null
+
+  return <div className="browser-surface browser-pane" onKeyDown={onKeyDown}>
     {tabs}
     {row}
     {/* Sharing takes this line away, so focus goes to the address, the next thing the eye reads. */}
@@ -265,8 +356,9 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat }: Brow
     {problem ? <p className="browser-problem" id="browser-address-problem" role="alert">{problem}</p> : null}
     {page?.error && page.status !== 'unavailable' && !waiting ? <p className="browser-problem" role="status">{page.error}</p> : null}
     {browser.notice ? <p className="terminal-notice tt-paragraph" role="alert">{shownNotice(browser.notice)}</p> : null}
+    {page && pointing ? <PointLine hover={hover} /> : null}
 
-    {page ? <PageViewport key={page.id} page={page} threadId={threadId} store={store} bridge={bridge} surface={null}
+    {page ? <PageViewport key={page.id} page={page} threadId={threadId} store={store} bridge={bridge} surface={null} cover={cover} onShown={setPageShown}
       refused={browser.placementProblem?.pageId === page.id ? browser.placementProblem.message : null} onOpenExternally={() => openExternally(page.url)}>{strip}</PageViewport>
       : <div className="browser-pane__empty">
         {opened.length > 0 ? <section className="browser-pane__opened" aria-labelledby="browser-pane-opened">

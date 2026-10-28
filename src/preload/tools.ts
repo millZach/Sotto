@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { filePathSchema } from '../shared/files'
 import { toolListRequestSchema, toolTargetSchema, toolsResultSchema } from '../shared/tools'
 import { TERMINAL_CHANNEL, TERMINAL_EVENT, terminalCreateSchema, terminalRequestSchema, terminalWriteSchema, terminalResizeSchema, terminalImageSchema, terminalSnapshotSchema, terminalListingSchema, terminalListRequestSchema, terminalEventSchema, type TerminalBridge } from '../shared/terminal'
-import { BROWSER_CHANNEL, BROWSER_EVENT, browserCreateSchema, browserRequestSchema, browserNavigateSchema, browserMountSchema, browserOpenLinkSchema, browserPageSchema, browserListingSchema, browserOpenResultSchema, browserEventSchema, browserTaskSchema, browserShareSchema, browserControlTaskSchema, browserAnswerActionSchema, browserViewportSchema, browserCaptureSchema, browserCaptureResultSchema, type BrowserBridge } from '../shared/browser'
+import { BROWSER_CHANNEL, BROWSER_EVENT, browserCreateSchema, browserRequestSchema, browserNavigateSchema, browserMountSchema, browserOpenLinkSchema, browserPageSchema, browserListingSchema, browserOpenResultSchema, browserEventSchema, browserTaskSchema, browserShareSchema, browserControlTaskSchema, browserAnswerActionSchema, browserViewportSchema, browserCaptureSchema, browserCaptureResultSchema, browserPointModeSchema, type BrowserBridge } from '../shared/browser'
 import { GIT_CHANGES_CHANNEL, GIT_CHANGES_EVENT, gitPathRequestSchema, gitReviewRequestSchema, gitReviewSchema, gitWatchRequestSchema, gitListingSchema, gitChangedSchema, type GitChangesBridge } from '../shared/gitChanges'
 import type { IpcRendererAdapter } from './index'
 import { checkpointListingSchema, checkpointRequestSchema, checkpointRevertSchema, checkpointSchema, checkpointInspectionSchema } from '../shared/checkpoints'
@@ -16,6 +16,7 @@ const browserTasksResult = toolsResultSchema(z.array(browserTaskSchema).max(64))
 const browserTaskResult = toolsResultSchema(browserTaskSchema)
 const browserPageResult = toolsResultSchema(browserPageSchema)
 const browserCaptureResult = toolsResultSchema(browserCaptureResultSchema)
+const browserPointResult = toolsResultSchema(z.object({ pointing: z.boolean() }).strict())
 const browserListingResult = toolsResultSchema(browserListingSchema)
 const browserOpenResult = toolsResultSchema(browserOpenResultSchema)
 const checkpointListingResult = toolsResultSchema(checkpointListingSchema)
@@ -58,6 +59,7 @@ export function createToolsBridges(renderer: IpcRendererAdapter): { terminal: Te
       stopGrant: request => call(BROWSER_CHANNEL + 'stopGrant', toolTargetSchema, voidResult, request),
       viewport: request => call(BROWSER_CHANNEL + 'viewport', browserViewportSchema, browserPageResult, request),
       capture: request => call(BROWSER_CHANNEL + 'capture', browserCaptureSchema, browserCaptureResult, request),
+      point: request => call(BROWSER_CHANNEL + 'point', browserPointModeSchema, browserPointResult, request),
       list: request => call(BROWSER_CHANNEL + 'list', toolListRequestSchema, browserListingResult, request),
       create: request => call(BROWSER_CHANNEL + 'create', browserCreateSchema, browserPageResult, request),
       navigate: request => call(BROWSER_CHANNEL + 'navigate', browserNavigateSchema, browserPageResult, request),

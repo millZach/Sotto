@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useRef, type ReactNode } from 'react'
 import { i18n } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
@@ -36,21 +36,27 @@ export function changePage(bridge: BrowserBridge, threadId: string, page: Browse
  * overlay: anything inside it never makes the page step aside. The quiet pane passes the viewport itself, so its
  * own More menu, which opens over the page, does (ADR-0154).
  */
-export function PageViewport({ page, threadId, store, bridge, surface, refused, onOpenExternally, children }: {
+export function PageViewport({ page, threadId, store, bridge, surface, refused, onOpenExternally, children, cover, onShown }: {
   readonly page: BrowserPage; readonly threadId: string; readonly store: BrowserStore; readonly bridge: BrowserBridge | undefined
   readonly surface: React.RefObject<HTMLDivElement | null> | null; readonly refused: LaterWords | null; readonly onOpenExternally: () => void
   /** What sits at the page's foot, under the native view and never over it: the quiet pane's agent strip. */
   readonly children?: ReactNode
+  /** What stands in the page's place while it steps aside: Point at something's picture of the page and comment. */
+  readonly cover?: ReactNode
+  /** Told whether the live page is showing, so what needs it on screen, such as Point at something, waits for it. */
+  readonly onShown?: (shown: boolean) => void
 }): ReactNode {
   const { t } = useLingui()
   const host = useRef<HTMLDivElement>(null)
   const covered = useOverlayOpen(surface ?? host, host)
-  const show = page.status !== 'unavailable' && covered === false
+  // A cover stands in the page's place, so the native page, which would draw over it, steps aside.
+  const show = page.status !== 'unavailable' && covered === false && !cover
   const openInSystemBrowser = t`Open in system browser`
   const pageId = page.id
 
   const mount = useCallback((bounds: BrowserBounds | null) => store.mount(bridge, threadId, pageId, bounds), [store, bridge, threadId, pageId])
   useBrowserPageMount(host, show, mount)
+  useEffect(() => { onShown?.(show) }, [onShown, show])
 
   return <div className="browser-page" id="browser-page" role="tabpanel" aria-label={pageLabel(page)} data-status={page.status}>
     {page.status === 'unavailable' ? <div className="files-problem browser-unavailable" role="status">
@@ -69,7 +75,8 @@ export function PageViewport({ page, threadId, store, bridge, surface, refused, 
           <button type="button" className="files-link tt-focusable" onClick={() => store.retryPlacement(threadId, pageId)}>{t`Try again`}</button>
           <button type="button" className="files-link tt-focusable" onClick={onOpenExternally}>{openInSystemBrowser}</button>
         </div>
-      </div> : covered ? <p className="browser-viewport__covered tt-paragraph">{t`The page steps aside while a menu or dialog is open.`}</p> : null}
+      </div> : covered && !cover ? <p className="browser-viewport__covered tt-paragraph">{t`The page steps aside while a menu or dialog is open.`}</p> : null}
+      {cover}
     </div>}
     {children}
   </div>

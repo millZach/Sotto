@@ -198,6 +198,13 @@ export function hasRasterImageSignature(attachment: Pick<AgentAttachment, 'mimeT
 export function bytesHaveRasterSignature(mimeType: string, bytes: Uint8Array): boolean {
   return rasterHeaderMatches(mimeType, String.fromCharCode(...bytes.subarray(0, 16)))
 }
+/**
+ * Point at something's feedback, carried by its picture's handle (ADR-0154): the element's `label` and the user's
+ * `comment`, which the composer's chip shows, and `context` (the page, the element and where it is outlined), which
+ * is written into the message for the provider only when it is sent. Removing the picture removes all of it.
+ */
+export const agentBrowserFeedbackSchema = z.object({ label: z.string().trim().min(1).max(600), comment: z.string().max(8000), context: z.string().max(4000) }).strict()
+export type AgentBrowserFeedback = z.infer<typeof agentBrowserFeedbackSchema>
 /** The SHA-256 of a staged image's bytes, as lowercase hex: the content a handle names. */
 export const attachmentDigestSchema = z.string().regex(/^[a-f0-9]{64}$/u)
 /**
@@ -209,6 +216,8 @@ export const agentAttachmentHandleSchema = z.object({
   mimeType: agentMimeTypeSchema, sizeBytes: z.number().int().min(1).max(AGENT_MAX_FILE_BYTES), digest: attachmentDigestSchema,
   /** The sizes the composer attached and staged it at, when it knew them (issue #321). */
   dimensions: agentAttachmentDimensionsSchema.optional(),
+  /** Set when the image is Point at something's picture (ADR-0154): what travels with it until the message is sent. */
+  browserFeedback: agentBrowserFeedbackSchema.optional(),
 }).strict().refine(handle => handle.sizeBytes <= attachmentLimitBytes(handle.mimeType), 'An image must be no larger than 10 MiB.')
 export type AgentAttachmentHandle = z.infer<typeof agentAttachmentHandleSchema>
 /** The bytes a set of staged attachments holds between them: what the 50 MiB total is measured on. */
@@ -261,11 +270,16 @@ export type AgentAttachmentPreviewResult = z.infer<typeof agentAttachmentPreview
 export const agentAttachmentReferenceSchema = z.object({ id, name: z.string(), mimeType: z.string(), sizeBytes: z.number().int().nonnegative(),
   /** Supplied by Sotto for submitted images; never a filesystem path or a provider URL. */
   preview: agentAttachmentPreviewSchema.optional(),
+  /** Point at something's picture (ADR-0154), whose feedback went to the provider in a note Sotto reads back off. */
+  pointed: z.literal(true).optional(),
 })
 export type AgentAttachmentReference = z.infer<typeof agentAttachmentReferenceSchema>
-/** The references a message records for its attachments: each one's ID, name, type and size, and nothing more. */
-export function attachmentReferences(attachments: readonly Pick<AgentAttachmentReference, 'id' | 'name' | 'mimeType' | 'sizeBytes'>[]): AgentAttachmentReference[] {
-  return attachments.map(({ id, name, mimeType, sizeBytes }) => ({ id, name, mimeType, sizeBytes }))
+/**
+ * The references a message records for its attachments: each one's ID, name, type and size, whether it was Point at
+ * something's picture, and nothing more.
+ */
+export function attachmentReferences(attachments: readonly (Pick<AgentAttachmentReference, 'id' | 'name' | 'mimeType' | 'sizeBytes'> & { readonly browserFeedback?: unknown })[]): AgentAttachmentReference[] {
+  return attachments.map(({ id, name, mimeType, sizeBytes, browserFeedback }) => ({ id, name, mimeType, sizeBytes, ...(browserFeedback ? { pointed: true as const } : {}) }))
 }
 /**
  * A permission setting a provider names itself, for providers whose own modes are not Sotto's four. `name`
