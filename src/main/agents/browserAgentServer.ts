@@ -1,9 +1,10 @@
+import { SOTTO_BROWSER_SERVER } from '../../shared/sottoBrowserTools'
 import { ThreadToolServer, type ThreadMcpServer, type ThreadToolCallContext, type ThreadToolDefinition, type ThreadToolResult } from './threadToolServer'
 
 export type BrowserToolDefinition = ThreadToolDefinition
 export type BrowserToolResult = ThreadToolResult
-/** The one name every client addresses this server by. A rename that misses a client is silent. */
-export const BROWSER_MCP_SERVER = 'sotto_browser'
+/** The one name every client addresses this server by. A rename that misses a client is silent; the transcript reads it too. */
+export const BROWSER_MCP_SERVER = SOTTO_BROWSER_SERVER
 export interface BrowserMcpServer extends ThreadMcpServer { name: typeof BROWSER_MCP_SERVER }
 export interface BrowserAgentTools {
   readonly definitions: readonly BrowserToolDefinition[]
