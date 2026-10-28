@@ -46,7 +46,16 @@ import { desktopDefaultsReceiptSchema, type DesktopDefaultsInput, type DesktopDe
 import type { DelegationRelayAsk, RelayedReply } from '../../shared/delegationRelay'
 import type { DelegationNews } from '../../shared/delegation'
 import { delegationBriefSchema, delegationsReadSchema, type DelegationBrief, type DelegationsRead } from '../../shared/delegation'
+import type { CheckQueueEntry } from '../../shared/checkQueue'
 import { usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, usageProvidersBeforeMuse, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
+
+/** Answers read on every call, checked against schemas built once rather than on every call. */
+const usageProviderIdsSchema = usageProviderIdSchema.array().max(usageProviderIdSchema.options.length)
+const signInAnswerSchema = hostSignInSchema.nullable()
+const fileListingResultSchema = filesResultSchema(fileListingSchema)
+const filePreviewResultSchema = filesResultSchema(filePreviewSchema)
+const gitListingResultSchema = toolsResultSchema(gitListingSchema)
+const gitReviewResultSchema = toolsResultSchema(gitReviewSchema)
 
 export const REMOTE_COMPOSE_UNSAVED = 'This host cannot save this draft yet. Your draft is kept on this computer and has not been saved on the host. Update the host.'
 const REMOTE_SEND_UNCERTAIN = msg`This draft may already have been sent. Your copy is kept on this computer. Check the original thread before sending again.`
@@ -200,6 +209,9 @@ export class SocketHostService implements HostService {
   private readonly held: HeldProviders
   private readonly watcherListeners = new Set<(projection: WatcherHostProjection) => void>()
   private readonly delegationListeners = new Set<(change: DelegationViewsChange) => void>()
+  /** The host's check queue as it last pushed it (#1312), on this connection only; undefined before a push and once it closes. */
+  private checks: readonly CheckQueueEntry[] | undefined
+  private readonly checkListeners = new Set<() => void>()
   private readonly relayListeners = new Set<(askId: string, ask: DelegationRelayAsk) => void>()
   /** Asks that came before anything listened, as when a host reads its relayed delegations again during this hello (#1316). */
   private readonly heldAsks: { readonly askId: string; readonly ask: DelegationRelayAsk }[] = []
@@ -357,7 +369,7 @@ export class SocketHostService implements HostService {
     try {
       // This desktop knows every provider Sotto has, OpenCode among them, so it accepts each one's feature (#1107); a provider
       // held on this run is hidden here as on this computer, by the held gate.
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views'] : [], ...this.relays ? ['delegation-relay'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.relays ? ['delegation-relay'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
@@ -398,6 +410,11 @@ export class SocketHostService implements HostService {
     if (this.cached) this.publish({ ...this.cached, stale: true })
     this.options.onConnectionChange?.(false)
     if (this.options.crossMachineEnabled === true) this.delegationsChanged({ connected: false })
+    // A queue read on a closed connection is not current: the machine's panel says nothing of it until the host pushes again.
+    if (this.checks !== undefined) { this.checks = undefined; this.checksChanged() }
+  }
+  private checksChanged(): void {
+    for (const listener of [...this.checkListeners]) { try { listener() } catch { /* A listener's failure is its own. */ } }
   }
   private delegationsChanged(change: DelegationViewsChange): void {
     for (const listener of [...this.delegationListeners]) { try { listener(change) } catch { /* A listener's failure is its own. */ } }
@@ -433,6 +450,8 @@ export class SocketHostService implements HostService {
         // Sent only to a client whose hello accepts `host-update` (ADR-0088), for the update step it asked for.
         else if (message.event === 'host-update-step') { for (const listener of this.updateSteps) listener(message.step) }
         else if (message.event === 'delegations-changed') { if (this.supportsDelegationViews) this.delegationsChanged({ threadIds: message.threadIds }) }
+        // Pushed only to a desktop whose hello accepted `check-queue-views` (#1312), so only where Work across machines is on.
+        else if (message.event === 'check-queue') { if (this.options.crossMachineEnabled === true) { this.checks = message.checks; this.checksChanged() } }
         else if (message.event === 'delegation-relay-ask') {
           // A host pushes asks only to a desktop whose hello accepted the feature, so one may come before that hello's answer.
           if (this.relays) {
@@ -766,6 +785,8 @@ export class SocketHostService implements HostService {
   get supportsWatcherOutcomes(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-outcomes') }
   /** A stable desktop never marks a start as a check, so it uses no host's queue (#1312, ADR-0072). */
   get supportsWatcherCheckQueue(): boolean { return this.options.crossMachineEnabled === true && this.supportsWatcherControl && this.features.includes('watcher-check-queue') }
+  /** Only a desktop that uses the host's queue stops a check waiting in it (#1637). */
+  get supportsWatcherCheckStop(): boolean { return this.supportsWatcherCheckQueue && this.features.includes('watcher-check-stop') }
   get supportsWatcherMuse(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-muse') }
   get supportsWatcherCursor(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-cursor') }
   private heldWatcherProvider(request: WatcherHostRead | WatcherHostControl): HeldProviderNames | undefined {
@@ -1264,17 +1285,17 @@ export class SocketHostService implements HostService {
    */
   async threadFiles(request: FileListRequest): Promise<FilesResult<FileListing>> {
     this.offers('thread-files')
-    return this.read(filesResultSchema(fileListingSchema), await this.call({ op: 'thread-files', request }))
+    return this.read(fileListingResultSchema, await this.call({ op: 'thread-files', request }))
   }
   threadFilePreview(request: FileRequest): Promise<FilesResult<FilePreview>> {
-    return this.large('thread-files', async () => this.read(filesResultSchema(filePreviewSchema), await this.call({ op: 'thread-file-preview', request })))
+    return this.large('thread-files', async () => this.read(filePreviewResultSchema, await this.call({ op: 'thread-file-preview', request })))
   }
   async gitChanges(request: ToolListRequest): Promise<ToolsResult<GitChangeListing>> {
     this.offers('thread-changes')
-    return this.read(toolsResultSchema(gitListingSchema), await this.call({ op: 'thread-changes', request }))
+    return this.read(gitListingResultSchema, await this.call({ op: 'thread-changes', request }))
   }
   gitReview(request: GitReviewRequest): Promise<ToolsResult<GitReview>> {
-    return this.large('thread-changes', async () => this.read(toolsResultSchema(gitReviewSchema), await this.call({ op: 'thread-changes-review', request })))
+    return this.large('thread-changes', async () => this.read(gitReviewResultSchema, await this.call({ op: 'thread-changes-review', request })))
   }
   async subagentPage(request: SubagentPageRequest): Promise<SubagentPage> {
     this.offers('subagents')
@@ -1356,6 +1377,15 @@ export class SocketHostService implements HostService {
     this.delegationListeners.add(listener)
     return () => { this.delegationListeners.delete(listener) }
   }
+  /** The host lists `check-queue-views` and this desktop accepted it (#1312): it pushes its own check queue. */
+  get supportsCheckQueueViews(): boolean { return this.options.crossMachineEnabled === true && this.features.includes('check-queue-views') }
+  /** The host's check queue as it last pushed it on this connection, the running check first, by the host's own thread IDs. */
+  checkQueue(): readonly CheckQueueEntry[] | undefined { return this.supportsCheckQueueViews ? this.checks : undefined }
+  /** Hears the host push its check queue, and this connection closing. Returns the way to stop. */
+  subscribeCheckQueue(listener: () => void): () => void {
+    this.checkListeners.add(listener)
+    return () => { this.checkListeners.delete(listener) }
+  }
   /** The host lists `thread-starts`: it continues agents as threads and reads a started thread's handover (#1028). */
   get supportsThreadStarts(): boolean { return this.features.includes('thread-starts') }
   /** The host lists `failure-seen`: it publishes `failureSeen` and takes `dismiss-failures` (ADR-0092). */
@@ -1400,7 +1430,7 @@ export class SocketHostService implements HostService {
   }
   async usageRefresh(providerIds?: ProviderId[], background = false): Promise<UsageLocalHostRead> {
     this.offers('usage-dashboard')
-    const named = providerIds === undefined ? undefined : usageProviderIdSchema.array().max(usageProviderIdSchema.options.length).parse(providerIds)
+    const named = providerIds === undefined ? undefined : usageProviderIdsSchema.parse(providerIds)
     const parsed = named === undefined || this.features.includes('usage-muse-opencode') ? named : usageProvidersBeforeMuse(named)
     // A host from before `usage-background-refresh` refuses the field, and reads every refresh afresh.
     const quiet = background && this.features.includes('usage-background-refresh')
@@ -1500,7 +1530,7 @@ export class SocketHostService implements HostService {
    */
   async signIn(operation: { op: 'sign-in-start'; provider: ProviderId } | { op: 'sign-in-read' | 'sign-in-cancel'; signInId: string } | { op: 'sign-in-code'; signInId: string; code: string }): Promise<HostSignIn | null> {
     if (!this.offersSignIn()) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
-    return this.read(hostSignInSchema.nullable(), await this.call(operation))
+    return this.read(signInAnswerSchema, await this.call(operation))
   }
   /** Whether the host signs its own OpenCode in to model sources for this client (#1107). */
   offersOpenCodeSignIn(): boolean { return this.features.includes('opencode-sign-in') }

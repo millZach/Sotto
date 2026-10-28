@@ -42,6 +42,7 @@ import { object } from './claudeProtocol'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import { compareClientVersions } from './clientVersions'
 import { findGrokExecutable, grokEnvironment, GROK_ACP_VERSION, GROK_CLI_VERSION, GrokRpc, GrokRejected, GrokSignedOut, GrokTooOld, GrokUncertain, GrokUnsupported, type GrokFrame } from './grokRpc'
+import { launchInteractiveProcess } from './gitLauncher'
 import { SessionReaper } from './sessionReaper'
 import { OpenSessions } from './openSessions'
 import { ReadsBeforeSend } from './readsBeforeSend'
@@ -118,6 +119,12 @@ function clientRefusal(client: GrokClient): GrokUnsupported | undefined {
   return undefined
 }
 const updateSchema = z.object({ sessionId: z.string(), _meta: z.object({ eventId: z.string().optional(), agentTimestampMs: z.number().optional(), promptId: z.string().optional(), streamStartMs: z.number().optional() }).optional(), update: z.object({ sessionUpdate: z.string(), content: z.unknown().optional(), stop_reason: z.string().optional(), stopReason: z.string().optional(), tool_call_id: z.string().optional() }).passthrough() })
+const emptyResponse = z.object({})
+const closeSessionResponse = z.object({ result: z.object({ success: z.literal(true), outcome: z.enum(['closed', 'notResident']) }) })
+const newSessionResponse = z.object({ sessionId: z.string().uuid(), models: catalogSchema })
+const promptResponse = z.object({ stopReason: z.enum(['end_turn', 'max_tokens', 'max_turn_requests', 'refusal', 'cancelled']) })
+/** An extension method's frame, which carries the method and its params inside. */
+const wrappedFrameSchema = z.object({ method: z.string(), params: z.unknown() })
 const historySchema = z.object({ updates: z.array(z.object({ timestamp: z.union([z.number(), z.string()]), method: z.string(), params: z.unknown() })), totalCount: z.number().int().nonnegative(), hasMore: z.boolean() })
 // Grok 1.0.5 restarts its event counter on CLI resume. eventId alone is not a message identity.
 function eventKey(params: z.infer<typeof updateSchema>, fallback: string | number): string {
@@ -426,14 +433,6 @@ export class GrokAcpHost implements AgentHost {
     })
   }
   /**
-   * Read the signed-in account's limits. A thread's process that is already running and signed in is asked first, so
-   * a refresh starts no process while one is there (#1456). `_x.ai/billing` names no session, and Grok already answers
-   * history reads on a process beside its running prompt, so asking one disturbs no turn on it. Only when there is
-   * none to ask may a refresh Usage made on its own take a good reading from the last few minutes; a live read that
-   * failed is never covered by an earlier reading. Otherwise a process is started for the one question. No
-   * session/new, load or prompt is sent on any of them.
-   */
-  /**
    * A refused prompt's usage-limit stop (ADR-0144), while restarting stopped threads is on: only when Grok Build's refusal
    * says it was its usage limit, with the reset of the allowance its last limits reading showed used up.
    */
@@ -442,6 +441,16 @@ export class GrokAcpHost implements AgentHost {
     const resetsAt = exhaustedQuotaReset(this.quota)
     return { limitStop: resetsAt ? { resetsAt } : {} }
   }
+  /**
+   * Read the signed-in account's limits. A thread's process that is already running and signed in is asked first, so
+   * a refresh starts no process while one is there (#1456). `_x.ai/billing` names no session, and Grok already answers
+   * history reads on a process beside its running prompt, so asking one disturbs no turn on it. Only when there is
+   * none to ask may a refresh Usage made on its own take a good reading from the last few minutes; a live read that
+   * failed is never covered by an earlier reading. Otherwise a process is started for the one question, on the Git
+   * launcher's worker thread: on Windows a start runs on the thread that asks, and the first start of Grok Build's
+   * unsigned 176 MB binary in a while held main for over a second while Windows scanned it (ADR-0083). No
+   * session/new, load or prompt is sent on any of them.
+   */
   private async readQuota(background: boolean): Promise<UsageQuotaRead> {
     const generation = this.generation, executable = this.executable, start = ++this.quotaStarts
     if (!executable) return unavailableProviderQuota('grok', 'not-connected')
@@ -459,7 +468,7 @@ export class GrokAcpHost implements AgentHost {
     }
     const latest = this.quotaLatest
     if (background && !live && latest && latest.read.status !== 'error' && Date.now() - latest.at < QUOTA_REUSE_MS) return latest.read
-    const probe = this.spawn(executable, () => undefined)
+    const probe = this.spawn(executable, () => undefined, true)
     this.quotaProbes.add(probe)
     try {
       const client = await this.identify(probe)
@@ -610,10 +619,14 @@ export class GrokAcpHost implements AgentHost {
     if (!entry || this.loaded.has(id) || this.loading.has(id) || this.historyReads.has(id) || this.busy(id)) return
     this.processes.delete(id); this.outdated.delete(id); this.closeProcess(entry)
   }
-  /** Start a Grok process. Its frames come back with the process that sent them. */
-  private spawn(executable: string, lost: () => void): GrokRpc {
+  /**
+   * Start a Grok process. Its frames come back with the process that sent them. `offThread` starts it on the Git
+   * launcher's worker thread (`gitLauncher.ts`) rather than this one; only Usage's limits probe asks for that so far.
+   */
+  private spawn(executable: string, lost: () => void, offThread = false): GrokRpc {
     const rpc: GrokRpc = new GrokRpc(executable, this.options.args ?? grokArguments(), this.userDataDirectory,
-      grokEnvironment(this.options.environment), this.options.requestTimeoutMs ?? 15000, frame => this.frame(frame, rpc), lost)
+      grokEnvironment(this.options.environment), this.options.requestTimeoutMs ?? 15000, frame => this.frame(frame, rpc), lost,
+      offThread ? launchInteractiveProcess : undefined)
     const exit = rpc.closed.finally(() => { this.exits.delete(exit) }); this.exits.add(exit)
     return rpc
   }
@@ -626,7 +639,7 @@ export class GrokAcpHost implements AgentHost {
     return client!
   }
   private authenticate(rpc: GrokRpc): Promise<void> {
-    return rpc.request('authenticate', { methodId: 'cached_token', _meta: { headless: true } }, value => { z.object({}).parse(value) })
+    return rpc.request('authenticate', { methodId: 'cached_token', _meta: { headless: true } }, value => { emptyResponse.parse(value) })
   }
   /** The provider's facts come from the newest client Sotto accepted, never from an older thread process. */
   private applyClient(client: GrokClient): void {
@@ -819,7 +832,7 @@ export class GrokAcpHost implements AgentHost {
     const thread = this.thread(id); thread.modelId = alias.nativeModelId; thread.runtimeMode = alias.runtimeMode ?? 'approval-required'
   }
   private closeSession(rpc: GrokRpc, alias: Alias): Promise<void> {
-    return rpc.request('_x.ai/session/close', { sessionId: alias.grokSessionId }, value => { z.object({ result: z.object({ success: z.literal(true), outcome: z.enum(['closed', 'notResident']) }) }).parse(value) })
+    return rpc.request('_x.ai/session/close', { sessionId: alias.grokSessionId }, value => { closeSessionResponse.parse(value) })
   }
   private id(nativeId: string): string | undefined { return Object.keys(this.aliases).find(id => this.aliases[id]!.grokSessionId === nativeId) }
   async connect(): Promise<AgentHostSnapshot> {
@@ -1256,7 +1269,7 @@ export class GrokAcpHost implements AgentHost {
           // Rules are appended to Grok's own system text, taken only at creation and kept through every later load
           // (ADR-0080). Watcher's override replaces that text whole, so its launch stays exactly as ADR-0073 pins it.
           await rpc.request('session/new', { cwd: alias.cwd, mcpServers, _meta: 'systemPromptOverride' in meta ? meta : { ...meta, rules: this.sessionRules(mcpServers) } }, async value => {
-            const response = z.object({ sessionId: z.string().uuid(), models: catalogSchema }).parse(value)
+            const response = newSessionResponse.parse(value)
             alias.grokSessionId = response.sessionId; alias.nativeModelId = response.models.currentModelId; await this.persist(); this.thread(command.threadId).status = 'error'; this.emit()
           })
           await rpc.request('session/set_model', { sessionId: alias.grokSessionId, modelId: alias.modelId, ...(alias.reasoningEffort ? { _meta: { reasoningEffort: alias.reasoningEffort } } : {}) }, value => {
@@ -1423,7 +1436,7 @@ export class GrokAcpHost implements AgentHost {
           // ACP prompt responds at turn completion. Its authored-message echo acknowledges delivery.
           markSendStage(command.commandId, 'written')
           void entry.rpc.request('session/prompt', { sessionId: alias.grokSessionId, prompt: [{ type: 'text', text: withAttachedFilesNote(nativeText, filesNote) }] }, value => {
-            const completion = z.object({ stopReason: z.enum(['end_turn', 'max_tokens', 'max_turn_requests', 'refusal', 'cancelled']) }).parse(value)
+            const completion = promptResponse.parse(value)
             this.thread(command.threadId).lastTurn = { id: command.messageId, status: turnOutcome(completion.stopReason) }
             this.markTurn(command.threadId, turnOutcome(completion.stopReason), command.messageId)
             this.activePrompts.delete(command.threadId); this.thread(command.threadId).status = 'idle'; this.deliveries.get(command.messageId)?.resolve(); this.emit()
@@ -1480,7 +1493,7 @@ export class GrokAcpHost implements AgentHost {
     let method = frame.method; let params = frame.params
     if (method?.startsWith('_')) {
       method = method.slice(1)
-      const wrapped = z.object({ method: z.string(), params: z.unknown() }).safeParse(params)
+      const wrapped = wrappedFrameSchema.safeParse(params)
       if (wrapped.success) { method = wrapped.data.method; params = wrapped.data.params }
     }
     if (frame.id !== undefined && method) {

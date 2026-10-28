@@ -8,6 +8,8 @@ import type { MemoryStore } from './store'
 
 export const policyRecordSchema = memoryPolicySchema
 export type PolicyRecord = z.infer<typeof policyRecordSchema>
+const timestampSchema = z.iso.datetime()
+const policyIdSchema = z.string().min(1)
 type GrantInput = Pick<PolicyRecord, 'action' | 'note'> &
   Partial<Omit<PolicyRecord, 'action' | 'note' | 'revokedAt'>>
 
@@ -33,7 +35,7 @@ export class PolicyStore {
 
   revoke(id: string, at = new Date().toISOString()): void {
     const result = this.memoryStore.database().prepare('UPDATE policies SET revokedAt = ? WHERE id = ?')
-      .run(z.iso.datetime().parse(at), z.string().min(1).parse(id))
+      .run(timestampSchema.parse(at), policyIdSchema.parse(id))
     if (result.changes === 0) throw new Error('Unknown policy record')
   }
 
@@ -46,7 +48,7 @@ export class PolicyStore {
   }
 
   authorizes({ action, resource, scope, at = new Date().toISOString() }: AuthorizationQuery): AuthorizationResult {
-    z.iso.datetime().parse(at)
+    timestampSchema.parse(at)
     // Authorization reads only policies: never memories or memories_fts, including joins and subqueries.
     const rows = this.memoryStore.database().prepare(`SELECT * FROM policies
       WHERE action = ? AND (scope = ? OR scope = 'global')
@@ -91,7 +93,7 @@ export class PolicyStore {
    */
   mayGrant(client: ClientIdentity, at = new Date().toISOString()): ClientGrantResult {
     if (client.transport === 'ipc') return { allowed: true, reason: 'local-window' }
-    z.iso.datetime().parse(at)
+    timestampSchema.parse(at)
     // Authorization reads only policies: never memories or memories_fts, including joins and subqueries.
     const rows = this.memoryStore.database().prepare(`SELECT * FROM policies
       WHERE action = 'remote-answer' AND scope = ? AND resource = ?
@@ -106,7 +108,7 @@ export class PolicyStore {
    * revoked, since renewing or lifting it restores the answers (#1310).
    */
   remoteAnswersRevoked(clientId: string, at = new Date().toISOString()): boolean {
-    z.iso.datetime().parse(at)
+    timestampSchema.parse(at)
     const rows = this.memoryStore.database().prepare(`SELECT * FROM policies
       WHERE action = 'remote-answer' AND scope = ? AND resource = ?
       ORDER BY grantedAt DESC, id DESC`).all(remoteAnswerScope(clientId), clientId)

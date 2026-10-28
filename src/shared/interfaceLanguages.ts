@@ -16,6 +16,13 @@ export interface InterfaceLanguage {
 
 export const SOURCE_INTERFACE_LANGUAGE = 'en'
 
+/**
+ * Whether Sotto shows its interface language at all, until the desktop catalogs are drafted (#1684). Off, Owl does what
+ * stable does with the `interface-language` feature: no Language row, English whatever the setting or the computer's
+ * language, and a saved choice kept whole, so it returns when this does.
+ */
+export const INTERFACE_LANGUAGE_SHOWN = false
+
 export const INTERFACE_LANGUAGES = [
   { code: 'en', endonym: 'English', englishName: 'English', direction: 'ltr' },
   { code: 'es-MX', endonym: 'Español (México)', englishName: 'Spanish (Mexico)', direction: 'ltr' },

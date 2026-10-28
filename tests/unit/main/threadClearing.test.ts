@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import type { AgentProject, AgentThread } from '../../../src/shared/agents'
-import { threadClearHold, threadDelegators, type ThreadClearFacts } from '../../../src/main/agents/threadClearing'
+import { threadClearHold, threadDelegators, unsentThreadRemovable, type ThreadClearFacts, type UnsentThreadFacts } from '../../../src/main/agents/threadClearing'
 
 const SETTLED = '2026-09-01T00:00:00.000Z'
 const project: AgentProject = { id: 'project', title: 'Sotto', path: '/work/sotto', workspaceSettledAt: null }
@@ -63,5 +63,43 @@ describe('what keeps a settled thread back from clearing (ADR-0140 decision 3)',
     const babysitting = [{ url: 'https://github.com/o/r/pull/1', number: 1, startedBy: 'user', startedAt: SETTLED }] as AgentThread['babysitting']
     expect(hold(thread('a', { babysitting }), [], { babysittingRetired: true })).toBeNull()
     expect(hold(thread('a', { babysitting }), [], { babysittingRetired: true, watched: id => id === 'a' })).toBe('watched')
+  })
+})
+
+describe('which unsent threads the host removes (ADR-0155)', () => {
+  const unsent = (extra: Partial<AgentThread> = {}): AgentThread => thread('new', { title: 'New thread', titleSource: 'default', workspaceSettledAt: null,
+    nativeSessionStarted: false, summary: { messageCount: 0, activityCount: 0 }, ...extra })
+  const removable = (subject: AgentThread, extra: Partial<UnsentThreadFacts> = {}) => unsentThreadRemovable(subject,
+    { ...facts([subject]), held: () => false, old: () => true, ...extra })
+
+  it('removes a thread opened and never sent to that no client holds', () => {
+    expect(removable(unsent())).toBe(true)
+  })
+
+  it('keeps one a client holds or that was made within the hour', () => {
+    expect(removable(unsent(), { held: () => true })).toBe(false)
+    expect(removable(unsent(), { old: () => false })).toBe(false)
+  })
+
+  it('keeps one that was sent to, renamed, started, settled or delegated', () => {
+    expect(removable(unsent({ summary: { messageCount: 1, activityCount: 0 } }))).toBe(false)
+    expect(removable(unsent({ titleSource: 'user' }))).toBe(false)
+    expect(removable(unsent({ titledFromFirstMessage: true }))).toBe(false)
+    expect(removable(unsent({ nativeSessionStarted: true }))).toBe(false)
+    expect(removable(unsent({ nativeSessionStarted: undefined }))).toBe(false)
+    expect(removable(unsent({ workspaceSettledAt: SETTLED }))).toBe(false)
+    expect(removable(unsent({ settledAt: SETTLED }))).toBe(false)
+    expect(removable(unsent({ delegatedBy: 'parent' }))).toBe(false)
+    expect(unsentThreadRemovable(unsent(), { ...facts([unsent()], { projects: [{ ...project, workspaceSettledAt: SETTLED }] }), held: () => false, old: () => true })).toBe(false)
+  })
+
+  it('keeps one that is busy, queued, watched, hidden or Watcher’s own', () => {
+    expect(removable(unsent({ status: 'running' }))).toBe(false)
+    expect(removable(unsent({ requests: [{ id: 'r', kind: 'question', text: 'Which?', options: [] }] as AgentThread['requests'] }))).toBe(false)
+    expect(removable(unsent(), { pending: () => true })).toBe(false)
+    expect(removable(unsent(), { watched: () => true })).toBe(false)
+    expect(removable(unsent(), { hidden: () => true })).toBe(false)
+    expect(removable(unsent({ kind: 'watcher' }))).toBe(false)
+    expect(unsentThreadRemovable(undefined, { ...facts([]), held: () => false, old: () => true })).toBe(false)
   })
 })

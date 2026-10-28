@@ -8,6 +8,8 @@ import { memoryItemSchema } from '../../shared/memory'
 import { memoryInsertSql, migrateDatabase } from './migrations.mjs'
 
 const timestampSchema = z.iso.datetime()
+const textSchema = z.string()
+const idSchema = z.string().min(1)
 
 export const memorySchema = memoryItemSchema.extend({
   embedding: z.instanceof(Uint8Array).nullable().optional(),
@@ -24,8 +26,8 @@ const searchOptionsSchema = z.object({
 function parseRow(row: Record<string, SQLOutputValue>): Memory {
   return memorySchema.parse({
     ...row,
-    provenance: JSON.parse(z.string().parse(row.provenance)) as unknown,
-    tags: JSON.parse(z.string().parse(row.tags)) as unknown,
+    provenance: JSON.parse(textSchema.parse(row.provenance)) as unknown,
+    tags: JSON.parse(textSchema.parse(row.tags)) as unknown,
   })
 }
 
@@ -63,7 +65,7 @@ export class MemoryStore {
 
   get(id: string): Memory | undefined {
     const row = this.requireOpen().prepare('SELECT * FROM memories WHERE id = ?')
-      .get(z.string().min(1).parse(id))
+      .get(idSchema.parse(id))
     return row === undefined ? undefined : parseRow(row)
   }
 
@@ -78,13 +80,13 @@ export class MemoryStore {
       AND supersededBy IS NULL AND (scope = 'global' OR scope = ?)
       AND validFrom <= ? AND (validTo IS NULL OR validTo > ?)
       ORDER BY CASE WHEN scope = 'global' THEN 1 ELSE 0 END, lastConfirmedAt DESC, id LIMIT 20`)
-      .all(projectId === undefined ? null : z.string().min(1).parse(projectId), at, at).map(parseRow)
+      .all(projectId === undefined ? null : idSchema.parse(projectId), at, at).map(parseRow)
   }
 
   search(query: string, options: { limit: number; projectId?: string; at?: string }): Memory[] {
     const db = this.requireOpen()
     const { limit, projectId, at = new Date().toISOString() } = searchOptionsSchema.parse(options)
-    const terms = z.string().parse(query).replaceAll('"', '').split(/\s+/u).filter(Boolean)
+    const terms = textSchema.parse(query).replaceAll('"', '').split(/\s+/u).filter(Boolean)
     if (terms.length === 0) return []
     // Bind SQL parameters and quote each FTS term separately: user input is text,
     // including reserved operators such as OR, rather than an FTS expression.

@@ -7,6 +7,10 @@ import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } fro
 import type { HostThreadToolReads } from './threadToolReads'
 import type { WorkspaceHost } from './workspace'
 
+/** Each call's arguments, checked against schemas built once rather than on every call. */
+const pageArguments = z.tuple([subagentPageRequestSchema])
+const assignmentsArguments = z.tuple([subagentAssignmentsRequestSchema])
+
 const UNAVAILABLE = msg`Agents cannot reach the host machine from this window. Nothing was changed. Restart Sotto and try again.`
 
 /**
@@ -17,14 +21,14 @@ export function registerSubagentIpc(ipc: IpcMainAdapter, host: Pick<WorkspaceHos
   senders: () => readonly TrustedIpcSender[], publish: (change: SubagentChange) => void, hosted?: Pick<HostThreadToolReads, 'subagentPage' | 'subagentAssignments'>): () => void {
   ipc.handle(SUBAGENTS_PAGE, (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Agents in the main Sotto window.`)
-    const [request] = z.tuple([subagentPageRequestSchema]).parse(args)
+    const [request] = pageArguments.parse(args)
     if (!namesHostThread(request)) return host.subagentPage(request)
     if (!hosted) throw new Error(i18n._(UNAVAILABLE))
     return hosted.subagentPage(request)
   })
   ipc.handle(SUBAGENTS_ASSIGNMENTS, (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Agents in the main Sotto window.`)
-    const [request] = z.tuple([subagentAssignmentsRequestSchema]).parse(args)
+    const [request] = assignmentsArguments.parse(args)
     if (!namesHostThread(request)) return host.subagentAssignments(request)
     if (!hosted) throw new Error(i18n._(UNAVAILABLE))
     return hosted.subagentAssignments(request)

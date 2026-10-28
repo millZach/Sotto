@@ -30,6 +30,7 @@ export interface ThreadToolServerIdentity {
 /** The largest request body a server reads unless it says otherwise: enough for every browser and host setup call. */
 export const DEFAULT_MAX_REQUEST_BYTES = 128 * 1024
 const frameSchema = z.object({ jsonrpc: z.literal('2.0'), id: z.union([z.string().max(256), z.number().int().safe()]).optional(), method: z.string().max(128), params: z.unknown().optional() })
+const initializeSchema = z.object({ protocolVersion: z.string() })
 const toolCallSchema = z.object({ name: z.string().max(128), arguments: z.unknown().optional() })
 
 /**
@@ -112,7 +113,7 @@ export class ThreadToolServer {
       if (id === undefined) { response.writeHead(202).end(); return }
       const reply = (result: unknown) => response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ jsonrpc: '2.0', id, result }))
       if (method === 'initialize') {
-        const version = z.object({ protocolVersion: z.string() }).safeParse(params)
+        const version = initializeSchema.safeParse(params)
         const protocolVersion = version.success && ['2024-11-05', '2025-03-26', '2025-06-18', '2025-11-25'].includes(version.data.protocolVersion) ? version.data.protocolVersion : '2025-06-18'
         reply({ protocolVersion, capabilities: { tools: { listChanged: false } }, serverInfo: { name: this.identity.serverName, version: '1.0.0' }, instructions: this.identity.instructions }); return
       }

@@ -1,6 +1,6 @@
 import type { AgentProject, AgentThread } from '../../shared/agents'
 import { delegatedThreadsBelow } from '../../shared/delegation'
-import { isWorkspaceThreadSettled } from '../../shared/threadActivity'
+import { isUnsentThread, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import type { ThreadClearKeptReason } from '../../shared/threadClear'
 
 /** What the coordinator knows of one thread beside its record, for the clearing check (ADR-0140 decision 3). */
@@ -52,4 +52,31 @@ export function threadClearHold(thread: AgentThread | undefined, facts: ThreadCl
   if (facts.babysittingRetired !== true && thread.babysitting?.length) return 'babysitting'
   if (facts.watched(thread.id)) return 'watched'
   return null
+}
+
+/** What the unsent sweep needs besides the clearing facts (ADR-0155). */
+export interface UnsentThreadFacts extends ThreadClearFacts {
+  /**
+   * A client may hold words for the thread: a connected client has it open, a composer draft or a delivery record names
+   * it, or it is the desktop's composer or active thread.
+   */
+  readonly held: (threadId: string) => boolean
+  /** The thread has gone unsent, as far as this run has seen, long enough that no client is still about to type in it. */
+  readonly old: (threadId: string) => boolean
+}
+/**
+ * Whether the host removes an unsent thread (ADR-0155): one opened and never sent to, whose provider session never
+ * started, that nothing is doing or waiting on, that no client holds words for, and that has been unsent a while. Any
+ * doubt keeps it. Its own worktree, if any, goes only under ADR-0041's guards, which the workspace checks as it deletes.
+ */
+export function unsentThreadRemovable(thread: AgentThread | undefined, facts: UnsentThreadFacts): boolean {
+  if (!thread || thread.kind === 'watcher' || thread.kind === 'watcher-history' || facts.hidden(thread.id)) return false
+  if (thread.nativeSessionStarted !== false || thread.titledFromFirstMessage === true) return false
+  if (!isUnsentThread(thread, facts.projects.find(project => project.id === thread.projectId))) return false
+  if (thread.requests.length || working(thread) || thread.compaction?.status === 'uncertain' || facts.pending(thread.id)) return false
+  // A shared folder's pull request is the project's, read into the draft's record; only one the thread linked or its own worktree's holds it.
+  const ownPullRequest = thread.pullRequests?.some(pullRequest => pullRequest.state === 'open') === true
+    || thread.worktree?.mode === 'independent' && thread.worktree.git?.pullRequest?.state === 'open'
+  if (facts.delegators.has(thread.id) || ownPullRequest || thread.babysitting?.length || facts.watched(thread.id)) return false
+  return !facts.held(thread.id) && facts.old(thread.id)
 }

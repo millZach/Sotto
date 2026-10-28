@@ -4,6 +4,10 @@
 
 Accepted October 27, 2026. Drake picked layout 7 of eight from `docs/prototypes/iphone-duo-layout-prototype.html`, kept at the tag `prototype/iphone-duo-layout`, captured on the iPhone Duo simulator. It changes only how the iPhone client lays out its pages; no computer offers anything new, so there is nothing to gate.
 
+Amended October 27, 2026 by the tab bar's amendment to [ADR-0051](0051-the-iphone-takes-the-glow-look.md): Sotto now draws its own tab bar on the page. It sits along the bottom at every width, so the unfolded Duo shows it along the bottom too, not as a rail at the right edge. The columns get the screen's full width and lose the bar's height.
+
+Amended October 27, 2026: on the folded Duo's cover screen the bar stands in the strip down the right edge. That screen is 466×678 points and the app's window covers all of it; the strip is an 84-point safe-area inset on the trailing side, under the clock and battery, so the app may draw there, as the system's own tab rail did before Sotto drew its bar. Drake asked for the tabs there. So when the width is compact and one side's inset is at least 60 points wider than the other's, the bar is a rail in that strip: the same tabs, badges and Watcher's dot, icons only, the chosen one in the accent, stacked from the bottom of the strip and clear of the clock and battery. Pages get the whole height. The rail goes under a thread and the keyboard as the bar does, which leaves the strip to the thread's Back button. Every other layout, the unfolded Duo included, keeps the bar along the bottom.
+
 ## Context
 
 The iPhone Duo folds. Folded, its cover screen gives the app 382×644 points at compact width, and Sotto looks as it does on any iPhone. Unfolded, the inner screen is landscape, 951×669 points. Beside the tab bar, which iOS 27.1 draws as a floating rail at the right edge, the app gets 867×635 points at regular width. The client had no layout for regular width, so every page stretched to the full 867 points: a thread's lines ran to about 140 characters and its tables spread across the screen.

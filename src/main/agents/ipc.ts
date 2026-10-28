@@ -17,6 +17,10 @@ import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } fro
 import type { AgentControl } from './control'
 import { desktopWindowClient, type HostService } from './hostService'
 
+/** Each call's arguments, checked against schemas built once rather than on every call. */
+const workingCopyOptionsArguments = z.tuple([agentWorkingCopyOptionsRequestSchema])
+const noArguments = z.tuple([]).or(z.tuple([z.undefined()]))
+
 export interface AgentIpcOptions {
   /** Encodes a command's reply as a command receipt (issue #323): `AgentStateBroadcaster.encodeReceipt`,
    * so the receipt names each catalog by the revision the broadcast uses. */
@@ -37,13 +41,13 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
   const { workingCopyOptions, encodeReceipt, windowRead } = options
   ipc.handle(AGENT_WORKING_COPY_OPTIONS, async (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
-    const [projectId] = z.tuple([agentWorkingCopyOptionsRequestSchema]).parse(args)
+    const [projectId] = workingCopyOptionsArguments.parse(args)
     if (!workingCopyOptions) throw new Error(t`Working-copy choices are unavailable. Reopen the project and try again.`)
     return agentWorkingCopyOptionsSchema.parse(await workingCopyOptions(projectId))
   })
   ipc.handle(AGENT_CHOOSE_PROJECT_DIRECTORY, async (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
-    z.tuple([]).or(z.tuple([z.undefined()])).parse(args)
+    noArguments.parse(args)
     const parent = BrowserWindow.fromWebContents(event.sender as WebContents)
     if (parent === null || parent.isDestroyed()) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
     if (resolveE2EConfiguration(app.isPackaged, process.env) !== null) {

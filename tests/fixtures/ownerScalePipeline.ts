@@ -527,8 +527,8 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
       // by its position, and so must not grow with the history behind it (#1312).
       const started = control.watcherRecord().operations.findLast(item => item.action === 'start' && item.target.hostId === localHostId)
       if (started) {
-        const queue = watcher as unknown as { joinChecks(ticket: string): unknown; adoptCheck(check: unknown, operationId: string): void }
-        queue.adoptCheck(queue.joinChecks(started.id), started.id)
+        const queue = watcher as unknown as { joinChecks(ticket: string, title: string): unknown; adoptCheck(check: unknown, operationId: string, threadId: string): void }
+        queue.adoptCheck(queue.joinChecks(started.id, 'A check'), started.id, started.target.threadId)
       }
     } else {
       // Stable starts no Watcher and keeps the record an Owl build left, whole (ADR-0072).

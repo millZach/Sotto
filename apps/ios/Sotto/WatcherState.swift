@@ -58,6 +58,9 @@ extension WatcherPhoneState {
     func followup(of draftID: String) -> Followup? {
         followups?.first { $0.draftId.lowercased() == draftID.lowercased() }
     }
+    /// Whether Watcher's computer says it took this draft, or holds it in Watcher's queue to go next: either way it has
+    /// the words.
+    func holds(_ draftID: String) -> Bool { delivery(of: draftID) == "accepted" || followup(of: draftID) != nil }
     /// Older than `other`, by when the computer read it. A page read before another one already shown is left unshown.
     func isOlder(than other: WatcherPhoneState) -> Bool {
         guard let mine = Stamp.date(observedAt), let theirs = Stamp.date(other.observedAt) else { return false }
@@ -66,6 +69,21 @@ extension WatcherPhoneState {
 }
 
 // MARK: - Asking Watcher
+
+/// A message on its way to Watcher: its words, its draft ID, and the messages Watcher's conversation held when it left.
+struct WatcherSending: Equatable, Sendable {
+    let text: String
+    let draftID: String
+    let before: Set<String>
+    /// Whether this page shows the message itself: the computer holds its draft, or the user's own message with its words
+    /// has joined the conversation since it left.
+    func shown(in page: WatcherPage) -> Bool {
+        let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return page.holds(draftID) || page.conversation.messages.contains {
+            $0.role == "user" && !before.contains($0.id) && $0.text.trimmingCharacters(in: .whitespacesAndNewlines) == words
+        }
+    }
+}
 
 /// The draft IDs the Watcher box sent with that its computer may still deliver, each with its exact words. The same
 /// words go with the same ID until a page asked for after their send ended says where that draft stands, even after
