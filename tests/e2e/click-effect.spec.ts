@@ -34,6 +34,22 @@ async function openConversation(page: Page): Promise<void> {
   await expect(page.getByLabel('Thread transcript')).toContainText('Fixing the footer links')
 }
 
+interface Part { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number }
+
+/** How many of the click effect canvas's pixels are lit in each part of the window, each given in CSS pixels. */
+function litIn<Name extends string>(page: Page, parts: Record<Name, Part>): Promise<Record<Name, number>> {
+  return page.evaluate(given => {
+    const canvas = document.querySelector<HTMLCanvasElement>('canvas.click-effect')!, scale = canvas.width / innerWidth
+    const pen = canvas.getContext('2d')!
+    return Object.fromEntries(Object.entries(given).map(([name, part]) => {
+      const { data } = pen.getImageData(Math.round(part.left * scale), Math.round(part.top * scale), Math.max(1, Math.round((part.right - part.left) * scale)), Math.max(1, Math.round((part.bottom - part.top) * scale)))
+      let n = 0
+      for (let i = 3; i < data.length; i += 4) if (data[i]) n++
+      return [name, n]
+    }))
+  }, parts as Record<string, Part>) as Promise<Record<Name, number>>
+}
+
 /** A point in the conversation's open space, beside the column of messages. */
 async function openSpace(page: Page, share: number): Promise<{ x: number; y: number }> {
   return page.getByLabel('Thread transcript').evaluate((transcript, at) => {
@@ -53,12 +69,11 @@ test.describe('the click effect', () => {
         await openConversation(page)
         await expect(layer(page)).toHaveCount(1)
         await expect(layer(page)).toHaveAttribute('aria-hidden', 'true')
-        // Opening the thread was a press too; its waves calm, and then nothing runs until the next press.
+        // Whatever earlier presses sent calms, and then nothing runs until the next press that counts.
         await expect.poll(() => running(page), { timeout: 30_000 }).toBe(false)
         const calm = await frames(page)
-        await page.waitForTimeout(400)
-        expect(await frames(page)).toBe(calm)
-        // A press in the composer sends no waves.
+        // A press on a thread's row in the sidebar sends no waves, and nor does one in the composer.
+        await page.getByRole('button', { name: 'Footer links', exact: true }).click({ position: { x: 16, y: 12 } })
         const composer = page.locator('.thread-prompt :is(.prompt-editor, textarea)').first()
         await composer.click()
         await page.locator('.thread-prompt').first().click({ position: { x: 8, y: 8 } })
@@ -139,17 +154,14 @@ test.describe('the click effect', () => {
       })
       await page.mouse.click(press.x, press.y)
       await expect.poll(() => glyphs(page)).toBeGreaterThan(50)
-      const lit = await page.evaluate(() => {
-        const canvas = document.querySelector<HTMLCanvasElement>('canvas.click-effect')!, scale = canvas.width / innerWidth
+      const parts = await page.evaluate(() => {
         const card = document.querySelector('#watcher-pane > .thread-workspace__compose > .thread-prompt')!.getBoundingClientRect()
-        const count = (x0: number, x1: number, y0: number, y1: number): number => {
-          const data = canvas.getContext('2d')!.getImageData(Math.round(x0 * scale), Math.round(y0 * scale), Math.round((x1 - x0) * scale), Math.round((y1 - y0) * scale)).data
-          let n = 0
-          for (let i = 3; i < data.length; i += 4) if (data[i]) n++
-          return n
+        return {
+          column: { left: card.left + 2, right: card.right - 2, top: 120, bottom: innerHeight - 10 },
+          margin: { left: 0, right: card.left - 2, top: 120, bottom: innerHeight - 10 },
         }
-        return { column: count(card.left + 2, card.right - 2, 120, innerHeight - 10), margin: count(0, card.left - 2, 120, innerHeight - 10) }
       })
+      const lit = await litIn(page, parts)
       expect(lit.column).toBe(0)
       expect(lit.margin).toBeGreaterThan(0)
     }))
@@ -167,18 +179,15 @@ test.describe('the click effect', () => {
       await expect.poll(() => glyphs(page)).toBeGreaterThan(50)
       await reply.evaluate(paragraph => { getSelection()!.selectAllChildren(paragraph) })
       await page.waitForTimeout(250)
-      const lit = await page.evaluate(() => {
-        const canvas = document.querySelector<HTMLCanvasElement>('canvas.click-effect')!, scale = canvas.width / innerWidth
+      const { still, parts } = await page.evaluate(() => {
         const selected = getSelection()!.getRangeAt(0).getBoundingClientRect()
-        const count = (x0: number, x1: number, y0: number, y1: number): number => {
-          const data = canvas.getContext('2d')!.getImageData(Math.round(x0 * scale), Math.round(y0 * scale), Math.max(1, Math.round((x1 - x0) * scale)), Math.max(1, Math.round((y1 - y0) * scale))).data
-          let n = 0
-          for (let i = 3; i < data.length; i += 4) if (data[i]) n++
-          return n
+        return {
+          still: getSelection()!.toString().length,
+          parts: { selected: { left: selected.left, right: selected.right, top: selected.top, bottom: selected.bottom }, room: { left: 0, right: innerWidth, top: selected.bottom + 4, bottom: innerHeight } },
         }
-        return { selected: count(selected.left, selected.right, selected.top, selected.bottom), still: getSelection()!.toString().length, room: count(0, innerWidth, selected.bottom + 4, innerHeight) }
       })
-      expect(lit.still).toBeGreaterThan(0)
+      const lit = await litIn(page, parts)
+      expect(still).toBeGreaterThan(0)
       expect(lit.selected).toBe(0)
       expect(lit.room).toBeGreaterThan(0)
     }))

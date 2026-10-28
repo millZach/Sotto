@@ -778,8 +778,8 @@ msgid "A phone cannot run the host"
 msgstr "A phone cannot run the host"
 
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
-msgid "A press anywhere but the composer sends waves of 0s and 1s in the accent through the room behind it. They never cover what you pressed. Reduced motion turns them off."
-msgstr "A press anywhere but the composer sends waves of 0s and 1s in the accent through the room behind it. They never cover what you pressed. Reduced motion turns them off."
+msgid "A press anywhere but the composer or the sidebar sends waves of 0s and 1s in the accent through the room behind it. They never cover what you pressed. Reduced motion turns them off."
+msgstr "A press anywhere but the composer or the sidebar sends waves of 0s and 1s in the accent through the room behind it. They never cover what you pressed. Reduced motion turns them off."
 
 #: src/renderer/src/features/settings/NotificationSettings.tsx
 msgid "A question or a permission is waiting for you."

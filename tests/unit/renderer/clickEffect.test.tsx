@@ -128,6 +128,17 @@ describe('the click effect', () => {
     expect(drawn).toBeGreaterThan(0)
   })
 
+  it('sends no waves for a press in the sidebar', async () => {
+    const { container } = render(<><ClickEffect /><aside className="thread-nav" aria-label="Thread sidebar"><button type="button">Footer links</button></aside></>)
+    pressAt(container.querySelector('aside button')!, 40, 120)
+    pressAt(container.querySelector('aside')!, 40, 400)
+    await frames(6)
+    expect(drawn).toBe(0)
+    pressAt(document.body, 600, 300)
+    await frames(6)
+    expect(drawn).toBeGreaterThan(0)
+  })
+
   it("sends waves for a press on a composer's menu even where the menu stands over the composer's card", async () => {
     const { container } = render(<><ClickEffect /><form className="thread-prompt"><textarea aria-label="Message" /><dialog open><button type="button">GPT-5.4</button></dialog></form></>)
     vi.spyOn(container.querySelector('form')!, 'getBoundingClientRect').mockReturnValue(new DOMRect(280, 580, 440, 100))

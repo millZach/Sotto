@@ -14,6 +14,8 @@ const STEP_MS = 1000 / STEP_HZ
 const SPRITE_W = GLYPH_W * 1.4
 /** Where a press sends no waves: every composer, the thread's, Watcher's and a new thread's draft (Zach, October 27). */
 const QUIET = '.thread-prompt'
+/** The sidebar, on every page that has one (Threads, Watcher, Settings), where a press sends no waves either (Zach, October 27). */
+const SIDEBAR = '.thread-nav'
 
 /** A menu or dialog a composer opens (its model picker); it lives inside the composer in the page but is not its card. */
 const COMPOSER_MENU = 'dialog, [role="dialog"], [role="menu"], [role="listbox"]'
@@ -105,8 +107,8 @@ function selectedText(): readonly Rect[] {
 }
 
 /**
- * The click effect (ADR-0156): a press anywhere in the main window but a composer sends waves of 0s and 1s in the theme's
- * accent through the room behind it. The canvas lies under the window's content, over only the room's own background, so
+ * The click effect (ADR-0156): a press anywhere in the main window but a composer or the sidebar sends waves of 0s and 1s in
+ * the theme's accent through the room behind it. The canvas lies under the window's content, over only the room's own background, so
  * a card, a bubble or the composer sits over the waves and nothing pressed is ever covered; it never takes the pointer
  * either. Its glyphs are never stronger than leaves every word written over them at 4.5:1 against the room, and none are
  * drawn under selected text or where Watcher's night scene already spends that. A theme change takes effect in the next
@@ -253,7 +255,7 @@ export function ClickEffect(): ReactNode {
     // wait on it. Many fast presses only add drops to the same water; the work per frame stays the same.
     const press = (event: PointerEvent): void => {
       if (event.button !== 0 || document.visibilityState === 'hidden') return
-      if (onComposer(event)) return
+      if (onComposer(event) || (event.target instanceof Element && event.target.closest(SIDEBAR) !== null)) return
       // Until the theme changes, a theme found to leave no room for the glyphs starts nothing at all.
       if (request === null && ink !== null && ink.ceiling <= 0) return
       waterNow().press(event.clientX, event.clientY)

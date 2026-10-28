@@ -198,7 +198,7 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, on
             </Select>
           </Field>
           {clickEffect ? <Toggle setting="click-effect" label={t`Click effect`} checked={settings.clickEffect} onCheckedChange={checked => void onSave({ clickEffect: checked }, checked ? msg`Click effect on.` : msg`Click effect off.`).catch(() => false)}
-            description={t`A press anywhere but the composer sends waves of 0s and 1s in the accent through the room behind it. They never cover what you pressed. Reduced motion turns them off.`} /> : null}
+            description={t`A press anywhere but the composer or the sidebar sends waves of 0s and 1s in the accent through the room behind it. They never cover what you pressed. Reduced motion turns them off.`} /> : null}
           {nightFalls ? <NightFallsSettings settings={settings} onSave={patch => onSave(patch).catch(() => false)} /> : null}
         </div>
       </section>
