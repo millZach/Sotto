@@ -2040,8 +2040,9 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       const cleanupDelegations = registerDelegationIpc(ipcMain, delegationService, () => windows.getTrustedRenderers(), () => agentControl.hostId(),
         (channel, payload) => { windows.sendToMain(channel, payload) }, crossMachineEnabled ? hostRouter : undefined)
       // Every machine's check queue for its panel and Tools › Agents (#1312), only where Watcher and Work across machines are
-      // both on, as the machines line is: This computer keeps no queue otherwise, and stable registers nothing.
-      const cleanupCheckQueues = registerCheckQueueIpc(ipcMain, watcherEnabled && crossMachineEnabled && 'checks' in localRuntime ? localRuntime.checks : undefined,
+      // both on, as the machines line is, so stable registers nothing. With the local host off, This computer keeps no queue
+      // and each host's is still read.
+      const cleanupCheckQueues = registerCheckQueueIpc(ipcMain, watcherEnabled && crossMachineEnabled, 'checks' in localRuntime ? localRuntime.checks : undefined,
         () => windows.getTrustedRenderers(), () => agentControl.hostId(), (channel, payload) => { windows.sendToMain(channel, payload) }, hostRouter)
       const cleanupContinue = registerContinueIpc(ipcMain, continueService, () => windows.getTrustedRenderers())
       const cleanupNextPrompts = registerNextPromptIpc(ipcMain, localRuntime.nextPrompts, () => agentControl.hostId(), () => windows.getTrustedRenderers())

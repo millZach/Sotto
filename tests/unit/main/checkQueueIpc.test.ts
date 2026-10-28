@@ -18,14 +18,27 @@ function remote(machines: MachineChecks[]): RemoteCheckQueues & { change(): void
 }
 
 describe('the window’s read of every machine’s check queue (#1312)', () => {
-  it('registers nothing and sends nothing where this computer keeps no queue, as stable keeps none', () => {
+  it('registers nothing and sends nothing where Work across machines is off, as in stable', () => {
     const { ipc, handlers, main } = ipcRegistry()
     const send = vi.fn()
     const hosts = remote([])
-    registerCheckQueueIpc(ipc, undefined, () => [main], () => LOCAL, send, hosts)()
+    registerCheckQueueIpc(ipc, false, new CheckQueue('This computer'), () => [main], () => LOCAL, send, hosts)()
     hosts.change()
     expect(handlers.size).toBe(0)
     expect(send).not.toHaveBeenCalled()
+  })
+
+  it('reads and follows each host\u2019s queue where this computer runs no local host, so it keeps no queue of its own', async () => {
+    const { ipc, handlers, main, mainEvent } = ipcRegistry()
+    const send = vi.fn()
+    const forge: MachineChecks = { hostId: FORGE, thisComputer: false, checks: [{ id: 'three', whose: 'thread', thread: hostEntityKey(FORGE, 'journeys') }] }
+    const hosts = remote([forge])
+    const close = registerCheckQueueIpc(ipc, true, undefined, () => [main], () => LOCAL, send, hosts)
+    expect(await handlers.get(CHECK_QUEUES_READ)!(mainEvent)).toEqual({ machines: [forge] })
+    hosts.change()
+    expect(send).toHaveBeenCalledWith(CHECK_QUEUES_CHANGED, { machines: [forge] })
+    close()
+    expect(handlers.size).toBe(0)
   })
 
   it('answers the main window with this computer’s queue first, its threads named as the window names them, then each host’s', async () => {
@@ -34,7 +47,7 @@ describe('the window’s read of every machine’s check queue (#1312)', () => {
     queue.join('one', vi.fn(), { whose: 'watcher', title: 'Capture check', thread: 'capture' })
     queue.join('two', vi.fn(), { whose: 'thread', by: 'parent', thread: 'child', work: 'building' })
     const forge: MachineChecks = { hostId: FORGE, thisComputer: false, checks: [{ id: 'three', whose: 'thread', thread: hostEntityKey(FORGE, 'journeys') }] }
-    const close = registerCheckQueueIpc(ipc, queue, () => [main], () => LOCAL, vi.fn(), remote([forge]))
+    const close = registerCheckQueueIpc(ipc, true, queue, () => [main], () => LOCAL, vi.fn(), remote([forge]))
     const read = handlers.get(CHECK_QUEUES_READ)!
     expect(await read(mainEvent)).toEqual({ machines: [
       { hostId: LOCAL, thisComputer: true, checks: [{ id: 'one', whose: 'watcher', title: 'Capture check', thread: hostEntityKey(LOCAL, 'capture') },
@@ -50,7 +63,7 @@ describe('the window’s read of every machine’s check queue (#1312)', () => {
     const send = vi.fn()
     const queue = new CheckQueue('This computer')
     const hosts = remote([])
-    const close = registerCheckQueueIpc(ipc, queue, () => [main], () => LOCAL, send, hosts)
+    const close = registerCheckQueueIpc(ipc, true, queue, () => [main], () => LOCAL, send, hosts)
     queue.join('one', vi.fn(), { whose: 'watcher' }); queue.join('two', vi.fn(), { whose: 'thread' })
     await settle()
     expect(send).toHaveBeenCalledTimes(1)
