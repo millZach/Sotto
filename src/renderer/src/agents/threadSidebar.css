@@ -258,7 +258,7 @@
 .thread-nav__row--details:is(:hover, :focus-within) .thread-nav__status { visibility: hidden; max-width: 0; }
 .thread-nav__row--details:is(:hover, :focus-within) .thread-nav__branch { padding-right: 114px; }
 .thread-nav__resize { position: absolute; top: 0; bottom: 0; right: 0; width: 8px; cursor: col-resize; touch-action: none; z-index: 5; -webkit-app-region: no-drag; }
-.thread-nav__resize::before { content: ''; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; }
+.thread-nav__resize::before { content: ''; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; transition: background-color 160ms ease; }
 .thread-nav__resize:is(:hover, :focus-visible)::before, .thread-nav[data-resizing] .thread-nav__resize::before { background: var(--tt-focus); }
 .thread-nav[data-resizing] { user-select: none; }
 .thread-nav__rail { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; min-height: 0; padding-top: 12px; }
