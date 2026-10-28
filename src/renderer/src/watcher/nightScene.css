@@ -58,6 +58,9 @@
    secondary tier where the conversation's would be muted, as the names and times are (pick D2), so the column's ink
    ceiling keeps them clear of the glyphs under them: 3:1 once the pointer or the keyboard reaches the lane. */
 .watcher-pane .message-scrubber { --tt-text-muted: var(--tt-text-2); }
+/* Each tick carries the room's colour around it as the column's words do, so it reads against the room rather than the
+   hill under it. The lane itself still paints nothing (#1646). */
+.watcher-pane .message-scrubber__tick::before { box-shadow: 0 0 1px 1px var(--tt-canvas), 0 0 3px 1px var(--tt-canvas), 0 0 6px 2px var(--tt-canvas); }
 /* Watcher's composer is frosted glass: the card's colour, partly clear, over the scene and the words passing under it,
    blurred, with no edge in any state (ADR-0110). It is never thinner than lets every word on it keep 4.5:1 over pure
    white or pure black, whatever a picture in the conversation puts under it: the scene works that out from the theme
@@ -65,6 +68,9 @@
    card is 92%, which holds for every built-in theme. This is the one composer that is not solid (ADR-0084, amended by
    ADR-0126); asking for less transparency makes it solid again. */
 .watcher-pane > .thread-workspace__compose > .thread-prompt { background: color-mix(in srgb, var(--tt-card) var(--watcher-glass, 92%), transparent); -webkit-backdrop-filter: blur(14px) saturate(1.1); backdrop-filter: blur(14px) saturate(1.1); }
+/* The glass is as thick as the muted tier needs. On it the placeholder takes that tier whole, not the 55% the solid
+   fields thin it to (#1646). */
+.watcher-pane > .thread-workspace__compose .prompt-editor { --placeholder-ink: var(--tt-text-muted); }
 @media (prefers-reduced-transparency: reduce) {
   .watcher-pane > .thread-workspace__compose > .thread-prompt { background: var(--tt-card); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
