@@ -396,6 +396,28 @@ describe('the desktop\'s record of a start from a branch on a paired host', () =
     remote.close()
   })
 
+  it('lets go of the queue place held for a start whose answer was lost once an exact read proves it was never made (Sol re-check)', async () => {
+    let read: () => unknown = () => { throw new Error('The socket closed.') }
+    const mac = pairedHost(ask => {
+      if (ask.type === 'delegate') throw new Error('The socket closed.')
+      return ask.type === 'release' ? { status: 'ok' } : read()
+    })
+    const remote = new DesktopRemoteDelegations(await folder(), { machineName: () => 'the Mac', letGo: async () => undefined })
+    remote.useDelivery(async () => undefined)
+    remote.useHosts(mac.source)
+    await remote.start('parent', 'code-review', macPlacement, { ...remoteAsk, input: { ...remoteAsk.input, test_run: true }, branch: landedOnMac, reservation: RESERVED })
+    // Still being admitted there: the place stays.
+    read = () => ({ status: 'refused', code: 'UNKNOWN_DELEGATION', message: 'Still admitting.', admitting: true })
+    mac.reconnect()
+    await expect.poll(() => mac.asked.length).toBe(2)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(mac.asked.filter(ask => ask.type === 'release')).toEqual([])
+    read = () => ({ status: 'refused', code: 'UNKNOWN_DELEGATION', message: 'None.', absent: true })
+    mac.reconnect()
+    await expect.poll(() => mac.asked.filter(ask => ask.type === 'release')).toEqual([{ type: 'release', caller: 'parent', reservation: RESERVED }])
+    remote.close()
+  })
+
   it('leaves the branch to the host once the host names the delegation that owns it', async () => {
     const mac = pairedHost(ask => ask.type === 'delegate' ? { status: 'ok', delegation: { id: THERE, thread: 'child-mac', outcome: 'working' } }
       : { status: 'refused', code: 'UNKNOWN_DELEGATION', message: 'None.' })

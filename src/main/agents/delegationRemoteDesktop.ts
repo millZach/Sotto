@@ -73,6 +73,8 @@ const recordSchema = z.object({
    * not yet named the delegation that owns it: let go of there once an exact read proves none does, kept while it may.
    */
   moveId: z.uuid().optional(),
+  /** The place reserved in the host's check queue for this start (#1316 part 2), kept and let go of as `moveId` is. */
+  reservation: z.uuid().optional(),
   createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(),
 }).strict()
 type RemoteRecord = z.infer<typeof recordSchema>
@@ -307,6 +309,7 @@ export class DesktopRemoteDelegations {
     if (!connection || this.closed) throw new RelayUnanswered('away')
     const time = now()
     const record: RemoteRecord = { id: randomUUID(), ...base, ...ask.retryKey ? { callerRetryKey: ask.retryKey } : {}, ...ask.branch ? { moveId: ask.branch.moveId } : {},
+      ...ask.reservation ? { reservation: ask.reservation } : {},
       outcome: 'working', createdAt: time, updatedAt: time }
     this.add(record); this.dirty.add(record)
     if (record.action === 'start') this.reserve(record)
@@ -488,9 +491,12 @@ export class DesktopRemoteDelegations {
       // Proved: the host holds nothing under that ID, or none under the retry key and is admitting none. A branch landed
       // there for a start never made is owned by no thread, so it is let go of.
       const landed = record.delegation === undefined && record.moveId !== undefined ? { hostId: record.hostId, projectId: record.projectId, moveId: record.moveId } : undefined
-      this.update(record, saved => { saved.outcome = 'unknown'; if (tells) saved.told = 'unknown'; delete saved.unread; if (saved.delegation === undefined) saved.absent = true; delete saved.moveId })
+      // So is the place held for it in that host's check queue.
+      const place = record.delegation === undefined ? record.reservation : undefined
+      this.update(record, saved => { saved.outcome = 'unknown'; if (tells) saved.told = 'unknown'; delete saved.unread; if (saved.delegation === undefined) saved.absent = true; delete saved.moveId; delete saved.reservation })
       this.release(record)
       if (landed) void this.options.letGo?.(landed).catch(() => undefined)
+      if (place) void this.releasePlace(record.callerId, record.hostId, place)
     }
   }
   /** Reads a host's unresolved delegations for `callerId` again shortly, while the host is still admitting one. */
@@ -504,7 +510,7 @@ export class DesktopRemoteDelegations {
     const outcome = watcherOutcomeSchema.safeParse(delegation.outcome)
     this.update(record, saved => {
       // Named by the host, the delegation owns the branch landed for it there, and the host lets go of it if its start fails.
-      if (typeof delegation.id === 'string' && uuidSchema.safeParse(delegation.id).success) { saved.delegation = delegation.id; delete saved.moveId; this.release(saved) }
+      if (typeof delegation.id === 'string' && uuidSchema.safeParse(delegation.id).success) { saved.delegation = delegation.id; delete saved.moveId; delete saved.reservation; this.release(saved) }
       if (typeof delegation.thread === 'string' && id.safeParse(delegation.thread).success) saved.thread = delegation.thread
       saved.outcome = outcome.success ? outcome.data : 'unknown'
       // A call's own result tells the thread; a read after a reconnect does not, so what moved is sent as news.
