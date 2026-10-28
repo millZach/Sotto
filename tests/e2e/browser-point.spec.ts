@@ -73,6 +73,18 @@ async function pageText(launched: LaunchedSotto, url: string, selector: string):
   }, { url, selector })
 }
 
+/**
+ * Whether turning Point on gave the page the keyboard. Windows reports a web page focused only while its window is the
+ * foreground window, which a test run on a computer someone is using cannot promise, so with another app in front this
+ * says nothing; the keys this spec sends reach the page directly either way.
+ */
+async function pageHasKeyboard(launched: LaunchedSotto, url: string): Promise<boolean> {
+  return launched.app.evaluate(({ BrowserWindow, webContents }, url) => {
+    const foreground = BrowserWindow.getFocusedWindow() !== null
+    return !foreground || webContents.getAllWebContents().find(item => item.getURL() === url)!.isFocused()
+  }, url)
+}
+
 test('point at something names the element, takes its picture and puts it in the message with a comment', async () => {
   test.setTimeout(300_000)
   await mkdir(SHOTS, { recursive: true })
@@ -161,7 +173,7 @@ test('point at something names the element, takes its picture and puts it in the
         await expect(comment).toBeHidden()
         await expect(point).toHaveAttribute('aria-pressed', 'true')
         await expect(line).toBeVisible()
-        await expect.poll(() => launched.app.evaluate(({ webContents }, url) => webContents.getAllWebContents().find(item => item.getURL() === url)!.isFocused(), url)).toBe(true)
+        await expect.poll(() => pageHasKeyboard(launched, url)).toBe(true)
         await key(launched, url, 'Escape')
         await expect(point).toHaveAttribute('aria-pressed', 'false')
         await expect(line).toBeHidden()
@@ -171,7 +183,7 @@ test('point at something names the element, takes its picture and puts it in the
         // Point again from the keyboard: Enter on Point, Tab through the page to Save trail, and Enter picks it.
         await point.press('Enter')
         await expect(line).toBeVisible()
-        await expect.poll(() => launched.app.evaluate(({ webContents }, url) => webContents.getAllWebContents().find(item => item.getURL() === url)!.isFocused(), url)).toBe(true)
+        await expect.poll(() => pageHasKeyboard(launched, url)).toBe(true)
         await key(launched, url, 'Tab'); await key(launched, url, 'Tab')
         await expect.poll(() => pageText(launched, url, '#save').then(() => launched.app.evaluate(async ({ webContents }, url) => webContents.getAllWebContents().find(item => item.getURL() === url)!.executeJavaScript('document.activeElement.id') as Promise<string>, url))).toBe('save')
         await key(launched, url, 'Enter')

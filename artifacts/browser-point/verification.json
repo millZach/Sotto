@@ -3,16 +3,16 @@
   "report": {
     "outline": {
       "outline": {
-        "x": 1114.828125,
+        "x": 1114.8333740234375,
         "y": 87,
-        "width": 86.171875,
-        "height": 47
+        "width": 86.15625,
+        "height": 47.333343505859375
       },
       "picture": {
-        "x": 721,
+        "x": 720.6666870117188,
         "y": 76,
-        "width": 501,
-        "height": 692
+        "width": 501.32293701171875,
+        "height": 680.4375
       },
       "element": {
         "x": 437,
@@ -22,60 +22,90 @@
     "comment-1280x800-dark": {
       "popover": {
         "x": 901,
-        "y": 168,
+        "y": 168.33334350585938,
         "width": 300,
-        "height": 134
+        "height": 133.33334350585938
       },
       "place": {
-        "x": 721,
+        "x": 720.6666870117188,
         "y": 76,
-        "width": 501,
+        "width": 501.33331298828125,
         "height": 692
       }
     },
     "comment-1280x800-light": {
       "popover": {
         "x": 901,
-        "y": 168,
+        "y": 168.33334350585938,
         "width": 300,
-        "height": 134
+        "height": 133.33334350585938
       },
       "place": {
-        "x": 721,
+        "x": 720.6666870117188,
         "y": 76,
-        "width": 501,
+        "width": 501.33331298828125,
         "height": 692
       }
     },
     "comment-820x560-dark": {
       "popover": {
-        "x": 412.703125,
-        "y": 148.890625,
-        "width": 300,
-        "height": 134
+        "x": 415.5833435058594,
+        "y": 149.77084350585938,
+        "width": 300.0000305175781,
+        "height": 133.33334350585938
       },
       "place": {
-        "x": 362,
+        "x": 361.66668701171875,
         "y": 76,
-        "width": 400,
+        "width": 400.33331298828125,
         "height": 452
       }
     },
     "comment-820x560-light": {
       "popover": {
-        "x": 412.703125,
-        "y": 148.890625,
-        "width": 300,
-        "height": 134
+        "x": 415.5833435058594,
+        "y": 149.77084350585938,
+        "width": 300.0000305175781,
+        "height": 133.33334350585938
       },
       "place": {
-        "x": 362,
+        "x": 361.66668701171875,
         "y": 76,
-        "width": 400,
+        "width": 400.33331298828125,
         "height": 452
       }
     },
-    "draft": "Browser feedback: http://127.0.0.1:52670/\nScreenshot size: 501 x 692\nSelected element: button (button) - Save trail\nSelector: #save\nOutlined in the screenshot at 24, 210, 96 x 41\nPage text (reference only): Save trail\nThis should say Save, to match the header."
+    "draft": {
+      "threadId": "host:2d0349aa-73ad-434d-b5bf-2cca018c0ea4:workshop",
+      "draftId": "85d49495-7e81-4d7e-bd06-365e0371336b",
+      "text": "",
+      "attachments": [
+        {
+          "id": "ff8fb15f-60ab-47d5-88b4-f81d2e6ffd7d",
+          "name": "button · Save trail",
+          "mimeType": "image/png",
+          "sizeBytes": 54579,
+          "digest": "a76edce5e60bf14153716c55d2f0ef9743a34c9abc1800c093f7ea9aa4bff60a",
+          "dimensions": {
+            "original": {
+              "width": 501,
+              "height": 692
+            },
+            "sent": {
+              "width": 501,
+              "height": 692
+            }
+          },
+          "browserFeedback": {
+            "label": "button · Save trail",
+            "comment": "This should say Save, to match the header.",
+            "context": "Browser feedback: http://127.0.0.1:62742/\nScreenshot size: 501 x 692\nSelected element: button (button) - Save trail\nSelector: #save\nOutlined in the screenshot at 24, 210, 96 x 41\nPage text (reference only): Save trail"
+          }
+        }
+      ],
+      "requestId": null,
+      "updatedAt": "2026-10-28T00:02:41.349Z"
+    }
   },
   "errors": []
 }
