@@ -1933,6 +1933,8 @@ private struct FollowupCard: View {
     @EnvironmentObject var model: AppModel
     let ref: ThreadRef
     let item: Followup
+    @State private var steerPresses = 0
+    @State private var removePresses = 0
     var body: some View {
         let steers = model.steerOffered(item, in: ref)
         let removable = FollowupQueue.removable(item)
@@ -1954,17 +1956,25 @@ private struct FollowupCard: View {
             if steers || removable {
                 HStack(spacing: Space.s2) {
                     if steers {
-                        Button { Task { await model.steer(item, in: ref) } } label: {
+                        Button {
+                            steerPresses += 1
+                            Task { await model.steer(item, in: ref) }
+                        } label: {
                             Label("Steer now", systemImage: "arrow.turn.up.right")
                         }
                         .buttonStyle(PillButtonStyle(kind: .primary))
+                        .sensoryFeedback(.impact(flexibility: .soft), trigger: steerPresses)
                         .disabled(!model.canSteer(item, in: ref))
                         .accessibilityHint("Sends this message now instead of after the turn.")
                     }
                     if removable {
-                        Button("Remove") { Task { await model.removeFollowup(item, in: ref) } }
-                            .buttonStyle(PillButtonStyle(kind: .ghost))
-                            .disabled(!model.canRemove(item, in: ref))
+                        Button("Remove") {
+                            removePresses += 1
+                            Task { await model.removeFollowup(item, in: ref) }
+                        }
+                        .buttonStyle(PillButtonStyle(kind: .ghost))
+                        .sensoryFeedback(.impact(flexibility: .soft), trigger: removePresses)
+                        .disabled(!model.canRemove(item, in: ref))
                             .accessibilityLabel(item.wakeUp == true ? String(localized: "Remove the wake-up from the queue") : String(localized: "Remove this message from the queue"))
                     }
                 }

@@ -2006,6 +2006,7 @@ private struct WatchedPane: View {
 /// A thread Watcher works with, as Threads draws a working card, with what Watcher last did with it. It opens the thread
 /// where this iPhone lists it. Where watching lasts until the user stops it, Stop watching sits at its foot.
 private struct WatchedCard: View {
+    @State private var stops = 0
     let thread: WatcherPage.WatchedThread
     let computer: String
     let listed: ThreadSummary?
@@ -2068,13 +2069,17 @@ private struct WatchedCard: View {
     private func foot(_ stop: @escaping () -> Void) -> some View {
         HStack(spacing: Space.s2) {
             Spacer(minLength: 0)
-            Button(action: stop) {
+            Button {
+                stops += 1
+                stop()
+            } label: {
                 HStack(spacing: 6) {
                     if stopping { ProgressView().controlSize(.mini) }
                     Text("Stop watching")
                 }
             }
             .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
+            .sensoryFeedback(.impact(weight: .medium), trigger: stops)
             .disabled(!canStop)
             .accessibilityLabel("Stop watching \(thread.title)")
             .accessibilityIdentifier("watched-stop-\(thread.target.ref.id)")
