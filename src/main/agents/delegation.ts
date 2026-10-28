@@ -586,7 +586,9 @@ export class DelegationService {
     const checks = this.options.checks
     const ticket = checks && input.test_run === true && input.thread === undefined ? randomUUID() : undefined
     if (!checks || !ticket) return await this.ask(threadId, input, context)
-    checks.join(ticket, () => this.checkTurn(ticket))
+    // What the window shows of it while it waits (#1312, fourth part): a thread's check, who asked, and what names it.
+    checks.join(ticket, () => this.checkTurn(ticket), { whose: 'thread', by: threadId, work: input.work,
+      ...input.title ? { title: input.title } : {}, ...input.provider ? { provider: input.provider } : {} })
     try { return await this.ask(threadId, input, context, ticket) }
     finally { if (!this.ticketRecords.has(ticket)) checks.leave(ticket) }
   }
@@ -1345,6 +1347,9 @@ export class DelegationService {
    */
   private queueCheck(record: DelegationRecord, brief: string, start: DelegatedStart, branch: LandedBranch | undefined, ticket: string): boolean {
     this.checkTickets.set(record.id, ticket); this.ticketRecords.set(ticket, record.id)
+    // Its thread, by the ID admission gave it, and the provider it starts on, for the machine's panel and its row in Agents.
+    const provider = resolveModel(this.snapshot().models, start.modelId)?.providerId
+    this.options.checks!.describe(ticket, { thread: record.delegatedThreadId, ...provider ? { provider } : {} })
     if (this.options.checks!.running(ticket)) return false
     this.waitingChecks.set(record.id, { brief, start, branch })
     return true

@@ -50,6 +50,8 @@ function ended(child: LaunchedProcess, encoding?: BufferEncoding): Promise<Ended
   })
 }
 const node = (script: string): [string, string[]] => [process.execPath, ['-e', script]]
+/** Prints each line it is given back as `echo:<line>`, and exits with 4 once its input ends. */
+const echo = node('let rest = ""; process.stdin.setEncoding("utf8").on("data", text => { const lines = (rest + text).split("\\n"); rest = lines.pop(); for (const line of lines) process.stdout.write("echo:" + line + "\\n") }).on("end", () => process.exit(4))')
 
 describe.each([
   ['in this thread', (): string | null => null],
@@ -107,6 +109,23 @@ describe.each([
       if (pid) try { process.kill(pid) } catch { /* Already gone. */ }
     }
   })
+
+  it('keeps an interactive launch\'s input open, writes it in order, answers a flushed write and reports its exit', async () => {
+    resetMainThreadLaunches()
+    const child = launcher(path()).launchInteractive(...echo, { cwd: process.cwd(), env: process.env })
+    const exits: Array<number | null> = []
+    child.once('exit', code => { exits.push(code) })
+    const result = ended(child, 'utf8')
+    child.stdin.write('one\n')
+    await new Promise<void>((done, fail) => { child.stdin.write('two\n', error => error ? fail(error) : done()) })
+    child.stdin.end()
+    expect(await result).toMatchObject({ stdout: 'echo:one\necho:two\n', code: 4, errors: [] })
+    expect(exits).toEqual([4])
+    expect(mainThreadLaunches.count).toBe(offThread ? 0 : 1)
+    // Input written once the process has gone fails, as a child's own input does.
+    child.stdin.on('error', () => undefined)
+    expect(await new Promise<Error | null | undefined>(done => { child.stdin.write('late\n', done) })).toBeInstanceOf(Error)
+  })
 })
 
 describe('the launcher without its worker', () => {
@@ -145,6 +164,17 @@ describe('the launcher without its worker', () => {
     const result = ended(child)
     child.kill()
     expect(await result).toMatchObject({ stdout: '', signal: 'SIGTERM' })
+  })
+
+  it('gives an interactive launch it starts here what was written to it before the worker failed', async () => {
+    const broken = join(await folder(), 'broken.cjs')
+    await writeFile(broken, 'throw new Error("This worker does not start.")')
+    const child = launcher(broken).launchInteractive(...echo, { cwd: process.cwd(), env: process.env })
+    const result = ended(child, 'utf8')
+    const flushed = new Promise<Error | null | undefined>(done => { child.stdin.write('before\n', done) })
+    child.stdin.end()
+    expect(await result).toMatchObject({ stdout: 'echo:before\n', code: 4, errors: [] })
+    expect(await flushed).toBeFalsy()
   })
 
   it('says a running launch stopped reporting when the worker closes, and launches in this thread after', async () => {

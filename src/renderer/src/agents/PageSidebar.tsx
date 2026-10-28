@@ -11,7 +11,7 @@ import { overlayDraftThreads, useDraftThreads } from './draftThreads'
 import { useClock } from './paneGrid'
 import { SidebarFoot, SidebarTop } from './SidebarFrame'
 import { useShared } from './stateSharing'
-import { describeThreads, EMPTY_NEEDS_YOU, organizeWorkspace } from './threadFacts'
+import { EMPTY_NEEDS_YOU, organizeWorkspace, threadDescriber, useWordsRevision } from './threadFacts'
 import { useContinueEnabled } from './continuations'
 import { setNewThreadIntent } from './threadIntent'
 import { ThreadSidebar } from './ThreadSidebar'
@@ -30,7 +30,8 @@ export function PageSidebar({ now: fixedNow }: {
   /** A fixed clock for captures; the rows' times then hold still. */
   readonly now?: number | undefined
 }): ReactNode {
-  const { t, i18n: { locale } } = useLingui()
+  const { t } = useLingui()
+  const words = useWordsRevision()
   const agents = useAgents()
   const app = useOptionalApp()
   const watcherEnabled = useWatcherEnabled()
@@ -42,13 +43,15 @@ export function PageSidebar({ now: fixedNow }: {
   const roomWatcher = useRoomWatcherThreadId()
   const state = useMemo(() => withoutRoomWatcher(visibleWatcherState(overlayDraftThreads(published, drafts), watcherEnabled), watcherEnabled, roomWatcher),
     [published, drafts, watcherEnabled, roomWatcher])
-  // Rows and folders carry words in the interface language, so a change of language describes them again.
+  // Rows and folders carry words in the interface language, so a change of language or of its messages describes them
+  // again. Otherwise the describer describes only the threads an update changed and hands back the rest as they were.
   const continued = useContinueEnabled()
-  const rows = useShared(useMemo(() => state === null ? [] : describeThreads(state, now, { continued }), [state, now, continued, locale]))
+  const [describeRows] = useState(threadDescriber)
+  const rows = useShared(useMemo(() => state === null ? [] : describeRows(state, now, { continued }), [state, now, continued, words]))
   // Delegated threads have no row of their own: they live in their delegating thread's Tools › Agents (ADR-0081; Owl only).
   const delegation = useOwlFeature('thread-delegation')
   const sidebarRows = useListedRows(agents.threadDrafts, rows)
-  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], needsYou: EMPTY_NEEDS_YOU, matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation, now), [state, sidebarRows, query, delegation, now, locale]))
+  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], needsYou: EMPTY_NEEDS_YOU, matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation, now), [state, sidebarRows, query, delegation, now, words]))
   const navigate = app?.actions.navigate
   const command = agents.command
   const openThread = useCallback((threadId: string): void => {

@@ -267,7 +267,8 @@ extension AppModel {
         guard let computer = computer(hostID) else { preparingSends.remove(box.id); return }
         // The host holds a draft ID to one packet, its photos' handles included: photos staged again go as another message.
         let draftID = watcherDrafts[hostID, default: WatcherDrafts()].id(for: text, photos: images.map(\.id))
-        watcherSending[hostID] = text; drafts[key] = ""
+        watcherSending[hostID] = WatcherSending(text: text, draftID: draftID, before: Set(watcherPage(hostID)?.conversation.messages.map(\.id) ?? []))
+        drafts[key] = ""
         if !photos.isEmpty { watcherSendingPhotos[hostID] = photos; draftPhotos[key] = nil; photoNotices[key] = nil }
         defer {
             watcherSending[hostID] = nil
@@ -303,7 +304,7 @@ extension AppModel {
             case .refused(let refusal):
                 // A page pushed while the words were on their way may already say Watcher took them or that they wait in
                 // its queue. Its word wins: put back in the box, they could be sent a second time.
-                if let page = watcherPage(hostID), page.delivery(of: draftID) == "accepted" || page.followup(of: draftID) != nil {
+                if let page = watcherPage(hostID), page.holds(draftID) {
                     watcherDrafts[hostID]?.resolve(draftID)
                     return
                 }
@@ -324,13 +325,20 @@ extension AppModel {
             // conversation, and the page is read again.
             watcherDrafts[hostID]?.end(draftID)
             // Taken, or waiting in Watcher's queue to go next: either way the computer has the words.
-            if watcherPage(hostID)?.delivery(of: draftID) == "accepted" || watcherPage(hostID)?.followup(of: draftID) != nil {
+            if watcherPage(hostID)?.holds(draftID) == true {
                 watcherDrafts[hostID]?.resolve(draftID)
             } else {
                 feedback = restoreWatcherDraft(text, photos: photos, on: hostID, unconfirmed: true) ? Self.watcherUnconfirmed : Self.watcherUnconfirmedSetAside
                 await readWatcher(hostID)
             }
         }
+    }
+    /// The words on their way to Watcher, to show under the conversation, until the page shows them itself: the computer
+    /// puts them in Watcher's conversation, or its queue, as soon as it takes the send, often before it answers it, and
+    /// shown in both they read twice.
+    func watcherSendingShown(_ hostID: String) -> WatcherSending? {
+        guard let sending = watcherSending[hostID], let page = watcherPage(hostID) else { return watcherSending[hostID] }
+        return sending.shown(in: page) ? nil : sending
     }
     static let watcherUnconfirmed = String(localized: "Watcher didn’t confirm your message, so it’s back in the box. Check the conversation before you send it again.")
     static let watcherUnconfirmedSetAside = String(localized: "Watcher didn’t confirm your message. It’s kept under the conversation, because the box has newer words. Check the conversation before you send it again.")
@@ -1185,9 +1193,9 @@ struct HeldDetail {
     @Published private var receiptFollowers: [String: ReceiptFollower] = [:]
     private struct ReceiptFollower { let token: UUID; let generation: UUID? }
     /// The kinds that read as sending. A thread or project creation keeps its own sheet and its own wait.
-    private static let sendingKinds: Set<String> = ["reply", "queue", "answer", "watcher-answer", "interrupt", "steer", "remove", "compact", "babysit", "stop-babysitting"]
+    private static let sendingKinds: Set<String> = ["reply", "queue", "answer", "watcher-answer", "interrupt", "steer", "remove", "compact", "settle", "restore", "babysit", "stop-babysitting"]
     /// The kinds whose refusal the computer says only in its shell's error, said here as feedback.
-    private static let queueActionKinds: Set<String> = ["steer", "remove", "compact", "babysit", "stop-babysitting"]
+    private static let queueActionKinds: Set<String> = ["steer", "remove", "compact", "settle", "restore", "babysit", "stop-babysitting"]
     /// A receipt the computer says is still being carried out is read again this often, this many times: about ten minutes.
     private static let receiptInterval: UInt64 = 2_000_000_000
     private static let receiptReads = 300
@@ -1221,8 +1229,8 @@ struct HeldDetail {
     @Published var watcherAlertOpened: String?
     /// The computer whose Watcher was last chosen for the Watcher tab, by its alert or the header's menu.
     @Published private var chosenWatcherHost: String?
-    /// Words on their way to Watcher, by computer, shown under the conversation until Watcher takes them.
-    @Published private(set) var watcherSending: [String: String] = [:]
+    /// The message on its way to Watcher, by computer. It locks the box until the computer answers the send.
+    @Published private(set) var watcherSending: [String: WatcherSending] = [:]
     /// The photos of the message on its way to Watcher, by computer. Watcher's box stays locked meanwhile, so they go back
     /// in it, with the words, when Watcher refuses them or doesn't confirm them.
     @Published private(set) var watcherSendingPhotos: [String: [DraftPhoto]] = [:]
@@ -1980,9 +1988,10 @@ struct HeldDetail {
     }
     /// A reply, answer or stop still on its way, as opposed to one its computer couldn't confirm.
     func isSending(_ item: PendingOperation) -> Bool { dispatchingOperations.keys.contains(item.id) || receiptFollowers[item.id] != nil }
-    /// Stop waits only for another stop or an answer on its way; a reply, a queued reply, a steer or a removal never holds it.
+    /// Stop waits only for another stop or an answer on its way; a reply, a queued reply, a steer, a removal or a settle
+    /// never holds it.
     func canInterrupt(_ ref: ThreadRef) -> Bool {
-        online(ref.hostID) && pending(for: ref).allSatisfy { ["reply", "queue", "steer", "remove"].contains($0.kind) }
+        online(ref.hostID) && pending(for: ref).allSatisfy { ["reply", "queue", "steer", "remove", "settle", "restore"].contains($0.kind) }
             && thread(ref)?.status == "running" && (capabilities(for: ref)?.interrupt ?? false)
     }
     /// The thread's follow-up queue, in order, as the reply box shows it.
@@ -2008,16 +2017,32 @@ struct HeldDetail {
     /// Why Compact context can't go now, in a few words, or nil when it can.
     func compactionHeld(_ ref: ThreadRef) -> String? {
         guard let thread = self.thread(ref) else { return String(localized: "This thread is no longer open", comment: "Why Compact context can't be pressed now") }
-        if !online(ref.hostID) {
-            return String(localized: "Available when \(name(ref.hostID)) is connected", comment: "Why Compact context can't be pressed now. %@ is the computer's name")
-        }
-        if !pending(for: ref).isEmpty || live[ref.hostID]?.shell?.busyThreadIds?.contains(ref.threadID) == true {
-            return String(localized: "Available once \(name(ref.hostID)) confirms your last action", comment: "Why Compact context can't be pressed now. %@ is the computer's name")
-        }
+        if let held = actionHeld(ref) { return held }
         let detail = shown(for: ref)
         return ContextCompaction.held(thread, messages: detail?.messages,
                                       earlierAvailable: detail?.earlierAvailable == true || thread.earlierAvailable == true)
     }
+    /// Why none of the thread's ••• actions can go now, or nil when they can: its computer is away, or hasn't confirmed the
+    /// last one.
+    func actionHeld(_ ref: ThreadRef) -> String? {
+        if !online(ref.hostID) {
+            return String(localized: "Available when \(name(ref.hostID)) is connected", comment: "Why a thread action can't be pressed now. %@ is the computer's name")
+        }
+        if !pending(for: ref).isEmpty || live[ref.hostID]?.shell?.busyThreadIds?.contains(ref.threadID) == true {
+            return String(localized: "Available once \(name(ref.hostID)) confirms your last action", comment: "Why a thread action can't be pressed now. %@ is the computer's name")
+        }
+        return nil
+    }
+    /// What the thread offers for the Settled shelf, as the desktop's ••• does: Settle while it is open, Restore once it is
+    /// settled on its own. One settled with its project, or one its provider closed, offers neither.
+    func shelfAction(_ ref: ThreadRef) -> ShelfAction? {
+        guard let thread = self.thread(ref) else { return nil }
+        let project = live[ref.hostID]?.shell?.host.projects.first { $0.id == thread.projectId }
+        if project?.workspaceSettledAt?.isEmpty == false { return nil }
+        if thread.workspaceSettledAt?.isEmpty == false { return .restore }
+        return ThreadGroups.isSettled(thread, project: project) ? nil : .settle
+    }
+    enum ShelfAction { case settle, restore }
     func canAnswer(_ request: AgentRequest, in ref: ThreadRef) -> Bool {
         guard canAct(on: ref), mayAnswer(ref.hostID), request.supported else { return false }
         let allowed = capabilities(for: ref)
@@ -2951,6 +2976,13 @@ struct HeldDetail {
         guard canAct(on: ref), compactionOffered(ref), compactionHeld(ref) == nil else { return }
         await act(on: ref, kind: "compact") { try Commands.compact(threadID: ref.threadID) }
     }
+    /// Moves the thread on or off the Settled shelf. The thread, its history and its working copy all stay, and a running
+    /// thread settles as it does on the desktop: settling stops nothing.
+    /// The action is the one the press showed, so a thread moved on the desktop meanwhile is left as it now stands.
+    func shelve(_ ref: ThreadRef, _ action: ShelfAction) async {
+        guard canAct(on: ref), shelfAction(ref) == action, actionHeld(ref) == nil else { return }
+        await act(on: ref, kind: action == .settle ? "settle" : "restore") { try Commands.settle(threadID: ref.threadID, settled: action == .settle) }
+    }
     /// One of the thread's own commands, marked by its kind and thread alone before it goes.
     private func act(on ref: ThreadRef, kind: String, _ build: () throws -> JSONValue) async {
         guard let computer = self.computer(ref.hostID) else { return }
@@ -3114,6 +3146,16 @@ struct HeldDetail {
         // A phone-minted Sotto ID identifies this exact creation even after its receipt expired.
         if item.kind == "create-thread", shell?.host.threads.contains(where: { $0.id == item.threadID }) == true {
             try forgetMarker(item.id)
+            return
+        }
+        // Settle and Restore are confirmed by the thread standing where they put it, even once the receipt has expired.
+        if item.kind == "settle" || item.kind == "restore", let thread = shell?.host.threads.first(where: { $0.id == item.threadID }),
+           (thread.workspaceSettledAt?.isEmpty == false) == (item.kind == "settle") {
+            try forgetMarker(item.id)
+            if feedback == nil || feedbackOperations.contains(item.id) {
+                feedback = item.kind == "settle" ? String(localized: "Moved to Settled.", comment: "Said once the computer confirms the user settled a thread")
+                    : String(localized: "Restored.", comment: "Said once the computer confirms the user took a thread off the Settled shelf")
+            }
             return
         }
         let delivery = shell?.deliveries?.first { $0.threadId == item.threadID && $0.draftId == item.draftID }
