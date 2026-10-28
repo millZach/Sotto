@@ -316,6 +316,28 @@ describe('the desktop\'s record of a start from a branch on a paired host', () =
   })
 })
 
+describe('two calls racing with one retry key for a start from a branch on a paired host', () => {
+  it('lets go of the branch the second call landed, which no thread uses, and makes one delegation (Sol review)', async () => {
+    const m = moves()
+    const mac = pairedHost(() => ({ status: 'ok', delegation: { id: THERE, thread: 'child-mac', outcome: 'working' } }))
+    const remote = new DesktopRemoteDelegations(await folder(), { machineName: () => 'the Mac',
+      letGo: landed => m.moves.forget({ ...landed, here: DESKTOP }) })
+    remote.useDelivery(async () => undefined)
+    remote.useHosts(mac.source)
+    const f = await desktop({ branchMoves: m.moves, remote })
+    const call = { ...start, machine: MAC, from_my_branch: true, retry_key: '77777777-7777-4777-8777-777777777777' }
+    const [first, second] = await Promise.all([f.delegation.delegate('parent', call), f.delegation.delegate('parent', call)])
+    expect((first as { delegation: { id: string } }).delegation.id).toBe((second as { delegation: { id: string } }).delegation.id)
+    expect(m.asked).toHaveLength(2)
+    const delegates = mac.asked.filter(ask => ask.type === 'delegate')
+    expect(delegates).toHaveLength(1)
+    const used = (delegates[0] as { branch: { moveId: string } }).branch.moveId
+    const unused = (m.asked as { moveId: string }[]).map(item => item.moveId).find(moveId => moveId !== used)
+    expect(m.forgotten).toEqual([{ hostId: MAC, projectId: 'mac-project', moveId: unused, here: DESKTOP }])
+    remote.close()
+  })
+})
+
 describe('who brings a remote child\'s changes back (#1030)', () => {
   it('offers it only on the desktop that started the worker', () => {
     const parent = { id: `host:${FORGE}:forge-parent`, hostId: FORGE, worktree: { mode: 'independent', status: 'ready', path: '/p', branch: 'feat/x' } }

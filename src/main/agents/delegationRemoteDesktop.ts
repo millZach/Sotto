@@ -260,7 +260,11 @@ export class DesktopRemoteDelegations {
    */
   async start(callerId: string, work: DelegationWork, placement: { readonly hostId: string; readonly projectId: string; readonly receipt: WorkerPlacementReceipt }, ask: RemoteAsk): Promise<Record<string, unknown>> {
     const retried = ask.retryKey ? this.byRetry.get(retryIndex(callerId, ask.retryKey)) : undefined
-    if (retried) return await this.read(callerId, retried.id)
+    if (retried) {
+      // A call that raced the first one with the same retry key landed a branch of its own, which no thread will use.
+      if (ask.branch) await this.options.letGo?.({ hostId: placement.hostId, projectId: placement.projectId, moveId: ask.branch.moveId }).catch(() => undefined)
+      return await this.read(callerId, retried.id)
+    }
     return await this.ask({ callerId, hostId: placement.hostId, projectId: placement.projectId, machine: placement.receipt.name, action: 'start', work }, ask,
       answer => ({ ...answer, placement: { ...placement.receipt, awayFromDefault: placement.receipt.awayFromDefault } }))
   }
