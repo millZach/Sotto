@@ -47,7 +47,7 @@ The glyphs go no stronger than leaves every word over them at 4.5:1 (ADR-0156, d
 | Dark | 0.20 | 0.05 | 0.14 | 0.17 | 0.22 | 0.19 |
 | Light | 0.05 | 0.13 | 0.11 | 0.03 | 0.14 | 0.16 |
 
-Zach chose the strict rule after seeing light Graphite at 0.05; counting the controls' fills afterwards brought it to 0.03, and light T3 Code (`spreading-light.png`) to 0.05, where the waves are faint but show. A theme whose ceiling comes to nothing draws nothing and stops at once. The faint tier is left out by his earlier choice: counted too, the ceiling fell further, so faint words may dip under 4.5:1 for the second or two a wave passes. The spec checks the ceiling is above nothing and no more than 0.65, and that it is the canvas's computed opacity. The frames in this note are at these ceilings.
+Zach chose the strict rule after seeing light Graphite at 0.05; counting the controls' fills afterwards brought it to 0.03, and light T3 Code (`spreading-light.png`) to 0.05, where the waves are faint but show. A theme whose ceiling comes to nothing moves no water, draws nothing and stops at once, and later presses start nothing until the theme changes. The faint tier is left out by his earlier choice: counted too, the ceiling fell further, so faint words may dip under 4.5:1 for the second or two a wave passes. The spec checks the ceiling is above nothing and no more than 0.65, and that it is the canvas's computed opacity. The frames in this note are at these ceilings.
 
 ## Cost
 

@@ -3,7 +3,7 @@ import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ClickEffect, waveCeiling } from '../../../src/renderer/src/components/ClickEffect'
-import { GLYPH_ALPHA } from '../../../src/renderer/src/components/clickWater'
+import { ClickWater, GLYPH_ALPHA } from '../../../src/renderer/src/components/clickWater'
 import { over, wordContrast } from '../../../src/renderer/src/watcher/nightScene'
 import { AppShell } from '../../../src/renderer/src/components/AppShell'
 import type { AppSettings } from '../../../src/shared/settings'
@@ -130,6 +130,31 @@ describe('the click effect', () => {
     pressAt(container.querySelector('dialog button')!, 300, 600)
     await frames(6)
     expect(drawn).toBeGreaterThan(0)
+  })
+
+  it('moves no water for a theme that leaves no room for the glyphs, and starts nothing for a press after, until the theme changes', async () => {
+    // Every colour reads as transparent, so the ceiling is nothing.
+    HTMLCanvasElement.prototype.getContext = (() => ({
+      setTransform() {}, scale() {}, fillText() {}, save() {}, restore() {}, globalAlpha: 1, font: '', fillStyle: '', textAlign: '', textBaseline: '',
+      clearRect() { cleared++ }, drawImage() { drawn++ }, fillRect() {}, getImageData: () => ({ data: [0, 0, 0, 0] }),
+    })) as never
+    const step = vi.spyOn(ClickWater.prototype, 'step')
+    render(<ClickEffect />)
+    pressAt(document.body, 300, 200)
+    await frames(6)
+    expect(step).not.toHaveBeenCalled()
+    expect(drawn).toBe(0)
+    const frame = vi.spyOn(window, 'requestAnimationFrame')
+    pressAt(document.body, 300, 200)
+    expect(frame).not.toHaveBeenCalled()
+    // A theme change is read again at the next press.
+    document.documentElement.setAttribute('data-theme', 'light')
+    await act(async () => { await Promise.resolve() })
+    pressAt(document.body, 300, 200)
+    expect(frame).toHaveBeenCalledTimes(1)
+    await frames(6)
+    expect(step).not.toHaveBeenCalled()
+    document.documentElement.removeAttribute('data-theme')
   })
 
   it('stops and clears when it goes, and a press afterwards draws nothing', async () => {

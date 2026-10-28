@@ -204,6 +204,14 @@ export function ClickEffect(): ReactNode {
     const frame = (now: number): void => {
       request = null
       if (water === null) return
+      if (stale || ink === null) {
+        ink = inkNow()
+        // The ceiling is the canvas's own opacity, so glyphs that overlap still add up to no more than it.
+        canvas.style.opacity = String(ink.ceiling)
+        stale = false
+      }
+      // A theme that leaves no room for the glyphs moves no water, draws nothing, and nothing keeps running for it.
+      if (ink.ceiling <= 0) { stop(); return }
       // Steps are owed by the clock, not by frames, so the waves keep their speed and their cost on any display.
       owed += now - last
       last = now
@@ -213,14 +221,6 @@ export function ClickEffect(): ReactNode {
       for (let step = 0; step < Math.min(due, MAX_STEPS); step++) water.step()
       water.age(due - MAX_STEPS)
       if (water.calm) { stop(); return }
-      if (stale || ink === null) {
-        ink = inkNow()
-        // The ceiling is the canvas's own opacity, so glyphs that overlap still add up to no more than it.
-        canvas.style.opacity = String(ink.ceiling)
-        stale = false
-      }
-      // A theme that leaves no room for the glyphs draws nothing, and nothing keeps running for it.
-      if (ink.ceiling <= 0) { stop(); return }
       quiet = sceneColumn()
       const { digits } = ink
       const width = SPRITE_W, height = GLYPH_H
@@ -241,6 +241,8 @@ export function ClickEffect(): ReactNode {
     const press = (event: PointerEvent): void => {
       if (event.button !== 0 || document.visibilityState === 'hidden') return
       if (onComposer(event)) return
+      // Until the theme changes, a theme found to leave no room for the glyphs starts nothing at all.
+      if (request === null && ink !== null && ink.ceiling <= 0) return
       waterNow().press(event.clientX, event.clientY)
       if (request !== null) return
       stale = true
@@ -262,7 +264,7 @@ export function ClickEffect(): ReactNode {
     // A face that finished loading draws the 0s and 1s again, in it rather than its fallback.
     const fontsLoaded = (): void => { ink = null; stale = true }
     document.fonts?.addEventListener('loadingdone', fontsLoaded)
-    const theme = new MutationObserver(records => { if (!rootStyleUnchanged(records, document.documentElement)) stale = true })
+    const theme = new MutationObserver(records => { if (!rootStyleUnchanged(records, document.documentElement)) { ink = null; stale = true } })
     theme.observe(document.documentElement, { attributes: true, attributeOldValue: true, attributeFilter: ['style', 'data-theme', 'data-theme-id'] })
     window.addEventListener('pointerdown', press, { capture: true, passive: true })
     window.addEventListener('resize', resized)
