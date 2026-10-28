@@ -1,7 +1,7 @@
 import { plural } from '@lingui/core/macro'
 import type { AgentThread } from '../../shared/agents'
 import { parseHostEntityKey } from '../../shared/clientIdentity'
-import { delegatedThreadsBelow } from '../../shared/delegation'
+import { DELEGATION_LEVELS_MAX } from '../../shared/delegation'
 import { isThreadTurnRunning } from '../../shared/threadActivity'
 
 /**
@@ -12,7 +12,10 @@ import { isThreadTurnRunning } from '../../shared/threadActivity'
  * and what Stop says of those it could not reach.
  */
 
-/** A thread below another, at either level, on a different machine than the thread that delegated to it. */
+/**
+ * A thread below another, at either level, that the cascade on that thread's own machine does not reach: one on a different
+ * machine, or one back on the same machine that was delegated to through a thread on another.
+ */
 export interface DelegatedElsewhere {
   /** The window's key for it. */
   readonly key: string
@@ -24,19 +27,32 @@ export interface DelegatedElsewhere {
 }
 
 /**
- * The threads below `parentKey`, both levels, from the window's own links, that run on a machine other than its own. One
- * pass over the threads the window holds, whatever the history.
+ * The threads below `parentKey`, both levels, from the window's own links, that the cascade on its own machine does not
+ * reach: every one on another machine, and one back on its machine whose link runs through a thread on another, as a check
+ * a thread on forge delegated back to this computer for a thread here. Only those whose whole chain stays on the parent's
+ * machine are left to that machine. One pass over the threads the window holds, whatever the history.
  */
 export function delegatedElsewhere(threads: readonly AgentThread[], parentKey: string): DelegatedElsewhere[] {
   const parentHost = parseHostEntityKey(parentKey)?.hostId
-  const below = new Set(delegatedThreadsBelow(threads, parentKey))
-  if (!below.size) return []
-  const elsewhere: DelegatedElsewhere[] = []
+  const children = new Map<string, AgentThread[]>()
   for (const thread of threads) {
-    if (!below.has(thread.id)) continue
-    const key = parseHostEntityKey(thread.id)
-    if (!key || key.hostId === parentHost) continue
-    elsewhere.push({ key: thread.id, hostId: key.hostId, id: key.id, running: isThreadTurnRunning(thread), settledAt: thread.workspaceSettledAt ?? null })
+    if (!thread.delegatedBy) continue
+    const siblings = children.get(thread.delegatedBy)
+    if (siblings) siblings.push(thread); else children.set(thread.delegatedBy, [thread])
+  }
+  const elsewhere: DelegatedElsewhere[] = [], seen = new Set([parentKey])
+  let level = (children.get(parentKey) ?? []).map(thread => ({ thread, through: false }))
+  for (let depth = 0; depth < DELEGATION_LEVELS_MAX && level.length; depth++) {
+    const next: { thread: AgentThread; through: boolean }[] = []
+    for (const { thread, through } of level) {
+      if (seen.has(thread.id)) continue
+      seen.add(thread.id)
+      const key = parseHostEntityKey(thread.id)
+      const across = through || key !== null && key.hostId !== parentHost
+      if (key && across) elsewhere.push({ key: thread.id, hostId: key.hostId, id: key.id, running: isThreadTurnRunning(thread), settledAt: thread.workspaceSettledAt ?? null })
+      for (const child of children.get(thread.id) ?? []) next.push({ thread: child, through: across })
+    }
+    level = next
   }
   return elsewhere
 }

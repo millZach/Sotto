@@ -13,12 +13,20 @@ import type { StopLeft } from '../../../src/main/agents/delegationRelayHost'
 const LOCAL = '11111111-1111-4111-8111-111111111111', FORGE = '22222222-2222-4222-8222-222222222222', MAC = '33333333-3333-4333-8333-333333333333'
 const SETTLED_AT = '2026-10-28T10:00:00.000Z'
 
-function host(hostId: string, kind: 'local' | 'remote', name: string, threads: Partial<AgentThread>[]) {
+/**
+ * A host with these threads. Given `stamp`, its Settle and Restore move a thread as the host's own would, settling it at its
+ * own clock's time; without, they change nothing.
+ */
+function host(hostId: string, kind: 'local' | 'remote', name: string, threads: Partial<AgentThread>[], stamp?: () => string) {
   const state = emptyDesktopState(hostId)
   state.host.connected = true; state.connection = 'connected'
   state.host.projects = [{ id: 'project', title: 'Project', path: '/repo' }]
   state.host.threads = threads.map(thread => ({ projectId: 'project', title: 'Task', modelId: '', status: 'idle', messages: [], requests: [], id: 'thread', ...thread }) as AgentThread)
-  const command = vi.fn(async (_input: AgentCommand) => { void _input; return state })
+  const command = vi.fn(async (input: AgentCommand) => {
+    if (stamp && (input.type === 'settle-thread' || input.type === 'restore-thread')) state.host.threads = state.host.threads.map(thread => thread.id !== input.threadId ? thread
+      : { ...thread, workspaceSettledAt: input.type === 'settle-thread' ? thread.workspaceSettledAt ?? stamp() : null })
+    return state
+  })
   let available = true
   const connection: DesktopHostConnection = { hostId, name, kind, available: () => available, ...kind === 'remote' ? { clientId: 'desktop-a' } : {},
     service: { shell: () => state, subscribe: () => () => undefined, command }, detail: async threadId => ({ threadId, revision: 1, messages: [] }), observe: async () => undefined, preview: () => null }
@@ -120,6 +128,27 @@ describe('Stop, Settle and Restore across machines', () => {
       await settled.router.command({ type: 'settle-thread', threadId: parentKey }, desktopWindowClient())
       expect(settled.forge.command).toHaveBeenCalledTimes(1)
     } finally { settled.router.dispose() }
+  })
+
+  it('settles and restores a thread back on this computer that a thread on forge delegated to for it', async () => {
+    // This computer's thread delegated a check to forge, which delegated a fix back to this computer: this computer's own
+    // settle does not reach the fix, since its link runs through forge, and forge's does not either.
+    const router = new DesktopHostRouter(emptyDesktopState, { crossMachineWork: true })
+    const local = host(LOCAL, 'local', 'This computer', [{ id: 'parent' }, { id: 'fix', delegatedBy: hostEntityKey(FORGE, 'check') }, { id: 'own', delegatedBy: 'parent' }],
+      () => SETTLED_AT)
+    const forge = host(FORGE, 'remote', 'forge', [{ id: 'check', delegatedBy: 'relay:desktop-a:parent' }], () => '2026-10-28T10:00:04.000Z')
+    for (const item of [local, forge]) router.add(item.connection)
+    try {
+      await router.command({ type: 'settle-thread', threadId: parentKey }, desktopWindowClient())
+      expect(forge.command).toHaveBeenCalledWith({ type: 'settle-thread', threadId: 'check' }, desktopWindowClient())
+      expect(local.command).toHaveBeenCalledWith({ type: 'settle-thread', threadId: 'fix' }, desktopWindowClient())
+      // A thread this computer's own thread delegated here is this computer's settle's to move, not the window's.
+      expect(local.command).not.toHaveBeenCalledWith({ type: 'settle-thread', threadId: 'own' }, desktopWindowClient())
+      await router.command({ type: 'restore-thread', threadId: parentKey }, desktopWindowClient())
+      expect(forge.command).toHaveBeenCalledWith({ type: 'restore-thread', threadId: 'check' }, desktopWindowClient())
+      expect(local.command).toHaveBeenCalledWith({ type: 'restore-thread', threadId: 'fix' }, desktopWindowClient())
+      expect(local.state.host.threads.find(thread => thread.id === 'fix')?.workspaceSettledAt).toBeNull()
+    } finally { router.dispose() }
   })
 
   it('does none of it in stable', async () => {
