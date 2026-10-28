@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UniformTypeIdentifiers
 import SottoCore
 
 // Watcher on this iPhone (ADR-0073, amended October 11, 2026): the Watcher tab reads the page of the computer that runs
@@ -224,15 +225,16 @@ extension AppModel {
         if page.needsYou.contains(where: { page.isOwn($0) }) { return String(localized: "Answer Watcher’s request first.") }
         return nil
     }
-    /// Whether the Watcher box holds something it can send now: words, photos or both, every photo prepared, and photos
-    /// only to a Watcher whose model takes them.
+    /// Whether the Watcher box holds something it can send now: words, photos, files or any of them, every photo prepared and
+    /// file read, photos only to a Watcher whose model takes them, and files only to a computer that takes them for Watcher.
     func canSendToWatcher(_ hostID: String) -> Bool {
-        let box = PhotoBox.watcher(hostID: hostID), photos = self.photos(box)
+        let box = PhotoBox.watcher(hostID: hostID), photos = self.photos(box), files = self.files(box)
         let text = drafts[box.id] ?? ""
         let written = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         return online(hostID) && watcherSendHeld(hostID) == nil && watcherSending[hostID] == nil && !preparingSends.contains(box.id)
-            && (written || !photos.isEmpty) && text.utf16.count <= 20_000
+            && (written || !photos.isEmpty || !files.isEmpty) && text.utf16.count <= 20_000
             && !photos.contains(where: \.preparing) && (photos.isEmpty || photoSupport(box) == .available)
+            && !files.contains(where: \.reading) && (files.isEmpty || fileSupport(box) == .available)
     }
     /// Sends the box's words and photos to Watcher as the user's own instruction, from this iPhone. While Watcher works, a computer
     /// that takes it steers them into Watcher's turn, or queues them to go next when it can't (#1229, Zach's pick B); an
@@ -247,32 +249,39 @@ extension AppModel {
         // The words as pressed. A message with photos locks the box from the press until Watcher answers, so nothing typed
         // or chosen meanwhile joins it, and a message that comes back finds the box as it left it.
         let text = drafts[key] ?? ""
-        var photos = self.photos(box)
-        var images: [StagedImage] = []
-        if !photos.isEmpty {
+        var photos = self.photos(box), files = self.files(box)
+        var images: [StagedImage] = [], stagedFiles: [StagedFile] = []
+        if !photos.isEmpty || !files.isEmpty {
             preparingSends.insert(box.id)
-            guard let ready = await readyPhotos(box) else { preparingSends.remove(box.id); return }
-            images = ready
-            // Watcher may have changed or been held while the photos were staged: the message stays in the box.
-            guard online(hostID), watcherSendHeld(hostID) == nil, watcherSending[hostID] == nil, photoSupport(box) == .available,
+            var ready: [StagedImage]? = []
+            if !photos.isEmpty { ready = await readyPhotos(box) }
+            var readyFiles: [StagedFile]? = []
+            if ready != nil, !files.isEmpty { readyFiles = await self.readyFiles(box) }
+            guard let ready, let readyFiles else { preparingSends.remove(box.id); return }
+            images = ready; stagedFiles = readyFiles
+            // Watcher may have changed or been held while they were staged: the message stays in the box.
+            guard online(hostID), watcherSendHeld(hostID) == nil, watcherSending[hostID] == nil, images.isEmpty || photoSupport(box) == .available,
+                  stagedFiles.isEmpty || fileSupport(box) == .available,
                   let now = watcherPage(hostID)?.current, now.target == current.target else {
                 preparingSends.remove(box.id)
                 photoNotices[box.id] = String(localized: "Your message wasn’t sent. It’s still in the box.", comment: "A message to Watcher that wasn't sent")
                 return
             }
             current = now
-            // As staged: their handles are what their message's photos carry, and what the box gets back.
-            photos = self.photos(box)
+            // As staged: their handles are what their message's photos and files carry, and what the box gets back.
+            photos = self.photos(box); files = self.files(box)
         }
         guard let computer = computer(hostID) else { preparingSends.remove(box.id); return }
-        // The host holds a draft ID to one packet, its photos' handles included: photos staged again go as another message.
-        let draftID = watcherDrafts[hostID, default: WatcherDrafts()].id(for: text, photos: images.map(\.id))
+        // The host holds a draft ID to one packet, its photos' and files' handles included: staged again, they go as another message.
+        let draftID = watcherDrafts[hostID, default: WatcherDrafts()].id(for: text, photos: images.map(\.id) + stagedFiles.map(\.id))
         watcherSending[hostID] = WatcherSending(text: text, draftID: draftID, before: Set(watcherPage(hostID)?.conversation.messages.map(\.id) ?? []))
         drafts[key] = ""
         if !photos.isEmpty { watcherSendingPhotos[hostID] = photos; draftPhotos[key] = nil; photoNotices[key] = nil }
+        if !files.isEmpty { watcherSendingFiles[hostID] = files; draftFiles[key] = nil; photoNotices[key] = nil }
         defer {
             watcherSending[hostID] = nil
             watcherSendingPhotos[hostID] = nil
+            watcherSendingFiles[hostID] = nil
             preparingSends.remove(box.id)
             watcherDrafts[hostID]?.end(draftID)
             // The page read after a lost acknowledgement came while the words were still on their way, and may say
@@ -282,17 +291,17 @@ extension AppModel {
         #if DEBUG && os(iOS)
         if isUIFixture { await sendToFixtureWatcher(text, on: hostID); watcherDrafts[hostID]?.resolve(draftID); return }
         #endif
-        guard let connection = connections[hostID], let epoch = generations[hostID] else { restoreWatcherDraft(text, photos: photos, on: hostID, unconfirmed: false); return }
+        guard let connection = connections[hostID], let epoch = generations[hostID] else { restoreWatcherDraft(text, photos: photos, files: files, on: hostID, unconfirmed: false); return }
         let steer = offersWatcherSteer(hostID)
         // Whether Watcher's turn ran when these words left: an older computer's refusal of them says only that, even if a
         // page saying Watcher finished arrives before it.
         let workingAtSend = current.status == "running"
-        let operation = WatcherWire.send(target: current.target, clientID: computer.pairing.clientId, draftID: draftID, text: text, steer: steer, images: images)
+        let operation = WatcherWire.send(target: current.target, clientID: computer.pairing.clientId, draftID: draftID, text: text, steer: steer, images: images, files: stagedFiles)
         do {
             let reply = try await connection.call(operation, as: WatcherSendResult.self)
             // A reply over a connection that has since changed doesn't say what happened to the words.
             guard generations[hostID] == epoch else {
-                feedback = restoreWatcherDraft(text, photos: photos, on: hostID, unconfirmed: true) ? Self.watcherUnconfirmed : Self.watcherUnconfirmedSetAside
+                feedback = restoreWatcherDraft(text, photos: photos, files: files, on: hostID, unconfirmed: true) ? Self.watcherUnconfirmed : Self.watcherUnconfirmedSetAside
                 return
             }
             switch reply {
@@ -310,13 +319,13 @@ extension AppModel {
                 }
                 // A refused message's photos are staged again before they go, as a refused reply's are (ADR-0031), unless
                 // the computer can't say whether Watcher took it: sent again, it is then the same message.
-                restoreWatcherDraft(text, photos: photos, on: hostID, unconfirmed: false, restage: refusal.code != "DELIVERY_UNCERTAIN")
+                restoreWatcherDraft(text, photos: photos, files: files, on: hostID, unconfirmed: false, restage: refusal.code != "DELIVERY_UNCERTAIN")
                 // An older computer refuses a message while Watcher works, in words that don't say why.
                 let busy = !steer && refusal.code == "PROVIDER_UNAVAILABLE" && workingAtSend
                 feedback = busy ? WatcherWords.updateToSteer(name(hostID)) : refusal.message
             }
         } catch let refusal as HostRefusal {
-            restoreWatcherDraft(text, photos: photos, on: hostID, unconfirmed: false, restage: true)
+            restoreWatcherDraft(text, photos: photos, files: files, on: hostID, unconfirmed: false, restage: true)
             feedback = refusal.localizedDescription
         } catch {
             // Lost on its way, perhaps after Watcher took it. Its part on the wire has ended either way, so the page read
@@ -328,7 +337,7 @@ extension AppModel {
             if watcherPage(hostID)?.holds(draftID) == true {
                 watcherDrafts[hostID]?.resolve(draftID)
             } else {
-                feedback = restoreWatcherDraft(text, photos: photos, on: hostID, unconfirmed: true) ? Self.watcherUnconfirmed : Self.watcherUnconfirmedSetAside
+                feedback = restoreWatcherDraft(text, photos: photos, files: files, on: hostID, unconfirmed: true) ? Self.watcherUnconfirmed : Self.watcherUnconfirmedSetAside
                 await readWatcher(hostID)
             }
         }
@@ -344,13 +353,15 @@ extension AppModel {
     static let watcherUnconfirmedSetAside = String(localized: "Watcher didn’t confirm your message. It’s kept under the conversation, because the box has newer words. Check the conversation before you send it again.")
     /// Puts words that didn't reach Watcher, or that it didn't confirm, back in its box. When the user has written
     /// something new there since, they are kept under the conversation instead, to be put back once the box is empty.
-    /// Says whether they went back in the box. Photos always go back in the box: it stayed locked while they were away. With
+    /// Says whether they went back in the box. Photos and files always go back in the box: it stayed locked while they were away. With
     /// `restage`, they are staged again before they next go.
-    @discardableResult private func restoreWatcherDraft(_ text: String, photos: [DraftPhoto] = [], on hostID: String, unconfirmed: Bool,
-                                                        restage: Bool = false) -> Bool {
+    @discardableResult private func restoreWatcherDraft(_ text: String, photos: [DraftPhoto] = [], files: [DraftFile] = [], on hostID: String,
+                                                        unconfirmed: Bool, restage: Bool = false) -> Bool {
         let key = watcherDraftKey(hostID)
         let returned = restage ? photos.map { var photo = $0; photo.staged = nil; photo.stagedAt = nil; return photo } : photos
         if !returned.isEmpty { draftPhotos[key] = (draftPhotos[key] ?? []) + returned }
+        let returnedFiles = restage ? files.map { var file = $0; file.staged = nil; file.stagedAt = nil; return file } : files
+        if !returnedFiles.isEmpty { draftFiles[key] = (draftFiles[key] ?? []) + returnedFiles }
         let box = drafts[key] ?? ""
         if box.isEmpty || box == text { drafts[key] = text; return true }
         var kept = watcherSetAside[hostID] ?? []
@@ -929,6 +940,14 @@ struct Live: Equatable {
     var watcherSummary: WatcherSummary?
 }
 
+/// What the share extension handed over, moved out of its inbox and waiting for a box (ADR-0157).
+struct SharedArrival: Equatable {
+    var folders: [URL] = []
+    var words: [String] = []
+    var files: [URL] = []
+}
+enum ShareDestination: Equatable { case watcher, newThread }
+
 /// Where a photo comes from: a name for it and its original bytes, read when its turn comes.
 struct PhotoSource: Sendable {
     let name: String
@@ -940,6 +959,7 @@ struct PhotoSource: Sendable {
 enum PhotoBox: Hashable {
     case thread(ThreadRef)
     case watcher(hostID: String)
+    var isWatcher: Bool { if case .watcher = self { return true }; return false }
     var hostID: String {
         switch self {
         case .thread(let ref): return ref.hostID
@@ -1193,6 +1213,15 @@ struct HeldDetail {
     /// Files in each thread's reply box, by `ThreadRef.id`, in the order they were chosen (ADR-0131); and those of a reply
     /// on its way, by operation ID, and of a refused reply, by `ThreadRef.id`. Their notices are the photos'.
     @Published private(set) var draftFiles: [String: [DraftFile]] = [:]
+    /// Rises each time photos or files go into a box, from the + menu, a paste or the share sheet, so the box answers with one tap.
+    @Published private(set) var attachHaptics: [String: Int] = [:]
+    /// The box whose text field should have the caret next, as one a share went into. Its field takes it when it shows.
+    @Published var focusRequest: String?
+    /// Where a share just went, for the tabs to open it: Watcher, or a new thread. They set it back to nil.
+    @Published var shareOpened: ShareDestination?
+    @Published private(set) var heldShare: SharedArrival?
+    private var shareDelivery: Task<Void, Never>?
+    private var sharesSwept = false
     @Published private(set) var submittedFiles: [String: [DraftFile]] = [:]
     @Published private(set) var failedFiles: [String: [DraftFile]] = [:]
     /// Reply boxes, by `PhotoBox.id`, whose message is having its photos staged again before it is sent, and Watcher's
@@ -1248,6 +1277,7 @@ struct HeldDetail {
     /// The photos of the message on its way to Watcher, by computer. Watcher's box stays locked meanwhile, so they go back
     /// in it, with the words, when Watcher refuses them or doesn't confirm them.
     @Published private(set) var watcherSendingPhotos: [String: [DraftPhoto]] = [:]
+    @Published private(set) var watcherSendingFiles: [String: [DraftFile]] = [:]
     /// Words that didn't reach Watcher, or that it didn't confirm, while newer words were in its box, by computer, oldest
     /// first. Each is offered back under the conversation, to go back in the box once it is empty. Nothing here is sent.
     @Published private(set) var watcherSetAside: [String: [WatcherSetAside]] = [:]
@@ -1471,7 +1501,16 @@ struct HeldDetail {
             // The pull request journey: the laptop is an Owl computer that offers the pull request sheet and babysitting.
             if arguments.contains("--ui-pull-request") && host == laptop { features += [Self.pullRequestViewFeature, Self.babysitFeature] }
             if agents && host == laptop { features += [AgentsRoster.feature, "subagents", "failure-seen"] }
+            // The paste and share journeys: the laptop keeps files, for a thread and for Watcher.
+            if arguments.contains("--ui-files") && host == laptop { features += [FileLimits.stagingFeature, WatcherWire.filesFeature] }
             live[host] = Live(status: host == laptop ? .online : .unreachable, shell: shell, mayAnswer: answers, features: features)
+        }
+        // The share journey: a link and a PDF wait in the inbox, as the share extension leaves them.
+        if arguments.contains("--ui-shared"), let container = shareContainer {
+            let share = ShareInbox.folder(in: container).appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try? FileManager.default.createDirectory(at: share, withIntermediateDirectories: true)
+            try? Data("%PDF-1.4\n%%EOF\n".utf8).write(to: share.appendingPathComponent("Quarterly report.pdf"))
+            try? ShareInbox.write(.init(words: "https://example.com/release-notes", files: ["Quarterly report.pdf"], sharedAt: Date()), to: share)
         }
         if watching {
             var page = Self.fixtureWatcherPage(laptop: laptop, studio: studio, mayAnswer: watcherAnswers,
@@ -1983,12 +2022,15 @@ struct HeldDetail {
     }
     func photos(_ ref: ThreadRef) -> [DraftPhoto] { photos(.thread(ref)) }
     func photos(_ box: PhotoBox) -> [DraftPhoto] { draftPhotos[box.id] ?? [] }
-    /// A thread's reply box's files. Watcher's box takes none yet (ADR-0131, October 25 amendment).
-    func files(_ ref: ThreadRef) -> [DraftFile] { draftFiles[ref.id] ?? [] }
-    func files(_ box: PhotoBox) -> [DraftFile] { if case .thread(let ref) = box { return files(ref) }; return [] }
-    /// Whether a thread's reply box can take files: its computer keeps them only where its own `attach-any-file` answer is on.
-    func fileSupport(_ ref: ThreadRef) -> FileSupport {
-        FileSupport(online: online(ref.hostID), features: live[ref.hostID]?.features ?? [])
+    func files(_ ref: ThreadRef) -> [DraftFile] { files(.thread(ref)) }
+    func files(_ box: PhotoBox) -> [DraftFile] { draftFiles[box.id] ?? [] }
+    func fileSupport(_ ref: ThreadRef) -> FileSupport { fileSupport(.thread(ref)) }
+    /// Whether a reply box can take files: its computer keeps them only where its own `attach-any-file` answer is on, and
+    /// Watcher's box only where that computer also takes them for Watcher (ADR-0131, October 28 amendment).
+    func fileSupport(_ box: PhotoBox) -> FileSupport {
+        let features = live[box.hostID]?.features ?? []
+        if box.isWatcher, !features.contains(WatcherWire.filesFeature) { return FileSupport(online: online(box.hostID), features: []) }
+        return FileSupport(online: online(box.hostID), features: features)
     }
     /// Whether a thread's computer hands its sent files back to open here (`attachment-files`).
     func opensSentFiles(_ hostID: String) -> Bool { live[hostID]?.features.contains(FileLimits.openingFeature) == true }
@@ -2623,7 +2665,7 @@ struct HeldDetail {
             var ready: [StagedImage]? = []
             if !photos(ref).isEmpty { ready = await readyPhotos(.thread(ref)) }
             var readyFiles: [StagedFile]? = []
-            if ready != nil, !files(ref).isEmpty { readyFiles = await self.readyFiles(ref) }
+            if ready != nil, !files(ref).isEmpty { readyFiles = await self.readyFiles(.thread(ref)) }
             preparingSends.remove(ref.id)
             guard let ready, let readyFiles else { return }
             images = ready; stagedFiles = readyFiles
@@ -2650,6 +2692,101 @@ struct HeldDetail {
         } catch { feedback = error.localizedDescription }
     }
 
+    // MARK: Shared to Sotto (ADR-0157)
+
+    /// Takes what the share extension left in the App Group's inbox, when Sotto opens or comes forward, and puts it in
+    /// Watcher's box: its words in the text field, its photos and files attached, the caret in the field. Several shares
+    /// waiting go in together. Where no computer shows this iPhone Watcher, they go in the next new thread instead.
+    func takeShares() {
+        guard shareDelivery == nil, heldShare == nil, let container = shareContainer else { return }
+        let shares = ShareInbox.pending(in: container)
+        guard !shares.isEmpty else { return }
+        // Moved into this app's own temporary folder, so the extension never writes over a share being read. Anything there
+        // from before this launch is what a crash left mid-read, and goes.
+        let taken = FileManager.default.temporaryDirectory.appendingPathComponent("Shared", isDirectory: true)
+        if !sharesSwept { sharesSwept = true; try? FileManager.default.removeItem(at: taken) }
+        try? FileManager.default.createDirectory(at: taken, withIntermediateDirectories: true)
+        var arrival = SharedArrival()
+        for share in shares {
+            let moved = taken.appendingPathComponent(share.folder.lastPathComponent, isDirectory: true)
+            guard (try? FileManager.default.moveItem(at: share.folder, to: moved)) != nil else { continue }
+            arrival.folders.append(moved)
+            if !share.manifest.words.isEmpty { arrival.words.append(share.manifest.words) }
+            arrival.files += share.manifest.files.prefix(ShareInbox.itemsMax).map { moved.appendingPathComponent($0) }
+        }
+        guard !arrival.folders.isEmpty else { return }
+        shareDelivery = Task { [weak self] in
+            await self?.deliver(arrival)
+            self?.shareDelivery = nil
+            // One that came while this one was on its way.
+            self?.takeShares()
+        }
+    }
+    private var shareContainer: URL? {
+        #if DEBUG && os(iOS)
+        // The journeys build unsigned, with no App Group, so their shares wait in a folder of the app's own.
+        if isUIFixture { return FileManager.default.temporaryDirectory.appendingPathComponent("ui-share-group", isDirectory: true) }
+        #endif
+        return FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: ShareInbox.appGroup)
+    }
+    /// Waits, a few seconds at most, for a computer still being reached to show Watcher before sending a share elsewhere.
+    private func deliver(_ arrival: SharedArrival) async {
+        for _ in 0..<60 {
+            if let hostID = watcherHostID, online(hostID), let page = watcherPage(hostID) {
+                // A message on its way holds the box; the share waits for it.
+                if page.current != nil, !preparingSends.contains(PhotoBox.watcher(hostID: hostID).id) {
+                    put(arrival, in: .watcher(hostID: hostID))
+                    shareOpened = .watcher
+                    return
+                }
+                // Watcher's computer is here but runs no Watcher now: it can't take a message.
+                if page.current == nil { break }
+            } else if !computers.contains(where: { (live[$0.hostID]?.status ?? .connecting) == .connecting }) { break }
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+        heldShare = arrival
+        shareOpened = .newThread
+    }
+    /// A new thread opened from the sheet a share opened takes the share.
+    func newThreadOpened(_ ref: ThreadRef) {
+        guard let held = heldShare else { return }
+        heldShare = nil
+        put(held, in: .thread(ref))
+        // A share that came while this one waited for its thread is taken now.
+        takeShares()
+    }
+    /// The new thread's sheet closed without a thread: the share it held goes.
+    func newThreadClosed() {
+        guard let held = heldShare else { return }
+        heldShare = nil
+        held.folders.forEach { try? FileManager.default.removeItem(at: $0) }
+        takeShares()
+    }
+    /// The one line the new thread's sheet shows while it holds a share.
+    var shareNotice: String? {
+        heldShare == nil ? nil : String(localized: "Watcher can’t take messages on this iPhone now, so what you shared goes in a new thread.")
+    }
+    private func put(_ arrival: SharedArrival, in box: PhotoBox) {
+        let words = arrival.words.joined(separator: "\n"), draft = drafts[box.id] ?? ""
+        if !words.isEmpty { drafts[box.id] = draft.isEmpty ? words : draft + "\n" + words }
+        // Any image goes as a photo, made ready as one from the library is, HEIC included; the rest go as files.
+        let photos = arrival.files.filter { UTType(filenameExtension: $0.pathExtension)?.conforms(to: .image) == true }
+        attach(box, photos: photos.map { url in
+            PhotoSource(name: url.deletingPathExtension().lastPathComponent) { try await Task.detached { try Data(contentsOf: url) }.value }
+        }, files: arrival.files.filter { !photos.contains($0) }.map { url in
+            FileSource(name: url.lastPathComponent, sizeBytes: try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) {
+                try await Task.detached { try Data(contentsOf: url) }.value
+            }
+        })
+        focusRequest = box.id
+        // The box holds the bytes once they are read; the copies go then.
+        let work = (photoWork, fileWork), folders = arrival.folders
+        Task.detached {
+            await work.0?.value; await work.1?.value
+            folders.forEach { try? FileManager.default.removeItem(at: $0) }
+        }
+    }
+
     // MARK: Photos in the reply box
 
     func attachPhotos(_ ref: ThreadRef, from sources: [PhotoSource]) { attachPhotos(.thread(ref), from: sources) }
@@ -2663,6 +2800,7 @@ struct HeldDetail {
         guard room > 0 else { photoNotices[box.id] = files(box).isEmpty ? box.photoLimitWords : FileWords.full; return }
         let added = sources.prefix(room).map { (photo: DraftPhoto(), source: $0) }
         draftPhotos[box.id, default: []] += added.map { $0.photo }
+        attachHaptics[box.id, default: 0] += 1
         let others = files(box).isEmpty ? box.photoLimitOthersWords : FileWords.othersNotAdded
         photoNotices[box.id] = sources.count > room ? others : nil
         let previous = photoWork
@@ -2794,54 +2932,78 @@ struct HeldDetail {
     }
     // MARK: Files in the reply box (ADR-0131)
 
-    /// Adds files to a thread's reply box. As on the desktop, nothing is attached when one is past the host's limits, and
-    /// that is decided by the sizes the Files app gives, before any is read. Each is then read into memory and staged on the
-    /// thread's computer in the order chosen, one at a time.
-    func attachFiles(_ ref: ThreadRef, from sources: [FileSource]) {
-        guard !sources.isEmpty, fileSupport(ref) == .available, !preparingSends.contains(ref.id) else { return }
-        let others = photos(ref).map { $0.prepared?.byteCount ?? 0 } + files(ref).map(\.sizeBytes)
-        if let refusal = Files.refusal(adding: sources.map { $0.sizeBytes ?? 0 }, to: others) { photoNotices[ref.id] = refusal; return }
+    func attachFiles(_ ref: ThreadRef, from sources: [FileSource]) { attachFiles(.thread(ref), from: sources) }
+    func removeFile(_ id: UUID, from ref: ThreadRef) { removeFile(id, from: .thread(ref)) }
+    /// Adds files to a reply box, a thread's or Watcher's. As on the desktop, nothing is attached when one is past the host's
+    /// limits, and that is decided by the sizes the Files app gives, before any is read. Each is then read into memory and
+    /// staged on the box's computer in the order chosen, one at a time.
+    func attachFiles(_ box: PhotoBox, from sources: [FileSource]) {
+        guard !sources.isEmpty, fileSupport(box) == .available, !preparingSends.contains(box.id) else { return }
+        let others = photos(box).map { $0.prepared?.byteCount ?? 0 } + files(box).map(\.sizeBytes)
+        if let refusal = Files.refusal(adding: sources.map { $0.sizeBytes ?? 0 }, to: others) { photoNotices[box.id] = refusal; return }
         let added = sources.map { (file: DraftFile(name: $0.name, mimeType: Files.mimeType(forName: $0.name), sizeBytes: $0.sizeBytes ?? 0), source: $0) }
-        draftFiles[ref.id, default: []] += added.map { $0.file }
-        photoNotices[ref.id] = nil
+        draftFiles[box.id, default: []] += added.map { $0.file }
+        photoNotices[box.id] = nil
+        attachHaptics[box.id, default: 0] += 1
         let previous = fileWork
         fileWork = Task { [weak self] in
             await previous?.value
-            for item in added { await self?.readFile(item.file.id, in: ref, from: item.source) }
+            for item in added { await self?.readFile(item.file.id, in: box, from: item.source) }
         }
     }
-    func removeFile(_ id: UUID, from ref: ThreadRef) {
-        guard !preparingSends.contains(ref.id) else { return }
-        dropFile(id, in: ref, reason: nil)
+    func removeFile(_ id: UUID, from box: PhotoBox) {
+        guard !preparingSends.contains(box.id) else { return }
+        dropFile(id, in: box, reason: nil)
     }
-    private func readFile(_ id: UUID, in ref: ThreadRef, from source: FileSource) async {
+    /// Photos and files chosen together, from Files, a paste or the share sheet. A photo goes as a photo, made ready as one
+    /// from the library is, and is refused in the photos' own words where the box's model can't take photos. Everything else
+    /// goes as a file. The whole choice is checked first: when its files are past the limits, counting the photos chosen with
+    /// them, nothing of it is attached.
+    func attach(_ box: PhotoBox, photos: [PhotoSource], files: [FileSource]) {
+        let photoRefusal = photos.isEmpty ? nil : photoSupport(box).reason(computer: name(box.hostID), watcher: box.isWatcher)
+        // A box that takes no files still takes the photos chosen with them, and says why the files stayed out.
+        if !files.isEmpty, let reason = fileSupport(box).reason(computer: name(box.hostID)) {
+            if photoRefusal == nil { attachPhotos(box, from: photos) }
+            photoNotices[box.id] = reason
+            return
+        }
+        let chosenPhotos = photoRefusal == nil ? photos.count : 0
+        let others = self.photos(box).map { $0.prepared?.byteCount ?? 0 } + self.files(box).map(\.sizeBytes) + Array(repeating: 0, count: chosenPhotos)
+        if !files.isEmpty, let refusal = Files.refusal(adding: files.map { $0.sizeBytes ?? 0 }, to: others) {
+            photoNotices[box.id] = refusal
+            return
+        }
+        attachFiles(box, from: files)
+        if let photoRefusal { photoNotices[box.id] = photoRefusal } else { attachPhotos(box, from: photos) }
+    }
+    private func readFile(_ id: UUID, in box: PhotoBox, from source: FileSource) async {
         // Removed while it waited its turn: nothing is read.
-        guard file(id, in: ref) != nil else { return }
+        guard file(id, in: box) != nil else { return }
         do {
             let bytes = try await loaded(source.load, for: id)
-            guard file(id, in: ref) != nil else { return }
+            guard file(id, in: box) != nil else { return }
             guard !bytes.isEmpty else { throw ClientError.rejected(FileWords.empty) }
-            let others = photos(ref).compactMap { $0.prepared?.byteCount } + files(ref).filter { $0.id != id }.map(\.sizeBytes)
+            let others = photos(box).compactMap { $0.prepared?.byteCount } + files(box).filter { $0.id != id }.map(\.sizeBytes)
             // The size the Files app gave may not have been the file's own.
             if let refusal = Files.refusal(adding: [bytes.count], to: others) { throw ClientError.rejected(refusal) }
             let digest = await Task.detached { Files.digest(bytes) }.value
-            changeFile(id, in: ref) { $0.bytes = bytes; $0.sizeBytes = bytes.count; $0.digest = digest }
+            changeFile(id, in: box) { $0.bytes = bytes; $0.sizeBytes = bytes.count; $0.digest = digest }
             // Staged on its own, so a slow computer never holds up reading the files chosen after it.
-            _ = fileStaging(id, in: ref)
+            _ = fileStaging(id, in: box)
         } catch {
             let reason = (error as? PhotoPipelineError) == .tooSlow ? FileWords.tooSlow : (error as? ClientError)?.errorDescription
-            dropFile(id, in: ref, reason: reason ?? FileWords.unreadable)
+            dropFile(id, in: box, reason: reason ?? FileWords.unreadable)
         }
     }
     /// A file's staging, started now unless it is already under way: a file is never staged twice at once.
-    private func fileStaging(_ id: UUID, in ref: ThreadRef) -> Task<Bool, Never>? {
+    private func fileStaging(_ id: UUID, in box: PhotoBox) -> Task<Bool, Never>? {
         if let running = fileStagingTasks[id] { return running }
-        guard let file = file(id, in: ref), let bytes = file.bytes, let digest = file.digest else { return nil }
-        changeFile(id, in: ref) { $0.progress = 0 }
+        guard let file = file(id, in: box), let bytes = file.bytes, let digest = file.digest else { return nil }
+        changeFile(id, in: box) { $0.progress = 0 }
         let task = Task { [weak self] () -> Bool in
-            let staged = await self?.requestFileStaging(file.name, mimeType: file.mimeType, bytes: bytes, digest: digest, as: id, in: ref) ?? false
+            let staged = await self?.requestFileStaging(file.name, mimeType: file.mimeType, bytes: bytes, digest: digest, as: id, in: box) ?? false
             self?.fileStagingTasks[id] = nil
-            self?.changeFile(id, in: ref) { $0.progress = nil }
+            self?.changeFile(id, in: box) { $0.progress = nil }
             return staged
         }
         fileStagingTasks[id] = task
@@ -2851,61 +3013,61 @@ struct HeldDetail {
     /// upload on this iPhone comes between them: the computer keeps one upload a client. The last part's answer is the
     /// handle. A file that couldn't reach the computer stays in the box and is staged when the reply is sent; one the
     /// computer refused for what it is leaves the box, with its reason.
-    private func requestFileStaging(_ name: String, mimeType: String, bytes: Data, digest: String, as id: UUID, in ref: ThreadRef) async -> Bool {
-        let over = generations[ref.hostID]
+    private func requestFileStaging(_ name: String, mimeType: String, bytes: Data, digest: String, as id: UUID, in box: PhotoBox) async -> Bool {
+        let over = generations[box.hostID]
         let ranges = Files.partRanges(bytes.count), upload = UUID()
         do {
-            let handle = try await largeRequest(on: ref.hostID) { [weak self] connection -> StagedFile in
+            let handle = try await largeRequest(on: box.hostID) { [weak self] connection -> StagedFile in
                 for (index, range) in ranges.enumerated() {
                     // A file removed while it goes stops going; the computer lets the parts it has go.
-                    guard self?.file(id, in: ref) != nil else { throw CancellationError() }
+                    guard self?.file(id, in: box) != nil else { throw CancellationError() }
                     let operation = try await Task.detached {
                         try Files.stagePart(uploadID: upload, index: index, count: ranges.count, name: name, mimeType: mimeType,
                                             sizeBytes: bytes.count, digest: digest, data: bytes.subdata(in: range))
                     }.value
                     let answer = try await connection.call(operation, as: Optional<StagedFile>.self)
-                    self?.changeFile(id, in: ref) { $0.progress = Double(index + 1) / Double(ranges.count) }
+                    self?.changeFile(id, in: box) { $0.progress = Double(index + 1) / Double(ranges.count) }
                     guard index == ranges.count - 1 else { if answer != nil { throw ClientError.invalidProtocol }; continue }
                     guard let answer, answer.valid, answer.digest == digest, answer.sizeBytes == bytes.count else { throw ClientError.invalidProtocol }
                     return answer
                 }
                 throw ClientError.invalidProtocol
             }
-            changeFile(id, in: ref) { $0.staged = handle; $0.stagedAt = Date(); $0.stagedGeneration = over }
+            changeFile(id, in: box) { $0.staged = handle; $0.stagedAt = Date(); $0.stagedGeneration = over }
             return true
         } catch let refusal as HostRefusal where refusal.failure.code == "invalid_request" {
-            dropFile(id, in: ref, reason: refusal.failure.message)
+            dropFile(id, in: box, reason: refusal.failure.message)
         } catch {}
         return false
     }
     /// Every file in the reply box with a handle its computer still keeps, as `readyPhotos` does for photos.
-    private func readyFiles(_ ref: ThreadRef) async -> [StagedFile]? {
-        for id in files(ref).map(\.id) {
-            guard let file = file(id, in: ref) else { return nil }
-            guard fileStagingTasks[id] != nil || file.needsStaging(generation: generations[ref.hostID]) else { continue }
-            guard await fileStaging(id, in: ref)?.value ?? false else {
-                if photoNotices[ref.id] == nil {
-                    photoNotices[ref.id] = String(localized: "A file couldn’t reach \(name(ref.hostID)), so nothing was sent. Try again when it’s connected.", comment: "%@ is the computer's name")
+    private func readyFiles(_ box: PhotoBox) async -> [StagedFile]? {
+        for id in files(box).map(\.id) {
+            guard let file = file(id, in: box) else { return nil }
+            guard fileStagingTasks[id] != nil || file.needsStaging(generation: generations[box.hostID]) else { continue }
+            guard await fileStaging(id, in: box)?.value ?? false else {
+                if photoNotices[box.id] == nil {
+                    photoNotices[box.id] = String(localized: "A file couldn’t reach \(name(box.hostID)), so nothing was sent. Try again when it’s connected.", comment: "%@ is the computer's name")
                 }
                 return nil
             }
         }
-        let current = files(ref)
+        let current = files(box)
         let staged = current.compactMap(\.staged)
         return !staged.isEmpty && staged.count == current.count ? staged : nil
     }
-    private func file(_ id: UUID, in ref: ThreadRef) -> DraftFile? { draftFiles[ref.id]?.first { $0.id == id } }
-    private func changeFile(_ id: UUID, in ref: ThreadRef, _ edit: (inout DraftFile) -> Void) {
-        guard let index = draftFiles[ref.id]?.firstIndex(where: { $0.id == id }) else { return }
-        edit(&draftFiles[ref.id]![index])
+    private func file(_ id: UUID, in box: PhotoBox) -> DraftFile? { draftFiles[box.id]?.first { $0.id == id } }
+    private func changeFile(_ id: UUID, in box: PhotoBox, _ edit: (inout DraftFile) -> Void) {
+        guard let index = draftFiles[box.id]?.firstIndex(where: { $0.id == id }) else { return }
+        edit(&draftFiles[box.id]![index])
     }
     /// Takes a file out of its reply box, saying why when it wasn't the user's choice.
-    private func dropFile(_ id: UUID, in ref: ThreadRef, reason: String?) {
-        guard file(id, in: ref) != nil else { return }
+    private func dropFile(_ id: UUID, in box: PhotoBox, reason: String?) {
+        guard file(id, in: box) != nil else { return }
         photoLoads[id]?.finish(.failure(CancellationError()))
-        draftFiles[ref.id]?.removeAll { $0.id == id }
-        if draftFiles[ref.id]?.isEmpty == true { draftFiles[ref.id] = nil }
-        photoNotices[ref.id] = reason
+        draftFiles[box.id]?.removeAll { $0.id == id }
+        if draftFiles[box.id]?.isEmpty == true { draftFiles[box.id] = nil }
+        photoNotices[box.id] = reason
     }
     /// A sent file's bytes from the computer that keeps it, for Quick Look (`attachment-file`): part by part, each waiting
     /// its turn behind other large requests to that computer, and none asked for once nothing `wanted` it. The parts must

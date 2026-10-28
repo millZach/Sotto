@@ -33,13 +33,16 @@ export const WATCHER_PHONE_MACHINE_THREADS_MAX = 6
  * with or without words, and `watcher-phone-preview` reads one of a Watcher message's photos, which the page marks.
  */
 export const WATCHER_PHONE_PHOTOS_FEATURE = 'watcher-phone-photos' as const
+/** Files for Watcher from the phone (ADR-0131, October 28 amendment): a send's `images` may name staged files too. */
+export const WATCHER_PHONE_FILES_FEATURE = 'watcher-phone-files' as const
 /** How many of the user's follow-ups waiting for Watcher a phone's page carries, the first in line. */
 export const WATCHER_PHONE_FOLLOWUPS_MAX = 50
 export const watcherPhoneSetPermissionSchema = z.object({ runtimeMode: agentRuntimeModeSchema }).strict()
 export const watcherPhoneWatchSchema = z.object({ target: watcherThreadTargetSchema }).strict()
 export const watcherPhoneSendSchema = z.object({ origin: watcherPhoneOriginSchema, target: watcherThreadTargetSchema,
   draftId: z.uuid(), text: z.string().max(20_000),
-  // Only from a phone offered WATCHER_PHONE_PHOTOS_FEATURE: the photos it staged, which go with the words.
+  // Only from a phone offered WATCHER_PHONE_PHOTOS_FEATURE: the photos it staged, which go with the words, and with
+  // WATCHER_PHONE_FILES_FEATURE its staged files too.
   images: agentAttachmentHandlesSchema.min(1).optional(),
   // Only from a phone that negotiated WATCHER_PHONE_STEER_FEATURE: while Watcher works the message steers into its turn,
   // or goes next as its own turn when it cannot. Absent, a send while Watcher works is refused, as before (#1229).

@@ -86,7 +86,17 @@ struct ThreadsView: View {
         .onChange(of: model.pending) { _, _ in
             for id in Array(sent.keys) { resolve(id) }
         }
-        .sheet(isPresented: $creating) { NewThreadSheet(opened: openCreated) }
+        .sheet(isPresented: $creating, onDismiss: { model.newThreadClosed() }) {
+            NewThreadSheet(opened: { ref in model.newThreadOpened(ref); openCreated(ref) })
+        }
+        .onChange(of: model.shareOpened) { _, destination in openForShare(destination) }
+        .onAppear { openForShare(model.shareOpened) }
+    }
+
+    private func openForShare(_ destination: ShareDestination?) {
+        guard destination == .newThread else { return }
+        model.shareOpened = nil
+        creating = true
     }
 
     // MARK: Top of the sheet
