@@ -1375,9 +1375,10 @@ export class WatcherService implements WatcherControlHooks {
   /** Whether this operation is a check waiting its turn here (#1312). */
   private checkWaits(operationId: string): boolean { return this.checkOf.get(operationId)?.waiting !== undefined }
   /** Puts a check in this machine's queue, under `ticket`: its own operation's ID for a start a paired desktop sent. */
-  private joinChecks(ticket: string): WatcherCheck {
+  private joinChecks(ticket: string, title: string): WatcherCheck {
     let check = this.heldChecks.get(ticket)
-    if (!check) { check = { ticket }; this.heldChecks.set(ticket, check); this.options.checks!.join(ticket, () => this.checkTurn(ticket)) }
+    // What the window shows of it while it waits (#1312, fourth part): Watcher's check, and the title it was asked under.
+    if (!check) { check = { ticket }; this.heldChecks.set(ticket, check); this.options.checks!.join(ticket, () => this.checkTurn(ticket), { whose: 'watcher', title }) }
     return check
   }
   /**
@@ -1411,7 +1412,10 @@ export class WatcherService implements WatcherControlHooks {
     if (check && check.operationId === undefined) this.leaveChecks(check)
   }
   /** A check's operation, admitted: from now on the pass on every publish reads it. */
-  private adoptCheck(check: WatcherCheck, operationId: string): void { check.operationId = operationId; this.checkOf.set(operationId, check) }
+  private adoptCheck(check: WatcherCheck, operationId: string, threadId: string): void {
+    check.operationId = operationId; this.checkOf.set(operationId, check)
+    this.options.checks?.describe(check.ticket, { thread: threadId })
+  }
   /** Takes a check out of this machine's queue, so the next one takes its turn. */
   private leaveChecks(check: WatcherCheck): void {
     this.heldChecks.delete(check.ticket)
@@ -3417,7 +3421,7 @@ export class WatcherService implements WatcherControlHooks {
         // A test run takes its place in this machine's queue as it is asked for, before it is placed and admitted, so a
         // check asked later, Watcher's or a delegated one, never overtakes it (#1312). It gives the place back when it is
         // placed on another machine, refused, or a retry; only an admitted check here keeps it.
-        const ticket = asked.testRun === true && this.options.checks && this.options.workerMachine ? this.joinChecks(randomUUID()).ticket : undefined
+        const ticket = asked.testRun === true && this.options.checks && this.options.workerMachine ? this.joinChecks(randomUUID(), asked.title).ticket : undefined
         try {
           const placed = await this.placeStart(asked)
           if (ticket && (placed?.input.check !== true || placed.input.project.hostId !== this.hostId())) this.dropTicket(ticket)
@@ -3691,8 +3695,8 @@ export class WatcherService implements WatcherControlHooks {
         // is never overtaken by one asked after it (#1312). A machine that keeps no queue refuses it.
         const checks = create.check ? this.options.checks : undefined
         if (create.check && !checks) refuse('HOST_FEATURE_UNAVAILABLE', 'This machine does not run checks one at a time. Nothing was started.')
-        const check = checks && !resumed ? this.joinChecks(ticket ?? operation.id) : undefined
-        if (check) this.adoptCheck(check, operation.id)
+        const check = checks && !resumed ? this.joinChecks(ticket ?? operation.id, create.title) : undefined
+        if (check) this.adoptCheck(check, operation.id, operation.target.threadId)
         let landed: LandedMove | undefined
         if (resumed) landed = resumed.landed
         else if (check) {

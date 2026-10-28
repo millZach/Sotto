@@ -57,6 +57,8 @@ final class WatcherModelTests: XCTestCase {
         var deliveries: [String: String] = [:]
         /// Watcher's answer so far, after its first reply.
         var answer: String?
+        /// The user's message from this iPhone, once Watcher's computer has put it in the conversation.
+        var sent: String?
         /// What Watcher may do without asking, as its computer keeps it for Watcher, and as the current Watcher has it.
         var runtimeMode: String?
         var currentMode: String?
@@ -90,7 +92,8 @@ final class WatcherModelTests: XCTestCase {
             cards.append(#"{"target":{"hostId":"\#(laptop)","threadId":"w"},"title":"Watcher","provider":"codex","request":\#(Self.ownRequest),"connected":true,"mayAnswer":\#(spec.mayAnswer)}"#)
         }
         let deliveries = spec.deliveries.map { draft, status in #"{"draftId":"\#(draft)","status":"\#(status)"}"# }.joined(separator: ",")
-        let answer = spec.answer.map { #",{"id":"more","role":"assistant","text":"\#($0)","createdAt":"2026-10-11T08:02:00.000Z"}"# } ?? ""
+        let answer = (spec.answer.map { #",{"id":"more","role":"assistant","text":"\#($0)","createdAt":"2026-10-11T08:02:00.000Z"}"# } ?? "")
+            + (spec.sent.map { #",{"id":"sent","role":"user","text":"\#($0)","createdAt":"2026-10-11T08:03:00.000Z"}"# } ?? "")
         let currentMode = (spec.currentMode.map { #","runtimeMode":"\#($0)""# } ?? "") + (spec.steers.map { #","steers":\#($0)"# } ?? "")
         let paused = spec.paused ? #","paused":true"# : ""
         var extra = spec.runtimeMode.map { #","runtimeMode":"\#($0)""# } ?? ""
@@ -794,6 +797,41 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertEqual(model.drafts[key], "", "Watcher took them")
         XCTAssertNil(model.feedback, "Nothing is left to check")
         XCTAssertEqual(requests.count, 5, "Nothing was sent again")
+        model.phase(.background)
+    }
+
+    /// The computer puts the user's words in Watcher's conversation, or its queue, before it answers the send: from then
+    /// the conversation shows them, and the Sending bubble goes, while the box stays locked until the answer.
+    @MainActor func testWordsWatcherShowsBeforeItAnswersShowOnce() async throws {
+        let model = try await fixture(spec: Spec(workerCard: false))
+        var shownMidSend: [WatcherSending?] = []
+        var lockedMidSend: [Bool] = []
+        var step = 0
+        HostConnection.watcherHandler = { op, operation, _ in
+            guard op == "watcher-phone-send", let draft = operation["request"]?["draftId"].string else { return try self.ok(self.page(Spec(workerCard: false))) }
+            step += 1
+            XCTAssertNotNil(model.watcherSendingShown(self.laptop), "Until the page shows them, the words show as on their way")
+            if step == 1 {
+                try self.push(Spec(workerCard: false, observedAt: "2026-10-11T09:01:00.000Z", sent: "Check the release notes"))
+            } else {
+                try self.push(Spec(workerCard: false, observedAt: "2026-10-11T09:03:00.000Z", steers: true,
+                                   followups: [("q", draft, "And the webhook thread?", "queued")]))
+            }
+            await self.until { model.watcherSendingShown(self.laptop) == nil }
+            shownMidSend.append(model.watcherSendingShown(self.laptop))
+            lockedMidSend.append(model.watcherSending[self.laptop] != nil && !model.canSendToWatcher(self.laptop))
+            let answered = self.page(Spec(workerCard: false, observedAt: "2026-10-11T09:0\(step + 1):30.000Z"))
+            return try self.json(#"{"status":"ok","draftId":"\#(draft)","state":\#(answered)}"#)
+        }
+        let key = model.watcherDraftKey(laptop)
+        model.drafts[key] = "Check the release notes"
+        await model.sendToWatcher(laptop)
+        model.drafts[key] = "And the webhook thread?"
+        await model.sendToWatcher(laptop)
+        XCTAssertEqual(shownMidSend, [nil, nil], "In the conversation, or in Watcher's queue, the words show once")
+        XCTAssertEqual(lockedMidSend, [true, true], "The box stays locked until the computer answers")
+        XCTAssertNil(model.watcherSending[laptop])
+        XCTAssertEqual(model.drafts[key], "")
         model.phase(.background)
     }
 
