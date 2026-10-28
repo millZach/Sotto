@@ -1,0 +1,482 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: Drake's ask on October 28, 2026, "refine #2 from the mockups on the send button and show me... show a version
+  too that has a dynamic element to it". Direction 2 of docs/prototypes/prompt-send-stop-prototype.html (tag
+  prototype/prompt-send-stop) is one plate in one place that changes role: an arrow sends, a square stops, a list-plus
+  queues. 9b of that page shipped (#1663, ADR-0153 amending ADR-0113), so its keys are the baseline here: Enter sends or
+  queues, Cmd+Enter steers, Cmd+Shift+S stops, and Stop keeps a button, with its trace, the whole turn.
+
+  Four tightened takes of 2 at the composer's real 760px width in Sotto's dark (Ink) and light (paper) halves, built on the
+  shipped key rules copied from src/renderer/src/agents/threads.css, and one live take with motion (2 in motion) that can
+  be typed in, pressed and played. Durations sit in the app's 120 to 240 ms range on its own curves:
+  cubic-bezier(.2, .8, .2, 1) for arrivals and cubic-bezier(.2, .9, .3, 1.3), the copy confirm's spring, for a press.
+
+  Built from template.html by build.py (inlines Figtree). Open with #2.1 (or #L, #0 ...) to show one section, ?still to
+  stop the trace, ?scene=start|type|running-typed&at=<ms> to freeze the live take mid-change (for screenshots).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Composer send button: direction 2 refined - prototype</title>
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; src: url(data:font/woff2;base64,__FIGTREE__) format('woff2'); }
+
+/* Theme roles, copied from src/shared/themes/palettes.ts. */
+.t-dark {
+  color-scheme: dark; --theme-contrast-target: white;
+  --theme-canvas: oklch(0.115 0.008 265); --theme-surface-raised: oklch(0.185 0.008 265); --theme-text: oklch(0.985 0.005 280);
+  --theme-muted-foreground: oklch(0.72 0.014 265); --theme-placeholder: oklch(0.675 0.012 270); --theme-border: oklch(0.305 0.02 265);
+  --theme-input: oklch(0.375 0.024 265); --theme-accent: oklch(0.714403 0.104089 183.092); --theme-accent-foreground: oklch(0.16 0.012 190);
+  --theme-update-foreground: oklch(0.83 0.08 183); --theme-accent-surface: oklch(0.32 0.05 185); --theme-error-foreground: oklch(0.702184 0.189226 22.228);
+  --theme-surface-overlay: oklch(0.215 0.008 265);
+  --tt-card: var(--theme-surface-raised);
+}
+.t-light {
+  color-scheme: light; --theme-contrast-target: black;
+  --theme-canvas: oklch(0.978 0.004 85); --theme-surface-raised: oklch(0.955 0.006 85); --theme-text: oklch(0.235 0.014 75);
+  --theme-muted-foreground: oklch(0.5 0.014 75); --theme-placeholder: oklch(0.525 0.015 78); --theme-border: oklch(0.86 0.012 80);
+  --theme-input: oklch(0.8 0.016 80); --theme-accent: oklch(0.53 0.095 186); --theme-accent-foreground: oklch(0.99 0.003 85);
+  --theme-update-foreground: oklch(0.43 0.08 186); --theme-accent-surface: oklch(0.92 0.03 186); --theme-error-foreground: oklch(0.509494 0.208583 28.513);
+  --theme-surface-overlay: oklch(0.945 0.007 85);
+  --tt-card: color-mix(in oklab, var(--theme-text) 4%, var(--theme-canvas));
+}
+/* The --tt-* formulas, from src/renderer/src/styles/tokens.css (contrast base 100%, boost 0%). */
+.t-dark, .t-light {
+  --tt-canvas: var(--theme-canvas);
+  --tt-text: var(--theme-text);
+  --tt-text-2: color-mix(in oklab, var(--theme-text) 55%, var(--theme-muted-foreground));
+  --tt-text-muted: color-mix(in oklab, var(--theme-muted-foreground) 85%, var(--theme-text));
+  --tt-text-faint: var(--theme-placeholder);
+  --tt-hairline: var(--theme-border);
+  --tt-field-border: var(--theme-input);
+  --tt-hover: color-mix(in srgb, var(--theme-accent-surface) 70%, transparent);
+  --tt-accent: var(--theme-accent);
+  --tt-accent-text: var(--theme-update-foreground);
+  --tt-on-accent: var(--theme-accent-foreground);
+  --tt-activity: var(--tt-accent-text);
+  --tt-pill: var(--tt-text);
+  --tt-pill-ink: var(--theme-canvas);
+  --tt-error: var(--theme-error-foreground);
+  --tt-segment-on: var(--theme-surface-overlay);
+  --followups-surface: color-mix(in oklab, var(--tt-card) 70%, var(--tt-canvas));
+  background: var(--tt-canvas); color: var(--tt-text);
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; padding: 28px 32px 40px; background: #0b0b0c; color: #ecebe6; font: 13px/1.4 Figtree, system-ui, sans-serif; --k: 1; }
+body.slow { --k: 4; }
+h1 { margin: 0 0 6px; font-size: 19px; font-weight: 600; }
+.intro { max-width: 1100px; margin: 0 0 18px; color: #a7a6a0; font-size: 13.5px; }
+.intro p { margin: 0 0 6px; }
+.intro b { color: #ecebe6; font-weight: 600; }
+.bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 24px; font-size: 12.5px; color: #a7a6a0; }
+.bar a, .bar button { color: #ecebe6; text-decoration: none; padding: 3px 8px; border: 0; border-radius: 5px; background: #1d1d1f; font: inherit; }
+.bar a:hover, .bar button:hover { background: #2a2a2d; }
+.bar label { margin-left: 10px; display: inline-flex; gap: 6px; align-items: center; }
+.bar select { font: inherit; color: #ecebe6; background: #1d1d1f; border: 0; border-radius: 5px; padding: 3px 6px; }
+
+section.dir { margin: 0 0 44px; padding: 18px 20px 20px; border-radius: 14px; background: #131315; width: max-content; max-width: 100%; }
+section.dir h2 { margin: 0 0 4px; font-size: 16px; font-weight: 600; display: flex; gap: 10px; align-items: baseline; }
+section.dir h2 b { display: inline-grid; place-items: center; min-width: 24px; height: 22px; padding: 0 5px; border-radius: 6px; background: #ecebe6; color: #121211; font-size: 12.5px; }
+section.dir[data-id='0'] h2 b { background: #3a3a3d; color: #ecebe6; }
+.idea { margin: 0 0 4px; color: #c9c8c2; font-size: 13.5px; max-width: 1540px; }
+.changed { margin: 0 0 4px; color: #ecebe6; font-size: 13.5px; max-width: 1540px; }
+.changed::before { content: 'Changed from 2: '; color: #8f8e88; }
+.keys { margin: 0 0 4px; font-size: 13px; color: #ecebe6; }
+.keys kbd, .note kbd { font: 600 11.5px Figtree, sans-serif; padding: 1px 5px; border-radius: 4px; background: #2a2a2d; color: #ecebe6; }
+.note { margin: 0 0 4px; color: #8f8e88; font-size: 12.5px; max-width: 1540px; }
+.ratio { margin: 0 0 14px; color: #8f8e88; font-size: 12px; font-variant-numeric: tabular-nums; }
+.ratio i { font-style: normal; color: #ecebe6; }
+.ratio i.low { color: #f08a7a; }
+
+.grid { display: grid; grid-template-columns: 112px 784px 784px; gap: 10px 14px; align-items: stretch; }
+.grid .th { font-size: 12px; color: #8f8e88; padding: 0 0 2px 2px; }
+.grid .rl { font-size: 12px; color: #a7a6a0; padding-top: 12px; line-height: 1.35; }
+.grid .rl small { display: block; color: #6f6e69; font-size: 11.5px; }
+.cell { padding: 14px 12px 14px; border-radius: 10px; display: flex; flex-direction: column; justify-content: flex-end; min-height: 128px; }
+@media (max-width: 1000px) { .cell[data-col]::before { content: attr(data-col); font-size: 11px; color: var(--tt-text-muted); margin: 0 0 6px 4px; } .grid { grid-template-columns: 1fr; } .grid .th { display: none; } .grid .rl { padding: 8px 0 0; } .cell { overflow-x: auto; } }
+
+/* ---------- the compose area, at real size ---------- */
+.compose { width: 760px; position: relative; }
+.tray { position: relative; margin: 0 14px -12px; padding: 4px 10px 16px 12px; border-radius: 12px 12px 0 0; background: var(--followups-surface); }
+.tray-head { display: flex; gap: 6px; align-items: center; min-height: 26px; color: var(--tt-text-muted); font-size: 12.5px; }
+.tray-head b { font-weight: 500; color: var(--tt-text-muted); }
+.tray-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 32px; }
+.tray-row p { margin: 0; color: var(--tt-text-2); font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tools { display: inline-flex; align-items: center; gap: 0; }
+.card { position: relative; z-index: 1; padding: 14px 16px 10px; border-radius: 16px; background: var(--tt-card); }
+.field { min-height: 36px; font-size: 15px; line-height: 1.5; color: var(--tt-text); position: relative; }
+.field.ph { color: var(--tt-text-faint); }
+.field .caret { display: inline-block; width: 1.5px; height: 18px; margin-left: 1px; vertical-align: -3px; background: var(--tt-text); }
+.grip { position: absolute; right: -6px; bottom: -2px; width: 9px; height: 9px; opacity: .55; color: var(--tt-text-muted); }
+.foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; min-height: 28px; }
+.meta { display: flex; align-items: center; gap: 8px; color: var(--tt-text-muted); font-size: 13px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border-radius: 5px; background: color-mix(in oklab, var(--tt-text) 6%, transparent); color: var(--tt-text-muted); font-size: 12.5px; }
+.chip .mk { width: 12px; height: 12px; border-radius: 3px; background: #e2ad80; }
+.acts { display: flex; align-items: center; gap: 6px; flex: none; }
+svg.i { width: 15px; height: 15px; fill: none; stroke: currentcolor; stroke-width: 2.25; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+svg.i.sm { width: 14px; height: 14px; stroke-width: 2; }
+svg.sq { width: 11px; height: 11px; fill: currentcolor; stroke: none; }
+
+
+/* ---------- the shipped composer keys, from src/renderer/src/agents/threads.css (ADR-0153, 9b) ----------
+   The reduced-motion root switch is body.calm here (set by the media query or the toggle). Forced .is-hover and
+   .is-active stand in for the pointer in the still rows. */
+.thread-prompt__actions { display: flex; flex: none; align-items: center; gap: 6px; }
+.thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop, .thread-prompt__steer) { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none; height: 28px; min-height: 28px; padding: 0 4px 0 8px; border: 1px solid transparent; border-radius: 6px; font-size: 12.5px; font-weight: 600; white-space: nowrap;
+  background: transparent; color: var(--tt-text-muted); font-family: inherit; cursor: default; }
+.thread-prompt__actions > .thread-prompt__steer:not(:disabled) { color: var(--tt-accent-text); }
+.thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop) { background: var(--tt-pill); color: var(--tt-pill-ink); }
+.thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop):is(:hover, .is-hover):not(:disabled) { border-color: transparent; background: var(--tt-pill); color: var(--tt-pill-ink); filter: brightness(1.08); }
+.thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop):is(:active, .is-active):not(:disabled) { background: var(--tt-pill); filter: brightness(.94); }
+.thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop, .thread-prompt__steer):disabled { opacity: .45; }
+.thread-prompt__key { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 4px; background: color-mix(in oklab, currentcolor 14%, transparent); font: inherit; font-size: 11.5px; letter-spacing: .02em; }
+.thread-prompt__actions > .thread-prompt__stop[data-beside], .thread-prompt__actions > .thread-prompt__stop[data-beside]:is(:hover, .is-hover, :active, .is-active):not(:disabled) { background: transparent; color: var(--tt-text-muted); filter: none; }
+.thread-prompt__actions > .thread-prompt__stop[data-beside]:is(:hover, .is-hover):not(:disabled),
+.thread-prompt__actions > .thread-prompt__steer:is(:hover, .is-hover):not(:disabled) { background: var(--tt-hover); color: var(--tt-text); }
+.thread-prompt__trace { position: absolute; inset: -3px; overflow: hidden; padding: 1.5px; border-radius: 8px; pointer-events: none;
+  -webkit-mask: linear-gradient(black 0 0) content-box, linear-gradient(black 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(black 0 0) content-box exclude, linear-gradient(black 0 0); }
+.thread-prompt__stop[data-beside] > .thread-prompt__trace { inset: -1px; border-radius: 6px; }
+.thread-prompt__trace > i { position: absolute; top: 50%; left: 50%; width: 220%; aspect-ratio: 1; translate: -50% -50%; will-change: transform;
+  background: conic-gradient(var(--tt-activity) 0turn .26turn, color-mix(in srgb, var(--tt-activity) 18%, transparent) .26turn 1turn); }
+body:not(.calm):not(.still) .thread-prompt__trace > i { animation: thread-prompt-trace 1.6s linear infinite; }
+body.calm .thread-prompt__trace > i { transform: rotate(.25turn); }
+@keyframes thread-prompt-trace { to { transform: rotate(1turn); } }
+
+/* ---------- direction 2 and its takes ---------- */
+/* A glyph plate: one 28px square. 2 as drawn: a 15px glyph at a 2.25 stroke and an 11px stop. */
+.thread-prompt__actions > .g { width: 28px; padding: 0; }
+.v0 .g svg.i { width: 15px; height: 15px; stroke-width: 2.25; }
+.v0 .g svg.sq { width: 11px; height: 11px; }
+/* Every take: a 14px glyph at a 2.5 stroke and a 10px stop with a softer corner, so the arrowhead stays sharp at 28px. */
+.ref .g svg.i, .ref .gk svg.i { width: 14px; height: 14px; stroke-width: 2.5; }
+.ref svg.sq { width: 10px; height: 10px; }
+/* Every take: hover and press mix the plate toward the card, which shows on a white plate where brightness() cannot;
+   a disabled plate is a dim plate with muted ink, not a see-through one. */
+.ref .thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop:not([data-beside])):is(:hover, .is-hover):not(:disabled) { filter: none; background: color-mix(in oklab, var(--tt-pill) 84%, var(--tt-card)); }
+.ref .thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop:not([data-beside])):is(:active, .is-active):not(:disabled) { filter: none; background: color-mix(in oklab, var(--tt-pill) 70%, var(--tt-card)); transform: scale(.94); }
+.ref .thread-prompt__actions > .thread-prompt__send:disabled { opacity: 1; background: color-mix(in oklab, var(--tt-pill) 16%, var(--tt-card)); color: var(--tt-text-muted); }
+/* 2.2: the glyph with its key cap, the word of 9b swapped for the glyph. */
+.thread-prompt__actions > .gk { padding: 0 4px 0 7px; }
+/* 2.3: the key cap folds away and slides out when the pointer or the focus reaches the button. */
+.v3 .thread-prompt__actions > .g { width: auto; min-width: 28px; padding: 0 6px; transition: padding calc(160ms * var(--k)) cubic-bezier(.2, .8, .2, 1); }
+.v3 .g > .thread-prompt__key { min-width: 0; max-width: 0; margin-left: -6px; padding: 0; opacity: 0; overflow: hidden;
+  transition: max-width calc(160ms * var(--k)) cubic-bezier(.2, .8, .2, 1), margin calc(160ms * var(--k)) cubic-bezier(.2, .8, .2, 1), padding calc(160ms * var(--k)) cubic-bezier(.2, .8, .2, 1), opacity calc(120ms * var(--k)) ease-out; }
+.v3 .g:is(:hover, .is-hover, :focus-visible, .is-active, :active):not(:disabled) { padding: 0 4px 0 7px; }
+.v3 .g:is(:hover, .is-hover, :focus-visible, .is-active, :active):not(:disabled) > .thread-prompt__key { min-width: 20px; max-width: 48px; margin-left: 0; padding: 0 5px; opacity: 1; }
+body.calm .v3 .g, body.calm .v3 .g > .thread-prompt__key { transition: none; }
+/* 2.4: holding Cmd turns the plate into Steer, in the accent and the ink made for it. */
+.thread-prompt__actions > .thread-prompt__send.steering { background: var(--tt-accent); color: var(--tt-on-accent); }
+
+/* ---------- 2 in motion ---------- */
+.live .field { cursor: text; }
+.live textarea { display: block; width: 100%; min-height: 36px; margin: 0; padding: 0; border: 0; outline: 0; resize: none; overflow: hidden; background: transparent; color: var(--tt-text); caret-color: var(--tt-text); font: inherit; font-size: 15px; line-height: 1.5; field-sizing: content; }
+.live textarea::placeholder { color: color-mix(in srgb, var(--tt-text-muted) 55%, transparent); }
+.live .meta .said { color: var(--tt-accent-text); font-size: 12.5px; }
+.glyphs { position: relative; display: grid; place-items: center; width: 14px; height: 14px; }
+.glyphs > svg { grid-area: 1 / 1; }
+.live .thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop) {
+  transition: background-color calc(160ms * var(--k)) cubic-bezier(.2, .8, .2, 1), color calc(160ms * var(--k)) cubic-bezier(.2, .8, .2, 1), transform calc(220ms * var(--k)) cubic-bezier(.2, .9, .3, 1.3); }
+.live .thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop):active:not(:disabled) { transition-duration: calc(160ms * var(--k)), calc(160ms * var(--k)), calc(80ms * var(--k)); transition-timing-function: ease-out; }
+body.calm .live .thread-prompt__actions > * { transform: none !important; transition: background-color 120ms linear, color 120ms linear; }
+.live .thread-prompt__trace { opacity: 0; transition: opacity calc(240ms * var(--k)) ease-out; }
+.live [data-run] > .thread-prompt__trace { opacity: 1; }
+.live .tray { transform-origin: bottom center; }
+.livebar { margin: 0 0 14px; }
+</style>
+</head>
+<body>
+<h1>Composer send button: direction 2 refined</h1>
+<div class="intro">
+  <p>Direction 2 of the ten was <b>one plate in one place that changes role</b>: an arrow sends, a square stops, a list-plus queues. Below it as drawn, four tightened takes, and one live take with motion. Every frame is the Threads composer at its real 760px width in Sotto's dark (Ink) and light (paper) halves, drawn with the key rules that shipped for 9b.</p>
+  <p><b>What every take keeps from 9b:</b> <kbd>Enter</kbd> sends, or queues while a turn runs; <kbd>⌘Enter</kbd> steers; <kbd>⌘⇧S</kbd> stops; and Stop keeps a button with its trace for the whole turn. 2 as drawn hid Stop once you typed during a turn; no take here does. When nothing is typed the plate is Stop, so the trace on the plate and the trace on Stop are the same thing. Without steering, the steer control goes and <kbd>⌘Enter</kbd> queues. On Windows the keys read Ctrl.</p>
+</div>
+<div class="bar" id="bar"></div>
+<main id="main"></main>
+<script>
+const I = {
+  up: '<svg class="i" viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>',
+  queue: '<svg class="i" viewBox="0 0 24 24"><path d="M11 12H3"/><path d="M16 6H3"/><path d="M16 18H3"/><path d="M18 9v6"/><path d="M21 12h-6"/></svg>',
+  sq: '<svg class="sq" viewBox="0 0 12 12"><rect x="0.5" y="0.5" width="11" height="11" rx="2.5"/></svg>',
+  steer: '<svg class="i" viewBox="0 0 24 24"><path d="m15 10 5 5-5 5"/><path d="M4 4v7a4 4 0 0 0 4 4h12"/></svg>',
+  right: '<svg class="i sm" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>',
+  edit: '<svg class="i sm" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
+  x: '<svg class="i sm" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
+}
+const CAP = { send: '↵', queue: '↵', stop: '⌘⇧S', steer: '⌘↵' }
+const NAME = { send: 'Send prompt', queue: 'Queue prompt', stop: 'Stop', steer: 'Steer now' }
+const GLYPH = { send: I.up, queue: I.queue, stop: I.sq, steer: I.steer }
+const TRACE = '<span class="thread-prompt__trace" aria-hidden="true"><i></i></span>'
+
+/* One button. kind: send | queue | stop | steer. shape: g (glyph), gk (glyph and key), gx (glyph, key folded away). */
+function key(kind, shape, o = {}) {
+  const cls = kind === 'steer' ? 'thread-prompt__steer' : kind === 'stop' && o.beside ? 'thread-prompt__stop' : kind === 'stop' ? 'thread-prompt__stop' : 'thread-prompt__send'
+  const cap = shape === 'g' ? '' : `<kbd class="thread-prompt__key" aria-hidden="true">${CAP[kind]}</kbd>`
+  return `<button type="button" class="${cls} ${shape === 'gk' ? 'gk' : 'g'} ${o.force ?? ''} ${o.steering ? 'steering' : ''}" ${o.beside ? 'data-beside' : ''} ${o.off ? 'disabled' : ''}
+    aria-label="${NAME[kind]}" title="${NAME[kind]} ${CAP[kind]}">${o.glyph ?? GLYPH[kind]}${cap}${kind === 'stop' && o.trace !== false ? TRACE : ''}</button>`
+}
+
+const STATES = [
+  { id: 'A', label: 'At rest, text typed', sub: 'Enter sends', text: true },
+  { id: 'B', label: 'At rest, empty', sub: 'nothing to send', text: false },
+  { id: 'C', label: 'Turn running, empty', sub: 'Stop is the plate', text: false, run: true },
+  { id: 'D', label: 'Turn running, text typed', sub: 'Enter queues; one already queued', text: true, run: true, queued: true },
+  { id: 'H', label: 'Pointer on the plate', sub: 'at rest, text typed', text: true, force: 'is-hover', more: true },
+  { id: 'P', label: 'Pressed', sub: 'at rest, text typed', text: true, force: 'is-active', more: true },
+  { id: 'M', label: '⌘ held', sub: 'turn running, text typed', text: true, run: true, queued: true, cmd: true, only: '2.4' },
+]
+const typed = 'Also update the release notes for the Windows path'
+const placeholder = s => s.run ? 'Claude is working. Write a follow-up to queue it.' : 'What should Claude do next?'
+
+/* The plate is always the last button; what Enter does. */
+const plate = (s, shape) => !s.run ? key('send', shape, { off: !s.text, force: s.force }) : !s.text ? key('stop', shape, { force: s.force }) : key('queue', shape, { force: s.force })
+
+const DIRS = [
+  { id: '0', name: '2 as drawn', ref: false,
+    idea: 'One plate in one place that changes role with the state: an arrow sends, a square stops, a list-plus queues. Never two squares; the glyph cross-fades as it changes.',
+    keys: '<kbd>Enter</kbd> does what the plate shows. <kbd>⌘Enter</kbd> steers. <kbd>⌘⇧S</kbd> stops.',
+    note: 'For reference, from the ten directions. Typed text during a turn leaves Stop with no button, which 9b fixed; every take below brings it back.',
+    pair: [['--tt-pill', '--tt-pill-ink', 'Glyph on its plate']],
+    acts: s => !s.run ? key('send', 'g', { off: !s.text }) : !s.text ? key('stop', 'g', { trace: false }) : key('queue', 'g') },
+  { id: '2.1', name: 'The plate, tightened', ref: true,
+    changed: 'a 14px glyph at a 2.5 stroke so the arrowhead stays sharp; a dim plate, not a see-through one; hover and press that show on a white plate; Stop (with 9b\'s trace) and Steer back beside Queue.',
+    keys: '<kbd>Enter</kbd> sends or queues. <kbd>⌘Enter</kbd> steers. <kbd>⌘⇧S</kbd> stops. Keys live in the titles.',
+    note: 'Closest to 2: three squares at most, no words. Glyph-only buttons drop ADR-0153\'s rule that each button shows its key, so picking this amends it.',
+    pair: [['--tt-pill', '--tt-pill-ink', 'Glyph on its plate'], ['--tt-activity', '--tt-card', 'Trace on the card'], ['--tt-text-muted', 'color-mix(in oklab, var(--tt-pill) 16%, var(--tt-card))', 'Glyph on the dim plate']],
+    acts: s => (s.run && s.text ? key('steer', 'g') + key('stop', 'g', { beside: true }) : '') + plate(s, 'g') },
+  { id: '2.2', name: 'The glyph and its key', ref: true,
+    changed: 'as 2.1, with 9b\'s key caps folded in: each button is its glyph and its key, so the row is shorter than 9b and still teaches the keys.',
+    keys: '<kbd>Enter</kbd> sends or queues. <kbd>⌘Enter</kbd> steers. <kbd>⌘⇧S</kbd> stops. Every button shows its key.',
+    note: 'Keeps ADR-0153 as written (the button says what it does and the key that does the same). Steer is not drawn until there is text to steer, as in 2.',
+    pair: [['--tt-pill', '--tt-pill-ink', 'Glyph on its plate'], ['--tt-activity', '--tt-card', 'Trace on the card']],
+    acts: s => (s.run && s.text ? key('steer', 'gk') + key('stop', 'gk', { beside: true }) : '') + plate(s, 'gk') },
+  { id: '2.3', name: 'Keys when you reach for them', ref: true,
+    changed: 'as 2.1, but the key cap slides out (160 ms) while the pointer or the focus is on a button: three squares at rest, the key there when you reach for it.',
+    keys: '<kbd>Enter</kbd> sends or queues. <kbd>⌘Enter</kbd> steers. <kbd>⌘⇧S</kbd> stops. Hover or Tab to a button to see its key.',
+    note: 'The rows Pointer on the plate and Pressed show the cap out. With reduced motion the cap appears without sliding.',
+    pair: [['--tt-pill', '--tt-pill-ink', 'Glyph on its plate'], ['--tt-activity', '--tt-card', 'Trace on the card']],
+    acts: s => (s.run && s.text ? key('steer', 'gx') + key('stop', 'gx', { beside: true }) : '') + plate(s, 'gx') },
+  { id: '2.4', name: 'The plate steers under ⌘', ref: true,
+    changed: 'as 2.1 without a Steer button: holding ⌘ turns the Queue plate into Steer in the accent, so the plate always shows what the key you press will do.',
+    keys: '<kbd>Enter</kbd> sends or queues. Hold <kbd>⌘</kbd> and the plate is Steer; <kbd>⌘Enter</kbd> or a ⌘-click steers. <kbd>⌘⇧S</kbd> stops.',
+    note: 'The fewest buttons, and the truest to 2. Steering by pointer needs ⌘ held, which nothing on screen says until you hold it; the plate\'s title says so.',
+    pair: [['--tt-pill', '--tt-pill-ink', 'Glyph on its plate'], ['--tt-on-accent', '--tt-accent', 'Steer glyph on the accent'], ['--tt-activity', '--tt-card', 'Trace on the card']],
+    acts: s => (s.run && s.text ? key('stop', 'g', { beside: true }) : '') + (s.cmd ? key('send', 'g', { glyph: I.steer, steering: true }).replace(/Send prompt/g, 'Steer now') : plate(s, 'g')) },
+]
+
+function compose(d, s) {
+  const tray = s.queued ? `<div class="tray"><div class="tray-head"><b>Queued 1</b>· sends when this turn ends</div>
+    <div class="tray-row"><p>Run the linter on the changed files too</p><span class="tools"><span class="words" style="display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 7px;color:var(--tt-accent-text);font-weight:600">${I.right}Steer now</span></span></div></div>` : ''
+  const field = s.text ? `<div class="field">${typed}<span class="caret"></span></div>` : `<div class="field ph">${placeholder(s)}</div>`
+  return `<div class="compose ${d.ref ? 'ref' : ''} v${d.id.replace('2.', '')}">${tray}<div class="card">${field}
+    <div class="foot"><div class="meta"><span class="chip"><i class="mk"></i>Opus 5.5</span><span class="chip">High</span></div>
+    <div class="thread-prompt__actions">${d.acts(s)}</div></div></div></div>`
+}
+
+const main = document.getElementById('main')
+const cols = [['t-dark', 'Dark'], ['t-light', 'Light']]
+for (const d of DIRS) {
+  const sec = document.createElement('section')
+  sec.className = 'dir'; sec.id = d.id; sec.dataset.id = d.id
+  let grid = '<div class="grid"><div></div>' + cols.map(c => `<div class="th">${c[1]}</div>`).join('')
+  for (const s of STATES) {
+    if (s.more && !d.ref) continue
+    if (s.only && s.only !== d.id) continue
+    grid += `<div class="rl">${s.label}<small>${s.sub}</small></div>`
+    for (const [cls, name] of cols) grid += `<div class="cell ${cls}" data-col="${name}">${compose(d, s)}</div>`
+  }
+  grid += '</div>'
+  sec.innerHTML = `<h2><b>${d.id === '0' ? '2' : d.id}</b>${d.name}</h2>${d.idea ? `<p class="idea">${d.idea}</p>` : ''}${d.changed ? `<p class="changed">${d.changed}</p>` : ''}
+    <p class="keys">${d.keys}</p><p class="note">${d.note}</p><p class="ratio" data-pair="${d.pair.map(p => p.join('|')).join(';')}"></p>${grid}`
+  main.appendChild(sec)
+}
+
+/* ---------- 2 in motion: a composer you can type in ---------- */
+const TURN = 6000
+const live = document.createElement('section')
+live.className = 'dir'; live.id = 'L'; live.dataset.id = 'L'
+live.innerHTML = `<h2><b>2 ▸</b>2 in motion</h2>
+  <p class="changed">the plate fills as you type (160 ms); its glyph eases into the next role, the arrow leaving upward as it sends (120 ms out, 200 ms in); the trace fades up as the turn starts (240 ms); Stop and Steer step out of the plate's side (200 ms); a press springs (220 ms).</p>
+  <p class="keys">Type and press <kbd>Enter</kbd> to send; type again to queue; <kbd>⌘Enter</kbd> steers; <kbd>⌘⇧S</kbd> or the Stop button stops. A turn runs ${TURN / 1000} seconds; a queued prompt sends when it ends.</p>
+  <p class="note">If the page sits inside Sotto, Sotto may keep ⌘⇧S for itself: use Play or the buttons. Reduced motion (the system setting or the box) keeps only the fills and a 120 ms cross-fade; the trace rests at a quarter.</p>
+  <div class="bar livebar"><button type="button" id="play">Play</button><button type="button" id="reset">Reset</button>
+    <label>Take <select id="take"><option value="2">2.2 glyph and key</option><option value="1">2.1 glyph only</option><option value="3">2.3 key on reach</option></select></label>
+    <label><input type="checkbox" id="calm"> Reduce motion</label><label><input type="checkbox" id="slow"> Slow ×4</label></div>
+  <p class="ratio" data-pair="--tt-pill|--tt-pill-ink|Glyph on its plate;--tt-activity|--tt-card|Trace on the card"></p>
+  <div class="grid"><div></div><div class="th">Dark</div><div class="th">Light</div><div class="rl">Live<small>type, press, play</small></div>
+    <div class="cell t-dark" data-col="Dark"></div><div class="cell t-light" data-col="Light"></div></div>`
+main.appendChild(live)
+
+const motion = () => !document.body.classList.contains('calm')
+const ms = n => n * (document.body.classList.contains('slow') ? 4 : 1)
+const OUT = 'cubic-bezier(.2, .8, .2, 1)', SPRING = 'cubic-bezier(.2, .9, .3, 1.3)'
+
+class Live {
+  constructor(cell) {
+    this.text = ''; this.running = false; this.queue = []; this.timer = 0
+    cell.innerHTML = `<div class="compose ref live v2"><div class="trayslot"></div><div class="card"><div class="field"><textarea rows="1" aria-label="Prompt"></textarea></div>
+      <div class="foot"><div class="meta"><span class="chip"><i class="mk"></i>Opus 5.5</span><span class="chip">High</span><span class="said"></span></div>
+      <div class="thread-prompt__actions"><button type="button" class="thread-prompt__send"><span class="glyphs">${I.up}</span><kbd class="thread-prompt__key" aria-hidden="true">↵</kbd>${TRACE}</button></div></div></div></div>`
+    this.root = cell.firstElementChild
+    this.ta = cell.querySelector('textarea'); this.acts = cell.querySelector('.thread-prompt__actions'); this.plate = this.acts.lastElementChild
+    this.traySlot = cell.querySelector('.trayslot'); this.said = cell.querySelector('.said')
+    this.role = 'send'; this.side = null
+    this.ta.addEventListener('input', () => { this.text = this.ta.value; this.render() })
+    this.ta.addEventListener('focus', () => { Live.last = this })
+    this.ta.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); (e.metaKey || e.ctrlKey) && this.running ? this.steer() : this.enter() }
+    })
+    this.plate.addEventListener('click', () => this.role === 'stop' ? this.stop() : this.enter(true))
+    this.render(true)
+  }
+  setTake(n) { this.root.classList.remove('v1', 'v2', 'v3'); this.root.classList.add('v' + n); this.render(true) }
+  shape() { return this.root.classList.contains('v2') ? 'gk' : this.root.classList.contains('v3') ? 'gx' : 'g' }
+  type(text) { this.ta.value = this.text = text; this.render() }
+  press(el) { if (motion()) el.animate([{ transform: 'scale(1)' }, { transform: 'scale(.94)', offset: .3 }, { transform: 'scale(1)' }], { duration: ms(240), easing: SPRING }) }
+  enter(clicked) {
+    if (!this.text.trim()) return
+    if (!clicked) this.press(this.plate)
+    if (this.running) { this.queue.push(this.text.trim()); this.type('') } else { this.type(''); this.start() }
+  }
+  steer() {
+    if (!this.running || !this.text.trim()) return
+    const steer = this.acts.querySelector('.thread-prompt__steer'); if (steer) this.press(steer)
+    this.type(''); this.say('Sent into the running turn')
+  }
+  say(words) { this.said.textContent = words; clearTimeout(this.sayTimer); this.sayTimer = setTimeout(() => { this.said.textContent = '' }, 1600) }
+  start(length = TURN) { this.running = true; clearTimeout(this.timer); if (length < Infinity) this.timer = setTimeout(() => this.end(), length); this.render() }
+  stop() { if (this.running) this.end() }
+  end() {
+    this.running = false; clearTimeout(this.timer); this.render()
+    if (this.queue.length) setTimeout(() => { if (this.running || !this.queue.length) return; this.queue.shift(); this.start() }, 360)
+  }
+  reset() { this.queue = []; this.running = false; clearTimeout(this.timer); this.ta.value = this.text = ''; this.said.textContent = ''; this.render(true) }
+  render(now) {
+    const role = !this.running ? 'send' : this.text.trim() ? 'queue' : 'stop'
+    const animate = motion() && !now, shape = this.shape()
+    this.ta.placeholder = this.running ? 'Claude is working. Write a follow-up to queue it.' : 'What should Claude do next?'
+    // The plate: fill, glyph, key, trace.
+    const p = this.plate
+    p.className = (role === 'stop' ? 'thread-prompt__stop' : 'thread-prompt__send') + (shape === 'gk' ? ' gk' : ' g')
+    p.disabled = role === 'send' && !this.text.trim()
+    p.setAttribute('aria-label', NAME[role]); p.title = `${NAME[role]} ${CAP[role]}`
+    p.toggleAttribute('data-run', role === 'stop')
+    const cap = p.querySelector('.thread-prompt__key'); cap.hidden = shape === 'g'
+    if (role !== this.role) {
+      const from = p.getBoundingClientRect().width
+      cap.textContent = CAP[role]
+      const box = p.querySelector('.glyphs'), old = box.lastElementChild
+      box.insertAdjacentHTML('beforeend', GLYPH[role]); const next = box.lastElementChild
+      if (!now) {
+        const leave = this.role === 'send' && this.running ? [{ transform: 'none', opacity: 1 }, { transform: 'translateY(-9px)', opacity: 0 }] : [{ transform: 'none', opacity: 1 }, { transform: 'scale(.6)', opacity: 0 }]
+        const calm = !motion()
+        old.animate(calm ? { opacity: [1, 0] } : leave, { duration: ms(120), easing: calm ? 'linear' : 'ease-in', fill: 'forwards' }).finished.then(() => old.remove())
+        next.animate(calm ? { opacity: [0, 1] } : [{ transform: 'scale(.6)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: ms(calm ? 120 : 200), delay: calm ? 0 : ms(40), easing: calm ? 'linear' : OUT, fill: 'backwards' })
+        const to = p.getBoundingClientRect().width
+        if (!calm && Math.abs(to - from) > .5) p.animate({ width: [from + 'px', to + 'px'] }, { duration: ms(200), easing: OUT })
+      } else old.remove()
+      this.role = role
+    }
+    // Stop and Steer beside the plate while a turn runs and there is text.
+    const want = role === 'queue'
+    if (want && (!this.side || this.side.shape !== shape)) {
+      if (this.side) this.side.els.forEach(el => el.remove())
+      const html = key('steer', shape) + key('stop', shape, { beside: true })
+      p.insertAdjacentHTML('beforebegin', html)
+      const els = [p.previousElementSibling.previousElementSibling, p.previousElementSibling]
+      els[1].toggleAttribute('data-run', true)
+      els[0].addEventListener('click', () => this.steer()); els[1].addEventListener('click', () => this.stop())
+      this.side = { shape, els }
+      if (animate) els.forEach((el, i) => {
+        el.animate([{ transform: 'translateX(12px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: ms(200), delay: ms(i ? 0 : 40), easing: OUT, fill: 'backwards' })
+        el.querySelector('.thread-prompt__trace')?.animate({ opacity: [0, 1] }, { duration: ms(240), easing: 'ease-out' })
+      })
+    } else if (!want && this.side) {
+      const els = this.side.els; this.side = null
+      if (animate) els.forEach(el => el.animate([{ opacity: 1 }, { transform: 'translateX(12px)', opacity: 0 }], { duration: ms(120), easing: 'ease-in', fill: 'forwards' }).finished.then(() => el.remove()))
+      else els.forEach(el => el.remove())
+    }
+    // The queue above the card.
+    const had = this.traySlot.firstElementChild
+    this.traySlot.innerHTML = this.queue.length ? `<div class="tray"><div class="tray-head"><b>Queued ${this.queue.length}</b>· sends when this turn ends</div>
+      ${this.queue.map(q => `<div class="tray-row"><p>${q.replace(/</g, '&lt;')}</p><span class="tools"></span></div>`).join('')}</div>` : ''
+    if (!had && this.traySlot.firstElementChild && motion()) this.traySlot.firstElementChild.animate([{ transform: 'translateY(6px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: ms(160), easing: OUT })
+  }
+}
+const lives = [...live.querySelectorAll('.cell')].map(c => new Live(c))
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 's') { e.preventDefault(); (Live.last ? [Live.last] : lives).forEach(l => l.stop()) }
+})
+
+let run = 0
+const wait = (t, id) => new Promise((ok, no) => setTimeout(() => id === run ? ok() : no(), t))
+async function typeOut(l, text, id) { for (let i = 1; i <= text.length; i++) { l.type(text.slice(0, i)); await wait(26, id) } }
+async function play(l, id) {
+  l.reset(); await wait(400, id)
+  await typeOut(l, 'Also update the release notes', id); await wait(500, id)
+  l.enter(); await wait(1600, id)
+  await typeOut(l, 'Run the linter too', id); await wait(600, id)
+  l.enter(); await wait(1000, id)
+  await typeOut(l, 'Use the Windows path', id); await wait(600, id)
+  l.steer(); await wait(1400, id)
+  l.stop(); await wait(2400, id)
+  l.stop()
+}
+document.getElementById('play').addEventListener('click', () => { const id = ++run; lives.forEach(l => play(l, id).catch(() => {})) })
+document.getElementById('reset').addEventListener('click', () => { run++; lives.forEach(l => l.reset()) })
+document.getElementById('take').addEventListener('change', e => lives.forEach(l => l.setTake(e.target.value)))
+const reduce = matchMedia('(prefers-reduced-motion: reduce)')
+const calmBox = document.getElementById('calm')
+const setCalm = () => document.body.classList.toggle('calm', calmBox.checked || reduce.matches)
+calmBox.addEventListener('change', setCalm); reduce.addEventListener('change', setCalm); setCalm()
+document.getElementById('slow').addEventListener('change', e => document.body.classList.toggle('slow', e.target.checked))
+
+/* Measure each pair as painted, in each half, by drawing both colours to a canvas. */
+const ctx = Object.assign(document.createElement('canvas'), { width: 1, height: 1 }).getContext('2d', { willReadFrequently: true })
+function rgb(color) { ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = '#000'; ctx.fillStyle = color; ctx.fillRect(0, 0, 1, 1); return [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3) }
+function lum([r, g, b]) { const f = c => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4 }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b) }
+function ratio(a, b) { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05) }
+const probe = document.createElement('div'); document.body.appendChild(probe)
+function resolve(scope, v) { probe.className = scope; probe.style.color = v.startsWith('--') ? `var(${v})` : v; return getComputedStyle(probe).color }
+for (const p of document.querySelectorAll('.ratio')) {
+  p.innerHTML = p.dataset.pair.split(';').map(pair => {
+    const [fg, bg, label] = pair.split('|')
+    const parts = [['t-dark', 'dark'], ['t-light', 'light']].map(([scope, name]) => {
+      const r = ratio(rgb(resolve(scope, fg)), rgb(resolve(scope, bg)))
+      return `${name} <i class="${r < 3 ? 'low' : ''}">${r.toFixed(1)}:1</i>`
+    })
+    return `${label}: ${parts.join(' · ')}`
+  }).join(' &nbsp;·&nbsp; ') + ' <span style="color:#6f6e69">(3:1 needed)</span>'
+}
+probe.remove()
+
+const bar = document.getElementById('bar')
+bar.innerHTML = [...DIRS.map(d => [d.id, d.id === '0' ? '2 as drawn' : `${d.id} ${d.name}`]), ['L', '2 in motion']].map(([id, n]) => `<a href="#${id}">${n}</a>`).join('')
+
+const params = new URLSearchParams(location.search)
+const only = location.hash.slice(1)
+if (only && document.getElementById(only)) {
+  for (const s of document.querySelectorAll('section.dir')) s.hidden = s.id !== only
+  document.querySelector('.intro').hidden = bar.hidden = document.querySelector('h1').hidden = true
+}
+if (params.has('still')) document.body.classList.add('still')
+if (params.get('take')) { document.getElementById('take').value = params.get('take'); lives.forEach(l => l.setTake(params.get('take'))) }
+/* Screenshot scenes: set a state, make one change, freeze every animation `at` ms into it. */
+const scene = params.get('scene'), at = params.get('at')
+if (scene) {
+  const before = { start: l => l.type(typed), type: l => l.start(Infinity), 'running-typed': l => { l.start(Infinity); l.queue.push('Run the linter on the changed files too'); l.type(typed) }, 'rest-typed': l => l.type(typed) }[scene]
+  const change = { start: l => { l.enter(); clearTimeout(l.timer) }, type: l => l.type(typed) }[scene]
+  lives.forEach(l => before(l))
+  if (change) setTimeout(() => {
+    lives.forEach(l => change(l))
+    if (at !== null) for (const a of document.getAnimations()) { a.pause(); a.currentTime = Number(at) }
+  }, 300)
+}
+</script>
+</body>
+</html>
