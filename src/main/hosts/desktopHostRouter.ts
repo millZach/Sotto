@@ -1,4 +1,5 @@
 import { t } from '@lingui/core/macro'
+import { delegatedElsewhere, settledWithParent, stopUnreachedWords, type DelegatedElsewhere } from './crossMachineCascade'
 import type { AgentThreadPrompts, AgentThreadPromptsRequest } from '../../shared/threadPrompts'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { startsThread, THREAD_STARTS_UNSUPPORTED } from '../../shared/threadStarts'
@@ -379,7 +380,12 @@ export class DesktopHostRouter {
      * This desktop's Owl answer for Restart stopped threads (ADR-0144), read once at start: with it, the window offers
      * Babysit pull request on no host's threads, and refuses a press that reaches it anyway.
      */
-    babysittingRetired?: boolean } = {}) {
+    babysittingRetired?: boolean
+    /**
+     * This desktop's Owl answer for Work across machines, read once at start: with it, Stop, Settle and Restore of a thread
+     * reach the threads it delegated to on other machines, and Stop says which it could not reach (#1316 part 3).
+     */
+    crossMachineWork?: boolean } = {}) {
     this.held = heldProvidersOption(options)
   }
 
@@ -1357,6 +1363,9 @@ export class DesktopHostRouter {
     const { activeThreadId, activeProjectId } = connection.service.shell()
     const selections = this.selections
     const windowShowed = { hostId: this.selectedHostId, threadId: this.selectedThreadId }
+    // Stop and settle reach a thread's delegated threads on other machines too (#1316 part 3), as the window saw them before.
+    const across = this.options.crossMachineWork === true && (command.type === 'interrupt' || command.type === 'settle-thread' || command.type === 'restore-thread')
+      ? this.delegatedAcross(connection.hostId, command.threadId) : undefined
     let refused = false
     let repeatedUnsupportedCompose = false
     // Continuing an agent or forking at a reply answers where it was asked (#1028): its refusal is this command's alone.
@@ -1415,6 +1424,7 @@ export class DesktopHostRouter {
       if (SELECTING_COMMANDS.has(command.type) && selections === this.selections) this.follow(connection, { activeThreadId, activeProjectId })
     }
     if (refused) for (const undo of unmark) undo()
+    if (across?.elsewhere.length && !refused && (command.type === 'interrupt' || command.type === 'settle-thread' || command.type === 'restore-thread')) await this.cascadeAcross(command.type, across, client)
     // Only while the window still shows what it did when the creation began: any other move meanwhile wins.
     const unmoved = selections === this.selections && this.selectedHostId === windowShowed.hostId && this.selectedThreadId === windowShowed.threadId
     if (command.type === 'create-thread' && command.threadId !== undefined && connection.kind === 'remote' && !refused && unmoved) {
@@ -1432,6 +1442,35 @@ export class DesktopHostRouter {
     // as a thread answers in the agent's row with its own refusal alone (#1028).
     return command.type === 'configure' || hostNamed ? { ...shell, error: refused ? this.notice?.message ?? null : null }
       : startsThread(command) ? { ...shell, error: inPlace ?? null } : shell
+  }
+  /**
+   * The thread the window names on `hostId`, as the window last showed it, with its delegated threads, both levels, that run
+   * on other machines (#1316 part 3). Read in place from what was last published, never a copy.
+   */
+  private delegatedAcross(hostId: string, threadId: string): { readonly settledAt: string | null; readonly elsewhere: readonly DelegatedElsewhere[] } {
+    const key = hostEntityKey(hostId, threadId), threads = this.lastPublished().host.threads
+    return { settledAt: threads.find(thread => thread.id === key)?.workspaceSettledAt ?? null, elsewhere: delegatedElsewhere(threads, key) }
+  }
+  /**
+   * After the window's own Stop, Settle or Restore of a thread went through (#1316 part 3, Owl `cross-machine-work`). Stop: the
+   * thread's delegation stops those on other machines through its own asks there, so here the window is told which working
+   * ones it could not reach, by machine. Settle: those still open on another machine are settled there, once, as the thread
+   * goes from open to settled. Restore: those settled with it there are restored. A machine not connected keeps its own.
+   */
+  private async cascadeAcross(type: 'interrupt' | 'settle-thread' | 'restore-thread', across: { readonly settledAt: string | null; readonly elsewhere: readonly DelegatedElsewhere[] }, client: ClientIdentity): Promise<void> {
+    const reachable = (hostId: string): DesktopHostConnection | undefined => {
+      const connection = this.hosts.get(hostId)?.connection
+      return connection && connection.available?.() !== false ? connection : undefined
+    }
+    if (type === 'interrupt') {
+      const left = new Map<string, number>()
+      for (const child of across.elsewhere) if (child.running && !reachable(child.hostId)) left.set(child.hostId, (left.get(child.hostId) ?? 0) + 1)
+      if (left.size) this.notice = { message: stopUnreachedWords([...left].map(([hostId, count]) => ({ name: this.hosts.get(hostId)?.connection.name ?? t`Remote host`, count }))) }
+      return
+    }
+    const targets = type === 'settle-thread' ? across.settledAt === null ? across.elsewhere.filter(child => child.settledAt === null) : []
+      : across.settledAt === null ? [] : across.elsewhere.filter(child => settledWithParent(across.settledAt, child.settledAt))
+    await Promise.allSettled(targets.map(async child => { await reachable(child.hostId)?.service.command({ type, threadId: child.id }, client) }))
   }
   /** A clearing or deleting command's answer (ADR-0140): the shell as it is now, built only when one answers, with its outcome. */
   private answer(outcome: Partial<AgentState>, withoutHistory = false): AgentState {

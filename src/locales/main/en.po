@@ -39,6 +39,10 @@ msgstr "{count, plural, one {{list} does nothing now.} other {{list} do nothing 
 msgid "{count, plural, one {{list} is Voxtype’s again.} other {{list} are Voxtype’s again.}}"
 msgstr "{count, plural, one {{list} is Voxtype’s again.} other {{list} are Voxtype’s again.}}"
 
+#: src/main/hosts/crossMachineCascade.ts
+msgid "{count, plural, one {Sotto couldn't stop # delegated thread on {name}, because {name} isn't connected.} other {Sotto couldn't stop # delegated threads on {name}, because {name} isn't connected.}}"
+msgstr "{count, plural, one {Sotto couldn't stop # delegated thread on {name}, because {name} isn't connected.} other {Sotto couldn't stop # delegated threads on {name}, because {name} isn't connected.}}"
+
 #: src/main/hosts/hostUpdate.ts
 msgid "{count, plural, one {Sotto did not restart while it was updating # host. Nothing was lost. Restart again once that update has finished.} other {Sotto did not restart while it was updating # hosts. Nothing was lost. Restart again once those updates have finished.}}"
 msgstr "{count, plural, one {Sotto did not restart while it was updating # host. Nothing was lost. Restart again once that update has finished.} other {Sotto did not restart while it was updating # hosts. Nothing was lost. Restart again once those updates have finished.}}"
@@ -229,6 +233,10 @@ msgstr "{to} installed on {name}, but its host did not start, and {from} did not
 #: src/main/hosts/hostUpdate.ts
 msgid "{to} installed on {name}, but its host did not start, so Sotto started {from} again."
 msgstr "{to} installed on {name}, but its host did not start, so Sotto started {from} again."
+
+#: src/main/hosts/crossMachineCascade.ts
+msgid "{total, plural, one {It may still be working there. Open it from Tools › Agents and stop it once its machine is back.} other {They may still be working there. Open them from Tools › Agents and stop them once their machine is back.}}"
+msgstr "{total, plural, one {It may still be working there. Open it from Tools › Agents and stop it once its machine is back.} other {They may still be working there. Open them from Tools › Agents and stop them once their machine is back.}}"
 
 #: src/main/tools/browser.ts
 msgid "A browser action is still running."
@@ -953,6 +961,10 @@ msgstr "Refresh the workspace and select a path."
 #: src/main/files/ipc.ts
 msgid "Refresh the workspace and use a relative directory path."
 msgstr "Refresh the workspace and use a relative directory path."
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "Remote host"
+msgstr "Remote host"
 
 #: src/main/omarchy/setup.ts
 msgid "Removal stopped before it finished. Try again to finish removing this piece."

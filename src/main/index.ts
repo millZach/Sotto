@@ -1070,7 +1070,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   // The runtime builds the worktree cleanup (ADR-0041). Only the local host has worktrees on this
   // computer; with it off the inactive host's cleanup does nothing, and no terminal check is wired.
   const worktreeCleanup = startupSettings.localHostEnabled ? localRuntime.worktreeCleanup : null
-  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), { watcherEnabled, heldProviders, streamingPublishCost: owlFeatures['streaming-publish-cost'],
+  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), { watcherEnabled, heldProviders, crossMachineWork: crossMachineEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'],
     ...babysittingRetired ? { babysittingRetired: true } : {},
     attachAnyFile: owlFeatures['attach-any-file'],
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
