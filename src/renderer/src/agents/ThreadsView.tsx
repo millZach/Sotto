@@ -323,7 +323,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
       workingCopy={paneWorkingCopy?.(slot)} notice={paneNotice?.(slot)} actions={actions} drawer={paneDrawer?.(slot)} />
   }
 
-  return <SidebarChromeProvider updateControl={updateControl}><Marked>{marks => <div className={page} onKeyDown={grid.onKeyDown} {...marks}>
+  return <SidebarChromeProvider updateControl={updateControl}><Marked>{marks => <div className={page} data-room-backdrop="" onKeyDown={grid.onKeyDown} {...marks}>
     {chooser !== null && <NewThreadDialog state={state} command={command}
       onClose={() => setChooser(null)}
       onCreating={start => { setChooser(null); handleCreationStart(start, chooser.carried) }}
@@ -332,11 +332,11 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
       currentThreadId={focusedId} listedThreadId={listedThreadId} openThreadIds={paneIds} onOpenBeside={openBeside} onDragThread={setDragging}
       newThreadError={shownWords(newThreadError)} onDismissNewThreadError={dismissNewThreadError} newThreadShortcut={newThreadShortcutLabel} shortcutsLive
       restartThreads={published?.host.threads} />
-    <section className="thread-workspace" aria-label={t`Thread workspace`}>
+    <section className="thread-workspace" data-room-backdrop="" aria-label={t`Thread workspace`}>
       {/* Before the panes, so it comes first in keyboard order; it sits in the top strip beside the window controls. */}
       {updateAll ? null : <HostUpdateControl />}
       {recoveredDraft ? <ProviderUpgradeNotice state={state} command={recoverCommand} threadId={focusedId ?? undefined} localDraftPresent={localDraftPresent} /> : null}
-      <div className="thread-workspace__body" data-panes={paneIds.length > 0 || undefined}>
+      <div className="thread-workspace__body" data-room-backdrop="" data-panes={paneIds.length > 0 || undefined}>
         {paneIds.length || dragging !== null
           ? <ThreadPanes layout={layout} paneIds={paneIds} rows={labels} focusedId={focusedId} dragging={dragging} renderPane={renderPane}
             onFocusPane={focusPane} onLayoutChange={next => layoutStore.set(next)} onDrop={(threadId, target) => { setDragging(null); grid.onDrop(threadId, target) }} onClosePane={grid.close} measuredWidth={paneAreaWidth} measuredHeight={paneAreaHeight} />

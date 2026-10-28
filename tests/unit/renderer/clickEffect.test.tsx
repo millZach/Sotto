@@ -89,12 +89,13 @@ describe('the click effect', () => {
     expect(gate.watched.every(watch => !watch)).toBe(true)
   })
 
-  it('draws after a primary press, even one the page stops, and never for another button', async () => {
-    const { container } = render(<><ClickEffect /><button type="button" onPointerDown={event => event.stopPropagation()}>Send</button></>)
-    pressAt(document.body, 300, 200, 2)
+  it('draws after a primary press on the backdrop, even one the page stops, and never for another button', async () => {
+    const { container } = render(<><ClickEffect /><div data-room-backdrop="" onPointerDown={event => event.stopPropagation()} /></>)
+    const backdrop = container.querySelector('[data-room-backdrop]')!
+    pressAt(backdrop, 300, 200, 2)
     await frames(6)
     expect(drawn).toBe(0)
-    pressAt(container.querySelector('button')!, 300, 200)
+    pressAt(backdrop, 300, 200)
     await frames(6)
     expect(drawn).toBeGreaterThan(0)
   })
@@ -108,50 +109,67 @@ describe('the click effect', () => {
     expect(document.querySelector('canvas.click-effect')).toBeNull()
   })
 
-  it('sends no waves for a press on a composer, but does for one on a menu it opened outside its card', async () => {
-    const { container } = render(<><ClickEffect /><form className="thread-prompt"><textarea aria-label="Message" /><button type="button">Send</button><dialog open><button type="button">GPT-5.4</button></dialog></form></>)
-    // The composer's card stands at 280..720 by 580..680; jsdom lays nothing out, so its box is given here.
-    vi.spyOn(container.querySelector('form')!, 'getBoundingClientRect').mockReturnValue(new DOMRect(280, 580, 440, 100))
-    pressAt(container.querySelector('textarea')!, 300, 600)
-    pressAt(container.querySelector('button')!, 320, 620)
-    pressAt(container.querySelector('form')!, 340, 640)
-    await frames(6)
-    expect(drawn).toBe(0)
-    pressAt(container.querySelector('dialog button')!, 300, 300)
-    await frames(6)
-    expect(drawn).toBeGreaterThan(0)
+  // The room as the Threads page lays it out, its bare surfaces marked, with what sits on them.
+  const room = (): HTMLElement => render(<><ClickEffect />
+    <aside className="thread-nav" aria-label="Thread sidebar"><button type="button">Footer links</button></aside>
+    <section className="thread-pane" data-room-backdrop="">
+      <div className="thread-workspace__transcript" data-room-backdrop="">
+        <div className="thread-transcript__content" data-room-backdrop="">
+          <article className="thread-message"><div className="rich-message"><p>Fixing the footer links.</p></div><button type="button">Copy message</button></article>
+          <section className="request-card"><p>Which docs path?</p><button type="button">Use /docs</button></section>
+        </div>
+      </div>
+      <div className="thread-workspace__compose" data-room-backdrop="">
+        <form className="thread-prompt"><textarea aria-label="Message" /><dialog open><button type="button">GPT-5.4</button></dialog></form>
+      </div>
+    </section>
+    <div className="management-view settings-view"><button type="button" role="switch" aria-checked="true">Click effect</button></div>
+  </>).container
+
+  it('sends waves for a press on the bare backdrop: behind the panes, around the messages and around the composer', async () => {
+    for (const selector of ['.thread-pane', '.thread-workspace__transcript', '.thread-transcript__content', '.thread-workspace__compose']) {
+      cleanup()
+      drawn = 0
+      pressAt(room().querySelector(selector)!, 600, 300)
+      await frames(6)
+      expect(drawn, selector).toBeGreaterThan(0)
+    }
   })
 
-  it('sends no waves for a press in the sidebar', async () => {
-    const { container } = render(<><ClickEffect /><aside className="thread-nav" aria-label="Thread sidebar"><button type="button">Footer links</button></aside></>)
-    pressAt(container.querySelector('aside button')!, 40, 120)
-    pressAt(container.querySelector('aside')!, 40, 400)
+  it("sends none for a press on a message's words, its copy action, an answer, the composer, its menu, the sidebar or Settings", async () => {
+    const container = room()
+    const pressed = {
+      words: container.querySelector('.rich-message p')!,
+      message: container.querySelector('.thread-message')!,
+      copy: container.querySelector('.thread-message button')!,
+      answer: container.querySelector('.request-card button')!,
+      card: container.querySelector('.request-card')!,
+      composer: container.querySelector('textarea')!,
+      menu: container.querySelector('dialog button')!,
+      sidebar: container.querySelector('.thread-nav')!,
+      row: container.querySelector('.thread-nav button')!,
+      settings: container.querySelector('.settings-view')!,
+      option: container.querySelector('[role="switch"]')!,
+    }
+    for (const target of Object.values(pressed)) pressAt(target, 600, 300)
     await frames(6)
     expect(drawn).toBe(0)
-    pressAt(document.body, 600, 300)
-    await frames(6)
-    expect(drawn).toBeGreaterThan(0)
-  })
-
-  it("sends waves for a press on a composer's menu even where the menu stands over the composer's card", async () => {
-    const { container } = render(<><ClickEffect /><form className="thread-prompt"><textarea aria-label="Message" /><dialog open><button type="button">GPT-5.4</button></dialog></form></>)
-    vi.spyOn(container.querySelector('form')!, 'getBoundingClientRect').mockReturnValue(new DOMRect(280, 580, 440, 100))
-    pressAt(container.querySelector('dialog button')!, 300, 600)
-    await frames(6)
-    expect(drawn).toBeGreaterThan(0)
   })
 
   it('stops and clears when it goes, and a press afterwards draws nothing', async () => {
+    const backdrop = document.body.appendChild(document.createElement('div'))
+    backdrop.setAttribute('data-room-backdrop', '')
     const { unmount } = render(<ClickEffect />)
-    pressAt(document.body, 300, 200)
+    pressAt(backdrop, 300, 200)
     await frames(3)
     const before = cleared
     unmount()
     expect(cleared).toBeGreaterThan(before)
     drawn = 0
-    pressAt(document.body, 300, 200)
+    pressAt(backdrop, 300, 200)
     await frames(6)
     expect(drawn).toBe(0)
+    backdrop.remove()
   })
 
 })

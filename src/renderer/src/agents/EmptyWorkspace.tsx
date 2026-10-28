@@ -100,7 +100,7 @@ export function EmptyWorkspace({ state, command, onNewThread, onNewThreadWithDra
     if (discarded) headingRef.current?.focus()
     return discarded
   }
-  return <div className="thread-workspace__empty thread-workspace__empty--page">
+  return <div className="thread-workspace__empty thread-workspace__empty--page" data-room-backdrop="">
     <MessageSquare size={30} strokeWidth={1.3} aria-hidden="true" />
     <h2 ref={headingRef} tabIndex={-1}>{page.heading}</h2>
     <p className="tt-paragraph">{page.detail}</p>

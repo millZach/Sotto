@@ -46,6 +46,12 @@ A press in Watcher's open left margin sends waves there, and the spec checks the
 
 In Node, on this laptop, one step of the water at 1280 by 800 took about 0.1 ms and walking the glyph grid about 1 ms with eight presses' waves crossing; at 1600 by 1000, 0.14 ms and 0.14 ms. Many presses add drops to the same water, so the work per frame does not grow with them. A single press's waves leave nothing to draw after about nine to ten seconds, and the loop stops then; in the built app the loop drew about 400 frames and stopped 9 seconds after a press. The water steps by the clock and the loop draws only when a step is due, so a 120 Hz display draws about sixty frames a second, as a 60 Hz one does, without running the water faster. A window drawn slowly (an occluded one, about a frame a second) ages the water by the steps it missed rather than running it for minutes: in Node, one press calmed after 9.0 seconds at sixty frames a second, 9.3 at ten and 12.0 at one.
 
+## Only the backdrop (October 28)
+
+On Linux on forge, with the built app in an Owl build on an isolated nested Hyprland desktop (`node scripts/verify-linux-window-minimum.mjs --exec node_modules/.bin/playwright test tests/e2e/click-effect.spec.ts`), every test in the spec passed after the effect was held to the room's bare backdrop. In dark and light, once the water was calm, these presses drew no frame and started nothing: a thread's row in the sidebar, the composer's field and card, a message's words, its **Copy message as Markdown** action, **Allow** on a permission request in the thread, the **Appearance** tab in Settings and the open space of a Settings page. A press on the conversation's open space beside and between its messages then sent waves, and so did one in Watcher's open margin. A press on the scrubber beside Watcher's column, the rail of the messages you sent, sends none: it is a control. The unit tests add a press on a request's card and on a menu the composer opened, which now send none either.
+
+Before the change, on the same Threads page, the bare points were `.thread-workspace__transcript` and `.thread-transcript__content` beside and between the messages, `.thread-workspace__compose` around the composer, and the pane itself; in Dictate, the room's own section, its layout and the open journal. Those, and the surfaces between them and the page, wear `data-room-backdrop`. No capture was taken again: the waves look as they did.
+
 ## Not checked here
 
 - macOS and Linux were not run; the canvas and the shell's stacking are the same code there.
