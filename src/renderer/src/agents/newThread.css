@@ -44,7 +44,6 @@
 .new-thread-working-copy__choice > svg { flex: none; color: var(--tt-text-muted); }
 .new-thread-working-copy__choice > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .new-thread-working-copy__choice:hover { border-color: var(--tt-border-faint); background: var(--tt-hover-strong); }
-.new-thread-working-copy__choice:active { background: var(--tt-hover-strong); }
 .new-thread-working-copy__choice:has(input:checked) { border-color: var(--tt-selected-border); background: var(--tt-selected); color: var(--tt-text); }
 .new-thread-working-copy__choice:has(input:checked) > svg { color: var(--tt-accent-text); }
 .new-thread-working-copy__choice:has(input:focus-visible) { outline: 3px solid var(--tt-focus-ring); outline-offset: 2px; }

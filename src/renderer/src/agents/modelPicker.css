@@ -32,7 +32,7 @@
 .model-picker__rail > button { position: relative; display: grid; place-items: center; flex: none; width: 40px; height: 40px; border: 0; border-radius: 10px; background: transparent; color: var(--tt-text-muted); cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .model-picker__rail > button .provider-mark { opacity: .75; }
 .model-picker__rail > button:hover { background: var(--tt-hover); }
-.model-picker__rail > button:active:not(:disabled) { background: var(--tt-hover-strong); }
+.model-picker__rail > button:active:not(:disabled):not([aria-selected='true']) { background: var(--tt-hover-strong); }
 .model-picker__rail > button:hover .provider-mark, .model-picker__rail > button[aria-selected='true'] .provider-mark { opacity: 1; }
 .model-picker__rail > button[aria-selected='true'] { background: var(--tt-selected); }
 .model-picker__rail > button[aria-selected='true']::before { content: ''; position: absolute; left: -6px; top: 10px; bottom: 10px; width: 2px; border-radius: 0 2px 2px 0; background: var(--tt-activity); }

@@ -34,7 +34,7 @@
 .provider-badge[data-provider='deepseek'] { --provider-badge: var(--tt-provider-deepseek-badge); }
 
 /* Update to <version>: a filled chip in the selected card's colour, beside the switch while an update is offered. */
-.provider-row__update { justify-self: end; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 28px; padding: 0 10px; border: 0; border-radius: 5px; background: var(--tt-card-selected); color: var(--tt-accent-text); font: inherit; font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; transition: box-shadow 120ms ease, color 120ms ease; }
+.provider-row__update { justify-self: end; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 28px; padding: 0 10px; border: 0; border-radius: 5px; background: var(--tt-card-selected); color: var(--tt-accent-text); font: inherit; font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; transition: box-shadow 120ms ease, opacity 120ms ease; }
 .provider-row__update > svg { flex: none; }
 .provider-row__update:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--tt-accent-border); }
 .provider-row__update:disabled { cursor: default; opacity: .7; }
