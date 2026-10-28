@@ -1,3 +1,5 @@
+import { i18n } from '@lingui/core'
+import { useSyncExternalStore } from 'react'
 import { t } from '@lingui/core/macro'
 
 import { hostForThread, PROVIDER_LABELS, isThreadProviderConnected, providerIdOfLabel, threadSummaryOf, type AgentModel, type AgentProject, type AgentRequest, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
@@ -9,7 +11,8 @@ import { babysittingWord } from './babysitting'
 import { restartRowWords } from './restartWords'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 import { failureUnseen } from '../../../shared/threadFailures'
-import { localeFormatter } from './localeFormat'
+import { localeFormatKey, localeFormatter } from './localeFormat'
+import { share } from './stateSharing'
 
 const DAY_MS = 86_400_000
 const WEEK_MS = 7 * DAY_MS
@@ -151,10 +154,24 @@ function runStartedAt(thread: AgentThread, lastUserAt: number, activityAt: numbe
   return Number.isFinite(started) ? started : Number.isFinite(lastUserAt) ? lastUserAt : activityAt
 }
 
-function describe(state: AgentState, thread: AgentThread, now: number, continued: boolean): ThreadRow {
-  const project = state.host.projects.find(entry => entry.id === thread.projectId)
-  const model = resolveModel(hostForThread(state.host, thread).models, thread.modelId)
-  const provider = model?.provider ?? (thread.providerId ? PROVIDER_LABELS[thread.providerId] : state.host.name)
+/**
+ * Everything a row reads from the state besides its own thread record. `describe` reads the state through this alone, so
+ * a row described from the same thread record and the same inputs, with the same words and clock, is the same row.
+ */
+interface RowInputs {
+  /** The thread's project, the first with its ID. */
+  readonly project: AgentProject | undefined
+  /** The model catalog of the host the thread runs on. */
+  readonly models: readonly AgentModel[]
+  /** The host's name, the provider a row names when neither its model nor its thread says one. */
+  readonly hostName: string
+  readonly connected: boolean
+}
+
+function describe(thread: AgentThread, inputs: RowInputs, now: number, continued: boolean): ThreadRow {
+  const { project } = inputs
+  const model = resolveModel(inputs.models, thread.modelId)
+  const provider = model?.provider ?? (thread.providerId ? PROVIDER_LABELS[thread.providerId] : inputs.hostName)
   // A row's history facts come from the thread's summary: the shell stream carries it in place of the
   // messages, and a thread whose messages did arrive derives exactly the same thing.
   const { lastAssistant, lastUser: lastUserExcerpt, lastMessageAt } = threadSummaryOf(thread)
@@ -237,7 +254,7 @@ function describe(state: AgentState, thread: AgentThread, now: number, continued
   return {
     thread, project, model, provider, providerKey: key, state: state_, stateLabel, waitingFor, request: decision, attention,
     providerId: thread.providerId ?? model?.providerId ?? (key === 'other' ? undefined : key),
-    connected: isThreadProviderConnected(state.host, thread), reconnecting: thread.clientReconnecting === true, settledBy,
+    connected: inputs.connected, reconnecting: thread.clientReconnecting === true, settledBy,
     sentence, activityAt,
     when: state_ === 'working' ? workingLabel(workingSince, now) : clockLabel(activityAt), workingSince,
     lastMessage,
@@ -293,8 +310,83 @@ export function rowStatus(row: Pick<ThreadRow, 'thread' | 'state' | 'stateLabel'
  * Every thread Sotto knows, described from its own state. `continued` is the Owl answer for continuing on another provider
  * (ADR-0089): with it, a continued thread's excerpt is the user's words rather than the handover ahead of them.
  */
-export function describeThreads(state: AgentState, now: number, options: { readonly continued?: boolean } = {}): ThreadRow[] {
-  return state.host.threads.map(thread => describe(state, thread, now, options.continued === true))
+export function describeThreads(state: AgentState, now: number, options: { readonly continued?: boolean } = {}): readonly ThreadRow[] {
+  return threadDescriber()(state, now, options)
+}
+
+/** Every thread described from one state, with the same options as `describeThreads`. */
+export type ThreadDescriber = (state: AgentState, now: number, options?: { readonly continued?: boolean }) => readonly ThreadRow[]
+
+/** A row and everything it was described from. */
+interface DescribedRow extends RowInputs {
+  readonly thread: AgentThread
+  /** The clock a working row counts its time on; undefined for a row that does not read the clock. */
+  readonly now: number | undefined
+  readonly row: ThreadRow
+}
+
+/** Moves on whenever the interface language or its messages change: a row's words are then those of another catalog. */
+let wordsRevision = 0
+i18n.on('change', () => { wordsRevision++ })
+const subscribeToWords = (listener: () => void): (() => void) => i18n.on('change', listener)
+const currentWords = (): number => wordsRevision
+
+/**
+ * The words revision a page's described rows and folders are in, for their memo dependencies. Unlike the locale, it also
+ * moves when messages load into the language already shown, and the page renders again when it does.
+ */
+export function useWordsRevision(): number {
+  return useSyncExternalStore(subscribeToWords, currentWords)
+}
+
+/**
+ * `describeThreads` for a page that describes every new state: it describes again only the threads whose row could have
+ * changed, and gives every other thread the row it gave last time, the same object. Main publishes every update
+ * with the records of unchanged threads kept (issue #1330, and the window's own state sharing), so while threads stream
+ * the work per update follows the threads that changed rather than all of them, and the shared rows let `useShared` and
+ * the memoised sidebar and panes skip the rest at once.
+ *
+ * A row is kept only while everything `describe` reads is unchanged: the thread record, its project, its host's model
+ * catalog, the host's name, whether its provider is connected, and, for a working row, the clock its time counts.
+ * Continuing on another provider being turned on or off, a change of language or of its messages, and a change of the
+ * window's language or time zone, which its clocks are formatted in, describe every row again. A row described again is
+ * shared against the one it replaces, so a row whose facts did not change keeps its reference either way. The result is
+ * always equal to `describeThreads` for the same state.
+ */
+export function threadDescriber(): ThreadDescriber {
+  let held = new Map<string, DescribedRow>()
+  let heldFor = ''
+  let last: readonly ThreadRow[] = []
+  return (state, now, options = {}) => {
+    const continued = options.continued === true
+    const describedFor = `${continued ? 1 : 0}|${wordsRevision}|${localeFormatKey()}`
+    if (describedFor !== heldFor) { held = new Map(); heldFor = describedFor }
+    const { host } = state
+    const projects = new Map<string, AgentProject>()
+    for (const project of host.projects) if (!projects.has(project.id)) projects.set(project.id, project)
+    const catalogs = new Map<string | undefined, readonly AgentModel[]>()
+    const next = new Map<string, DescribedRow>()
+    let same = host.threads.length === last.length
+    const rows = host.threads.map((thread, index) => {
+      let models = catalogs.get(thread.hostId)
+      if (models === undefined) { models = hostForThread(host, thread).models; catalogs.set(thread.hostId, models) }
+      const inputs: RowInputs = { project: projects.get(thread.projectId), models, hostName: host.name, connected: isThreadProviderConnected(host, thread) }
+      const previous = held.get(thread.id)
+      const kept = previous !== undefined && previous.thread === thread && previous.project === inputs.project && previous.models === models
+        && previous.hostName === inputs.hostName && previous.connected === inputs.connected && (previous.now === undefined || previous.now === now)
+      let entry = previous!
+      if (!kept) {
+        const fresh = describe(thread, inputs, now, continued)
+        entry = { ...inputs, thread, now: fresh.state === 'working' ? now : undefined, row: previous === undefined ? fresh : share(previous.row, fresh) }
+      }
+      next.set(thread.id, entry)
+      if (entry.row !== last[index]) same = false
+      return entry.row
+    })
+    held = next
+    if (!same) last = rows
+    return last
+  }
 }
 
 /** A row matches when the query appears anywhere in it: title, project, provider, sentence or your last message. */
@@ -311,7 +403,8 @@ function matchesThreadQuery(row: ThreadRow, query: string): boolean {
  */
 export function listThreads(rows: readonly ThreadRow[], query: string): { readonly matching: ThreadRow[]; readonly listed: ThreadRow[] } {
   const matching = rows.filter(row => matchesThreadQuery(row, query))
-  return { matching, listed: rows.filter(row => row.attention || matching.includes(row)) }
+  const matched = new Set(matching)
+  return { matching, listed: rows.filter(row => row.attention || matched.has(row)) }
 }
 
 /** Open work and Settled history (workspace-settled, provider-settled or archived); unknown activity sorts last. */
@@ -549,11 +642,15 @@ export function organizeWorkspace(state: AgentState, allRows: readonly ThreadRow
   const tops = delegation ? delegationTops(state.host.threads, threadId => settledIds!.has(threadId)) : undefined
   const rows = tops?.size ? withoutDelegated(allRows, tops) : allRows
   const { matching, listed } = listThreads(rows, query)
+  const isListed = new Set(listed)
   const needle = query.trim().toLocaleLowerCase()
   const projectMatches = (project: AgentProject): boolean => needle !== '' && `${project.title} ${project.path}`.toLocaleLowerCase().includes(needle)
   const projects = new Map(state.host.projects.map(project => [project.id, project]))
   const threadsByProject = new Map<string, ThreadRow[]>()
-  for (const row of rows) threadsByProject.set(row.thread.projectId, [...threadsByProject.get(row.thread.projectId) ?? [], row])
+  for (const row of rows) {
+    const held = threadsByProject.get(row.thread.projectId)
+    if (held === undefined) threadsByProject.set(row.thread.projectId, [row]); else held.push(row)
+  }
   const ids = new Set([...projects.keys(), ...threadsByProject.keys()])
   const open: ProjectFolder[] = []
   const settled: ProjectFolder[] = []
@@ -561,7 +658,7 @@ export function organizeWorkspace(state: AgentState, allRows: readonly ThreadRow
     const project = projects.get(id)
     const all = threadsByProject.get(id) ?? []
     const nameMatch = project !== undefined && projectMatches(project)
-    const shown = nameMatch ? all : all.filter(row => listed.includes(row))
+    const shown = nameMatch ? all : all.filter(row => isListed.has(row))
     if (isWorkspaceThreadSettled({ workspaceSettledAt: null }, project)) {
       if (shown.length || nameMatch || (needle === '' && all.length === 0)) settled.push(folder(id, project, shown, true))
       continue
