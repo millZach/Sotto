@@ -78,7 +78,7 @@
 .settings-rows .segmented-control { background: var(--tt-card-inset); }
 .segmented-control button { min-height: 30px; padding: 2px 12px; border: 0; border-radius: 4px; font: inherit; font-size: 14px; white-space: nowrap; color: var(--tt-text-muted); background: none; cursor: pointer; transition: background-color 120ms ease, color 120ms ease; }
 .segmented-control button:hover:not(:disabled) { color: var(--tt-text); }
-.segmented-control button:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
+.segmented-control button:active:not(:disabled):not([aria-checked='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .segmented-control button:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
 .segmented-control button:disabled { opacity: .5; cursor: default; }
 /* Night falls' look: a line for each choice under the row's name, the choice's name leading its line. */

@@ -53,7 +53,7 @@
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .changes-base__trigger:hover, .changes-base__trigger[aria-expanded='true'] { background: var(--tools-hover); }
-.changes-base__trigger:active:not(:disabled) { background: var(--tt-hover-strong); }
+.changes-base__trigger:active:not(:disabled):not([aria-expanded='true']) { background: var(--tt-hover-strong); }
 .changes-base__trigger > svg { flex: none; color: var(--tt-text-muted); }
 .changes-base__value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .changes-base__popover {

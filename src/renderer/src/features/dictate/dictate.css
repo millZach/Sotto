@@ -223,7 +223,7 @@
 }
 
 .journal-chip:hover { background: var(--tt-hover); color: var(--tt-text); }
-.journal-chip:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
+.journal-chip:active:not(:disabled):not([aria-pressed='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 
 .journal-chip[aria-pressed='true'] {
   border-color: var(--tt-selected-border);

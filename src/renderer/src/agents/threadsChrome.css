@@ -47,7 +47,7 @@
 .thread-nav__foot .thread-nav__pages { gap: 2px; }
 .thread-nav__page { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 7px; color: var(--tt-text-muted); text-decoration: none; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .thread-nav__page:hover, .thread-nav__page[aria-current='page'] { background: var(--tt-hover); color: var(--tt-text); }
-.thread-nav__page:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
+.thread-nav__page:active:not(:disabled):not([aria-current='page']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .thread-nav__page > svg { flex: none; }
 .thread-nav__foot .thread-nav__page { border-radius: 8px; }
 .thread-nav__foot .thread-nav__page:hover { background: var(--foot-hover); }

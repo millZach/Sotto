@@ -44,7 +44,7 @@
 /* The header's icon buttons: the Tools toggle, the More menu, and anything a pane adds beside them. */
 .pane-action { display: grid; place-items: center; width: 30px; height: 30px; flex: none; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
 .pane-action:hover:not(:disabled), .pane-action[aria-pressed='true'], .pane-action[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
-.pane-action:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
+.pane-action:active:not(:disabled):not([aria-pressed='true']):not([aria-expanded='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .pane-action:disabled { opacity: .5; cursor: default; }
 
 /* The More menu hangs under its button, inside the header, so the pane keeps the focus the menu hands out. */
@@ -316,7 +316,7 @@
 .thread-greeting__project { min-width: 0; max-width: 100%; }
 .pane-menu__trigger { display: inline-flex; align-items: center; gap: 5px; min-width: 0; margin: -2px -6px; padding: 2px 6px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .pane-menu__trigger:hover, .pane-menu__trigger[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
-.pane-menu__trigger:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
+.pane-menu__trigger:active:not(:disabled):not([aria-expanded='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .thread-greeting__project-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .thread-greeting__project .pane-menu__list { right: auto; left: 50%; transform: translateX(-50%); max-height: 260px; overflow-y: auto; text-align: left; }
 @container thread-pane (max-width: 720px) { .thread-greeting h3 { font-size: 23px; } }

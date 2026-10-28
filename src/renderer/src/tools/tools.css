@@ -62,7 +62,7 @@
 .terminal-tabs { display: flex; flex: 1; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .terminal-tabs__tab { display: inline-flex; flex: none; align-items: center; gap: 7px; max-width: 180px; min-height: 30px; padding: 0 10px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .terminal-tabs__tab:hover { background: var(--tools-hover); color: var(--tt-text-2); }
-.terminal-tabs__tab:active { background: var(--tt-hover-strong); color: var(--tt-text-2); }
+.terminal-tabs__tab:active:not([aria-selected='true']) { background: var(--tt-hover-strong); color: var(--tt-text-2); }
 .terminal-tabs__tab:focus-visible { outline-offset: -3px; }
 .terminal-tabs__tab[aria-selected='true'] { border-color: var(--tt-selected-border); background: var(--tt-selected); color: var(--tt-text); }
 .terminal-tabs__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -49,7 +49,7 @@
   transition: background-color 120ms ease, color 120ms ease;
 }
 .tools-rail__tab:hover { background: var(--tools-hover); color: var(--tt-text); }
-.tools-rail__tab:active { background: var(--tt-hover-strong); color: var(--tt-text); }
+.tools-rail__tab:active:not([aria-selected='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .tools-rail__tab[aria-selected='true'] { background: var(--tt-selected); color: var(--tt-text); }
 /* The open surface's mark is on the tile's outer side, at the window's edge. It is drawn as a shadow so it adds
    no overflow to the tile. */

@@ -267,7 +267,7 @@
 .thread-nav__rail-list nav { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 4px 0; }
 .thread-nav__rail-thread { position: relative; flex: none; width: 32px; height: 34px; border: 1px solid var(--tt-hairline); border-radius: 7px; color: var(--tt-text); background: transparent; cursor: pointer; font: inherit; font-size: 14px; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .thread-nav__rail-thread:hover { background: var(--tt-hover); }
-.thread-nav__rail-thread:active:not(:disabled) { background: var(--tt-hover-strong); }
+.thread-nav__rail-thread:active:not(:disabled):not([aria-current]) { background: var(--tt-hover-strong); }
 .thread-nav__rail-thread[aria-current] { background: var(--tt-selected); border-color: var(--tt-focus); }
 .thread-nav__rail-thread .thread-nav__ring { position: absolute; right: -1px; bottom: -1px; }
 .thread-nav__rail-thread .thread-nav__ring[data-background] { width: 12px; height: 12px; right: -2px; bottom: -2px; border-radius: 3px; background: var(--threads-sidebar); }
