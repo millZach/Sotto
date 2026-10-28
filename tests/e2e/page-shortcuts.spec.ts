@@ -87,6 +87,20 @@ test.describe('page shortcuts (ADR-0158)', () => {
         }
       }
 
+      // The room already open: its lit tab takes focus from the composer, as a click on it would.
+      await page.getByRole('button', { name: 'Footer links', exact: true }).click({ position: { x: 16, y: 12 } })
+      await page.getByRole('textbox', { name: 'Prompt' }).first().focus()
+      await expect(page.getByRole('textbox', { name: 'Prompt' }).first()).toBeFocused()
+      await page.keyboard.press('ControlOrMeta+3')
+      await expectRoom(page, 'Threads')
+      // With the sidebar folded to its rail there is no switch on screen; the page's main room takes focus.
+      await page.getByRole('button', { name: 'Collapse sidebar' }).first().click()
+      await page.keyboard.press('ControlOrMeta+5')
+      await page.keyboard.press('ControlOrMeta+3')
+      await expect(litTab(page, 'Threads')).toHaveCount(0)
+      await expect(page.locator('#main-content')).toBeFocused()
+      await page.getByRole('button', { name: 'Expand sidebar' }).first().click()
+
       await page.keyboard.press('ControlOrMeta+5')
       await keyboardTab.click()
       await page.getByRole('searchbox', { name: 'Filter shortcuts' }).fill('')

@@ -11,7 +11,7 @@ import { DEFAULT_THREAD_SHORTCUTS, PAGE_SHORTCUT_IDS, resolveThreadShortcut, typ
 import { parseAccelerator, parseChord } from '../../agents/branchToolbar.logic'
 import { acceleratorForChord, chordFromAccelerator, menuOwnedChord, sameThreadKeys } from '../../agents/threadShortcuts'
 import { changesChord } from '../../tools/changesShortcut'
-import { pageShortcutShown, usePageShortcutGates } from '../../components/pageShortcuts'
+import { pageChordHolder, pageShortcutShown, usePageShortcutGates } from '../../components/pageShortcuts'
 import { ShortcutKey } from '../../components/ShortcutKey'
 import { SettingsGroup } from './SettingsGroup'
 import { shownWords, type LaterWords } from './laterWords'
@@ -169,7 +169,9 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
       if (row.id === except) continue
       // Changes may be answering to its shifted fallback while dictation holds its plain chord, so the keys
       // it holds are the ones it answers to, not only the ones it is set to.
-      const other = row.id === 'changes' ? changesChord(resolved(row.id), settings.hotkey, platform) : resolved(row.id)
+      const other = row.id === 'changes' ? changesChord(resolved(row.id), settings.hotkey, platform)
+        // A page shortcut standing down for a saved thread shortcut answers to nothing; that thread shortcut is named instead.
+        : isPageRow(row.id) && pageChordHolder(settings, row.id, platform) !== null ? null : resolved(row.id)
       if (other !== null && sameThreadKeys(chord, other, platform)) {
         const name = i18n._(row.label)
         return msg`${name} already uses ${keys}. Pick other keys.`
@@ -261,13 +263,22 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
     return query.split(/\s+/u).every(word => haystack.includes(word))
   }
 
+  /** A page shortcut whose default keys a thread shortcut was set to before page shortcuts existed stands down (ADR-0158). */
+  const heldNote = (row: ThreadShortcutId): { readonly text: LaterWords; readonly alert: boolean } | null => {
+    const holder = isPageRow(row) ? pageChordHolder(settings, row, platform) : null
+    const chord = resolved(row)
+    if (holder === null || chord === null) return null
+    const name = i18n._(GROUPS.flatMap(group => group.rows).find(other => other.id === holder)!.label)
+    return { text: msg`${name} already uses ${inline(chord)}, so these keys do nothing here until one of the two changes.`, alert: false }
+  }
+
   const rowView = (row: RowCopy): ReactNode => {
     const chord = resolved(row.id)
     const label = i18n._(row.label)
     const recordingHere = target === row.id
     const line = recordingHere
       ? { text: recorder.held.length === 0 ? msg`Hold the keys you want, then let go. Esc cancels.` : msg`Let go to save. Esc cancels.`, alert: false }
-      : message?.id === row.id ? message : null
+      : message?.id === row.id ? message : heldNote(row.id)
     const words = chord === null ? t`No shortcut` : chordWords(acceleratorOf(chord), platform)
     return (
       <div key={row.id} className="dictation-shortcuts__row" role="group" data-setting={`shortcut-${row.id}`} aria-labelledby={`${id}-${row.id}-label`} aria-describedby={`${id}-${row.id}-description`}>

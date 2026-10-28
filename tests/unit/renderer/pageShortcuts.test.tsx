@@ -54,11 +54,11 @@ describe('page shortcuts (ADR-0158)', () => {
   })
 
   it('answers ⌘ on a Mac, and the keys the user chose', () => {
-    const { navigate } = setup({ platform: 'darwin', choices: { 'page-usage': 'mod+shift+u', 'page-settings': null } })
+    const { navigate } = setup({ platform: 'darwin', choices: { 'page-usage': 'mod+alt+4', 'page-settings': null } })
     fireEvent.keyDown(window, { key: '1', metaKey: true })
     fireEvent.keyDown(window, { key: '1', ctrlKey: true })
     fireEvent.keyDown(window, { key: '4', metaKey: true })
-    fireEvent.keyDown(window, { key: 'U', metaKey: true, shiftKey: true })
+    fireEvent.keyDown(window, { key: '4', metaKey: true, altKey: true })
     fireEvent.keyDown(window, { key: '5', metaKey: true })
     expect(navigate.mock.calls.map(([destination]) => destination)).toEqual(['home', 'usage'])
   })
@@ -71,11 +71,39 @@ describe('page shortcuts (ADR-0158)', () => {
     expect(claimRoomFocus('threads')).toBe(false)
   })
 
-  it('hands no focus for the room already open, as its lit tab does not', () => {
-    const { navigate } = setup({ navigation: 'memory' })
-    ctrl('3')
+  it('focuses the lit tab of the room already open, as a click on it does', () => {
+    const { navigate } = setup({ navigation: 'threads' })
+    const composer = document.body.appendChild(document.createElement('textarea'))
+    const tab = document.body.appendChild(Object.assign(document.createElement('button'), { role: 'tab' }))
+    tab.setAttribute('role', 'tab'); tab.dataset.room = 'threads'; tab.setAttribute('aria-selected', 'true')
+    composer.focus()
+    ctrl('3', composer)
     expect(navigate).toHaveBeenCalledWith('threads')
-    expect(claimRoomFocus('threads')).toBe(false)
+    expect(tab).toHaveFocus()
+    composer.remove(); tab.remove()
+  })
+
+  it('hands focus on from a page that lights the same room, such as Memory', () => {
+    setup({ navigation: 'memory' })
+    ctrl('3')
+    expect(claimRoomFocus('threads')).toBe(true)
+  })
+
+  it('puts focus in the main room when no switch on screen takes it', async () => {
+    setup({ navigation: 'settings' })
+    const main = document.body.appendChild(Object.assign(document.createElement('main'), { id: 'main-content', tabIndex: -1 }))
+    ctrl('3')
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    await new Promise(resolve => requestAnimationFrame(resolve))
+    expect(main).toHaveFocus()
+    main.remove()
+  })
+
+  it('stands down where a thread shortcut was saved on the same keys before, and the other keys still answer', () => {
+    const { navigate } = setup({ choices: { 'new-thread': 'mod+1' } })
+    ctrl('1')
+    ctrl('3')
+    expect(navigate.mock.calls.map(([destination]) => destination)).toEqual(['threads'])
   })
 
   it('works from a text box, as thread shortcuts do, but stands down in a terminal and under a dialog', () => {

@@ -7,7 +7,10 @@ October 28, 2026. ADR-0158.
 Ctrl+1 to Ctrl+5 (⌘ on a Mac) open Dictate, Watcher, Threads, Usage and Settings while Sotto's window holds the keys.
 They are thread shortcuts by another name: the same setting (`threadShortcuts`), recorder and rules, listed in a new
 **Switch pages** group first on Settings › Keyboard. A room opened this way takes focus on its lit tab in the room
-switch, as pressing that tab does. With dictation turned off, Dictate has no row and Ctrl+1 does nothing.
+switch, as pressing that tab does, the room already open included; with the sidebar folded to its rail, the page's
+main room takes focus instead. The room tabs and page links name their keys in their title and `aria-keyshortcuts`. A
+thread shortcut saved on one of these keys before keeps it, and the page's row says so. With dictation turned off,
+Dictate has no row and Ctrl+1 does nothing.
 
 ## How it was checked
 
@@ -18,7 +21,9 @@ tests/e2e/page-shortcuts.spec.ts`. Both tests passed:
 - **Ctrl+1 to Ctrl+5 open each page from any page**: from Threads, 1 to 5 and back down to 1, each page checked by its
   own heading or lit tab. After each room opened, its lit room tab had focus. Ctrl+3 from the Keyboard page's filter
   box, with text in it, opened Threads. Ctrl+1, Ctrl+2, Ctrl+5 and Ctrl+3 then went through Hyprland's own keyboard
-  (`hl.dsp.send_shortcut` to the window) rather than Playwright's, and each opened its page. Settings › Keyboard
+  (`hl.dsp.send_shortcut` to the window) rather than Playwright's, and each opened its page. With a thread open and
+  focus in its composer, Ctrl+3 put focus on the lit Threads tab. With the sidebar folded, Ctrl+5 then Ctrl+3 put focus
+  in the main room, since no switch was on screen. Settings › Keyboard
   showed Switch pages above the Threads group with Ctrl 1 to Ctrl 5, and recording Ctrl+L on Threads was refused:
   "Focus the prompt already uses Ctrl + L. Pick other keys."
 - **With dictation turned off**: the room switch had no Dictate tab, Ctrl+1 left Threads lit, the group had four
@@ -36,8 +41,10 @@ a Sotto thread's worktree does: the spec's results folder and the live Sotto's O
 live Omarchy and Hyprland trees were unchanged.
 
 Unit: `tests/unit/renderer/pageShortcuts.test.tsx` (the listener: each key's page, ⌘ on a Mac, a chosen or removed
-key, focus handed only to a room not already lit, a text box, a terminal, a dialog, a page left out, setup not
-finished, dictation's own keys, a press already taken and a repeat), the Switch pages cases in
+key, focus on the open room's lit tab and handed on from Memory, the main room when no switch takes it, a thread
+shortcut saved on the same keys, a text box, a terminal, a dialog, a page left out, setup not finished, dictation's own
+keys, a press already taken and a repeat), the keys on the room tabs and page links in
+`tests/unit/renderer/roomSwitch.test.tsx`, the Switch pages cases in
 `tests/unit/renderer/features/settings/threadShortcuts.test.tsx`, the defaults in
 `tests/unit/shared/threadShortcuts.test.ts`, and in `tests/unit/renderer/agents/threadOptions.test.tsx` the effort
 slider leaving Ctrl or ⌘ with a digit alone.

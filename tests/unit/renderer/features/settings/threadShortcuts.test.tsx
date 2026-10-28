@@ -159,4 +159,15 @@ describe('Settings › Keyboard (ADR-0133)', () => {
     release('Digit2')
     await waitFor(() => expect(onUpdateSettings).toHaveBeenCalledWith({ threadShortcuts: { 'new-thread': 'mod+2' } }))
   })
+
+  it('says which thread shortcut saved before holds a page shortcut’s default keys, and refuses them to others still', async () => {
+    const { onUpdateSettings, user } = setup({ choices: { 'new-thread': 'mod+1' } })
+    expect(within(row('Dictate')).getByRole('status')).toHaveTextContent('New thread already uses Ctrl + 1, so these keys do nothing here until one of the two changes.')
+    expect(within(row('Threads')).queryByRole('status')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Change shortcut, Ctrl Shift E' }))
+    press('ControlLeft', 'Digit1')
+    release('Digit1')
+    expect(await within(row('Settle thread')).findByRole('alert')).toHaveTextContent('New thread already uses Ctrl + 1. Pick other keys.')
+    expect(onUpdateSettings).not.toHaveBeenCalled()
+  })
 })

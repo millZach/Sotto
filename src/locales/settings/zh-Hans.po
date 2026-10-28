@@ -325,6 +325,11 @@ msgstr ""
 msgid "{name} added. It’s now your light theme."
 msgstr ""
 
+#. placeholder {0}: inline(chord)
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "{name} already uses {0}, so these keys do nothing here until one of the two changes."
+msgstr ""
+
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "{name} already uses {keys}. Pick other keys."
 msgstr ""
