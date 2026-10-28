@@ -167,7 +167,7 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
         </div>
       </div>
     </div>
-    {model !== undefined ? <div className="thread-workspace__compose">
+    {model !== undefined ? <div className="thread-workspace__compose" data-room-backdrop="">
       {error ? <p className="agent-error watcher-first__error tt-paragraph" role="alert">{error}</p> : null}
       <form className="thread-prompt" onSubmit={event => { event.preventDefault(); void start() }}>
         <EffortTrace />

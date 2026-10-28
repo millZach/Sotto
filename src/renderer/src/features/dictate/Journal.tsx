@@ -154,7 +154,7 @@ export const Journal = memo(function Journal({
   const searched = query.trim()
 
   return (
-    <div className="journal">
+    <div className="journal" data-room-backdrop="">
       <h2 ref={headingRef} tabIndex={-1} className="tt-visually-hidden"><Trans>Transcripts</Trans></h2>
       {historyEnabled ? null : (
         <p className="journal-note tt-paragraph">
