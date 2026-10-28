@@ -12,6 +12,7 @@ import { desktopWindowClient } from '../../../src/main/agents/hostService'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
 import type { AgentCommand, AgentThread } from '../../../src/shared/agents'
 import type { StopLeft } from '../../../src/main/agents/delegationRelayHost'
+import { HostConnectionError } from '../../../src/main/agents/socketHostService'
 
 const LOCAL = '11111111-1111-4111-8111-111111111111', FORGE = '22222222-2222-4222-8222-222222222222', MAC = '33333333-3333-4333-8333-333333333333'
 const SETTLED_AT = '2026-10-28T10:00:00.000Z'
@@ -174,6 +175,55 @@ describe('Stop, Settle and Restore across machines', () => {
       expect(forge.command).toHaveBeenCalledWith({ type: 'restore-thread', threadId: 'check' }, desktopWindowClient())
       expect(mac.command).toHaveBeenCalledWith({ type: 'restore-thread', threadId: 'mac-check' }, desktopWindowClient())
     } finally { router.dispose() }
+  })
+
+  it('leaves a thread it could not settle to itself once the user settles it there, and does not restore it', async () => {
+    let forgeClock = '2026-10-28T10:00:02.000Z'
+    const { router, forge } = machines(true, { status: 'idle' }, {}, {}, { local: () => SETTLED_AT, forge: () => forgeClock, mac: () => SETTLED_AT })
+    try {
+      forge.away()
+      await router.command({ type: 'settle-thread', threadId: parentKey }, desktopWindowClient())
+      // Forge is back, and a minute later the user settles its thread there by hand: that settle is the user's own.
+      forge.back()
+      forgeClock = '2026-10-28T10:01:00.000Z'
+      await forge.connection.service.command({ type: 'settle-thread', threadId: 'check' }, desktopWindowClient())
+      forge.command.mockClear()
+      await router.command({ type: 'settle-thread', threadId: parentKey }, desktopWindowClient())
+      await router.command({ type: 'restore-thread', threadId: parentKey }, desktopWindowClient())
+      expect(forge.command).not.toHaveBeenCalled()
+      expect(forge.state.host.threads[0]?.workspaceSettledAt).toBe('2026-10-28T10:01:00.000Z')
+    } finally { router.dispose() }
+  })
+
+  it('keeps a settle whose answer was lost apart: never sent again, and restored only if it is seen settled with the thread', async () => {
+    const clocks = { local: () => SETTLED_AT, forge: () => '2026-10-28T10:00:03.000Z', mac: () => SETTLED_AT }
+    const lost = (applied: boolean) => {
+      const made = machines(true, { status: 'idle' }, {}, {}, clocks)
+      const apply = made.forge.command.getMockImplementation()!
+      made.forge.command.mockImplementationOnce(async input => {
+        if (applied) await apply(input)
+        throw new HostConnectionError('The connection to forge closed.', 'disconnected')
+      })
+      return made
+    }
+    // The settle reached forge, but its answer did not come back.
+    const landed = lost(true)
+    try {
+      expect((await landed.router.command({ type: 'settle-thread', threadId: parentKey }, desktopWindowClient())).error)
+        .toBe('Sotto couldn\'t settle 1 delegated thread on forge. Open it from Tools › Agents to settle it yourself.')
+      await landed.router.command({ type: 'settle-thread', threadId: parentKey }, desktopWindowClient())
+      expect(landed.forge.command).toHaveBeenCalledTimes(1)
+      await landed.router.command({ type: 'restore-thread', threadId: parentKey }, desktopWindowClient())
+      expect(landed.forge.command).toHaveBeenLastCalledWith({ type: 'restore-thread', threadId: 'check' }, desktopWindowClient())
+    } finally { landed.router.dispose() }
+    // It did not reach forge: the thread is still open there, so nothing is sent again and the Restore leaves it.
+    const dropped = lost(false)
+    try {
+      await dropped.router.command({ type: 'settle-thread', threadId: parentKey }, desktopWindowClient())
+      await dropped.router.command({ type: 'settle-thread', threadId: parentKey }, desktopWindowClient())
+      await dropped.router.command({ type: 'restore-thread', threadId: parentKey }, desktopWindowClient())
+      expect(dropped.forge.command).toHaveBeenCalledTimes(1)
+    } finally { dropped.router.dispose() }
   })
 
   it('says which it could not restore', async () => {

@@ -1516,30 +1516,47 @@ export class DesktopHostRouter {
       return
     }
     const parent = hostEntityKey(connection.hostId, threadId), record = this.cascadedSettles.of(parent)
+    // Each delegated thread elsewhere by its key, read once, so what follows does no more work than there are threads.
+    const children = new Map(across.elsewhere.map(child => [child.key, child] as const))
+    const shown = (keys: Iterable<string>, wanted: (child: DelegatedElsewhere) => boolean): DelegatedElsewhere[] => {
+      const found: DelegatedElsewhere[] = []
+      for (const key of keys) { const child = children.get(key); if (child && wanted(child)) found.push(child) }
+      return found
+    }
     const settle = type === 'settle-thread'
     // Settle: as the thread goes from open to settled, each open one elsewhere; once settled, those an earlier Settle of it
-    // could not settle, so none is left open behind it. Restore: only those its Settle settled, still settled with it.
+    // never got a settle to that are still open, so none is left open behind it. Restore: only those its Settle settled, and
+    // those whose settle's answer was lost, still settled with it.
     const targets = settle ? across.settledAt === null ? across.elsewhere.filter(child => child.settledAt === null)
-      : across.elsewhere.filter(child => record?.left.has(child.key) === true && child.settledAt === null)
-      : across.settledAt === null ? [] : across.elsewhere.filter(child => record?.settled.has(child.key) === true && settledWithParent(across.settledAt, child.settledAt))
-    if (!targets.length && (record === undefined || settle && across.settledAt !== null && !record.left.size)) return
-    const left = new LeftTally(), moved = new Set<string>()
+      : shown(record?.left ?? [], child => child.settledAt === null)
+      : across.settledAt === null ? [] : shown(new Set([...record?.settled ?? [], ...record?.uncertain ?? []]), child => settledWithParent(across.settledAt, child.settledAt))
+    if (!targets.length && record === undefined) return
+    const left = new LeftTally(), moved = new Set<string>(), lost = new Set<string>()
     await Promise.all(targets.map(async child => {
       const there = reachable(child.hostId)
-      const answer = there ? await there.service.command({ type, threadId: child.id }, client).catch(() => undefined) : undefined
-      if (answer && !answer.error) moved.add(child.key)
-      else left.add(child.hostId, this.hosts.get(child.hostId)?.connection.name ?? t`Remote host`, child.key)
+      let outcome: 'moved' | 'left' | 'lost' = 'left'
+      if (there) {
+        try { outcome = (await there.service.command({ type, threadId: child.id }, client)).error ? 'left' : 'moved' }
+        // A host's refusal moved nothing; an answer lost on the way may have moved it.
+        catch (error) { outcome = there.kind === 'remote' && (!(error instanceof HostConnectionError) || error.code === 'disconnected') ? 'lost' : 'left' }
+      }
+      if (outcome === 'moved') { moved.add(child.key); return }
+      if (outcome === 'lost') lost.add(child.key)
+      left.add(child.hostId, this.hosts.get(child.hostId)?.connection.name ?? t`Remote host`, child.key)
     }))
     const counts = left.counts()
     if (counts.length) this.notice = { message: settle ? settleLeftWords(counts) : restoreLeftWords(counts) }
     if (!settle) { await this.cascadedSettles.forget(parent); return }
-    // What this Settle settled joins what an earlier one did; one it tried and could not stays to be tried again. One an
-    // earlier Settle left that has been settled since, by hand or by an answer that was lost, is taken as settled with it.
+    // What this Settle settled joins what an earlier one did. One whose answer was lost is kept apart: its Restore brings it
+    // back only if it is seen settled with the thread, and no Settle sends it again. One that was never sent a settle stays
+    // to be tried again, unless it has been settled since: that settle is someone else's, so it keeps its own and leaves
+    // the record. One not shown now is kept as it was.
     const earlier = across.settledAt === null ? undefined : record
-    const settled = new Set([...earlier?.settled ?? [], ...moved]), still = new Set<string>()
-    for (const key of earlier?.left ?? []) if (!moved.has(key)) (across.elsewhere.some(child => child.key === key && child.settledAt !== null) ? settled : still).add(key)
-    for (const child of targets) if (!moved.has(child.key)) still.add(child.key)
-    await this.cascadedSettles.keep(parent, { settled, left: still })
+    const settled = new Set([...earlier?.settled ?? [], ...moved]), uncertain = new Set([...earlier?.uncertain ?? [], ...lost]), still = new Set<string>()
+    for (const key of earlier?.left ?? []) if (!children.has(key)) still.add(key)
+    for (const child of targets) if (!moved.has(child.key) && !lost.has(child.key)) still.add(child.key)
+    if (settled.size || uncertain.size || still.size) await this.cascadedSettles.keep(parent, { settled, left: still, uncertain })
+    else await this.cascadedSettles.forget(parent)
   }
   /** A clearing or deleting command's answer (ADR-0140): the shell as it is now, built only when one answers, with its outcome. */
   private answer(outcome: Partial<AgentState>, withoutHistory = false): AgentState {

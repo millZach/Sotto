@@ -138,19 +138,21 @@ export function stopLeftWords(away: LeftTally, unconfirmed: LeftTally): string |
 }
 
 /**
- * What the window's Settle of a thread did to its delegated threads elsewhere (#1316 part 3): the ones it settled there,
- * by the window's key, which its Restore brings back, and the ones it could not settle, which a later Settle of the same
- * thread tries again.
+ * What the window's Settle of a thread did to its delegated threads elsewhere (#1316 part 3), by the window's keys: the ones
+ * it settled there, which its Restore brings back; the ones it never got a settle to, its machine away or refusing, which a
+ * later Settle of the same thread tries again while they are open; and the ones whose settle went but whose answer was
+ * lost, which its Restore brings back only if they are seen settled with it, and which are never sent a settle again.
  */
 export interface CascadedSettle {
   readonly settled: ReadonlySet<string>
   readonly left: ReadonlySet<string>
+  readonly uncertain: ReadonlySet<string>
 }
 /** How many threads' cascaded settles are kept, newest last; an older one's Restore brings back none of them. */
 const SETTLES_KEPT = 500
 /** The window's key for a thread: `host:<hostId>:<id>`, with a host's thread ID of up to 512 characters. */
 const keySchema = z.string().min(1).max(600)
-const settlesFileSchema = z.object({ version: z.literal(1), settles: z.array(z.object({ parent: keySchema, settled: z.array(keySchema).max(1_000), left: z.array(keySchema).max(1_000) }).strict()).max(SETTLES_KEPT) }).strict()
+const settlesFileSchema = z.object({ version: z.literal(1), settles: z.array(z.object({ parent: keySchema, settled: z.array(keySchema).max(1_000), left: z.array(keySchema).max(1_000), uncertain: z.array(keySchema).max(1_000).optional() }).strict()).max(SETTLES_KEPT) }).strict()
 type SettlesFile = z.infer<typeof settlesFileSchema>
 
 /**
@@ -169,7 +171,7 @@ export class CascadedSettles {
   }
   async load(): Promise<void> {
     const file = await this.store?.read().catch((): SettlesFile => ({ version: 1, settles: [] }))
-    for (const settle of file?.settles ?? []) this.settles.set(settle.parent, { settled: new Set(settle.settled), left: new Set(settle.left) })
+    for (const settle of file?.settles ?? []) this.settles.set(settle.parent, { settled: new Set(settle.settled), left: new Set(settle.left), uncertain: new Set(settle.uncertain) })
   }
   /** What the window's newest Settle of `parent` did elsewhere, until its Restore. */
   of(parent: string): CascadedSettle | undefined { return this.settles.get(parent) }
@@ -185,7 +187,8 @@ export class CascadedSettles {
     if (this.settles.delete(parent)) await this.save()
   }
   private async save(): Promise<void> {
-    await this.store?.writeLatest(() => ({ version: 1, settles: [...this.settles].map(([parent, { settled, left }]) => ({ parent, settled: [...settled], left: [...left] })) }))
+    await this.store?.writeLatest(() => ({ version: 1, settles: [...this.settles].map(([parent, { settled, left, uncertain }]) => ({ parent, settled: [...settled], left: [...left],
+      ...uncertain.size ? { uncertain: [...uncertain] } : {} })) }))
       .catch(() => undefined)
   }
 }
