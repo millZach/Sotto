@@ -69,7 +69,7 @@
 .theme-own__name { overflow: hidden; color: var(--tt-text); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .theme-own__modes { overflow: hidden; color: var(--tt-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .theme-own__actions { display: flex; flex: none; }
-.theme-own__actions .tt-button { width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; }
+.theme-own__actions .tt-button { width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; transition: color 120ms ease; }
 .theme-own__remove:hover { color: var(--tt-error-text); }
 
 .theme-remove-grid {
@@ -209,6 +209,7 @@
   cursor: se-resize;
   touch-action: none;
   user-select: none;
+  transition: color 120ms ease;
 }
 
 .theme-editor__grip svg { width: 10px; height: 10px; }
@@ -365,6 +366,7 @@
   font-size: 14px;
   text-align: left;
   cursor: pointer;
+  transition: color 120ms ease;
 }
 
 .theme-color-field__usage:hover, .theme-color-field__usage[aria-pressed='true'] { color: var(--tt-text); }
