@@ -511,7 +511,7 @@ describe('the coordinator at its limits', () => {
    */
   it('examines the page of a thread whose kept reply a mark let go on the next change', async () => {
     vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
-    const made = await stack({ watcherEnabled: true })
+    const made = await stack({ watcherEnabled: true }, 6, false, false)
     const { changed, whole, sotto, at, publish } = made
     for (const each of [changed, whole]) await each.control.command({ type: 'connect' })
     const [n, c] = ['s2', 's5']
@@ -609,7 +609,7 @@ describe('the coordinator at its limits', () => {
    */
   it.each([['before', 's1', 's2'], ['after', 's5', 's2']] as const)('clears a mark whose kept reply another thread\'s mark let go, with that thread %s it', async (_order, a, b) => {
     vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
-    const made = await stack({ watcherEnabled: true })
+    const made = await stack({ watcherEnabled: true }, 6, false, false)
     const { adapter, changed, whole, sotto, at, publish } = made
     for (const each of [changed, whole]) await each.control.command({ type: 'connect' })
     // Dated now: a coordinator marks only replies written after its marks began, when it was made.
