@@ -140,11 +140,12 @@ private struct WatchToggle: View {
     @EnvironmentObject var model: AppModel
     let ref: ThreadRef
     let title: String?
+    @State private var presses = 0
     @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         let watched = model.watchedByWatcher(ref)
         let compact = typeSize.isAccessibilitySize
-        Button { Task { await model.setWatched(ref, !watched, title: title) } } label: {
+        Button { presses += 1; Task { await model.setWatched(ref, !watched, title: title) } } label: {
             HStack(spacing: 6) {
                 if model.changingWatch(ref) { ProgressView().controlSize(.mini) } else { WatcherOwlMark(size: 17).accessibilityHidden(true) }
                 if !compact { Text("Watch").lineLimit(1) }
@@ -159,6 +160,7 @@ private struct WatchToggle: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
+        .sensoryFeedback(.selection, trigger: presses)
         .disabled(!model.canChangeWatch(ref))
         .accessibilityLabel("Watch")
         .accessibilityValue(watched ? String(localized: "On", comment: "Whether Watcher watches this thread") : String(localized: "Off", comment: "Whether Watcher watches this thread"))

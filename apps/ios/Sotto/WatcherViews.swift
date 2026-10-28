@@ -1489,6 +1489,7 @@ private struct WatcherDock: View {
     let hostID: String
     let willSend: () -> Void
     @FocusState private var focused: Bool
+    @State private var sent = 0
     @Environment(\.sottoTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -1582,7 +1583,7 @@ private struct WatcherDock: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             // Sending puts the keyboard away, as the design does, so Watcher's answer has room on a small phone.
-            Button { willSend(); focused = false; Task { await model.sendToWatcher(hostID) } } label: {
+            Button { sent += 1; willSend(); focused = false; Task { await model.sendToWatcher(hostID) } } label: {
                 Group {
                     if preparing { ProgressView().tint(Palette.onAccent) }
                     else { Image(systemName: symbol).font(.system(size: 17, weight: .semibold)) }
@@ -1593,6 +1594,7 @@ private struct WatcherDock: View {
                 .contentShape(Circle())
             }
             .buttonStyle(PressStyle())
+            .sensoryFeedback(.impact(flexibility: .soft), trigger: sent)
             .disabled(!canSend)
             .accessibilityLabel(preparing ? String(localized: "watcher-send.sending", defaultValue: "Sending to Watcher", comment: "The send button's name while a message is on its way to Watcher") : label)
             .accessibilityIdentifier("watcher-send")
@@ -1800,6 +1802,7 @@ private struct WatchedPane: View {
     /// Slides the bar away, or back, as the user reads down or goes up.
     let slideBar: (Bool) -> Void
     let stopAll: () -> Void
+    @State private var stopPresses = 0
     @State private var picking = false
     @State private var motion = WatchedMotion()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1983,13 +1986,14 @@ private struct WatchedPane: View {
 
     @ViewBuilder private func stopButton(_ page: WatcherPage) -> some View {
         if model.offersWatcherStop(hostID) && !page.watched.isEmpty {
-            Button(action: stopAll) {
+            Button { stopPresses += 1; stopAll() } label: {
                 HStack(spacing: 6) {
                     if model.watcherStopping.contains(hostID) { ProgressView().controlSize(.mini) }
                     Text("Stop all")
                 }
             }
             .buttonStyle(PillButtonStyle(kind: .danger))
+            .sensoryFeedback(.impact(weight: .medium), trigger: stopPresses)
             .disabled(!model.online(hostID) || model.watcherStopping.contains(hostID))
             .accessibilityHint("Asks first, then stops the threads Watcher started")
             .accessibilityIdentifier("watcher-stop-all")
