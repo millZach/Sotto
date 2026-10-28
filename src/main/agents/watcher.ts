@@ -9,7 +9,7 @@ import { capRuntimeMode, roleStartNote, startFromRole, type HeldPermission, type
 import { nearestReasoningEffort, RUNTIME_MODE_ORDER, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { isThreadClosed, isThreadTurnRunning, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { countMachineWorkingThreads, countWorkingThreads, machineWorkingThreadsWarning, workingThreadsWarning } from '../../shared/workingThreads'
-import { workerMachineHostId, type NewWorkersStart, type ProjectOrigins, type WorkerMachineSetting, type WorkerPlacementReceipt } from '../../shared/workerMachine'
+import { workerMachineHostId, type NewWorkersStart, type ProjectOrigins, type ProjectSetupRequest, type ProjectSetupResult, type WorkerMachineSetting, type WorkerPlacementReceipt } from '../../shared/workerMachine'
 import { PlacementRefusal, placeWorker, type PlacementAsk, type PlacementSources, type WorkerPlacement } from './workerPlacement'
 import { branchStartWords, systemClockTime, type BranchStartReceipt } from '../../shared/branchMoves'
 import type { DesktopBranchMoves } from './branchMoves'
@@ -569,6 +569,8 @@ export class WatcherService implements WatcherControlHooks {
     workerMachine?: () => WorkerMachineSetting
     /** This computer's projects' GitHub origins, read when a start is placed on another machine than its project's (#1032). */
     projectOrigins?: () => Promise<ProjectOrigins>
+    /** Sets up a copy of a repository on This computer for a start placed here that has none (#1690), only where `projectOrigins` is. */
+    setUpProject?: (request: ProjectSetupRequest) => Promise<ProjectSetupResult>
     /**
      * Carries a thread's branch to where a worker starts from it (#1033), on the desktop only and only while Work across
      * machines is on. Without it a start names no thread to start from.
@@ -1239,6 +1241,18 @@ export class WatcherService implements WatcherControlHooks {
       projects: hostId => this.owningSnapshot(hostId)?.projects ?? [],
       origins: async hostId => hostId === local ? this.options.projectOrigins?.()
         : others().find(host => host.hostId === hostId)?.origins && this.remote?.projectOrigins ? this.remote.projectOrigins(hostId) : undefined,
+      setUp: async (hostId, request) => hostId === local ? this.options.setUpProject?.(request)
+        : others().find(host => host.hostId === hostId)?.setUp && this.remote?.setUpProject ? this.remote.setUpProject(hostId, request) : undefined,
+      // How busy a machine is now, as list_machines says it (#1311); a machine that does not say reads null and is never chosen.
+      load: async hostId => {
+        try {
+          const report = hostId === local ? await this.options.machineFacts?.()
+            : others().find(host => host.hostId === hostId)?.facts && this.remote?.machineFacts ? await this.remote.machineFacts(hostId) : undefined
+          if (!report) return null
+          const states = machineLoadStates(report.load ?? null, report.facts.totalMemoryBytes, Date.now())
+          return { cpu: states.cpu, memory: states.memory, cpuBusyPercent: report.load?.cpuBusyPercent ?? null }
+        } catch { return null }
+      },
     }
   }
   /**

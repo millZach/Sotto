@@ -1,19 +1,29 @@
 // @vitest-environment node
 // #1032: where a new worker starts, from what the start asked, where new workers start and what each machine reports.
 import { describe, expect, it, vi } from 'vitest'
-import { PlacementRefusal, placeWorker, type PlacementMachine, type PlacementSources } from '../../../src/main/agents/workerPlacement'
+import { PlacementRefusal, placeWorker, type MachineLoad, type PlacementMachine, type PlacementSources } from '../../../src/main/agents/workerPlacement'
 import type { HostOsFamily } from '../../../src/shared/hostFacts'
-import type { ProjectOrigins } from '../../../src/shared/workerMachine'
+import type { ProjectOrigins, ProjectSetupRequest, ProjectSetupResult } from '../../../src/shared/workerMachine'
 
 const LAPTOP = '11111111-1111-4111-8111-111111111111', FORGE = '22222222-2222-4222-8222-222222222222', MAC = '33333333-3333-4333-8333-333333333333'
 const sotto = { host: 'github.com', owner: 'millZach', name: 'Sotto' }
 
-interface Machine { machine: PlacementMachine; system: HostOsFamily | null; projects: { id: string; title: string }[]; origins?: ProjectOrigins['projects'] | 'fails' | undefined }
-function sources(machines: Machine[]): PlacementSources & { originReads: string[] } {
-  const originReads: string[] = []
+interface Machine { machine: PlacementMachine; system: HostOsFamily | null; projects: { id: string; title: string }[]; origins?: ProjectOrigins['projects'] | 'fails' | undefined
+  /** What setting up a copy there answers (#1690): undefined for an older host, 'fails' for one out of reach. */
+  setUp?: ProjectSetupResult | 'fails' | undefined
+  load?: MachineLoad | null }
+function sources(machines: Machine[]): PlacementSources & { originReads: string[]; setUps: [string, ProjectSetupRequest][] } {
+  const originReads: string[] = [], setUps: [string, ProjectSetupRequest][] = []
   const find = (hostId: string) => machines.find(item => item.machine.hostId === hostId)
   return {
-    originReads,
+    originReads, setUps,
+    setUp: async (hostId, request) => {
+      setUps.push([hostId, request])
+      const answer = find(hostId)?.setUp
+      if (answer === 'fails') throw new Error('unreachable')
+      return answer
+    },
+    load: async hostId => find(hostId)?.load ?? null,
     machines: () => machines.map(item => item.machine),
     system: async hostId => find(hostId)?.system ?? null,
     projects: hostId => find(hostId)?.projects ?? [],
@@ -94,11 +104,37 @@ describe('a start that names a machine', () => {
     expect(await placeWorker({ machine: LAPTOP }, FORGE, { hostId: FORGE, projectId: 'forge-sotto' }, sources([laptop(), forge()]))).toMatchObject({ hostId: LAPTOP, projectId: 'laptop-sotto',
       receipt: { awayFromDefault: true } })
   })
-  it('refuses in plain words a machine with no copy, and never clones', async () => {
-    expect(await refusal(placeWorker({ machine: MAC }, 'this-computer', onLaptop, sources([laptop(), mac()])))).toEqual({ code: 'UNKNOWN_TARGET', retryable: false,
-      message: 'Studio has no copy of Sotto. Add the project on Studio first. Nothing was started.' })
-    expect(await refusal(placeWorker({ machine: FORGE }, 'this-computer', onLaptop, sources([laptop(), forge({ projects: [{ id: 'forge-other', title: 'Other' }] })]))))
-      .toMatchObject({ message: 'Forge has no copy of Sotto. Add the project on forge first. Nothing was started.' })
+  it('has a machine with no copy set one up, and says in the receipt how (#1690)', async () => {
+    const cloned: ProjectSetupResult = { ok: true, projectId: 'mac-sotto', title: 'Sotto', path: '/Users/zach/Projects/Sotto', how: 'cloned', current: true }
+    const read = sources([laptop(), mac({ setUp: cloned })])
+    expect(await placeWorker({ machine: MAC }, 'this-computer', onLaptop, read)).toEqual({ hostId: MAC, projectId: 'mac-sotto',
+      receipt: { hostId: MAC, name: 'Studio', awayFromDefault: true, defaultName: 'This computer', setUp: { how: 'cloned', path: '/Users/zach/Projects/Sotto', current: true },
+        note: 'Studio had no copy of Sotto, so Sotto cloned millZach/Sotto into /Users/zach/Projects/Sotto there.' } })
+    // It is asked for the repository and the project's title, never a path or a URL.
+    expect(read.setUps).toEqual([[MAC, { repository: sotto, title: 'Sotto' }]])
+    const added = (current: boolean, reason?: string): Machine => forge({ projects: [{ id: 'forge-other', title: 'Other' }],
+      setUp: { ok: true, projectId: 'forge-sotto', title: 'Sotto', path: '/home/zach/Projects/Sotto', how: 'added', current, ...reason ? { reason } : {} } })
+    expect((await placeWorker({ machine: FORGE }, 'this-computer', onLaptop, sources([laptop(), added(true)]))).receipt).toMatchObject({
+      setUp: { how: 'added', path: '/home/zach/Projects/Sotto', current: true },
+      note: 'Sotto added the copy of Sotto already at /home/zach/Projects/Sotto to forge\'s projects and brought it up to date.' })
+    expect((await placeWorker({ machine: FORGE }, 'this-computer', onLaptop, sources([laptop(), added(false, 'it has uncommitted changes')]))).receipt).toMatchObject({
+      setUp: { how: 'added', current: false },
+      note: 'Sotto added the copy of Sotto already at /home/zach/Projects/Sotto to forge\'s projects; it was left as it was because it has uncommitted changes, so the worker starts from that checkout\'s commit.' })
+  })
+  it('joins the sentence of the setup to the one saying why Sotto placed it there', async () => {
+    const cloned: ProjectSetupResult = { ok: true, projectId: 'mac-sotto', title: 'Sotto', path: '/Users/zach/Projects/Sotto', how: 'cloned', current: true }
+    const load = { busy: { cpu: 'busy', memory: 'enough', cpuBusyPercent: 97 }, roomy: { cpu: 'not-busy', memory: 'enough', cpuBusyPercent: 3 } } as const
+    expect((await placeWorker({}, 'watcher', onLaptop, sources([laptop({ load: load.busy }), mac({ setUp: cloned, load: load.roomy })]))).receipt.note)
+      .toBe('This computer is busy, so Sotto started this one on Studio, which has room. Studio had no copy of Sotto, so Sotto cloned millZach/Sotto into /Users/zach/Projects/Sotto there.')
+  })
+  it('refuses in plain words when a machine with no copy cannot set one up', async () => {
+    expect(await refusal(placeWorker({ machine: MAC }, 'this-computer', onLaptop, sources([laptop(), mac()])))).toEqual({ code: 'HOST_FEATURE_UNAVAILABLE', retryable: false,
+      message: 'Studio has no copy of Sotto, and its Sotto is too old to set one up. Update Sotto on it, or add the project there. Nothing was started.' })
+    const occupied = 'There is already a folder named Sotto in /home/zach/Projects that is not a copy of millZach/Sotto. Clone millZach/Sotto there under another name yourself, or name another machine.'
+    expect(await refusal(placeWorker({ machine: FORGE }, 'this-computer', onLaptop, sources([laptop(), forge({ projects: [{ id: 'forge-other', title: 'Other' }], setUp: { ok: false, message: occupied } })]))))
+      .toEqual({ code: 'UNKNOWN_TARGET', retryable: false, message: `Forge has no copy of Sotto, and Sotto could not set one up. ${occupied} Nothing was started.` })
+    expect(await refusal(placeWorker({ machine: FORGE }, 'this-computer', onLaptop, sources([laptop(), forge({ projects: [{ id: 'forge-other', title: 'Other' }], setUp: 'fails' })]))))
+      .toEqual({ code: 'HOST_DISCONNECTED', retryable: true, message: 'Forge has no copy of Sotto, and Sotto could not reach it to set one up. Nothing was started. Try again.' })
   })
   it('refuses one it does not know or that is not connected', async () => {
     expect(await refusal(placeWorker({ machine: MAC }, 'this-computer', onLaptop, sources([laptop(), forge()])))).toMatchObject({ code: 'UNKNOWN_TARGET' })
@@ -127,6 +163,42 @@ describe('a start that names a machine', () => {
       message: 'Forge runs Linux, not Windows. Name a Windows machine, or leave the system out. Nothing was started.' })
     expect(await refusal(placeWorker({ machine: FORGE, os: 'linux' }, 'this-computer', onLaptop, sources([laptop(), forge({ system: null })])))).toMatchObject({ code: 'HOST_FEATURE_UNAVAILABLE',
       message: 'Forge does not say what system it runs. Update Sotto on it, or leave the system out. Nothing was started.' })
+  })
+})
+
+describe('Watcher\'s own choice with This computer busy (#1690)', () => {
+  const busy: MachineLoad = { cpu: 'busy', memory: 'enough', cpuBusyPercent: 97 }
+  const roomy = (cpuBusyPercent: number): MachineLoad => ({ cpu: 'not-busy', memory: 'enough', cpuBusyPercent })
+  it('starts on a connected machine with room, the least busy first, and says why', async () => {
+    const box = { machine: { hostId: MAC, name: 'box', thisComputer: false, connected: true }, system: 'linux' as const, projects: [{ id: 'box-sotto', title: 'Sotto' }],
+      origins: [{ projectId: 'box-sotto', repository: sotto }], load: roomy(40) }
+    expect(await placeWorker({}, 'watcher', onLaptop, sources([laptop({ load: busy }), forge({ load: roomy(10) }), box]))).toEqual({ hostId: FORGE, projectId: 'forge-sotto',
+      receipt: { hostId: FORGE, name: 'forge', awayFromDefault: false, note: 'This computer is busy, so Sotto started this one on forge, which has room.' } })
+    expect((await placeWorker({}, 'watcher', onLaptop, sources([laptop({ load: { cpu: 'not-busy', memory: 'short', cpuBusyPercent: 5 } }), forge({ load: roomy(10) })]))).receipt.note)
+      .toBe('This computer is short on memory, so Sotto started this one on forge, which has room.')
+  })
+  it('stays on This computer when it has room, when any load is unknown, or when no other machine has room', async () => {
+    const stays = async (machines: Machine[]) => (await placeWorker({}, 'watcher', onLaptop, sources(machines))).receipt
+    expect(await stays([laptop({ load: roomy(20) }), forge({ load: roomy(1) })])).toEqual({ hostId: LAPTOP, name: 'This computer', awayFromDefault: false })
+    expect(await stays([laptop({ load: null }), forge({ load: roomy(1) })])).toEqual({ hostId: LAPTOP, name: 'This computer', awayFromDefault: false })
+    expect(await stays([laptop({ load: { cpu: 'unknown', memory: 'enough', cpuBusyPercent: null } }), forge({ load: roomy(1) })])).toMatchObject({ hostId: LAPTOP })
+    expect(await stays([laptop({ load: busy }), forge({ load: null })])).toMatchObject({ hostId: LAPTOP })
+    expect(await stays([laptop({ load: busy }), forge({ load: { cpu: 'not-busy', memory: 'short', cpuBusyPercent: 1 } })])).toMatchObject({ hostId: LAPTOP })
+    expect(await stays([laptop({ load: busy }), forge({ load: roomy(1), machine: { hostId: FORGE, name: 'forge', thisComputer: false, connected: false } })])).toMatchObject({ hostId: LAPTOP })
+  })
+  it('comes back to This computer, and says so, when the machine Sotto chose cannot take it', async () => {
+    const read = sources([laptop({ load: busy }), forge({ load: roomy(10), projects: [{ id: 'forge-other', title: 'Other' }], setUp: { ok: false, message: 'Git could not clone it.' } })])
+    expect(await placeWorker({}, 'watcher', onLaptop, read)).toEqual({ hostId: LAPTOP, projectId: 'laptop-sotto', receipt: { hostId: LAPTOP, name: 'This computer', awayFromDefault: false,
+      note: 'This computer is busy, so Sotto tried forge, which has room, but could not start this one there, so it started on This computer.' } })
+    expect(read.setUps).toHaveLength(1)
+  })
+  it('moves nothing that was asked for, pinned here, set elsewhere or named on another machine', async () => {
+    const machines = () => [laptop({ load: busy }), forge({ load: roomy(10) })]
+    expect((await placeWorker({ machine: LAPTOP }, 'watcher', onLaptop, sources(machines()))).hostId).toBe(LAPTOP)
+    expect((await placeWorker({ os: 'windows' }, 'watcher', onLaptop, sources(machines()))).hostId).toBe(LAPTOP)
+    expect((await placeWorker({ pinnedBy: 'existing-worktree' }, 'watcher', onLaptop, sources(machines()))).hostId).toBe(LAPTOP)
+    expect((await placeWorker({}, 'this-computer', onLaptop, sources(machines()))).hostId).toBe(LAPTOP)
+    expect((await placeWorker({}, 'watcher', { hostId: FORGE, projectId: 'forge-sotto' }, sources([laptop({ load: roomy(1) }), forge({ load: busy })]))).hostId).toBe(FORGE)
   })
 })
 

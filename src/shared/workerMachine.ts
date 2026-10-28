@@ -37,10 +37,12 @@ export type NewWorkersStart = z.infer<typeof newWorkersStartSchema>
 /**
  * Where a start was placed, as its receipt records it: the machine, by host ID and name, whether that is somewhere other
  * than where new workers start and, when it is, that machine's name (`defaultName`, absent when it is no longer saved), and
- * Sotto's sentence saying why when it placed it itself (a default machine not connected).
+ * Sotto's sentence saying why when it placed it itself (a default machine not connected). `setUp` is there when the machine
+ * had no copy of the project and Sotto gave it one (#1690): how, the folder, and whether the copy is up to date.
  */
 export const workerPlacementReceiptSchema = z.object({ hostId: z.string().min(1).max(512), name: z.string().min(1).max(200),
-  awayFromDefault: z.boolean(), defaultName: z.string().min(1).max(200).optional(), note: z.string().min(1).max(2_000).optional() }).strict()
+  awayFromDefault: z.boolean(), defaultName: z.string().min(1).max(200).optional(), note: z.string().min(1).max(2_000).optional(),
+  setUp: z.object({ how: z.enum(['added', 'cloned']), path: z.string().min(1).max(4_096), current: z.boolean() }).strict().optional() }).strict()
 export type WorkerPlacementReceipt = z.infer<typeof workerPlacementReceiptSchema>
 
 /**
@@ -55,3 +57,23 @@ export const projectOriginsSchema = z.object({
   projects: z.array(z.object({ projectId: z.string().min(1).max(512), repository: projectRepositorySchema.nullable().catch(null) })).max(PROJECT_ORIGINS_MAX),
 })
 export type ProjectOrigins = z.infer<typeof projectOriginsSchema>
+
+/**
+ * Setting up a copy of a project on a machine that has none (#1690), as the optional host feature `project-setup` asks it:
+ * the GitHub repository the start's project is a copy of, and the project's title, which the copy is added under.
+ */
+export const projectSetupRequestSchema = z.object({ repository: projectRepositorySchema, title: z.string().min(1).max(512) }).strict()
+export type ProjectSetupRequest = z.infer<typeof projectSetupRequestSchema>
+/**
+ * What setting up a copy did. `added`: a clone already in the machine's usual projects folder became a project, brought up
+ * to date when nothing stood in the way. `cloned`: Sotto cloned the repository there. `current` says whether the copy is at
+ * its default branch's newest commit on GitHub, and `reason` why not, as the end of a sentence ("it has uncommitted
+ * changes"). A refusal says in `message`, in plain words, what happened and what to do; nothing was started and nothing of
+ * the user's removed. Read leniently, as project origins are, so a later host's additions still read.
+ */
+export const projectSetupResultSchema = z.discriminatedUnion('ok', [
+  z.object({ ok: z.literal(true), projectId: z.string().min(1).max(6_144), title: z.string().min(1).max(512), path: z.string().min(1).max(4_096),
+    how: z.enum(['added', 'cloned']), current: z.boolean(), reason: z.string().min(1).max(500).optional().catch(undefined) }),
+  z.object({ ok: z.literal(false), message: z.string().min(1).max(2_000) }),
+])
+export type ProjectSetupResult = z.infer<typeof projectSetupResultSchema>

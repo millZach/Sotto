@@ -1714,12 +1714,18 @@ it('keeps a start that reuses a worktree or a base branch read here on This comp
   expect(f.socket.shell().host.threads.filter(thread => ['Synthetic reused worktree', 'Synthetic base branch', 'Synthetic named machine'].includes(thread.title))).toEqual([])
 })
 
-it('refuses in plain words a machine with no copy of the project, and sends it nothing (#1032)', async () => {
+it('refuses in plain words a machine with no copy of the project whose Sotto cannot set one up, and sends it nothing (#1032, #1690)', async () => {
   const f = await acrossMachines()
+  expect(f.hello.features).toContain('project-setup')
   await git('git', ['-C', f.project.path, 'remote', 'set-url', 'origin', 'https://github.com/someone/Elsewhere.git'])
+  // As an older host that lists no project-setup: a host that does would clone the repository from GitHub.
+  const socket = f.socket as unknown as { features: readonly string[] }
+  socket.features = socket.features.filter(feature => feature !== 'project-setup')
+  expect(f.router.watcherHosts().hosts()[0]).toMatchObject({ origins: true, setUp: false })
   const writes = vi.spyOn(f.socket, 'watcherControl')
   const refused = await f.call('start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId })
-  expect(refused).toMatchObject({ status: 'refused', code: 'UNKNOWN_TARGET', message: `Synthetic remote has no copy of ${f.local.title}. Add the project on Synthetic remote first. Nothing was started.` })
+  expect(refused).toMatchObject({ status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE',
+    message: `Synthetic remote has no copy of ${f.local.title}, and its Sotto is too old to set one up. Update Sotto on it, or add the project there. Nothing was started.` })
   expect(writes).not.toHaveBeenCalled()
   expect(f.control.watcherRecord().operations).toHaveLength(0)
 })
@@ -2158,6 +2164,7 @@ it('counts a start the paired machine lists before its first prompt is confirmed
 it('refuses a machine or system while Work across machines is off, and lists no default (#1032)', async () => {
   const f = await master()
   expect(f.hello.features).not.toContain('project-origins')
+  expect(f.hello.features).not.toContain('project-setup')
   expect(await f.call('start_thread', { ...f.start(), machine: f.pairing.hostId })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
   expect(await f.call('start_thread', { ...f.start(), os: family })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
   // Nor a thread's branch to start from, or a test run (#1033).
