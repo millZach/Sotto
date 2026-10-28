@@ -78,6 +78,13 @@ It is removed when the preview closes, when the app moves to the background, and
 
 **Not in this amendment.** Watcher's reply box on the phone (#1446 adds photos there) takes files later, through the same box abstraction. Files from the Android client follow ADR-0059's port.
 
+## Amendment, October 28, 2026: Watcher's box on the phone takes files, and a paste attaches
+
+At Drake's request with Share to Sotto ([ADR-0157](0157-share-to-sotto-puts-what-you-share-in-watchers-box.md)):
+
+- **Watcher's box takes files.** A host lists `watcher-phone-files` where it offers `watcher-phone-photos` and keeps files (`file-staging`). A phone's `watcher-phone-send` may then name staged files in `images` beside its photos; the host refuses a file's handle from a phone without it. The phone offers **Files** in Watcher's + menu too, stages files as it does for a thread, and puts them back in the box with the words when a message doesn't go.
+- **A paste attaches.** Pasting into either box attaches what was copied as a photo or a file, as if chosen from the + menu, with the same tap; copied words paste as words. A copied file is told from copied words by the name it carries. The pasteboard is read only when the user pastes.
+
 Consequences:
 
 - **No new host.** `HOST_FEATURES` gains `attachment-files`. Protocol version stays 1: a phone uses the request only when the host lists the feature, and a host never sends anything new unasked.

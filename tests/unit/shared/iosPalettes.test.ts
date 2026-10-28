@@ -1,6 +1,6 @@
 // @vitest-environment node
 /*
- * The iPhone paints Sotto's six built-in palettes (ADR-0051). Its Swift copy,
+ * The iPhone paints Sotto's six built-in palettes and Glass (ADR-0051, ADR-0150). Its Swift copy,
  * apps/ios/Sotto/ThemePalettes.swift, is generated from the desktop's own
  * definitions here, so the two cannot drift: this test rebuilds the Swift
  * source and fails when the committed file differs.
@@ -14,13 +14,17 @@
  * with the accent, the warning or the danger colour, and the wash at the top
  * of a page. The tints below are the ones the Swift design system paints
  * (apps/ios/Sotto/Design.swift); change them together.
+ *
+ * Glass also carries the desktop's see-through tints. On the iPhone nothing is behind the window, so its room is the
+ * room tint over the in-app backdrop and its cards the raised tint over that; Glass's text is checked there too.
  */
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 import { contrastRatio, mixRgb, oklchToRgb, parseThemeColor, rgbToOklch, type ThemeRgb } from '../../../src/shared/themes/color'
-import { BUILT_IN_THEMES, RETIRED_BUILT_IN_THEMES, getThemeColorsForMode } from '../../../src/shared/themes/library'
+import { GLASS_THEME_ID, GLASS_TINTS } from '../../../src/shared/themes/glass'
+import { EVERY_BUILT_IN_THEME, RETIRED_BUILT_IN_THEMES, getThemeColorsForMode } from '../../../src/shared/themes/library'
 import type { ThemeAppearance, ThemeColorRole, ThemeColors } from '../../../src/shared/themes/palettes'
 
 const SWIFT_FILE = fileURLToPath(new URL('../../../apps/ios/Sotto/ThemePalettes.swift', import.meta.url))
@@ -48,10 +52,21 @@ const TINT = {
   washUnderText: 0.6,
 }
 
-function rgbOf(color: string): ThemeRgb {
-  const parsed = parseThemeColor(color)
-  if (!parsed) throw new Error(`Not a colour: ${color}`)
-  return oklchToRgb(parsed.color)
+function parsed(color: string): { rgb: ThemeRgb; alpha: number } {
+  const value = parseThemeColor(color)
+  if (!value) throw new Error(`Not a colour: ${color}`)
+  return { rgb: oklchToRgb(value.color), alpha: value.alpha }
+}
+
+const rgbOf = (color: string): ThemeRgb => parsed(color).rgb
+
+/** Glass's room and cards on the iPhone: the room tint over each of the backdrop's stops, and the raised tint over that. */
+function glassBases(appearance: ThemeAppearance): { rooms: ThemeRgb[]; cards: ThemeRgb[] } {
+  const tints = GLASS_TINTS[appearance]
+  const room = parsed(tints.room)
+  const raised = parsed(tints.raised)
+  const rooms = tints.backdrop.map(stop => over(rgbOf(stop), room.rgb, room.alpha))
+  return { rooms, cards: rooms.map(base => over(base, raised.rgb, raised.alpha)) }
 }
 
 /** CSS `color-mix(in oklab, a (1 - amount), b amount)`, rounded to 8-bit sRGB. */
@@ -90,22 +105,25 @@ function readable(start: ThemeRgb, ink: ThemeRgb, surfaces: readonly ThemeRgb[])
 interface Surfaces { readonly muted: ThemeRgb[]; readonly accent: ThemeRgb[]; readonly warning: ThemeRgb[]; readonly danger: ThemeRgb[] }
 
 /** Every surface each derived text colour sits on, for one palette half. */
-function surfacesFor(raw: Record<(typeof ROLES)[number], ThemeRgb>, appearance: ThemeAppearance): Surfaces {
+function surfacesFor(raw: Record<(typeof ROLES)[number], ThemeRgb>, appearance: ThemeAppearance, glass = false): Surfaces {
   const { canvas, surface, surfaceRaised, surfaceOverlay, accent, warning, error } = raw
-  const wash = over(canvas, accent, (appearance === 'dark' ? TINT.washDark : TINT.washLight) * TINT.washUnderText)
-  const plain = [canvas, surface, surfaceRaised, surfaceOverlay, wash]
-  const cards = [over(surface, warning, TINT.needsYou), over(surface, accent, TINT.working), over(surface, accent, TINT.answered), over(surface, error, TINT.failed)]
+  const washOf = (base: ThemeRgb): ThemeRgb => over(base, accent, (appearance === 'dark' ? TINT.washDark : TINT.washLight) * TINT.washUnderText)
+  const { rooms, cards: glassCards } = glass ? glassBases(appearance) : { rooms: [], cards: [] }
+  const canvases = [canvas, ...rooms]
+  const surfaces = [surface, ...glassCards]
+  const plain = [...canvases, ...surfaces, surfaceRaised, surfaceOverlay, ...canvases.map(washOf)]
+  const cards = surfaces.flatMap(base => [over(base, warning, TINT.needsYou), over(base, accent, TINT.working), over(base, accent, TINT.answered), over(base, error, TINT.failed)])
   return {
     muted: [...plain, ...cards],
-    accent: [...plain, ...cards, over(surface, accent, TINT.chosen), over(canvas, accent, TINT.accentPill), over(surface, accent, TINT.accentPill)],
-    warning: [...plain, over(surface, warning, TINT.needsYou)],
-    danger: [...plain, over(surface, error, TINT.failed), over(surface, error, TINT.dangerButton), over(canvas, error, TINT.dangerButton)],
+    accent: [...plain, ...cards, ...surfaces.flatMap(base => [over(base, accent, TINT.chosen), over(base, accent, TINT.accentPill)]), ...canvases.map(base => over(base, accent, TINT.accentPill))],
+    warning: [...plain, ...surfaces.map(base => over(base, warning, TINT.needsYou))],
+    danger: [...plain, ...surfaces.flatMap(base => [over(base, error, TINT.failed), over(base, error, TINT.dangerButton)]), ...canvases.map(base => over(base, error, TINT.dangerButton))],
   }
 }
 
-function swatchFor(colors: ThemeColors, appearance: ThemeAppearance): Swatch {
+function swatchFor(colors: ThemeColors, appearance: ThemeAppearance, glass: boolean): Swatch {
   const raw = Object.fromEntries(ROLES.map(role => [role, rgbOf(colors[role])])) as Record<(typeof ROLES)[number], ThemeRgb>
-  const on = surfacesFor(raw, appearance)
+  const on = surfacesFor(raw, appearance, glass)
   const dark = appearance === 'dark'
   // The starting mixes are the approved study's --accent-text, --warn-text and --danger-text.
   return {
@@ -120,18 +138,23 @@ function swatchFor(colors: ThemeColors, appearance: ThemeAppearance): Swatch {
 interface IosPalette { readonly id: string; readonly name: string; readonly light: Swatch; readonly dark: Swatch }
 
 function iosPalettes(): IosPalette[] {
-  return BUILT_IN_THEMES.map(theme => {
+  return EVERY_BUILT_IN_THEME.map(theme => {
     const light = getThemeColorsForMode(theme, 'light')
     const dark = getThemeColorsForMode(theme, 'dark')
     if (!light || !dark) throw new Error(`${theme.label} needs a light and a dark half`)
+    const glass = theme.id === GLASS_THEME_ID
     // The desktop keeps Sotto's original id, t3-code; the iPhone names every palette by its label.
-    return { id: theme.label.toLowerCase(), name: theme.label, light: swatchFor(light, 'light'), dark: swatchFor(dark, 'dark') }
+    return { id: theme.label.toLowerCase(), name: theme.label, light: swatchFor(light, 'light', glass), dark: swatchFor(dark, 'dark', glass) }
   })
 }
 
 const component = (channel: number): string => (Math.round((channel / 255) * 10_000) / 10_000).toFixed(4)
 const swiftRgb = (color: ThemeRgb): string => `ThemeRGB(${component(color.r)}, ${component(color.g)}, ${component(color.b)})`
 const swiftName = (id: string, appearance: ThemeAppearance): string => `${id}${appearance === 'light' ? 'Light' : 'Dark'}`
+const swiftTint = (color: string): string => {
+  const { rgb, alpha } = parsed(color)
+  return `ThemeTint(color: ${swiftRgb(rgb)}, alpha: ${alpha.toFixed(2)})`
+}
 
 function swiftSource(palettes: readonly IosPalette[]): string {
   const fields = [...ROLES, ...DERIVED]
@@ -165,8 +188,21 @@ function swiftSource(palettes: readonly IosPalette[]): string {
     '    let dark: ThemeSwatch',
     '}',
     '',
+    '/// A translucent colour: the colour, and how much of it is laid over what is under it.',
+    'struct ThemeTint: Equatable {',
+    '    let color: ThemeRGB',
+    '    let alpha: Double',
+    '}',
+    '',
+    '/// Glass\'s see-through tints (ADR-0150): the room over the backdrop\'s three stops, and cards over the room.',
+    'struct GlassTints: Equatable {',
+    '    let room: ThemeTint',
+    '    let raised: ThemeTint',
+    '    let backdrop: [ThemeRGB]',
+    '}',
+    '',
     'enum ThemePalettes {',
-    '    /// The six palettes in the order the desktop lists them. The first is the default.',
+    '    /// Sotto\'s six palettes in the order the desktop lists them, then Glass. The first is the default.',
     `    static let all: [ThemePalette] = [${palettes.map(palette => palette.id).join(', ')}]`,
     '    /// The palettes the desktop retired, and the one each moved to (ADR-0024).',
     `    static let retired: [String: String] = [${[...RETIRED_BUILT_IN_THEMES].map(([from, to]) => `"${from}": "${to}"`).join(', ')}]`,
@@ -186,6 +222,15 @@ function swiftSource(palettes: readonly IosPalette[]): string {
       lines.push('    )')
     }
   }
+  for (const appearance of ['light', 'dark'] as const) {
+    const tints = GLASS_TINTS[appearance]
+    lines.push('')
+    lines.push(`    static let ${swiftName('glassTints', appearance)} = GlassTints(`)
+    lines.push(`        room: ${swiftTint(tints.room)},`)
+    lines.push(`        raised: ${swiftTint(tints.raised)},`)
+    lines.push(`        backdrop: [${tints.backdrop.map(stop => swiftRgb(rgbOf(stop))).join(', ')}]`)
+    lines.push('    )')
+  }
   lines.push('}', '')
   return lines.join('\n')
 }
@@ -193,15 +238,15 @@ function swiftSource(palettes: readonly IosPalette[]): string {
 describe('iPhone palettes', () => {
   const palettes = iosPalettes()
 
-  it('lists the six built-ins under their own names', () => {
-    expect(palettes.map(palette => palette.id)).toEqual(['sotto', 'hush', 'citrine', 'graphite', 'clay', 'fern'])
+  it('lists the six built-ins and Glass under their own names', () => {
+    expect(palettes.map(palette => palette.id)).toEqual(['sotto', 'hush', 'citrine', 'graphite', 'clay', 'fern', 'glass'])
   })
 
   it('keeps derived text readable on every tinted surface', () => {
     for (const palette of palettes) {
       for (const appearance of ['light', 'dark'] as const) {
         const swatch = palette[appearance]
-        const on = surfacesFor(swatch, appearance)
+        const on = surfacesFor(swatch, appearance, palette.id === GLASS_THEME_ID)
         const where = `${palette.name} ${appearance}`
         expect(minimum(swatch.text, on.muted), `${where}: text`).toBeGreaterThanOrEqual(4.5)
         expect(minimum(swatch.mutedText, on.muted), `${where}: muted text`).toBeGreaterThanOrEqual(4.5)

@@ -198,6 +198,13 @@ export function settingsSteps(from: ClaudeSettings, to: ClaudeSettings, ultracod
 }
 /** Appended to Claude Code's own system prompt on every thread process, Watcher's included (ADR-0080). */
 const CLAUDE_QUESTIONS = questionInstructions('AskUserQuestion', false)
+/**
+ * Claude Code asks the API by default for thinking shown as updates, under which the server may swap the prose a model
+ * writes between tool calls for a short summary filed as a thinking block. A reply written just before AskUserQuestion
+ * then reached Sotto only as a Thinking row and its card showed with no reply above it (October 28, 2026). Off, the
+ * model's prose comes back as text and becomes its message.
+ */
+const PROSE_STAYS_TEXT = { CLAUDE_CODE_THINKING_DISPLAY_UPDATES: '0' }
 function permissionArguments(mode: AgentRuntimeMode = 'approval-required'): string[] {
   // Two flags, and both are needed. `--permission-prompts host` only says prompts are not force-denied;
   // `--permission-prompt-tool stdio` is what makes this process the surface that answers them, the way
@@ -1494,7 +1501,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     try {
       this.configurationGuards.get(id)?.()
       runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, watcher: !!profile, subagentMode: roles?.subagents?.widest,
-        ...(effort.ultracode && effort.effortLevel ? { ultracodeEffort: effort.effortLevel as UltracodeEffort } : {}), protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
+        ...(effort.ultracode && effort.effortLevel ? { ultracodeEffort: effort.effortLevel as UltracodeEffort } : {}), protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...PROSE_STAYS_TEXT, ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
       frame => {
         if (this.runtimes.get(id) === runtime) this.frame(id, frame)
         // A spare keeps a bounded handful of frames for the send that adopts it; one that says more is let go.

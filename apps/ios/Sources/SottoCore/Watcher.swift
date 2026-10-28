@@ -184,6 +184,8 @@ public enum WatcherWire {
     /// A send may carry the photos this iPhone staged, with words or alone, and a Watcher message's photos are read back
     /// through `preview`: Watcher's thread is never one of this iPhone's own to read (October 23, 2026).
     public static let photosFeature = "watcher-phone-photos"
+    /// A send's `images` may also name files this iPhone staged, on a computer that keeps files (ADR-0131, October 28 amendment).
+    public static let filesFeature = "watcher-phone-files"
     /// Views opt in to management only when they can present the controls and recover mutation receipts. Steering rides
     /// with it: its Remove recovers its outcome from the same receipt. So does the machines line (#1032), which reads only.
     public static var managementHello: [String: JSONValue] {
@@ -210,15 +212,16 @@ public enum WatcherWire {
     public static let prepareStop: [String: JSONValue] = ["op": .string("watcher-phone-prepare-stop-all")]
     /// With `steer`, only to a computer that offers `steerFeature`: while Watcher works the words steer into its turn, or
     /// go next as their own turn when they can't.
-    /// `images` only to a computer that offers `photosFeature`; they go with the words however the words go.
+    /// `images` only to a computer that offers `photosFeature`, and `files` only to one that offers `filesFeature`; both go in
+    /// the request's `images`, with the words however the words go.
     public static func send(target: WatcherTarget, clientID: String, draftID: String, text: String, steer: Bool = false,
-                            images: [StagedImage] = []) -> [String: JSONValue] {
+                            images: [StagedImage] = [], files: [StagedFile] = []) -> [String: JSONValue] {
         var request: [String: JSONValue] = [
             "origin": .object(["kind": .string("phone"), "hostId": .string(target.hostId), "clientId": .string(clientID)]),
             "target": .object(["hostId": .string(target.hostId), "threadId": .string(target.threadId)]),
             "draftId": .string(draftID), "text": .string(text)]
         if steer { request["delivery"] = .string("steer") }
-        if !images.isEmpty { request["images"] = .array(images.map(\.wire)) }
+        if !images.isEmpty || !files.isEmpty { request["images"] = .array(images.map(\.wire) + files.map(\.wire)) }
         return ["op": .string("watcher-phone-send"), "request": .object(request)]
     }
     /// One photo of a message in Watcher's conversation, answered as `Photos.preview` is for a thread.

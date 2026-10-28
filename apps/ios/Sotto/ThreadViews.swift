@@ -30,7 +30,7 @@ struct ThreadView: View {
             shown = request.id
             open = request
         }
-        .background(Palette.canvas)
+        .pageGround()
         .navigationTitle(thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -1979,7 +1979,7 @@ private struct ReplyDock: View, Equatable {
             // Photos wait inside the reply box, above the words, as in Messages, and files under them as pills.
             VStack(alignment: .leading, spacing: Space.s2) {
                 if !photos.isEmpty { DraftPhotoStrip(box: .thread(ref)).padding(.top, Space.s1) }
-                if !files.isEmpty { DraftFilePills(ref: ref).padding(.top, photos.isEmpty ? Space.s1 : 0) }
+                if !files.isEmpty { DraftFilePills(box: .thread(ref)).padding(.top, photos.isEmpty ? Space.s1 : 0) }
                 if let notice = model.photoNotices[ref.id] {
                     Text(notice).font(.sotto(.small)).foregroundStyle(Palette.dangerText).fixedSize(horizontal: false, vertical: true).paragraphDirection()
                         .accessibilityAddTraits(.updatesFrequently)
@@ -1994,6 +1994,8 @@ private struct ReplyDock: View, Equatable {
                     .padding(.vertical, 11)
                     .accessibilityLabel("Reply to this thread")
                     .accessibilityIdentifier("thread-reply")
+                    .pasteAttaches(to: .thread(ref))
+                    .onChange(of: model.focusRequest, initial: true) { if model.focusRequest == ref.id { model.focusRequest = nil; focused = true } }
                     // Locked while the reply's photos are staged, so nothing typed now joins it.
                     .disabled(model.preparingSends.contains(ref.id))
             }
@@ -2009,7 +2011,7 @@ private struct ReplyDock: View, Equatable {
         .background {
             ZStack {
                 SoftShadow(shape: shape, color: Color.black.opacity(0.22), radius: 16, y: 8).opacity(focused ? 0 : 1)
-                SoftShadow(shape: shape, color: theme.color(.accent).opacity(0.35), radius: 18).opacity(focused ? 1 : 0)
+                GlowShadow(shape: shape, color: theme.color(.accent), alpha: 0.35, radius: 18).opacity(focused ? 1 : 0)
             }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: focused)
@@ -2691,7 +2693,7 @@ private struct OptionLabel: View {
                 .opacity(chosen ? 1 : 0)
         }
         .frame(width: 22, height: 22)
-        .softShadow(Circle(), color: theme.color(.accent).opacity(0.6), radius: 6, showing: chosen)
+        .glow(Circle(), color: theme.color(.accent), alpha: 0.6, radius: 6, showing: chosen)
         .animation(.easeInOut(duration: 0.25), value: chosen)
         .accessibilityHidden(true)
     }
@@ -2712,7 +2714,7 @@ private struct PermissionCommand: View {
         .padding(Space.s4)
         .background(Palette.code, in: shape)
         .overlay(shape.strokeBorder(theme.color(.warning).opacity(0.3), lineWidth: 1))
-        .softShadow(shape, color: theme.color(.warning).opacity(0.3), radius: 16, y: 8)
+        .glow(shape, color: theme.color(.warning), alpha: 0.3, radius: 16, y: 8)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Command: \(command)")
     }
