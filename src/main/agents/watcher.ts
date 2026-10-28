@@ -1122,8 +1122,19 @@ export class WatcherService implements WatcherControlHooks {
     this.pending(thread)
     // A provider may report the thread idle before its turn's completion arrives.
     if (isThreadTurnRunning(thread)) refuse('THREAD_BUSY', 'Wait for this thread to finish before settling it.')
-    // Sub-agents still working, or not yet known to have ended, count as Settle finished threads counts them.
-    if (watcherBackgroundWorkCount(thread) > 0) refuse('BACKGROUND_WORK_RUNNING', 'This thread still has background work. Stop it explicitly before settling.')
+    // Sub-agents still working, or not yet known to have ended, count as Settle finished threads counts them. The refusal
+    // names what it counted, in the same pieces as that count.
+    const backgroundTasks = thread.backgroundWork?.length ?? 0
+    const workingAgents = (thread.subagentSummary?.working ?? 0) + (thread.subagentSummary?.unknown ?? 0)
+    const monitors = thread.monitoring?.length ?? 0
+    if (watcherBackgroundWorkCount(thread) > 0) {
+      const counted = [
+        backgroundTasks ? `${backgroundTasks} background task${backgroundTasks === 1 ? '' : 's'}` : '',
+        workingAgents ? `${workingAgents} agent${workingAgents === 1 ? '' : 's'} still working or not known to have ended` : '',
+        monitors ? `${monitors} monitor${monitors === 1 ? '' : 's'}` : '',
+      ].filter(Boolean).join(', ')
+      refuse('BACKGROUND_WORK_RUNNING', `This thread still has background work: ${counted}. Stop it explicitly before settling.`)
+    }
     // The threads it delegated to settle with it (ADR-0081), so their work holds it too.
     const threads = this.owningSnapshot(thread.hostId ?? this.hostId())?.threads ?? []
     if (threads.some(item => item.delegatedBy) && delegatedThreadsBelow(threads, thread.id).some(id => {
@@ -1611,7 +1622,7 @@ export class WatcherService implements WatcherControlHooks {
     try { thread = this.thread(target) } catch { /* Unavailable is distinct from stopped. */ }
     return { status: thread?.status ?? 'unavailable' as const, stopped: thread?.status === 'idle' && !thread.requests.length,
       settled: Boolean(thread && isWorkspaceThreadSettled(thread, this.owningSnapshot(target.hostId)?.projects.find(item => item.id === thread!.projectId))),
-      backgroundWorkCount: (thread?.backgroundWork?.length ?? 0) + (thread?.monitoring?.length ?? 0), observedAt: thread ? now() : null,
+      backgroundWorkCount: thread === undefined ? 0 : watcherBackgroundWorkCount(thread), observedAt: thread ? now() : null,
       freshness: thread && this.connected(thread) ? 'fresh' as const : 'stale' as const }
   }
   state(): WatcherRoomState {
@@ -1690,7 +1701,7 @@ export class WatcherService implements WatcherControlHooks {
         // One definition of watched for every surface: a standing watch, or taking part in an active request.
         return { target, watched: Boolean(watch) || takesPartInActiveRequest(participation, acting), paused: Boolean(watch?.pausedByUserMessageId), title: thread?.title ?? 'Unavailable thread', status: thread?.status ?? 'unavailable', connected: Boolean(thread && this.connected(thread)),
           settled: Boolean(thread && isWorkspaceThreadSettled(thread, owning.snapshot?.projects.find(item => item.id === thread.projectId))),
-          backgroundWorkCount: (thread?.backgroundWork?.length ?? 0) + (thread?.monitoring?.length ?? 0),
+          backgroundWorkCount: thread === undefined ? 0 : watcherBackgroundWorkCount(thread),
           evidence: this.wakes.evidence.read(target, Boolean(thread && this.connected(thread)), undefined, targetKey),
           ...(thread && observation ? { observation: this.roomObservation(observation) } : {}),
           waitsOn: thread?.requests.map(request => ({ id: request.id, kind: request.kind, openTarget: target })) ?? [],
