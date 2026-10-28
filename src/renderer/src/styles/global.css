@@ -528,6 +528,21 @@ textarea.tt-input {
   }
 }
 
+/* A popover's arrival: down from its anchor, or up when it opens above it. */
+@keyframes tt-pop-down {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes tt-pop-up {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+
 /* ---- the voice wave ----
 
    The widget's seven bars, reproduced exactly: 3px wide, 3px apart, 5px at

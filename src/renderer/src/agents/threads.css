@@ -50,6 +50,7 @@
 /* The More menu hangs under its button, inside the header, so the pane keeps the focus the menu hands out. */
 .pane-menu { position: relative; display: flex; }
 .pane-menu__list { position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; display: grid; min-width: 212px; padding: 6px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .pane-menu__list { animation: tt-pop-down 120ms ease-out; } }
 .pane-menu__list hr { margin: 6px 0; border: 0; border-top: 1px solid var(--tt-hairline); }
 .pane-menu__item { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; text-align: left; white-space: nowrap; cursor: pointer; }
 .pane-menu__item > svg { flex: none; color: var(--tt-text-muted); }
