@@ -1353,6 +1353,11 @@ msgstr "{working, plural, other {{workingThreads} working}}"
 msgid "{working} working"
 msgstr "{working} working"
 
+#. The keys of an expanded diagram that is a walkthrough: the arrows left and right go to the previous and next step.
+#: src/renderer/src/agents/diagrams/DiagramViewer.tsx
+msgid "← → to step · Drag or ↑ ↓ to move · Scroll or +/− to zoom · 0 to fit"
+msgstr "← → to step · Drag or ↑ ↓ to move · Scroll or +/− to zoom · 0 to fit"
+
 #. A keyboard hint: the arrow keys move through the list.
 #: src/renderer/src/agents/NextList.tsx
 msgid "↑ ↓ choose"
@@ -3540,10 +3545,6 @@ msgstr "Enter this code on the {sourceName} page at the address below."
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Enter this code on the {sourceName} page that opened in your browser."
 msgstr "Enter this code on the {sourceName} page that opened in your browser."
-
-#: src/renderer/src/agents/ThreadFollowups.tsx
-msgid "Enter to save · Shift+Enter for a new line"
-msgstr "Enter to save · Shift+Enter for a new line"
 
 #. A keyboard hint: Escape closes the list.
 #: src/renderer/src/agents/NextList.tsx
@@ -5785,7 +5786,9 @@ msgstr "Question from {ownerTitle}"
 msgid "Question skipped."
 msgstr "Question skipped."
 
+#. Button: puts the typed prompt in the queue to send when the turn ends.
 #. The follow-up queue's heading when it holds nothing yet.
+#: src/renderer/src/agents/ThreadComposer.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Queue"
 msgstr "Queue"
@@ -6478,6 +6481,11 @@ msgstr "Select a thread to read its messages and continue working."
 msgid "Select ref"
 msgstr "Select ref"
 
+#. Button: sends the typed prompt or answer.
+#: src/renderer/src/agents/ThreadComposer.tsx
+msgid "Send"
+msgstr "Send"
+
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Send answer"
@@ -6582,6 +6590,10 @@ msgstr "SGLang, vLLM, Ollama, LM Studio, llama.cpp or any OpenAI-compatible serv
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Shell sandbox"
 msgstr "Shell sandbox"
+
+#: src/renderer/src/agents/ThreadFollowups.tsx
+msgid "Shift+Enter for a new line"
+msgstr "Shift+Enter for a new line"
 
 #. Shows the rows of work above the newest ones.
 #: src/renderer/src/agents/ThreadActivity.tsx
@@ -7244,6 +7256,11 @@ msgstr "Starts from {branch}’s last commit. Uncommitted changes stay where the
 msgid "Status"
 msgstr "Status"
 
+#. Button: sends the typed prompt into the running turn now. Its full name is Steer now.
+#: src/renderer/src/agents/ThreadComposer.tsx
+msgid "Steer"
+msgstr "Steer"
+
 #: src/renderer/src/agents/ThreadComposer.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Steer now"
@@ -7313,7 +7330,9 @@ msgid "Still working after this reply"
 msgstr "Still working after this reply"
 
 #. Button on the line of a turn that is waiting on the user’s own model server: stops the turn.
+#. Button: stops the running turn.
 #: src/renderer/src/agents/ownServerTurnWords.ts
+#: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Stop"
 msgstr "Stop"
 

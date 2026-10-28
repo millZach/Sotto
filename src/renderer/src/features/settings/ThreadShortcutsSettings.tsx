@@ -296,12 +296,13 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
       ? <><Trans>Global — the one set that works outside Sotto.</Trans>{' '}<button type="button" className="dictation-shortcuts__add tt-focusable" onClick={onOpenDictation}><Trans>Settings › Dictation</Trans></button></>
       : <Trans>Global — the one set that works outside Sotto. Changed in Settings › Dictation.</Trans>, dictationAccelerator, 'dictation'),
     fixedRow(t`Send the prompt`, <Trans>The composer’s own key. Shift+Enter adds a line.</Trans>, 'Enter', 'send'),
+    fixedRow(t`Steer now`, <Trans>In the composer while a turn runs, where the agent can take it. Otherwise it does what Enter does.</Trans>, acceleratorOf('mod+enter'), 'steer'),
     fixedRow(t`Commit, use folder`, <Trans>Inside its dialog only.</Trans>, acceleratorOf('mod+enter'), 'commit'),
     fixedRow(t`Search transcripts`, <Trans>Opens the Dictate room on its search, from any page.</Trans>, acceleratorOf('mod+k'), 'search'),
     fixedRow(t`Terminal search & text size`, <Trans>The terminal’s own keys, while a terminal holds them.</Trans>, acceleratorOf('mod+f'), 'terminal'),
     ...(platform === 'darwin' ? [fixedRow(t`Settings`, <Trans>macOS’s own Settings chord, from the app menu.</Trans>, 'CommandOrControl+,', 'settings')] : []),
   ]
-  const fixedMatches = query === '' || 'fixed dictation send search terminal settings'.includes(query)
+  const fixedMatches = query === '' || 'fixed dictation send steer search terminal settings'.includes(query)
   const changedCount = GROUPS.flatMap(group => group.rows).filter(row => changed(row.id)).length
 
   return (

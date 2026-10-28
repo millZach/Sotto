@@ -3,7 +3,7 @@ import type { ThemeRgb } from '../../../shared/themes/color'
 /**
  * A colour as the canvas paints it, whatever form the style gave it in: a hex value, `rgb()`, a named colour or a
  * `color-mix()`. Painted on one pixel of `pixel` and read back, so null means it paints nothing (transparent or unreadable).
- * Watcher's night scene and its pictures read their inks with it, and night falls' Stars look reads the theme's.
+ * Watcher's night scene reads its inks with it, and night falls' Stars look reads the theme's.
  */
 export function toRgb(value: string, pixel: CanvasRenderingContext2D): ThemeRgb | null {
   pixel.clearRect(0, 0, 1, 1)

@@ -69,7 +69,7 @@ A failed, malformed, timed-out or inconclusive probe ends that app-server before
 
 Only main's current identity gets the frozen `sotto_threads` server and its exact contract tool names. Codex uses per-tool `approval_mode=approve` with a prompt default; Claude uses exact `mcp__sotto_threads__<name>` allowances; Grok's scoped admission compares exact offered server/tool names. Preallowance admits a call to Sotto's boundary, never authority over a worker. Ticket 3 supplies the real local server with these frozen names. The earlier own-tools live suite retains its stand-in; the thread-tools live suite exercises the real service.
 
-Attach `sotto_visual` and `sotto_pull_requests` as ordinary threads get them. Exclude Sotto's browser and host-setup servers from both offered servers and scoped admission. ADR-0029's automatic browser actions would exceed this shape. User-configured provider servers remain inherited.
+Attach `sotto_visual` and `sotto_pull_requests` as ordinary threads get them (amended October 27, 2026 by [ADR-0152](0152-watchers-room-is-its-conversation.md): Watcher gets `sotto_pull_requests` alone, and draws no visuals). Exclude Sotto's browser and host-setup servers from both offered servers and scoped admission. ADR-0029's automatic browser actions would exceed this shape. User-configured provider servers remain inherited.
 
 ## Proof and replacement of the old profile
 

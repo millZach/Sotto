@@ -1353,6 +1353,11 @@ msgstr ""
 msgid "{working} working"
 msgstr ""
 
+#. The keys of an expanded diagram that is a walkthrough: the arrows left and right go to the previous and next step.
+#: src/renderer/src/agents/diagrams/DiagramViewer.tsx
+msgid "← → to step · Drag or ↑ ↓ to move · Scroll or +/− to zoom · 0 to fit"
+msgstr ""
+
 #. A keyboard hint: the arrow keys move through the list.
 #: src/renderer/src/agents/NextList.tsx
 msgid "↑ ↓ choose"
@@ -3539,10 +3544,6 @@ msgstr ""
 #. {sourceName} is a model source, such as Anthropic.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Enter this code on the {sourceName} page that opened in your browser."
-msgstr ""
-
-#: src/renderer/src/agents/ThreadFollowups.tsx
-msgid "Enter to save · Shift+Enter for a new line"
 msgstr ""
 
 #. A keyboard hint: Escape closes the list.
@@ -5785,7 +5786,9 @@ msgstr ""
 msgid "Question skipped."
 msgstr ""
 
+#. Button: puts the typed prompt in the queue to send when the turn ends.
 #. The follow-up queue's heading when it holds nothing yet.
+#: src/renderer/src/agents/ThreadComposer.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Queue"
 msgstr ""
@@ -6478,6 +6481,11 @@ msgstr ""
 msgid "Select ref"
 msgstr ""
 
+#. Button: sends the typed prompt or answer.
+#: src/renderer/src/agents/ThreadComposer.tsx
+msgid "Send"
+msgstr ""
+
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Send answer"
@@ -6581,6 +6589,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Shell sandbox"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadFollowups.tsx
+msgid "Shift+Enter for a new line"
 msgstr ""
 
 #. Shows the rows of work above the newest ones.
@@ -7244,6 +7256,11 @@ msgstr ""
 msgid "Status"
 msgstr ""
 
+#. Button: sends the typed prompt into the running turn now. Its full name is Steer now.
+#: src/renderer/src/agents/ThreadComposer.tsx
+msgid "Steer"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadComposer.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Steer now"
@@ -7313,7 +7330,9 @@ msgid "Still working after this reply"
 msgstr ""
 
 #. Button on the line of a turn that is waiting on the user’s own model server: stops the turn.
+#. Button: stops the running turn.
 #: src/renderer/src/agents/ownServerTurnWords.ts
+#: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Stop"
 msgstr ""
 
