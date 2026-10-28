@@ -41,7 +41,8 @@ export function claudeUserText(content: unknown, attachments?: RecordedAttachmen
  * block the user wrote in a note's shape is never taken for Sotto's.
  */
 export function claudeReadBack<T extends { readonly attachments?: RecordedAttachments | undefined; readonly delivered?: { readonly digest: string; readonly suffixLength: number } | undefined }>(
-  content: unknown, known: T | undefined, byDelivered: ((digest: string) => T | undefined) | undefined): { readonly text: string; readonly origin: T | undefined } {
+  content: unknown, known: T | undefined, byDelivered: ((digest: string) => T | undefined) | undefined,
+  byLegacyWords?: (digest: string) => T | undefined): { readonly text: string; readonly origin: T | undefined } {
   const text = claudeText(content)
   if (known) {
     const words = carriesAttachedFiles(known.attachments) ? claudeUserText(content, known.attachments ?? []) : text
@@ -49,8 +50,16 @@ export function claudeReadBack<T extends { readonly attachments?: RecordedAttach
   }
   const digest = claudeDigest(text)
   const owner = byDelivered?.(digest)
-  if (!owner?.delivered || owner.delivered.digest !== digest || owner.delivered.suffixLength > text.length) return { text, origin: undefined }
-  return { text: text.slice(0, text.length - owner.delivered.suffixLength), origin: owner }
+  if (owner?.delivered && owner.delivered.digest === digest && owner.delivered.suffixLength <= text.length) return { text: text.slice(0, text.length - owner.delivered.suffixLength), origin: owner }
+  // An origin recorded before the delivered digest existed reads back as it did then: every note-shaped block comes off
+  // to find it by its words' digest, and its recorded attachments say which were Sotto's. One lookup, and never for an
+  // origin that has a delivered digest, which only the exact match above may claim.
+  const candidate = byLegacyWords ? claudeUserText(content) : text
+  if (candidate === text) return { text, origin: undefined }
+  const legacy = byLegacyWords?.(claudeDigest(candidate))
+  if (!legacy || legacy.delivered || !carriesAttachedFiles(legacy.attachments)) return { text, origin: undefined }
+  const words = claudeUserText(content, legacy.attachments ?? [])
+  return words === text ? { text, origin: undefined } : { text: words, origin: legacy }
 }
 export function authoredClaudeUser(frame: ClaudeFrame): boolean {
   if (frame.type !== 'user' || frame.isMeta === true || frame.isSynthetic === true || frame.isCompactSummary === true || frame.is_compact_summary === true || frame.isSidechain === true || frame.parent_tool_use_id) return false

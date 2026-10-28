@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { claudeDigest, claudeReadBack, ClaudeSessionLog, claudeText, claudeUserText } from '../../../src/main/agents/claudeSessionLog'
-import { browserFeedbackNote } from '../../../src/main/agents/attachedFiles'
+import { attachedFilesNote, browserFeedbackNote } from '../../../src/main/agents/attachedFiles'
 import type { ClaudeFrame } from '../../../src/main/agents/claudeProtocol'
 
 const roots: string[] = []
@@ -179,5 +179,26 @@ describe('a Claude prompt read back with Point at something feedback (ADR-0154)'
     const { find, calls } = lookup()
     claudeReadBack([{ type: 'text', text: `${blocks}\n\n${note}` }], undefined, find)
     expect(calls).toHaveLength(1)
+  })
+
+  it('reads back an origin recorded before the delivered digest as it did then, by its words, once its file note comes off', () => {
+    const note = attachedFilesNote([{ relativePath: '.sotto/attachments/3f2a9c1e0b7d/report.pdf', name: 'report.pdf', mimeType: 'application/pdf', sizeBytes: 2048 }])
+    // A record from before the change: the words' digest and the attachments, no delivered digest.
+    const legacy: { uuid: string; digest: string; attachments: { mimeType: string }[]; delivered?: { digest: string; suffixLength: number } } = { uuid: 'legacy', digest: claudeDigest('Read this'), attachments: [{ mimeType: 'application/pdf' }] }
+    const calls: string[] = []
+    const byWords = (digest: string) => { calls.push(digest); return digest === legacy.digest ? legacy : undefined }
+    expect(claudeReadBack([{ type: 'text', text: 'Read this' }, { type: 'text', text: note }], undefined, () => undefined, byWords)).toEqual({ text: 'Read this', origin: legacy })
+    expect(calls).toHaveLength(1)
+  })
+
+  it('never takes the words path for an origin that has a delivered digest, so look-alike native input stays as typed', () => {
+    const note = browserFeedbackNote([picture])
+    // Sotto sent "Plan" with a picture; the user then typed "Plan" and a block of their own in Claude Code, as one text.
+    const origin = sent('pointed', [image, { type: 'text', text: 'Plan' }, { type: 'text', text: note }], 'Plan')
+    const typed = `Plan\n\n${handwritten}`
+    // Taking every note-shaped block off leaves "Plan", whose digest is the origin's words; a words lookup that answers
+    // this origin still cannot claim the native input, since the origin has a delivered digest.
+    const { find } = lookup(origin)
+    expect(claudeReadBack(typed, undefined, find, find)).toEqual({ text: typed, origin: undefined })
   })
 })
