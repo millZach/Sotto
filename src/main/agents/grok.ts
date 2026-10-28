@@ -413,7 +413,7 @@ export class GrokAcpHost implements AgentHost {
       this.readProviderQuota = async (providerId, refresh, background = false) => {
         if (providerId !== 'grok') return unavailableProviderQuota(providerId, 'unsupported')
         if (!this.state.connected || !this.executable) return unavailableProviderQuota('grok', 'not-connected')
-        if (!refresh) return this.quota ?? unavailableProviderQuota('grok', 'not-read', true)
+        if (!refresh) return this.quotaLatest?.read ?? this.quota ?? unavailableProviderQuota('grok', 'not-read', true)
         const reading = this.quotaReading
         if (reading && (background || !reading.background)) return reading.read
         const read: Promise<UsageQuotaRead> = this.readQuota(background).finally(() => { if (this.quotaReading?.read === read) this.quotaReading = undefined })
