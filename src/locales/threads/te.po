@@ -1720,6 +1720,10 @@ msgstr ""
 msgid "An answer from an earlier thread is saved."
 msgstr ""
 
+#: src/renderer/src/agents/ThreadComposer.tsx
+msgid "An earlier send is still on its way; Steer waits for it"
+msgstr ""
+
 #: src/renderer/src/agents/MessageScrubber.tsx
 msgid "An empty message"
 msgstr ""
@@ -8932,6 +8936,14 @@ msgstr ""
 #. A visual an agent drew, by its title.
 #: src/renderer/src/agents/VisualCardShell.tsx
 msgid "Visual: {title}"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadComposer.tsx
+msgid "Wait for the answer to be sent"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadComposer.tsx
+msgid "Wait for the attachment to be read"
 msgstr ""
 
 #: src/renderer/src/agents/ForkFromHere.tsx

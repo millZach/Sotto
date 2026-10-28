@@ -43,6 +43,7 @@ struct ThreadView: View {
                     if model.compactionOffered(ref) || model.shelfAction(ref) != nil { ThreadMenu(ref: ref) }
                 }
             }
+            .horizontalOnly()
         }
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbarBackground(stuck ? .visible : .hidden, for: .navigationBar)
@@ -82,6 +83,19 @@ struct ThreadView: View {
         guard open == nil, !agentsOpen, !agentsCovered, let request = thread?.requests.first(where: { !setAside.contains($0.id) }) else { return }
         shown = request.id
         open = request
+    }
+}
+
+extension ToolbarContent {
+    /// Keeps an item in the bar over the page. Where iOS 27.1 stands a vertical bar beside the page, as in the iPhone
+    /// Duo cover screen's strip, it would otherwise move the item there, where only an icon fits (ADR-0151, amended).
+    /// CI's Xcode 26.6 has no iOS 27.1 SDK, hence the compiler check (Swift 6.4 came with Xcode 27).
+    @ToolbarContentBuilder func horizontalOnly() -> some ToolbarContent {
+        #if compiler(>=6.4)
+        if #available(iOS 27.1, *) { axisBehavior(.horizontalOnly) } else { self }
+        #else
+        self
+        #endif
     }
 }
 
@@ -141,11 +155,13 @@ private struct WatchToggle: View {
     @EnvironmentObject var model: AppModel
     let ref: ThreadRef
     let title: String?
+    @State private var presses = 0
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         let watched = model.watchedByWatcher(ref)
         let compact = typeSize.isAccessibilitySize
-        Button { Task { await model.setWatched(ref, !watched, title: title) } } label: {
+        Button { presses += 1; Task { await model.setWatched(ref, !watched, title: title) } } label: {
             HStack(spacing: 6) {
                 if model.changingWatch(ref) { ProgressView().controlSize(.mini) } else { WatcherOwlMark(size: 17).accessibilityHidden(true) }
                 if !compact { Text("Watch").lineLimit(1) }
@@ -160,6 +176,8 @@ private struct WatchToggle: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: watched)
+        .sensoryFeedback(.selection, trigger: presses)
         .disabled(!model.canChangeWatch(ref))
         .accessibilityLabel("Watch")
         .accessibilityValue(watched ? String(localized: "On", comment: "Whether Watcher watches this thread") : String(localized: "Off", comment: "Whether Watcher watches this thread"))
@@ -176,11 +194,12 @@ private struct ThreadMenu: View {
     /// Watched so whether there is history to compact follows the thread as it is read.
     @EnvironmentObject var detailStore: DetailStore
     let ref: ThreadRef
+    @State private var acted = 0
     var body: some View {
         Menu {
             if model.compactionOffered(ref) {
                 let held = model.compactionHeld(ref)
-                Button { Task { await model.compact(ref) } } label: {
+                Button { acted += 1; Task { await model.compact(ref) } } label: {
                     Text("Compact context")
                     Text(held ?? String(localized: "Summarize earlier messages to free room"))
                 }
@@ -188,7 +207,7 @@ private struct ThreadMenu: View {
             }
             if let action = model.shelfAction(ref) {
                 let held = model.actionHeld(ref)
-                Button { Task { await model.shelve(ref, action) } } label: {
+                Button { acted += 1; Task { await model.shelve(ref, action) } } label: {
                     Text(action == .settle ? String(localized: "Settle", comment: "Settle the thread: put it away on the Settled shelf.")
                          : String(localized: "Restore", comment: "Restore a settled thread to open work."))
                     if let held { Text(held) }
@@ -208,6 +227,7 @@ private struct ThreadMenu: View {
         }
         .accessibilityLabel("Show thread actions")
         .accessibilityIdentifier("thread-actions")
+        .sensoryFeedback(.impact(weight: .medium), trigger: acted)
     }
 }
 
@@ -1861,6 +1881,8 @@ private struct ReplyDock: View, Equatable {
     @FocusState private var focused: Bool
     @Environment(\.sottoTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var sent = 0
+    @State private var stopped = 0
 
     var body: some View {
         VStack(spacing: Space.s2) {
@@ -1978,6 +2000,8 @@ private struct ReplyDock: View, Equatable {
             .frame(maxWidth: .infinity, alignment: .leading)
             trailingButtons
         }
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: model.canInterrupt(ref))
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: written)
         .padding(6)
         .glass(in: shape)
         .overlay(shape.strokeBorder(theme.color(.accent).opacity(focused ? 0.55 : 0), lineWidth: 1))
@@ -1991,18 +2015,22 @@ private struct ReplyDock: View, Equatable {
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: focused)
     }
 
+    /// Whether the box holds something to send: words, photos or files.
+    private var written: Bool {
+        !(model.drafts[ref.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.photos(ref).isEmpty
+            || !model.files(ref).isEmpty
+    }
+
     /// Stop while the turn can be stopped, and beside it, once the box holds something, the button that queues it for
     /// after the turn. Otherwise Send, as before.
     @ViewBuilder private var trailingButtons: some View {
         let stops = model.canInterrupt(ref)
-        let written = !(model.drafts[ref.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.photos(ref).isEmpty
-            || !model.files(ref).isEmpty
-        if stops { stopButton }
-        if !stops || written { sendButton }
+        if stops { stopButton.transition(.scale(scale: 0.8).combined(with: .opacity)) }
+        if !stops || written { sendButton.transition(.scale(scale: 0.8).combined(with: .opacity)) }
     }
 
     private var stopButton: some View {
-        Button { Task { await model.interrupt(ref) } } label: {
+        Button { stopped += 1; Task { await model.interrupt(ref) } } label: {
             RoundedRectangle(cornerRadius: 3.5, style: .continuous)
                 .frame(width: 13, height: 13)
                 .frame(width: 44, height: 44)
@@ -2012,6 +2040,7 @@ private struct ReplyDock: View, Equatable {
                 .contentShape(Circle())
         }
         .buttonStyle(PressStyle())
+        .sensoryFeedback(.impact(weight: .medium), trigger: stopped)
         .accessibilityLabel("Stop this turn")
     }
 
@@ -2020,7 +2049,7 @@ private struct ReplyDock: View, Equatable {
         let preparing = model.preparingSends.contains(ref.id)
         let canSend = model.canSendReply(ref)
         let queues = model.queuesReply(ref)
-        return Button { Task { await model.send(ref) } } label: {
+        return Button { sent += 1; Task { await model.send(ref) } } label: {
             Group {
                 if preparing { ProgressView().tint(Palette.onAccent) }
                 else { Image(systemName: queues ? "text.badge.plus" : "arrow.up").font(.system(size: 17, weight: .semibold)) }
@@ -2031,6 +2060,9 @@ private struct ReplyDock: View, Equatable {
             .contentShape(Circle())
         }
         .buttonStyle(PressStyle())
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: canSend)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: queues)
+        .sensoryFeedback(.impact(flexibility: .soft), trigger: sent)
         .disabled(!canSend)
         .accessibilityLabel(queues ? (preparing ? String(localized: "Queuing reply") : String(localized: "Queue for after this turn")) : (preparing ? String(localized: "Sending reply") : String(localized: "Send reply")))
     }
@@ -2070,6 +2102,8 @@ private struct FollowupCard: View {
     @EnvironmentObject var model: AppModel
     let ref: ThreadRef
     let item: Followup
+    @State private var steerPresses = 0
+    @State private var removePresses = 0
     var body: some View {
         let steers = model.steerOffered(item, in: ref)
         let removable = FollowupQueue.removable(item)
@@ -2091,17 +2125,25 @@ private struct FollowupCard: View {
             if steers || removable {
                 HStack(spacing: Space.s2) {
                     if steers {
-                        Button { Task { await model.steer(item, in: ref) } } label: {
+                        Button {
+                            steerPresses += 1
+                            Task { await model.steer(item, in: ref) }
+                        } label: {
                             Label("Steer now", systemImage: "arrow.turn.up.right")
                         }
                         .buttonStyle(PillButtonStyle(kind: .primary))
+                        .sensoryFeedback(.impact(flexibility: .soft), trigger: steerPresses)
                         .disabled(!model.canSteer(item, in: ref))
                         .accessibilityHint("Sends this message now instead of after the turn.")
                     }
                     if removable {
-                        Button("Remove") { Task { await model.removeFollowup(item, in: ref) } }
-                            .buttonStyle(PillButtonStyle(kind: .ghost))
-                            .disabled(!model.canRemove(item, in: ref))
+                        Button("Remove") {
+                            removePresses += 1
+                            Task { await model.removeFollowup(item, in: ref) }
+                        }
+                        .buttonStyle(PillButtonStyle(kind: .ghost))
+                        .sensoryFeedback(.impact(flexibility: .soft), trigger: removePresses)
+                        .disabled(!model.canRemove(item, in: ref))
                             .accessibilityLabel(item.wakeUp == true ? String(localized: "Remove the wake-up from the queue") : String(localized: "Remove this message from the queue"))
                     }
                 }
@@ -2157,6 +2199,7 @@ struct RequestSheet: View {
     @State private var answers: [String: QuestionAnswer] = [:]
     @State private var choice: String?
     @State private var text = ""
+    @State private var answered = 0
     /// Questions whose own-answer box is open.
     @State private var writing: Set<String> = []
     /// The question's page open in the in-app browser over the sheet (ADR-0085).
@@ -2191,6 +2234,7 @@ struct RequestSheet: View {
         .presentationCornerRadius(Radius.xl)
         .onChange(of: current == nil && !model.hasPending(at: place)) { _, gone in if gone { dismiss() } }
         .sheet(item: $opening) { row in SafariPage(url: row.url).ignoresSafeArea() }
+        .sensoryFeedback(.impact(flexibility: .soft), trigger: answered)
     }
 
     @ViewBuilder private func content(_ current: AgentRequest, threadTitle: String, providerID: String?) -> some View {
@@ -2345,7 +2389,10 @@ struct RequestSheet: View {
     }
 
     /// Sends against the request as the computer holds it now, never the copy the sheet opened with.
-    private func send(_ current: AgentRequest, choice: String) { Task { await model.answer(current, at: place, choice: choice) } }
+    private func send(_ current: AgentRequest, choice: String) {
+        answered += 1
+        Task { await model.answer(current, at: place, choice: choice) }
+    }
 
     /// Allow once first, then the other allows, then deny and the rest.
     private static func rank(_ choice: PermissionChoice) -> Int {
@@ -2513,6 +2560,7 @@ struct RequestSheet: View {
     }
 
     private func sendAnswer(_ current: AgentRequest) {
+        answered += 1
         focus = nil
         Task {
             if current.questions?.isEmpty == false { await model.answer(current, at: place, answers: answers) }

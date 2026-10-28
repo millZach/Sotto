@@ -14,8 +14,9 @@
 .thread-followups > * { flex: none; }
 .thread-followups__top { position: sticky; top: 0; z-index: 1; display: flow-root; background: var(--followups-surface); }
 .thread-followups__head { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 28px; margin-bottom: 2px; }
-.thread-followups__toggle { display: flex; flex: 0 1 auto; align-items: center; gap: 5px; min-width: 0; min-height: 28px; margin-left: -4px; padding: 0 6px 0 4px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.thread-followups__toggle { display: flex; flex: 0 1 auto; align-items: center; gap: 5px; min-width: 0; min-height: 28px; margin-left: -4px; padding: 0 6px 0 4px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; text-align: left; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .thread-followups__toggle:hover { background: var(--tt-hover); color: var(--tt-text); }
+.thread-followups__toggle:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .thread-followups__toggle > svg { flex: none; }
 .thread-followups__label { flex: none; }
 .thread-followups__count { margin-left: 3px; font-variant-numeric: tabular-nums; }
@@ -54,7 +55,7 @@
 .followup-editor { width: min(560px, calc(100vw - 48px)); max-height: calc(100vh - 48px); margin: auto; padding: 18px 20px 16px; overflow: auto; border: 1px solid var(--tt-panel-border); border-radius: 18px; background: var(--tt-panel); box-shadow: 0 28px 90px var(--tt-shadow-color); color: var(--tt-text); }
 .followup-editor::backdrop { background: var(--tt-backdrop); }
 .followup-editor h2 { margin: 0 0 12px; font-size: 16px; font-weight: 500; letter-spacing: -.2px; }
-.followup-editor textarea { display: block; width: 100%; field-sizing: content; min-height: 104px; max-height: min(320px, calc(100vh - 200px)); padding: 10px 12px; border: 1px solid var(--tt-field-border, var(--tt-hairline)); border-radius: 12px; outline: 0; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 16px; line-height: 1.55; resize: vertical; scrollbar-width: thin; }
+.followup-editor textarea { display: block; width: 100%; field-sizing: content; min-height: 104px; max-height: min(320px, calc(100vh - 200px)); padding: 10px 12px; border: 1px solid var(--tt-field-border, var(--tt-hairline)); border-radius: 12px; outline: 0; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 16px; line-height: 1.55; resize: vertical; scrollbar-width: thin; transition: border-color 120ms ease, box-shadow 120ms ease; }
 .followup-editor textarea:focus { border-color: var(--tt-field-border-focus, var(--tt-focus-ring)); }
 .followup-editor__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-top: 12px; }
 .followup-editor__note { flex: 1 1 220px; margin: 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.45; }
@@ -68,7 +69,7 @@
    height from the composer, so the typed text and its send action stay where they were. */
 .thread-prompt { position: relative; }
 .thread-prompt > .composer-picker { position: absolute; right: -1px; bottom: calc(100% + 6px); left: -1px; z-index: 4; padding: 6px 6px 2px; border: 1px solid var(--threads-field-border); border-radius: 14px; background: var(--threads-field); box-shadow: 0 16px 48px var(--tt-shadow-color); }
-.composer-picker__list { max-height: clamp(80px, calc(100vh - 460px), 216px); margin: 0; padding: 0; overflow-y: auto; list-style: none; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
+.composer-picker__list { max-height: clamp(80px, calc(100vh - 460px), 216px); margin: 0; padding: 0; overflow-y: auto; overscroll-behavior: contain; list-style: none; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 .composer-picker__option { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr) auto; align-items: baseline; gap: 12px; min-height: 36px; padding: 8px; border-radius: 8px; cursor: pointer; }
 .composer-picker__option[data-active] { background: var(--tt-accent-wash); }
 .composer-picker__option[aria-disabled='true'] { cursor: default; }
@@ -85,7 +86,7 @@
 .composer-picker__foot[data-message] { min-height: 40px; }
 .composer-picker__notes .composer-picker__message { font-size: 14px; line-height: 1.45; }
 .composer-picker__notes .composer-picker__message:not([data-tone]) { color: var(--tt-text-2); }
-.composer-picker__refresh { display: inline-flex; flex: none; align-items: center; gap: 6px; min-height: 32px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 14px; cursor: pointer; }
+.composer-picker__refresh { display: inline-flex; flex: none; align-items: center; gap: 6px; min-height: 32px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 14px; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .composer-picker__refresh:hover:not(:disabled) { background: var(--threads-hover); color: var(--tt-text); }
 .composer-picker__refresh:disabled { cursor: default; }
 

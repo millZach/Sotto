@@ -40,6 +40,7 @@
   border-radius: 6px;
   background: transparent;
   cursor: pointer;
+  transition: width 160ms ease;
 }
 .visual-stepper__dot::before {
   content: '';
@@ -47,6 +48,7 @@
   height: 9px;
   border-radius: 50%;
   background: var(--tt-text-faint);
+  transition: width 160ms ease, background-color 120ms ease;
 }
 .visual-stepper__dot[data-state='done']::before { background: var(--tt-text-muted); }
 .visual-stepper__dot[data-state='current'] { width: 30px; }

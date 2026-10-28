@@ -125,6 +125,18 @@ export function watcherNewestTurnReply(thread: AgentThread): AgentMessage | unde
 }
 
 /**
+ * Whether the newest turn said more than the one reply it is quoted by (#1434): more than one assistant message with
+ * words in it, by the same turn rule and the same guard as watcherNewestTurnReply. A turn that cannot be placed as the
+ * thread's last reads as one message, so its reply is never called a fragment of something Sotto cannot see.
+ */
+export function watcherNewestTurnSaidMore(thread: AgentThread): boolean {
+  const messages = thread.messages.filter(message => !isVisualMessage(message))
+  const turns = turnsOf(thread, messages), newest = turns.at(-1), last = thread.lastTurn
+  if (!newest || !last || newest.nativeTurnId !== last.id && newest.turnId !== last.id) return false
+  return messages.filter((message, position) => message.role === 'assistant' && message.text.trim() !== '' && turnOfReply(turns, position, message) === newest).length > 1
+}
+
+/**
  * Whether the turn a brief began, by its Sotto anchor, is still the thread's newest (#1190): the newest turn Sotto placed,
  * and the provider's newest turn is that same turn, by its ID, its native ID or its anchor. A turn the provider started by
  * itself, as Claude Code does to report background work, has no anchor and is not the brief's. A steer read into the

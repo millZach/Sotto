@@ -385,7 +385,7 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
         const selected = id === shownId
         return <button key={id} id={tabDomId(id)} type="button" role="tab" aria-selected={selected} aria-controls={paneDomId(id)} tabIndex={selected ? 0 : -1}
           aria-label={paneRow?.attention ? paneName(id) : undefined}
-          className="thread-panes__tab tt-focusable" onClick={() => onFocusPane(id)} onKeyDown={event => onTabKey(event, index)}>
+          className="thread-panes__tab tt-focusable" title={paneName(id)} onClick={() => onFocusPane(id)} onKeyDown={event => onTabKey(event, index)}>
           {paneRow ? <ProviderMark provider={paneRow.providerId} name={paneRow.provider} size={14} /> : null}
           <span>{title(id)}</span>
         </button>

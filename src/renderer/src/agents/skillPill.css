@@ -2,7 +2,7 @@
    already uses for selection. It sits on the text's baseline and is shorter than the line, so a line holding one
    is no taller than a line without, and it wraps as a single word. Sized in em so it follows the text it sits in
    (15px in the composer, 16px in the queued message editor). */
-.composer-skill { display: inline-flex; align-items: baseline; gap: .28em; max-width: 100%; margin: 0 .05em; padding: 0 .42em 0 .34em; border-radius: .42em; background: var(--tt-accent-wash); color: var(--tt-accent-text); font-weight: 500; line-height: 1.34; vertical-align: baseline; white-space: nowrap; cursor: default; }
+.composer-skill { display: inline-flex; align-items: baseline; gap: .28em; max-width: 100%; margin: 0 .05em; padding: 0 .42em 0 .34em; border-radius: .42em; background: var(--tt-accent-wash); color: var(--tt-accent-text); font-weight: 500; line-height: 1.34; vertical-align: baseline; white-space: nowrap; cursor: default; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .composer-skill__icon { flex: none; align-self: center; width: .95em; height: .95em; }
 .composer-skill__name { min-width: 0; max-width: 28ch; overflow: hidden; text-overflow: ellipsis; }
 .composer-skill:hover { background: color-mix(in srgb, var(--tt-accent) 20%, transparent); }

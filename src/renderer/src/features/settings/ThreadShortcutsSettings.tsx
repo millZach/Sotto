@@ -231,7 +231,7 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
       {recorder.held.length === 0
         ? <span className="dictation-shortcuts__prompt"><Trans>Press the new keys…</Trans></span>
         : <ShortcutKey accelerator={recorder.held.join('+')} platform={platform} />}
-      <button type="button" className="dictation-shortcuts__icon tt-focusable" aria-label={t`Cancel recording`} data-recording-cancel autoFocus onClick={recorder.cancel} data-focus-key={`${row}-cancel`}>
+      <button type="button" className="dictation-shortcuts__icon tt-focusable" aria-label={t`Cancel recording`} title={t`Cancel recording`} data-recording-cancel autoFocus onClick={recorder.cancel} data-focus-key={`${row}-cancel`}>
         <X size={13} aria-hidden="true" />
       </button>
     </span>

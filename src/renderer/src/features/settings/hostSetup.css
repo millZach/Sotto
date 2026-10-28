@@ -44,7 +44,7 @@
 
 /* Two ways to add a machine (ADR-0035): native radios in bordered choices, the chosen one lit by the accent. */
 .host-setup__choices { display: grid; gap: 8px; }
-.host-setup__choice { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 3px 10px; min-width: 0; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); padding: 10px 12px; cursor: pointer; }
+.host-setup__choice { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 3px 10px; min-width: 0; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); padding: 10px 12px; cursor: pointer; transition: border-color 120ms ease, background-color 120ms ease; }
 .host-setup__choice[data-checked] { border-color: var(--tt-accent); background: var(--tt-selected); }
 .host-setup__choice[data-disabled] { cursor: default; }
 .host-setup__choice > input { grid-row: 1 / span 2; width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--tt-accent); }

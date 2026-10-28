@@ -220,7 +220,9 @@ describe('Keep main up to date (ADR-0142)', () => {
     const repository = await behind()
     repository.git('remote', 'set-url', 'origin', 'https://github.com/millZach/Sotto.git')
     const { keeper } = await keeperFor(repository)
-    const request = vi.spyOn(keeper, 'request')
+    // Only the routing is checked. A real pass would fetch this repository from GitHub, and the clean-up's close()
+    // waits for that pass: on a Windows runner it ran past the 15 s hook deadline.
+    const request = vi.spyOn(keeper, 'request').mockResolvedValue(undefined)
     keeper.pullRequestMerged('https://github.com/millzach/sotto/pull/1406')
     keeper.pullRequestMerged('https://github.com/millzach/sotto/pull/1406')
     keeper.pullRequestMerged('https://github.com/someone/else/pull/2')

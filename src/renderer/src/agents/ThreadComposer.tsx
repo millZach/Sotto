@@ -555,7 +555,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         <div ref={actionsRow} className="thread-prompt__actions">
           {running && capabilities.steer === true && content
             ? <Button variant="ghost" className="thread-prompt__steer" aria-label={t`Steer now`} aria-keyshortcuts={steerChord ? threadChordLabel(steerChord, platform).keys : undefined}
-              disabled={!canSteer} title={canSteer ? t`Send this now, without waiting for the turn to end` + (steerChord ? ` ${threadChordLabel(steerChord, platform).suffix}` : '') : reason ?? undefined}
+              disabled={!canSteer} title={canSteer ? t`Send this now, without waiting for the turn to end` + (steerChord ? ` ${threadChordLabel(steerChord, platform).suffix}` : '') : reason ?? (sendInFlight ? t`An earlier send is still on its way; Steer waits for it` : readingImages ? t`Wait for the attachment to be read` : answerState.sending ? t`Wait for the answer to be sent` : undefined)}
               onClick={() => send(performance.now(), 'steer')}><KeyedGlyph role="steer" keyCap={steerChord ? threadChordCap(steerChord, platform) : null} /></Button>
             : null}
           {/* While a turn runs, Stop carries its trace: the control that ends the turn is the sign that it is running. */}

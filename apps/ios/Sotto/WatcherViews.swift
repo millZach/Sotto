@@ -25,6 +25,8 @@ struct WatcherView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @State private var stopPreview: WatcherStopPreview?
+    /// Counts confirmed stops, so the view that carries the alert can give the destructive act a warning buzz.
+    @State private var stopsConfirmed = 0
     @State private var reviewing: ReviewedCard?
     enum Pane: Hashable { case conversation, watched }
 
@@ -71,12 +73,14 @@ struct WatcherView: View {
                isPresented: Binding(get: { stopPreview != nil }, set: { if !$0 { stopPreview = nil } }),
                presenting: stopPreview) { preview in
             Button(WatcherWords.stopButton(preview.targets.count), role: .destructive) {
+                stopsConfirmed += 1
                 Task { await model.confirmWatcherStop(preview, on: hostID) }
             }
             Button("Cancel", role: .cancel) {}
         } message: { preview in
             Text(stopMessage(preview))
         }
+        .sensoryFeedback(.warning, trigger: stopsConfirmed)
     }
 
     /// What stays, then each thread Stop all would stop and where it runs: "Fix login test, Claude Code on Laptop".
@@ -473,6 +477,9 @@ private struct WatcherStatePill: View {
 private struct SectionSwitch: View {
     @Binding var section: WatcherView.Pane
     let watched: Int
+    @Namespace private var knob
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var picks = 0
     var body: some View {
         HStack(spacing: 4) {
             option(.conversation, String(localized: "Conversation", comment: "One of Watcher's two panes"), count: nil, id: "watcher-section-conversation")
@@ -481,10 +488,14 @@ private struct SectionSwitch: View {
         .padding(4)
         .background(Palette.fillSoft, in: Capsule())
         .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
+        .sensoryFeedback(.selection, trigger: picks)
     }
     private func option(_ value: WatcherView.Pane, _ title: String, count: Int?, id: String) -> some View {
         let chosen = section == value
-        return Button { section = value } label: {
+        return Button {
+            picks += 1
+            withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85)) { section = value }
+        } label: {
             HStack(spacing: 6) {
                 Text(title).font(.sotto(.body, .semibold))
                 if let count { Text("\(count)").font(.sotto(.body)).foregroundStyle(Palette.muted) }
@@ -496,6 +507,7 @@ private struct SectionSwitch: View {
             .background {
                 if chosen {
                     Capsule().fill(Palette.surface).overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
+                        .matchedGeometryEffect(id: "watcher-section-knob", in: knob)
                 }
             }
             .contentShape(Capsule())
@@ -1282,6 +1294,7 @@ private struct WatcherRequestCard: View {
     let own: Bool
     let review: (ReviewedCard) -> Void
     @State private var picked: String?
+    @State private var answered = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1293,6 +1306,7 @@ private struct WatcherRequestCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .sottoCard(.needsYou)
+        .sensoryFeedback(.impact(flexibility: .soft), trigger: answered)
     }
 
     /// Where the answer goes, or nil for a thread on a computer this iPhone isn't paired with.
@@ -1327,6 +1341,7 @@ private struct WatcherRequestCard: View {
     }
     private func send(choice: String?, answers: [String: QuestionAnswer] = [:]) {
         guard let place else { return }
+        answered += 1
         let current = request
         Task { await model.answer(current, at: place, choice: choice, answers: answers) }
     }
@@ -1491,6 +1506,7 @@ private struct WatcherDock: View {
     let hostID: String
     let willSend: () -> Void
     @FocusState private var focused: Bool
+    @State private var sent = 0
     @Environment(\.sottoTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -1586,7 +1602,7 @@ private struct WatcherDock: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             // Sending puts the keyboard away, as the design does, so Watcher's answer has room on a small phone.
-            Button { willSend(); focused = false; Task { await model.sendToWatcher(hostID) } } label: {
+            Button { sent += 1; willSend(); focused = false; Task { await model.sendToWatcher(hostID) } } label: {
                 Group {
                     if preparing { ProgressView().tint(Palette.onAccent) }
                     else { Image(systemName: symbol).font(.system(size: 17, weight: .semibold)) }
@@ -1597,6 +1613,8 @@ private struct WatcherDock: View {
                 .contentShape(Circle())
             }
             .buttonStyle(PressStyle())
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: canSend)
+            .sensoryFeedback(.impact(flexibility: .soft), trigger: sent)
             .disabled(!canSend)
             .accessibilityLabel(preparing ? String(localized: "watcher-send.sending", defaultValue: "Sending to Watcher", comment: "The send button's name while a message is on its way to Watcher") : label)
             .accessibilityIdentifier("watcher-send")
@@ -1627,6 +1645,7 @@ private struct WatcherPermissionChip: View {
     @EnvironmentObject var watcherStore: WatcherStore
     let hostID: String
     @State private var choosing = false
+    @State private var picks = 0
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
@@ -1642,12 +1661,14 @@ private struct WatcherPermissionChip: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .sheet(isPresented: $choosing) {
             WatcherPermissionSheet(hostID: hostID) { mode in
+                picks += 1
                 choosing = false
                 Task { await model.setWatcherPermission(mode, on: hostID) }
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+        .sensoryFeedback(.selection, trigger: picks)
     }
 
     private func chip(pending: Bool, fixed: Bool) -> some View {
@@ -1804,6 +1825,7 @@ private struct WatchedPane: View {
     /// Slides the bar away, or back, as the user reads down or goes up.
     let slideBar: (Bool) -> Void
     let stopAll: () -> Void
+    @State private var stopPresses = 0
     @State private var picking = false
     @State private var motion = WatchedMotion()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1895,6 +1917,8 @@ private struct WatchedPane: View {
                     .onAppear { moved(content.frame(in: .global)) }
                     .onChange(of: content.frame(in: .global)) { _, frame in moved(frame) }
             })
+            // Once for the page, not once for each layout ViewThatFits builds, so one press plays one tap.
+            .sensoryFeedback(.impact(weight: .medium), trigger: stopPresses)
         }
         .refreshable { await model.readWatcher(hostID) }
         // What a Stop watching press did, with Undo, over the tab bar.
@@ -1987,7 +2011,7 @@ private struct WatchedPane: View {
 
     @ViewBuilder private func stopButton(_ page: WatcherPage) -> some View {
         if model.offersWatcherStop(hostID) && !page.watched.isEmpty {
-            Button(action: stopAll) {
+            Button { stopPresses += 1; stopAll() } label: {
                 HStack(spacing: 6) {
                     if model.watcherStopping.contains(hostID) { ProgressView().controlSize(.mini) }
                     Text("Stop all")
@@ -2004,6 +2028,7 @@ private struct WatchedPane: View {
 /// A thread Watcher works with, as Threads draws a working card, with what Watcher last did with it. It opens the thread
 /// where this iPhone lists it. Where watching lasts until the user stops it, Stop watching sits at its foot.
 private struct WatchedCard: View {
+    @State private var stops = 0
     let thread: WatcherPage.WatchedThread
     let computer: String
     let listed: ThreadSummary?
@@ -2066,13 +2091,17 @@ private struct WatchedCard: View {
     private func foot(_ stop: @escaping () -> Void) -> some View {
         HStack(spacing: Space.s2) {
             Spacer(minLength: 0)
-            Button(action: stop) {
+            Button {
+                stops += 1
+                stop()
+            } label: {
                 HStack(spacing: 6) {
                     if stopping { ProgressView().controlSize(.mini) }
                     Text("Stop watching")
                 }
             }
             .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
+            .sensoryFeedback(.impact(weight: .medium), trigger: stops)
             .disabled(!canStop)
             .accessibilityLabel("Stop watching \(thread.title)")
             .accessibilityIdentifier("watched-stop-\(thread.target.ref.id)")

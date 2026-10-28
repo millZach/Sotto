@@ -6,6 +6,11 @@
 .restart-bands { display: grid; flex: none; gap: 8px; margin: 0 8px 8px; }
 .restart-band { padding: 8px 10px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-surface-elevated); color: var(--tt-text-2);
   font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .restart-band {
+    animation: tt-band-arrive 160ms cubic-bezier(.2, .8, .2, 1);
+  }
+}
 .restart-band__words { display: flex; align-items: flex-start; gap: 8px; margin: 0; }
 .restart-band__words > svg { flex: none; margin-top: 2px; color: var(--tt-text-muted); }
 .restart-band__words strong { color: var(--tt-text); font-weight: 600; }
@@ -13,7 +18,8 @@
 /* A short window keeps the list to three names, so the threads below keep their room; the rest scroll into view. */
 @media (max-height: 640px) { .restart-band__threads { max-height: 4.6em; } }
 .restart-band__thread { display: block; max-width: 100%; padding: 1px 0; overflow: hidden; border: 0; border-radius: 3px; background: transparent; color: var(--tt-text-2);
-  font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer;
+  transition: color 120ms ease; }
 .restart-band__thread:hover { color: var(--tt-text); text-decoration: underline; text-underline-offset: 2px; }
 .restart-band__cancel, .restart-strip__cancel { flex: none; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-link); font: inherit;
   text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }

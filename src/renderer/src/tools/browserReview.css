@@ -1,4 +1,4 @@
-.browser-review-link { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 3px 6px; border: 0; border-radius: 5px; font: inherit; font-size: 14px; color: var(--tt-text); background: transparent; cursor: pointer; }
+.browser-review-link { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 3px 6px; border: 0; border-radius: 5px; font: inherit; font-size: 14px; color: var(--tt-text); background: transparent; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .browser-review-link:hover { background: var(--tt-hover); }
 .browser-review-link:active { background: var(--tt-hover-strong); }
 .browser-review-problem { color: var(--tt-error); font-size: 14px; margin: 8px 12px; }

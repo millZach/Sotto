@@ -13,6 +13,8 @@ struct NewThreadSheet: View {
     @State private var step = Step.computer
     /// Whether the last move went forward, so the next page slides in from the side it came from.
     @State private var forward = true
+    @State private var presses = 0
+    @State private var openedCount = 0
     @State private var hostID = ""
     @State private var projectID: String?
     @State private var folder: FolderListing?
@@ -138,9 +140,11 @@ struct NewThreadSheet: View {
 
     private var openButton: some View {
         Button {
+            presses += 1
             Task {
                 if let ref = await model.createThread(on: hostID, projectID: projectID, folder: folder, modelID: modelID,
                                                      effort: effort, permissionID: permissionID, workingCopy: workingCopy) {
+                    self.openedCount += 1
                     dismiss(); opened(ref)
                 }
             }
@@ -151,6 +155,8 @@ struct NewThreadSheet: View {
             }
         }
         .buttonStyle(ActionStyle(wide: true))
+        .sensoryFeedback(.impact(flexibility: .soft), trigger: presses)
+        .sensoryFeedback(.success, trigger: openedCount)
         .disabled(!canCreate)
         .accessibilityIdentifier("open-new-thread")
         .padding(.horizontal, Space.gutter).padding(.vertical, Space.s3)

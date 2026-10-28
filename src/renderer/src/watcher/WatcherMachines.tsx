@@ -153,6 +153,7 @@ function MachinePanel({ entry, threads, watcherIds, now, anchor, frame, onClose,
     style={place ? { top: place.top, left: place.left, maxHeight: place.maxHeight } : { visibility: 'hidden' }}>
     <h2 id={heading}><MachineIcon entry={entry} size={15} /><span>{name}</span></h2>
     <button type="button" className="watcher-machine-panel__close tt-focusable" aria-label={entry.thisComputer ? t`Close this computer’s panel` : t`Close ${name}’s panel`}
+      title={entry.thisComputer ? t`Close this computer’s panel` : t`Close ${name}’s panel`}
       onClick={() => onClose(true)}><X size={14} aria-hidden="true" /></button>
     {/* A stop in the Tab order between Close and Change where new workers start, so what does not fit can be scrolled
         from the keyboard as well as read. */}

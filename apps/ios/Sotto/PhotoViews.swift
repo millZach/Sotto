@@ -222,6 +222,7 @@ private struct DraftPhotoView: View {
     let count: Int
     let locked: Bool
     let remove: () -> Void
+    @State private var removed = 0
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Group {
@@ -235,12 +236,15 @@ private struct DraftPhotoView: View {
             .accessibilityElement()
             .accessibilityLabel("Photo \(number) of \(count)")
             .accessibilityValue(photo.preparing ? String(localized: "Getting it ready", comment: "Accessibility value: a photo in the reply box is being prepared.") : photo.staging ? String(localized: "Sending it to the computer", comment: "Accessibility value: a photo in the reply box is being sent to the computer.") : String(localized: "Ready", comment: "Accessibility value: a photo in the reply box is ready to send."))
-            Button(action: remove) {
+            Button {
+                removed += 1
+                remove()
+            } label: {
                 Image(systemName: "xmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Palette.canvas)
                     .frame(width: 22, height: 22).background(Palette.ink.opacity(0.85), in: Circle())
                     .frame(width: 44, height: 44, alignment: .topTrailing).padding(4).contentShape(Rectangle())
             }
-            .buttonStyle(.plain).offset(x: 4, y: -4).disabled(locked)
+            .buttonStyle(.plain).sensoryFeedback(.impact(flexibility: .soft), trigger: removed).offset(x: 4, y: -4).disabled(locked)
             .accessibilityLabel("Remove photo \(number)")
         }
     }
@@ -262,6 +266,7 @@ struct AttachPhotosButton: View {
     @State private var choosing = false
     @State private var shooting = false
     @State private var choosingFiles = false
+    @State private var attached = 0
     @State private var picked: [PhotosPickerItem] = []
     var body: some View {
         let reason = self.reason, fileReason = self.fileReason
@@ -294,6 +299,7 @@ struct AttachPhotosButton: View {
         .onChange(of: picked) { _, items in
             guard !items.isEmpty else { return }
             let start = model.photos(box).count
+            attached += 1
             model.attachPhotos(box, from: items.enumerated().map { offset, item in
                 PhotoSource(name: "Photo \(start + offset + 1)") {
                     guard let data = try await item.loadTransferable(type: Data.self) else { throw PhotoPipelineError.unreadable }
@@ -308,12 +314,14 @@ struct AttachPhotosButton: View {
         }
         .fullScreenCover(isPresented: $shooting) {
             CameraPicker(shown: $shooting) { image in
+                attached += 1
                 model.attachPhotos(box, from: [PhotoSource(name: "Camera photo") {
                     guard let data = image.jpegData(compressionQuality: 0.95) else { throw PhotoPipelineError.unreadable }
                     return data
                 }])
             }.ignoresSafeArea()
         }
+        .sensoryFeedback(.selection, trigger: attached)
     }
     private var watcher: Bool { if case .watcher = box { return true }; return false }
     /// Photos and files count toward the same eight.
@@ -354,6 +362,7 @@ struct AttachPhotosButton: View {
                 PhotoSource(name: url.deletingPathExtension().lastPathComponent) { try await Task.detached { try PickedFile.read(url) }.value }
             })
         }
+        if !files.isEmpty || !photos.isEmpty { attached += 1 }
     }
     /// The camera asks for access the first time. Once it has been refused, iOS won't ask again, so say where to turn it on.
     private func openCamera() {

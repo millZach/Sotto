@@ -522,6 +522,27 @@ describe('native subscription metadata seam', () => {
     expect(quota.windows[0]).toMatchObject({ durationMinutes: 10080, resetsAt: '2026-10-19T00:00:00.000Z' })
     expect(quota.windows[0]?.usedPercent).toBeUndefined()
   })
+  it('keeps a failed Grok quota refresh showing as failed on the plain read that follows, until a read succeeds (#1462)', async () => {
+    const { root } = await fixture('grok')
+    const host = new GrokAcpHost(root, { usageEnabled: true })
+    const native = host as unknown as { state: AgentHostSnapshot; executable: string; spawn(): unknown; identify(probe: unknown): Promise<unknown>; authenticate(probe: unknown): Promise<void> }
+    native.state.connected = true; native.executable = 'native'
+    let refuse = false
+    vi.spyOn(native, 'spawn').mockReturnValue({ close: vi.fn(), request: async (method: string, _params: unknown, apply: (value: unknown) => void) => {
+      if (refuse) throw new Error('billing refused')
+      apply({ config: { currentPeriod: { type: 'USAGE_PERIOD_TYPE_WEEKLY', start: '2026-10-12T00:00:00Z', end: '2026-10-19T00:00:00Z' } } })
+    } })
+    vi.spyOn(native, 'identify').mockResolvedValue({ protocolVersion: 1, agentCapabilities: { loadSession: true }, authMethods: [{ id: 'cached_token' }], _meta: { agentVersion: '1.0.50' } })
+    vi.spyOn(native, 'authenticate').mockResolvedValue()
+    const good = await host.readProviderQuota!('grok', true)
+    refuse = true
+    expect(await host.readProviderQuota!('grok', true)).toMatchObject({ status: 'error', reason: 'read-failed' })
+    expect(await host.readProviderQuota!('grok', false)).toMatchObject({ status: 'error', reason: 'read-failed', windows: good.windows })
+    refuse = false
+    const readAgain = await host.readProviderQuota!('grok', true)
+    expect(await host.readProviderQuota!('grok', false)).toMatchObject({ windows: readAgain.windows })
+    expect((await host.readProviderQuota!('grok', false)).status).not.toBe('error')
+  })
 })
 
 it('maps native thread IDs before observing or visiting usage and qualifies model IDs once', async () => {

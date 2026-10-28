@@ -82,6 +82,12 @@ input:not([type='checkbox']):not([type='radio']) {
   min-height: 30px;
 }
 
+/* A checkbox or radio takes the theme's accent, as every other control does; a page may still choose another role. */
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--tt-accent);
+}
+
 /* First-run setup and confirmation dialogs keep the full 44px target: they are
    the two places a newcomer or a nervous hand is aiming at one button. */
 .onboarding-card button,
@@ -181,7 +187,7 @@ h1[tabindex='-1']:focus {
   font-weight: 500;
   line-height: 1.2;
   white-space: nowrap;
-  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, filter 120ms ease;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, filter 120ms ease, opacity 120ms ease;
 }
 
 .tt-button:hover:not(:disabled) {
@@ -300,7 +306,7 @@ h1[tabindex='-1']:focus {
   color: var(--tt-text);
   font-size: 13.5px;
   font-weight: 500;
-  transition: border-color 120ms ease, background-color 120ms ease;
+  transition: border-color 120ms ease, background-color 120ms ease, opacity 120ms ease;
 }
 
 .tt-select {
@@ -403,6 +409,16 @@ textarea.tt-input {
   transition: background-color 120ms ease, border-color 120ms ease;
 }
 
+/* Keyboard focus rings the switch, as macOS does, not the row of words. */
+.tt-toggle:focus-visible {
+  outline: none;
+}
+
+.tt-toggle:focus-visible .tt-toggle__track {
+  outline: 3px solid var(--tt-focus-ring);
+  outline-offset: 2px;
+}
+
 .tt-toggle__thumb {
   position: absolute;
   top: 2px;
@@ -411,7 +427,7 @@ textarea.tt-input {
   height: 14px;
   border-radius: 3px;
   background: var(--tt-text-muted);
-  transition: transform 120ms ease, background-color 120ms ease;
+  transition: transform 120ms ease, width 120ms ease, background-color 120ms ease;
 }
 
 .tt-toggle[aria-checked='true'] .tt-toggle__track {
@@ -422,6 +438,16 @@ textarea.tt-input {
 .tt-toggle[aria-checked='true'] .tt-toggle__thumb {
   background: var(--tt-canvas);
   transform: translateX(16px);
+}
+
+/* Held, the knob stretches toward the side it will slide to, as a macOS
+   switch does. */
+.tt-toggle:active:not(:disabled) .tt-toggle__thumb {
+  width: 18px;
+}
+
+.tt-toggle[aria-checked='true']:active:not(:disabled) .tt-toggle__thumb {
+  transform: translateX(12px);
 }
 
 /* Only the switch itself dims. Some toggles here are permanently on and
@@ -508,6 +534,36 @@ textarea.tt-input {
 
 .tt-toast[data-tone='success'] {
   border-left-color: var(--tt-success);
+}
+
+/* A toast rises in as Watcher's does; reduced motion, by the system or the setting, shows it at once. */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .tt-toast {
+    animation: tt-toast-rise 160ms cubic-bezier(.2, .8, .2, 1);
+  }
+}
+
+@keyframes tt-toast-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* A notice band settles in from just above its place. */
+@keyframes tt-band-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+/* A popover's arrival: down from its anchor. */
+@keyframes tt-pop-down {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
 }
 
 /* ---- the voice wave ----
@@ -1374,6 +1430,7 @@ textarea.tt-input {
   border-radius: 3px;
   color: var(--tt-text-2);
   text-decoration: none;
+  transition: color 120ms ease;
 }
 
 .app-footer__link:hover,
@@ -1418,6 +1475,10 @@ textarea.tt-input {
 .update-control:hover:not([aria-disabled='true']) {
   background: var(--tt-hover);
   color: var(--tt-text);
+}
+
+.update-control:active:not([aria-disabled='true']) {
+  background: var(--tt-hover-strong);
 }
 
 .update-control[aria-disabled='true'] {
@@ -1513,6 +1574,7 @@ textarea.tt-input {
   text-decoration: underline dotted;
   text-underline-offset: 4px;
   cursor: pointer;
+  transition: color 120ms ease;
 }
 
 .tt-toast__link:hover {
@@ -1933,6 +1995,7 @@ textarea.tt-input {
   padding: 10px 16px;
   cursor: pointer;
   list-style: none;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
 .help-topic summary::-webkit-details-marker {
@@ -1941,6 +2004,10 @@ textarea.tt-input {
 
 .help-topic summary:hover {
   background: var(--tt-hover);
+}
+
+.help-topic summary:active {
+  background: var(--tt-hover-strong);
 }
 
 .help-topic summary h2 {
@@ -2039,6 +2106,29 @@ textarea.tt-input {
   background: var(--tt-surface-elevated);
   box-shadow: var(--tt-shadow-lg);
   padding: 24px;
+}
+
+/* A dialog's dimming fades in and its card settles, as a sheet does; reduced motion, by the system or the setting, shows both at once. */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .tt-dialog-backdrop {
+    animation: tt-dialog-dim 160ms ease-out;
+  }
+  :root:not([data-reduced-motion='on']) .tt-dialog {
+    animation: tt-dialog-rise 160ms cubic-bezier(.2, .8, .2, 1);
+  }
+}
+
+@keyframes tt-dialog-dim {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes tt-dialog-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(.98);
+  }
 }
 
 .tt-dialog h2 {
