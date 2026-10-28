@@ -276,6 +276,44 @@ describe('the desktop\'s record of a start from a branch on a paired host', () =
     expect(await waiting).toMatchObject({ status: 'ok', delegation: { outcome: 'answered' }, startedFrom })
     expect(mac.asked.map(ask => ask.type)).toEqual(['delegate', 'read'])
   })
+  it('lets go of the branch landed for a start whose answer was lost only once an exact read proves no thread owns it (Sol review)', async () => {
+    let read: () => unknown = () => { throw new Error('The socket closed.') }
+    const mac = pairedHost(ask => { if (ask.type === 'delegate') throw new Error('The socket closed.'); return read() })
+    const letGo: unknown[] = []
+    const remote = new DesktopRemoteDelegations(await folder(), { machineName: () => 'the Mac', letGo: async landed => { letGo.push(landed) } })
+    remote.useDelivery(async () => undefined)
+    remote.useHosts(mac.source)
+    expect(await remote.start('parent', 'code-review', macPlacement, { ...remoteAsk, branch: landedOnMac })).toMatchObject({ delegation: { outcome: 'unknown' } })
+    // Still being admitted there: it may yet own the branch, so the branch stays.
+    read = () => ({ status: 'refused', code: 'UNKNOWN_DELEGATION', message: 'Still admitting.', admitting: true })
+    mac.reconnect()
+    await expect.poll(() => mac.asked.length).toBe(2)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(letGo).toEqual([])
+    // Proved never made: nothing owns the branch landed for it, so it is let go of there, once.
+    read = () => ({ status: 'refused', code: 'UNKNOWN_DELEGATION', message: 'None.', absent: true })
+    mac.reconnect()
+    await expect.poll(() => letGo).toEqual([{ hostId: MAC, projectId: 'mac-project', moveId: MOVE }])
+    mac.reconnect()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(letGo).toHaveLength(1)
+    remote.close()
+  })
+
+  it('leaves the branch to the host once the host names the delegation that owns it', async () => {
+    const mac = pairedHost(ask => ask.type === 'delegate' ? { status: 'ok', delegation: { id: THERE, thread: 'child-mac', outcome: 'working' } }
+      : { status: 'refused', code: 'UNKNOWN_DELEGATION', message: 'None.' })
+    const letGo: unknown[] = []
+    const remote = new DesktopRemoteDelegations(await folder(), { machineName: () => 'the Mac', letGo: async landed => { letGo.push(landed) } })
+    remote.useDelivery(async () => undefined)
+    remote.useHosts(mac.source)
+    await remote.start('parent', 'code-review', macPlacement, { ...remoteAsk, branch: landedOnMac })
+    mac.reconnect()
+    await expect.poll(() => mac.asked.length).toBe(2)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(letGo).toEqual([])
+    remote.close()
+  })
 })
 
 describe('who brings a remote child\'s changes back (#1030)', () => {

@@ -442,7 +442,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     // The desktop relay (#1316): a host's threads delegate to This computer through this desktop, placed as its own are.
     if (placingWatcher) {
       // This computer's delegations start threads on its paired hosts too (#1316 part 2), each admitted there by that host.
-      delegationRemote = new DesktopRemoteDelegations(directory, { machineName: hostId => placingWatcher.machineName(hostId) })
+      // A branch landed on a host for a start an exact read proves never made is let go of there (#1316 part 2).
+      delegationRemote = new DesktopRemoteDelegations(directory, { machineName: hostId => placingWatcher.machineName(hostId),
+        ...branchMoves ? { letGo: async landed => { const here = agentControl.hostId(); if (here) await branchMoves.forget({ ...landed, here }) } } : {} })
       await delegationRemote.load()
       const remoteStarts = delegationRemote
       placingWatcher.useDelegationStarts(hostId => remoteStarts.pendingStarts(hostId))
