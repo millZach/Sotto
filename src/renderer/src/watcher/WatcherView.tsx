@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Marked } from '../components/marks'
-import { ArrowUp, ChevronDown, List } from 'lucide-react'
+import { ChevronDown, List } from 'lucide-react'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { shownWords } from '../features/settings/laterWords'
 import { PROVIDER_LABELS, type AgentState } from '../../../shared/agents'
@@ -14,6 +14,8 @@ import { claimRoomFocus } from '../components/AppShell'
 import { useOptionalApp } from '../state/AppContext'
 import { useOwlFeature } from '../state/owlFeature'
 import { useAgents } from '../agents/AgentContext'
+import { KeyedGlyph } from '../agents/composerPlate'
+import { threadChordCap } from '../agents/threadShortcuts'
 import { WayOffThePage } from '../agents/SidebarFrame'
 import { UpdateControl, type UpdateControlProps } from '../features/updates/UpdateControl'
 import { EffortPicker } from '../agents/EffortPicker'
@@ -199,8 +201,8 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
             {starting ? <span className="thread-prompt__status" role="status"><Trans>Starting Watcher…</Trans></span> : null}
           </div>
           <div className="thread-prompt__actions">
-            <Button iconOnly className="thread-prompt__send" type="submit" aria-label={t`Start Watcher and send`} title={canSend ? t`Start Watcher and send` : t`Write what Watcher should do first`} disabled={!canSend}>
-              <ArrowUp size={15} strokeWidth={2.25} aria-hidden="true" />
+            <Button className="thread-prompt__send" type="submit" aria-label={t`Start Watcher and send`} aria-keyshortcuts="Enter" title={canSend ? t`Start Watcher and send` : t`Write what Watcher should do first`} disabled={!canSend}>
+              <KeyedGlyph role="send" keyCap={threadChordCap('enter', app?.platform ?? 'win32')} />
             </Button>
           </div>
         </div>

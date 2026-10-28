@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted October 27, 2026. Drake picked direction 9, Keys first, from ten in `docs/prototypes/prompt-send-stop-prototype.html`, kept at the tag `prototype/prompt-send-stop`, with the running motion of direction 8, and then 9b of three ways to carry it: the trace on Stop. It changes an existing control and fixes its contrast, so it goes straight to stable (AGENTS.md: fixes and small changes to an existing feature are not Owl features). It builds on ADR-0110 (controls are soft squares; the primary keeps its plate in the text colour) and changes no rule of it. It amends ADR-0113 decision 3, which said no chord steers and Steer now shows no shortcut: Cmd+Enter (Ctrl+Enter) now steers, and the button shows it.
+Accepted October 27, 2026. Drake picked direction 9, Keys first, from ten in `docs/prototypes/prompt-send-stop-prototype.html`, kept at the tag `prototype/prompt-send-stop`, with the running motion of direction 8, and then 9b of three ways to carry it: the trace on Stop. Amended October 28, 2026 (below): each button shows a glyph beside its key, and the row moves. It changes an existing control and fixes its contrast, so it goes straight to stable (AGENTS.md: fixes and small changes to an existing feature are not Owl features). It builds on ADR-0110 (controls are soft squares; the primary keeps its plate in the text colour) and changes no rule of it. It amends ADR-0113 decision 3, which said no chord steers and Steer now shows no shortcut: Cmd+Enter (Ctrl+Enter) now steers, and the button shows it.
 
 ## Context
 
@@ -24,3 +24,12 @@ The buttons keep their order (Steer, Stop, then the filled button), so a turn's 
 - `--threads-on-accent` is gone. Nothing pairs `--tt-on-accent` with anything but `--tt-accent` now.
 - `threadChordCap` in `src/renderer/src/agents/threadShortcuts.ts` draws a chord as a key cap; a new key cap uses it rather than spelling keys out.
 - The ten directions that were not picked, and the three ways of showing a running turn, stay at the tag `prototype/prompt-send-stop`.
+
+## Amendment, October 28, 2026: a glyph beside each key
+
+Drake picked take 2.2, The glyph and its key, with its motion, from `docs/prototypes/prompt-send-refine-2.html` (kept at the tag `prototype/prompt-send-refine-2`), which refined direction 2 of the first page, one plate that changes role. Every button still shows its key, so decisions 1 to 4 stand; what the button shows beside the key changed, and the row now moves.
+
+- **A glyph instead of a word.** Send is an arrow, Queue a list-plus, Steer a turning arrow and Stop a square, each beside its key cap: ↑ ↵, list-plus ↵, ↳ ⌘↵, ■ ⇧⌘S. The glyph is 14px at a 2.5 stroke and Stop's square 10px, so the arrowhead stays sharp at 28px. The full names stay in the label and the title. A button with no key is its glyph alone (Stop in Watcher, Steer where dictation holds Cmd+Enter). Continue keeps its word, since no glyph says where a handover goes. Watcher's first message ends in the same arrow and ↵.
+- **Steer is drawn once there is text to steer.** With nothing typed, the row is Stop alone, the filled plate. Decision 5's narrow pane now drops only Continue's word: a glyph and its key fit.
+- **The plate's states.** With nothing to send the plate dims, a 16% mix of the pill toward the card with muted ink, rather than letting the card through at 45%. Pointed at and pressed, it mixes toward the card (84% and 70%), since `brightness()` cannot lighten a plate that is already white, and a press scales it to 94%.
+- **The row moves**, each move 120 to 240 ms on the app's arrival curve and the copy confirm's spring: the plate fills as text arrives (160 ms), its glyph rises out as a send goes and the next settles in (120 ms out, 200 ms in), Stop's light fades up as the turn starts (240 ms), Stop and Steer step out of the plate's side when typing during a turn brings Queue (200 ms), and a press springs back (80 ms down, 220 ms back), from Enter as from a click. Under reduced motion, the system's or Sotto's own setting, none of it moves and the light rests. The motion lives in `src/renderer/src/agents/composerPlate.tsx`.
