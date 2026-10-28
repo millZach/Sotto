@@ -48,6 +48,8 @@ export interface WorktreeCleanupDependencies {
     /** `keep` is asked of each thread the coordinator would otherwise clear. */
     readonly clear: (days: number, keep?: (thread: AgentThread) => Promise<ThreadClearKeptReason | null>) => Promise<void>
   }
+  /** Removes unsent threads no client holds (ADR-0155), on every host and track. It runs before the folders. */
+  readonly removeUnsentThreads?: () => Promise<void>
   readonly git?: RunGit
   /** Whether GitHub reports this branch's pull request merged. Absent, neither the merged rule nor auto-settle fires. */
   readonly pullRequestMerged?: (repositoryRoot: string, branch: string, github?: SharedGitHub) => Promise<boolean>
@@ -301,6 +303,8 @@ export class WorktreeCleanup {
     try { return this.dependencies.clearSettledThreads?.afterDays() ?? null } catch { return null }
   }
   async sweep(): Promise<void> {
+    await this.dependencies.removeUnsentThreads?.().catch(() => undefined)
+    if (this.disposed) return
     await this.sweepWorktrees()
     const days = this.clearAfterDays()
     if (days !== null && !this.disposed) await this.dependencies.clearSettledThreads!.clear(days, this.openPullRequestHold()).catch(() => undefined)

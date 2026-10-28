@@ -125,6 +125,19 @@ describe('thread browser tool dispatcher', () => {
       expect(String(decode(result).message)).toContain('Read iphone_cloud_status before asking again.')
     } finally { vi.useRealTimers() }
   })
+  it('passes a file in the thread\'s folder on to the browser, which says in its own words why one does not open (ADR-0085)', async () => {
+    const { server, service } = setup(true)
+    const written = 'file:///C:/work/docs/prototypes/x-prototype.html?variant=A'
+    service.agentOpen.mockResolvedValueOnce({ ok: false, error: { code: 'blocked', message: 'Only HTML files inside this thread\'s folder can open in Sotto\'s browser.' } })
+    const result = await server.call('owner', 'browser_open', { url: written, description: 'Show the prototype' })
+    expect(service.agentOpen).toHaveBeenCalledWith({ threadId: 'owner', workspaceId, url: written, description: 'Show the prototype' })
+    expect(decode(result)).toEqual({ code: 'blocked', message: 'Only HTML files inside this thread\'s folder can open in Sotto\'s browser.' })
+    expect(JSON.stringify(decode(result))).not.toContain('documented arguments')
+    const open = browserToolDefinitions.find(tool => tool.name === 'browser_open')!
+    expect(open.description).toContain('HTML file in this thread\'s folder')
+    expect(JSON.stringify(open.inputSchema)).toContain('file:// URL')
+    expect(browserToolDefinitions.find(tool => tool.name === 'iphone_open')!.description).toContain('HTML file in this thread\'s folder')
+  })
   it('marks only the tools that read as read-only', () => {
     expect(browserToolDefinitions.filter(tool => tool.annotations?.readOnlyHint).map(tool => tool.name)).toEqual(['browser_pages', 'browser_status', 'iphone_cloud_status'])
   })

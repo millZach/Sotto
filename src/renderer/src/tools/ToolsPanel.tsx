@@ -28,13 +28,15 @@ import { changesChord, chordBelongsElsewhere } from './changesShortcut'
 import { shownCount } from '../state/interfaceNumbers'
 import { chosenThreadChord } from '../agents/threadShortcuts'
 import { describeWorkingCopy } from '../agents/ThreadWorkingCopy'
-import { BrowserPlayer } from './BrowserPlayer'
+import { BrowserPlayer, playerHasPage, playerTask } from './BrowserPlayer'
 import { browserPlayerStore, type BrowserPlayerStore } from './browserPlayerStore'
 import { BrowserSurface } from './BrowserSurface'
+import { useBrowserOpensItself } from './browserOpensItself'
+import { useOwlFeature } from '../state/owlFeature'
 import { IPhoneSurface } from './IPhoneSurface'
 import { PhonePlayer } from './PhonePlayer'
 import { phonePlayerStore, type PhonePlayerStore } from './phonePlayerStore'
-import { useBrowserTasks } from './browserStore'
+import { useBrowserTasks, useThreadBrowser } from './browserStore'
 import { bridgeCloudIphone, cloudIphoneStore, useCloudSession, type CloudIphoneBridgeLike, type CloudIphoneStore } from './cloudIphoneStore'
 import { ChangesSurface } from './ChangesSurface'
 import { PullRequestSurface } from './PullRequestSurface'
@@ -294,6 +296,8 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   const subagentsBridge = subagents ?? (window.sotto as { subagents?: SubagentsBridge } | undefined)?.subagents
   // showBrowserPreviews keeps its settings key (ADR-0020); in the player it decides whether a new page opens the player on its own.
   const autoShowBrowser = useOptionalAgents()?.showBrowserPreviews !== false
+  // The quiet browser pane (ADR-0154; Owl) also opens Tools > Browser on its own while Tools is open.
+  const quietBrowser = useOwlFeature('quiet-browser')
   // While delegation is on (ADR-0081), Agents follows the pin like every other surface, so a delegated thread opened
   // from the roster leaves Tools on the thread that delegated it.
   const delegationOn = useDelegationsEnabled()
@@ -413,6 +417,9 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
     wasOpen.current = open
   }, [open, chrome.surface, store])
   useProactiveChanges(state, focusedThreadId, store)
+  useBrowserOpensItself(quietBrowser && autoShowBrowser, focusedThreadId, store, aside)
+  // Only the quiet pane lists the addresses a thread's browser opened this session; stable keeps none.
+  useEffect(() => { store.browser.setRemembering(quietBrowser) }, [quietBrowser, store])
 
   const changedFiles = workingCopyChanges?.list.status === 'ready' ? { count: workingCopyChanges.list.files.length, truncated: workingCopyChanges.list.truncated } : null
   const agentsThread = delegationOn ? workingCopyThread : selectedThread
@@ -430,6 +437,7 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   // Whether Browser here shows the focused thread's own page and that thread has a task the player could show:
   // the "Float the browser over the thread" control's own condition, computed once for the surface below.
   const browserTasks = useBrowserTasks(store.browser)
+  const focusedBrowser = useThreadBrowser(store.browser, focusedThreadId)
 
   const player = <>
     <BrowserPlayer state={state} focusedThreadId={focusedThreadId} bridge={browserBridge} store={store} autoShow={autoShowBrowser} playerStore={playerStore} />
@@ -460,7 +468,9 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   }
   // Never offered while Tools is pinned elsewhere: that thread has no player here to float back to (the pin,
   // not this thread, owns what Browser shows), and the control never pins on its own way back either.
-  const canFloat = chrome.surface === 'browser' && thread !== undefined && thread.id === focusedThreadId && browserTasks.some(item => item.threadId === thread.id && !item.device)
+  // Offered only while the player has a page to take: the same task and page the player itself would show.
+  const floatTask = thread !== undefined ? playerTask(browserTasks, thread.id) : undefined
+  const canFloat = chrome.surface === 'browser' && thread !== undefined && thread.id === focusedThreadId && floatTask !== undefined && playerHasPage(floatTask, focusedBrowser, quietBrowser)
   const floatBrowser = (): void => {
     if (!thread) return
     close()

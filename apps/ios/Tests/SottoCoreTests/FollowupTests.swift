@@ -34,6 +34,8 @@ final class FollowupTests: XCTestCase {
         XCTAssertEqual(try Commands.steerFollowup(threadID: "t", itemID: first), .object(["type": .string("steer-followup"), "threadId": .string("t"), "itemId": .string(first)]))
         XCTAssertEqual(try Commands.removeFollowup(threadID: "t", itemID: first), .object(["type": .string("remove-followup"), "threadId": .string("t"), "itemId": .string(first)]))
         XCTAssertEqual(try Commands.compact(threadID: "t"), .object(["type": .string("compact-thread"), "threadId": .string("t")]))
+        XCTAssertEqual(try Commands.settle(threadID: "t", settled: true), .object(["type": .string("settle-thread"), "threadId": .string("t")]))
+        XCTAssertEqual(try Commands.settle(threadID: "t", settled: false), .object(["type": .string("restore-thread"), "threadId": .string("t")]))
         XCTAssertEqual(try Commands.prompt(threadID: "t", text: "Now", draftID: draft)["type"], .string("manual-send"))
         // None of them needs the remote-answer policy, and none carries an unlisted field.
         XCTAssertEqual(RemoteCommands.needAnswerPolicy, ["answer"])

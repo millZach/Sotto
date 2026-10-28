@@ -12,6 +12,7 @@ import { clockLabel } from '../agents/threadFacts'
 import { DelegatedThreadRow, useDelegatedRoster, type DelegatedRosterSource } from './DelegatedThreads'
 import { machineCount, mixedRoster, rosterByMachine, rosterCounts, rosterMachine, THIS_COMPUTER, type RosterBlock, type RosterMachineGroup } from './delegatedRoster'
 import { useOwlFeature } from '../state/owlFeature'
+import { checkMachineName, useCheckRowHandover, useWaitingChecks, WaitingCheckRow } from './WaitingChecks'
 import { elapsedLabel } from './rosterTime'
 import './agentsSurface.css'
 
@@ -268,6 +269,10 @@ export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuat
   const ownerThread = useMemo(() => delegation?.state.host.threads.find(item => item.id === threadId), [delegation?.state.host.threads, threadId])
   const owner = useMemo(() => ownerThread ? rosterMachine(delegation?.state.connections, ownerThread) : THIS_COMPUTER, [ownerThread, delegation?.state.connections])
   const groups = useMemo(() => families.length ? rosterByMachine(owner, families, reads, reads.get(threadId), crossMachine) : null, [families, owner, reads, threadId, crossMachine])
+  // Checks this thread delegated that wait their turn, whose threads are not made yet (#1312, Zach's pick C): a row each.
+  const waitingChecks = useWaitingChecks(threadId, crossMachine ? delegation?.state : undefined)
+  const rosterThreads = delegation?.state.host.threads
+  const threadOf = useCallback((id: string) => rosterThreads?.find(item => item.id === id), [rosterThreads])
   useEffect(() => { store.activate(bridge, threadId); return () => store.deactivate() }, [store, bridge, threadId])
   const followed = useRef(rosterSignal)
   useEffect(() => {
@@ -277,6 +282,8 @@ export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuat
   }, [store, threadId, rosterSignal])
   const [page, setPage] = useState<{ threadId: string; id: string } | null>(null)
   const surface = useRef<HTMLDivElement>(null)
+  // A waiting check's row hands focus and its open details on as it goes (#1312).
+  const checkRowLeft = useCheckRowHandover(surface)
   // Focus moves only after the user opens or leaves a workflow page, never when a thread switch or reset does it.
   const focusNext = useRef<{ back: true } | { row: string } | null>(null)
   useEffect(() => { setPage(null) }, [threadId])
@@ -307,7 +314,7 @@ export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuat
   const live = delegation?.liveClock !== false
   const onOpenThread = delegation?.open
   const rosterItems = (list: readonly RosterBlock[]): ReactNode[] => list.flatMap(block => block.kind === 'threads'
-    ? block.rows.map(row => <DelegatedThreadRow key={`thread:${row.thread.id}`} row={row} shown={row.thread.id === delegation?.shownThreadId} live={live} onOpen={onOpenThread!} />)
+    ? block.rows.map(row => <DelegatedThreadRow key={`thread:${row.thread.id}`} row={row} shown={row.thread.id === delegation?.shownThreadId} live={live} onOpen={onOpenThread!} threadOf={threadOf} />)
     : block.rows.map(({ row, depth }) => row.kind === 'workflow'
       ? <WorkflowRow key={`${state.resetVersion}:${row.id}`} row={row} agents={members.get(row.id) ?? []} onOpen={openPage} />
       : <AgentRow key={`${state.resetVersion}:${row.id}`} threadId={threadId} row={row} depth={depth} bridge={bridge} startMeta />))
@@ -326,7 +333,9 @@ export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuat
       : <ToolsChrome title={total > 0 ? plural(total, { one: '# agent', other: '# agents' }) : t({ message: 'Agents', comment: 'The subagents a provider reports for a thread.' })} detail={total > 0 ? working ? plural(working, { other: '# working' }) : unknown ? t`Activity not confirmed` : t`None working` : null} />}
     <div className="subagents-roster">
       {open ? <WorkflowPage key={`${state.resetVersion}:${open.id}`} threadId={threadId} row={open} agents={pageAgents} bridge={bridge} /> : <>
-        {!roster.length && !blocks && !state.error ? <div className="subagents-empty"><Users size={25} aria-hidden="true" /><p className="tt-paragraph">{state.loading ? t`Loading agents…` : t`No agents spawned in this thread yet.`}</p></div> : null}
+        {waitingChecks.length && onOpenThread ? <ul className="subagents-list" data-mixed="" aria-label={t`Checks waiting their turn`}>{waitingChecks.map(waiting => <WaitingCheckRow
+          key={`check:${waiting.check.id}`} waiting={waiting} machine={checkMachineName(delegation?.state, waiting, t`This computer`, t`Remote host`)} threadOf={threadOf} onLeave={checkRowLeft} />)}</ul> : null}
+        {!roster.length && !blocks && !state.error && !waitingChecks.length ? <div className="subagents-empty"><Users size={25} aria-hidden="true" /><p className="tt-paragraph">{state.loading ? t`Loading agents…` : t`No agents spawned in this thread yet.`}</p></div> : null}
         {grouped && onOpenThread
           // A heading per machine with its count, and that machine's delegated threads under it (#1310, variant B).
           ? <>

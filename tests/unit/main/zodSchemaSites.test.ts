@@ -503,6 +503,10 @@ export function read(value: unknown) {
     expect(sitesOf({
       'labels.ts': `export const thing = 'label'
 `,
+      // Another module exports a schema by the same name: matched by name alone, \`thing.trim()\` would read as a schema built.
+      'schemas.ts': `import { z } from 'zod'
+export const thing = z.string()
+`,
       'main.ts': `import { z } from 'zod'
 import { thing } from './labels'
 const name = z.string()
