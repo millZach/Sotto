@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, type ReactNode } from 'react'
 import { rootStyleUnchanged } from '../state/appearance'
-import { useClickEffectOn } from '../state/clickEffect'
 import { toRgb } from '../watcher/canvasColor'
 import { columnCeiling, type Word } from '../watcher/nightScene'
 import { measureRoom, surfaceOf, toWord } from '../watcher/WatcherNightScene'
@@ -13,6 +12,17 @@ const MAX_STEPS = 4
 const STEP_MS = 1000 / STEP_HZ
 /** Where a press sends no waves: every composer, the thread's, Watcher's and a new thread's draft (Zach, October 27). */
 const QUIET = '.thread-prompt'
+
+/**
+ * Whether a press lands on a composer's own card. A menu the composer opens (its model picker) lives inside it in the page
+ * but stands outside its card, and so does that menu's backdrop over the conversation: a press there still sends waves.
+ */
+function onComposer(event: PointerEvent): boolean {
+  const composer = event.target instanceof Element ? event.target.closest(QUIET) : null
+  if (composer === null) return false
+  const card = composer.getBoundingClientRect()
+  return event.clientX >= card.left && event.clientX <= card.right && event.clientY >= card.top && event.clientY <= card.bottom
+}
 /**
  * Every colour words over the room are written in, which the glyphs must leave at 4.5:1: the text and its secondary and
  * muted tiers, links at rest and pointed at, the accent's text tone and the working words', and the status colours. The
@@ -58,13 +68,9 @@ function sceneColumn(): readonly Rect[] {
  * either. Its glyphs are never stronger than leaves every word written over them at 4.5:1 against the room, and none are
  * drawn where Watcher's night scene already spends that. A theme change takes effect in the next frame. It exists only
  * while the effect is on, draws only while the water moves, and clears itself and stops when the water is calm, the
- * window is hidden or the effect goes.
+ * window is hidden or the effect goes. The shell mounts it only while `useClickEffectOn` says the effect is on.
  */
 export function ClickEffect(): ReactNode {
-  return useClickEffectOn() ? <ClickEffectLayer /> : null
-}
-
-function ClickEffectLayer(): ReactNode {
   const ref = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
     const canvas = ref.current
@@ -88,10 +94,14 @@ function ClickEffectLayer(): ReactNode {
     const counted = window.sottoE2E !== undefined
     const dpr = (): number => window.devicePixelRatio || 1
 
+    /** Whether water and the canvas still fit the window and its pixel ratio as they are now. */
+    const fits = (current: ClickWater): boolean =>
+      current.width === window.innerWidth && current.height === window.innerHeight && canvas.width === Math.round(current.width * dpr())
+
     /** The water, sized to the window and its pixel ratio as they are now; a new size starts calm water. */
     const waterNow = (): ClickWater => {
       const width = window.innerWidth, height = window.innerHeight, scale = dpr()
-      if (water?.width === width && water.height === height && canvas.width === Math.round(width * scale)) return water
+      if (water !== null && fits(water)) return water
       canvas.width = Math.round(width * scale)
       canvas.height = Math.round(height * scale)
       ctx.setTransform(scale, 0, 0, scale, 0, 0)
@@ -190,7 +200,7 @@ function ClickEffectLayer(): ReactNode {
     // wait on it. Many fast presses only add drops to the same water; the work per frame stays the same.
     const press = (event: PointerEvent): void => {
       if (event.button !== 0 || document.visibilityState === 'hidden') return
-      if (event.target instanceof Element && event.target.closest(QUIET) !== null) return
+      if (onComposer(event)) return
       waterNow().press(event.clientX, event.clientY)
       if (request !== null) return
       stale = true
@@ -203,7 +213,7 @@ function ClickEffectLayer(): ReactNode {
     // A new window size or pixel ratio stills the water; the next press starts water to fit.
     const resized = (): void => {
       if (water === null) return
-      if (water.width === window.innerWidth && water.height === window.innerHeight && canvas.width === Math.round(water.width * dpr())) return
+      if (fits(water)) return
       stop()
       water = null
     }

@@ -8,7 +8,7 @@ import type { AppSettings } from '../../../src/shared/settings'
 
 // The effect is an Owl feature (ADR-0072); each test says whether this build has it, what the settings say and whether
 // motion is reduced.
-const gate = vi.hoisted(() => ({ owl: true, reduced: false, settings: undefined as Partial<AppSettings> | undefined }))
+const gate = vi.hoisted(() => ({ owl: true, reduced: false, settings: undefined as Partial<AppSettings> | undefined, watched: [] as boolean[] }))
 vi.mock('../../../src/renderer/src/state/owlFeature', async importOriginal => ({
   ...await importOriginal<typeof import('../../../src/renderer/src/state/owlFeature')>(),
   useOwlFeature: (id: string) => id === 'click-effect' && gate.owl,
@@ -19,7 +19,7 @@ vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({
 }))
 vi.mock('../../../src/renderer/src/state/reducedMotion', async importOriginal => ({
   ...await importOriginal<typeof import('../../../src/renderer/src/state/reducedMotion')>(),
-  useReducedMotion: () => gate.reduced,
+  useReducedMotion: (watch = true) => { gate.watched.push(watch); return gate.reduced },
 }))
 
 const originalGetContext = HTMLCanvasElement.prototype.getContext
@@ -44,6 +44,7 @@ afterEach(() => {
   gate.owl = true
   gate.reduced = false
   gate.settings = undefined
+  gate.watched = []
 })
 
 const layer = (container: HTMLElement): HTMLCanvasElement | null => container.querySelector('canvas.click-effect')
@@ -53,25 +54,39 @@ const pressAt = (target: EventTarget, x: number, y: number, button = 0): void =>
 const frames = (count: number): Promise<void> => act(async () => { await vi.advanceTimersByTimeAsync(count * 17) })
 
 describe('the click effect', () => {
+  const shell = (): HTMLElement => render(<AppShell navigation={null} platform="win32" onMinimize={() => undefined} onMaximize={() => undefined} onClose={() => undefined}>room</AppShell>).container
+
   it('is there, hidden from assistive technology and never pressed, when the build has it and the settings leave it on', () => {
-    const { container } = render(<ClickEffect />)
-    expect(layer(container)?.getAttribute('aria-hidden')).toBe('true')
+    expect(layer(shell())?.getAttribute('aria-hidden')).toBe('true')
     cleanup()
     gate.settings = { clickEffect: true }
-    expect(layer(render(<ClickEffect />).container)).not.toBeNull()
+    expect(layer(shell())).not.toBeNull()
   })
 
   it('does not exist where the build holds it, the switch is off, or motion is reduced', () => {
     gate.owl = false
-    expect(layer(render(<ClickEffect />).container)).toBeNull()
+    expect(layer(shell())).toBeNull()
     cleanup()
     gate.owl = true
     gate.settings = { clickEffect: false }
-    expect(layer(render(<ClickEffect />).container)).toBeNull()
+    expect(layer(shell())).toBeNull()
     cleanup()
     gate.settings = { clickEffect: true }
     gate.reduced = true
-    expect(layer(render(<ClickEffect />).container)).toBeNull()
+    expect(layer(shell())).toBeNull()
+  })
+
+  it('follows reduced motion only while the effect is chosen, so a held or switched-off effect starts nothing', () => {
+    gate.owl = false
+    shell()
+    expect(gate.watched.length).toBeGreaterThan(0)
+    expect(gate.watched.every(watch => !watch)).toBe(true)
+    cleanup()
+    gate.watched = []
+    gate.owl = true
+    gate.settings = { clickEffect: false }
+    shell()
+    expect(gate.watched.every(watch => !watch)).toBe(true)
   })
 
   it('draws after a primary press, even one the page stops, and never for another button', async () => {
@@ -85,23 +100,24 @@ describe('the click effect', () => {
   })
 
   it('marks the shell while its layer is there, so the shell stacks it under the page, and never otherwise', () => {
-    const shell = (): Element | null => render(<AppShell navigation={null} platform="win32" onMinimize={() => undefined} onMaximize={() => undefined} onClose={() => undefined}>room</AppShell>).container.querySelector('.app-shell')
-    expect(shell()?.hasAttribute('data-click-effect')).toBe(true)
+    expect(shell().querySelector('.app-shell')?.hasAttribute('data-click-effect')).toBe(true)
     expect(document.querySelector('.app-shell > canvas.click-effect')).not.toBeNull()
     cleanup()
     gate.settings = { clickEffect: false }
-    expect(shell()?.hasAttribute('data-click-effect')).toBe(false)
+    expect(shell().querySelector('.app-shell')?.hasAttribute('data-click-effect')).toBe(false)
     expect(document.querySelector('canvas.click-effect')).toBeNull()
   })
 
-  it('sends no waves for a press in a composer', async () => {
-    const { container } = render(<><ClickEffect /><form className="thread-prompt"><textarea aria-label="Message" /><button type="button">Send</button></form></>)
+  it('sends no waves for a press on a composer, but does for one on a menu it opened outside its card', async () => {
+    const { container } = render(<><ClickEffect /><form className="thread-prompt"><textarea aria-label="Message" /><button type="button">Send</button><dialog open><button type="button">GPT-5.4</button></dialog></form></>)
+    // The composer's card stands at 280..720 by 580..680; jsdom lays nothing out, so its box is given here.
+    vi.spyOn(container.querySelector('form')!, 'getBoundingClientRect').mockReturnValue(new DOMRect(280, 580, 440, 100))
     pressAt(container.querySelector('textarea')!, 300, 600)
     pressAt(container.querySelector('button')!, 320, 620)
     pressAt(container.querySelector('form')!, 340, 640)
     await frames(6)
     expect(drawn).toBe(0)
-    pressAt(document.body, 300, 200)
+    pressAt(container.querySelector('dialog button')!, 300, 300)
     await frames(6)
     expect(drawn).toBeGreaterThan(0)
   })

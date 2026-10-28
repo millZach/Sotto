@@ -239,7 +239,7 @@ export function AppShell({
   const shellClass = page ? 'app-shell app-shell--page' : beside ? 'app-shell app-shell--sidebar' : management ? 'app-shell' : 'app-shell app-shell--bare'
   return (
     <div className={shellClass} data-platform={platform} data-click-effect={clickEffect || undefined}>
-      <ClickEffect />
+      {clickEffect ? <ClickEffect /> : null}
       {page || beside ? null : (
         <header className={nativeWindowControls ? 'app-strip app-strip--mac' : 'app-strip'}>
           {nativeWindowControls ? <span /> : owl ? (

@@ -13,9 +13,12 @@ export function useClickEffectChosen(): boolean {
   return owl && saved !== false
 }
 
-/** Whether a press sends waves of 0s and 1s through the room: chosen, and motion not reduced, the system's or Sotto's own. */
+/**
+ * Whether a press sends waves of 0s and 1s through the room: chosen, and motion not reduced, the system's or Sotto's own.
+ * Motion is followed only while the effect is chosen, so a held or switched-off effect starts nothing.
+ */
 export function useClickEffectOn(): boolean {
   const chosen = useClickEffectChosen()
-  const reduced = useReducedMotion()
+  const reduced = useReducedMotion(chosen)
   return chosen && !reduced
 }
