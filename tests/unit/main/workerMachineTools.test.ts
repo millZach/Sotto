@@ -113,14 +113,14 @@ describe('starting from a branch with Work across machines', () => {
       expect(delegate.description.includes('One check runs at a time on a machine')).toBe(machines)
       expect(delegate.description.includes('the verdict, the counts and the failing lines, inside 32 KiB')).toBe(machines)
     }
-    // A thread on a headless host is offered test_run with its own machine's queue, shared with Watcher's checks there, but
-    // no branch to start from (#1312). With Work across machines off it is offered neither.
+    // A thread on a headless host is offered test_run with its own machine's queue, shared with Watcher's checks there, and
+    // from_my_branch, its branch or a check's snapshot (#1312, #1316 part 2). With Work across machines off it is offered neither.
     for (const machines of [false, true]) {
       const hosted = tool(delegationToolDefinitions(false, machines, 'this-machine'), 'delegate')!
       expect(Object.hasOwn(hosted.schema.properties, 'test_run')).toBe(machines)
-      expect(Object.hasOwn(hosted.schema.properties, 'from_my_branch')).toBe(false)
+      expect(Object.hasOwn(hosted.schema.properties, 'from_my_branch')).toBe(machines)
       expect(hosted.description.includes('One check runs at a time on this machine, yours and Watcher\'s alike')).toBe(machines)
-      expect(hosted.description).not.toContain('snapshot')
+      expect(hosted.description.includes('snapshot')).toBe(machines)
     }
   })
 })

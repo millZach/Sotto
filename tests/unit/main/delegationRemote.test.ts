@@ -363,7 +363,7 @@ describe('the desktop\'s delegation reaching a paired host', () => {
     const remote = { start: async (callerId: string, _work: string, _placement: unknown, ask: unknown) => { calls.push({ kind: 'start', callerId, ask }); return answer },
       send: async (callerId: string, _work: string, thread: string, ask: unknown) => { calls.push({ kind: 'send', callerId, ask: { thread, ask } }); return answer },
       holds: () => false, holdsThread: (_: string, thread: string) => thread === `host:${MAC}:child-mac`, read: async () => ({}), cancel: async () => ({}), list: () => [],
-      useDelivery: () => undefined, detail: () => undefined, retried: () => undefined, isOpen: () => false, hasOpen: () => false } as unknown as NonNullable<DelegationServiceOptions['remote']>
+      useDelivery: () => undefined, detail: () => undefined, retried: () => undefined, isOpen: () => false, hasOpen: () => false, takesBranches: () => false } as unknown as NonNullable<DelegationServiceOptions['remote']>
     return { remote, calls }
   }
   const start = { work: 'code-review', brief: 'Review it.', provider: 'codex', model: 'model', permission: 'auto', wait_seconds: 0 }
@@ -375,7 +375,7 @@ describe('the desktop\'s delegation reaching a paired host', () => {
     expect(r.calls).toEqual([{ kind: 'start', callerId: 'parent', ask: expect.objectContaining({ levels: 0, rootUserMessageId: 'parent-ask', runtimeMode: 'auto', retryKey: RETRY,
       input: expect.not.objectContaining({ machine: MAC, retry_key: RETRY }) }) }])
     expect(f.created).toEqual([])
-    // A branch to start from on another machine comes later, and is refused before anything is asked.
+    // A host from before it takes no branch to start from, so one is refused before anything is asked (#1316 part 2).
     expect(await f.delegation.delegate('parent', { ...start, machine: MAC, from_my_branch: true })).toMatchObject({ status: 'refused', code: 'BRANCH_UNAVAILABLE' })
     // A second brief to the thread there goes to its host.
     await f.delegation.delegate('parent', { work: 'code-review', brief: 'Again.', thread: `host:${MAC}:child-mac` })

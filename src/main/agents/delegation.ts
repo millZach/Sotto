@@ -354,6 +354,8 @@ interface DelegateContext {
   readonly landed?: RemoteLandedBranch
   /** When a relayed caller asked, as its own computer writes the time, which a check's snapshot words say (#1316 part 2). */
   readonly takenAt?: string
+  /** Where a check that named a machine was placed here, before it joined this machine's queue (#1316 part 2). */
+  readonly placedHere?: WorkerPlacementReceipt | undefined
 }
 /** A check waiting in this machine's queue (#1312): what it starts with once its turn comes, held in memory only. */
 interface WaitingCheck { readonly brief: string; readonly start: DelegatedStart; readonly branch: LandedBranch | undefined }
@@ -609,10 +611,17 @@ export class DelegationService {
     if (input.thread !== undefined && this.options.remote?.holdsThread(threadId, input.thread)) return await this.elsewhereSend(threadId, input, context, 'remote')
     // A check takes its place in this machine's queue as it is asked for, before its snapshot is taken (#1312), so a check
     // whose snapshot takes longer is never overtaken by one asked after it. A call that ends without a check keeps none.
-    // One the desktop relay already placed on another machine waits in that machine's queue, never this one's (#1316 part 2).
+    // One the desktop relay already placed on another machine waits in that machine's queue, never this one's, and one that
+    // names a machine or a system joins this one's only once it is placed here (#1316 part 2).
     const checks = this.options.checks
-    const ticket = checks && input.test_run === true && input.thread === undefined && !context.placement ? randomUUID() : undefined
+    const named = input.machine !== undefined || input.os !== undefined
+    const ticket = checks && input.test_run === true && input.thread === undefined && !context.placement && !named ? randomUUID() : undefined
     if (!checks || !ticket) return await this.ask(threadId, input, context)
+    return await this.queued(threadId, input, context, ticket)
+  }
+  /** A check's call with its place in this machine's queue, held until a check of it holds it, or let go when none does. */
+  private async queued(threadId: string, input: DelegateInput, context: DelegateContext, ticket: string): Promise<unknown> {
+    const checks = this.options.checks!
     // What the window shows of it while it waits (#1312, fourth part): a thread's check, who asked, and what names it.
     checks.join(ticket, () => this.checkTurn(ticket), { whose: 'thread', by: threadId, work: input.work,
       ...input.title ? { title: input.title } : {}, ...input.provider ? { provider: input.provider } : {} })
@@ -624,12 +633,15 @@ export class DelegationService {
     // retry never makes a second thread on either machine (#1316 review).
     const elsewhere = input.thread === undefined && input.retry_key !== undefined ? this.options.remote?.retried(threadId, input.retry_key) : undefined
     if (elsewhere !== undefined) return await this.options.remote!.read(threadId, elsewhere)
-    const placed = context.placement ? { elsewhere: context.placement } : await this.place(threadId, input)
+    const placed = context.placement ? { elsewhere: context.placement } : 'placedHere' in context ? context.placedHere : await this.place(threadId, input)
     // A check placed on another machine waits in that machine's queue, so it gives up its place in this one (#1316 part 2).
     if ((placed === RELAYED || placed && 'elsewhere' in placed) && ticket !== undefined) this.options.checks?.leave(ticket)
     if (placed === RELAYED) return await this.relayStart(threadId, input, context)
     if (placed && 'elsewhere' in placed) return await this.remoteStart(threadId, input, context, placed.elsewhere)
     if (placed && 'status' in placed) return placed
+    // A check that named a machine and was placed here takes its place in this machine's queue now, before its snapshot.
+    if (ticket === undefined && this.options.checks && input.test_run === true && input.thread === undefined && !('placedHere' in context)
+      && (input.machine !== undefined || input.os !== undefined)) return await this.queued(threadId, input, { ...context, placedHere: placed }, randomUUID())
     const branch = context.landed ? this.landedHere(threadId, context.landed) : await this.fromBranch(threadId, input, context.takenAt)
     if (branch && 'status' in branch) return branch
     let admitted: { record: DelegationRecord; retry: boolean; start?: DelegatedStart; role?: RoleReceipt }
