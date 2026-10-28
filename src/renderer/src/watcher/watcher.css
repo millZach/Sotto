@@ -25,6 +25,7 @@
   background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watch-toggle:hover { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
+.watch-toggle:active:not(:disabled) { border-color: var(--tt-border-faint); background: var(--tt-hover-strong); color: var(--tt-text); }
 .watch-toggle[aria-pressed='true'] { border-color: color-mix(in srgb, var(--tt-accent-text) 50%, transparent); background: color-mix(in srgb, var(--tt-accent) 14%, var(--tt-canvas)); color: var(--tt-text); }
 @container thread-pane (width < 520px) { .watch-toggle { padding: 0 7px; } .watch-toggle__text { display: none; } }
 /* The owl among a sidebar row's actions, in the accent while pressed. */
@@ -36,6 +37,7 @@
   border: 1px solid var(--tt-field-border); border-radius: 6px; background: transparent; color: var(--tt-text-muted); cursor: pointer;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watcher-row__watch:hover { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
+.watcher-row__watch:active:not(:disabled) { border-color: var(--tt-border-faint); background: var(--tt-hover-strong); color: var(--tt-text); }
 .watcher-row__watch[aria-pressed='true'] { border-color: color-mix(in srgb, var(--tt-accent-text) 50%, transparent); background: color-mix(in srgb, var(--tt-accent) 14%, var(--tt-surface-elevated)); color: var(--tt-accent-text); }
 
 /* What a Watch or Stop watching press did, with Undo; it never takes focus and goes by itself. The anchor is the top
@@ -51,8 +53,10 @@
 .watch-toast[data-tone='refused'] > .watcher-owl { color: var(--tt-warning-text); }
 .watch-toast__undo { flex: none; height: 26px; padding: 0 11px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 12.5px; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watch-toast__undo:hover { background: var(--tt-hover); }
+.watch-toast__undo:active:not(:disabled) { background: var(--tt-hover-strong); }
 .watch-toast__dismiss { display: grid; flex: none; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watch-toast__dismiss:hover { background: var(--tt-hover); color: var(--tt-text); }
+.watch-toast__dismiss:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .watch-toast { animation: watch-toast-rise 160ms cubic-bezier(.2, .8, .2, 1); }
 }
@@ -109,6 +113,7 @@
 /* All threads, beside Watcher's name: it opens the Overview over the room. */
 .watcher-head__list { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 8px 0 9px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watcher-head__list:hover, .watcher-head__list[aria-expanded='true'] { border-color: var(--tt-hairline); background: var(--tt-hover); color: var(--tt-text); }
+.watcher-head__list:active:not(:disabled) { border-color: var(--tt-hairline); background: var(--tt-hover-strong); color: var(--tt-text); }
 .watcher-head__count { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }
 /* On the button's own fill the muted count falls short of 4.5:1 in some themes, so it lifts with the label. */
 .watcher-head__list:is(:hover, [aria-expanded='true']) .watcher-head__count { color: var(--tt-text-2); }
@@ -302,6 +307,7 @@
 .watcher-machine-panel__body:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; border-radius: 4px; }
 .watcher-machine-panel__close { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watcher-machine-panel__close:hover { background: var(--tt-hover); color: var(--tt-text); }
+.watcher-machine-panel__close:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .watcher-machine-panel p { margin: 0 0 8px; color: var(--tt-text-2); }
 .watcher-machine-panel dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; margin: 4px 0 10px; }
 .watcher-machine-panel dt { color: var(--tt-text-muted); }
@@ -338,6 +344,7 @@
 .watcher-group[data-tone='needs'] .watcher-group__label { color: var(--watcher-needs-ink); }
 .watcher-group__settled { display: flex; align-items: center; gap: 6px; width: calc(100% - 12px); min-height: 30px; margin: 2px 6px 0; padding: 0 10px 0 6px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watcher-group__settled:hover { background: var(--tt-hover); color: var(--tt-text); }
+.watcher-group__settled:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .watcher-group__chevron { flex: none; color: var(--tt-text-muted); transition: transform 120ms ease; }
 .watcher-group__settled[aria-expanded='true'] > .watcher-group__chevron { transform: rotate(90deg); }
 .watcher-group__count { margin-left: auto; color: var(--tt-text-muted); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
@@ -445,6 +452,7 @@
 .watcher-handover__lead strong { font-weight: 600; }
 .watcher-handover__dismiss { display: grid; flex: none; place-items: center; width: 26px; height: 26px; margin: -4px -5px -4px 0; padding: 0; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-2); cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watcher-handover__dismiss:hover { background: var(--tt-hover); color: var(--tt-text); }
+.watcher-handover__dismiss:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .watcher-handover__ledger { margin: 6px 0 0 23px; color: var(--tt-text-2); }
 .watcher-handover__read { padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-link); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .watcher-handover__read:disabled { color: var(--tt-text-muted); cursor: progress; }
@@ -549,6 +557,7 @@
   background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watcher-stop-all__button:hover, .watcher-stop-all__button[aria-expanded='true'] { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
+.watcher-stop-all__button:active:not(:disabled) { border-color: var(--tt-border-faint); background: var(--tt-hover-strong); color: var(--tt-text); }
 .watcher-stop-all__button:hover > svg, .watcher-stop-all__button[aria-expanded='true'] > svg { color: var(--tt-error-text); }
 @container thread-pane (width < 520px) { .watcher-stop-all__button { padding: 0 7px; } .watcher-stop-all__text { display: none; } }
 /* The popover, in the shape of a small panel under its button: the question, the threads it names with what each is doing, what a stop
