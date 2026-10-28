@@ -1,8 +1,10 @@
 import { z } from 'zod'
 import { agentRuntimeModeSchema } from './agents'
-import { DELEGATION_LEVELS_MAX, DELEGATION_NEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, delegationNewsSchema } from './delegation'
+import { DELEGATION_LEVELS_MAX, DELEGATION_NEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, delegationNewsSchema, delegationWorkSchema } from './delegation'
 import { WATCHER_REPLY_BYTES_MAX } from './watcher'
 import { workerSystemSchema } from './workerMachine'
+import { branchNameSchema, snapshotCarriedSchema } from './branchMoves'
+import { worktreeMadeFromSchema } from './bringChangesBack'
 
 /**
  * The desktop relay (#1316, ADR-0105 decisions 1 and 6, Owl `cross-machine-work`): a thread on a headless host delegates to
@@ -27,8 +29,13 @@ export const DELEGATION_RELAY_READ_MS = 15_000
 export const DELEGATION_RELAY_ANSWER_BYTES_MAX = 512 * 1024
 /** The open relayed delegations a host keeps, newest kept, so a busy host's record stays bounded. */
 export const DELEGATION_RELAY_RECORDS_MAX = 500
+/** The longest time of day a snapshot's words carry, as a machine writes it ("14:02", "2:02 PM"). */
+export const DELEGATION_TAKEN_AT_MAX = 32
 
-/** The `delegate` arguments a relayed start carries: never a machine, a system, or a branch to start from (part 1 of #1316). */
+/**
+ * The `delegate` arguments a relayed start carries: never a machine or a system. `from_my_branch` and `test_run` only to a
+ * desktop whose hello accepted `delegation-branch-starts` (#1316 part 2).
+ */
 export const relayedInputSchema = z.record(z.string().max(64), z.unknown())
 
 export const delegationRelayAskSchema = z.discriminatedUnion('type', [
@@ -41,7 +48,14 @@ export const delegationRelayAskSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('start'), relayId: z.uuid(), threadId: id, levels: z.number().int().min(0).max(DELEGATION_LEVELS_MAX - 1),
     rootUserMessageId: id, callerMessageId: id.optional(), runtimeMode: agentRuntimeModeSchema, projectId: id,
     machine: z.uuid().optional(), os: workerSystemSchema.optional(), input: relayedInputSchema,
-    waitMs: z.number().int().min(0).max(DELEGATION_RELAY_WAIT_MAX_MS) }).strict(),
+    waitMs: z.number().int().min(0).max(DELEGATION_RELAY_WAIT_MAX_MS),
+    /**
+     * With `from_my_branch` and `test_run` (`delegation-branch-starts`): the check snapshot the host took of its thread's
+     * working copy as the thread asked, pinned there for the desktop's move to send, and when it was taken, as the host's
+     * own computer writes the time, which the snapshot's words say.
+     */
+    pinned: z.uuid().optional(),
+    takenAt: z.string().trim().min(1).max(DELEGATION_TAKEN_AT_MAX).optional() }).strict(),
   /**
    * Send another brief to a thread this host's thread delegated to through the relay (#1316 part 2), named in `input.thread`
    * as the desktop named it, charged on the desktop against the same four briefs per thread per user message as any brief.
@@ -74,6 +88,16 @@ export const relayedRepliesSchema = z.array(relayedReplySchema).max(DELEGATION_N
 export const relayAwayWords = (here: string): string =>
   `This computer isn't connected to ${here}, so nothing was started there. Start it on ${here} instead, or try again when this computer is back.`
 
+/**
+ * A delegating thread's branch the desktop already landed in the host project's incoming ref for a start there
+ * (`delegation-branch-starts`, #1316 part 2): the move, the branch, what a check's snapshot carried and when it was taken,
+ * as the delegating thread's own computer writes it, and the thread it came from, which the new worktree keeps so only the
+ * desktop that started it brings its changes back (#1030).
+ */
+export const remoteLandedBranchSchema = z.object({ moveId: z.uuid(), branch: branchNameSchema, snapshot: snapshotCarriedSchema.optional(),
+  takenAt: z.string().trim().min(1).max(DELEGATION_TAKEN_AT_MAX).optional(), madeFrom: worktreeMadeFromSchema }).strict()
+export type RemoteLandedBranch = z.infer<typeof remoteLandedBranchSchema>
+
 /** The longest name a desktop gives a delegating thread in a `delegation-remote-ask`, so the host's key for it stays inside its record's bound. */
 export const DELEGATION_REMOTE_CALLER_MAX = 400
 const callerId = z.string().min(1).max(DELEGATION_REMOTE_CALLER_MAX)
@@ -93,7 +117,18 @@ export const delegationRemoteAskSchema = z.discriminatedUnion('type', [
    */
   z.object({ type: z.literal('delegate'), caller: callerId, levels: z.number().int().min(0).max(DELEGATION_LEVELS_MAX - 1), rootUserMessageId: id,
     callerMessageId: id.optional(), runtimeMode: agentRuntimeModeSchema, projectId: id, input: relayedInputSchema,
-    waitMs: z.number().int().min(0).max(DELEGATION_RELAY_WAIT_MAX_MS) }).strict(),
+    waitMs: z.number().int().min(0).max(DELEGATION_RELAY_WAIT_MAX_MS),
+    /** A start from the caller's branch, already landed here (`delegation-branch-starts`): its new worktree is made from it. */
+    branch: remoteLandedBranchSchema.optional(),
+    /** A check's place in this host's queue, reserved by `reserve` before its branch moved (`delegation-branch-starts`): it takes that place. */
+    reservation: z.uuid().optional() }).strict(),
+  /**
+   * Holds a place at the end of this host's check queue for a check the desktop is about to start here (`delegation-branch-starts`,
+   * #1316 part 2), before its branch or snapshot moves, so the queue keeps the order checks were asked in. The `delegate` that
+   * names it takes the place; `release`, the desktop's socket closing, or 15 minutes unclaimed let it go.
+   */
+  z.object({ type: z.literal('reserve'), caller: callerId, reservation: z.uuid(), work: delegationWorkSchema }).strict(),
+  z.object({ type: z.literal('release'), caller: callerId, reservation: z.uuid() }).strict(),
   /** Read one exactly, by the host's delegation ID, or by the retry key it was asked under when the answer was lost. */
   z.object({ type: z.literal('read'), caller: callerId, delegation: z.uuid().optional(), retryKey: z.uuid().optional() }).strict(),
   /** Cancel one, as `cancel_delegation` does on the host. */

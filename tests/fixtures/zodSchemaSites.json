@@ -49,7 +49,7 @@
   },
   "src/main/agents/delegationTools.ts": {
     "delegationToolDefinitions": {
-      "count": 2,
+      "count": 1,
       "reason": "Builds the delegate tool's input schema for the roles, machines and place it is given; runs once at module load and once when the delegation tool server is constructed at start."
     }
   },

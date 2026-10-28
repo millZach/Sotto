@@ -466,8 +466,9 @@ jobs:
     # push to main. Watcher's permissions, own changes and watching added three.
     timeout-minutes: 140
     env:
-      # The same Xcode as the TestFlight workflow: App Store Connect accepts only iOS 26 SDK builds.
-      # Its Swift 6 compiler builds in Swift 5 mode, above Package.swift's 5.9 tools and the iOS 17 minimum.
+      # Older than the TestFlight workflow's Xcode 27.1: the journeys run on iPhone SE (3rd generation) and iPhone 16
+      # Pro Max, which the iOS 27.1 simulator no longer offers. Its Swift 6 compiler builds in Swift 5 mode, above
+      # Package.swift's 5.9 tools and the iOS 17 minimum.
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
     steps:
       - name: Check out the repository

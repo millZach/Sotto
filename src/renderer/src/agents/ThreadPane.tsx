@@ -400,8 +400,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         observation={state.connection === 'connecting' ? 'loading' : !rowConnected ? 'disconnected' : thread.historyStatus === 'loading' ? 'loading' : thread.historyStatus === 'error' ? 'unavailable' : 'ready'}
         observed={JSON.stringify([rowConnected, state.connection, thread.historyStatus, thread.status, closed, thread.requests.map(request => [request.id, request.delivery, request.questions])])} />
     </ThreadTranscript></RunCommands></ThreadWebLinks>
-    <div className="thread-greeting-slot" ref={setGreetingSlot} />
-    <div className="thread-workspace__compose" ref={compose} data-slim={slim || undefined} onMouseDown={slim ? pressSlim : undefined}
+    <div className="thread-greeting-slot" data-room-backdrop="" ref={setGreetingSlot} />
+    <div className="thread-workspace__compose" data-room-backdrop="" ref={compose} data-slim={slim || undefined} onMouseDown={slim ? pressSlim : undefined}
       onFocus={() => setComposeFocused(true)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setComposeFocused(false) }}>
       {/* What a Watch or Stop watching press did, just above the focused pane's composer (Owl only). */}
       {focused ? <WatchToast /> : null}
@@ -428,7 +428,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       </div>
     </div>
     {/* Under a greeting, the room below the composer matches the room above, so the two sit in the middle. */}
-    <div className="thread-pane__balance" aria-hidden="true" />
+    <div className="thread-pane__balance" data-room-backdrop="" aria-hidden="true" />
     {drawer}
   </>
 }

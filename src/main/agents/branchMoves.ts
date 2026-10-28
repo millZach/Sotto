@@ -131,7 +131,7 @@ export class DesktopBranchMoves {
    * Moves a host thread's branch to a project on this computer: the host checks the thread's working copy and bundles its
    * branch against this repository's tips, and this computer lands it in `refs/sotto/incoming/<move>/<branch>`.
    */
-  async fromHost(input: { readonly hostId: string; readonly threadId: string; readonly projectId: string; readonly moveId?: string; readonly snapshot?: boolean }): Promise<BranchMoveReceipt> {
+  async fromHost(input: { readonly hostId: string; readonly threadId: string; readonly projectId: string; readonly moveId?: string; readonly snapshot?: boolean; readonly pinned?: string | undefined }): Promise<BranchMoveReceipt> {
     const connection = this.connected(input.hostId)
     if ('type' in connection) return connection
     const { host } = connection
@@ -143,7 +143,7 @@ export class DesktopBranchMoves {
     let incoming: IncomingBundle | undefined
     try {
       const sending = answer(branchSendBeginAnswerSchema, await host.branchMove({ action: 'send-begin', moveId, threadId: input.threadId, bases: tips,
-        ...input.snapshot ? { snapshot: true } : {} }))
+        ...input.snapshot ? { snapshot: true, ...input.pinned ? { pinned: input.pinned } : {} } : {} }))
       if (refused(sending)) return sending
       if (sending.type === 'present') return carrying(await this.options.bundles.receiveRef({ repository: folder, moveId, branch: sending.branch, commit: sending.commit }), sending.snapshot)
       const begun = await this.options.bundles.receive({ repository: folder, moveId, branch: sending.branch, commit: sending.commit, size: sending.size, sha256: sending.sha256 })
@@ -169,7 +169,7 @@ export class DesktopBranchMoves {
    * (ADR-0105 decision 1): the sending host stages its bundle against the receiving host's tips, and each chunk this
    * desktop reads from one it hands to the other. Nothing is written here.
    */
-  async betweenHosts(input: { readonly fromHostId: string; readonly threadId: string; readonly toHostId: string; readonly projectId: string; readonly moveId?: string; readonly snapshot?: boolean }): Promise<BranchMoveReceipt> {
+  async betweenHosts(input: { readonly fromHostId: string; readonly threadId: string; readonly toHostId: string; readonly projectId: string; readonly moveId?: string; readonly snapshot?: boolean; readonly pinned?: string | undefined }): Promise<BranchMoveReceipt> {
     const sender = this.connected(input.fromHostId)
     if ('type' in sender) return sender
     const receiver = this.connected(input.toHostId)
@@ -180,7 +180,7 @@ export class DesktopBranchMoves {
       const tips = answer(branchTipsAnswerSchema, await to.branchMove({ action: 'tips', projectId: input.projectId }))
       if (refused(tips)) return tips
       const sending = answer(branchSendBeginAnswerSchema, await from.branchMove({ action: 'send-begin', moveId, threadId: input.threadId, bases: tips.tips,
-        ...input.snapshot ? { snapshot: true } : {} }))
+        ...input.snapshot ? { snapshot: true, ...input.pinned ? { pinned: input.pinned } : {} } : {} }))
       if (refused(sending)) return sending
       // The receiving host already has the commit: only its incoming ref is made, and nothing travels.
       if (sending.type === 'present') {
@@ -235,6 +235,21 @@ export class DesktopBranchMoves {
     return this.options.bundles.copy({ from, source, repository, moveId: input.moveId ?? this.options.newMoveId?.() ?? randomUUID() })
   }
 
+  /**
+   * Takes a check's snapshot of a thread on this machine now, as the check is asked for, and pins it for the move that sends
+   * it later from here (#1316 part 2): a host's thread whose check starts on another machine through the desktop.
+   */
+  async pin(threadId: string): Promise<{ readonly pinned: string; readonly branch: string; readonly snapshot?: SnapshotCarried } | BranchMoveRefusal> {
+    const folder = this.options.folders.threadFolder(threadId)
+    if (!folder) return branchMoveRefusal('unknown-thread', branchMoveWords.unknownThread)
+    const pinned = await this.options.bundles.pin(folder)
+    if ('type' in pinned) return pinned
+    return { pinned: pinned.pinned, branch: pinned.source.branch, ...pinned.source.snapshot ? { snapshot: pinned.source.snapshot } : {} }
+  }
+
+  /** Lets go of a check snapshot pinned here once the start that would send it has its answer, or was never asked. */
+  unpin(pinned: string): void { this.options.bundles.unpin(pinned) }
+
   /** Lets go of a move landed in a project on this computer for a start that was then refused, so no ref holds its commits. */
   async forgetHere(input: { readonly projectId: string; readonly moveId: string }): Promise<void> {
     const repository = this.options.folders.projectFolder(input.projectId)
@@ -244,14 +259,15 @@ export class DesktopBranchMoves {
   /**
    * Puts a thread's branch where a worker will start from it (ADR-0082 decisions 2 and 4, #1033): into the incoming ref
    * of this move in the destination project, on whichever machine each is, so the worker's new worktree is made from it
-   * there. A plain start refuses uncommitted work as a move does; a test run carries it as a snapshot.
+   * there. A plain start refuses uncommitted work as a move does; a test run carries it as a snapshot: the one `pinned` names,
+   * which a host took when its thread asked (#1316 part 2), or one taken now.
    */
-  forStart(input: { readonly from: BranchStartSource; readonly to: BranchStartDestination; readonly here: string; readonly moveId: string; readonly snapshot: boolean }): Promise<BranchMoveReceipt> {
-    const { from, to, here, moveId, snapshot } = input
+  forStart(input: { readonly from: BranchStartSource; readonly to: BranchStartDestination; readonly here: string; readonly moveId: string; readonly snapshot: boolean; readonly pinned?: string | undefined }): Promise<BranchMoveReceipt> {
+    const { from, to, here, moveId, snapshot, pinned } = input
     const common = { moveId, snapshot, projectId: to.projectId, threadId: from.threadId }
     if (from.hostId === here) return to.hostId === here ? this.here(common) : this.toHost({ ...common, hostId: to.hostId })
-    if (to.hostId === here) return this.fromHost({ ...common, hostId: from.hostId })
-    return from.hostId === to.hostId ? this.onHost({ ...common, hostId: from.hostId }) : this.betweenHosts({ ...common, fromHostId: from.hostId, toHostId: to.hostId })
+    if (to.hostId === here) return this.fromHost({ ...common, hostId: from.hostId, pinned })
+    return from.hostId === to.hostId ? this.onHost({ ...common, hostId: from.hostId }) : this.betweenHosts({ ...common, fromHostId: from.hostId, toHostId: to.hostId, pinned })
   }
 
   /**

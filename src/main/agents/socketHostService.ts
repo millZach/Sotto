@@ -371,7 +371,7 @@ export class SocketHostService implements HostService {
     try {
       // This desktop knows every provider Sotto has, OpenCode among them, so it accepts each one's feature (#1107); a provider
       // held on this run is hidden here as on this computer, by the held gate.
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
@@ -1395,6 +1395,11 @@ export class SocketHostService implements HostService {
   get supportsDelegationRemote(): boolean { return this.relays && this.features.includes('delegation-remote') }
   /** The host lists `delegation-relay-send` and this desktop accepted it: its threads may send a second brief through this desktop. */
   get supportsDelegationRelaySend(): boolean { return this.supportsDelegationRelay && this.features.includes('delegation-relay-send') }
+  /**
+   * The host lists `delegation-branch-starts` and this desktop accepted it (#1316 part 2): a start there may begin from a
+   * branch this desktop landed, or be a check, and its threads' relayed starts may ask for either.
+   */
+  get supportsDelegationBranchStarts(): boolean { return this.relays && this.features.includes('delegation-branch-starts') }
   async delegationRemoteAsk(ask: DelegationRemoteAsk, timeoutMs: number): Promise<unknown> {
     if (!this.relays) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
     this.offers('delegation-remote')

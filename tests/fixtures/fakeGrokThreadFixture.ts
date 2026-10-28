@@ -55,6 +55,10 @@ export async function grokFixture(root?: string, requestTimeoutMs = 15_000, poll
  // whose reply was.
  let promptLost = false, spawning = false
  const lostRequests = new Set<string>()
+ // Requests of each method sent with the generous deadline that have no reply yet. A reply scripted lost is lost only once
+ // these have theirs: one already on its way when the script changed would otherwise be lost too, and wait out the
+ // generous deadline (a history poll in flight held a send's own read behind it for 15 seconds).
+ const unanswered = new Map<string, Set<Promise<void>>>()
  const adapterOptions: GrokAcpOptions = {executable:process.execPath,args:[resolve('tests/fixtures/fakeGrokThreadAgent.mjs'),root],pollIntervalMs,...session,...options}
  Object.defineProperty(adapterOptions,'requestTimeoutMs',{enumerable:true,get:()=>{
   if (spawning || !promptLost) return requestTimeoutMs
@@ -69,7 +73,12 @@ export async function grokFixture(root?: string, requestTimeoutMs = 15_000, poll
   try { rpc = spawn(...args) } finally { spawning = false }
   const deadline = rpc as unknown as { timeoutMs: number }, request = rpc.request.bind(rpc)
   rpc.request = (method, ...rest) => {
-   if (!lostRequests.has(method)) return request(method, ...rest)
+   if (!lostRequests.has(method)) {
+    const sent = request(method, ...rest)
+    const waiting = unanswered.get(method) ?? new Set<Promise<void>>(); unanswered.set(method, waiting)
+    waiting.add(sent); const answered = () => { waiting.delete(sent) }; sent.then(answered, answered)
+    return sent
+   }
    deadline.timeoutMs = LOST_REPLY_DEADLINE_MS
    try { return request(method, ...rest) } finally { deadline.timeoutMs = requestTimeoutMs }
   }
@@ -81,8 +90,12 @@ export async function grokFixture(root?: string, requestTimeoutMs = 15_000, poll
  const delayNextAck = async (method: string): Promise<void> => {
   const lost = lostReplies[method]
   if (!lost) throw new Error(`The Grok fixture cannot lose the reply to ${method}`)
+  if (method === 'session/prompt') { await writeScript(lost); promptLost = true; return }
+  // Every request from here on waits the short deadline, and the fake starts losing replies once every request sent
+  // before has its reply, so no request that waits the generous deadline is lost.
+  lostRequests.add(method)
+  await Promise.allSettled([...unanswered.get(method) ?? []])
   await writeScript(lost)
-  if (method === 'session/prompt') promptLost = true; else lostRequests.add(method)
  }
  const requests = async (): Promise<RecordedRpc[]> => {
   await checkViolations()

@@ -64,7 +64,8 @@ for (const order of ['remove', 'remove-then-stop', 'stop-then-remove'] as const)
     await fillPrompt(prompt, 'Count the lighthouses on this coast.')
     await prompt.press('Enter')
     await expect.poll(async () => (await sentTexts(claude)).length, { timeout: 30_000 }).toBe(1)
-    await expect(pane.getByRole('button', { name: 'Steer now', exact: true })).toBeVisible({ timeout: 30_000 })
+    // The turn is running once Stop is the plate; Steer now waits for text (ADR-0153).
+    await expect(pane.locator('.thread-prompt__stop')).toBeVisible({ timeout: 30_000 })
 
     await fillPrompt(prompt, 'Sorry it shows you are watching 8')
     await prompt.press('Enter')

@@ -66,7 +66,9 @@ test('Steer now answers the steer at once and the turn it cut reads Steered', as
     await prompt.press('Enter')
     await expect.poll(() => prompts(claude), { timeout: 30_000 }).toBe(1)
     const steerNow = pane.getByRole('button', { name: 'Steer now', exact: true })
-    await expect(steerNow).toBeVisible({ timeout: 30_000 })
+    // The turn is running once Stop is the plate; Steer now waits for text to steer (ADR-0153).
+    await expect(pane.locator('.thread-prompt__stop')).toBeVisible({ timeout: 30_000 })
+    await expect(steerNow).toHaveCount(0)
 
     // Typed while the turn runs, the steer goes in from the composer's Steer now, by keyboard as by click.
     await fillPrompt(prompt, 'Skip the essay. Just name the oldest lighthouse still standing.')

@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
-import { Laptop, MessageSquare, Quote, Server, Sparkles, X } from 'lucide-react'
+import { Laptop, MessageSquare, Quote, Server, X } from 'lucide-react'
 import { msg, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { NextPrompt } from '../../../shared/nextPrompt'
@@ -46,6 +46,7 @@ import { PromptEditor, promptSelection, setPromptSelection, type PromptEditorEle
 import { promptDocText } from './promptDocument'
 import { toolbarApplies } from './branchToolbar.logic'
 import { useDelegationsEnabled } from './delegations'
+import { KeyedGlyph, plateSent, rowMoved, type PlateRole } from './composerPlate'
 import { stopLabel, workingDelegatedThreads } from './delegationWords'
 import { ContinueOptions, ContinueStrip } from './ContinueThread'
 import { RestartStrip } from './RestartStopped'
@@ -256,6 +257,15 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   // Steering is a direct delivery: it waits for any prompt still on its way, the queue's included.
   const canSteer = running && capabilities.steer === true && canSend && !sendInFlight
   const canStop = working && capabilities.interrupt === true && row.connected && !isThreadBusy(state, threadId)
+  // The row's motion (ADR-0153): which button is the plate, remembered with its thread so opening another moves nothing.
+  const actionsRow = useRef<HTMLDivElement>(null)
+  const rowRole: PlateRole = working ? content ? 'queue' : 'stop' : 'send'
+  const lastRow = useRef({ threadId, role: rowRole }), aside = useRef({ width: 0 })
+  useLayoutEffect(() => {
+    const last = lastRow.current
+    if (last.threadId === threadId && last.role !== rowRole) rowMoved(actionsRow.current, last.role, rowRole, aside.current)
+    lastRow.current = { threadId, role: rowRole }
+  }, [threadId, rowRole])
   // Stop names the delegated threads below this one that a press also stops (ADR-0081 decision 6).
   const delegationsOn = useDelegationsEnabled()
   // Counted once per state, not on every keystroke the composer redraws for.
@@ -324,9 +334,10 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     void command({ type: 'select-thread', threadId: result.threadId })
   }
   /** `written`: the text was put in the draft by this press (a Next answer), so the draft read at render is not yet it. */
-  const send = (submittedAt: number, mode: SubmissionMode = queueing ? 'queue' : 'send', written = false): void => {
+  const send = (submittedAt: number, mode: SubmissionMode = queueing ? 'queue' : 'send', written = false, fromKeyboard = false): void => {
     if (mode === 'steer' ? !canSteer : !(canSend || written && reason === null && !readingImages && !answerState.sending)) return
     if (continuing !== undefined) { if (mode === 'send') void continueSend(continuing); return }
+    if (mode !== 'steer') plateSent(actionsRow.current, fromKeyboard)
     // Sent from a button, which the emptied draft is about to disable: the next prompt starts where the last was written.
     const input = field.current
     if (input !== null && document.activeElement !== input && input.closest('form')?.contains(document.activeElement)) input.focus()
@@ -428,20 +439,14 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const enterCap = threadChordCap('enter', platform)
   const stopKeys = !watcher && stopChord ? stopChord : null
   // Kept with the thread it was opened on, so moving to another thread finds it closed and at its first row.
-  const [nextListState, setNextListState] = useState<{ readonly threadId: string; readonly index: number; readonly from: 'prompt' | 'button' } | null>(null)
+  const [nextListState, setNextListState] = useState<{ readonly threadId: string; readonly index: number } | null>(null)
   const nextList = next !== null && nextListState?.threadId === threadId ? nextListState : null
-  const setNextList = (value: { readonly index: number; readonly from: 'prompt' | 'button' } | null): void => { setNextListState(value === null ? null : { ...value, threadId }) }
+  const setNextList = (value: { readonly index: number } | null): void => { setNextListState(value === null ? null : { ...value, threadId }) }
   const nextOpen = nextList !== null
   // Escape in the prompt puts the ghost away for this turn, so Tab moves focus as it always does.
   const [ghostDismissed, setGhostDismissed] = useState<string | null>(null)
   const ghostAway = ghostDismissed === `${threadId}\n${nextAnchor}`
-  const nextButton = useRef<HTMLButtonElement>(null)
   const nextListId = `${composerId}-next`
-  const closeNext = (returnFocus: boolean): void => {
-    const from = nextList?.from
-    setNextList(null)
-    if (returnFocus && from === 'button') nextButton.current?.focus()
-  }
   /** A row chosen: an answer sends at once into an empty prompt, anything else is written into the prompt for the user to send. */
   const chooseNext = (choice: NextRow): void => {
     setNextList(null)
@@ -472,7 +477,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         setNextList({ ...nextList, index: (nextList.index + (event.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length })
         return true
       }
-      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeNext(true); return true }
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setNextList(null); return true }
       if (event.key === 'Enter' && !event.shiftKey) return take(rows[nextList.index])
       if (/^[1-4]$/u.test(event.key) && !event.shiftKey && nextKeysFree.digit(event.key)) return take(rows.find(item => item.kind === 'suggestion' && item.key === event.key))
       if (event.key === 'Tab' && !event.shiftKey && nextKeysFree.tab) return take(rows.find(item => item.kind === 'ghost'))
@@ -480,7 +485,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     }
     if (event.key === 'Escape' && ghostShown) { event.preventDefault(); event.stopPropagation(); setGhostDismissed(`${threadId}\n${nextAnchor}`); return true }
     if (event.key === 'Tab' && !event.shiftKey && ghostShown && nextKeysFree.tab) return take(rows.find(item => item.kind === 'ghost'))
-    if (event.key === 'ArrowUp' && !event.shiftKey && !hasContent && nextKeysFree.up) { event.preventDefault(); setNextList({ index: 0, from: 'prompt' }); return true }
+    if (event.key === 'ArrowUp' && !event.shiftKey && !hasContent && nextKeysFree.up) { event.preventDefault(); setNextList({ index: 0 }); return true }
     return false
   }
 
@@ -505,7 +510,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         next={next} nextOpen={nextOpen} nextListId={nextListId} nextActiveId={nextOpen ? nextOptionId(nextListId, nextList.index) : undefined}
         dictating={dictating || ghostAway} nextKey={nextKey}
         fieldLabel={fieldLabel} edit={edit}
-        onSend={event => send(performance.now(), canSteer && steerChord !== null && event !== undefined && chordMatches(event, steerChord, platform) ? 'steer' : undefined)}>
+        onSend={event => send(performance.now(), canSteer && steerChord !== null && event !== undefined && chordMatches(event, steerChord, platform) ? 'steer' : undefined, false, true)}>
         {comments.length > 0 ? <ul className="review-chips" aria-label={t`Review comments`}>
           {comments.map(comment => {
             const label = reviewLabel(comment)
@@ -545,22 +550,17 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
             : <><span className="thread-prompt__model"><ProviderMark provider={row.providerId} name={row.provider} />{row.model?.name ?? row.provider}<small>{answering ? t`Answer this question` : t`Manual prompt`}</small></span>
               {watcher ? <WatcherPermissionChip model={row.model} provider={row.provider} inForce={row.thread.runtimeMode} noticeSlot={settingsNotices}
                 disabled={watcherPermissionFixedReason(state, row.thread) !== undefined} fixedReason={watcherPermissionFixedReason(state, row.thread)} /> : null}</>}
-          {next !== null ? <button ref={nextButton} type="button" className="thread-chip next-prompt__open tt-focusable" aria-haspopup="listbox" aria-expanded={nextOpen}
-            aria-controls={nextOpen ? nextListId : undefined} title={nextKeysFree.up ? t`Suggested next prompts (Up in an empty prompt)` : t`Suggested next prompts`}
-            onMouseDown={event => event.preventDefault()}
-            onClick={() => { if (nextOpen) closeNext(false); else { setNextList({ index: 0, from: 'button' }); field.current?.focus() } }}>
-            <Sparkles size={14} aria-hidden="true" /><span>{t({ message: 'Next', context: 'suggested prompts', comment: 'Opens the list of suggested next prompts.' })}</span></button> : null}
           {status}
         </div>
-        <div className="thread-prompt__actions">
-          {running && capabilities.steer === true
+        <div ref={actionsRow} className="thread-prompt__actions">
+          {running && capabilities.steer === true && content
             ? <Button variant="ghost" className="thread-prompt__steer" aria-label={t`Steer now`} aria-keyshortcuts={steerChord ? threadChordLabel(steerChord, platform).keys : undefined}
               disabled={!canSteer} title={canSteer ? t`Send this now, without waiting for the turn to end` + (steerChord ? ` ${threadChordLabel(steerChord, platform).suffix}` : '') : reason ?? (sendInFlight ? t`An earlier send is still on its way; Steer waits for it` : readingImages || answerState.sending ? t`Wait for the attachment to be read` : !content ? t`Write what to send into the running turn first` : undefined)}
-              onClick={() => send(performance.now(), 'steer')}><KeyedLabel word={t({ message: 'Steer', comment: 'Button: sends the typed prompt into the running turn now. Its full name is Steer now.' })} keyCap={steerChord ? threadChordCap(steerChord, platform) : null} /></Button>
+              onClick={() => send(performance.now(), 'steer')}><KeyedGlyph role="steer" keyCap={steerChord ? threadChordCap(steerChord, platform) : null} /></Button>
             : null}
           {/* While a turn runs, Stop carries its trace: the control that ends the turn is the sign that it is running. */}
           {working ? <Button variant="ghost" className="thread-prompt__stop" data-beside={content || undefined} aria-label={stopName} aria-keyshortcuts={stopKeys ? threadChordLabel(stopKeys, platform).keys : undefined} title={stopKeys ? `${stopName} ${threadChordLabel(stopKeys, platform).suffix}` : stopName} disabled={!canStop} onClick={() => void command({ type: 'interrupt', threadId })}>
-            <KeyedLabel word={t({ message: 'Stop', comment: 'Button: stops the running turn.' })} keyCap={stopKeys ? threadChordCap(stopKeys, platform) : null} /><span className="thread-prompt__trace" aria-hidden="true"><i /></span></Button> : null}
+            <KeyedGlyph role="stop" keyCap={stopKeys ? threadChordCap(stopKeys, platform) : null} /><span className="thread-prompt__trace" aria-hidden="true"><i /></span></Button> : null}
           {/* With nothing to send, Stop holds the send button's place; typed text brings the send back to the end, so Enter's button is never Stop. */}
           {/* The filled button is always what Enter does. Its full name stays in the label and title, so Queue prompt is never called Send. */}
           {continuing !== undefined
@@ -571,7 +571,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
             ? <Button className="thread-prompt__send" data-wide aria-label={handover.label} aria-keyshortcuts="Enter" title={reason ?? handover.label} disabled={!canSend} type="submit">
               <KeyedLabel word={t`Continue`} keyCap={enterCap} /></Button>
             : !working || content ? <Button className="thread-prompt__send" aria-label={primaryLabel} aria-keyshortcuts="Enter" title={reason ?? primaryLabel} disabled={!canSend} type="submit">
-              <KeyedLabel word={queueing ? t({ message: 'Queue', comment: 'Button: puts the typed prompt in the queue to send when the turn ends.' }) : t({ message: 'Send', comment: 'Button: sends the typed prompt or answer.' })} keyCap={enterCap} /></Button> : null}
+              <KeyedGlyph role={queueing ? 'queue' : 'send'} keyCap={enterCap} /></Button> : null}
         </div>
       </div>
       <div ref={setSettingsNotices} className="thread-options-notices" />

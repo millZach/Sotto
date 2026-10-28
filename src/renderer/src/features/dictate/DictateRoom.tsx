@@ -312,8 +312,8 @@ export function DictateRoom({
   }
 
   return (
-    <section className="dictate" aria-label={t`Dictation`} data-status={dictation.status} data-stage={stage}>
-      <div className="dictate__layout">
+    <section className="dictate" data-room-backdrop="" aria-label={t`Dictation`} data-status={dictation.status} data-stage={stage}>
+      <div className="dictate__layout" data-room-backdrop="">
         <div className="dictate__bar">
           <VoiceWave
             stage={stage}
@@ -355,7 +355,7 @@ export function DictateRoom({
         <div className="dictate__stats">
           <JournalStats stats={stats} typingWpm={typingWpm} />
         </div>
-        <div className="dictate__journal">
+        <div className="dictate__journal" data-room-backdrop="">
           <Journal
             entries={entries}
             records={records}
