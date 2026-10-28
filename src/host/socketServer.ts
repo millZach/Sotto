@@ -264,6 +264,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'watcher-cursor' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
     // A host keeps its own check queue (#1312) only where its Owl answer turns on Work across machines.
     && (feature !== 'watcher-check-queue' || service.supportsWatcherCheckQueue === true && service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
+    // Watcher's stop_thread takes a check out of that queue (#1637), so it goes with the queue.
+    && (feature !== 'watcher-check-stop' || service.supportsWatcherCheckQueue === true && service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
     && (feature !== 'answer-check' || service.checkRequestAnswer !== undefined)
     && (feature !== 'atomic-send' || service.supportsAtomicSend === true)
     && (feature !== 'draft-revisions' || service.supportsDraftRevisions === true)
