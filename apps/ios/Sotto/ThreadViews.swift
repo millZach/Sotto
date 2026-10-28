@@ -43,6 +43,7 @@ struct ThreadView: View {
                     if model.compactionOffered(ref) || model.shelfAction(ref) != nil { ThreadMenu(ref: ref) }
                 }
             }
+            .horizontalOnly()
         }
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbarBackground(stuck ? .visible : .hidden, for: .navigationBar)
@@ -82,6 +83,19 @@ struct ThreadView: View {
         guard open == nil, !agentsOpen, !agentsCovered, let request = thread?.requests.first(where: { !setAside.contains($0.id) }) else { return }
         shown = request.id
         open = request
+    }
+}
+
+extension ToolbarContent {
+    /// Keeps an item in the bar over the page. Where iOS 27.1 stands a vertical bar beside the page, as in the iPhone
+    /// Duo cover screen's strip, it would otherwise move the item there, where only an icon fits (ADR-0151, amended).
+    /// CI's Xcode 26.6 has no iOS 27.1 SDK, hence the compiler check (Swift 6.4 came with Xcode 27).
+    @ToolbarContentBuilder func horizontalOnly() -> some ToolbarContent {
+        #if compiler(>=6.4)
+        if #available(iOS 27.1, *) { axisBehavior(.horizontalOnly) } else { self }
+        #else
+        self
+        #endif
     }
 }
 
