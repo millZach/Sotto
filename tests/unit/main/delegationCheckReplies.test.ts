@@ -168,6 +168,25 @@ describe('a check\'s reply, read on a press', () => {
     expect(f.threadMessage.mock.calls.map(([, id]) => id)).toEqual([replyId])
   })
 
+  it('is found by its ID and read only for the thread that delegated it', async () => {
+    const replyId = randomUUID(), otherReplyId = randomUUID()
+    const check = record({ check: true, replyMessageId: replyId })
+    // Another thread's own answered check, with a long history of its own.
+    const theirs = record({ check: true, delegatingThreadId: 'other', delegatedThreadId: 'their-check', replyMessageId: otherReplyId })
+    const history = Array.from({ length: 50 }, (_, index) => record({ delegatingThreadId: 'other', delegatedThreadId: `old-${index}`, outcome: 'stopped', told: 'stopped' }))
+    const f = await service([check, ...history, theirs], { [replyId]: FAILED, [otherReplyId]: 'Passed: 9 tests.' })
+    expect(f.delegation.checkReply('other', theirs.id)).toEqual({ text: 'Passed: 9 tests.', truncated: false })
+    // Each thread is refused the other's, though both are answered checks, and its reply is never read for it.
+    f.threadMessage.mockClear()
+    expect(f.delegation.checkReply('other', check.id)).toBeUndefined()
+    expect(f.delegation.checkReply('parent', theirs.id)).toBeUndefined()
+    expect(f.threadMessage).not.toHaveBeenCalled()
+    const { ipc, handlers, main, mainEvent } = ipcRegistry()
+    const close = registerDelegationIpc(ipc, f.delegation, () => [main], () => LOCAL, vi.fn(), undefined, true)
+    expect(await handlers.get(DELEGATION_CHECK_REPLY_READ)!(mainEvent, { threadId: hostEntityKey(LOCAL, 'other'), delegation: check.id })).toBeNull()
+    close()
+  })
+
   it('is cut at 32 KiB, as the thread that delegated was given it', async () => {
     const replyId = randomUUID()
     const check = record({ check: true, replyMessageId: replyId })

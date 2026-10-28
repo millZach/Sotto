@@ -486,13 +486,15 @@ export class DelegationService {
   private readonly byDelegated = new Map<string, DelegationRecord[]>()
   /** Each record by its delegating thread and retry key, so a retry is found without walking the user's history. */
   private readonly byRetryKey = new Map<string, DelegationRecord>()
+  /** Each record by its ID, the first with it, so the window's press on one row finds it without walking a thread's history. */
+  private readonly byId = new Map<string, DelegationRecord>()
   private refusalEntries: RefusedDelegation[] = []
   /** Each delegating thread's refusals, oldest first as in `refusalEntries`. */
   private readonly refusedBy = new Map<string, RefusedDelegation[]>()
   private get records(): readonly DelegationRecord[] { return this.entries }
   private set records(records: DelegationRecord[]) {
     this.entries = records
-    this.byDelegating.clear(); this.byDelegated.clear(); this.byRetryKey.clear()
+    this.byDelegating.clear(); this.byDelegated.clear(); this.byRetryKey.clear(); this.byId.clear()
     for (const record of records) this.indexed(record)
   }
   private get refusals(): readonly RefusedDelegation[] { return this.refusalEntries }
@@ -915,8 +917,9 @@ export class DelegationService {
    */
   checkReply(threadId: string, delegationId: string): { readonly text: string; readonly truncated: boolean } | undefined {
     if (!this.options.checkReplies) return undefined
-    const record = this.byDelegating.get(threadId)?.findLast(item => item.id === delegationId)
-    if (!record?.check || this.outcomeOf(record) !== 'answered') return undefined
+    // Found by its ID, whatever the length of the history; only one `threadId` delegated is its own to read.
+    const record = this.byId.get(delegationId)
+    if (!record?.check || record.delegatingThreadId !== threadId || this.outcomeOf(record) !== 'answered') return undefined
     const reply = this.replyOf(record, undefined).reply
     if (reply) return { text: reply.text, truncated: reply.truncated }
     // Gone since its excerpt was read: the row is told, and says its reply was not kept.
@@ -1297,6 +1300,7 @@ export class DelegationService {
     listed(this.byDelegating, record.delegatingThreadId).push(record)
     listed(this.byDelegated, record.delegatedThreadId).push(record)
     if (record.retryKey) this.byRetryKey.set(retryIndex(record.delegatingThreadId, record.retryKey), record)
+    if (!this.byId.has(record.id)) this.byId.set(record.id, record)
   }
   /**
    * Lets go of the incoming ref a branch copy landed for a start that will not use it, on whichever machine it landed: this
