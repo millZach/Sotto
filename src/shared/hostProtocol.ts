@@ -23,6 +23,7 @@ import { providerIdSchema, type ProviderClientUpdate, type ProviderId } from './
 import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema } from './usageDashboard'
 import { HOST_UPDATE_STEPS, type HostUpdateStep } from './hostUpdates'
 import { hostBranchMoveRequestSchema } from './branchMoves'
+import { checkQueueSchema, type CheckQueueEntry } from './checkQueue'
 
 /**
  * Protocol version 1 is frozen (ADR-0025; every message is listed in docs/host-protocol.md). A later host
@@ -283,14 +284,21 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * Work across machines, and only to a desktop the launch script recorded; a desktop accepts it only where its own Owl
  * answer turns Work across machines on. While no such desktop is connected, a start elsewhere is refused by name and
  * nothing is queued.
+ * `check-queue-views`: the host pushes `check-queue`, its own check queue as its machine's panel and Tools › Agents show it
+ * (#1312, fourth part), to a desktop whose hello accepted the feature: once after the hello, and again whenever the queue
+ * changes. Each check is its ticket in the queue, whether it is Watcher's or a thread's, its thread and the thread that
+ * asked once known, and the title, kind of work and provider that name it before its thread is made; never a brief, a
+ * reply or a log. A thread the desktop is not sent is not named. Only a host that keeps a check queue lists it, where its
+ * Owl answer turns on Work across machines, and only to a desktop the launch script recorded; a desktop accepts it only
+ * where its own Owl answer turns Work across machines on. A desktop that does not accept it is pushed nothing.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'check-queue-views'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
  * (ADR-0053). Its health lists them; a phone's hello does not, and their requests are refused for a phone.
  */
-export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'client-update-outcomes', 'client-update-not-listed', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'watcher-cursor', 'host-update', 'opencode-sign-in', 'activity-bodies', 'thread-prompts', 'project-origins', 'host-delegation', 'delegation-views', 'branch-moves', 'delegation-relay']
+export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'client-update-outcomes', 'client-update-not-listed', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'watcher-cursor', 'host-update', 'opencode-sign-in', 'activity-bodies', 'thread-prompts', 'project-origins', 'host-delegation', 'delegation-views', 'branch-moves', 'delegation-relay', 'check-queue-views']
 /**
  * The providers a host sends only to a client whose hello accepts their feature (#1107, ADR-0087). A desktop or phone from
  * before a provider joined Sotto reads provider IDs against a list without it, and refuses a whole shell that names one, so
@@ -577,6 +585,8 @@ export type HostPush = { v: 1; event: 'shell'; state: HostWireShell; eventPage?:
   | { v: 1; event: 'delegations-changed'; threadIds: string[] }
   /** An ask for the desktop relay (#1316); only to a desktop whose hello accepted `delegation-relay`. */
   | { v: 1; event: 'delegation-relay-ask'; askId: string; ask: DelegationRelayAsk }
+  /** The host's own check queue, the running check first (#1312); only to a desktop whose hello accepted `check-queue-views`. */
+  | { v: 1; event: 'check-queue'; checks: CheckQueueEntry[] }
 export interface HostEventPage { events: StoredThreadEvent[]; latestSeq: number; hasMore: boolean }
 /**
  * What a headless host says about itself in health and hello (ADR-0053, ADR-0054). `tailnetAddress` is the address
@@ -664,6 +674,8 @@ export const hostPushSchema = z.discriminatedUnion('event', [
   z.object({ v: z.literal(1), event: z.literal('delegations-changed'), threadIds: z.array(id).max(DELEGATIONS_CHANGED_MAX) }),
   /** An ask for the desktop relay (`delegation-relay`), only to a desktop whose hello accepted it. */
   z.object({ v: z.literal(1), event: z.literal('delegation-relay-ask'), askId: z.uuid(), ask: delegationRelayAskSchema }),
+  /** The host's own check queue (`check-queue-views`), only to a desktop whose hello accepted it. */
+  z.object({ v: z.literal(1), event: z.literal('check-queue'), checks: checkQueueSchema }),
 ])
 export const hostReceiptSchema = z.object({ status: z.enum(['pending', 'completed', 'unknown']), error: hostProtocolErrorSchema.optional(),
   answerDelivered: z.boolean().optional(), acceptedAnswer: hostAnswerTargetSchema.extend({ decisionId: id }).optional(),
