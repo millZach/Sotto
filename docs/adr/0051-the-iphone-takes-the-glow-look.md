@@ -4,11 +4,13 @@ Accepted October 4, 2026. Zach found the iPhone app's type and spacing uneven, i
 
 Amended October 26, 2026 by [ADR-0150](0150-glass-is-a-see-through-theme-held-in-owl.md): the desktop's seventh built-in, Glass, is see-through and held in Owl, so the iPhone does not offer it; its palettes stay generated from the six in `BUILT_IN_THEMES`.
 
+Amended October 27, 2026: the tab bar leaves the glass. On iOS 26 the system tab bar is a floating Liquid Glass capsule that reads as a near-black pill over the dark canvas, and neither `toolbarBackground(.hidden, for: .tabBar)` nor `toolbarBackgroundVisibility` reaches that glass. Drake asked for the icons and names to sit straight on the page, as the desktop's rail, Watcher header and scrubber do (ADR-0146, ADR-0109). So the system bar is hidden and Sotto draws its own: the same tabs, icons and badges on the canvas, the chosen tab in the accent, and no shape behind them. Pages end above it, as they did above the system's. It still goes under a thread and under the keyboard. The thread's pinned bar and the reply box keep their glass.
+
 This amends [ADR-0039](0039-the-iphone-opens-on-focus-threads.md). Its navigation stands: Threads, Computers and Settings, questions and permissions first, Settled collapsed. What changes is how the app looks and moves, the thread page, and what Settings holds.
 
 ## The look
 
-The chosen theme colours the room. Each tab opens on a soft wash mixed from the theme's accent; a thread that needs the user warms it, and the wash scrolls away with the page. Questions and permissions carry a warm glow, working threads breathe with a faint accent halo, and a failed thread has a faint danger edge. The tab bar, the thread's pinned bar and the reply box are frosted glass. Type and spacing come from one scale each, set in Figtree. Screens push and pop, sheets rise over a receding screen, and an answer reads Sending, then Answered, before its card leaves Needs you. Reduce Motion turns movement into fades and stops the breathing; Reduce Transparency turns glass into solid surfaces.
+The chosen theme colours the room. Each tab opens on a soft wash mixed from the theme's accent; a thread that needs the user warms it, and the wash scrolls away with the page. Questions and permissions carry a warm glow, working threads breathe with a faint accent halo, and a failed thread has a faint danger edge. The thread's pinned bar and the reply box are frosted glass; the tab bar sits on the page. Type and spacing come from one scale each, set in Figtree. Screens push and pop, sheets rise over a receding screen, and an answer reads Sending, then Answered, before its card leaves Needs you. Reduce Motion turns movement into fades and stops the breathing; Reduce Transparency turns glass into solid surfaces.
 
 ## The thread page
 

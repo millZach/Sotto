@@ -6,7 +6,7 @@
  * input it is told to, streams what the process prints back as it prints it, and passes on a kill or a closed pipe.
  * Every decision (deadlines, output caps, stopping a process tree, errors) stays with the caller in main. An
  * interactive launch keeps standard input open and writes what main sends it, in order; Grok's limits probe speaks
- * JSON-RPC through one (`grok.ts`).
+ * JSON-RPC through one (`grok.ts`), and Claude Code's speaks stream-json (`claudeLimits.ts`).
  *
  * It imports only Node builtins, so the same file runs in Electron main and in the headless host under plain Node.
  */
