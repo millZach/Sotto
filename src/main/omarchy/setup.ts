@@ -63,6 +63,10 @@ function ownedHash(hash: string | null, receipt: PieceReceipt | undefined): bool
 const bindSchema = z.object({ key: z.string(), modmask: z.number(), dispatcher: z.string(), arg: z.string(),
   release: z.boolean().optional(), description: z.string().optional() }).passthrough()
 type Bind = z.infer<typeof bindSchema>
+const bindsSchema = z.array(bindSchema)
+const shellConfigSchema = z.object({ bar: z.object({ layout: z.record(z.string(), z.array(z.unknown())).optional() }).optional() }).passthrough()
+const pluginsSchema = z.array(z.object({ id: z.string() }).passthrough())
+const objectSchema = z.record(z.string(), z.unknown())
 type Verb = 'start' | 'stop' | 'toggle'
 const VOXTYPE_LABELS = { start: 'Start dictation (push-to-talk)', stop: 'Stop dictation (push-to-talk)', toggle: 'Toggle dictation' }
 const isSottoBind = (bind: Bind, verb: Verb, legacySotto: boolean): boolean => sottoVerb(bind) === verb ||
@@ -78,7 +82,7 @@ function sottoVerb(bind: Bind): Verb | null {
 /** Who owns each of these chords, including a hold's release binding. Without shortcuts, the default F9 and Super+Ctrl+X. */
 export function inspectDictationBindings(value: unknown, legacySotto = false, shortcuts: DictationShortcutSet = DEFAULT_OMARCHY_SHORTCUTS): { conflicts: string[]; voxtype: boolean; manual: boolean } {
   const chords = boundChords(shortcuts)
-  const binds = z.array(bindSchema).parse(value).flatMap(bind => {
+  const binds = bindsSchema.parse(value).flatMap(bind => {
     const on = chordOfBind(bind, chords)
     return on ? [{ bind, on }] : []
   })
@@ -102,7 +106,7 @@ export function inspectDictationBindings(value: unknown, legacySotto = false, sh
 export function hyprlandUses(value: unknown, chord: string): string | null {
   const hypr = hyprlandChord(chord)
   if (hypr === null) return null
-  const entry = z.array(bindSchema).parse(value).find(bind => chordOfBind(bind, [{ chord, role: 'press', hypr }]) !== undefined &&
+  const entry = bindsSchema.parse(value).find(bind => chordOfBind(bind, [{ chord, role: 'press', hypr }]) !== undefined &&
     sottoVerb(bind) === null && !/(?:^|[\s/'"])voxtype(?:['"])?\s/.test(bind.arg) &&
     !(bind.dispatcher === '__lua' && Object.values(VOXTYPE_LABELS).includes(bind.description ?? '')))
   return entry === undefined ? null : (entry.description || entry.dispatcher).slice(0, 800)
@@ -221,8 +225,7 @@ export class OmarchySetup {
   private async onBar(): Promise<boolean> {
     const value = await contents(this.shellConfig)
     if (value === null) return false
-    const config = z.object({ bar: z.object({ layout: z.record(z.string(), z.array(z.unknown())).optional() }).optional() })
-      .passthrough().parse(JSON.parse(value))
+    const config = shellConfigSchema.parse(JSON.parse(value))
     // Top-level plugins enable services; only a bar layout entry places the owl.
     return Object.values(config.bar?.layout ?? {}).flat().some(entry =>
       entry === ID || (typeof entry === 'object' && entry !== null && 'id' in entry && entry.id === ID))
@@ -574,7 +577,7 @@ export class OmarchySetup {
         let found = false
         for (let attempt = 0; attempt < 50; attempt++) {
           const result = await this.run('omarchy-shell', ['shell', 'listPlugins'])
-          try { found = result.ok && z.array(z.object({ id: z.string() }).passthrough()).parse(JSON.parse(result.stdout)).some(plugin => plugin.id === ID) } catch { found = false }
+          try { found = result.ok && pluginsSchema.parse(JSON.parse(result.stdout)).some(plugin => plugin.id === ID) } catch { found = false }
           if (found) break
           await wait(100)
         }
@@ -632,9 +635,8 @@ export class OmarchySetup {
     const current = await contents(this.shellConfig)
     if (current === before) return
     if (current === null) return // A later deletion belongs to the user.
-    const object = z.record(z.string(), z.unknown())
-    const saved = before === null ? {} : object.parse(JSON.parse(before))
-    const latest = object.parse(JSON.parse(current))
+    const saved = before === null ? {} : objectSchema.parse(JSON.parse(before))
+    const latest = objectSchema.parse(JSON.parse(current))
     const isOwl = (entry: unknown): boolean => entry === ID || typeof entry === 'object' && entry !== null && 'id' in entry && entry.id === ID
     const restoreEntries = (prior: unknown, now: unknown): unknown[] => {
       const result = Array.isArray(now) ? now.filter(entry => !isOwl(entry)) : []
@@ -646,10 +648,10 @@ export class OmarchySetup {
     for (const key of ['plugins', 'disabledPlugins']) {
       if (key in latest || key in saved) latest[key] = restoreEntries(saved[key], latest[key])
     }
-    const oldBar = object.safeParse(saved.bar), bar = object.safeParse(latest.bar)
+    const oldBar = objectSchema.safeParse(saved.bar), bar = objectSchema.safeParse(latest.bar)
     if (bar.success) {
-      const oldLayout = object.safeParse(oldBar.success ? oldBar.data.layout : undefined)
-      const layout = object.safeParse(bar.data.layout)
+      const oldLayout = objectSchema.safeParse(oldBar.success ? oldBar.data.layout : undefined)
+      const layout = objectSchema.safeParse(bar.data.layout)
       if (layout.success) {
         for (const section of Object.keys(layout.data)) layout.data[section] = restoreEntries(oldLayout.success ? oldLayout.data[section] : undefined, layout.data[section])
         bar.data.layout = layout.data

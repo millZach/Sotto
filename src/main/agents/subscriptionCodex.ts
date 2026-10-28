@@ -181,6 +181,12 @@ function childOperation<T>(executable: string, args: string[], cwd: string, time
  * approval could be asked for and nobody is waiting to answer one.
  */
 const sideWritingArguments = [...isolationArguments, 'approval_policy="never"'].flatMap((value) => ['-c', value])
+const configResult = z.object({ config: z.object({
+  model_provider: z.string(), model_providers: z.record(z.string(), z.unknown()).optional(),
+  model: z.string().nullable().optional(),
+  openai_base_url: z.string().nullable().optional(), chatgpt_base_url: z.string().nullable().optional(),
+  mcp_servers: z.record(z.string(), z.unknown()).optional(),
+}).passthrough() })
 const execEvent = z.object({ type: z.string(), item: z.object({ type: z.string(), text: z.string().optional() }).passthrough().optional() }).passthrough()
 /**
  * The items a side call may produce. `error` items are Codex's own warnings (an unknown model's metadata,
@@ -275,12 +281,7 @@ export class CodexSubscriptionClient implements SubscriptionClient {
         request('initialize', { clientInfo: { name: 'sotto', title: 'Sotto subscription reasoning', version: '1.0' }, capabilities: { experimentalApi: true } }, () => {
           child.stdin.write(JSON.stringify({ method: 'initialized' }) + '\n')
           request('config/read', { includeLayers: false, cwd: directory }, (result) => {
-            const { config } = z.object({ config: z.object({
-              model_provider: z.string(), model_providers: z.record(z.string(), z.unknown()).optional(),
-              model: z.string().nullable().optional(),
-              openai_base_url: z.string().nullable().optional(), chatgpt_base_url: z.string().nullable().optional(),
-              mcp_servers: z.record(z.string(), z.unknown()).optional(),
-            }).passthrough() }).parse(result)
+            const { config } = configResult.parse(result)
             // Never send native account credentials to a custom provider endpoint.
             if (config.model_provider !== 'openai' || config.model_providers?.openai !== undefined
               || (config.openai_base_url && config.openai_base_url !== 'https://api.openai.com/v1')
