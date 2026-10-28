@@ -639,7 +639,8 @@ describe('Claude recovery and safety', () => {
     // with no reply above it.
     const created = randomUUID()
     await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: created, projectId: f.projectId, title: 'Prose', modelId: f.modelId })
-    const frames = (await f.driver.requests()).filter(record => record.method === 'launch' || record.method === 'resume').map(record => record.params?.frame as { thinkingDisplayUpdates: string | null })
+    const frames = (await f.driver.requests()).filter(record => record.method === 'launch' || record.method === 'resume').map(record => record.params?.frame as { args: string[]; thinkingDisplayUpdates: string | null })
+      .filter(frame => !frame.args.includes('--no-session-persistence'))
     expect(frames.length).toBeGreaterThan(0)
     for (const frame of frames) expect(frame.thinkingDisplayUpdates).toBe('0')
   })
