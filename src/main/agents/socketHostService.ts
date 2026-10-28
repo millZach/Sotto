@@ -41,13 +41,21 @@ import { hostMachineReportSchema, type HostMachineReport } from '../../shared/ho
 import { branchMoveStepTimeoutMs, type HostBranchMoveRequest } from '../../shared/branchMoves'
 import { HOST_UPDATE_ANSWER_DEADLINES_MS, hostUpdateAnswerSchema, type HostUpdateAnswer, type HostUpdateRequest } from '../../shared/hostSelfUpdate'
 import type { HostUpdateStep } from '../../shared/hostUpdates'
-import { projectOriginsSchema, type ProjectOrigins } from '../../shared/workerMachine'
+import { projectOriginsSchema, projectSetupResultSchema, type ProjectOrigins, type ProjectSetupRequest, type ProjectSetupResult } from '../../shared/workerMachine'
 import { desktopDefaultsReceiptSchema, type DesktopDefaultsInput, type DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
 import type { DelegationRelayAsk, RelayedReply } from '../../shared/delegationRelay'
 import type { DelegationNews } from '../../shared/delegation'
 import { delegationBriefSchema, delegationsReadSchema, type DelegationBrief, type DelegationsRead } from '../../shared/delegation'
 import type { CheckQueueEntry } from '../../shared/checkQueue'
 import { usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, usageProvidersBeforeMuse, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
+
+/** Answers read on every call, checked against schemas built once rather than on every call. */
+const usageProviderIdsSchema = usageProviderIdSchema.array().max(usageProviderIdSchema.options.length)
+const signInAnswerSchema = hostSignInSchema.nullable()
+const fileListingResultSchema = filesResultSchema(fileListingSchema)
+const filePreviewResultSchema = filesResultSchema(filePreviewSchema)
+const gitListingResultSchema = toolsResultSchema(gitListingSchema)
+const gitReviewResultSchema = toolsResultSchema(gitReviewSchema)
 
 export const REMOTE_COMPOSE_UNSAVED = 'This host cannot save this draft yet. Your draft is kept on this computer and has not been saved on the host. Update the host.'
 const REMOTE_SEND_UNCERTAIN = msg`This draft may already have been sent. Your copy is kept on this computer. Check the original thread before sending again.`
@@ -1277,17 +1285,17 @@ export class SocketHostService implements HostService {
    */
   async threadFiles(request: FileListRequest): Promise<FilesResult<FileListing>> {
     this.offers('thread-files')
-    return this.read(filesResultSchema(fileListingSchema), await this.call({ op: 'thread-files', request }))
+    return this.read(fileListingResultSchema, await this.call({ op: 'thread-files', request }))
   }
   threadFilePreview(request: FileRequest): Promise<FilesResult<FilePreview>> {
-    return this.large('thread-files', async () => this.read(filesResultSchema(filePreviewSchema), await this.call({ op: 'thread-file-preview', request })))
+    return this.large('thread-files', async () => this.read(filePreviewResultSchema, await this.call({ op: 'thread-file-preview', request })))
   }
   async gitChanges(request: ToolListRequest): Promise<ToolsResult<GitChangeListing>> {
     this.offers('thread-changes')
-    return this.read(toolsResultSchema(gitListingSchema), await this.call({ op: 'thread-changes', request }))
+    return this.read(gitListingResultSchema, await this.call({ op: 'thread-changes', request }))
   }
   gitReview(request: GitReviewRequest): Promise<ToolsResult<GitReview>> {
-    return this.large('thread-changes', async () => this.read(toolsResultSchema(gitReviewSchema), await this.call({ op: 'thread-changes-review', request })))
+    return this.large('thread-changes', async () => this.read(gitReviewResultSchema, await this.call({ op: 'thread-changes-review', request })))
   }
   async subagentPage(request: SubagentPageRequest): Promise<SubagentPage> {
     this.offers('subagents')
@@ -1314,6 +1322,17 @@ export class SocketHostService implements HostService {
   async projectOrigins(): Promise<ProjectOrigins> {
     this.offers('project-origins')
     return this.read(projectOriginsSchema, await this.call({ op: 'project-origins' }, undefined, undefined, 10000))
+  }
+  /** The host lists `project-setup`: it gives itself a copy of a repository for a worker placed there (#1690). An older host's cannot. */
+  get supportsProjectSetup(): boolean { return this.features.includes('project-setup') }
+  /** A clone may take minutes: the host stops its own after ten, and this waits a minute longer for its answer. */
+  async setUpProject(request: ProjectSetupRequest): Promise<ProjectSetupResult> {
+    this.offers('project-setup')
+    const result = this.read(projectSetupResultSchema, await this.call({ op: 'project-setup', request }, undefined, undefined, 11 * 60_000))
+    // The host's shell push naming the new project may come later than this answer; the start is admitted against the shell
+    // held here, so it is read now. A failed read leaves admission to say the project is unavailable, as it would have.
+    if (result.ok) await this.readShell().catch(() => undefined)
+    return result
   }
   /**
    * The host lists `host-delegation`: its own threads delegate on its machine and it keeps the desktop defaults this
@@ -1422,7 +1441,7 @@ export class SocketHostService implements HostService {
   }
   async usageRefresh(providerIds?: ProviderId[], background = false): Promise<UsageLocalHostRead> {
     this.offers('usage-dashboard')
-    const named = providerIds === undefined ? undefined : usageProviderIdSchema.array().max(usageProviderIdSchema.options.length).parse(providerIds)
+    const named = providerIds === undefined ? undefined : usageProviderIdsSchema.parse(providerIds)
     const parsed = named === undefined || this.features.includes('usage-muse-opencode') ? named : usageProvidersBeforeMuse(named)
     // A host from before `usage-background-refresh` refuses the field, and reads every refresh afresh.
     const quiet = background && this.features.includes('usage-background-refresh')
@@ -1522,7 +1541,7 @@ export class SocketHostService implements HostService {
    */
   async signIn(operation: { op: 'sign-in-start'; provider: ProviderId } | { op: 'sign-in-read' | 'sign-in-cancel'; signInId: string } | { op: 'sign-in-code'; signInId: string; code: string }): Promise<HostSignIn | null> {
     if (!this.offersSignIn()) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
-    return this.read(hostSignInSchema.nullable(), await this.call(operation))
+    return this.read(signInAnswerSchema, await this.call(operation))
   }
   /** Whether the host signs its own OpenCode in to model sources for this client (#1107). */
   offersOpenCodeSignIn(): boolean { return this.features.includes('opencode-sign-in') }

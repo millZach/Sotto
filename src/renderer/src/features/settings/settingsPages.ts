@@ -63,7 +63,7 @@ export function settingsSectionHome(id: SettingsSectionId): { readonly page: Set
 }
 
 /** What has to be on for a setting to show: dictation itself, or an Owl feature that holds it back. `babysitting` is on while restarting stopped threads (ADR-0144), which takes babysitting away, is off. */
-export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'cross-machine-work' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers' | 'keep-main-current' | 'clear-threads' | 'restart-stopped-threads' | 'babysitting'
+export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'cross-machine-work' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers' | 'keep-main-current' | 'clear-threads' | 'restart-stopped-threads' | 'babysitting' | 'click-effect'
 
 /**
  * The attribute that marks a setting's control on its page with the setting's id: Find a setting lands on a control by
@@ -225,6 +225,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     ...platform === 'darwin' ? [{ id: 'menu-bar-owl', label: msg`Menu bar owl`, section: 'settings-appearance', words: 'tray icon body eyes colour color', gate: 'menu-bar-owl' } as const] : [],
     { id: 'contrast', label: msg`Contrast`, section: 'settings-appearance' },
     { id: 'reduced-motion', label: msg`Reduced motion`, section: 'settings-appearance', words: 'animation' },
+    { id: 'click-effect', label: msg`Click effect`, section: 'settings-appearance', words: 'press ripple waves binary animation accent', gate: 'click-effect' },
     { id: 'night-falls', label: msg`Night falls between Dictate or Threads and Watcher`, section: 'settings-appearance', words: 'transition animation watcher room dictate', gate: 'night-falls' },
     { id: 'night-falls-look', label: msg`Night falls look`, section: 'settings-appearance', words: 'transition animation stars band look', gate: 'night-falls' },
     { id: 'night-falls-speed', label: msg`Night falls speed`, section: 'settings-appearance', words: 'transition animation slower faster', gate: 'night-falls' },

@@ -331,7 +331,10 @@ export const watcherToolSchemas = {
       // A check (#1312): the start waits its turn in the queue of the machine it starts on, behind the check running there,
       // before its thread is made. Sotto's, like the move: main sets it for a `testRun` placed on This computer or on a host
       // that lists `watcher-check-queue`, and Watcher never names it. A host without a queue refuses it.
-      check: z.literal(true).optional() }).strict(),
+      check: z.literal(true).optional(),
+      // A new worktree made from `origin`'s branch as just fetched, where the copy Sotto set up for this start keeps its own
+      // checkout behind (#1690). Sotto's, like the move: main sets it when it places the start, and Watcher never names it.
+      fromOrigin: z.string().min(1).max(255).optional() }).strict(),
     output: result({ ...receiptResult, target: watcherThreadTargetSchema, effectiveChoices: choices, creationReceiptId: id, firstPromptReceiptId: id,
       // Where a start from a thread's branch began and from which branch, with what a test run's snapshot carried (#1033).
       // In memory only, as `placement` is.

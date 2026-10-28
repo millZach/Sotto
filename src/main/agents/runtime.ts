@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import type { AgentThread, ProviderId } from '../../shared/agents'
 import type { ThreadClearKeptReason } from '../../shared/threadClear'
 import type { AppSettings } from '../../shared/settings'
+import type { ProjectSetupRequest } from '../../shared/workerMachine'
 import { babysitEndedReasonSchema, type BabysitEndedReason } from '../../shared/babysitting'
 import { ShortTextWriter } from '../llm/shortTextWriter'
 import { firstMessageTitleWriter, threadTitleWriter } from '../llm/threadTitle'
@@ -33,7 +34,7 @@ import { WatcherService, type WatcherAutoSettleEvent } from './watcher'
 import { WatcherPhoneService } from './watcherPhone'
 import { WatcherToolServer } from './watcherTools'
 import { DelegationService } from './delegation'
-import { hostname } from 'node:os'
+import { homedir, hostname } from 'node:os'
 import { CheckQueue } from './checkQueue'
 import type { PackageInstaller } from './checkWorktree'
 import { ContinueService } from './continueThread'
@@ -64,6 +65,7 @@ import { mayGrantLocally } from './authority'
 import { HostFactsSource, hostMachineReport, type MachineWork } from './hostFacts'
 import type { HostMachineReport } from '../../shared/hostFacts'
 import { readProjectOrigins } from './projectOrigins'
+import { ProjectCopies } from './projectSetup'
 import { threadDelegations } from './agentsView'
 import { BranchBundles } from './branchBundles'
 import { desktopBranchMoves, foldersOfSnapshot } from './branchMoves'
@@ -408,8 +410,13 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const relayed = options.runsAs === 'headless-host' ? options.hostDelegation?.relay : undefined
   const checks = crossMachine ? new CheckQueue(options.runsAs !== 'headless-host' ? 'This computer'
     : () => relayed?.hereName() ?? (hostname().trim().slice(0, 64) || 'this machine')) : undefined
+  // A machine with no copy of a start's project gets one (#1690): This computer's set up by the desktop, a host's by the
+  // host, each through its own coordinator. Sotto's own data folder, where Watcher works, never says where projects go.
+  const projectCopies = crossMachine ? new ProjectCopies({ projects: () => agentControl.watcherSnapshot().projects, projectsDirectory: () => agentControl.projectsDirectory(),
+    home: homedir(), ownFolder: directory, addProject: (title, path) => agentControl.addProjectForPlacement(title, path) }) : undefined
   const placing = crossMachine && options.runsAs !== 'headless-host'
     ? { workerMachine: () => options.settings().newWorkerMachine, projectOrigins: () => readProjectOrigins(agentControl.watcherSnapshot().projects),
+      ...projectCopies ? { setUpProject: (request: ProjectSetupRequest) => projectCopies.setUp(request) } : {},
       ...branchMoves ? { branchMoves } : {} } : {}
   const watcher = moving.watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
@@ -600,6 +607,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const prepareForShutdown = (): Promise<void> => {
     if (preparingForShutdown) return preparingForShutdown
     worktreeCleanup.dispose()
+    projectCopies?.close()
     void mainCheckout?.close()
     void babysitter?.close().catch(() => undefined)
     void watchedPullRequests?.close().catch(() => undefined)
@@ -612,6 +620,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       // A sweep in progress finishes its current worktree, and takes no other, before the host it asks is closed.
       // A babysitting pass finishes the pull request it is on, and records what it told, the same way.
       stopWatcher()
+      projectCopies?.close()
       await worktreeCleanup.close()
       if (mainCheckout) await mainCheckout.close()
       if (babysitter) await babysitter.close()
@@ -654,6 +663,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const delegationRecord = delegation
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
     ...(crossMachine ? { projectOrigins: readProjectOrigins } : {}),
+    ...(projectCopies ? { setUpProject: (request: ProjectSetupRequest) => projectCopies.setUp(request) } : {}),
     // A headless host that runs delegation for its own threads keeps the desktop defaults a desktop sends it (#1310).
     ...(desktopDefaults ? { desktopDefaults } : {}),
     // And answers the desktop window's read of those threads' delegations, for its Tools › Agents and rows of delegated work (#1310).

@@ -4,7 +4,7 @@ import { isBuiltin } from 'node:module'
 import { lingui } from '@lingui/vite-plugin'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import { build as buildVite, type Plugin } from 'vite'
-import { storeWorkerBuild } from './scripts/store-worker-build.mjs'
+import { STORE_WORKERS, storeWorkerBuild } from './scripts/store-worker-build.mjs'
 
 // Preview code is inert unless the renderer was built with this exact test-only gate.
 const visualPreviewEnvironment = process.env.SOTTO_VISUAL_PREVIEW === '1' ? '1' : '0'
@@ -85,17 +85,20 @@ function headlessHostBuild(): Plugin {
           },
         },
       })
-      await buildVite(storeWorkerBuild({ root: __dirname, outDir: resolve(__dirname, 'out/host') }))
+      for (const worker of STORE_WORKERS) await buildVite(storeWorkerBuild({ root: __dirname, outDir: resolve(__dirname, 'out/host'), worker }))
     },
   }
 }
 
 /**
- * Builds the store worker (`threadStoreWorker.ts`), which writes the thread store off main (#1457), beside main's bundle
- * once main is built, as one file on its own (`scripts/store-worker-build.mjs`).
+ * Builds the store workers beside main's bundle once main is built, each as one file on its own
+ * (`scripts/store-worker-build.mjs`): `threadStoreWorker.ts`, which writes the thread store off main (#1457), and
+ * `usageStoreWorker.ts`, which reads and writes Usage's store off main (ADR-0083, October 27 amendment).
  */
 function storeWorkerBesideMain(): Plugin {
-  return { name: 'sotto-store-worker', async closeBundle() { await buildVite(storeWorkerBuild({ root: __dirname, outDir: resolve(__dirname, 'out/main') })) } }
+  return { name: 'sotto-store-worker', async closeBundle() {
+    for (const worker of STORE_WORKERS) await buildVite(storeWorkerBuild({ root: __dirname, outDir: resolve(__dirname, 'out/main'), worker }))
+  } }
 }
 
 export default defineConfig({
@@ -123,7 +126,7 @@ export default defineConfig({
       lingui({ macroTransform: true, failOnCompileError: true }),
       externalizeDepsPlugin({ exclude: ['electron-updater'] }),
       headlessHostBuild(),
-      // The thread store's writes and its log's checkpoints run on this worker thread, so no save holds main (`storeWorker.ts`).
+      // The thread store's writes and its log's checkpoints, and every Usage store read and write, run on worker threads (`storeWorker.ts`, `usageStoreClient.ts`).
       storeWorkerBesideMain(),
       externalDependencyInventory('main'),
       bundledDependencyInventory(),

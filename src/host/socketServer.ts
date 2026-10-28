@@ -24,7 +24,7 @@ import { REMOTE_OPENCODE_SIGN_IN_OPERATIONS, REMOTE_SIGN_IN_OPERATIONS, remoteCo
 import type { HostSelfUpdate } from './selfUpdate'
 import { usageLocalClearResultSchema, usageLocalHostReadSchema, usageProvidersBeforeMuse, usageReadBeforeHistory, usageReadBeforeMuse, type UsageLocalHostRead } from '../shared/usageDashboard'
 import { hostMachineReportSchema } from '../shared/hostFacts'
-import { projectOriginsSchema, type ProjectOrigins } from '../shared/workerMachine'
+import { projectOriginsSchema, projectSetupResultSchema, type ProjectOrigins } from '../shared/workerMachine'
 import { desktopDefaultsReceiptSchema } from '../shared/desktopDefaults'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { DEFLATE_RESPONSE, deflateOffered, SocketFrames } from './socketFrames'
@@ -43,6 +43,13 @@ import { MAX_AGENT_ACTIVITIES } from '../shared/agentActivity'
 import type { OpenCodeHostCall } from '../shared/opencodeSignIn'
 import type { OpenCodeSignIn } from '../main/agents/opencodeSignIn'
 import type { HostBranchMoves } from './branchMoves'
+
+/** The HTTP listener's request bodies, checked against schemas built once rather than on every request. */
+const adminPhonesRequest = z.object({}).strict()
+const adminPhonesCommandRequest = z.object({ command: hostPhonesCommandSchema }).strict()
+const adminTailnetRequest = z.object({ enabled: z.boolean().optional() }).strict()
+const adminClientRequest = z.object({ clientId: z.string().min(1).max(512) }).strict()
+const pairRequest = z.object({ v: z.literal(1), code: z.string().min(1).max(32), name: z.string().min(1).max(256) }).strict()
 
 const errors: Record<HostErrorCode, string> = {
   unauthenticated: HOST_SESSION_REJECTED,
@@ -294,6 +301,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     // Project origins are for a desktop placing work (#1032), as host facts are, and only where the host's Owl answer
     // turns on Work across machines.
     && (feature !== 'project-origins' || service.supportsProjectOrigins === true && service.projectOrigins !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    // Setting up a copy for a worker placed here (#1690) is offered exactly where project origins are.
+    && (feature !== 'project-setup' || service.supportsProjectSetup === true && service.setUpProject !== undefined && (options.admin !== false || options.tailnet !== undefined))
     // A host that runs delegation for its own threads (#1310) takes desktop defaults from recorded desktops on both
     // listeners, only where its Owl answer turns on Work across machines. The desktop's own phone listener never lists it.
     && (feature !== 'host-delegation' || service.supportsHostDelegation === true && service.desktopDefaults !== undefined && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
@@ -1330,6 +1339,11 @@ export async function startSocketServer(options: SocketServerOptions) {
         // A project of a provider this peer does not know is not named to it (#1107).
         return { projects: read.projects.filter(project => !unknownProviderProject(peer, project.projectId)) }
       }
+      case 'project-setup': {
+        if (!offers(peer, 'project-setup') || !service.setUpProject) throw new Refusal('invalid_request')
+        // A setup that cannot finish answers its own plain words; only a failure to answer at all is a refusal.
+        try { return projectSetupResultSchema.parse(await service.setUpProject(request.request)) } catch { throw new Refusal('unavailable') }
+      }
       case 'delegation-views': {
         // Delegation's own record of one of this host's threads (#1310), read for a recorded desktop's window, never a reply.
         if (!offers(peer, 'delegation-views') || !service.delegationViews) throw new Refusal('invalid_request')
@@ -1582,17 +1596,17 @@ export async function startSocketServer(options: SocketServerOptions) {
           if (request.url === '/v1/admin/pairing-code') { respond(response, 200, { v: 1, hostId, ...pairing.issuePairingCode() }); return }
           if (request.url === '/v1/admin/phones' || request.url === '/v1/admin/phones-command') {
             if (!options.phones) throw new Refusal('invalid_request')
-            if (request.url === '/v1/admin/phones') { z.object({}).strict().parse(await body(request)); respond(response, 200, { v: 1, hostId, state: options.phones.get() }); return }
-            const { command } = z.object({ command: hostPhonesCommandSchema }).strict().parse(await body(request))
+            if (request.url === '/v1/admin/phones') { adminPhonesRequest.parse(await body(request)); respond(response, 200, { v: 1, hostId, state: options.phones.get() }); return }
+            const { command } = adminPhonesCommandRequest.parse(await body(request))
             respond(response, 200, { v: 1, hostId, ...await options.phones.command(command) }); return
           }
           // Only here, on the listener the tailnet never reaches: a desktop turns its tailnet connections on or off over SSH.
           if (request.url === '/v1/admin/tailnet') {
             if (!options.phones) throw new Refusal('invalid_request')
-            const input = z.object({ enabled: z.boolean().optional() }).strict().parse(await body(request))
+            const input = adminTailnetRequest.parse(await body(request))
             respond(response, 200, { v: 1, hostId, ...await options.phones.tailnet(input) }); return
           }
-          const input = z.object({ clientId: z.string().min(1).max(512) }).strict().parse(await body(request))
+          const input = adminClientRequest.parse(await body(request))
           if (request.url === '/v1/admin/revoke-client') { const wasPaired = await pairing.revoke(input.clientId); revoked(input.clientId); respond(response, 200, { v: 1, hostId, revoked: wasPaired }); return }
           else if (request.url === '/v1/admin/allow-answers' || request.url === '/v1/admin/deny-answers') {
             if (!pairing.list().some(client => client.clientId === input.clientId) || !options.setAnswers) throw new Refusal('invalid_request')
@@ -1604,7 +1618,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (request.url === '/v1/pair') {
           // A desktop never pairs here (ADR-0053), so with phones off nobody may.
           if (tailnet && !tailnet.phonesAdmitted()) throw new Refusal('forbidden', phonesOffMessage())
-          const input = z.object({ v: z.literal(1), code: z.string().min(1).max(32), name: z.string().min(1).max(256) }).strict().parse(await body(request))
+          const input = pairRequest.parse(await body(request))
           // This listener binds only loopback. Serve replaces this header with the device address;
           // direct connections use loopback's budget. Neither address grants client authority.
           const forwarded = request.headers['x-forwarded-for']

@@ -132,6 +132,7 @@ export default tseslint.config(
       'artifacts/watcher-column/**',
       'artifacts/composer-slim-steady/**',
       'artifacts/scene-under-column/**',
+      'artifacts/click-effect/**',
       'artifacts/reply-quote/**',
       'artifacts/sidebar-question/**',
       'artifacts/tools-rail-run/**',
