@@ -354,7 +354,16 @@ export class BrowserService extends ToolOperations {
     if (version !== this.mountVersion[slot]) return
     const window = this.dependencies.getWindow()
     if (!window || window.isDestroyed()) return fail('unavailable', t`The main window is unavailable.`)
-    const previous = this.mounted.get(slot)?.record
+    const shown = this.mounted.get(slot)
+    // The same page in the same window only moves, as when the line over the page appears with Point at something: it
+    // keeps its place on the window, and with it the keyboard focus main may just have given it.
+    if (shown?.record === record && shown.window === window) {
+      this.desiredPageId[slot] = request.pageId
+      this.setBounds(record, window, request.bounds)
+      this.startPoint(record)
+      return
+    }
+    const previous = shown?.record
     this.removeMountedView(slot)
     if (previous && previous !== record) this.endPoint(previous, 'hidden')
     this.desiredPageId[slot] = request.pageId

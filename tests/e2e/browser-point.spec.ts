@@ -181,8 +181,13 @@ test('point at something names the element, takes its picture and puts it in the
         await expect(panel).toBeVisible()
 
         // Point again from the keyboard: Enter on Point, Tab through the page to Save trail, and Enter picks it.
-        await point.press('Enter')
+        // Enter goes down and comes up as a person's key does, a moment apart: press() sends both within a few
+        // milliseconds through the debugger, and its key-up can land on Sotto's own window after main has handed the
+        // page the keyboard. The page keeps the keyboard through the key-up.
+        await point.focus(); await page.keyboard.down('Enter')
         await expect(line).toBeVisible()
+        await expect.poll(() => pageHasKeyboard(launched, url)).toBe(true)
+        await page.keyboard.up('Enter')
         await expect.poll(() => pageHasKeyboard(launched, url)).toBe(true)
         await key(launched, url, 'Tab'); await key(launched, url, 'Tab')
         await expect.poll(() => pageText(launched, url, '#save').then(() => launched.app.evaluate(async ({ webContents }, url) => webContents.getAllWebContents().find(item => item.getURL() === url)!.executeJavaScript('document.activeElement.id') as Promise<string>, url))).toBe('save')

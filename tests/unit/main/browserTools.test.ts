@@ -799,6 +799,18 @@ describe('point at something (ADR-0154)', () => {
     await vi.waitFor(() => expect(overlay(view, 'none')).toHaveLength(1))
   })
 
+  it('keeps the page on the window when the pane only moves it, so the keyboard Point gave it stays', async () => {
+    const fixture = await browserFixture(true)
+    await pointing(fixture)
+    const removed = vi.spyOn(fixture.attached, 'delete'), added = vi.spyOn(fixture.attached, 'add')
+    // The line over the page appears and the page moves down under it.
+    unwrap(await fixture.service.mount({ ...fixture.target, bounds: { ...bounds, y: bounds.y + 32, height: bounds.height - 32 } }))
+    expect(removed).not.toHaveBeenCalled()
+    expect(added).not.toHaveBeenCalled()
+    expect(fixture.view.setBounds).toHaveBeenLastCalledWith(expect.objectContaining({ y: bounds.y + 32 }))
+    expect(inspectModes(fixture.view).at(-1)).toBe('searchForNode')
+  })
+
   it('does nothing on a page nobody shows', async () => {
     const { service, target, view } = await browserFixture(true)
     expect(unwrap(await service.point({ ...target, on: true, color }))).toEqual({ pointing: false })
