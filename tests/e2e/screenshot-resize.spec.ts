@@ -22,7 +22,8 @@ test('a screenshot past the bound is scaled down in its own format, and its chip
     expect(large.mimeType).toBe('image/png')
     expect(large.dimensions).toEqual({ original: { width: 3840, height: 2160 }, sent: { width: 2576, height: 1449 } })
     expect(await decodedSize(page, large)).toEqual({ width: 2576, height: 1449 })
-    // Both sizes are on the chip, where a keyboard user sees them as well as a pointer user.
+    // Both sizes are in a badge on the picture once the deck fans out, where a keyboard user sees them as well as a pointer user.
+    await previews.getByRole('button', { name: 'Remove 4K capture.png', exact: true }).focus()
     await expect(previews.getByText('Resized from 3840 x 2160 to 2576 x 1449', { exact: true })).toBeVisible()
     await expect(previews.getByText('Resized from 3840 by 2160 to 2576 by 1449 pixels')).toBeAttached()
 
@@ -60,8 +61,10 @@ test('a screenshot past the bound is scaled down in its own format, and its chip
         await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeInViewport()
         const note = previews.getByText(/^Resized from \d+\sx\s/u).first()
         await note.scrollIntoViewIfNeeded()
+        // The badge shows once the deck fans out under the pointer.
+        await previews.locator('.screenshot-deck').hover()
         await expect(note).toBeInViewport()
-        // The note sits inside its chip: no wider than the chip and not clipped by it.
+        // The badge sits on its picture: no wider than the picture and not clipped by it.
         const [chip, label] = await Promise.all([previews.locator('figure').first().boundingBox(), note.boundingBox()])
         expect(label!.x).toBeGreaterThanOrEqual(chip!.x)
         expect(label!.x + label!.width).toBeLessThanOrEqual(chip!.x + chip!.width)

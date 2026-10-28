@@ -5089,12 +5089,6 @@ msgctxt "queued message"
 msgid "Next"
 msgstr "Next"
 
-#. Opens the list of suggested next prompts.
-#: src/renderer/src/agents/ThreadComposer.tsx
-msgctxt "suggested prompts"
-msgid "Next"
-msgstr "Next"
-
 #. Goes to the next step of a walkthrough.
 #: src/renderer/src/agents/VisualStepper.tsx
 msgctxt "walkthrough"
@@ -7677,14 +7671,6 @@ msgstr "Stopped. Nothing more will come of it."
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Suggested next prompt: {ghostText}. Press Tab to take it, or Up for more."
 msgstr "Suggested next prompt: {ghostText}. Press Tab to take it, or Up for more."
-
-#: src/renderer/src/agents/ThreadComposer.tsx
-msgid "Suggested next prompts"
-msgstr "Suggested next prompts"
-
-#: src/renderer/src/agents/ThreadComposer.tsx
-msgid "Suggested next prompts (Up in an empty prompt)"
-msgstr "Suggested next prompts (Up in an empty prompt)"
 
 #. A step in the browser line; starts lowercase.
 #: src/renderer/src/agents/browserLine.ts

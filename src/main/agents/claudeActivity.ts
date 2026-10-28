@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
-import { MAX_ACTIVITY_TEXT, compactAgentIdentity, isTerminalActivity, mergeAgentActivities, planSteps, type AgentActivity, type ObservedAgent, type WorkflowProgress } from '../../shared/agentActivity'
+import { MAX_ACTIVITY_TEXT, compactAgentIdentity, findAgentActivity, isTerminalActivity, mergeAgentActivities, planSteps, type AgentActivity, type ObservedAgent, type WorkflowProgress } from '../../shared/agentActivity'
 import { observedSubagentStatus } from '../../shared/subagents'
 import { object, type ClaudeFrame } from './claudeProtocol'
 import { claudeText } from './claudeSessionLog'
@@ -57,11 +57,7 @@ function workflowAgent(entry: Record<string, unknown>, workflow: ObservedAgent, 
  * that everything changed.
  */
 function mergeChanged(previous: AgentActivity[], rows: readonly AgentActivity[]): AgentActivity[] {
-  if (!rows.length) return previous
-  const merged = mergeAgentActivities(previous, rows)
-  if (merged.length !== previous.length) return merged
-  for (const [index, record] of merged.entries()) if (record !== previous[index] && !isDeepStrictEqual(record, previous[index])) return merged
-  return previous
+  return rows.length ? mergeAgentActivities(previous, rows, isDeepStrictEqual) : previous
 }
 
 /** How far a workflow's agents have got, as its row's count and strip show it. */
@@ -140,7 +136,7 @@ export class ClaudeActivity {
       if (typeof block.id !== 'string' || typeof block.name !== 'string') return
       const input = object(block.input)
       const name = block.name
-      const old = previous.find(row => row.id === `claude-tool-${block.id}`) ?? this.readActivity?.(`claude-tool-${block.id}`)
+      const old = findAgentActivity(previous, `claude-tool-${block.id}`) ?? this.readActivity?.(`claude-tool-${block.id}`)
       const kind = /^(Bash|PowerShell|Shell)$/u.test(name) ? 'command' : /^(Write|Edit|MultiEdit|NotebookEdit)$/u.test(name) ? 'file-change'
         : /^(Agent|Task)$/u.test(name) ? 'subagent' : /^Todo(Write|Update)$/u.test(name) ? 'plan' : 'tool'
       let child: ObservedAgent | undefined
@@ -189,7 +185,7 @@ export class ClaudeActivity {
         }
       }
       if (block.type === 'tool_result' && typeof block.tool_use_id === 'string') {
-        const old = previous.find(row => row.id === `claude-tool-${block.tool_use_id}`) ?? this.readActivity?.(`claude-tool-${block.tool_use_id}`)
+        const old = findAgentActivity(previous, `claude-tool-${block.tool_use_id}`) ?? this.readActivity?.(`claude-tool-${block.tool_use_id}`)
         const result = object(frame.tool_use_result)
         // A replayed transcript files the same launch result as `toolUseResult`. Only its model and
         // transcript identities are read from there; its status stays with the live stream's shape.
@@ -267,7 +263,7 @@ export class ClaudeActivity {
     if (frame.type === 'result' && !parentTool) for (const [key, open] of this.blocks) {
       if (!key.startsWith('main:')) continue
       this.blocks.delete(key)
-      const old = typeof open.block.id === 'string' ? previous.find(row => row.id === `claude-tool-${open.block.id}`) ?? this.readActivity?.(`claude-tool-${open.block.id}`) : undefined
+      const old = typeof open.block.id === 'string' ? findAgentActivity(previous, `claude-tool-${open.block.id}`) ?? this.readActivity?.(`claude-tool-${open.block.id}`) : undefined
       if (old && !isTerminalActivity(old.status)) rows.push({ ...old, status: (turnEnd ?? (frame.is_error === true ? 'failed' : 'interrupted')) === 'failed' ? 'failed' : 'interrupted', ...(observedAt ? { completedAt: observedAt } : {}) })
     }
     if (frame.type === 'system' && ['task_started', 'task_progress', 'task_notification'].includes(String(frame.subtype)) && typeof frame.task_id === 'string') {
@@ -275,8 +271,8 @@ export class ClaudeActivity {
       // A task that ended ends the stream of the subagent it ran, whatever else this notification is kept from changing.
       const ending = frame.subtype === 'task_notification' ? typeof frame.tool_use_id === 'string' ? frame.tool_use_id : this.toolByTask.get(frame.task_id) : undefined
       if (ending) rows.push(...this.thinking.streamEnded(ending, thinkingSettledAs(status), observedAt))
-      const owner = typeof frame.tool_use_id === 'string' ? previous.find(row => row.id === `claude-tool-${frame.tool_use_id}`) ?? this.readActivity?.(`claude-tool-${frame.tool_use_id}`) : undefined
-      const old = previous.find(row => row.id === `claude-task-${frame.task_id}`) ?? this.readActivity?.(`claude-task-${frame.task_id}`)
+      const owner = typeof frame.tool_use_id === 'string' ? findAgentActivity(previous, `claude-tool-${frame.tool_use_id}`) ?? this.readActivity?.(`claude-tool-${frame.tool_use_id}`) : undefined
+      const old = findAgentActivity(previous, `claude-task-${frame.task_id}`) ?? this.readActivity?.(`claude-task-${frame.task_id}`)
       // A restored row is positive task evidence even when this projector resumed after its start.
       // Retire a reassigned identity on that history row so cursor resume preserves the exclusion.
       if (frame.subtype === 'task_started') {

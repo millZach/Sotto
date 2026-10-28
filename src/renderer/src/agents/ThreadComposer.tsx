@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
-import { Laptop, MessageSquare, Quote, Server, Sparkles, X } from 'lucide-react'
+import { Laptop, MessageSquare, Quote, Server, X } from 'lucide-react'
 import { msg, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { NextPrompt } from '../../../shared/nextPrompt'
@@ -439,20 +439,14 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const enterCap = threadChordCap('enter', platform)
   const stopKeys = !watcher && stopChord ? stopChord : null
   // Kept with the thread it was opened on, so moving to another thread finds it closed and at its first row.
-  const [nextListState, setNextListState] = useState<{ readonly threadId: string; readonly index: number; readonly from: 'prompt' | 'button' } | null>(null)
+  const [nextListState, setNextListState] = useState<{ readonly threadId: string; readonly index: number } | null>(null)
   const nextList = next !== null && nextListState?.threadId === threadId ? nextListState : null
-  const setNextList = (value: { readonly index: number; readonly from: 'prompt' | 'button' } | null): void => { setNextListState(value === null ? null : { ...value, threadId }) }
+  const setNextList = (value: { readonly index: number } | null): void => { setNextListState(value === null ? null : { ...value, threadId }) }
   const nextOpen = nextList !== null
   // Escape in the prompt puts the ghost away for this turn, so Tab moves focus as it always does.
   const [ghostDismissed, setGhostDismissed] = useState<string | null>(null)
   const ghostAway = ghostDismissed === `${threadId}\n${nextAnchor}`
-  const nextButton = useRef<HTMLButtonElement>(null)
   const nextListId = `${composerId}-next`
-  const closeNext = (returnFocus: boolean): void => {
-    const from = nextList?.from
-    setNextList(null)
-    if (returnFocus && from === 'button') nextButton.current?.focus()
-  }
   /** A row chosen: an answer sends at once into an empty prompt, anything else is written into the prompt for the user to send. */
   const chooseNext = (choice: NextRow): void => {
     setNextList(null)
@@ -483,7 +477,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         setNextList({ ...nextList, index: (nextList.index + (event.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length })
         return true
       }
-      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeNext(true); return true }
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setNextList(null); return true }
       if (event.key === 'Enter' && !event.shiftKey) return take(rows[nextList.index])
       if (/^[1-4]$/u.test(event.key) && !event.shiftKey && nextKeysFree.digit(event.key)) return take(rows.find(item => item.kind === 'suggestion' && item.key === event.key))
       if (event.key === 'Tab' && !event.shiftKey && nextKeysFree.tab) return take(rows.find(item => item.kind === 'ghost'))
@@ -491,7 +485,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     }
     if (event.key === 'Escape' && ghostShown) { event.preventDefault(); event.stopPropagation(); setGhostDismissed(`${threadId}\n${nextAnchor}`); return true }
     if (event.key === 'Tab' && !event.shiftKey && ghostShown && nextKeysFree.tab) return take(rows.find(item => item.kind === 'ghost'))
-    if (event.key === 'ArrowUp' && !event.shiftKey && !hasContent && nextKeysFree.up) { event.preventDefault(); setNextList({ index: 0, from: 'prompt' }); return true }
+    if (event.key === 'ArrowUp' && !event.shiftKey && !hasContent && nextKeysFree.up) { event.preventDefault(); setNextList({ index: 0 }); return true }
     return false
   }
 
@@ -556,11 +550,6 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
             : <><span className="thread-prompt__model"><ProviderMark provider={row.providerId} name={row.provider} />{row.model?.name ?? row.provider}<small>{answering ? t`Answer this question` : t`Manual prompt`}</small></span>
               {watcher ? <WatcherPermissionChip model={row.model} provider={row.provider} inForce={row.thread.runtimeMode} noticeSlot={settingsNotices}
                 disabled={watcherPermissionFixedReason(state, row.thread) !== undefined} fixedReason={watcherPermissionFixedReason(state, row.thread)} /> : null}</>}
-          {next !== null ? <button ref={nextButton} type="button" className="thread-chip next-prompt__open tt-focusable" aria-haspopup="listbox" aria-expanded={nextOpen}
-            aria-controls={nextOpen ? nextListId : undefined} title={nextKeysFree.up ? t`Suggested next prompts (Up in an empty prompt)` : t`Suggested next prompts`}
-            onMouseDown={event => event.preventDefault()}
-            onClick={() => { if (nextOpen) closeNext(false); else { setNextList({ index: 0, from: 'button' }); field.current?.focus() } }}>
-            <Sparkles size={14} aria-hidden="true" /><span>{t({ message: 'Next', context: 'suggested prompts', comment: 'Opens the list of suggested next prompts.' })}</span></button> : null}
           {status}
         </div>
         <div ref={actionsRow} className="thread-prompt__actions">

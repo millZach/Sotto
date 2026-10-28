@@ -5,7 +5,7 @@ import { z } from 'zod'
 import type { AgentRuntimeMode } from '../../shared/agents'
 import { hostEntityKey, parseHostEntityKey } from '../../shared/clientIdentity'
 import { delegationWorkSchema, type DelegationNews, type DelegationWork } from '../../shared/delegation'
-import { DELEGATION_RELAY_ANSWER_GRACE_MS, DELEGATION_RELAY_READ_MS, DELEGATION_RELAY_RECORDS_MAX, type DelegationRemoteAsk, type RelayedReply } from '../../shared/delegationRelay'
+import { DELEGATION_RELAY_ANSWER_GRACE_MS, DELEGATION_RELAY_READ_MS, DELEGATION_RELAY_RECORDS_MAX, type DelegationRemoteAsk, type RelayedReply, type RemoteLandedBranch } from '../../shared/delegationRelay'
 import { watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
 import type { WorkerPlacementReceipt } from '../../shared/workerMachine'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -18,6 +18,8 @@ export interface RemoteDelegationConnection {
   readonly kind: 'local' | 'remote'
   readonly service: {
     readonly supportsDelegationRemote?: boolean | undefined
+    /** The host takes a start from a branch this computer landed there, and a check (`delegation-branch-starts`, #1316 part 2). */
+    readonly supportsDelegationBranchStarts?: boolean | undefined
     delegationRemoteAsk?(ask: DelegationRemoteAsk, timeoutMs: number): Promise<unknown>
     subscribeDelegationRemoteNews?(listener: (caller: string, news: DelegationNews, replies: readonly RelayedReply[]) => void): () => void
   }
@@ -39,6 +41,10 @@ export interface RemoteAsk {
   readonly retryKey?: string | undefined
   /** How long the call waits here for the outcome. */
   readonly waitMs: number
+  /** The caller's branch, which this computer already landed in the host's project for this start (#1316 part 2). */
+  readonly branch?: RemoteLandedBranch | undefined
+  /** The place this computer reserved in the host's check queue for this start, before its branch moved (#1316 part 2). */
+  readonly reservation?: string | undefined
 }
 
 const id = z.string().min(1).max(512)
@@ -62,6 +68,13 @@ const recordSchema = z.object({
   unread: z.literal(true).optional(),
   /** The host said it holds none for its retry key and is admitting none: it was never made, and is history (#1316 review). */
   absent: z.literal(true).optional(),
+  /**
+   * The move that landed the caller's branch in the host's project for this start (#1316 part 2), kept while the host has
+   * not yet named the delegation that owns it: let go of there once an exact read proves none does, kept while it may.
+   */
+  moveId: z.uuid().optional(),
+  /** The place reserved in the host's check queue for this start (#1316 part 2), kept and let go of as `moveId` is. */
+  reservation: z.uuid().optional(),
   createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(),
 }).strict()
 type RemoteRecord = z.infer<typeof recordSchema>
@@ -159,6 +172,8 @@ export class DesktopRemoteDelegations {
     readonly machineName: (hostId: string) => string | undefined
     /** Stable event names only, never a brief, a reply or a thread. */
     readonly log?: (event: 'delegation-remote-answer-lost' | 'delegation-remote-reconciled') => void
+    /** Lets go of a move landed in a host's project for a start no thread there owns. Best effort. */
+    readonly letGo?: (landed: { readonly hostId: string; readonly projectId: string; readonly moveId: string }) => Promise<void>
   }) {
     this.store = new AtomicJsonStore(join(directory, 'delegation-remote.json'), input => fileSchema.parse(input), (): RemoteFile => ({ version: 1, delegations: [] }))
     this.settledPath = join(directory, 'delegation-remote-settled.jsonl')
@@ -212,6 +227,11 @@ export class DesktopRemoteDelegations {
     this.rereads.clear()
   }
 
+  /**
+   * Whether `hostId` is connected now and takes a start from a branch this computer lands there, or a check
+   * (`delegation-branch-starts`, #1316 part 2). A host from before it, or one not connected, does not.
+   */
+  takesBranches(hostId: string): boolean { return this.connection(hostId)?.service.supportsDelegationBranchStarts === true }
   /** Whether `delegationId` is one of `callerId`'s delegations on a paired host. */
   holds(callerId: string, delegationId: string): boolean { return this.find(callerId, delegationId) !== undefined }
   /** Whether `threadKey` (`host:<hostId>:<threadId>`) is a thread on a paired host that `callerId` delegated to. */
@@ -244,9 +264,33 @@ export class DesktopRemoteDelegations {
    */
   async start(callerId: string, work: DelegationWork, placement: { readonly hostId: string; readonly projectId: string; readonly receipt: WorkerPlacementReceipt }, ask: RemoteAsk): Promise<Record<string, unknown>> {
     const retried = ask.retryKey ? this.byRetry.get(retryIndex(callerId, ask.retryKey)) : undefined
-    if (retried) return await this.read(callerId, retried.id)
+    if (retried) {
+      // A call that raced the first one with the same retry key landed a branch of its own, and held a place, which no thread will use.
+      if (ask.branch) await this.options.letGo?.({ hostId: placement.hostId, projectId: placement.projectId, moveId: ask.branch.moveId }).catch(() => undefined)
+      if (ask.reservation) await this.releasePlace(callerId, placement.hostId, ask.reservation)
+      return await this.read(callerId, retried.id)
+    }
     return await this.ask({ callerId, hostId: placement.hostId, projectId: placement.projectId, machine: placement.receipt.name, action: 'start', work }, ask,
       answer => ({ ...answer, placement: { ...placement.receipt, awayFromDefault: placement.receipt.awayFromDefault } }))
+  }
+  /**
+   * Holds a place at the end of `hostId`'s check queue for a check `callerId` is about to start there, before its branch
+   * or snapshot moves (#1316 part 2), so that queue keeps the order checks were asked in. Answers the reservation, which
+   * the start names. Throws `RelayUnanswered('away')` when the host is not connected, and otherwise when it did not hold one.
+   */
+  async reservePlace(callerId: string, hostId: string, work: DelegationWork): Promise<string> {
+    const connection = this.connection(hostId)
+    if (!connection || this.closed) throw new RelayUnanswered('away')
+    const reservation = randomUUID()
+    let answer: unknown
+    try { answer = await connection.service.delegationRemoteAsk!({ type: 'reserve', caller: callerId, reservation, work }, DELEGATION_RELAY_READ_MS) }
+    catch { await this.releasePlace(callerId, hostId, reservation); throw new RelayUnanswered('lost') }
+    if (!isObject(answer) || answer.status !== 'ok') throw new RelayUnanswered('lost')
+    return reservation
+  }
+  /** Lets go of a place reserved on `hostId` that no start there took. Best effort: the host also lets it go when this computer's socket closes. */
+  async releasePlace(callerId: string, hostId: string, reservation: string): Promise<void> {
+    await this.connection(hostId)?.service.delegationRemoteAsk!({ type: 'release', caller: callerId, reservation }, DELEGATION_RELAY_READ_MS).catch(() => undefined)
   }
   /** Sends another brief to `threadKey`, a thread `callerId` delegated to on a paired host, charged there as any brief is. */
   async send(callerId: string, work: DelegationWork, threadKey: string, ask: RemoteAsk): Promise<Record<string, unknown>> {
@@ -264,7 +308,9 @@ export class DesktopRemoteDelegations {
     const connection = this.connection(base.hostId)
     if (!connection || this.closed) throw new RelayUnanswered('away')
     const time = now()
-    const record: RemoteRecord = { id: randomUUID(), ...base, ...ask.retryKey ? { callerRetryKey: ask.retryKey } : {}, outcome: 'working', createdAt: time, updatedAt: time }
+    const record: RemoteRecord = { id: randomUUID(), ...base, ...ask.retryKey ? { callerRetryKey: ask.retryKey } : {}, ...ask.branch ? { moveId: ask.branch.moveId } : {},
+      ...ask.reservation ? { reservation: ask.reservation } : {},
+      outcome: 'working', createdAt: time, updatedAt: time }
     this.add(record); this.dirty.add(record)
     if (record.action === 'start') this.reserve(record)
     await this.save()
@@ -273,7 +319,8 @@ export class DesktopRemoteDelegations {
       // The host answers at once: a call that waits for its outcome waits here, on the news, so nothing stays open there.
       answer = await connection.service.delegationRemoteAsk!({ type: 'delegate', caller: base.callerId, levels: ask.levels, rootUserMessageId: ask.rootUserMessageId,
         ...ask.callerMessageId ? { callerMessageId: ask.callerMessageId } : {}, runtimeMode: ask.runtimeMode, projectId: base.projectId,
-        input: { ...ask.input, retry_key: record.id, wait_seconds: 0 }, waitMs: 0 }, DELEGATION_RELAY_ANSWER_GRACE_MS + DELEGATION_RELAY_READ_MS)
+        input: { ...ask.input, retry_key: record.id, wait_seconds: 0 }, waitMs: 0, ...ask.branch ? { branch: ask.branch } : {},
+        ...ask.reservation ? { reservation: ask.reservation } : {} }, DELEGATION_RELAY_ANSWER_GRACE_MS + DELEGATION_RELAY_READ_MS)
     } catch {
       // The counting rule (Zach, October 23): what cannot be told apart from a start counts as one, and is read once the host is back.
       this.options.log?.('delegation-remote-answer-lost')
@@ -297,9 +344,13 @@ export class DesktopRemoteDelegations {
     }
     return shape(this.asKnown(record, answer))
   }
-  /** What a start's own answer carries besides the delegation, which a read after its wait would not: the role and the warning. */
+  /**
+   * What a start's own answer carries besides the delegation, which a read after its wait would not: the role, the warning,
+   * and where it started from, the branch and a check's snapshot (#1316 part 2).
+   */
   private carried(answer: Record<string, unknown>): Record<string, unknown> {
-    return { ...answer.role !== undefined ? { role: answer.role } : {}, ...answer.warning !== undefined ? { warning: answer.warning } : {} }
+    return { ...answer.role !== undefined ? { role: answer.role } : {}, ...answer.warning !== undefined ? { warning: answer.warning } : {},
+      ...answer.startedFrom !== undefined ? { startedFrom: answer.startedFrom } : {} }
   }
 
   /** Reads one exactly from its host, or, while the host is away, as Sotto last read it, said as such. */
@@ -437,9 +488,15 @@ export class DesktopRemoteDelegations {
       this.update(record, saved => { saved.outcome = 'unknown'; if (tells) saved.told = 'unknown'; saved.unread = true })
       if (answer.admitting === true) this.readAgain(record.hostId, record.callerId)
     } else if (answer.status === 'refused' || answer.status === 'ok' && !outcome.success) {
-      // Proved: the host holds nothing under that ID, or none under the retry key and is admitting none.
-      this.update(record, saved => { saved.outcome = 'unknown'; if (tells) saved.told = 'unknown'; delete saved.unread; if (saved.delegation === undefined) saved.absent = true })
+      // Proved: the host holds nothing under that ID, or none under the retry key and is admitting none. A branch landed
+      // there for a start never made is owned by no thread, so it is let go of.
+      const landed = record.delegation === undefined && record.moveId !== undefined ? { hostId: record.hostId, projectId: record.projectId, moveId: record.moveId } : undefined
+      // So is the place held for it in that host's check queue.
+      const place = record.delegation === undefined ? record.reservation : undefined
+      this.update(record, saved => { saved.outcome = 'unknown'; if (tells) saved.told = 'unknown'; delete saved.unread; if (saved.delegation === undefined) saved.absent = true; delete saved.moveId; delete saved.reservation })
       this.release(record)
+      if (landed) void this.options.letGo?.(landed).catch(() => undefined)
+      if (place) void this.releasePlace(record.callerId, record.hostId, place)
     }
   }
   /** Reads a host's unresolved delegations for `callerId` again shortly, while the host is still admitting one. */
@@ -452,7 +509,8 @@ export class DesktopRemoteDelegations {
   private adopt(record: RemoteRecord, delegation: Record<string, unknown>, tells = true): void {
     const outcome = watcherOutcomeSchema.safeParse(delegation.outcome)
     this.update(record, saved => {
-      if (typeof delegation.id === 'string' && uuidSchema.safeParse(delegation.id).success) { saved.delegation = delegation.id; this.release(saved) }
+      // Named by the host, the delegation owns the branch landed for it there, and the host lets go of it if its start fails.
+      if (typeof delegation.id === 'string' && uuidSchema.safeParse(delegation.id).success) { saved.delegation = delegation.id; delete saved.moveId; delete saved.reservation; this.release(saved) }
       if (typeof delegation.thread === 'string' && id.safeParse(delegation.thread).success) saved.thread = delegation.thread
       saved.outcome = outcome.success ? outcome.data : 'unknown'
       // A call's own result tells the thread; a read after a reconnect does not, so what moved is sent as news.

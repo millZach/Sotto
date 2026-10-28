@@ -16,6 +16,8 @@ export interface RelayDesktop {
   push(askId: string, ask: DelegationRelayAsk): boolean
   /** Its hello accepted `delegation-relay-send` too: it takes second briefs (#1316 part 2). */
   readonly sends?: boolean
+  /** Its hello accepted `delegation-branch-starts` too: it takes starts from a thread's branch, and checks (#1316 part 2). */
+  readonly branches?: boolean
 }
 /** Why an ask has no answer: no desktop was connected to send it to, or the answer never came. */
 export class RelayUnanswered extends Error {
@@ -87,6 +89,8 @@ export class HostDelegationRelay {
    * that carries them is worded, as delegation keeps none on disk (ADR-0105 decision 6).
    */
   private readonly replies = new Map<string, NonNullable<DelegationNewsDetail['reply']>>()
+  /** This machine's own answers for a start or brief whose desktop answer was lost, so a caller can tell them from the desktop's. */
+  private readonly lost = new WeakSet<object>()
   /** Starts still waiting for the desktop's answer, by the thread that asked: news may name what they made before they hear. */
   private readonly starting = new Map<string, Set<Promise<unknown>>>()
   private closed = false
@@ -131,6 +135,11 @@ export class HostDelegationRelay {
   private relaying(): RelayDesktop | undefined { return this.desktops.findLast(desktop => this.options.counts?.(desktop.clientId) ?? true) }
   /** Whether a desktop that relays is connected now. */
   reachable(): boolean { return this.relaying() !== undefined }
+  /**
+   * Whether the desktop that relays now takes a start from the asking thread's branch, or a check (#1316 part 2). One from
+   * before that, or none, does not: such a start is refused here, and nothing is asked.
+   */
+  carriesBranches(): boolean { return this.relaying()?.branches === true }
   /** The words for a start elsewhere while no desktop that relays is connected (Zach, October 23, 2026). */
   awayWords(): string { return relayAwayWords(this.hereName()) }
 
@@ -199,6 +208,11 @@ export class HostDelegationRelay {
     return await this.asking({ id: relayId, relayId, delegatingThreadId: callerId, work, action: 'send', thread, outcome: 'working', createdAt: time, updatedAt: time },
       { type: 'send', relayId, threadId: callerId, ...ask, input: { ...ask.input, thread } }, ask.waitMs)
   }
+  /**
+   * Whether `answer` is this machine's own word that the desktop's answer was lost, so what the desktop did is not known
+   * yet, rather than the desktop's answer (#1316 part 2).
+   */
+  answerLost(answer: object): boolean { return this.lost.has(answer) }
   private async asking(record: RelayedRecord, body: DelegationRelayAsk, waitMs: number): Promise<Record<string, unknown>> {
     const callerId = record.delegatingThreadId
     this.records.push(record)
@@ -216,8 +230,10 @@ export class HostDelegationRelay {
       this.options.log?.('delegation-relay-answer-lost')
       this.update(record, saved => { saved.outcome = 'unknown'; saved.told = 'unknown'; saved.unread = true })
       await this.persist()
-      return { status: 'ok', delegation: { id: record.id, ...record.thread ? { thread: record.thread } : {}, work: record.work, action: record.action ?? 'start', outcome: 'unknown',
+      const unknown = { status: 'ok', delegation: { id: record.id, ...record.thread ? { thread: record.thread } : {}, work: record.work, action: record.action ?? 'start', outcome: 'unknown',
         note: record.action === 'send' ? LOST_SEND : LOST_START, createdAt: record.createdAt } }
+      this.lost.add(unknown)
+      return unknown
     }
     const delegation = isObject(answer.delegation) ? answer.delegation : undefined
     if (answer.status !== 'ok' || !delegation || typeof delegation.id !== 'string') { this.forget(record); await this.persist(); return answer }
