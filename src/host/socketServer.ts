@@ -24,7 +24,7 @@ import { REMOTE_OPENCODE_SIGN_IN_OPERATIONS, REMOTE_SIGN_IN_OPERATIONS, remoteCo
 import type { HostSelfUpdate } from './selfUpdate'
 import { usageLocalClearResultSchema, usageLocalHostReadSchema, usageProvidersBeforeMuse, usageReadBeforeHistory, usageReadBeforeMuse, type UsageLocalHostRead } from '../shared/usageDashboard'
 import { hostMachineReportSchema } from '../shared/hostFacts'
-import { projectOriginsSchema, type ProjectOrigins } from '../shared/workerMachine'
+import { projectOriginsSchema, projectSetupResultSchema, type ProjectOrigins } from '../shared/workerMachine'
 import { desktopDefaultsReceiptSchema } from '../shared/desktopDefaults'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { DEFLATE_RESPONSE, deflateOffered, SocketFrames } from './socketFrames'
@@ -292,6 +292,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     // Project origins are for a desktop placing work (#1032), as host facts are, and only where the host's Owl answer
     // turns on Work across machines.
     && (feature !== 'project-origins' || service.supportsProjectOrigins === true && service.projectOrigins !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    // Setting up a copy for a worker placed here (#1690) is offered exactly where project origins are.
+    && (feature !== 'project-setup' || service.supportsProjectSetup === true && service.setUpProject !== undefined && (options.admin !== false || options.tailnet !== undefined))
     // A host that runs delegation for its own threads (#1310) takes desktop defaults from recorded desktops on both
     // listeners, only where its Owl answer turns on Work across machines. The desktop's own phone listener never lists it.
     && (feature !== 'host-delegation' || service.supportsHostDelegation === true && service.desktopDefaults !== undefined && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
@@ -1281,6 +1283,11 @@ export async function startSocketServer(options: SocketServerOptions) {
         try { read = projectOriginsSchema.parse(await service.projectOrigins()) } catch { throw new Refusal('unavailable') }
         // A project of a provider this peer does not know is not named to it (#1107).
         return { projects: read.projects.filter(project => !unknownProviderProject(peer, project.projectId)) }
+      }
+      case 'project-setup': {
+        if (!offers(peer, 'project-setup') || !service.setUpProject) throw new Refusal('invalid_request')
+        // A setup that cannot finish answers its own plain words; only a failure to answer at all is a refusal.
+        try { return projectSetupResultSchema.parse(await service.setUpProject(request.request)) } catch { throw new Refusal('unavailable') }
       }
       case 'delegation-views': {
         // Delegation's own record of one of this host's threads (#1310), read for a recorded desktop's window, never a reply.

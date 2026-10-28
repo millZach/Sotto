@@ -130,6 +130,9 @@ describe('remote command allow-list', () => {
       'host-facts',
       // Each project's GitHub repository, read only by a desktop that lists project-origins, to place a worker (#1032).
       'project-origins',
+      // A copy of a GitHub repository set up for a worker placed there (#1690), only for a desktop that lists project-setup,
+      // as create-project already takes a path from a paired client. It answers nothing and grants nothing.
+      'project-setup',
       // A recorded desktop's new-thread default and worker roles for host delegation (#1310): settings, never a grant.
       'desktop-defaults',
       // A host thread's delegations and a delegated thread's newest brief, reads for a recorded desktop's window on a
