@@ -102,6 +102,25 @@ Watcher's `stop_thread` on a check waiting in a paired host's own queue takes it
 3. **No standing watch travels with it.** The host is sent a watch only once it has the thread, so the stop of a waiting check carries none.
 4. **`watcher-check-stop`.** A host that keeps a check queue lists it, and only a desktop with Work across machines on uses it. Such a host's waiting checks are described as This computer's are ("stop_thread on its target, or the user's Stop, takes it out of the queue."). A desktop facing a host without it keeps the old words, that the user's Stop takes it out, and refuses `stop_thread` on its target as before, since the host has no thread there. A stable host keeps no queue and has nothing to stop.
 
+## Amended October 28, 2026: a check's reply on its row of delegated work (#1312, last part)
+
+Zach's answers of October 23, 2026, as the orchestrator recorded them, word for word:
+
+- "Should a test run's card show the reply's verdict, counts and failing lines, marked as the thread's words?" → "Show them, outcome stays Answered".
+- The name is "check".
+- One queue per machine.
+
+On October 28 he picked variant C, "Excerpt and tray", of the check reply card prototype (`docs/prototypes/check-reply-card-prototype.html`, kept as the tag `prototype/check-reply-card`), with the row saying Check and a flask in place of its kind of work, and a row whose reply was not kept saying "Its reply wasn't kept here. Open the check to read it in its thread." It is built behind `cross-machine-work`; ADR-0081's amendment of the same day says what the window may read for it.
+
+1. **The row says Check.** A check's row of delegated work says **Check** with a flask in place of its kind of work, and the Worked for line counts checks as checks ("1 delegated thread · 2 checks"). Its outcome stays Answered once it has answered, never Returned as a review's does, and there is no new outcome word.
+2. **Excerpt.** An answered check's row has a second line, its **reply excerpt** in quotes as the thread's words: It replied "Failed: 2 of 1,214 tests.", then "· cut at 32 KiB" when Sotto cut the reply, then **Read its reply**.
+3. **Tray.** Read its reply opens a tray over the bottom of the transcript, above the composer and in the transcript's column, headed with the check's title and "Its reply, in its own words, on forge · 2:39 pm". It reads the reply on the press and shows its first 60 lines in monospace with the dashed edge another thread's words wear, then "That is all of its reply.", how many more lines are in its thread, or "Its reply was longer than 32 KiB, so this thread was given only the first 32 KiB. All of it is in the check's thread.", beside **Open the check** and Close. One tray is open at a time. Escape, wherever the focus is in the transcript, and Close return focus to Read its reply; Escape closes the tray before the Worked for fold. The tray stops short of its row, and the transcript scrolls the row above it, so the row stays in view at the 820x560 minimum.
+4. **Not kept.** A check whose reply Sotto no longer holds says "Its reply wasn't kept here. Open the check to read it in its thread." and has no tray.
+5. **Decision 5 holds.** Sotto reads no pass or fail from the reply: nothing is coloured, badged or iconed from what it says, the tray shows its lines in the order the thread wrote them, with no control that picks out failing lines, and a reply that opens with prose shows its prose.
+6. **The fourth part's decision 1 holds.** A check waiting its turn keeps today's card, Working, with no queue line.
+
+A check a thread on a host delegated there, and a check on another machine than the thread that asked for it, show as before: the host's read carries no excerpt yet, and the relay's and remote delegations' rows are not in the thread's transcript yet.
+
 ## Amended October 27, 2026: the check queue on screen (#1312, fourth part)
 
 Zach's pick C of the check queue prototype is built, behind `cross-machine-work`.
