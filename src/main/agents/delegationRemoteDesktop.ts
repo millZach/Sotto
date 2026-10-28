@@ -94,6 +94,11 @@ const retryIndex = (callerId: string, retryKey: string): string => `${callerId}\
 const REREAD_MS = 5_000
 /** How many replies wait in memory for their wake-up to be worded. */
 const REPLIES_KEPT = 200
+/**
+ * Whether a host ask never left this computer: the socket's `HostRequestUnanswered` at its `unsent` stage. Read by that
+ * stage rather than the class, since the socket's module is the desktop's alone and this one is built into a host too.
+ */
+const neverSent = (error: unknown): boolean => error instanceof Error && 'stage' in error && error.stage === 'unsent'
 
 /** Model-facing words, said of the machine by the name this computer saved for it (#1316 part 2). Not settled with Zach. */
 export const REMOTE_LOST_START = (machine: string): string =>
@@ -379,18 +384,21 @@ export class DesktopRemoteDelegations {
     if (!connection) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: REMOTE_CANCEL_AWAY(this.name(record)) }
     if (!record.delegation) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: `${REMOTE_LOST_CANCEL(this.name(record))} Nothing was stopped.` }
     const answer = await this.cancelling(record, record.delegation, connection)
-    if (!answer) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: REMOTE_LOST_CANCEL(this.name(record)) }
+    if (typeof answer === 'string') return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: REMOTE_LOST_CANCEL(this.name(record)) }
     await this.persist()
     return this.asKnown(record, answer)
   }
-  /** Asks its host to cancel one and keeps what it answered, saving nothing; undefined when its answer was lost. Never asked twice. */
-  private async cancelling(record: RemoteRecord, delegation: string, connection: RemoteDelegationConnection): Promise<Record<string, unknown> | undefined> {
+  /**
+   * Asks its host to cancel one and keeps what it answered, saving nothing. Without an answer, `unsent` when the ask never
+   * left this computer, and `lost` when it went and its answer did not come back as one. Never asked twice.
+   */
+  private async cancelling(record: RemoteRecord, delegation: string, connection: RemoteDelegationConnection): Promise<Record<string, unknown> | 'unsent' | 'lost'> {
     try {
       const answer = await connection.service.delegationRemoteAsk!({ type: 'cancel', caller: record.callerId, delegation }, DELEGATION_RELAY_READ_MS)
-      if (!isObject(answer)) return undefined
+      if (!isObject(answer)) return 'lost'
       this.fromRead(record, answer)
       return answer
-    } catch { return undefined }
+    } catch (error) { return neverSent(error) ? 'unsent' : 'lost' }
   }
 
   /**
@@ -414,7 +422,9 @@ export class DesktopRemoteDelegations {
       seen.add(thread)
       const connection = this.connection(record.hostId)
       const answer = record.delegation && connection ? await this.cancelling(record, record.delegation, connection) : undefined
-      if (answer?.status !== 'ok') left.push({ machine: this.name(record), hostId: record.hostId, ...record.thread ? { thread: record.thread } : {}, reason: connection ? 'unconfirmed' : 'away' })
+      if (typeof answer === 'object' && answer.status === 'ok') return
+      // A cancel that never left this computer is as one never sent: its host was not there to take it.
+      left.push({ machine: this.name(record), hostId: record.hostId, ...record.thread ? { thread: record.thread } : {}, reason: connection && answer !== 'unsent' ? 'unconfirmed' : 'away' })
     }))
     for (const record of open) if (this.open(record)) this.update(record, saved => { saved.told = 'stopped' })
     await this.persist()

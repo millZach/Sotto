@@ -38,7 +38,7 @@ import type { HostThreadToolReads } from '../agents/threadToolReads'
 import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
 import type { CheckQueueEntry, MachineChecks } from '../../shared/checkQueue'
 import { RemoteDelegationReads } from './remoteDelegations'
-import { HostConnectionError, REMOTE_COMPOSE_UNSAVED } from '../agents/socketHostService'
+import { HostConnectionError, HostRequestUnanswered, REMOTE_COMPOSE_UNSAVED } from '../agents/socketHostService'
 import { USAGE_HOSTS_MAX, usageClearQuerySchema, usageDashboardReadSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageProviderIdSchema, usageQuerySchema, usageRefreshQuerySchema, type UsageClearQuery, type UsageClearResult, type UsageDashboardRead, type UsageHostRead, type UsageProviderId, type UsageQuery, type UsageRefreshQuery } from '../../shared/usageDashboard'
 
 /** A thread's Files, Changes and Agents reads (ADR-0025, October 5 amendment), by the host's own IDs; absent on a connection that has none. */
@@ -1540,8 +1540,12 @@ export class DesktopHostRouter {
       let outcome: 'moved' | 'left' | 'lost' = 'left'
       if (there) {
         try { outcome = (await there.service.command({ type, threadId: child.id }, client)).error ? 'left' : 'moved' }
-        // A host's refusal moved nothing; an answer lost on the way may have moved it.
-        catch (error) { outcome = there.kind === 'remote' && (!(error instanceof HostConnectionError) || error.code === 'disconnected') ? 'lost' : 'left' }
+        // A host's refusal moved nothing, and nor did a request that never left this computer; an answer lost on the way, once
+        // the request went, may have moved it.
+        catch (error) {
+          const went = error instanceof HostRequestUnanswered ? error.stage !== 'unsent' : !(error instanceof HostConnectionError) || error.code === 'disconnected'
+          outcome = there.kind === 'remote' && went ? 'lost' : 'left'
+        }
       }
       if (outcome === 'moved') { moved.add(child.key); return }
       if (outcome === 'lost') lost.add(child.key)

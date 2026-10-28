@@ -139,9 +139,10 @@ export function stopLeftWords(away: LeftTally, unconfirmed: LeftTally): string |
 
 /**
  * What the window's Settle of a thread did to its delegated threads elsewhere (#1316 part 3), by the window's keys: the ones
- * it settled there, which its Restore brings back; the ones it never got a settle to, its machine away or refusing, which a
- * later Settle of the same thread tries again while they are open; and the ones whose settle went but whose answer was
- * lost, which its Restore brings back only if they are seen settled with it, and which are never sent a settle again.
+ * it settled there, which its Restore brings back; the ones it never got a settle to, its machine away or refusing, or the
+ * request never leaving this computer, which a later Settle of the same thread tries again while they are open; and the
+ * ones whose settle went but whose answer was lost, which its Restore brings back only if they are seen settled with it,
+ * and which are never sent a settle again.
  */
 export interface CascadedSettle {
   readonly settled: ReadonlySet<string>

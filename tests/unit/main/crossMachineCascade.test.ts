@@ -12,7 +12,7 @@ import { desktopWindowClient } from '../../../src/main/agents/hostService'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
 import type { AgentCommand, AgentThread } from '../../../src/shared/agents'
 import type { StopLeft } from '../../../src/main/agents/delegationRelayHost'
-import { HostConnectionError } from '../../../src/main/agents/socketHostService'
+import { HostConnectionError, HostRequestUnanswered } from '../../../src/main/agents/socketHostService'
 
 const LOCAL = '11111111-1111-4111-8111-111111111111', FORGE = '22222222-2222-4222-8222-222222222222', MAC = '33333333-3333-4333-8333-333333333333'
 const SETTLED_AT = '2026-10-28T10:00:00.000Z'
@@ -224,6 +224,38 @@ describe('Stop, Settle and Restore across machines', () => {
       await dropped.router.command({ type: 'restore-thread', threadId: parentKey }, desktopWindowClient())
       expect(dropped.forge.command).toHaveBeenCalledTimes(1)
     } finally { dropped.router.dispose() }
+  })
+
+  it('takes a settle that never left this computer as never sent: a later Settle tries it again', async () => {
+    const clocks = { local: () => SETTLED_AT, forge: () => '2026-10-28T10:00:03.000Z', mac: () => SETTLED_AT }
+    const { router, forge } = machines(true, { status: 'idle' }, {}, {}, clocks)
+    try {
+      // The socket would not take the request, so it never reached forge.
+      forge.command.mockImplementationOnce(async () => { throw new HostRequestUnanswered('The connection closed before Sotto could send this.', 'unsent') })
+      expect((await router.command({ type: 'settle-thread', threadId: parentKey }, desktopWindowClient())).error)
+        .toBe('Sotto couldn\'t settle 1 delegated thread on forge. Open it from Tools › Agents to settle it yourself.')
+      await router.command({ type: 'settle-thread', threadId: parentKey }, desktopWindowClient())
+      expect(forge.command).toHaveBeenCalledTimes(2)
+      expect(forge.state.host.threads[0]?.workspaceSettledAt).toBe('2026-10-28T10:00:03.000Z')
+      await router.command({ type: 'restore-thread', threadId: parentKey }, desktopWindowClient())
+      expect(forge.command).toHaveBeenLastCalledWith({ type: 'restore-thread', threadId: 'check' }, desktopWindowClient())
+    } finally { router.dispose() }
+  })
+
+  it('leaves a thread whose settle never left this computer to itself once the user settles it, even within the skew', async () => {
+    let forgeClock = '2026-10-28T10:00:03.000Z'
+    const { router, forge } = machines(true, { status: 'idle' }, {}, {}, { local: () => SETTLED_AT, forge: () => forgeClock, mac: () => SETTLED_AT })
+    try {
+      forge.command.mockImplementationOnce(async () => { throw new HostRequestUnanswered('The connection closed before Sotto could send this.', 'unsent') })
+      await router.command({ type: 'settle-thread', threadId: parentKey }, desktopWindowClient())
+      // Thirty seconds later the user settles it by hand on forge: well within the two clocks' skew, and still the user's own.
+      forgeClock = '2026-10-28T10:00:30.000Z'
+      await forge.connection.service.command({ type: 'settle-thread', threadId: 'check' }, desktopWindowClient())
+      forge.command.mockClear()
+      await router.command({ type: 'restore-thread', threadId: parentKey }, desktopWindowClient())
+      expect(forge.command).not.toHaveBeenCalled()
+      expect(forge.state.host.threads[0]?.workspaceSettledAt).toBe('2026-10-28T10:00:30.000Z')
+    } finally { router.dispose() }
   })
 
   it('says which it could not restore', async () => {

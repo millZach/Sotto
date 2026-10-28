@@ -297,17 +297,20 @@ export class HostDelegationRelay {
     if (!record.delegation) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: `${LOST_CANCEL} Nothing was stopped.` }
     if (!this.reachable()) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: `${this.awayStop()} Nothing was stopped.` }
     const answer = await this.cancelling(record, record.delegation)
-    if (!answer) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: LOST_CANCEL }
+    if (typeof answer === 'string') return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: LOST_CANCEL }
     await this.persist()
     return this.asKnown(record, answer)
   }
-  /** Asks the desktop to cancel one and keeps what it answered, saving nothing; undefined when its answer was lost. Never asked twice. */
-  private async cancelling(record: RelayedRecord, delegation: string): Promise<Record<string, unknown> | undefined> {
+  /**
+   * Asks the desktop to cancel one and keeps what it answered, saving nothing. Without an answer, `unsent` when the ask never
+   * went, since no desktop that relays would take it, and `lost` when it went and its answer did not come. Never asked twice.
+   */
+  private async cancelling(record: RelayedRecord, delegation: string): Promise<Record<string, unknown> | 'unsent' | 'lost'> {
     try {
       const answer = await this.ask({ type: 'cancel', threadId: record.delegatingThreadId, delegation }, DELEGATION_RELAY_READ_MS)
       this.fromRead(record, answer)
       return answer
-    } catch { return undefined }
+    } catch (error) { return error instanceof RelayUnanswered && error.stage === 'away' ? 'unsent' : 'lost' }
   }
   /**
    * Stops what these threads delegated through the relay that is still open, as the user's Stop on them stops what they
@@ -329,7 +332,9 @@ export class HostDelegationRelay {
       seen.add(thread)
       const reachable = this.reachable()
       const answer = record.delegation && reachable ? await this.cancelling(record, record.delegation) : undefined
-      if (answer?.status !== 'ok') left.push({ machine: record.machine ?? 'This computer', ...record.thread ? { thread: record.thread } : {}, reason: reachable ? 'unconfirmed' : 'away' })
+      if (typeof answer === 'object' && answer.status === 'ok') return
+      // A cancel that never left this machine is as one never sent: its desktop was not there to take it.
+      left.push({ machine: record.machine ?? 'This computer', ...record.thread ? { thread: record.thread } : {}, reason: reachable && answer !== 'unsent' ? 'unconfirmed' : 'away' })
     }))
     for (const record of open) if (this.open(record)) record.told = 'stopped'
     await this.persist()

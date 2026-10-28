@@ -12,6 +12,7 @@ import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread } from '../.
 import type { DelegationNews } from '../../../src/shared/delegation'
 import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../../src/shared/delegationRelay'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
+import { HostRequestUnanswered } from '../../../src/main/agents/socketHostService'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -93,6 +94,19 @@ describe('a host thread\'s Stop through the relay', () => {
     expect(relay.list('thread-a')[0]?.outcome).toBe('working')
   })
 
+  it('counts a cancel the desktop\'s socket would not take as never sent', async () => {
+    const relay = new HostDelegationRelay(await folder(), { here: () => 'forge' })
+    await relay.load()
+    const handle: RelayDesktop = { clientId: 'desktop-a', push: (askId, ask) => {
+      if (ask.type === 'cancel') return false
+      queueMicrotask(() => relay.answered(handle, askId, { status: 'ok', delegation: { id: FIRST, thread: 'child-1', outcome: 'working' }, placement: { hostId: MAC, name: 'the Mac' } }))
+      return true
+    } }
+    relay.desktopConnected(handle)
+    await relay.start('thread-a', 'code-review', startAsk)
+    expect(await relay.stopFor(['thread-a'])).toEqual([{ machine: 'the Mac', thread: 'child-1', reason: 'away' }])
+  })
+
   it('names the machine it could not reach while no desktop relays, and stops nothing there', async () => {
     const relay = new HostDelegationRelay(await folder(), { here: () => 'forge' })
     await relay.load()
@@ -163,6 +177,21 @@ describe('a desktop thread\'s Stop on its paired hosts', () => {
     expect(cancels).toBe(1)
     // Its record still reads as it did: nothing claims it stopped.
     expect(remote.list('parent')[0]?.outcome).toBe('working')
+  })
+
+  it('counts a cancel that never left this computer as never sent', async () => {
+    const mac = host(() => 'working')
+    const remote = new DesktopRemoteDelegations(await folder(), { machineName: () => 'the Mac' })
+    await remote.load()
+    remote.useDelivery(async () => undefined)
+    remote.useHosts({ subscribeConnected: () => () => undefined, remoteConnections: () => [mac.connection] })
+    await remote.start('parent', 'code-review', placement, ask)
+    const asks = mac.connection.service.delegationRemoteAsk!
+    mac.connection.service.delegationRemoteAsk = async (given, timeoutMs) => {
+      if (given.type === 'cancel') throw new HostRequestUnanswered('The connection closed before Sotto could send this.', 'unsent')
+      return await asks(given, timeoutMs)
+    }
+    expect(await remote.stopFor(['parent'])).toEqual([{ machine: 'the Mac', hostId: MAC, thread: 'child-1', reason: 'away' }])
   })
 
   it('cancels the open ones of every thread it stops once, and saves once for the whole Stop', async () => {
