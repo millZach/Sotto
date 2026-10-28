@@ -151,8 +151,16 @@ export interface CascadedSettle {
 /** How many threads' cascaded settles are kept, newest last; an older one's Restore brings back none of them. */
 const SETTLES_KEPT = 500
 /** The window's key for a thread: `host:<hostId>:<id>`, with a host's thread ID of up to 512 characters. */
-const keySchema = z.string().min(1).max(600)
-const settlesFileSchema = z.object({ version: z.literal(1), settles: z.array(z.object({ parent: keySchema, settled: z.array(keySchema).max(1_000), left: z.array(keySchema).max(1_000), uncertain: z.array(keySchema).max(1_000).optional() }).strict()).max(SETTLES_KEPT) }).strict()
+const KEY_MAX = 600
+const keySchema = z.string().min(1).max(KEY_MAX)
+/**
+ * The file as it is read. Every bound here is one `keep` holds to as it writes, so what is written can always be read: a
+ * thread's lists have no bound of their own, since each key is bounded and one Settle lists only the threads below it.
+ */
+const settlesFileSchema = z.object({ version: z.literal(1), settles: z.array(z.object({ parent: keySchema, settled: z.array(keySchema), left: z.array(keySchema),
+  uncertain: z.array(keySchema).optional() }).strict()).max(SETTLES_KEPT) }).strict()
+/** Whether a key is one the file can hold. One that is not is left out of the record, and its thread is not restored. */
+const fits = (key: string): boolean => key.length >= 1 && key.length <= KEY_MAX
 type SettlesFile = z.infer<typeof settlesFileSchema>
 
 /**
@@ -178,7 +186,9 @@ export class CascadedSettles {
   /** Keeps what a Settle of `parent` did elsewhere, in place of what an earlier one did, and saves it. */
   async keep(parent: string, settle: CascadedSettle): Promise<void> {
     this.settles.delete(parent)
-    this.settles.set(parent, settle)
+    if (!fits(parent)) { await this.save(); return }
+    const held = (keys: ReadonlySet<string>): ReadonlySet<string> => [...keys].every(fits) ? keys : new Set([...keys].filter(fits))
+    this.settles.set(parent, { settled: held(settle.settled), left: held(settle.left), uncertain: held(settle.uncertain) })
     if (this.settles.size > SETTLES_KEPT) this.settles.delete(this.settles.keys().next().value!)
     await this.save()
   }

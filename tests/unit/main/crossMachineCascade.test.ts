@@ -294,6 +294,22 @@ describe('Stop, Settle and Restore across machines', () => {
     } finally { router.dispose() }
   })
 
+  it('writes only what it can read again: many threads below one, and a key too long left out', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'sotto-cascade-unit-'))
+    try {
+      const before = new CascadedSettles(directory)
+      await before.load()
+      const many = Array.from({ length: 1_500 }, (_, index) => hostEntityKey(FORGE, `check-${index}`))
+      await before.keep(hostEntityKey(LOCAL, 'other'), { settled: new Set([hostEntityKey(MAC, 'mac-check')]), left: new Set(), uncertain: new Set() })
+      await before.keep(parentKey, { settled: new Set(many), left: new Set([hostEntityKey(FORGE, 'x'.repeat(700))]), uncertain: new Set() })
+      const after = new CascadedSettles(directory)
+      await after.load()
+      expect(after.of(parentKey)?.settled.size).toBe(1_500)
+      expect(after.of(parentKey)?.left.size).toBe(0)
+      expect([...after.of(hostEntityKey(LOCAL, 'other'))?.settled ?? []]).toEqual([hostEntityKey(MAC, 'mac-check')])
+    } finally { await rm(directory, { recursive: true, force: true }) }
+  })
+
   it('words one thread on one machine, and allows the two clocks a little skew', () => {
     expect(stopUnreachedWords([{ name: 'forge', count: 1 }])).toBe('Sotto couldn\'t stop 1 delegated thread on forge, because forge isn\'t connected. '
       + 'It may still be working there. Open it from Tools › Agents and stop it once its machine is back.')
