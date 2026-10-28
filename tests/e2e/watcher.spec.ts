@@ -406,7 +406,7 @@ async function contrastHolds(page: Page, key: string): Promise<void> {
 test.describe("Watcher's room on the built app", () => {
   test.describe.configure({ mode: 'serial', timeout: 5 * 60_000 })
   test.beforeAll(async () => {
-    for (const folder of [evidenceRoot, permissionEvidence, handoverEvidence, polishEvidence, newsEvidence, answerEvidence, macEvidence, newWatcherEvidence, machinesEvidence, scrubberEvidence]) await mkdir(folder, { recursive: true })
+    for (const folder of [evidenceRoot, permissionEvidence, handoverEvidence, polishEvidence, newsEvidence, answerEvidence, macEvidence, newWatcherEvidence, machinesEvidence, checksEvidence, scrubberEvidence]) await mkdir(folder, { recursive: true })
   })
   test.afterAll(async () => {
     // Each folder gets its own readings, and a run that took none for a folder leaves that folder's file as it was.
