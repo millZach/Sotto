@@ -31,7 +31,7 @@ function fakeStore() {
     metadata: () => ({ startedAt, revision: 0, generation: 0, legacySeedCompleted: true, ...(statuses.length ? { history: statuses.at(-1)! } : {}) }),
     observeTokenBatch: batch => { if (failTokens) throw new Error('disk'); tokens.push(batch); return { status: 'written', revision: 1 } },
     importPrompts: batch => { prompts.push(batch); return { status: 'written', revision: 1 } },
-    historyCursor: key => cursors.get(key),
+    historyCursors: () => [...cursors].map(([key, cursor]) => ({ key, cursor })),
     setHistoryCursors: entries => { for (const entry of entries) cursors.set(entry.key, entry.cursor) },
     setHistoryStatus: status => { statuses.push(status) },
   }
@@ -112,6 +112,8 @@ describe('Usage history importer', () => {
     expect(scan).toHaveBeenCalledOnce()
     now = 60_000
     importer.poke()
+    // The pass reads the store's metadata and cursors, answered later on the usage store worker, before it scans.
+    await vi.advanceTimersByTimeAsync(0)
     expect(scan).toHaveBeenCalledTimes(2)
     release!(); importer.close()
   })
