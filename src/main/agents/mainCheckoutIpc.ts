@@ -4,6 +4,11 @@ import { MAIN_CHECKOUT_CHANGES, MAIN_CHECKOUT_COMMAND, MAIN_CHECKOUT_READ, mainC
 import { isAuthorizedIpcSender, type IpcInvocationEvent, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 import type { MainCheckoutKeeper } from './mainCheckout'
 
+/** Each call's arguments, checked against schemas built once rather than on every call. */
+const noArguments = z.tuple([])
+const projectArguments = z.tuple([z.string().min(1).max(256)])
+const commandArguments = z.tuple([mainCheckoutCommandSchema])
+
 /**
  * Keep main up to date's handlers (ADR-0142). Stable builds no keeper, so nothing is registered there. Only the main
  * window may ask, since only its Threads sidebar shows a project's line.
@@ -16,17 +21,17 @@ export function registerMainCheckoutIpc(ipc: IpcMainAdapter, keeper: MainCheckou
   }
   ipc.handle(MAIN_CHECKOUT_READ, (event, ...args) => {
     authorize(event)
-    z.tuple([]).parse(args)
+    noArguments.parse(args)
     return mainCheckoutStateSchema.parse(keeper.state())
   })
   ipc.handle(MAIN_CHECKOUT_CHANGES, async (event, ...args) => {
     authorize(event)
-    const [projectId] = z.tuple([z.string().min(1).max(256)]).parse(args)
+    const [projectId] = projectArguments.parse(args)
     return mainCheckoutChangesSchema.parse(await keeper.changes(projectId))
   })
   ipc.handle(MAIN_CHECKOUT_COMMAND, async (event, ...args) => {
     authorize(event)
-    const [command] = z.tuple([mainCheckoutCommandSchema]).parse(args)
+    const [command] = commandArguments.parse(args)
     if (command.type === 'dismiss-dependencies') return mainCheckoutStateSchema.parse(await keeper.dismissDependencies(command.projectId))
     const folder = keeper.projectFolder(command.projectId)
     if (folder === null) throw new Error('That project is no longer in Sotto.')

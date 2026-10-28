@@ -3,13 +3,16 @@ import { CLOUD_IPHONE_CHANNEL } from '../../shared/cloudIphone'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 import type { CloudIphoneService } from './cloudIphone/service'
 
+/** Each call's arguments, checked against schemas built once rather than on every call. */
+const oneArgument = z.tuple([z.unknown()])
+
 /** The renderer's view of the cloud iPhone (ADR-0047): status, setKey, sessions, answer, end, mount. Main window only. */
 export function registerCloudIphoneIpc(ipc: IpcMainAdapter, service: CloudIphoneService, senders: () => readonly TrustedIpcSender[]): () => Promise<void> {
   const channels: string[] = []
   const register = (channel: string, operation: (payload: unknown) => unknown): void => {
     ipc.handle(channel, (event, ...args) => {
       if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('CLOUD_IPHONE_MAIN_WINDOW_REQUIRED')
-      const [payload] = z.tuple([z.unknown()]).parse(args)
+      const [payload] = oneArgument.parse(args)
       return operation(payload)
     })
     channels.push(channel)

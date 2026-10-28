@@ -167,6 +167,8 @@ const sessionSchema = z.looseObject({
 type NativeSession = z.infer<typeof sessionSchema>
 const sessionListSchema = z.looseObject({ data: z.array(sessionSchema), cursor: z.looseObject({ next: z.string().nullable().optional() }).optional() })
 const sessionReplySchema = z.looseObject({ data: sessionSchema })
+const interruptReplySchema = z.looseObject({ interrupted: z.boolean().optional() })
+const idListSchema = z.looseObject({ data: z.array(z.looseObject({ id: z.string() })) })
 const promptReplySchema = z.looseObject({ data: z.looseObject({ id: z.string().min(1) }) })
 const toolPartSchema = z.looseObject({
   type: z.literal('tool'), id: z.string().min(1), name: z.string().min(1),
@@ -877,7 +879,7 @@ export class OpenCodeHost implements AgentHost {
         if (attempt) await new Promise(resolve => setTimeout(resolve, this.options.ownServerStopRetryMs ?? OWN_SERVER_STOP_RETRY_MS))
         if (!current()) return
         try {
-          const reply = z.looseObject({ interrupted: z.boolean().optional() }).parse(await entry.client!.request('POST', `/api/session/${this.sid(alias)}/interrupt`) ?? {})
+          const reply = interruptReplySchema.parse(await entry.client!.request('POST', `/api/session/${this.sid(alias)}/interrupt`) ?? {})
           // Nothing was running, so OpenCode will not say the turn ended: Sotto records it itself.
           if (reply.interrupted === false && current()) this.endTimedOut(id, messageId, server)
           return
@@ -1165,9 +1167,8 @@ export class OpenCodeHost implements AgentHost {
     if (!entry?.client || !alias) return
     const uncertain = [...this.pending.values()].filter(pending => pending.threadId === id && pending.request.delivery === 'uncertain' && (!only || pending.request.id === only))
     if (!uncertain.length) return
-    const listed = z.looseObject({ data: z.array(z.looseObject({ id: z.string() })) })
-    const permissions = new Set(listed.parse(await entry.client.request('GET', `/api/session/${this.sid(alias)}/permission`)).data.map(item => item.id))
-    const forms = new Set(listed.parse(await entry.client.request('GET', `/api/session/${this.sid(alias)}/form`)).data.map(item => item.id))
+    const permissions = new Set(idListSchema.parse(await entry.client.request('GET', `/api/session/${this.sid(alias)}/permission`)).data.map(item => item.id))
+    const forms = new Set(idListSchema.parse(await entry.client.request('GET', `/api/session/${this.sid(alias)}/form`)).data.map(item => item.id))
     for (const pending of uncertain) {
       const open = pending.kind === 'permission' ? permissions.has(pending.permission.id) : forms.has(pending.form.id)
       if (!open) this.removeRequest(pending)
@@ -1834,7 +1835,7 @@ export class OpenCodeHost implements AgentHost {
           await this.open(command.threadId); this.assertGeneration(generation)
           const entry = await this.threadProcess(command.threadId)
           watcherGuard?.()
-          const reply = z.looseObject({ interrupted: z.boolean().optional() }).parse(await entry.client!.request('POST', `/api/session/${this.sid(alias)}/interrupt`) ?? {})
+          const reply = interruptReplySchema.parse(await entry.client!.request('POST', `/api/session/${this.sid(alias)}/interrupt`) ?? {})
           // Nothing was running on this server, so nothing will say the turn ended: Sotto settles what it shows itself.
           const active = this.activeTurns.get(command.threadId)
           if (reply.interrupted === false && active) this.endTurn(command.threadId, active.messageId, 'interrupted')

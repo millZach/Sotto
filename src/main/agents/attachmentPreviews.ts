@@ -17,6 +17,9 @@ const entrySchema = z.object({ ...identity, attachments: agentAttachmentHandlesS
 /** Version 1 kept each image's bytes inline; they are staged into the attachment store when it is read (ADR-0031). */
 const inlineEntrySchema = z.object({ ...identity, attachments: agentAttachmentsSchema.refine(items => items.every(hasRasterImageSignature)) })
 type Entry = z.infer<typeof entrySchema>
+const savedSchema = z.object({ version: z.union([z.literal(1), z.literal(2)]), entries: z.array(z.unknown()) })
+const threadOwnerSchema = z.object({ threadId: z.string() })
+const messageOwnerSchema = z.object({ threadId: z.string(), messageId: z.string() })
 type Read = { version: 1 | 2; entries: unknown[] }
 type Cached = Entry & { retain: boolean }
 
@@ -43,7 +46,7 @@ export class AttachmentPreviews {
     private readonly dormantThreadIds?: ReadonlySet<string>) {
     this.enabled = historyEnabled()
     this.store = new AtomicJsonStore<Read>(join(directory, 'attachment-previews.json'), value => {
-      const saved = z.object({ version: z.union([z.literal(1), z.literal(2)]), entries: z.array(z.unknown()) }).parse(value)
+      const saved = savedSchema.parse(value)
       return { version: saved.version, entries: saved.entries }
     }, () => ({ version: 2, entries: [] }))
   }
@@ -64,8 +67,8 @@ export class AttachmentPreviews {
       if (text === undefined) continue
       let kept: string | undefined
       try {
-        const saved = z.object({ version: z.union([z.literal(1), z.literal(2)]), entries: z.array(z.unknown()) }).parse(JSON.parse(text))
-        const entries = saved.entries.filter(item => { const owner = z.object({ threadId: z.string() }).safeParse(item); return owner.success && this.preserveThread(owner.data.threadId) })
+        const saved = savedSchema.parse(JSON.parse(text))
+        const entries = saved.entries.filter(item => { const owner = threadOwnerSchema.safeParse(item); return owner.success && this.preserveThread(owner.data.threadId) })
         if (entries.length) {
           kept = entries.length === saved.entries.length ? text : JSON.stringify({ ...saved, entries })
           if (entries.length !== saved.entries.length) await new AtomicJsonStore<unknown>(path, value => value, () => undefined).writeSerialized(kept)
@@ -96,7 +99,7 @@ export class AttachmentPreviews {
       this.enabled = this.historyEnabled()
       const entries: Entry[] = []
       for (const [index, item] of saved.entries.entries()) {
-        const owner = z.object({ threadId: z.string(), messageId: z.string() }).safeParse(item)
+        const owner = messageOwnerSchema.safeParse(item)
         if (owner.success) {
           this.diskOrder.set(JSON.stringify([owner.data.threadId, owner.data.messageId]), index)
           if (this.preserveThread?.(owner.data.threadId)) { this.dormant.push(item); continue }
@@ -150,7 +153,7 @@ export class AttachmentPreviews {
       .map(entry => ({ threadId: entry.threadId, messageId: entry.messageId, commandId: entry.commandId, storedAt: entry.storedAt, attachments: entry.attachments }))]
     if (this.dormant.length) {
       const order = (entry: unknown): number => {
-        const owner = z.object({ threadId: z.string(), messageId: z.string() }).safeParse(entry)
+        const owner = messageOwnerSchema.safeParse(entry)
         return owner.success ? this.diskOrder.get(JSON.stringify([owner.data.threadId, owner.data.messageId])) ?? Infinity : Infinity
       }
       entries.sort((a, b) => order(a) - order(b))

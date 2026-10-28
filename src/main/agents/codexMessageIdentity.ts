@@ -10,6 +10,10 @@ export const codexTurnIdentitySchema = z.object({
   turnId: z.string(), ordered: z.boolean(), sealed: z.boolean().default(false), messages: z.array(codexMessageIdentitySchema),
 })
 export type CodexTurnIdentity = z.infer<typeof codexTurnIdentitySchema>
+/** One rollout line's payload, read for every line of a thread's history. */
+const rolloutPayloadSchema = z.object({ type: z.string().optional(), turn_id: z.string().optional(), role: z.string().optional(),
+  id: z.string().nullish(), client_id: z.string().nullish(), message: z.string().optional(),
+  content: z.array(z.object({ type: z.string(), text: z.string().optional() })).optional() })
 export type CodexMessageIdentity = z.infer<typeof codexMessageIdentitySchema>
 export type CodexOrigin = { messageId: string; commandId: string; digest: string; createdAt: string; turnId?: string | undefined;
   itemId?: string | undefined; clientIdentity?: boolean | undefined }
@@ -25,9 +29,7 @@ export class CodexRolloutIdentities {
   private readonly turns = new Map<string, RolloutIdentity[]>()
   get(turnId: string): readonly RolloutIdentity[] { return this.turns.get(turnId) ?? [] }
   consume(entry: { type: string; payload: unknown; timestamp: string; ordinal?: number | undefined }): void {
-    const parsed = z.object({ type: z.string().optional(), turn_id: z.string().optional(), role: z.string().optional(),
-      id: z.string().nullish(), client_id: z.string().nullish(), message: z.string().optional(),
-      content: z.array(z.object({ type: z.string(), text: z.string().optional() })).optional() }).safeParse(entry.payload)
+    const parsed = rolloutPayloadSchema.safeParse(entry.payload)
     if (!parsed.success) return
     const p = parsed.data
     if ((entry.type === 'turn_context' || entry.type === 'event_msg' && p.type === 'task_started') && p.turn_id) {

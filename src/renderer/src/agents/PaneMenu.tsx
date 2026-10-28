@@ -17,10 +17,12 @@ export interface PaneMenuItem {
   readonly hint?: string
   /** A press that cannot be taken back from here, such as closing a pull request, reads in the error colour. */
   readonly tone?: 'danger'
+  /** Set on one of a group of choices, such as a size: the row is a radio item, checked when true. */
+  readonly checked?: boolean
   readonly run: () => void
 }
 
-const ITEM = '[role="menuitem"]:not(:disabled)'
+const ITEM = ':is([role="menuitem"], [role="menuitemradio"]):not(:disabled)'
 
 /**
  * The pane header's "…" menu: everything that acts on this thread but does not earn a button of
@@ -31,7 +33,7 @@ const ITEM = '[role="menuitem"]:not(:disabled)'
  * the pane's own focus bookkeeping keeps working. Escape or Tab closes it and returns focus to the button,
  * as a pointer outside it does.
  */
-export function PaneMenu({ groups, label: givenLabel, icon, text, className }: {
+export function PaneMenu({ groups, label: givenLabel, icon, text, className, buttonClassName }: {
   readonly groups: readonly (readonly PaneMenuItem[])[]
   readonly label?: string
   /** The button's glyph; the ellipsis unless a control says otherwise. */
@@ -39,6 +41,8 @@ export function PaneMenu({ groups, label: givenLabel, icon, text, className }: {
   /** Words shown beside the glyph, for a menu that opens from a named thing rather than an icon button. */
   readonly text?: ReactNode
   readonly className?: string
+  /** The icon button's own class where the menu sits on another surface's line, such as Tools' `files-icon`. */
+  readonly buttonClassName?: string
 }): ReactNode {
   const { t } = useLingui()
   const label = givenLabel ?? t`More actions`
@@ -64,7 +68,7 @@ export function PaneMenu({ groups, label: givenLabel, icon, text, className }: {
     if (restore) button.current?.focus()
   }
   return <div className={className ? `pane-menu ${className}` : 'pane-menu'}>
-    <button ref={button} type="button" className={text === undefined ? 'pane-action tt-focusable' : 'pane-menu__trigger tt-focusable'} aria-label={label} title={label}
+    <button ref={button} type="button" className={text === undefined ? `${buttonClassName ?? 'pane-action'} tt-focusable` : 'pane-menu__trigger tt-focusable'} aria-label={label} title={label}
       aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)}
       // A menu whose every row is disabled leaves focus on the button; Escape still puts it away.
       onKeyDown={event => { if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setOpen(false) } }}>
@@ -83,7 +87,7 @@ export function PaneMenu({ groups, label: givenLabel, icon, text, className }: {
       }}>
       {shown.map((group, index) => <React.Fragment key={group[0]!.id}>
         {index > 0 ? <hr /> : null}
-        {group.map(item => <button key={item.id} type="button" role="menuitem" className="pane-menu__item" data-tone={item.tone} tabIndex={-1} disabled={item.disabled} title={item.hint}
+        {group.map(item => <button key={item.id} type="button" role={item.checked === undefined ? 'menuitem' : 'menuitemradio'} aria-checked={item.checked} className="pane-menu__item" data-tone={item.tone} tabIndex={-1} disabled={item.disabled} title={item.hint}
           onClick={() => { close(true); item.run() }}>{item.icon}{item.content ?? item.label}{item.hint ? <span className="tt-visually-hidden">. {item.hint}</span> : null}</button>)}
       </React.Fragment>)}
     </div> : null}

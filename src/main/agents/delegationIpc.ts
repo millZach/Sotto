@@ -4,6 +4,10 @@ import { hostEntityKey, parseHostEntityKey } from '../../shared/clientIdentity'
 import { DELEGATION_BRIEF_READ, DELEGATIONS_CHANGED, DELEGATIONS_READ, delegationBriefRequestSchema, delegationBriefSchema, delegationsChangedSchema, delegationsReadSchema, delegationsRequestSchema, type DelegatedView, type DelegationBrief, type DelegationsRead, type DelegationView } from '../../shared/delegation'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 
+/** Each call's arguments, checked against schemas built once rather than on every call. */
+const delegationsArguments = z.tuple([delegationsRequestSchema])
+const delegationBriefArguments = z.tuple([delegationBriefRequestSchema])
+
 /** What the window's read asks of delegation in main: its own record, never a snapshot (#1029). */
 export interface DelegationViews {
   views(threadId: string): { readonly made: readonly DelegationView[]; readonly received: readonly DelegatedView[] }
@@ -36,7 +40,7 @@ export function registerDelegationIpc(ipc: IpcMainAdapter, delegation: Delegatio
   // Synchronous for this computer's threads, so a refusal throws as the window asks; a remote read answers when its host does.
   ipc.handle(DELEGATIONS_READ, (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open delegations in the main Sotto window.`)
-    const [request] = z.tuple([delegationsRequestSchema]).parse(args)
+    const [request] = delegationsArguments.parse(args)
     const key = parseHostEntityKey(request.threadId)
     if (key && key.hostId !== localHostId()) {
       return remote ? remote.delegationViews(request.threadId).then(read => delegationsReadSchema.parse(read)) : delegationsReadSchema.parse({ threadId: request.threadId, delegations: [], received: [] })
@@ -49,7 +53,7 @@ export function registerDelegationIpc(ipc: IpcMainAdapter, delegation: Delegatio
   })
   ipc.handle(DELEGATION_BRIEF_READ, (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open delegations in the main Sotto window.`)
-    const [request] = z.tuple([delegationBriefRequestSchema]).parse(args)
+    const [request] = delegationBriefArguments.parse(args)
     const key = parseHostEntityKey(request.threadId)
     if (key && key.hostId !== localHostId()) return remote ? remote.delegationBrief(request.threadId).then(brief => delegationBriefSchema.parse(brief)) : null
     const text = delegation?.brief(key?.id ?? request.threadId)

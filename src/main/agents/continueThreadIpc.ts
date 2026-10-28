@@ -3,6 +3,9 @@ import { z } from 'zod'
 import { CONTINUE_READ, CONTINUE_START, continueReadSchema, continueStartSchema, type ContinueRead, type ContinueStart } from '../../shared/continueThread'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 
+/** Each call's arguments, checked against schemas built once rather than on every call. */
+const oneArgument = z.tuple([z.unknown()])
+
 /** What the window's bridge asks of continuing in main: a read of what would be handed over, and the start itself. */
 export interface ContinueCalls {
   read(request: unknown): ContinueRead
@@ -18,12 +21,12 @@ export function registerContinueIpc(ipc: IpcMainAdapter, calls: ContinueCalls | 
   if (!calls) return () => undefined
   ipc.handle(CONTINUE_READ, (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Continue a thread from the main Sotto window.`)
-    const [request] = z.tuple([z.unknown()]).parse(args)
+    const [request] = oneArgument.parse(args)
     return continueReadSchema.parse(calls.read(request))
   })
   ipc.handle(CONTINUE_START, async (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Continue a thread from the main Sotto window.`)
-    const [request] = z.tuple([z.unknown()]).parse(args)
+    const [request] = oneArgument.parse(args)
     return continueStartSchema.parse(await calls.start(request))
   })
   return () => { ipc.removeHandler(CONTINUE_READ); ipc.removeHandler(CONTINUE_START) }
