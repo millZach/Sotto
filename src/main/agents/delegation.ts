@@ -161,7 +161,7 @@ export interface DelegationServiceOptions {
    * goes to that machine's host, which admits it with its own delegation and keeps its record, and every later brief, read
    * and cancel of it goes there too. Absent, a start placed elsewhere is refused, as on a host.
    */
-  readonly remote?: Pick<DesktopRemoteDelegations, 'start' | 'send' | 'holds' | 'holdsThread' | 'read' | 'cancel' | 'list' | 'useDelivery' | 'detail' | 'retried' | 'isOpen' | 'hasOpen' | 'takesBranches'>
+  readonly remote?: Pick<DesktopRemoteDelegations, 'start' | 'send' | 'holds' | 'holdsThread' | 'read' | 'cancel' | 'list' | 'useDelivery' | 'detail' | 'retried' | 'isOpen' | 'hasOpen' | 'takesBranches' | 'reservePlace' | 'releasePlace'>
   /**
    * This machine's own name, as a host says it to a thread on another machine that delegates here (#1316 part 2, Zach,
    * October 28): its refusals, notes and warning name it, "That model is not ready on the Mac", where a thread of its own
@@ -356,9 +356,17 @@ interface DelegateContext {
   readonly takenAt?: string
   /** The check snapshot a relayed caller's machine took and pinned as it asked, which the move sends (#1316 part 2). */
   readonly pinned?: string
-  /** Where a check that named a machine was placed here, before it joined this machine's queue (#1316 part 2). */
-  readonly placedHere?: WorkerPlacementReceipt | undefined
+  /**
+   * A place in this machine's check queue the desktop reserved for this start before its branch moved here (#1316 part 2),
+   * which a check takes instead of joining at the end.
+   */
+  readonly reserved?: string
 }
+/**
+ * How long a place a desktop reserved in this machine's check queue waits for the start that takes it (#1316 part 2):
+ * past it, the place is let go, so a desktop that never asks cannot hold the machine's checks back.
+ */
+export const CHECK_RESERVATION_MS = 15 * 60 * 1000
 /** A check waiting in this machine's queue (#1312): what it starts with once its turn comes, held in memory only. */
 interface WaitingCheck { readonly brief: string; readonly start: DelegatedStart; readonly branch: LandedBranch | undefined }
 /** How many times news of a thread's delegations is offered to its queue before it is left untold. */
@@ -479,6 +487,8 @@ export class DelegationService {
    */
   private readonly checkTickets = new Map<string, string>()
   private readonly ticketRecords = new Map<string, string>()
+  /** Places a desktop reserved in this machine's queue for starts it is about to ask (#1316 part 2), by caller and reservation. */
+  private readonly reservations = new Map<string, { readonly ticket: string; readonly timer: ReturnType<typeof setTimeout> }>()
   private lettingGo: Promise<void> = Promise.resolve()
   /** The checks waiting their turn, with what each starts with; never saved, so a restart starts none of them. */
   private readonly waitingChecks = new Map<string, WaitingCheck>()
@@ -570,6 +580,8 @@ export class DelegationService {
     const waiting = [...this.waitingChecks]
     this.waitingChecks.clear()
     for (const [delegationId] of waiting) this.leaveQueue(delegationId)
+    for (const held of this.reservations.values()) { clearTimeout(held.timer); this.options.checks?.leave(held.ticket) }
+    this.reservations.clear()
     this.lettingGo = Promise.all(waiting.map(([, check]) => this.letGo(check.branch))).then(() => undefined)
     this.cancelRelease?.(); this.cancelRelease = undefined
     this.viewListeners.clear()
@@ -613,37 +625,64 @@ export class DelegationService {
     if (input.thread !== undefined && this.options.remote?.holdsThread(threadId, input.thread)) return await this.elsewhereSend(threadId, input, context, 'remote')
     // A check takes its place in this machine's queue as it is asked for, before its snapshot is taken (#1312), so a check
     // whose snapshot takes longer is never overtaken by one asked after it. A call that ends without a check keeps none.
-    // One the desktop relay already placed on another machine waits in that machine's queue, never this one's, and one that
-    // names a machine or a system joins this one's only once it is placed here (#1316 part 2).
+    // One the desktop relay already placed on another machine waits in that machine's queue, never this one's. One that
+    // names a machine or a system holds its place hidden until it is placed, and gives it up if it goes elsewhere; one the
+    // desktop reserved a place for before its branch moved here takes that place (#1316 part 2).
     const checks = this.options.checks
+    if (!checks || input.test_run !== true || input.thread !== undefined || context.placement) return await this.ask(threadId, input, context)
+    const reserved = context.reserved !== undefined ? this.claimReservation(threadId, context.reserved) : undefined
     const named = input.machine !== undefined || input.os !== undefined
-    const ticket = checks && input.test_run === true && input.thread === undefined && !context.placement && !named ? randomUUID() : undefined
-    if (!checks || !ticket) return await this.ask(threadId, input, context)
-    return await this.queued(threadId, input, context, ticket)
-  }
-  /** A check's call with its place in this machine's queue, held until a check of it holds it, or let go when none does. */
-  private async queued(threadId: string, input: DelegateInput, context: DelegateContext, ticket: string): Promise<unknown> {
-    const checks = this.options.checks!
+    const ticket = reserved ?? randomUUID()
     // What the window shows of it while it waits (#1312, fourth part): a thread's check, who asked, and what names it.
     checks.join(ticket, () => this.checkTurn(ticket), { whose: 'thread', by: threadId, work: input.work,
-      ...input.title ? { title: input.title } : {}, ...input.provider ? { provider: input.provider } : {} })
+      ...input.title ? { title: input.title } : {}, ...input.provider ? { provider: input.provider } : {} }, { hidden: named })
     try { return await this.ask(threadId, input, context, ticket) }
     finally { if (!this.ticketRecords.has(ticket)) checks.leave(ticket) }
+  }
+  /**
+   * Holds a place at the end of this machine's check queue for a check a desktop is about to start here for `threadId`,
+   * before its branch moves (#1316 part 2). The start that names `reservation` takes it; `releaseReservation`, or
+   * CHECK_RESERVATION_MS unclaimed, lets it go. False without a queue.
+   */
+  reserveCheck(threadId: string, reservation: string, work: DelegateInput['work']): boolean {
+    const checks = this.options.checks
+    if (!checks || this.closed) return false
+    const key = `${threadId}\n${reservation}`
+    if (this.reservations.has(key)) return true
+    const ticket = randomUUID()
+    const timer = setTimeout(() => { this.releaseReservation(threadId, reservation) }, CHECK_RESERVATION_MS)
+    timer.unref?.()
+    this.reservations.set(key, { ticket, timer })
+    checks.join(ticket, () => this.checkTurn(ticket), { whose: 'thread', by: threadId, work })
+    return true
+  }
+  /** Lets go of a reserved place no start has taken. One a start took stays its own. */
+  releaseReservation(threadId: string, reservation: string): void {
+    const key = `${threadId}\n${reservation}`, held = this.reservations.get(key)
+    if (!held) return
+    clearTimeout(held.timer); this.reservations.delete(key)
+    if (!this.ticketRecords.has(held.ticket)) this.options.checks?.leave(held.ticket)
+  }
+  /** The ticket a start takes for the place reserved for it, still held, or undefined when it was let go. */
+  private claimReservation(threadId: string, reservation: string): string | undefined {
+    const key = `${threadId}\n${reservation}`, held = this.reservations.get(key)
+    if (!held) return undefined
+    clearTimeout(held.timer); this.reservations.delete(key)
+    return held.ticket
   }
   private async ask(threadId: string, input: DelegateInput, context: DelegateContext, ticket?: string): Promise<unknown> {
     // A retry of a start made on a paired host reads that start there, before anything is placed or admitted here, so a
     // retry never makes a second thread on either machine (#1316 review).
     const elsewhere = input.thread === undefined && input.retry_key !== undefined ? this.options.remote?.retried(threadId, input.retry_key) : undefined
     if (elsewhere !== undefined) return await this.options.remote!.read(threadId, elsewhere)
-    const placed = context.placement ? { elsewhere: context.placement } : 'placedHere' in context ? context.placedHere : await this.place(threadId, input)
-    // A check placed on another machine waits in that machine's queue, so it gives up its place in this one (#1316 part 2).
+    const placed = context.placement ? { elsewhere: context.placement } : await this.place(threadId, input)
+    // A check placed on another machine waits in that machine's queue, so it gives up its place in this one; one placed
+    // here keeps the place it held from when it was asked, now shown (#1316 part 2).
     if ((placed === RELAYED || placed && 'elsewhere' in placed) && ticket !== undefined) this.options.checks?.leave(ticket)
+    else if (ticket !== undefined) this.options.checks?.show(ticket)
     if (placed === RELAYED) return await this.relayStart(threadId, input, context)
     if (placed && 'elsewhere' in placed) return await this.remoteStart(threadId, input, context, placed.elsewhere)
     if (placed && 'status' in placed) return placed
-    // A check that named a machine and was placed here takes its place in this machine's queue now, before its snapshot.
-    if (ticket === undefined && this.options.checks && input.test_run === true && input.thread === undefined && !('placedHere' in context)
-      && (input.machine !== undefined || input.os !== undefined)) return await this.queued(threadId, input, { ...context, placedHere: placed }, randomUUID())
     const branch = context.landed ? this.landedHere(threadId, context.landed) : await this.fromBranch(threadId, input, context)
     if (branch && 'status' in branch) return branch
     let admitted: { record: DelegationRecord; retry: boolean; start?: DelegatedStart; role?: RoleReceipt }
@@ -982,9 +1021,19 @@ export class DelegationService {
     if (branching && !remote.takesBranches(placement.hostId)) return await this.refused(threadId, input, delegationRefusal('BRANCH_UNAVAILABLE', REMOTE_NO_BRANCH(name)))
     const asked = await this.elsewhereCaller(threadId, input, context, 2_000)
     if ('status' in asked) return asked
+    // A check holds its place in that host's queue first, in the order asked, before its branch or snapshot moves there.
+    let reservation: string | undefined
+    if (input.test_run === true) {
+      try { reservation = await remote.reservePlace(asked.caller.id, placement.hostId, input.work) }
+      catch (error) {
+        if (error instanceof RelayUnanswered && error.stage === 'away') return await this.refused(threadId, input, delegationRefusal('MACHINE_UNAVAILABLE', REMOTE_AWAY(name)))
+        return delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not start this delegation. Nothing was started.')
+      }
+    }
+    const release = async () => { if (reservation !== undefined) await remote.releasePlace(asked.caller.id, placement.hostId, reservation) }
     // The branch, or a check's snapshot, goes to that host's project first, taken now, as this start is asked for.
     const branch = await this.fromBranch(threadId, input, context, { hostId: placement.hostId, projectId: placement.projectId, name })
-    if (branch && 'status' in branch) return branch
+    if (branch && 'status' in branch) { await release(); return branch }
     const { retry_key: retryKey, ...rest } = asked.rest
     // A check waits in that host's own queue, which its delegation joins for `test_run` (#1312).
     const landed: RemoteLandedBranch | undefined = branch ? { moveId: branch.moveId, branch: branch.receipt.branch, ...branch.receipt.snapshot ? { snapshot: branch.receipt.snapshot } : {},
@@ -993,15 +1042,15 @@ export class DelegationService {
     try {
       answer = await remote.start(asked.caller.id, input.work, placement, { levels: asked.levels, rootUserMessageId: asked.root, ...(asked.head ? { callerMessageId: asked.head } : {}),
         runtimeMode: asked.own, input: { ...rest, ...input.test_run === true ? { test_run: true } : {} }, ...typeof retryKey === 'string' ? { retryKey } : {}, waitMs: asked.waitMs,
-        ...landed ? { branch: landed } : {} })
+        ...landed ? { branch: landed } : {}, ...reservation !== undefined ? { reservation } : {} })
     } catch (error) {
-      // Nothing was asked of a host that is away, so the branch landed for it is let go. Otherwise it may have been taken.
-      if (error instanceof RelayUnanswered && error.stage === 'away') { await this.letGo(branch); return await this.refused(threadId, input, delegationRefusal('MACHINE_UNAVAILABLE', REMOTE_AWAY(name))) }
+      // Nothing was asked of a host that is away, so the branch landed for it, and its place, are let go. Otherwise it may have been taken.
+      if (error instanceof RelayUnanswered && error.stage === 'away') { await this.letGo(branch); await release(); return await this.refused(threadId, input, delegationRefusal('MACHINE_UNAVAILABLE', REMOTE_AWAY(name))) }
       return delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not start this delegation. Nothing was started.')
     }
     if (answer.status !== 'refused') return answer
-    // A definite refusal made no thread there, so nothing owns the branch landed for it.
-    await this.letGo(branch)
+    // A definite refusal made no thread there, so nothing owns the branch landed for it, or the place held for it.
+    await this.letGo(branch); await release()
     return await this.refusedElsewhere(threadId, input, answer, `${name} could not start this delegation. Nothing was started.`, false)
   }
   /**

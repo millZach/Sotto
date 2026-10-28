@@ -28,7 +28,7 @@ afterEach(async () => {
 const folder = async () => { const root = await mkdtemp(join(tmpdir(), 'sotto-branch-elsewhere-')); roots.push(root); return root }
 const FORGE = '11111111-1111-4111-8111-111111111111', DESKTOP = '22222222-2222-4222-8222-222222222222', MAC = '33333333-3333-4333-8333-333333333333'
 const THERE = '44444444-4444-4444-8444-444444444444'
-const MOVE = '66666666-6666-4666-8666-666666666666', PIN = '88888888-8888-4888-8888-888888888888'
+const MOVE = '66666666-6666-4666-8666-666666666666', PIN = '88888888-8888-4888-8888-888888888888', RESERVED = '99999999-9999-4999-8999-999999999999'
 const model = { id: 'model', name: 'Model', providerId: 'codex', ready: true, reasoningEfforts: [], runtimeModes: ['approval-required', 'auto', 'full-access'] } as unknown as AgentModel
 const macPlacement = { hostId: MAC, projectId: 'mac-project', receipt: { hostId: MAC, name: 'the Mac', awayFromDefault: false } }
 const start = { work: 'code-review', brief: 'Run the tests.', provider: 'codex', model: 'model', permission: 'auto', wait_seconds: 0 }
@@ -52,12 +52,13 @@ function moves(refuse?: string) {
   } as unknown as NonNullable<DelegationServiceOptions['branchMoves']>, pinned }
 }
 /** A fake of the desktop's delegations on its paired hosts, answering each start as `answer` says. */
-function remoteOf(answer: () => Promise<Record<string, unknown>>, takes = true) {
-  const calls: { callerId: string; ask: Record<string, unknown> }[] = []
-  const remote = { start: async (callerId: string, _work: string, _placement: unknown, ask: Record<string, unknown>) => { calls.push({ callerId, ask }); return await answer() },
+function remoteOf(answer: () => Promise<Record<string, unknown>>, takes = true, events: string[] = []) {
+  const calls: { callerId: string; ask: Record<string, unknown> }[] = [], released: string[] = []
+  const remote = { start: async (callerId: string, _work: string, _placement: unknown, ask: Record<string, unknown>) => { events.push('start'); calls.push({ callerId, ask }); return await answer() },
+    reservePlace: async () => { events.push('reserve'); return RESERVED }, releasePlace: async (_callerId: string, _hostId: string, reservation: string) => { released.push(reservation) },
     send: async () => ({}), holds: () => false, holdsThread: () => false, read: async () => ({}), cancel: async () => ({}), list: () => [], useDelivery: () => undefined,
     detail: () => undefined, retried: () => undefined, isOpen: () => false, hasOpen: () => false, takesBranches: () => takes } as unknown as NonNullable<DelegationServiceOptions['remote']>
-  return { remote, calls }
+  return { remote, calls, released }
 }
 
 /** The desktop's delegation, with one thread of its own on feat/x, and This computer's check queue. */
@@ -133,6 +134,75 @@ describe('a desktop thread\'s start on a paired host from its branch, or as a ch
     expect(m.asked).toEqual([])
     expect(r.calls[0]!.ask).toMatchObject({ input: { test_run: true } })
     expect(r.calls[0]!.ask).not.toHaveProperty('branch')
+  })
+})
+
+describe('one check queue per machine, in the order asked (Sol review)', () => {
+  it('holds the check\'s place in the host\'s queue before its snapshot moves there, and gives it up when the move is refused', async () => {
+    const events: string[] = []
+    const m = moves(), r = remoteOf(async () => ({ status: 'ok', delegation: { id: THERE, outcome: 'working' } }), true, events)
+    const forStart = m.moves.forStart.bind(m.moves)
+    m.moves.forStart = async input => { events.push('move'); return await forStart(input) }
+    const f = await desktop({ branchMoves: m.moves, remote: r.remote })
+    await f.delegation.delegate('parent', { ...start, machine: MAC, from_my_branch: true, test_run: true })
+    expect(events).toEqual(['reserve', 'move', 'start'])
+    expect(r.calls[0]!.ask).toMatchObject({ reservation: RESERVED })
+    expect(r.released).toEqual([])
+    const refusing = moves('A submodule in this thread has uncommitted changes, and a check can\'t carry them. Commit them inside the submodule first, then start again. Nothing was started.')
+    const g = await desktop({ branchMoves: refusing.moves, remote: r.remote })
+    expect(await g.delegation.delegate('parent', { ...start, machine: MAC, from_my_branch: true, test_run: true })).toMatchObject({ status: 'refused', code: 'BRANCH_UNAVAILABLE' })
+    expect(r.released).toEqual([RESERVED])
+  })
+
+  it('puts a check whose place was reserved before its branch moved ahead of one asked on the host while it moved', async () => {
+    const root = await folder()
+    const snapshot: AgentHostSnapshot = { ...EMPTY_AGENT_HOST, connected: true, models: [model], projects: [{ id: 'mac-project', title: 'Project', path: join(root, 'project') }] as never, threads: [] }
+    const created: Record<string, unknown>[] = []
+    const control: DelegationCoordinator = { hostId: () => MAC, watcherSnapshot: () => snapshot, configuration: () => ({}),
+      useDelegation: () => () => undefined, commandFromDelegation: async (command, guard) => { guard(); created.push(command as never); if (command.type === 'create-thread') snapshot.threads = [...snapshot.threads, { id: command.threadId, projectId: command.projectId, status: 'idle', messages: [], requests: [] } as never]; return { host: snapshot } as never },
+      hasPendingThreadWork: () => false, hasUserDraft: () => false, refreshDelegationObservation: () => undefined, deliverWakeUp: async () => undefined }
+    const callers = new HostRemoteCallers(root), checks = new CheckQueue('the Mac')
+    const delegation = new DelegationService({ directory: root, control, host: { setDelegatedBy: async () => undefined, threadMessage: () => undefined }, historyEnabled: () => true,
+      newThreadCeiling: () => ({ mode: 'full-access' }), relayedCallers: callers, hereName: () => 'the Mac', checks, branchMoves: moves().moves, clockTime: () => '9:15 AM' })
+    await delegation.recover()
+    callers.useDelegation(delegation)
+    const ask = (caller: string, extra: Record<string, unknown> = {}) => delegationRemoteAskSchema.parse({ type: 'delegate', caller, projectId: 'mac-project',
+      levels: 0, rootUserMessageId: 'root', runtimeMode: 'auto', input: { ...start, test_run: true }, waitMs: 0, ...extra })
+    // The desktop reserves the first check's place, then moves its snapshot; meanwhile a second check is asked here.
+    expect(await callers.answer('desktop-a', { type: 'reserve', caller: 'parent', reservation: RESERVED, work: 'code-review' })).toEqual({ status: 'ok' })
+    expect(await callers.answer('desktop-a', ask('other'))).toMatchObject({ status: 'ok', delegation: { check: { ahead: 1 } } })
+    // The first arrives once its snapshot landed, takes its reserved place, and starts at once.
+    const first = await callers.answer('desktop-a', ask('parent', { reservation: RESERVED, branch: { moveId: MOVE, branch: 'feat/x', madeFrom: { thread: 'parent', host: DESKTOP, by: DESKTOP } } }))
+    expect(first).toMatchObject({ status: 'ok' })
+    expect((first as { delegation: object }).delegation).not.toHaveProperty('check')
+    expect(created[0]).toMatchObject({ type: 'create-thread', startFromMove: MOVE, check: true })
+    // A place reserved by a desktop whose socket then closes is let go.
+    const desktopA = { clientId: 'desktop-a', push: () => true }
+    callers.desktopConnected(desktopA)
+    const before = checks.ids().length
+    await callers.answer('desktop-a', { type: 'reserve', caller: 'parent', reservation: PIN, work: 'code-review' })
+    expect(checks.ids()).toHaveLength(before + 1)
+    callers.desktopGone(desktopA)
+    expect(checks.ids()).toHaveLength(before)
+    delegation.close()
+  })
+
+  it('holds a check that names this machine in place from when it is asked, while it is placed', async () => {
+    let placed: (() => void) | undefined
+    const here = { hostId: DESKTOP, projectId: 'project', receipt: { hostId: DESKTOP, name: 'This computer', awayFromDefault: false } }
+    const f = await desktop({ machines: { list: async () => ({}), name: () => 'This computer', setting: () => 'this-computer',
+      place: ask => ask.machine === DESKTOP ? new Promise(resolve => { placed = () => resolve(here) }) : Promise.resolve(here) } })
+    const named = f.delegation.delegate('parent', { ...start, machine: DESKTOP, test_run: true, title: 'Named' })
+    await expect.poll(() => placed).toBeDefined()
+    // Not shown while it may still go elsewhere.
+    expect(f.checks.view()).toEqual([])
+    const later = await f.delegation.delegate('parent', { ...start, test_run: true, title: 'Later' })
+    expect(later).toMatchObject({ status: 'ok', delegation: { check: { ahead: 1 } } })
+    placed!()
+    const first = await named
+    expect(first).toMatchObject({ status: 'ok' })
+    expect((first as { delegation: object }).delegation).not.toHaveProperty('check')
+    expect(f.checks.view().map(entry => entry.title)).toEqual(['Named', 'Later'])
   })
 })
 

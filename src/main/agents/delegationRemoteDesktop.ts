@@ -43,6 +43,8 @@ export interface RemoteAsk {
   readonly waitMs: number
   /** The caller's branch, which this computer already landed in the host's project for this start (#1316 part 2). */
   readonly branch?: RemoteLandedBranch | undefined
+  /** The place this computer reserved in the host's check queue for this start, before its branch moved (#1316 part 2). */
+  readonly reservation?: string | undefined
 }
 
 const id = z.string().min(1).max(512)
@@ -261,12 +263,32 @@ export class DesktopRemoteDelegations {
   async start(callerId: string, work: DelegationWork, placement: { readonly hostId: string; readonly projectId: string; readonly receipt: WorkerPlacementReceipt }, ask: RemoteAsk): Promise<Record<string, unknown>> {
     const retried = ask.retryKey ? this.byRetry.get(retryIndex(callerId, ask.retryKey)) : undefined
     if (retried) {
-      // A call that raced the first one with the same retry key landed a branch of its own, which no thread will use.
+      // A call that raced the first one with the same retry key landed a branch of its own, and held a place, which no thread will use.
       if (ask.branch) await this.options.letGo?.({ hostId: placement.hostId, projectId: placement.projectId, moveId: ask.branch.moveId }).catch(() => undefined)
+      if (ask.reservation) await this.releasePlace(callerId, placement.hostId, ask.reservation)
       return await this.read(callerId, retried.id)
     }
     return await this.ask({ callerId, hostId: placement.hostId, projectId: placement.projectId, machine: placement.receipt.name, action: 'start', work }, ask,
       answer => ({ ...answer, placement: { ...placement.receipt, awayFromDefault: placement.receipt.awayFromDefault } }))
+  }
+  /**
+   * Holds a place at the end of `hostId`'s check queue for a check `callerId` is about to start there, before its branch
+   * or snapshot moves (#1316 part 2), so that queue keeps the order checks were asked in. Answers the reservation, which
+   * the start names. Throws `RelayUnanswered('away')` when the host is not connected, and otherwise when it did not hold one.
+   */
+  async reservePlace(callerId: string, hostId: string, work: DelegationWork): Promise<string> {
+    const connection = this.connection(hostId)
+    if (!connection || this.closed) throw new RelayUnanswered('away')
+    const reservation = randomUUID()
+    let answer: unknown
+    try { answer = await connection.service.delegationRemoteAsk!({ type: 'reserve', caller: callerId, reservation, work }, DELEGATION_RELAY_READ_MS) }
+    catch { await this.releasePlace(callerId, hostId, reservation); throw new RelayUnanswered('lost') }
+    if (!isObject(answer) || answer.status !== 'ok') throw new RelayUnanswered('lost')
+    return reservation
+  }
+  /** Lets go of a place reserved on `hostId` that no start there took. Best effort: the host also lets it go when this computer's socket closes. */
+  async releasePlace(callerId: string, hostId: string, reservation: string): Promise<void> {
+    await this.connection(hostId)?.service.delegationRemoteAsk!({ type: 'release', caller: callerId, reservation }, DELEGATION_RELAY_READ_MS).catch(() => undefined)
   }
   /** Sends another brief to `threadKey`, a thread `callerId` delegated to on a paired host, charged there as any brief is. */
   async send(callerId: string, work: DelegationWork, threadKey: string, ask: RemoteAsk): Promise<Record<string, unknown>> {
@@ -294,7 +316,8 @@ export class DesktopRemoteDelegations {
       // The host answers at once: a call that waits for its outcome waits here, on the news, so nothing stays open there.
       answer = await connection.service.delegationRemoteAsk!({ type: 'delegate', caller: base.callerId, levels: ask.levels, rootUserMessageId: ask.rootUserMessageId,
         ...ask.callerMessageId ? { callerMessageId: ask.callerMessageId } : {}, runtimeMode: ask.runtimeMode, projectId: base.projectId,
-        input: { ...ask.input, retry_key: record.id, wait_seconds: 0 }, waitMs: 0, ...ask.branch ? { branch: ask.branch } : {} }, DELEGATION_RELAY_ANSWER_GRACE_MS + DELEGATION_RELAY_READ_MS)
+        input: { ...ask.input, retry_key: record.id, wait_seconds: 0 }, waitMs: 0, ...ask.branch ? { branch: ask.branch } : {},
+        ...ask.reservation ? { reservation: ask.reservation } : {} }, DELEGATION_RELAY_ANSWER_GRACE_MS + DELEGATION_RELAY_READ_MS)
     } catch {
       // The counting rule (Zach, October 23): what cannot be told apart from a start counts as one, and is read once the host is back.
       this.options.log?.('delegation-remote-answer-lost')

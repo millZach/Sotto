@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { agentRuntimeModeSchema } from './agents'
-import { DELEGATION_LEVELS_MAX, DELEGATION_NEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, delegationNewsSchema } from './delegation'
+import { DELEGATION_LEVELS_MAX, DELEGATION_NEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, delegationNewsSchema, delegationWorkSchema } from './delegation'
 import { WATCHER_REPLY_BYTES_MAX } from './watcher'
 import { workerSystemSchema } from './workerMachine'
 import { branchNameSchema, snapshotCarriedSchema } from './branchMoves'
@@ -119,7 +119,16 @@ export const delegationRemoteAskSchema = z.discriminatedUnion('type', [
     callerMessageId: id.optional(), runtimeMode: agentRuntimeModeSchema, projectId: id, input: relayedInputSchema,
     waitMs: z.number().int().min(0).max(DELEGATION_RELAY_WAIT_MAX_MS),
     /** A start from the caller's branch, already landed here (`delegation-branch-starts`): its new worktree is made from it. */
-    branch: remoteLandedBranchSchema.optional() }).strict(),
+    branch: remoteLandedBranchSchema.optional(),
+    /** A check's place in this host's queue, reserved by `reserve` before its branch moved (`delegation-branch-starts`): it takes that place. */
+    reservation: z.uuid().optional() }).strict(),
+  /**
+   * Holds a place at the end of this host's check queue for a check the desktop is about to start here (`delegation-branch-starts`,
+   * #1316 part 2), before its branch or snapshot moves, so the queue keeps the order checks were asked in. The `delegate` that
+   * names it takes the place; `release`, the desktop's socket closing, or 15 minutes unclaimed let it go.
+   */
+  z.object({ type: z.literal('reserve'), caller: callerId, reservation: z.uuid(), work: delegationWorkSchema }).strict(),
+  z.object({ type: z.literal('release'), caller: callerId, reservation: z.uuid() }).strict(),
   /** Read one exactly, by the host's delegation ID, or by the retry key it was asked under when the answer was lost. */
   z.object({ type: z.literal('read'), caller: callerId, delegation: z.uuid().optional(), retryKey: z.uuid().optional() }).strict(),
   /** Cancel one, as `cancel_delegation` does on the host. */
