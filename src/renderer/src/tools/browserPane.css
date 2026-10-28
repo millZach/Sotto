@@ -6,7 +6,7 @@
 /* Loading is a steady line under the row, not a sweep. */
 .browser-pane__row[data-loading]::after { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; background: var(--tt-activity); content: ''; }
 
-.browser-pane__address { position: relative; display: flex; flex: 1; align-items: center; min-width: 72px; height: 30px; margin: 0 4px; border: 1px solid transparent; border-radius: 7px; background: var(--tt-field); color: var(--tt-text-muted); }
+.browser-pane__address { position: relative; display: flex; flex: 1; align-items: center; min-width: 72px; height: 30px; margin: 0 4px; border: 1px solid transparent; border-radius: 7px; background: var(--tt-field); color: var(--tt-text-muted); transition: border-color 120ms ease; }
 .browser-pane__address > svg { position: absolute; left: 10px; flex: none; pointer-events: none; }
 .browser-pane__address:focus-within { border-color: var(--tt-field-border-focus); }
 .browser-pane__address:has(.browser-pane__input:focus-visible) { box-shadow: 0 0 0 2px var(--tt-focus-ring); }
