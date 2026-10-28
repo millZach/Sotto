@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { handoverCountsSchema } from '../../../shared/agents'
 import { watcherIdentitySchema, type WatcherRefusal, type WatcherThreadTarget } from '../../../shared/watcher'
+import { checkQueuesViewSchema, type CheckQueuesBridge } from '../../../shared/checkQueue'
 import { stopAllRunning, watcherMachinesReadSchema, watcherRoomStateSchema, type WatcherBridge, type WatcherRoomState } from '../../../shared/watcherRoom'
 
 /** Where an end-to-end run leaves the projection the room should show, before it reloads the window. */
@@ -30,6 +31,8 @@ export const watcherStandInSeedSchema = z.object({
   startNewRefusal: z.string().optional(),
   /** What main reads for the machines line and Settings (#1032); without it, the bridge offers no machines read. */
   machines: watcherMachinesReadSchema.optional(),
+  /** Every machine's check queue (#1312), as main sends it; without it, the window reads main's own. */
+  checks: checkQueuesViewSchema.optional(),
   /**
    * Later projections, each published this long after the window first listens, so a run can watch the picture move:
    * a send delivered, a reply, a question for the user. Each replaces the parts of the projection it names.
@@ -40,6 +43,15 @@ export type WatcherStandInSeed = z.infer<typeof watcherStandInSeedSchema>
 
 const NOT_HERE: WatcherRefusal = { status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE', message: 'This test run does not stop threads.', retryable: false }
 const same = (a: WatcherThreadTarget, b: WatcherThreadTarget): boolean => a.hostId === b.hostId && a.threadId === b.threadId
+
+/** Every machine's check queue, stood in for by an end-to-end run that seeds one (#1312); without a seed, none. */
+export function createE2ECheckQueuesBridge(): CheckQueuesBridge | undefined {
+  let raw: string | null
+  try { raw = localStorage.getItem(WATCHER_STAND_IN_KEY) } catch { return undefined }
+  if (raw === null) return undefined
+  const checks = watcherStandInSeedSchema.parse(JSON.parse(raw)).checks
+  return checks === undefined ? undefined : { read: async () => checks, onChanged: () => () => undefined }
+}
 
 /**
  * Main's Watcher bridge, stood in for by an end-to-end run that seeds one, so the room's renderer is checked on a

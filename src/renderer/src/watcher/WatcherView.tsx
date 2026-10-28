@@ -23,7 +23,7 @@ import { OwlRoomSky } from '../agents/OwlSky'
 import { useClock } from '../agents/paneGrid'
 import { PromptEditor, type PromptEditorElement } from '../agents/PromptEditor'
 import { useShared } from '../agents/stateSharing'
-import { describeThreads, type ThreadRow } from '../agents/threadFacts'
+import { threadDescriber, useWordsRevision, type ThreadRow } from '../agents/threadFacts'
 import { useContinueEnabled } from '../agents/continuations'
 import { effortChoices } from '../agents/ThreadOptions'
 import { ThreadPane } from '../agents/ThreadPane'
@@ -391,7 +391,11 @@ export function WatcherView({ now: fixedNow, update = null }: {
   const current = room?.state?.current ?? null
   const watcherId = room?.currentThreadId ?? null
   const continued = useContinueEnabled()
-  const rows = useShared(useMemo(() => state === null ? [] : describeThreads(state, now, { continued }), [state, now, continued]))
+  // Describes only the threads an update changed and hands back the rest as they were, and every thread again when the
+  // interface language or its messages change.
+  const [describeRows] = useState(threadDescriber)
+  const words = useWordsRevision()
+  const rows = useShared(useMemo(() => state === null ? [] : describeRows(state, now, { continued }), [state, now, continued, words]))
   const groups = useOverview(state, rows, now, watcherId)
   const needs = useMemo<readonly OverviewEntry[]>(() => groups.find(group => group.group === 'Needs you')?.entries ?? [], [groups])
   const rowsById = useMemo(() => new Map(rows.map(row => [row.thread.id, row] as const)), [rows])

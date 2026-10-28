@@ -42,6 +42,7 @@ import { object } from './claudeProtocol'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import { compareClientVersions } from './clientVersions'
 import { findGrokExecutable, grokEnvironment, GROK_ACP_VERSION, GROK_CLI_VERSION, GrokRpc, GrokRejected, GrokSignedOut, GrokTooOld, GrokUncertain, GrokUnsupported, type GrokFrame } from './grokRpc'
+import { launchInteractiveProcess } from './gitLauncher'
 import { SessionReaper } from './sessionReaper'
 import { OpenSessions } from './openSessions'
 import { ReadsBeforeSend } from './readsBeforeSend'
@@ -426,14 +427,6 @@ export class GrokAcpHost implements AgentHost {
     })
   }
   /**
-   * Read the signed-in account's limits. A thread's process that is already running and signed in is asked first, so
-   * a refresh starts no process while one is there (#1456). `_x.ai/billing` names no session, and Grok already answers
-   * history reads on a process beside its running prompt, so asking one disturbs no turn on it. Only when there is
-   * none to ask may a refresh Usage made on its own take a good reading from the last few minutes; a live read that
-   * failed is never covered by an earlier reading. Otherwise a process is started for the one question. No
-   * session/new, load or prompt is sent on any of them.
-   */
-  /**
    * A refused prompt's usage-limit stop (ADR-0144), while restarting stopped threads is on: only when Grok Build's refusal
    * says it was its usage limit, with the reset of the allowance its last limits reading showed used up.
    */
@@ -442,6 +435,16 @@ export class GrokAcpHost implements AgentHost {
     const resetsAt = exhaustedQuotaReset(this.quota)
     return { limitStop: resetsAt ? { resetsAt } : {} }
   }
+  /**
+   * Read the signed-in account's limits. A thread's process that is already running and signed in is asked first, so
+   * a refresh starts no process while one is there (#1456). `_x.ai/billing` names no session, and Grok already answers
+   * history reads on a process beside its running prompt, so asking one disturbs no turn on it. Only when there is
+   * none to ask may a refresh Usage made on its own take a good reading from the last few minutes; a live read that
+   * failed is never covered by an earlier reading. Otherwise a process is started for the one question, on the Git
+   * launcher's worker thread: on Windows a start runs on the thread that asks, and the first start of Grok Build's
+   * unsigned 176 MB binary in a while held main for over a second while Windows scanned it (ADR-0083). No
+   * session/new, load or prompt is sent on any of them.
+   */
   private async readQuota(background: boolean): Promise<UsageQuotaRead> {
     const generation = this.generation, executable = this.executable, start = ++this.quotaStarts
     if (!executable) return unavailableProviderQuota('grok', 'not-connected')
@@ -459,7 +462,7 @@ export class GrokAcpHost implements AgentHost {
     }
     const latest = this.quotaLatest
     if (background && !live && latest && latest.read.status !== 'error' && Date.now() - latest.at < QUOTA_REUSE_MS) return latest.read
-    const probe = this.spawn(executable, () => undefined)
+    const probe = this.spawn(executable, () => undefined, true)
     this.quotaProbes.add(probe)
     try {
       const client = await this.identify(probe)
@@ -610,10 +613,14 @@ export class GrokAcpHost implements AgentHost {
     if (!entry || this.loaded.has(id) || this.loading.has(id) || this.historyReads.has(id) || this.busy(id)) return
     this.processes.delete(id); this.outdated.delete(id); this.closeProcess(entry)
   }
-  /** Start a Grok process. Its frames come back with the process that sent them. */
-  private spawn(executable: string, lost: () => void): GrokRpc {
+  /**
+   * Start a Grok process. Its frames come back with the process that sent them. `offThread` starts it on the Git
+   * launcher's worker thread (`gitLauncher.ts`) rather than this one; only Usage's limits probe asks for that so far.
+   */
+  private spawn(executable: string, lost: () => void, offThread = false): GrokRpc {
     const rpc: GrokRpc = new GrokRpc(executable, this.options.args ?? grokArguments(), this.userDataDirectory,
-      grokEnvironment(this.options.environment), this.options.requestTimeoutMs ?? 15000, frame => this.frame(frame, rpc), lost)
+      grokEnvironment(this.options.environment), this.options.requestTimeoutMs ?? 15000, frame => this.frame(frame, rpc), lost,
+      offThread ? launchInteractiveProcess : undefined)
     const exit = rpc.closed.finally(() => { this.exits.delete(exit) }); this.exits.add(exit)
     return rpc
   }

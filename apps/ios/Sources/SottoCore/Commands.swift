@@ -16,6 +16,9 @@ public enum RemoteCommands {
         "remove-followup": ["threadId", "itemId"],
         "interrupt": ["threadId"],
         "compact-thread": ["threadId"],
+        // Settle and Restore move a thread on or off the Settled shelf and stop nothing (ADR-0033).
+        "settle-thread": ["threadId"],
+        "restore-thread": ["threadId"],
         "load-earlier-messages": ["threadId"],
         "answer": ["threadId", "requestId", "answer", "approved", "questionAnswers", "permissionChoice"],
         "create-project": ["provider", "title", "path", "useExisting"],
@@ -54,6 +57,10 @@ public enum Commands {
     /// Asks the thread's provider to compact its context.
     public static func compact(threadID: String) throws -> JSONValue {
         try RemoteCommands.checked(.object(["type": .string("compact-thread"), "threadId": .string(threadID)]))
+    }
+    /// Puts the thread on the Settled shelf, or takes it back off.
+    public static func settle(threadID: String, settled: Bool) throws -> JSONValue {
+        try RemoteCommands.checked(.object(["type": .string(settled ? "settle-thread" : "restore-thread"), "threadId": .string(threadID)]))
     }
     /// Starts or stops babysitting one of the thread's pull requests, by its GitHub URL (ADR-0061).
     public static func babysit(threadID: String, url: String, on: Bool) throws -> JSONValue {

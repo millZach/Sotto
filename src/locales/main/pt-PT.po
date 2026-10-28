@@ -832,6 +832,10 @@ msgstr ""
 msgid "Open Agents in the main Sotto window."
 msgstr ""
 
+#: src/main/agents/checkQueueIpc.ts
+msgid "Open checks in the main Sotto window."
+msgstr ""
+
 #: src/main/agents/delegationIpc.ts
 msgid "Open delegations in the main Sotto window."
 msgstr ""

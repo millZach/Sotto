@@ -2,7 +2,8 @@
 import { describe, expect, it } from 'vitest'
 import { REMOTE_COMMANDS, REMOTE_CONFIGURATION_FIELDS, REMOTE_HOST_UPDATE_ACTIONS, REMOTE_OPENCODE_SIGN_IN_OPERATIONS, REMOTE_SIGN_IN_OPERATIONS, REMOTE_USAGE_OPERATIONS, remoteCommandRefusal, remoteHostUpdateRefusal, remoteUsageRefusal } from '../../../src/host/remoteCommands'
 import { agentCommandSchema, type AgentCommand } from '../../../src/shared/agents'
-import { HOST_FEATURES, HOST_UPDATE_REQUEST_ACTIONS, hostRequestSchema, commandFromProtocolV1, protocolAgentCommandSchema } from '../../../src/shared/hostProtocol'
+import { HOST_DESKTOP_FEATURES, HOST_FEATURES, HOST_UPDATE_REQUEST_ACTIONS, hostPushSchema, hostRequestSchema, commandFromProtocolV1, protocolAgentCommandSchema } from '../../../src/shared/hostProtocol'
+import { CHECK_QUEUE_VIEW_MAX } from '../../../src/shared/checkQueue'
 import { watcherToolSchemas } from '../../../src/shared/watcher'
 
 /** Commands that stay on the host machine. A new command type must land here or in REMOTE_COMMANDS. */
@@ -173,6 +174,18 @@ describe('remote command allow-list', () => {
     expect(ops.filter(op => op.includes('stop')).sort()).toEqual(['watcher-phone-prepare-stop-all', 'watcher-phone-stop-all'])
     expect(Object.keys(watcherToolSchemas.stop_thread.input.shape).sort()).toEqual(['requestId', 'retryKey', 'target'])
   })
+  it('sends a host\u2019s own check queue to a recorded desktop as a push under check-queue-views, no request of its own, and only ids and names (#1312)', () => {
+    expect(HOST_FEATURES).toContain('check-queue-views')
+    expect(HOST_DESKTOP_FEATURES).toContain('check-queue-views')
+    const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
+    expect(ops.filter(op => op.includes('check'))).toEqual(['check-answer'])
+    const push = (checks: unknown) => hostPushSchema.safeParse({ v: 1, event: 'check-queue', checks })
+    expect(push([{ id: 'ticket', whose: 'thread', thread: 'child', by: 'parent', title: 'Linux journeys', work: 'building', provider: 'codex' }]).success).toBe(true)
+    expect(push([]).success).toBe(true)
+    // A brief, a reply or anything else is refused, and so is a queue longer than the panel lists.
+    expect(push([{ id: 'ticket', brief: 'Run the suite' }]).success).toBe(false)
+    expect(push(Array.from({ length: CHECK_QUEUE_VIEW_MAX + 1 }, (_, index) => ({ id: `t${index}` }))).success).toBe(false)
+  })
   it('lets only a recorded desktop that may answer have its host update itself, naming a version and never a URL or path (ADR-0088)', () => {
     expect([...REMOTE_HOST_UPDATE_ACTIONS]).toEqual([...HOST_UPDATE_REQUEST_ACTIONS])
     expect(remoteHostUpdateRefusal({ desktop: true, mayAnswer: true })).toBeNull()
@@ -335,5 +348,12 @@ describe('remote command allow-list', () => {
     expect(refuse({ type: 'configure-thread', threadId: 'thread', providerMode: 'smart' }, false, ['plan'])).toBe('forbidden')
     expect(refuse({ type: 'reclaim-thread-worktree', threadId: 'thread', withUncommittedChanges: false })).toBeNull()
     expect(refuse({ type: 'restore-thread-branch', threadId: 'thread' })).toBeNull()
+  })
+  it('lets a paired iPhone settle and restore a thread without the answer policy, carrying only its ID', () => {
+    // The iPhone's ••• menu sends these (ADR-0033). Settling stops nothing and grants nothing, so pairing is enough.
+    for (const type of ['settle-thread', 'restore-thread'] as const) {
+      expect(refuse({ type, threadId: 'thread' }), type).toBeNull()
+      expect(refuse({ type, threadId: 'thread', projectId: 'project' } as unknown as AgentCommand), type).toBe('forbidden')
+    }
   })
 })

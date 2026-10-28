@@ -712,6 +712,19 @@ msgstr ""
 msgid "Changes were asked for"
 msgstr ""
 
+#. Marks a row in Tools › Agents as a check: a test run that waits its turn on a machine, not a CI check.
+#: src/renderer/src/tools/WaitingChecks.tsx
+msgid "Check"
+msgstr ""
+
+#: src/renderer/src/tools/WaitingChecks.tsx
+msgid "check on {machine}"
+msgstr ""
+
+#: src/renderer/src/tools/WaitingChecks.tsx
+msgid "check on this computer"
+msgstr ""
+
 #: src/renderer/src/tools/GitActions.tsx
 msgid "Check recovery"
 msgstr ""
@@ -748,6 +761,10 @@ msgstr ""
 
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "Checks passing"
+msgstr ""
+
+#: src/renderer/src/tools/AgentsSurface.tsx
+msgid "Checks waiting their turn"
 msgstr ""
 
 #: src/renderer/src/tools/BrowserFeedback.tsx
@@ -1525,6 +1542,10 @@ msgstr ""
 msgid "Its output stays here until you close it."
 msgstr ""
 
+#: src/renderer/src/tools/WaitingChecks.tsx
+msgid "Its turn has come, and its thread is being made."
+msgstr ""
+
 #: src/renderer/src/tools/DelegatedThreads.tsx
 msgid "Just finished"
 msgstr ""
@@ -1552,6 +1573,7 @@ msgid "Last update"
 msgstr ""
 
 #: src/renderer/src/tools/DelegatedThreads.tsx
+#: src/renderer/src/tools/WaitingChecks.tsx
 msgid "Latest outcome"
 msgstr ""
 
@@ -2271,6 +2293,7 @@ msgid "Project folder"
 msgstr ""
 
 #: src/renderer/src/tools/DelegatedThreads.tsx
+#: src/renderer/src/tools/WaitingChecks.tsx
 msgid "Provider"
 msgstr ""
 
@@ -2402,6 +2425,7 @@ msgstr ""
 msgid "Remote"
 msgstr ""
 
+#: src/renderer/src/tools/AgentsSurface.tsx
 #: src/renderer/src/tools/delegatedRoster.ts
 msgid "Remote host"
 msgstr ""
@@ -3080,6 +3104,7 @@ msgstr ""
 msgid "This comparison could not be read."
 msgstr ""
 
+#: src/renderer/src/tools/AgentsSurface.tsx
 #: src/renderer/src/tools/delegatedRoster.ts
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "This computer"
