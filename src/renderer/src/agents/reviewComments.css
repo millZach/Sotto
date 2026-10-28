@@ -16,3 +16,7 @@
 }
 .review-chip__remove:hover { background: var(--tt-hover-strong); color: var(--tt-text); }
 .review-chips__note { margin: -2px 0 8px; color: var(--tt-text-muted); font-size: 12.5px; }
+/* A review chip settles onto the composer as a queued message does, on the attachment keyframes. */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .review-chip { animation: attachment-arrive 160ms cubic-bezier(.2, .8, .2, 1); }
+}
