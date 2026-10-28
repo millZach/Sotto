@@ -1979,7 +1979,7 @@ private struct ReplyDock: View, Equatable {
             // Photos wait inside the reply box, above the words, as in Messages, and files under them as pills.
             VStack(alignment: .leading, spacing: Space.s2) {
                 if !photos.isEmpty { DraftPhotoStrip(box: .thread(ref)).padding(.top, Space.s1) }
-                if !files.isEmpty { DraftFilePills(ref: ref).padding(.top, photos.isEmpty ? Space.s1 : 0) }
+                if !files.isEmpty { DraftFilePills(box: .thread(ref)).padding(.top, photos.isEmpty ? Space.s1 : 0) }
                 if let notice = model.photoNotices[ref.id] {
                     Text(notice).font(.sotto(.small)).foregroundStyle(Palette.dangerText).fixedSize(horizontal: false, vertical: true).paragraphDirection()
                         .accessibilityAddTraits(.updatesFrequently)
@@ -1994,6 +1994,8 @@ private struct ReplyDock: View, Equatable {
                     .padding(.vertical, 11)
                     .accessibilityLabel("Reply to this thread")
                     .accessibilityIdentifier("thread-reply")
+                    .pasteAttaches(to: .thread(ref))
+                    .onChange(of: model.focusRequest, initial: true) { if model.focusRequest == ref.id { model.focusRequest = nil; focused = true } }
                     // Locked while the reply's photos are staged, so nothing typed now joins it.
                     .disabled(model.preparingSends.contains(ref.id))
             }

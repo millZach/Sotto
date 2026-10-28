@@ -122,6 +122,8 @@ Sotto is a desktop dictation app with manual coding threads across native provid
 
 **Watcher tab (phone client).** The paired desktop's Watcher page, with Conversation and Watched, a working dot and a needs-you badge. Receipts form one card per reply with a row per thread. Provider logos identify workers and the owl follows the logo for a watched worker. Watched remote workers retain their owning computer; they do not join the paired desktop's ordinary phone thread list. An old phone sees only ordinary workers, and a desktop without Watcher, such as stable 0.1.39 or earlier, shows no Watcher tab.
 
+**Share to Sotto (phone client).** The iPhone app's share extension, offered as **Sotto** on any app's share sheet: it hands up to 8 photos or files, a link or text to the app, which puts them in Watcher's box, words in the field and nothing sent, or in a new thread's box where no computer shows the iPhone Watcher (ADR-0157). Its **share inbox** is the App Group folder a share waits in until the app takes it. Avoid: "import", "upload".
+
 **Paired Watcher origin.** A Watcher request and operation attributed to the paired desktop that runs the master, while the worker's owning host keeps its ownership and receipt. It carries no permission answer or grant; uncertain remote work remains in the master's shared capacity until reconciled. Avoid: an ordinary privileged desktop command as an automation fallback.
 
 **Sotto thread ID.** An opaque ID, unique within its host, that Sotto assigns the first time it sees or creates a thread, normally a fresh UUID. It outlives any provider session. Agent state, drafts and follow-up queue items refer to this ID; a client pairs it with the Host ID when it shows more than one host.
