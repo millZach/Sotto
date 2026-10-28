@@ -7,6 +7,10 @@ import { isAuthorizedIpcSender, type IpcInvocationEvent, type IpcMainAdapter, ty
 import type { ProfilerTarget } from './activityRecorder'
 import type { MainActivityService } from './mainActivityService'
 
+/** Each call's arguments, checked against schemas built once rather than on every call. */
+const noArguments = z.tuple([])
+const commandArguments = z.tuple([mainActivityCommandSchema])
+
 /**
  * The main-activity bridge's handlers. Stable built no service, so nothing is registered there and no window can start a
  * monitor or a recording. Only the main window may ask; a recording profiles the window that asked.
@@ -19,12 +23,12 @@ export function registerMainActivityIpc(ipc: IpcMainAdapter, service: MainActivi
   }
   ipc.handle(MAIN_ACTIVITY_READ, (event, ...args) => {
     authorize(event)
-    z.tuple([]).parse(args)
+    noArguments.parse(args)
     return mainActivityStateSchema.parse(service.state())
   })
   ipc.handle(MAIN_ACTIVITY_COMMAND, async (event, ...args) => {
     authorize(event)
-    const [command] = z.tuple([mainActivityCommandSchema]).parse(args)
+    const [command] = commandArguments.parse(args)
     return mainActivityStateSchema.parse(await service.command(command, () => windowProfiler(event)))
   })
   return () => { ipc.removeHandler(MAIN_ACTIVITY_READ); ipc.removeHandler(MAIN_ACTIVITY_COMMAND) }

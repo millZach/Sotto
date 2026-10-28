@@ -41,6 +41,8 @@ import { isProviderSignInPage, type HostOpenCodeSignInRequest, type HostClientUp
 /** Files from before the switch have no `sshPort` or `enabled` and still read: both are optional, and no `enabled` means on. */
 const savedHostSchema = remoteHostSchema.extend({ hostId: z.uuid().optional(), clientId: z.string().optional() })
 type SavedHost = z.infer<typeof savedHostSchema>
+/** What a row shows of a saved host, read for every row each time Hosts publishes. */
+const hostFieldsSchema = remoteHostSchema.strip()
 type Connection = Omit<RemoteHost, 'enabled'>
 /** What Settings > Hosts & phones asks of the host setup (ADR-0035), which runs beside the saved hosts and reports into them. */
 export interface HostSetupSource {
@@ -725,7 +727,7 @@ export class DesktopHosts {
   subscribe(listener: (state: HostsState) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   /** What a row shows of a saved host: its connection, with `enabled` read as on when an older file left it out. */
   private fields(host: SavedHost): Omit<HostStatus, 'phase'> {
-    const { enabled, ...fields } = remoteHostSchema.strip().parse(host)
+    const { enabled, ...fields } = hostFieldsSchema.parse(host)
     return { ...fields, enabled: enabled !== false }
   }
   /** What a row and Edit connection show of how a saved host is reached (ADR-0053): the owner's choice, and the tailnet address last learned. */
