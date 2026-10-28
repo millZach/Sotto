@@ -455,6 +455,16 @@
 .theme-import[open] { display: flex; flex-direction: column; }
 .theme-import::backdrop { background: var(--tt-overlay); }
 
+/* Arrive as the app's dialogs do: the card settles while its dimming fades in, and the global rule does not reach ::backdrop. */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .theme-import[open] {
+    animation: tt-dialog-rise 160ms cubic-bezier(.2, .8, .2, 1);
+  }
+  :root:not([data-reduced-motion='on']) .theme-import[open]::backdrop {
+    animation: tt-dialog-dim 160ms ease-out;
+  }
+}
+
 .theme-import__head {
   display: flex;
   align-items: center;

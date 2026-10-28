@@ -1,5 +1,10 @@
 .new-thread-dialog { width: min(590px, calc(100vw - 48px)); max-height: calc(100vh - 70px); padding: 0; margin: auto; overflow: hidden; color: var(--tt-text); background: var(--tt-panel); border: 1px solid var(--tt-panel-border); border-radius: 20px; box-shadow: 0 28px 90px var(--tt-shadow-color); }
 .new-thread-dialog::backdrop { background: var(--tt-backdrop); backdrop-filter: blur(5px); }
+/* Arrive as the app's dialogs do: the card settles while its dimming fades in, and the global rule does not reach ::backdrop. */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .new-thread-dialog[open] { animation: tt-dialog-rise 160ms cubic-bezier(.2, .8, .2, 1); }
+  :root:not([data-reduced-motion='on']) .new-thread-dialog[open]::backdrop { animation: tt-dialog-dim 160ms ease-out; }
+}
 .new-thread-dialog__search { display: flex; align-items: center; gap: 10px; padding: 14px 15px; }
 .new-thread-dialog__search > span { flex: 1; font-size: 14px; }
 .new-thread-dialog__search > svg { color: var(--tt-text-muted); }
