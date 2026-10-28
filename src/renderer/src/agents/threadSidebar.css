@@ -269,8 +269,15 @@
 /* Owl's rail (ADR-0146): Watcher's tile under Expand, the threads it watches under it, smaller tiles for resting threads. */
 .thread-nav__rail-mark { font-size: 12.5px; font-weight: 600; }
 .thread-nav__rail-watcher { display: grid; place-items: center; background: var(--tt-surface-elevated); }
-.thread-nav__rail-rule { flex: none; width: 70%; height: 1px; background: var(--tt-hairline); }
-.thread-nav__rail-watched { flex: none; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.thread-nav__rail-group { flex: none; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.thread-nav__rail-group + .thread-nav__rail-group { margin-top: 4px; }
+/* A part of two or more tiles sits in a tray: a faint wash and an edge in its own group colour (Drake's pick r3,
+   October 28, 2026). Sized to the tiles, it gives way to the rail's scrollbar rather than clip. */
+.thread-nav__rail-tray { width: 44px; max-width: 100%; padding: 8px 0; border-radius: 16px; background: color-mix(in srgb, var(--rail-group) 7%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rail-group) 22%, transparent); }
+.thread-nav__rail-tray[data-hue='1'] { --rail-group: var(--tt-rail-group-1); }
+.thread-nav__rail-tray[data-hue='2'] { --rail-group: var(--tt-rail-group-2); }
+.thread-nav__rail-tray[data-hue='3'] { --rail-group: var(--tt-rail-group-3); }
+.thread-nav__rail-tray[data-hue='4'] { --rail-group: var(--tt-rail-group-4); }
 /* The owl on a watched tile, in the muted text colour the owl on a watched row takes (Drake's pick D, October 27, 2026). */
 .thread-nav__rail-watched-mark { position: absolute; left: -4px; top: -4px; display: grid; place-items: center; width: 13px; height: 13px; border-radius: 4px; background: var(--threads-sidebar); color: var(--tt-text-muted); }
 /* Amber means only that it waits on you: the whole edge, so it keeps 3:1 by day. */
