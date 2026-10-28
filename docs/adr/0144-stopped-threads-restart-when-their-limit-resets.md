@@ -51,3 +51,9 @@ The word Zach used, "continue", already means a **continued thread** (ADR-0089):
 - Watcher's background pull request reads now follow the watched set rather than babysat pull requests, so a watched thread's pull request is read without anyone asking. README's "Privacy and cost" names the same GitHub reads.
 - The iPhone needs no change: it already hides Babysit when the host does not offer it.
 - Removing babysitting's code waits for the move to stable.
+
+## October 28, 2026: threads leave CI to Watcher's news
+
+The October 28 latency report (`~/Developer/Reports/sotto-pr-latency-2026-10-28.md`, fix 8) found threads waiting on CI with `gh pr checks --watch` in the shell. A restart killed one (#1707, about 2 minutes), and the watch waited for Gates (Windows) when a shard had already failed 6 minutes earlier. It proposed babysitting, which decision 9 retired. Drake chose Watcher's pull request news instead. That news already says checks failed once any check fails, before the rest finish, and its reader starts again with Sotto and reads every watched pull request afresh, where a shell watch is simply gone.
+
+While this feature is on, and so the news runs, `watcherPrompt.ts` tells Watcher that a watched thread which pushed to a pull request ends its turn rather than watching CI. On a failure, Watcher sends the thread back to read which check failed and fix it, or to merge the base branch in when the base already has the fix. When the required checks pass, it sends the thread to merge. With the feature off Watcher hears nothing of checks, so it is not told this. `AGENTS.md` tells threads the same, with that condition. The news still names no check, because Watcher's evidence stays text-free. The thread reads the name with `gh pr checks` when it is sent back.
