@@ -74,6 +74,9 @@ describe('clock labels made with one formatter', () => {
   })
 
   it('builds the formatter once for every label, and again only when the time zone or the language moves', async () => {
+    // The clock stands still, so the once-a-second zone name read cannot add a build on a slow runner (3 for 2, Windows CI).
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(START)
     process.env.TZ = 'America/Chicago'
     countFormatters()
     const { clockLabel } = await freshModules()
