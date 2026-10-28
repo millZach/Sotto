@@ -118,6 +118,7 @@
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease;
   -webkit-app-region: no-drag;
 }
 .update-all-pill > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
