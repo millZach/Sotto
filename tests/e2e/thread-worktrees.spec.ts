@@ -636,9 +636,11 @@ test('a worktree the cleanup rules could only half remove on Windows comes back 
     await expect(page.getByRole('alert').filter({ hasText: 'Working folder unavailable.' })).toHaveCount(0)
     await page.screenshot({ path: `${RECLAIM_SHOTS}/half-removed-restored.png`, animations: 'disabled' })
   } finally {
-    await holder?.release()
-    if (launched) await closeSotto(launched)
-    await removeOwnedE2EProfile(root)
+    // A holder that ended by itself fails the test here, and the app and its profile still go.
+    try { await holder?.release() } finally {
+      if (launched) await closeSotto(launched)
+      await removeOwnedE2EProfile(root)
+    }
   }
 })
 
