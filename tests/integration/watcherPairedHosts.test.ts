@@ -2445,12 +2445,47 @@ it('has Watcher’s stop_thread take a check out of a paired host’s queue: it 
   await f.socket.command({ type: 'refresh', provider: 'codex' })
   await expect.poll(() => f.made(third.target.threadId), { timeout: 5_000 }).toBe(true)
   expect(f.made(f.waiting.target.threadId)).toBe(false)
-  // A check whose turn has come is stopped as any thread is, by a stop of its own: its start is not failed.
+  // A check whose turn has come and whose first prompt has gone is stopped as any thread is, by a stop of its own: its
+  // start stands. Its thread is made before its first prompt goes, so the host's record of the start is what says the
+  // prompt went; a stop before that cancels it (the next test).
+  await vi.waitFor(async () => expect(['queued', 'dispatching']).not.toContain((await f.there(third.receipt!.operationId))?.deliveryState), { timeout: 10_000 })
   const running = await f.stop(third.target)
   const ownStop = f.control.watcherRecord().operations.filter(item => item.action === 'stop' && item.target.threadId === third.target.threadId)
   expect(ownStop).toHaveLength(1)
   expect((running as { receipt?: { operationId: string } }).receipt?.operationId).toBe(ownStop[0]!.id)
   expect(f.operation(third.receipt!.operationId).deliveryState).not.toBe('failed')
+})
+
+it('has Watcher’s stop of a check whose thread is made but whose first prompt has not gone stop it as any thread, cancelling that prompt (#1637)', async () => {
+  const f = await waitingOnHost()
+  // The host makes the waiting check's thread when its turn comes; its first prompt is held on the way.
+  const commandFromWatcher = Object.getPrototypeOf(f.control).commandFromWatcher as (this: unknown, command: { type: string; threadId?: string }, origin: unknown) => Promise<unknown>
+  const reached = deferred<void>(), held = deferred<void>()
+  vi.spyOn(Object.getPrototypeOf(f.control), 'commandFromWatcher').mockImplementation(async function (this: unknown, command: { type: string; threadId?: string }, origin: unknown) {
+    if (command.type === 'manual-send' && command.threadId === f.waiting.target.threadId) { reached.resolve(); await held.promise }
+    return commandFromWatcher.call(this, command, origin)
+  })
+  const native = (await remote.native.snapshot()).threads.find(item => item.title === 'Synthetic first remote check')!
+  const brief = native.messages.find(message => message.role === 'user')!
+  remote.native.event({ type: 'ready', threadId: native.id, text: 'Synthetic verdict: passed',
+    activities: markTurnActivity([], { provider: 'codex', turnId: brief.id, status: 'completed' }) })
+  await f.socket.command({ type: 'refresh', provider: 'codex' })
+  await reached.promise
+  await expect.poll(() => f.made(f.waiting.target.threadId), { timeout: 5_000 }).toBe(true)
+  // The host decides: the check is no longer waiting, so the stop takes the normal path. It stops the thread, and the first
+  // prompt still on its way is cancelled with it, as a stop cancels any prompt waiting for its thread.
+  expect(await f.there(f.waiting.receipt!.operationId)).toMatchObject({ deliveryState: 'dispatching' })
+  const fast = vi.spyOn(WatcherService.prototype as unknown as { stopQueuedCheck(stop: unknown): Promise<boolean> }, 'stopQueuedCheck')
+  await f.stop(f.waiting.target)
+  // The host did not take it out as a waiting check: it was no longer one.
+  expect(fast).toHaveBeenCalled()
+  expect(await Promise.all(fast.mock.results.map(result => result.value as Promise<boolean>))).toEqual(fast.mock.results.map(() => false))
+  held.resolve()
+  expect(f.control.watcherRecord().operations.filter(item => item.action === 'stop' && item.target.threadId === f.waiting.target.threadId)).toHaveLength(1)
+  await vi.waitFor(async () => expect(await f.there(f.waiting.receipt!.operationId)).toMatchObject({ deliveryState: 'failed', refusalCode: 'REQUEST_NOT_ACTIVE' }), { timeout: 10_000 })
+  await vi.waitFor(() => expect(f.watcher.outcomeOf(f.operation(f.waiting.receipt!.operationId))).toBe('stopped'), { timeout: 10_000 })
+  const made = (await remote.native.snapshot()).threads.find(item => item.title === 'Synthetic waiting remote check')
+  expect(made?.messages.some(message => message.role === 'user') ?? false).toBe(false)
 })
 
 it('reads back a Watcher stop of a check on a paired host whose answer was lost, so the check is neither left queued nor stopped twice (#1637)', async () => {
