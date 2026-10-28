@@ -98,6 +98,8 @@ export interface HostService {
    * check running there, its own delegations' checks included. Only where its Owl answer turns on Work across machines.
    */
   readonly supportsWatcherCheckQueue?: boolean
+  /** Watcher's stop_thread on a check waiting in the host's queue takes it out of that queue (`watcher-check-stop`, #1637). */
+  readonly supportsWatcherCheckStop?: boolean
   /** The host takes requests from a Watcher on Muse; without it a desktop whose Watcher is on Muse leaves the host alone. */
   readonly supportsWatcherMuse?: boolean
   /** The host lists `watcher-cursor`: it takes Watcher requests whose identity names Cursor (ADR-0128). */
