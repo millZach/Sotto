@@ -1341,10 +1341,11 @@ import XCTest
         XCTAssertTrue(labelled("Answer sent.").waitForExistence(timeout: 10), "The answer reached its thread")
         XCTAssertTrue(waitUntilGone(send), "The card leaves Watcher's page once answered")
         // With the card answered, the page follows Watcher's words again: the end of its reply comes into view above the box.
-        let band = watcherBand
+        // Each look reads the band again: Answer sent. stays a few seconds over the page, and the band ends above it.
         var seen = "no look found the reply's frame"
         let following = NSPredicate { _, _ in
             guard writing.exists else { seen = "the reply is missing"; return false }
+            let band = self.watcherBand
             let frame = writing.frame
             guard !frame.isEmpty else { return false }
             seen = "reply \(frame), between \(band.top) and \(band.bottom)"
