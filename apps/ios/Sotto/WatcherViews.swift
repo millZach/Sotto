@@ -1279,6 +1279,7 @@ private struct WatcherRequestCard: View {
     let own: Bool
     let review: (ReviewedCard) -> Void
     @State private var picked: String?
+    @State private var answered = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1290,6 +1291,7 @@ private struct WatcherRequestCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .sottoCard(.needsYou)
+        .sensoryFeedback(.impact(flexibility: .soft), trigger: answered)
     }
 
     /// Where the answer goes, or nil for a thread on a computer this iPhone isn't paired with.
@@ -1324,6 +1326,7 @@ private struct WatcherRequestCard: View {
     }
     private func send(choice: String?, answers: [String: QuestionAnswer] = [:]) {
         guard let place else { return }
+        answered += 1
         let current = request
         Task { await model.answer(current, at: place, choice: choice, answers: answers) }
     }
