@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 /// Runs the real SwiftUI hierarchy with isolated, in-memory host data. No host or account is used.
 @MainActor final class FocusJourneyTests: XCTestCase {
@@ -25,7 +26,7 @@ import XCTest
     }
 
     /// Starts a fresh copy of Sotto with these arguments once any earlier copy has stopped, and waits for Threads.
-    private func launch(_ arguments: [String]) {
+    private func launch(_ arguments: [String], opensOnThreads: Bool = true) {
         if appIsRunning {
             app.terminate()
             XCTAssertTrue(app.wait(for: .notRunning, timeout: 20), "The earlier copy of Sotto must stop before the next launch")
@@ -34,7 +35,7 @@ import XCTest
         app.launchArguments = arguments + ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30), "Sotto must come to the foreground after launch")
-        XCTAssertTrue(app.textFields["thread-search"].waitForExistence(timeout: 20))
+        if opensOnThreads { XCTAssertTrue(app.textFields["thread-search"].waitForExistence(timeout: 20)) }
         waitForRenderedOrientation(landscape: false)
     }
 
@@ -506,6 +507,32 @@ import XCTest
         capture("thread-long-open")
     }
 
+    /// A paste into the reply box attaches a copied file as a pill, as if chosen in Files, and copied words still paste as words.
+    func testPastingACopiedFileAttachesItAndWordsStayWords() {
+        launch(Self.fixture + ["--ui-files"])
+        let thread = row("iphone")
+        reveal(thread)
+        thread.tap()
+        let reply = byID("thread-reply")
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        let pdf = Data("%PDF-1.4\n1 0 obj << >> endobj\ntrailer << >>\n%%EOF\n".utf8)
+        UIPasteboard.general.setItems([["com.adobe.pdf": pdf]])
+        paste(into: reply)
+        XCTAssertTrue(text("Pasted file.pdf").waitForExistence(timeout: 5), "A copied PDF goes into the box as a file")
+        XCTAssertTrue(["", "Reply while it works", "Reply to this thread"].contains(reply.value as? String ?? ""), "None of it is pasted as words")
+        capture("thread-pasted-file")
+        UIPasteboard.general.string = "Synthetic copied words"
+        paste(into: reply)
+        XCTAssertTrue(reply.waitForValue("Synthetic copied words"), "Copied words paste as words")
+    }
+    private func paste(into field: XCUIElement) {
+        field.tap()
+        field.press(forDuration: 1.2)
+        let paste = app.menuItems["Paste"].exists ? app.menuItems["Paste"] : app.buttons["Paste"]
+        XCTAssertTrue(paste.waitForExistence(timeout: 5), "Paste is offered for what was copied")
+        paste.tap()
+    }
+
     /// Thread page B: the conversation opens at its end and stays there while the reply keyboard opens and closes; the
     /// title block and Git chips scroll away with it; messages read as Markdown blocks.
     func testThreadPageKeepsItsPlaceAndReadsMarkdown() {
@@ -737,6 +764,15 @@ import XCTest
         tab.tap()
         XCTAssertTrue(byID("watcher-state").waitForExistence(timeout: 10), "Watcher's page opens with its state")
         return tab
+    }
+    /// Something shared to Sotto opens the Watcher tab with its file in the box and its link in the field (ADR-0157).
+    func testASharedFileAndLinkLandInWatchersBox() {
+        launch(Self.watcher + ["--ui-files", "--ui-shared"], opensOnThreads: false)
+        XCTAssertTrue(byID("watcher-state").waitForExistence(timeout: 15), "A share opens the Watcher tab")
+        XCTAssertTrue(text("Quarterly report.pdf").waitForExistence(timeout: 10), "The shared PDF waits in Watcher's box")
+        XCTAssertTrue(byID("watcher-reply").waitForValue("https://example.com/release-notes"), "The shared link is in the field")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "The caret is in the field, ready for words")
+        capture("watcher-shared")
     }
     /// Where every drag on Watcher's page runs: down its leading margin, clear of bubbles, cards and rows. Not the trailing
     /// margin, where iOS draws the page's scroll indicator: a touch that lands on the indicator while it shows takes hold
@@ -2095,4 +2131,15 @@ extension XCUIApplication {
     var tabButtons: XCUIElementQuery { buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'tab-'")) }
     /// One tab's button, by its English name: `tab("Settings")`.
     func tab(_ name: String) -> XCUIElement { buttons["tab-\(name.lowercased())"] }
+}
+
+private extension XCUIElement {
+    func waitForValue(_ value: String, timeout: TimeInterval = 5) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if (self.value as? String) == value { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        }
+        return false
+    }
 }

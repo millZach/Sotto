@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import SottoCore
 
 // MARK: Sent files
@@ -88,20 +89,20 @@ struct SentFilePills: View {
 
 // MARK: The reply box's files
 
-/// The files waiting in a thread's reply box, under its photos, inside the words' column, as on the desktop.
+/// The files waiting in a reply box, a thread's or Watcher's, under its photos, inside the words' column, as on the desktop.
 struct DraftFilePills: View {
     @EnvironmentObject var model: AppModel
-    let ref: ThreadRef
+    let box: PhotoBox
     var body: some View {
-        let locked = model.preparingSends.contains(ref.id)
+        let locked = model.preparingSends.contains(box.id)
         FlowLayout(spacing: Space.s2) {
-            ForEach(model.files(ref)) { file in
+            ForEach(model.files(box)) { file in
                 FilePill(name: file.name, sizeBytes: file.sizeBytes, progress: file.progress, reading: file.reading,
-                         remove: { model.removeFile(file.id, from: ref) }, locked: locked)
+                         remove: { model.removeFile(file.id, from: box) }, locked: locked)
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Files in this reply")
+        .accessibilityLabel(box.isWatcher ? String(localized: "Files in this message", comment: "The files waiting in the box to Watcher") : String(localized: "Files in this reply"))
     }
 }
 
@@ -216,5 +217,130 @@ enum PickedFile {
         }
         if let failure { throw failure }
         return try result.get()
+    }
+}
+
+// MARK: Pasting
+
+extension View {
+    /// A paste into this text field attaches what was copied as a photo or a file, as if chosen from the + menu, and leaves
+    /// copied words to paste as words. Put it on the box's text field.
+    func pasteAttaches(to box: PhotoBox) -> some View { background(PasteAttacher(box: box)) }
+}
+
+/// SwiftUI's text field has no paste hook on iOS, so this finds the text view under it, the one that begins editing over it, and
+/// answers its pastes: words as the field would, and photos and files into the box. The pasteboard's contents are read only
+/// when the user pastes, never on focus, so iOS asks nothing.
+private struct PasteAttacher: UIViewRepresentable {
+    @EnvironmentObject var model: AppModel
+    let box: PhotoBox
+    func makeUIView(context: Context) -> Marker { Marker(coordinator: context.coordinator) }
+    func updateUIView(_ view: Marker, context: Context) { context.coordinator.box = box; context.coordinator.model = model }
+    func makeCoordinator() -> Coordinator { Coordinator(box: box, model: model) }
+
+    /// Sits behind the field, the same size. When a text view begins editing over it, that is the field.
+    final class Marker: UIView {
+        let coordinator: Coordinator
+        private var observers: [NSObjectProtocol] = []
+        init(coordinator: Coordinator) {
+            self.coordinator = coordinator
+            super.init(frame: .zero)
+            isUserInteractionEnabled = false; isAccessibilityElement = false
+            for name in [UITextView.textDidBeginEditingNotification, UITextField.textDidBeginEditingNotification] {
+                observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                    MainActor.assumeIsolated { self?.began(note.object as? UIView) }
+                })
+            }
+        }
+        required init?(coder: NSCoder) { nil }
+        deinit { observers.forEach(NotificationCenter.default.removeObserver) }
+        private func began(_ field: UIView?) {
+            guard let field, let window, field.window === window else { return }
+            let mine = convert(bounds, to: window), theirs = field.convert(field.bounds, to: window)
+            guard mine.insetBy(dx: -4, dy: -4).contains(CGPoint(x: theirs.midX, y: theirs.midY)) else { return }
+            coordinator.take(field)
+        }
+    }
+
+    @MainActor final class Coordinator: NSObject {
+        var box: PhotoBox
+        weak var model: AppModel?
+        init(box: PhotoBox, model: AppModel) { self.box = box; self.model = model }
+        func take(_ field: UIView) {
+            objc_setAssociatedObject(field, &PasteHook.key, self, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            PasteHook.install(on: type(of: field))
+        }
+        /// Attaches what was copied when it holds a photo or a file. False leaves the paste to the field: words.
+        func paste() -> Bool {
+            let items = UIPasteboard.general.itemProviders.compactMap { provider in
+                SharedItemKind(types: provider.registeredTypeIdentifiers, suggestedName: provider.suggestedName).map { (provider, $0) }
+            }.filter { $0.1 != .words }
+            guard !items.isEmpty, let model else { return false }
+            var photos: [PhotoSource] = [], files: [FileSource] = []
+            for (provider, kind) in items {
+                let name = provider.suggestedName
+                switch kind {
+                case .photo(let type):
+                    let stem = ((name ?? "") as NSString).deletingPathExtension
+                    photos.append(PhotoSource(name: stem.isEmpty ? "Pasted photo" : stem) { try await provider.data(as: type) })
+                case .file(let type):
+                    files.append(FileSource(name: SharedItemKind.name(name, type: type, fallback: "Pasted file"), sizeBytes: nil) { try await provider.data(as: type) })
+                case .words: break
+                }
+            }
+            model.attach(box, photos: photos, files: files)
+            return true
+        }
+    }
+}
+
+/// The text view class under SwiftUI's field offers Paste for a copied photo or file, which it otherwise refuses, and hands
+/// it to the box marked on that field. A field without a box, or a paste of words, goes on as before. Installed once a class.
+@MainActor private enum PasteHook {
+    static var key = 0
+    private static var installed = Set<ObjectIdentifier>()
+    private static let pasteSelector = #selector(UIResponderStandardEditActions.paste(_:))
+    /// Whether the pasteboard holds something only a box can take. Reads its types alone, so iOS asks nothing.
+    private static var holdsAttachment: Bool {
+        let types = UIPasteboard.general.types
+        guard let kind = SharedItemKind(types: types, suggestedName: nil) else { return false }
+        return kind != .words
+    }
+    static func install(on base: AnyClass) {
+        guard installed.insert(ObjectIdentifier(base)).inserted else { return }
+        let canSelector = #selector(UIResponder.canPerformAction(_:withSender:))
+        if let method = class_getInstanceMethod(base, canSelector) {
+            typealias Can = @convention(c) (AnyObject, Selector, Selector, Any?) -> Bool
+            let original = unsafeBitCast(method_getImplementation(method), to: Can.self)
+            let block: @convention(block) (AnyObject, Selector, Any?) -> Bool = { view, action, sender in
+                if action == pasteSelector, objc_getAssociatedObject(view, &key) != nil,
+                   MainActor.assumeIsolated({ holdsAttachment }) { return true }
+                return original(view, canSelector, action, sender)
+            }
+            let imp = imp_implementationWithBlock(block)
+            if !class_addMethod(base, canSelector, imp, method_getTypeEncoding(method)) { method_setImplementation(method, imp) }
+        }
+        if let method = class_getInstanceMethod(base, pasteSelector) {
+            typealias Paste = @convention(c) (AnyObject, Selector, Any?) -> Void
+            let original = unsafeBitCast(method_getImplementation(method), to: Paste.self)
+            let block: @convention(block) (AnyObject, Any?) -> Void = { view, sender in
+                if let coordinator = objc_getAssociatedObject(view, &key) as? PasteAttacher.Coordinator,
+                   MainActor.assumeIsolated({ coordinator.paste() }) { return }
+                original(view, pasteSelector, sender)
+            }
+            let imp = imp_implementationWithBlock(block)
+            if !class_addMethod(base, pasteSelector, imp, method_getTypeEncoding(method)) { method_setImplementation(method, imp) }
+        }
+    }
+}
+
+extension NSItemProvider {
+    /// The item's bytes as `type`, from a copy, a paste or the share sheet.
+    func data(as type: String) async throws -> Data {
+        try await withCheckedThrowingContinuation { continuation in
+            _ = loadDataRepresentation(forTypeIdentifier: type) { data, error in
+                if let data { continuation.resume(returning: data) } else { continuation.resume(throwing: error ?? CocoaError(.fileReadUnknown)) }
+            }
+        }
     }
 }

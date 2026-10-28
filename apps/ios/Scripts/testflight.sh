@@ -17,6 +17,13 @@ xcodebuild -project Sotto.xcodeproj -scheme Sotto -configuration Release \
   DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGNING_ALLOWED=NO CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
   archive
 
+# An unsigned archive carries no entitlements, and the export signs with what each binary's signature names. So the app and
+# its share extension are signed ad hoc, with no certificate, to carry their App Group (ADR-0157); the export signs them again.
+app="$out/Sotto.xcarchive/Products/Applications/Sotto.app"
+codesign --force --sign - --entitlements SottoShare/SottoShare.entitlements "$app/PlugIns/SottoShare.appex"
+codesign --force --sign - --entitlements Sotto/Sotto.entitlements "$app"
+codesign -d --entitlements - "$app/PlugIns/SottoShare.appex"
+
 # destination "upload" sends the signed build straight to App Store Connect; nothing is kept on the runner.
 cat > "$out/ExportOptions.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
