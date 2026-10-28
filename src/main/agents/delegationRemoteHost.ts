@@ -48,6 +48,8 @@ export class HostRemoteCallers {
   private readonly store: AtomicJsonStore<RemoteFile>
   private readonly callers = new Map<string, RelayedCaller>()
   private readonly desktops: RemoteDesktop[] = []
+  /** Callers whose admission is running now, by how many: never trimmed, so a caller cannot drop itself before it is admitted. */
+  private readonly admitting = new Map<string, number>()
   private delegation: Pick<DelegationService, 'delegate' | 'read' | 'cancel' | 'retriedDelegation' | 'hasOpen'> | undefined
 
   constructor(directory: string, private readonly options: {
@@ -103,16 +105,25 @@ export class HostRemoteCallers {
     this.callers.delete(key)
     this.callers.set(key, { id: key, projectId: ask.projectId, runtimeMode: ask.runtimeMode, levels: ask.levels, rootUserMessageId: ask.rootUserMessageId,
       ...(ask.callerMessageId ? { callerMessageId: ask.callerMessageId } : {}) })
-    await this.save()
-    return await delegation.delegate(key, ask.input, { waitMs: ask.waitMs + 2_000 })
+    this.admitting.set(key, (this.admitting.get(key) ?? 0) + 1)
+    try {
+      await this.save()
+      return await delegation.delegate(key, ask.input, { waitMs: ask.waitMs + 2_000 })
+    } finally {
+      const count = (this.admitting.get(key) ?? 1) - 1
+      if (count > 0) this.admitting.set(key, count); else this.admitting.delete(key)
+    }
   }
-  /** Keeps the newest callers, dropping only those with nothing open, so an open delegation can always be read and told. */
+  /**
+   * Keeps the newest callers, dropping only those with nothing open and no admission running, so an open delegation can
+   * always be read and told, and a caller being admitted is never dropped before it is (#1316 review).
+   */
   private trim(): void {
     let excess = this.callers.size - CALLERS_MAX
     if (excess <= 0) return
     for (const key of [...this.callers.keys()]) {
       if (excess <= 0) break
-      if (this.delegation?.hasOpen(key) !== false) continue
+      if (this.admitting.has(key) || this.delegation?.hasOpen(key) !== false) continue
       this.callers.delete(key); excess--
     }
   }

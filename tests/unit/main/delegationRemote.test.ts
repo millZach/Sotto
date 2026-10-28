@@ -75,6 +75,18 @@ describe('a desktop\'s delegation on a paired host, on the host', () => {
     await again.load()
     expect(again.caller(key)?.projectId).toBe('mac-project')
   })
+
+  it('never drops a caller while its own admission runs, however many older callers stay open (review)', async () => {
+    const callers = new HostRemoteCallers(await folder())
+    const seen: boolean[] = [], open = new Set<string>()
+    // A caller has a delegation open once its own was admitted; the newest has none yet while it is admitted.
+    callers.useDelegation({ delegate: async threadId => { seen.push(callers.caller(threadId) !== undefined); open.add(threadId); return { status: 'ok' } },
+      read: async () => ({}), cancel: async () => ({}), retriedDelegation: () => undefined, hasOpen: key => open.has(key) })
+    // A thousand older callers, every one with a delegation still open, then one more.
+    for (let index = 0; index <= 1_000; index++) await callers.answer('desktop-a', { type: 'delegate', caller: `parent-${index}`, projectId: 'mac-project', ...askOf })
+    expect(seen).toHaveLength(1_001)
+    expect(seen.every(Boolean)).toBe(true)
+  })
 })
 
 describe('a delegation on a paired host, on the desktop', () => {
