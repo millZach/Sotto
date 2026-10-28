@@ -12,6 +12,11 @@ export interface UsageHistorySink {
   prompts(batch: readonly UsageHistoryPrompt[]): void
   cursor(key: string): UsageHistoryCursor | undefined
   setCursors(entries: readonly { key: string; cursor: UsageHistoryCursor }[]): void
+  /**
+   * Resolves once the store has caught up enough to take more, so a first import does not hand it a whole history at
+   * once (the usage store worker, ADR-0083 October 27 amendment). A reader waits for it after each cursor it saves.
+   */
+  settled?(): Promise<void> | void
 }
 
 /**
@@ -89,5 +94,6 @@ export function mappedSink(sink: UsageHistorySink, mapping: {
     prompts: batch => { const mapped = map(batch, mapping.prompt); if (mapped.length) sink.prompts(mapped) },
     cursor: key => sink.cursor(key),
     setCursors: entries => sink.setCursors(entries),
+    settled: () => sink.settled?.(),
   }
 }
