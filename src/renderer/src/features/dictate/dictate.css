@@ -195,6 +195,7 @@
   color: var(--tt-text-muted);
   cursor: pointer;
   translate: 0 -50%;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
 .journal-search__clear:hover { background: var(--tt-hover); color: var(--tt-text); }
@@ -215,6 +216,7 @@
   font-size: 12.5px;
   white-space: nowrap;
   cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
 .journal-chip:hover { background: var(--tt-hover); color: var(--tt-text); }

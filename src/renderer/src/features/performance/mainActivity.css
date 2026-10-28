@@ -29,6 +29,7 @@
   white-space: nowrap;
   cursor: pointer;
   -webkit-app-region: no-drag;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .main-freeze__pill[data-tone='quiet'] { border-color: var(--tt-border); background: var(--tt-surface-elevated); color: var(--tt-text-2); font-weight: 500; }
 .main-freeze__pill:hover, .main-freeze__pill[aria-expanded='true'] { border-color: var(--tt-text-faint); }
