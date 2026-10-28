@@ -2069,6 +2069,29 @@ textarea.tt-input {
   padding: 24px;
 }
 
+/* A dialog's dimming fades in and its card settles, as a sheet does; reduced motion, by the system or the setting, shows both at once. */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .tt-dialog-backdrop {
+    animation: tt-dialog-dim 160ms ease-out;
+  }
+  :root:not([data-reduced-motion='on']) .tt-dialog {
+    animation: tt-dialog-rise 160ms cubic-bezier(.2, .8, .2, 1);
+  }
+}
+
+@keyframes tt-dialog-dim {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes tt-dialog-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(.98);
+  }
+}
+
 .tt-dialog h2 {
   margin: 0;
   font-size: 16px;
