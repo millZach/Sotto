@@ -338,6 +338,16 @@ describe('a pending setting', () => {
     ])
   })
 
+  it('leaves Ctrl or ⌘ with a digit to the page shortcuts rather than picking an effort (ADR-0158)', () => {
+    const command = vi.fn(async () => fixture())
+    render(<ThreadOptions thread={fixture().host.threads[0]!} state={fixture()} command={command} />)
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+    const slider = screen.getByRole('slider', { name: 'Thread reasoning effort' })
+    expect(fireEvent.keyDown(slider, { key: '3', ctrlKey: true })).toBe(true)
+    expect(fireEvent.keyDown(slider, { key: '3', metaKey: true })).toBe(true)
+    expect(command).not.toHaveBeenCalled()
+  })
+
   it("says a provider's own mode stays in force in that mode's name", () => {
     const state = fixture({ providerId: 'devin', modelId: 'devin:model', providerMode: 'ask-first' })
     Object.assign(state.host.models.find(model => model.id === 'devin:model')!, { runtimeModes: [], providerModes: [

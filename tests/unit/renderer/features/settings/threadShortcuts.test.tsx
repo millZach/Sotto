@@ -6,8 +6,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ThreadShortcutsSettings } from '../../../../../src/renderer/src/features/settings/ThreadShortcutsSettings'
 import type { ThreadShortcutChoices } from '../../../../../src/shared/threadShortcuts'
 
+// Watcher and Usage are Owl features (ADR-0072); each test says whether this build has them.
+const owl = vi.hoisted(() => ({ on: false }))
+vi.mock('../../../../../src/renderer/src/state/owlFeature', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../../../src/renderer/src/state/owlFeature')>(),
+  useOwlFeature: (id: string) => owl.on && (id === 'watcher' || id === 'usage'),
+}))
+
 afterEach(() => {
   cleanup()
+  owl.on = false
   delete (window as { sotto?: unknown }).sotto
 })
 
@@ -67,7 +75,7 @@ describe('Settings › Keyboard (ADR-0133)', () => {
     await user.click(screen.getByRole('button', { name: 'Change shortcut, Ctrl Shift N' }))
     press('KeyB')
     release('KeyB')
-    expect(await within(row('New thread')).findByRole('alert')).toHaveTextContent('A thread shortcut needs Ctrl, so plain typing can never set it off.')
+    expect(await within(row('New thread')).findByRole('alert')).toHaveTextContent('This shortcut needs Ctrl, so plain typing can never set it off.')
     expect(onUpdateSettings).not.toHaveBeenCalled()
   })
 
@@ -106,5 +114,49 @@ describe('Settings › Keyboard (ADR-0133)', () => {
     await user.type(screen.getByRole('searchbox', { name: 'Filter shortcuts' }), 'settle')
     expect(row('Settle thread')).toBeVisible()
     expect(screen.queryByRole('group', { name: 'New thread' })).not.toBeInTheDocument()
+  })
+
+  it('lists the page shortcuts first, Ctrl+1 to Ctrl+5, leaving out pages this build does not have (ADR-0158)', () => {
+    setup()
+    expect(within(row('Dictate')).getByRole('button', { name: 'Change shortcut, Ctrl 1' })).toBeVisible()
+    expect(within(row('Threads')).getByRole('button', { name: 'Change shortcut, Ctrl 3' })).toBeVisible()
+    expect(within(row('Settings')).getByRole('button', { name: 'Change shortcut, Ctrl 5' })).toBeVisible()
+    expect(row('Threads')).toHaveAttribute('data-setting', 'shortcut-page-threads')
+    expect(screen.queryByRole('group', { name: 'Watcher' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Usage' })).not.toBeInTheDocument()
+    const headings = screen.getAllByRole('heading', { level: 3 }).map(heading => heading.textContent)
+    expect(headings.slice(0, 2)).toEqual(['Switch pages', 'Threads'])
+    cleanup()
+    owl.on = true
+    setup()
+    expect(screen.getAllByRole('group').map(group => group.getAttribute('data-setting')).slice(0, 5))
+      .toEqual(['shortcut-page-dictate', 'shortcut-page-watcher', 'shortcut-page-threads', 'shortcut-page-usage', 'shortcut-page-settings'])
+    expect(within(row('Watcher')).getByRole('button', { name: 'Change shortcut, Ctrl 2' })).toBeVisible()
+    expect(within(row('Usage')).getByRole('button', { name: 'Change shortcut, Ctrl 4' })).toBeVisible()
+  })
+
+  it('records a page shortcut like any other, and refuses keys a page or thread shortcut holds', async () => {
+    const { onUpdateSettings, user } = setup()
+    await user.click(screen.getByRole('button', { name: 'Change shortcut, Ctrl 3' }))
+    press('ControlLeft', 'KeyL')
+    release('KeyL')
+    expect(await within(row('Threads')).findByRole('alert')).toHaveTextContent('Focus the prompt already uses Ctrl + L. Pick other keys.')
+    await user.click(screen.getByRole('button', { name: 'Change shortcut, Ctrl Shift N' }))
+    press('ControlLeft', 'Digit5')
+    release('Digit5')
+    expect(await within(row('New thread')).findByRole('alert')).toHaveTextContent('Settings already uses Ctrl + 5. Pick other keys.')
+    expect(onUpdateSettings).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Change shortcut, Ctrl 3' }))
+    press('ControlLeft', 'Digit7')
+    release('Digit7')
+    await waitFor(() => expect(onUpdateSettings).toHaveBeenCalledWith({ threadShortcuts: { 'page-threads': 'mod+7' } }))
+  })
+
+  it('leaves the keys of a page this build hides free for another row', async () => {
+    const { onUpdateSettings, user } = setup()
+    await user.click(screen.getByRole('button', { name: 'Change shortcut, Ctrl Shift N' }))
+    press('ControlLeft', 'Digit2')
+    release('Digit2')
+    await waitFor(() => expect(onUpdateSettings).toHaveBeenCalledWith({ threadShortcuts: { 'new-thread': 'mod+2' } }))
   })
 })

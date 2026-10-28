@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef, useState, type ComponentType, type ReactNode } from 'react'
-import { Columns2, GitBranch, Info, MessagesSquare, RotateCcw, SquarePen, X } from 'lucide-react'
+import { AppWindow, Columns2, GitBranch, Info, MessagesSquare, RotateCcw, SquarePen, X } from 'lucide-react'
 import type { MessageDescriptor } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
@@ -7,10 +7,11 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import { chordInline, chordWords } from '../../../../shared/dictationShortcuts'
 import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
-import { DEFAULT_THREAD_SHORTCUTS, resolveThreadShortcut, type ThreadShortcutChoices, type ThreadShortcutId } from '../../../../shared/threadShortcuts'
+import { DEFAULT_THREAD_SHORTCUTS, PAGE_SHORTCUT_IDS, resolveThreadShortcut, type PageShortcutId, type ThreadShortcutChoices, type ThreadShortcutId } from '../../../../shared/threadShortcuts'
 import { parseAccelerator, parseChord } from '../../agents/branchToolbar.logic'
 import { acceleratorForChord, chordFromAccelerator, menuOwnedChord, sameThreadKeys } from '../../agents/threadShortcuts'
 import { changesChord } from '../../tools/changesShortcut'
+import { pageShortcutShown, usePageShortcutGates } from '../../components/pageShortcuts'
 import { ShortcutKey } from '../../components/ShortcutKey'
 import { SettingsGroup } from './SettingsGroup'
 import { shownWords, type LaterWords } from './laterWords'
@@ -41,6 +42,15 @@ interface RowCopy { readonly id: ThreadShortcutId; readonly label: MessageDescri
 interface GroupCopy { readonly title: MessageDescriptor; readonly icon: ComponentType<{ size?: number; strokeWidth?: number; 'aria-hidden'?: 'true' }>; readonly rows: readonly RowCopy[] }
 
 const GROUPS: readonly GroupCopy[] = [
+  {
+    title: msg`Switch pages`, icon: AppWindow, rows: [
+      { id: 'page-dictate', label: msg`Dictate`, description: msg`Open the Dictate room.` },
+      { id: 'page-watcher', label: msg`Watcher`, description: msg`Open Watcher’s room.` },
+      { id: 'page-threads', label: msg`Threads`, description: msg`Open the Threads page.` },
+      { id: 'page-usage', label: msg`Usage`, description: msg`Open the Usage page.` },
+      { id: 'page-settings', label: msg`Settings`, description: msg`Open Settings.` },
+    ],
+  },
   {
     title: msg`Threads`, icon: MessagesSquare, rows: [
       { id: 'new-thread', label: msg`New thread`, description: msg`In the focused thread’s project, or the chooser when none is focused.` },
@@ -76,9 +86,11 @@ const GROUPS: readonly GroupCopy[] = [
   },
 ]
 
+const isPageRow = (row: ThreadShortcutId): row is PageShortcutId => (PAGE_SHORTCUT_IDS as readonly string[]).includes(row)
+
 interface RowMessage { readonly id: ThreadShortcutId; readonly text: LaterWords; readonly alert: boolean }
 
-const UNSUPPORTED_KEY = msg`That key can’t be part of a thread shortcut. Try a letter, a number, an F key, Space, Enter or an arrow key.`
+const UNSUPPORTED_KEY = msg`That key can’t be part of a shortcut here. Try a letter, a number, an F key, Space, Enter or an arrow key.`
 
 /**
  * Settings › Keyboard (ADR-0133): every thread shortcut as a recordable row, the fixed keys for reference,
@@ -98,6 +110,10 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
   const saveRef = useRef(0)
   const id = useId()
   const choices = settings.threadShortcuts
+  // A page that is not there (an Owl feature held back, or Dictate with dictation off) shows no row and holds no keys (ADR-0158).
+  const gates = usePageShortcutGates()
+  const shown = (row: RowCopy): boolean => !isPageRow(row.id) || pageShortcutShown(row.id, gates)
+  const groupRows = (group: GroupCopy): readonly RowCopy[] => group.rows.filter(shown)
   const resolved = (row: ThreadShortcutId): string | null => resolveThreadShortcut(choices, row)
   const acceleratorOf = (chord: string): string => acceleratorForChord(chord, platform)
   const inline = (chord: string): string => chordInline(acceleratorOf(chord), platform)
@@ -149,7 +165,7 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
       const name = i18n._(MENU_OWNER_NAMES[menuOwned] ?? msg`Sotto’s menu`)
       return msg`${name} already uses ${keys}. Pick other keys.`
     }
-    for (const group of GROUPS) for (const row of group.rows) {
+    for (const group of GROUPS) for (const row of groupRows(group)) {
       if (row.id === except) continue
       // Changes may be answering to its shifted fallback while dictation holds its plain chord, so the keys
       // it holds are the ones it answers to, not only the ones it is set to.
@@ -196,7 +212,7 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
     if (chord === null) {
       const parsed = parseAccelerator(recorded, platform)
       show(row, parsed !== null && !parsed.ctrl && !parsed.meta
-        ? (platform === 'darwin' ? msg`A thread shortcut needs ⌘ Command or ⌃ Control, so plain typing can never set it off.` : msg`A thread shortcut needs Ctrl, so plain typing can never set it off.`)
+        ? (platform === 'darwin' ? msg`This shortcut needs ⌘ Command or ⌃ Control, so plain typing can never set it off.` : msg`This shortcut needs Ctrl, so plain typing can never set it off.`)
         : UNSUPPORTED_KEY, true)
       return
     }
@@ -303,7 +319,7 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
     ...(platform === 'darwin' ? [fixedRow(t`Settings`, <Trans>macOS’s own Settings chord, from the app menu.</Trans>, 'CommandOrControl+,', 'settings')] : []),
   ]
   const fixedMatches = query === '' || 'fixed dictation send steer search terminal settings'.includes(query)
-  const changedCount = GROUPS.flatMap(group => group.rows).filter(row => changed(row.id)).length
+  const changedCount = GROUPS.flatMap(groupRows).filter(row => changed(row.id)).length
 
   return (
     <div ref={rootRef}>
@@ -311,7 +327,7 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
       <input className="tt-input thread-shortcuts__filter" type="search" aria-label={t`Filter shortcuts`} placeholder={t`Filter by action or keys`} value={filter} onChange={event => setFilter(event.currentTarget.value)} />
       {notice !== null ? <p className="tt-paragraph thread-shortcuts__notice" role="status">{shownWords(notice)}</p> : null}
       {GROUPS.map(group => {
-        const rows = group.rows.filter(matches)
+        const rows = groupRows(group).filter(matches)
         if (rows.length === 0) return null
         return (
           <SettingsGroup key={i18n._(group.title)} title={i18n._(group.title)} icon={group.icon}>
@@ -324,7 +340,7 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
           <div className="dictation-shortcuts">{fixedRows}</div>
         </SettingsGroup>
       ) : null}
-      {query !== '' && GROUPS.every(group => group.rows.filter(matches).length === 0) && !fixedMatches
+      {query !== '' && GROUPS.every(group => groupRows(group).filter(matches).length === 0) && !fixedMatches
         ? <p className="tt-paragraph thread-shortcuts__notice"><Trans>Nothing matches. Clear the filter to see every shortcut.</Trans></p> : null}
       <div className="thread-shortcuts__foot">
         <span>{changedCount === 0 ? <Trans>Every shortcut is at its default.</Trans> : <>{changedCount} <Trans>changed from their defaults.</Trans></>}</span>

@@ -3,12 +3,18 @@ import { z } from 'zod'
 import type { SottoPlatform } from './platform'
 
 /**
- * The keyboard shortcuts for working in threads (Settings › Keyboard, ADR-0133), in T3's chord spelling
+ * The keyboard shortcuts for working in threads and switching pages (Settings › Keyboard, ADR-0133, ADR-0158), in T3's chord spelling
  * (`mod+shift+n`: mod is Command on macOS and Control elsewhere). They are read from keydown events while
  * Sotto's window holds the keys — never registered with the system, unlike dictation's (`dictationShortcuts.ts`).
  * This module owns the ids, their defaults and the shape a saved chord must have; the renderer owns the words.
  */
+
+/** The page shortcuts (ADR-0158): one for each page the room switch and page links reach, in their order. */
+export const PAGE_SHORTCUT_IDS = ['page-dictate', 'page-watcher', 'page-threads', 'page-usage', 'page-settings'] as const
+export type PageShortcutId = (typeof PAGE_SHORTCUT_IDS)[number]
+
 export const THREAD_SHORTCUT_IDS = [
+  ...PAGE_SHORTCUT_IDS,
   'new-thread',
   'settle',
   'restore',
@@ -34,8 +40,14 @@ export type ThreadShortcutId = (typeof THREAD_SHORTCUT_IDS)[number]
  * The chord each shortcut answers to until the user picks another. Every chord Sotto already shipped is
  * its own default, so an upgraded install keeps its keys — Zoom pane alone moves, from `ctrl+shift+m` on
  * every platform to the mod pattern the rest follow (on Windows and Linux mod is Ctrl, so nothing moves there).
+ * The page shortcuts are new, and number the pages 1 to 5 in the order the switch and links draw them.
  */
 export const DEFAULT_THREAD_SHORTCUTS: Readonly<Record<ThreadShortcutId, string>> = Object.freeze({
+  'page-dictate': 'mod+1',
+  'page-watcher': 'mod+2',
+  'page-threads': 'mod+3',
+  'page-usage': 'mod+4',
+  'page-settings': 'mod+5',
   'new-thread': 'mod+shift+n',
   'settle': 'mod+shift+e',
   'restore': 'mod+alt+r',

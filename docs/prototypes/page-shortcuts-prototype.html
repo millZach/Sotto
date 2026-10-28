@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Page shortcuts — prototype</title>
+<!--
+  PROTOTYPE — throwaway. Question: "How does a Switch pages group look and behave on Settings › Keyboard?"
+  Zach's settled choices: mod+1..5 in the page row's order (Dictate, Watcher, Threads, Usage, Settings), only while a
+  Sotto window is focused, a new "Switch pages" group above the thread shortcuts, recorded and removed exactly like
+  the thread shortcuts (ADR-0133). Open question shown as variants (?variant=A|B and the bottom bar): how a clash
+  with another shortcut is shown. State is in memory only.
+-->
+<style>
+:root{--bg:#161616;--side:#1b1b1b;--sunk:#202020;--elev:#2b2b2b;--hair:#2e2e2e;--text:#ececec;--muted:#9a9a9a;
+ --acc:#e8dcc4;--accbg:#c9b98f;--bad:#e08a7a;--ok:#9fc48f;--kbd:#333}
+*{box-sizing:border-box}
+body{margin:0;background:#0e0e0e;color:var(--text);font:14px/1.5 Figtree,system-ui,sans-serif;padding:24px 20px 110px}
+.wrap{max-width:1080px;margin:0 auto}
+h1{font-size:20px;margin:0 0 4px}
+p.lead{color:var(--muted);margin:0 0 12px;max-width:820px}
+p.lead b{color:var(--text);font-weight:600}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:99px;background:#ffffff10;color:var(--muted);margin-left:6px;vertical-align:2px}
+.bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:12px 0 16px}
+.seg{display:flex;padding:3px;border-radius:9px;background:var(--sunk);border:1px solid var(--hair)}
+.seg button{min-height:30px;padding:0 12px;border:0;border-radius:7px;background:transparent;color:var(--muted);font:inherit;font-size:13px;cursor:pointer}
+.seg button.on{background:var(--elev);color:var(--text);box-shadow:0 1px 2px #0006}
+#live{flex:1 1 280px;border:1px dashed var(--hair);border-radius:8px;padding:7px 12px;color:var(--muted);font-size:13px}
+#live b{color:var(--acc)}
+.win{display:grid;grid-template-columns:190px 1fr;border:1px solid var(--hair);border-radius:12px;overflow:hidden;background:var(--bg)}
+.nav{background:var(--side);padding:14px 8px;border-right:1px solid var(--hair)}
+.nav h2{font-size:15px;margin:2px 10px 10px}
+.nav div{padding:6px 10px;border-radius:7px;color:var(--muted);font-size:13px;margin:1px 0}
+.nav div.on{background:var(--elev);color:var(--text)}
+.detail{padding:20px 24px 26px;min-width:0}
+.sh h2{margin:0;font-size:16px}.sh p{margin:1px 0 10px;color:var(--muted);font-size:12.5px;max-width:640px}
+.filter{width:min(420px,100%);height:34px;border:1px solid var(--hair);border-radius:8px;background:var(--sunk);color:var(--text);font:inherit;font-size:13px;padding:0 12px;margin-bottom:4px}
+.group{margin-top:20px}.group>h3{font-size:13px;margin:0 0 6px;display:flex;align-items:center;gap:7px}
+.group>h3 .ico{color:var(--muted)}
+.rows{border:1px solid var(--hair);border-radius:10px;background:var(--sunk)}
+.row{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center;padding:10px 14px}
+.row+.row{border-top:1px solid var(--hair)}
+.row .lab{flex:1 1 240px;min-width:0}.row .lab b{font-size:13px;font-weight:600;display:block}
+.row .lab span{color:var(--muted);font-size:12.5px;display:block}
+.row.flash{animation:flash 1.2s ease-out}
+@keyframes flash{0%{background:#c9b98f33}100%{background:transparent}}
+@media (prefers-reduced-motion: reduce){.row.flash{animation:none;outline:1px solid var(--accbg)}}
+.ctl{display:flex;align-items:center;gap:6px;flex:none;margin-left:auto}
+.chip{display:inline-flex;align-items:center;gap:4px;min-height:32px;padding:3px 8px;border:1px solid var(--hair);border-radius:8px;background:var(--elev);color:var(--text);font:inherit;cursor:pointer}
+.chip:hover{border-color:#4a4a4a}.chip:focus-visible,.ib:focus-visible,.link:focus-visible{outline:2px solid var(--accbg);outline-offset:1px}
+.chip.none{color:var(--muted);font-size:12.5px;background:transparent;border-style:dashed}
+.chip.locked{cursor:default;opacity:.75}
+.recbox{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:3px 6px 3px 10px;border:1px solid var(--accbg);border-radius:8px;background:#c9b98f1f;color:var(--acc);font-size:12.5px}
+kbd{display:inline-block;min-width:22px;text-align:center;padding:2px 6px;border:1px solid #454545;border-bottom-width:2px;border-radius:6px;background:var(--kbd);font:600 12px/1.25 Figtree,system-ui,sans-serif;color:var(--text)}
+.ib{width:30px;height:30px;display:grid;place-items:center;border:0;border-radius:7px;background:transparent;color:var(--muted);cursor:pointer;font-size:14px}
+.ib:hover{background:var(--elev);color:var(--text)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--accbg);flex:none}
+.msg{flex:1 0 100%;margin:0;font-size:12.5px;color:var(--muted)}.msg.err{color:var(--bad)}
+.link{border:0;background:transparent;color:var(--acc);font:inherit;font-size:12.5px;text-decoration:underline;cursor:pointer;padding:0 2px}
+.foot{display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center;margin-top:16px;font-size:12.5px;color:var(--muted)}
+.btn{min-height:30px;padding:0 12px;border:1px solid var(--hair);border-radius:8px;background:var(--elev);color:var(--text);font:inherit;font-size:13px;cursor:pointer}
+.btn:disabled{opacity:.5;cursor:default}
+.pad{margin-top:10px;display:none;flex-wrap:wrap;gap:6px;align-items:center;font-size:12.5px;color:var(--muted)}
+.pad.show{display:flex}
+.pad button{min-height:34px;padding:0 10px;border:1px solid var(--accbg);border-radius:8px;background:#c9b98f14;color:var(--acc);font:inherit;font-size:12.5px;cursor:pointer}
+.pages{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}
+.pages span{padding:3px 10px;border-radius:99px;border:1px solid var(--hair);color:var(--muted);font-size:12.5px}
+.pages span.on{background:var(--elev);color:var(--text);border-color:#4a4a4a}
+.notes{max-width:820px;color:var(--muted);font-size:13px}.notes li{margin:5px 0}.notes b{color:var(--text)}
+code{font:12px ui-monospace,Menlo,monospace;background:#ffffff10;border-radius:5px;padding:1px 5px;color:var(--text)}
+.switcher{position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:50;display:flex;align-items:center;gap:4px;background:#f2ead8;color:#1b1b1b;border-radius:99px;padding:5px 8px;box-shadow:0 8px 26px #000c;font-size:13px;max-width:calc(100vw - 20px)}
+.switcher button{width:34px;height:34px;border:0;border-radius:50%;background:transparent;font-size:18px;cursor:pointer;color:#1b1b1b}
+.switcher .lab{padding:0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:720px){
+  body{padding:16px 10px 100px}
+  .win{grid-template-columns:1fr}
+  .nav{display:flex;gap:4px;overflow-x:auto;border-right:0;border-bottom:1px solid var(--hair);padding:8px}
+  .nav h2{display:none}.nav div{white-space:nowrap}
+  .detail{padding:14px 12px 20px}
+  .ctl{margin-left:0}
+  .pad.show{position:fixed;left:8px;right:8px;bottom:64px;z-index:40;background:#1b1b1bf2;border:1px solid var(--hair);border-radius:12px;padding:8px;box-shadow:0 8px 26px #000c}
+}
+</style></head><body><div class="wrap">
+<h1>Switch pages from the keyboard <span class="tag">prototype — throwaway</span></h1>
+<p class="lead">Settings › Keyboard with the new <b>Switch pages</b> group above the thread shortcuts. <b>Ctrl+1 to Ctrl+5</b> (⌘1 to ⌘5 on a Mac) open Dictate, Watcher, Threads, Usage and Settings while a Sotto window is in front. Click a shortcut and press new keys; on a phone, tap a shortcut and use the keys that appear under the page. The bottom bar flips between two ways a clash is shown.</p>
+<div class="bar">
+  <div class="seg" role="group" aria-label="Keys shown for"><button id="p-win" class="on" type="button">Windows / Linux</button><button id="p-mac" type="button">Mac</button></div>
+  <div class="seg" role="group" aria-label="Build"><button id="b-owl" class="on" type="button">Owl</button><button id="b-stable" type="button">Stable</button></div>
+  <div id="live" role="status">Try it: press <b>Ctrl+3</b>, or tap a shortcut and pick keys.</div>
+</div>
+<div class="pages" id="pages" aria-label="Open page (mock)"></div>
+<div class="win">
+  <nav class="nav" aria-label="Settings pages (mock)"><h2>Settings</h2>
+    <div>General</div><div>Appearance</div><div>Dictation</div><div>Threads</div><div class="on">Keyboard</div><div>Providers</div><div>Hosts</div><div>Phones</div><div>About</div>
+  </nav>
+  <section class="detail">
+    <div class="sh"><h2>Keyboard</h2><p>Click a shortcut and press the new keys; let go to save. These keys work while Sotto is in front, and stand down in terminals and dialogs. Dictation’s keys always win a tie.</p></div>
+    <input class="filter" type="search" id="filter" aria-label="Filter shortcuts" placeholder="Filter by action or keys">
+    <div id="groups"></div>
+    <div class="foot"><span id="changed"></span><button class="btn" id="restore" type="button">Restore defaults</button></div>
+    <div class="pad" id="pad" aria-label="Keys to press (for phones)"></div>
+  </section>
+</div>
+<h2 style="font-size:15px;margin:28px 0 6px">How it behaves</h2>
+<ul class="notes">
+  <li><b>Same machinery as thread shortcuts.</b> Same recorder, same rules (needs Ctrl, or ⌘/⌃ on a Mac), same saved setting. A row left out follows its default; a removed row has no shortcut, and the page links still work.</li>
+  <li><b>Gated pages leave their rows.</b> Watcher and Usage are Owl features, so stable shows neither row and their keys do nothing. Dictate’s row goes while dictation is turned off. Flip <b>Stable</b> above to see it.</li>
+  <li><b>Works on every page,</b> in a text box too (as the thread shortcuts do), but not inside a terminal, an open dialog, or the browser pane, which keep their keys.</li>
+  <li><b>A press opens the page the way its link does.</b> For Dictate, Watcher and Threads, focus lands on that page’s lit room tab, as after pressing the room switch.</li>
+  <li><b>Nothing else uses Ctrl+1 to Ctrl+5 today.</b> No menu, terminal or browser-pane key; dictation’s keys would still win a tie.</li>
+</ul>
+</div>
+<div class="switcher" role="group" aria-label="Prototype variants">
+  <button id="prev" type="button" aria-label="Previous variant">‹</button><span class="lab" id="vlabel"></span><button id="next" type="button" aria-label="Next variant">›</button>
+</div>
+<script>
+'use strict';
+const VARIANTS = {A:'A — Refuse and name it (as today)', B:'B — Refuse, name it, offer to go there'};
+const PAGES = [
+  {id:'page-dictate',label:'Dictate',desc:'Open the Dictate room.',def:'mod+1',page:'Dictate'},
+  {id:'page-watcher',label:'Watcher',desc:'Open Watcher’s room.',def:'mod+2',page:'Watcher',owl:true},
+  {id:'page-threads',label:'Threads',desc:'Open the Threads page.',def:'mod+3',page:'Threads'},
+  {id:'page-usage',label:'Usage',desc:'Open the Usage page.',def:'mod+4',page:'Usage',owl:true},
+  {id:'page-settings',label:'Settings',desc:'Open Settings.',def:'mod+5',page:'Settings'},
+];
+const THREADS = [
+  {id:'new-thread',label:'New thread',desc:'In the focused thread’s project, or the chooser when none is focused.',def:'mod+shift+n'},
+  {id:'next-thread',label:'Next thread',desc:'Move to the next thread in the sidebar’s order.',def:'mod+alt+arrowdown'},
+  {id:'focus-prompt',label:'Focus the prompt',desc:'Put the cursor in the focused pane’s composer.',def:'mod+l'},
+  {id:'changes',label:'Changes',desc:'Open Tools on Changes, or close it when Changes is showing.',def:'mod+d'},
+  {id:'terminal-drawer',label:'Terminal drawer',desc:'Show or hide the focused pane’s terminal drawer.',def:'mod+j'},
+];
+const GROUPS = [{title:'Switch pages',ico:'⇄',rows:PAGES},{title:'Threads (and the other thread groups, unchanged)',ico:'💬',rows:THREADS}];
+const FIXED = [['Dictation (press & hold)','ctrl+shift+space','Global — the one set that works outside Sotto.'],['Search transcripts','mod+k','Opens the Dictate room on its search, from any page.'],['Terminal search & text size','mod+f','The terminal’s own keys, while a terminal holds them.']];
+const ALL = [...PAGES,...THREADS];
+let platform='win32', owl=true, choices={}, recording=null, held=[], messages={}, filter='', open='Threads';
+let variant = new URLSearchParams(location.search).get('variant'); if(!VARIANTS[variant]) variant='A';
+const $=s=>document.querySelector(s);
+const resolved=id=>Object.hasOwn(choices,id)?choices[id]:ALL.find(r=>r.id===id).def;
+function toks(c){return c.split('+').map(t=>t==='mod'?(platform==='darwin'?'meta':'ctrl'):t)}
+function norm(c){const t=toks(c);const m=['ctrl','alt','shift','meta'].filter(x=>t.includes(x));return [...m,t.at(-1)].join('+')}
+const same=(a,b)=>norm(a)===norm(b);
+const KEY={arrowdown:'↓',arrowup:'↑',space:'Space',enter:'↵'};
+function parts(c){const t=toks(c),mac=platform==='darwin',o=[];if(t.includes('ctrl'))o.push(mac?'⌃':'Ctrl');if(t.includes('alt'))o.push(mac?'⌥':'Alt');if(t.includes('shift'))o.push(mac?'⇧':'Shift');if(t.includes('meta'))o.push(mac?'⌘':'Win');const k=t.at(-1);o.push(KEY[k]||k.toUpperCase());return o}
+const caps=c=>parts(c).map(p=>`<kbd>${p}</kbd>`).join('');
+const inline=c=>parts(c).join(platform==='darwin'?'':'+');
+const visible=r=>!(r.owl&&!owl);
+function owner(chord,except){
+  if(same(chord,'ctrl+shift+space')) return {name:'Sotto’s start-and-stop dictation shortcut'};
+  if(same(chord,'mod+k')) return {name:'Search transcripts'};
+  if(same(chord,platform==='darwin'?'mod+w':'ctrl+w')) return {name:'Close the window'};
+  for(const r of ALL){ if(r.id===except||!visible(r))continue; const c=resolved(r.id); if(c&&same(c,chord)) return {name:r.label,id:r.id}; }
+  return null;
+}
+function say(text){ $('#live').innerHTML=text; }
+function render(){
+  $('#vlabel').textContent=VARIANTS[variant];
+  $('#pages').innerHTML=['Dictate','Watcher','Threads','Usage','Settings'].filter(p=>owl||(p!=='Watcher'&&p!=='Usage')).map(p=>`<span class="${p===open?'on':''}">${p}</span>`).join('');
+  const q=filter.trim().toLowerCase();
+  const match=r=>!q||`${r.label} ${r.desc} ${resolved(r.id)?parts(resolved(r.id)).join(' '):'no shortcut'}`.toLowerCase().includes(q);
+  let html='';
+  for(const g of GROUPS){
+    const rows=g.rows.filter(visible).filter(match); if(!rows.length)continue;
+    html+=`<div class="group"><h3><span class="ico" aria-hidden="true">${g.ico}</span>${g.title}</h3><div class="rows">${rows.map(rowHTML).join('')}</div></div>`;
+  }
+  if(!q||'fixed dictation search terminal'.includes(q)) html+=`<div class="group"><h3><span class="ico" aria-hidden="true">ⓘ</span>Fixed &amp; elsewhere</h3><div class="rows">${FIXED.map(([l,c,d])=>`<div class="row"><div class="lab"><b>${l}</b><span>${d}</span></div><div class="ctl"><span class="chip locked">${caps(c)}</span></div></div>`).join('')}</div></div>`;
+  $('#groups').innerHTML=html;
+  const n=ALL.filter(visible).filter(changed).length;
+  $('#changed').textContent=n?`${n} changed from their defaults.`:'Every shortcut is at its default.';
+  $('#restore').disabled=n===0;
+  const pad=$('#pad'); pad.classList.toggle('show',recording!==null);
+  if(recording) pad.innerHTML=`Keys (for phones):`+['mod+1','mod+6','mod+shift+3','mod+l','mod+k','mod+d','shift+7'].map(c=>`<button type="button" data-press="${c}">${inline(c)}</button>`).join('')+`<button type="button" data-press="esc">Esc</button>`;
+}
+const changed=r=>{const c=resolved(r.id);return c===null||!same(c,r.def)};
+function rowHTML(r){
+  const c=resolved(r.id), rec=recording===r.id, m=messages[r.id];
+  const words=c?parts(c).join(' '):'No shortcut';
+  let ctl;
+  if(rec) ctl=`<span class="recbox">${held.length?held.map(h=>`<kbd>${h}</kbd>`).join(''):'Press the new keys…'}<button class="ib" type="button" aria-label="Cancel recording" data-cancel>✕</button></span>`;
+  else ctl=`${changed(r)?'<span class="dot" title="Changed from the default"></span>':''}<button class="chip ${c?'':'none'}" type="button" aria-label="Change shortcut, ${words}" data-rec="${r.id}">${c?caps(c):'No shortcut'}</button>${changed(r)?`<button class="ib" type="button" aria-label="Reset ${r.label} to its default" title="Reset to ${inline(r.def)}" data-reset="${r.id}">↺</button>`:''}${c?`<button class="ib" type="button" aria-label="Remove shortcut, ${words}" title="Remove shortcut" data-remove="${r.id}">✕</button>`:''}`;
+  let line='';
+  if(rec) line=`<p class="msg" role="status">${held.length?'Let go to save. Esc cancels.':'Hold the keys you want, then let go. Esc cancels.'}</p>`;
+  else if(m) line=`<p class="msg ${m.err?'err':''}" role="${m.err?'alert':'status'}">${m.text}${m.go&&variant==='B'?` <button class="link" type="button" data-go="${m.go}">Change ${m.goName} instead</button>`:''}</p>`;
+  return `<div class="row" id="row-${r.id}" data-row="${r.id}"><div class="lab"><b>${r.label}</b><span>${r.desc}${changed(r)?` Default is ${inline(r.def)}.`:''}</span></div><div class="ctl">${ctl}</div>${line}</div>`;
+}
+function commit(id,chord){
+  recording=null; held=[];
+  const prev=resolved(id), row=ALL.find(r=>r.id===id);
+  if(chord===null){render();focus(`[data-rec="${id}"]`);return}
+  if(chord==='unsupported'){messages[id]={err:true,text:'That key can’t be part of a thread shortcut. Try a letter, a number, an F key, Space, Enter or an arrow key.'};render();focus(`[data-rec="${id}"]`);return}
+  if(chord==='needs-mod'){messages[id]={err:true,text:platform==='darwin'?'A shortcut needs ⌘ Command or ⌃ Control, so plain typing can never set it off.':'A shortcut needs Ctrl, so plain typing can never set it off.'};render();focus(`[data-rec="${id}"]`);return}
+  if(prev&&same(prev,chord)){messages[id]={text:'Shortcut saved.'};render();focus(`[data-rec="${id}"]`);return}
+  const o=owner(chord,id);
+  if(o){messages[id]={err:true,text:`${o.name} already uses ${inline(chord)}. Pick other keys.`,go:o.id,goName:o.name};render();focus(`[data-rec="${id}"]`);return}
+  choices={...choices,[id]:chord}; messages[id]={text:'Shortcut saved.'}; render(); focus(`[data-rec="${id}"]`);
+}
+function focus(sel){document.querySelector(sel)?.focus()}
+function startRecording(id){messages={};recording=id;held=[];render();focus('[data-cancel]');}
+function eventKey(e){let k=e.key.toLowerCase();if(k===' ')k='space';if(/^digit\d$/i.test(e.code))k=e.code.slice(5);if(/^key[a-z]$/i.test(e.code))k=e.code.slice(3).toLowerCase();return k}
+function chordOf(e,k){const t=[];const mac=platform==='darwin';if(mac?e.metaKey:e.ctrlKey)t.push('mod');if(mac&&e.ctrlKey)t.push('ctrl');if(e.altKey)t.push('alt');if(e.shiftKey)t.push('shift');t.push(k);return t.join('+')}
+function heldParts(e,k){const mac=platform==='darwin',o=[];if(e.ctrlKey)o.push(mac?'⌃':'Ctrl');if(e.altKey)o.push(mac?'⌥':'Alt');if(e.shiftKey)o.push(mac?'⇧':'Shift');if(e.metaKey)o.push(mac?'⌘':'Win');if(k)o.push(KEY[k]||k.toUpperCase());return o}
+let pending=null;
+window.addEventListener('keydown',e=>{
+  if(recording){
+    e.preventDefault();
+    if(e.key==='Escape'){commit(recording,null);return}
+    const k=eventKey(e); const modOnly=['control','shift','alt','meta'].includes(k);
+    held=heldParts(e,modOnly?null:k);
+    if(!modOnly){
+      if(!/^([a-z0-9]|space|enter|arrow(up|down|left|right)|f\d{1,2})$/.test(k)) pending='unsupported';
+      else if(!(e.ctrlKey||e.metaKey)) pending='needs-mod';
+      else pending=chordOf(e,k);
+    }
+    render(); return;
+  }
+  if(e.target.closest&&e.target.closest('input')&&!(e.ctrlKey||e.metaKey))return;
+  const k=eventKey(e); if(['control','shift','alt','meta'].includes(k))return;
+  const c=chordOf(e,k);
+  for(const r of PAGES){ if(!visible(r))continue; const rc=resolved(r.id); if(rc&&same(rc,c)){e.preventDefault();open=r.page;say(`<b>${inline(c)}</b> opened <b>${r.page}</b>.`);render();return} }
+});
+window.addEventListener('keyup',e=>{ if(recording&&pending&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!e.shiftKey){const p=pending;pending=null;commit(recording,p)} else if(recording&&pending&&!['Control','Shift','Alt','Meta'].includes(e.key)){const p=pending;pending=null;commit(recording,p)} });
+document.addEventListener('click',e=>{
+  const t=e.target.closest('button'); if(!t)return;
+  if(t.dataset.rec){startRecording(t.dataset.rec);return}
+  if(t.hasAttribute('data-cancel')){commit(recording,null);return}
+  if(t.dataset.press){const p=t.dataset.press;if(p==='esc')commit(recording,null);else commit(recording,p==='shift+7'?'needs-mod':p);return}
+  if(t.dataset.remove){const id=t.dataset.remove;choices={...choices,[id]:null};messages={[id]:{text:'Shortcut saved.'}};render();focus(`[data-rec="${id}"]`);return}
+  if(t.dataset.reset){const id=t.dataset.reset;const n={...choices};delete n[id];choices=n;messages={[id]:{text:`Back to the default, ${inline(ALL.find(r=>r.id===id).def)}.`}};render();focus(`[data-rec="${id}"]`);return}
+  if(t.dataset.go){const id=t.dataset.go;const row=$(`#row-${id}`);row?.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});row?.classList.remove('flash');void row?.offsetWidth;row?.classList.add('flash');row?.querySelector('[data-rec]')?.focus();return}
+});
+$('#restore').onclick=()=>{choices={};messages={};render();say('All shortcuts are back to their defaults.')};
+$('#filter').oninput=e=>{filter=e.target.value;render()};
+$('#p-win').onclick=()=>{platform='win32';$('#p-win').classList.add('on');$('#p-mac').classList.remove('on');render();say('Try it: press <b>Ctrl+3</b>.')};
+$('#p-mac').onclick=()=>{platform='darwin';$('#p-mac').classList.add('on');$('#p-win').classList.remove('on');render();say('Try it: press <b>⌘3</b>.')};
+$('#b-owl').onclick=()=>{owl=true;$('#b-owl').classList.add('on');$('#b-stable').classList.remove('on');render()};
+$('#b-stable').onclick=()=>{owl=false;if(open==='Watcher'||open==='Usage')open='Threads';$('#b-stable').classList.add('on');$('#b-owl').classList.remove('on');render()};
+const keys=Object.keys(VARIANTS);
+function setVariant(v){variant=v;const u=new URL(location.href);u.searchParams.set('variant',v);history.replaceState(null,'',u);render()}
+$('#prev').onclick=()=>setVariant(keys[(keys.indexOf(variant)+keys.length-1)%keys.length]);
+$('#next').onclick=()=>setVariant(keys[(keys.indexOf(variant)+1)%keys.length]);
+render();
+</script>
+</body></html>

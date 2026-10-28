@@ -514,6 +514,11 @@ artifacts/linux-window-minimum/*
 
 !artifacts/linux-window-minimum/shell-plumbing-proof.txt
 # Linux Settings copy proof; retain only the cited frames and the run log.
+artifacts/page-shortcuts/*
+!artifacts/page-shortcuts/keyboard-switch-pages-1600x1000-dark.png
+!artifacts/page-shortcuts/keyboard-switch-pages-1280x800-light.png
+!artifacts/page-shortcuts/keyboard-switch-pages-820x560-dark.png
+!artifacts/page-shortcuts/keyboard-switch-pages-820x560-light.png
 artifacts/linux-settings-copy/*
 !artifacts/linux-settings-copy/proof.txt
 !artifacts/linux-settings-copy/linux-specs-proof.txt

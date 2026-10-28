@@ -793,14 +793,6 @@ msgstr ""
 msgid "A theme with the id \"{id}\" is already installed."
 msgstr ""
 
-#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
-msgid "A thread shortcut needs ⌘ Command or ⌃ Control, so plain typing can never set it off."
-msgstr ""
-
-#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
-msgid "A thread shortcut needs Ctrl, so plain typing can never set it off."
-msgstr ""
-
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "A thread stopped by a usage limit or by Sotto closing waits for your next message."
 msgstr ""
@@ -2029,7 +2021,12 @@ msgstr ""
 
 #. The Dictate room, named in the title bar
 #: src/renderer/src/features/settings/themes/AppearancePreview.tsx
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Dictate"
+msgstr ""
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Dictate page shortcut"
 msgstr ""
 
 #: src/renderer/src/features/settings/settingsPages.ts
@@ -3565,6 +3562,10 @@ msgstr ""
 msgid "Open Providers"
 msgstr ""
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Open Settings."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 #: src/renderer/src/features/settings/TailscaleConnect.tsx
 msgid "Open sign-in page"
@@ -3586,6 +3587,10 @@ msgstr ""
 msgid "Open the branch bar’s working-copy chooser, in the focused pane."
 msgstr ""
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Open the Dictate room."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Open the Tailscale approval page for {editedName}"
 msgstr ""
@@ -3598,6 +3603,14 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Open the thread whose sidebar row holds the keys in a pane beside the current one. At its default either primary modifier with Enter answers."
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Open the Threads page."
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Open the Usage page."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostSetupView.tsx
@@ -3614,6 +3627,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Open VSX search is unavailable right now."
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Open Watcher’s room."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
@@ -4461,6 +4478,10 @@ msgstr ""
 msgid "Settings found"
 msgstr ""
 
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Settings page shortcut"
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Settings reset to defaults."
 msgstr ""
@@ -5228,6 +5249,10 @@ msgid "Switch it off"
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Switch pages"
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Switch the focused thread back to its previous working copy."
 msgstr ""
 
@@ -5377,12 +5402,12 @@ msgstr ""
 msgid "That is not valid JSON. Check for a missing comma or quote."
 msgstr ""
 
-#: src/renderer/src/features/settings/DictationShortcuts.tsx
-msgid "That key can’t be part of a shortcut. Try a letter, a number, an F key, Space or an arrow key."
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "That key can’t be part of a shortcut here. Try a letter, a number, an F key, Space, Enter or an arrow key."
 msgstr ""
 
-#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
-msgid "That key can’t be part of a thread shortcut. Try a letter, a number, an F key, Space, Enter or an arrow key."
+#: src/renderer/src/features/settings/DictationShortcuts.tsx
+msgid "That key can’t be part of a shortcut. Try a letter, a number, an F key, Space or an arrow key."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -5840,6 +5865,14 @@ msgstr ""
 msgid "This revokes this computer's access on the host and removes the saved connection. Threads stay on the host."
 msgstr ""
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "This shortcut needs ⌘ Command or ⌃ Control, so plain typing can never set it off."
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "This shortcut needs Ctrl, so plain typing can never set it off."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "This SSH host and username are too long together. Nothing was saved. Use a shorter alias from your SSH configuration."
 msgstr ""
@@ -5871,6 +5904,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "Threads kept"
+msgstr ""
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Threads page shortcut"
 msgstr ""
 
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
@@ -6159,12 +6196,20 @@ msgstr ""
 msgid "Updating…"
 msgstr ""
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Usage"
+msgstr ""
+
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "Usage keeps its numbers. Its provider keeps its own copy of the session."
 msgstr ""
 
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "Usage keeps its numbers. Providers keep their own copies of the sessions."
+msgstr ""
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Usage page shortcut"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/EffortColor.tsx
@@ -6382,6 +6427,10 @@ msgstr ""
 msgid "Watched threads"
 msgstr ""
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Watcher"
+msgstr ""
+
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Watcher can’t run on {provider} yet."
 msgstr ""
@@ -6396,6 +6445,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/WatcherCompactionSetting.tsx
 msgid "Watcher is at {size}."
+msgstr ""
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Watcher page shortcut"
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
