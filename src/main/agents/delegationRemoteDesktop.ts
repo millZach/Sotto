@@ -237,8 +237,9 @@ export class DesktopRemoteDelegations {
     this.adopt(record, delegation)
     await this.persist()
     // A call that waits for the outcome hears it from the host's news, then reads it exactly, the reply included.
-    if (!SETTLED.has(record.outcome) && ask.waitMs > 0) {
-      await this.wait(record.id, ask.waitMs)
+    // News may have moved it already, while the start was being saved: then it is read at once, without waiting.
+    if (ask.waitMs > 0) {
+      if (!SETTLED.has(record.outcome)) await this.wait(record.id, ask.waitMs)
       if (record.outcome !== 'working') return { ...shape(await this.read(base.callerId, record.id)), ...this.carried(answer) }
     }
     return shape(this.asKnown(record, answer))

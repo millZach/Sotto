@@ -186,6 +186,20 @@ describe('a delegation on a paired host, on the desktop', () => {
     expect(mac.asked.map(ask => ask.type)).toEqual(['delegate', 'read'])
   })
 
+  it('reads the outcome exactly when it moved before the call began to wait for it', async () => {
+    let outcome = 'working'
+    const mac = host(ask => {
+      if (ask.type === 'read') return { status: 'ok', delegation: { id: THERE, thread: 'child-mac', outcome } }
+      // The host's news follows its answer at once, while this computer is still saving the start.
+      setTimeout(() => { outcome = 'failed'; mac.push('parent-1', { source: 'delegation', items: [{ delegationId: THERE, threadId: 'child-mac', outcome: 'failed' }] }) }, 0)
+      return { status: 'ok', delegation: { id: THERE, thread: 'child-mac', outcome: 'working' } }
+    })
+    const remote = new DesktopRemoteDelegations(await folder(), { machineName: () => 'the Mac' })
+    remote.useDelivery(async () => undefined)
+    remote.useHosts(hosts([mac.connection]).source)
+    expect(await remote.start('parent-1', 'code-review', macPlacement, { ...askOf, waitMs: 60_000 })).toMatchObject({ delegation: { outcome: 'failed' } })
+  })
+
   it('counts a start whose answer was lost, sends nothing again, and reads it exactly when the host is back', async () => {
     let lose = true
     const mac = host(() => { if (lose) throw new Error('The socket closed.'); return { status: 'ok', delegation: { id: THERE, thread: 'child-mac', outcome: 'answered' } } })
