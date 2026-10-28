@@ -1718,6 +1718,8 @@ private struct ReplyDock: View, Equatable {
     @FocusState private var focused: Bool
     @Environment(\.sottoTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var sent = 0
+    @State private var stopped = 0
 
     var body: some View {
         VStack(spacing: Space.s2) {
@@ -1833,6 +1835,7 @@ private struct ReplyDock: View, Equatable {
             .frame(maxWidth: .infinity, alignment: .leading)
             trailingButtons
         }
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: model.canInterrupt(ref))
         .padding(6)
         .glass(in: shape)
         .overlay(shape.strokeBorder(theme.color(.accent).opacity(focused ? 0.55 : 0), lineWidth: 1))
@@ -1852,12 +1855,12 @@ private struct ReplyDock: View, Equatable {
         let stops = model.canInterrupt(ref)
         let written = !(model.drafts[ref.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.photos(ref).isEmpty
             || !model.files(ref).isEmpty
-        if stops { stopButton }
-        if !stops || written { sendButton }
+        if stops { stopButton.transition(.scale(scale: 0.8).combined(with: .opacity)) }
+        if !stops || written { sendButton.transition(.scale(scale: 0.8).combined(with: .opacity)) }
     }
 
     private var stopButton: some View {
-        Button { Task { await model.interrupt(ref) } } label: {
+        Button { stopped += 1; Task { await model.interrupt(ref) } } label: {
             RoundedRectangle(cornerRadius: 3.5, style: .continuous)
                 .frame(width: 13, height: 13)
                 .frame(width: 44, height: 44)
@@ -1867,6 +1870,7 @@ private struct ReplyDock: View, Equatable {
                 .contentShape(Circle())
         }
         .buttonStyle(PressStyle())
+        .sensoryFeedback(.impact(weight: .medium), trigger: stopped)
         .accessibilityLabel("Stop this turn")
     }
 
@@ -1875,7 +1879,7 @@ private struct ReplyDock: View, Equatable {
         let preparing = model.preparingSends.contains(ref.id)
         let canSend = model.canSendReply(ref)
         let queues = model.queuesReply(ref)
-        return Button { Task { await model.send(ref) } } label: {
+        return Button { sent += 1; Task { await model.send(ref) } } label: {
             Group {
                 if preparing { ProgressView().tint(Palette.onAccent) }
                 else { Image(systemName: queues ? "text.badge.plus" : "arrow.up").font(.system(size: 17, weight: .semibold)) }
@@ -1886,6 +1890,7 @@ private struct ReplyDock: View, Equatable {
             .contentShape(Circle())
         }
         .buttonStyle(PressStyle())
+        .sensoryFeedback(.impact(flexibility: .soft), trigger: sent)
         .disabled(!canSend)
         .accessibilityLabel(queues ? (preparing ? String(localized: "Queuing reply") : String(localized: "Queue for after this turn")) : (preparing ? String(localized: "Sending reply") : String(localized: "Send reply")))
     }
@@ -2012,6 +2017,7 @@ struct RequestSheet: View {
     @State private var answers: [String: QuestionAnswer] = [:]
     @State private var choice: String?
     @State private var text = ""
+    @State private var answered = 0
     /// Questions whose own-answer box is open.
     @State private var writing: Set<String> = []
     /// The question's page open in the in-app browser over the sheet (ADR-0085).
@@ -2046,6 +2052,7 @@ struct RequestSheet: View {
         .presentationCornerRadius(Radius.xl)
         .onChange(of: current == nil && !model.hasPending(at: place)) { _, gone in if gone { dismiss() } }
         .sheet(item: $opening) { row in SafariPage(url: row.url).ignoresSafeArea() }
+        .sensoryFeedback(.impact(flexibility: .soft), trigger: answered)
     }
 
     @ViewBuilder private func content(_ current: AgentRequest, threadTitle: String, providerID: String?) -> some View {
@@ -2200,7 +2207,10 @@ struct RequestSheet: View {
     }
 
     /// Sends against the request as the computer holds it now, never the copy the sheet opened with.
-    private func send(_ current: AgentRequest, choice: String) { Task { await model.answer(current, at: place, choice: choice) } }
+    private func send(_ current: AgentRequest, choice: String) {
+        answered += 1
+        Task { await model.answer(current, at: place, choice: choice) }
+    }
 
     /// Allow once first, then the other allows, then deny and the rest.
     private static func rank(_ choice: PermissionChoice) -> Int {
@@ -2368,6 +2378,7 @@ struct RequestSheet: View {
     }
 
     private func sendAnswer(_ current: AgentRequest) {
+        answered += 1
         focus = nil
         Task {
             if current.questions?.isEmpty == false { await model.answer(current, at: place, answers: answers) }
