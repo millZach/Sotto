@@ -12,7 +12,7 @@ import { clockLabel } from '../agents/threadFacts'
 import { DelegatedThreadRow, useDelegatedRoster, type DelegatedRosterSource } from './DelegatedThreads'
 import { machineCount, mixedRoster, rosterByMachine, rosterCounts, rosterMachine, THIS_COMPUTER, type RosterBlock, type RosterMachineGroup } from './delegatedRoster'
 import { useOwlFeature } from '../state/owlFeature'
-import { checkMachineName, useWaitingChecks, WaitingCheckRow } from './WaitingChecks'
+import { checkMachineName, useCheckRowHandover, useWaitingChecks, WaitingCheckRow } from './WaitingChecks'
 import { elapsedLabel } from './rosterTime'
 import './agentsSurface.css'
 
@@ -282,6 +282,8 @@ export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuat
   }, [store, threadId, rosterSignal])
   const [page, setPage] = useState<{ threadId: string; id: string } | null>(null)
   const surface = useRef<HTMLDivElement>(null)
+  // A waiting check's row hands focus and its open details on as it goes (#1312).
+  const checkRowLeft = useCheckRowHandover(surface)
   // Focus moves only after the user opens or leaves a workflow page, never when a thread switch or reset does it.
   const focusNext = useRef<{ back: true } | { row: string } | null>(null)
   useEffect(() => { setPage(null) }, [threadId])
@@ -332,7 +334,7 @@ export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuat
     <div className="subagents-roster">
       {open ? <WorkflowPage key={`${state.resetVersion}:${open.id}`} threadId={threadId} row={open} agents={pageAgents} bridge={bridge} /> : <>
         {waitingChecks.length && onOpenThread ? <ul className="subagents-list" data-mixed="" aria-label={t`Checks waiting their turn`}>{waitingChecks.map(waiting => <WaitingCheckRow
-          key={`check:${waiting.check.id}`} waiting={waiting} machine={checkMachineName(delegation?.state, waiting, t`This computer`, t`Remote host`)} threadOf={threadOf} />)}</ul> : null}
+          key={`check:${waiting.check.id}`} waiting={waiting} machine={checkMachineName(delegation?.state, waiting, t`This computer`, t`Remote host`)} threadOf={threadOf} onLeave={checkRowLeft} />)}</ul> : null}
         {!roster.length && !blocks && !state.error && !waitingChecks.length ? <div className="subagents-empty"><Users size={25} aria-hidden="true" /><p className="tt-paragraph">{state.loading ? t`Loading agents…` : t`No agents spawned in this thread yet.`}</p></div> : null}
         {grouped && onOpenThread
           // A heading per machine with its count, and that machine's delegated threads under it (#1310, variant B).
