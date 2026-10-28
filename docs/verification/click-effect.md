@@ -12,7 +12,7 @@ npm run build
 SOTTO_E2E_EVIDENCE=publish npx playwright test tests/e2e/click-effect.spec.ts
 ```
 
-The full suite runs in CI on the pull request, not on this machine.
+The full suite and `npm run notices:verify` run in CI on GitHub, as Zach asked for this work; this laptop runs only targeted checks.
 
 ## The waves in the running app
 
@@ -28,15 +28,17 @@ The spec also checks, in dark and light:
 - the water calms, the canvas is cleared, and no frame is drawn after that;
 - the canvas is hidden from assistive technology.
 
+In a separate test, a theme changed while waves run (dark to light) changes the ink the waves are drawn in within a few frames, while they keep running.
+
 In one Owl run, turning `clickEffect` off through the settings bridge takes the canvas away and the saved setting reads back off, so the switch is on the patch allow-list. A stable run and an Owl run with reduced motion have no canvas at all.
 
 ## Watcher's margin
 
-`watcher-margin-press-dark.png` holds Watcher's room just after a press in the open left margin with the click effect on. The waves run under the night scene, which draws over them unchanged, and the scene's own ripple is not sent: the night scene drew 0 ripple cells behind the column. With motion reduced and the effect still chosen, the same press showed nothing: no canvas and 0 ripple cells. With the click effect turned off it sent the ripple as before, 1,089 cells behind the column. Those were one-off runs, not a kept spec. The existing column spec (`tests/e2e/watcher-column.spec.ts`) keeps the ripple's contrast check, since the design profile leaves the click effect off.
+`watcher-margin-press-dark.png` holds Watcher's room just after a press in the open left margin with the click effect on. The waves run under the night scene in the margin, which draws over them unchanged, and none are drawn under the column or the header, where the scene already spends what the words allow: the click effect's canvas had 0 lit pixels across the column and 30,565 in the left margin. The scene's own ripple is not sent: the night scene drew 0 ripple cells behind the column. With motion reduced and the effect still chosen, the same press showed nothing: no canvas and 0 ripple cells. With the click effect turned off it sent the ripple as before, 1,089 cells behind the column. Those were one-off runs, not a kept spec. The existing column spec (`tests/e2e/watcher-column.spec.ts`) keeps the ripple's contrast check, since the design profile leaves the click effect off.
 
 ## Contrast
 
-The glyphs go no stronger than leaves every word over them at 4.5:1 (ADR-0156, decision 2). In one Owl run each built-in theme, dark and light (t3-code, hush, citrine, graphite, clay and fern), was saved in turn and a press read the ceiling the canvas took: 0.35 in all twelve, against the prototype's 0.65. The spec checks the ceiling is above nothing and no more than 0.65. The frames above are at that ceiling.
+The glyphs go no stronger than leaves every word over them at 4.5:1 (ADR-0156, decision 2), links pointed at included (`--tt-primary-hover`), since the second review measured a hovered link at 4.38:1 without it. In one Owl run each built-in theme, dark and light (t3-code, hush, citrine, graphite, clay and fern), was saved in turn and a press read the ceiling the canvas took: 0.35 in all twelve, against the prototype's 0.65. The spec checks the ceiling is above nothing and no more than 0.65. The frames above are at that ceiling.
 
 ## Cost
 

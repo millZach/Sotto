@@ -3,6 +3,7 @@ import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ClickEffect } from '../../../src/renderer/src/components/ClickEffect'
+import { AppShell } from '../../../src/renderer/src/components/AppShell'
 import type { AppSettings } from '../../../src/shared/settings'
 
 // The effect is an Owl feature (ADR-0072); each test says whether this build has it, what the settings say and whether
@@ -81,6 +82,16 @@ describe('the click effect', () => {
     pressAt(container.querySelector('button')!, 300, 200)
     await frames(6)
     expect(drawn).toBeGreaterThan(0)
+  })
+
+  it('marks the shell while its layer is there, so the shell stacks it under the page, and never otherwise', () => {
+    const shell = (): Element | null => render(<AppShell navigation={null} platform="win32">room</AppShell>).container.querySelector('.app-shell')
+    expect(shell()?.hasAttribute('data-click-effect')).toBe(true)
+    expect(document.querySelector('.app-shell > canvas.click-effect')).not.toBeNull()
+    cleanup()
+    gate.settings = { clickEffect: false }
+    expect(shell()?.hasAttribute('data-click-effect')).toBe(false)
+    expect(document.querySelector('canvas.click-effect')).toBeNull()
   })
 
   it('sends no waves for a press in a composer', async () => {

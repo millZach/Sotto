@@ -21,13 +21,33 @@ interface Ink {
   readonly ceiling: number
 }
 
+/** A part of the window, in CSS pixels, where no glyph is drawn. */
+interface Rect { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number }
+
 /**
- * The click effect (ADR-0156): a press anywhere in the main window sends waves of 0s and 1s in the theme's accent through
- * the room behind it; a press in a composer sends none. The canvas lies under the window's content, over only the room's own background, so a card, a
- * bubble or the composer sits over the waves and nothing pressed is ever covered; it never takes the pointer either. Its
- * glyphs are never stronger than leaves every word written over them at 4.5:1 against the room. It exists only while the
- * effect is on, draws only while the water moves, and clears itself and stops when the water is calm, the window is
- * hidden or the effect goes.
+ * Where Watcher's night scene already spends what the words over it allow (ADR-0126): the conversation's column and the
+ * header above it. Waves drawn under the scene's glyphs there would add to them, so none are; the margins keep theirs.
+ */
+function sceneColumn(): readonly Rect[] {
+  const pane = document.querySelector<HTMLElement>('.watcher-pane')
+  if (pane?.querySelector(':scope > .watcher-scene--land') == null) return []
+  const room = pane.getBoundingClientRect()
+  const card = pane.querySelector(':scope > .thread-workspace__compose > .thread-prompt')?.getBoundingClientRect()
+  const header = Math.max(room.top, ...[...pane.querySelectorAll(':scope > :is(.watcher-head, .watcher-glance)')].map(band => band.getBoundingClientRect().bottom))
+  return [
+    { left: room.left, top: room.top, right: room.right, bottom: header },
+    ...card === undefined ? [] : [{ left: card.left, top: room.top, right: card.right, bottom: room.bottom }],
+  ]
+}
+
+/**
+ * The click effect (ADR-0156): a press anywhere in the main window but a composer sends waves of 0s and 1s in the theme's
+ * accent through the room behind it. The canvas lies under the window's content, over only the room's own background, so
+ * a card, a bubble or the composer sits over the waves and nothing pressed is ever covered; it never takes the pointer
+ * either. Its glyphs are never stronger than leaves every word written over them at 4.5:1 against the room, and none are
+ * drawn where Watcher's night scene already spends that. A theme change takes effect in the next frame. It exists only
+ * while the effect is on, draws only while the water moves, and clears itself and stops when the water is calm, the
+ * window is hidden or the effect goes.
  */
 export function ClickEffect(): ReactNode {
   return useClickEffectOn() ? <ClickEffectLayer /> : null
@@ -43,6 +63,9 @@ function ClickEffectLayer(): ReactNode {
     const pixel = Object.assign(document.createElement('canvas'), { width: 1, height: 1 }).getContext('2d', { willReadFrequently: true })
     let water: ClickWater | null = null
     let ink: Ink | null = null
+    /** The ink and the quiet column are read again before the next frame: a run starts, or the theme changed. */
+    let stale = true
+    let quiet: readonly Rect[] = []
     let request: number | null = null
     let last = 0
     /** Time owed to the water since the last step, in milliseconds. */
@@ -66,18 +89,19 @@ function ClickEffectLayer(): ReactNode {
 
     /**
      * The ink for the theme in force, read once as a run starts: the accent (the canvas's outline), the words' colours (its
-     * borders: the text, its secondary and muted tiers, and links) and the room's surface under them, as the night scene
+     * borders and column rule: the text, its secondary and muted tiers, and links at rest and pointed at) and the room's
+     * surface under them, as the night scene
      * reads its own (ADR-0126). The glyphs go no stronger than leaves every one of those words at 4.5:1 over a glyph.
      */
     const inkNow = (): Ink => {
       const style = getComputedStyle(canvas)
       const scale = dpr()
       const shell = canvas.parentElement ?? document.body
-      const key = [style.outlineColor, style.borderTopColor, style.borderRightColor, style.borderBottomColor, style.borderLeftColor,
+      const key = [style.outlineColor, style.borderTopColor, style.borderRightColor, style.borderBottomColor, style.borderLeftColor, style.columnRuleColor,
         getComputedStyle(shell).backgroundColor, style.fontFamily, scale].join('|')
       if (ink?.key === key) return ink
       const accent = pixel === null ? null : toRgb(style.outlineColor, pixel)
-      const words = pixel === null ? [] : [style.borderTopColor, style.borderRightColor, style.borderBottomColor, style.borderLeftColor]
+      const words = pixel === null ? [] : [style.borderTopColor, style.borderRightColor, style.borderBottomColor, style.borderLeftColor, style.columnRuleColor]
         .map(value => toWord(value, pixel)).filter((word): word is Word => word !== null)
       const surface = pixel === null || words[0] === undefined ? null : surfaceOf(shell, pixel, words[0])
       // Colours that cannot be read draw nothing rather than risk a word.
@@ -98,7 +122,7 @@ function ClickEffectLayer(): ReactNode {
         return sprite
       }
       ink = { key, digits: [draw('0'), draw('1')], ceiling }
-      if (counted) canvas.dataset.clickEffectCeiling = String(ceiling)
+      if (counted) { canvas.dataset.clickEffectCeiling = String(ceiling); canvas.dataset.clickEffectInk = style.outlineColor }
       return ink
     }
 
@@ -112,7 +136,7 @@ function ClickEffectLayer(): ReactNode {
 
     const frame = (now: number): void => {
       request = null
-      if (water === null || ink === null) return
+      if (water === null) return
       // Steps are owed by the clock, not by frames, so the waves keep their speed and their cost on any display.
       owed += now - last
       last = now
@@ -122,10 +146,12 @@ function ClickEffectLayer(): ReactNode {
       for (let step = 0; step < Math.min(due, MAX_STEPS); step++) water.step()
       water.age(due - MAX_STEPS)
       if (water.calm) { stop(); return }
+      if (stale || ink === null) { ink = inkNow(); quiet = sceneColumn(); stale = false }
       const { digits, ceiling } = ink
       const width = GLYPH_W * 1.4, height = GLYPH_H, strength = ceiling / GLYPH_ALPHA
       ctx.clearRect(0, 0, water.width, water.height)
       const stamped = water.draw((digit, x, y, alpha) => {
+        if (quiet.some(rect => x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom)) return
         ctx.globalAlpha = alpha * strength
         ctx.drawImage(digits[digit], x - width / 2, y - height / 2, width, height)
       })
@@ -141,7 +167,7 @@ function ClickEffectLayer(): ReactNode {
       if (event.target instanceof Element && event.target.closest(QUIET) !== null) return
       waterNow().press(event.clientX, event.clientY)
       if (request !== null) return
-      inkNow()
+      stale = true
       last = performance.now()
       owed = STEP_MS
       request = requestAnimationFrame(frame)
@@ -155,11 +181,15 @@ function ClickEffectLayer(): ReactNode {
       stop()
       water = null
     }
+    // A theme or mode change is read again before the next frame, so waves already running take the new accent.
+    const theme = new MutationObserver(() => { stale = true })
+    theme.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'data-theme', 'data-theme-id'] })
     window.addEventListener('pointerdown', press, { capture: true, passive: true })
     window.addEventListener('resize', resized)
     const unwatchResolution = watchResolution(resized)
     document.addEventListener('visibilitychange', hidden)
     return () => {
+      theme.disconnect()
       window.removeEventListener('pointerdown', press, { capture: true })
       window.removeEventListener('resize', resized)
       unwatchResolution()

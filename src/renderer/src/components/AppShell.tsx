@@ -17,6 +17,7 @@ import { SottoMark } from './SottoMark'
 import { WindowControls } from './WindowControls'
 import { MainFreezeNotice } from '../features/performance/MainFreezeNotice'
 import { ClickEffect } from './ClickEffect'
+import { useClickEffectOn } from '../state/clickEffect'
 
 type ManagementNavigation = Exclude<AppNavigation, 'onboarding'>
 
@@ -231,11 +232,13 @@ export function AppShell({
   // slots where a layout has none: the room keeps its position, so a page that hands the window over
   // (Threads) and one beside the sidebar (Dictate) swap without remounting what lives inside the room, and
   // the memory surface's dismissal survives.
+  // While the click effect's layer is there the shell wears its mark, and stacks it under the page (clickEffect.css).
+  const clickEffect = useClickEffectOn()
   const page = layout === 'page'
   const beside = layout === 'sidebar'
   const shellClass = page ? 'app-shell app-shell--page' : beside ? 'app-shell app-shell--sidebar' : management ? 'app-shell' : 'app-shell app-shell--bare'
   return (
-    <div className={shellClass} data-platform={platform}>
+    <div className={shellClass} data-platform={platform} data-click-effect={clickEffect || undefined}>
       <ClickEffect />
       {page || beside ? null : (
         <header className={nativeWindowControls ? 'app-strip app-strip--mac' : 'app-strip'}>

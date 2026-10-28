@@ -99,6 +99,20 @@ test.describe('the click effect', () => {
     })
   }
 
+  test('a theme changed while waves run takes the new accent in the next frames', async () => {
+    await onReleaseTrack('owl', () => withSotto(launchOptions('dark'), async ({ page }) => {
+      await openConversation(page)
+      await expect.poll(() => running(page), { timeout: 30_000 }).toBe(false)
+      const at = await openSpace(page, 0.4)
+      await page.mouse.click(at.x, at.y)
+      await expect.poll(() => running(page)).toBe(true)
+      const before = await layer(page).evaluate(canvas => (canvas as HTMLCanvasElement).dataset.clickEffectInk)
+      await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'light' }))
+      await expect.poll(() => layer(page).evaluate(canvas => (canvas as HTMLCanvasElement).dataset.clickEffectInk)).not.toBe(before)
+      expect(await running(page)).toBe(true)
+    }))
+  })
+
   test('the switch in Settings turns it off, and the setting is saved', async () => {
     await onReleaseTrack('owl', () => withSotto(launchOptions('dark'), async ({ page }) => {
       await openConversation(page)
