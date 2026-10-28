@@ -14,7 +14,7 @@
 .thread-followups > * { flex: none; }
 .thread-followups__top { position: sticky; top: 0; z-index: 1; display: flow-root; background: var(--followups-surface); }
 .thread-followups__head { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 28px; margin-bottom: 2px; }
-.thread-followups__toggle { display: flex; flex: 0 1 auto; align-items: center; gap: 5px; min-width: 0; min-height: 28px; margin-left: -4px; padding: 0 6px 0 4px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.thread-followups__toggle { display: flex; flex: 0 1 auto; align-items: center; gap: 5px; min-width: 0; min-height: 28px; margin-left: -4px; padding: 0 6px 0 4px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; text-align: left; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .thread-followups__toggle:hover { background: var(--tt-hover); color: var(--tt-text); }
 .thread-followups__toggle > svg { flex: none; }
 .thread-followups__label { flex: none; }
@@ -85,7 +85,7 @@
 .composer-picker__foot[data-message] { min-height: 40px; }
 .composer-picker__notes .composer-picker__message { font-size: 14px; line-height: 1.45; }
 .composer-picker__notes .composer-picker__message:not([data-tone]) { color: var(--tt-text-2); }
-.composer-picker__refresh { display: inline-flex; flex: none; align-items: center; gap: 6px; min-height: 32px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 14px; cursor: pointer; }
+.composer-picker__refresh { display: inline-flex; flex: none; align-items: center; gap: 6px; min-height: 32px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 14px; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .composer-picker__refresh:hover:not(:disabled) { background: var(--threads-hover); color: var(--tt-text); }
 .composer-picker__refresh:disabled { cursor: default; }
 
