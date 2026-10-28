@@ -75,6 +75,11 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   questionPageOpened?(token: string): void
   /** Where a remote host serves a question page, as this computer's browser reaches it (ADR-0085). */
   pageAddress?(token: string): string | undefined
+  /**
+   * The client ID a remote host knows this computer by, as its hello authenticated it: how that host names this computer's
+   * threads that delegated to its threads (`relay:<client>:<caller>`, #1316 part 3).
+   */
+  clientId?: string
 }
 
 /**
@@ -785,13 +790,16 @@ export class DesktopHostRouter {
   private build(read: (connection: DesktopHostConnection) => AgentState, publish = false): AgentState {
     this.settleAnswerNotice()
     const multiple = this.hosts.size > 1
-    // A host's thread that this computer's own thread delegated to names it by this computer's own ID (#1316 part 3).
+    // With Work across machines on, a delegated thread's link to the thread that delegated to it is keyed on whichever
+    // machine that thread runs (#1316 part 3): a host's thread that this computer's own thread delegated to names it by
+    // this computer's own ID, under the client ID that host knows this computer by. Stable keys every link by its own host.
+    const across = this.options.crossMachineWork === true
     let desktopHostId: string | undefined
-    for (const { connection } of this.hosts.values()) if (connection.kind === 'local') desktopHostId = connection.hostId
+    if (across) for (const { connection } of this.hosts.values()) if (connection.kind === 'local') desktopHostId = connection.hostId
     const entries = [...this.hosts.values()].map(({ connection }) => {
       const original = this.visibleState(read(connection), connection.hostId)
       const last = this.built.get(connection.hostId)
-      const projection = projectClientAgentState(original, last?.projection, desktopHostId)
+      const projection = projectClientAgentState(original, last?.projection, across ? { desktopHostId, clientId: connection.clientId } : undefined)
       const threads = this.windowThreads(connection, original, projection.output, multiple, last)
       if (publish) this.built.set(connection.hostId, { projection, threads })
       return { connection, original, state: projection.output, threads: threads.made, remade: threads.remade, before: last?.threads.made }

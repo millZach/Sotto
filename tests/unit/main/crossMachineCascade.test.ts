@@ -19,7 +19,7 @@ function host(hostId: string, kind: 'local' | 'remote', name: string, threads: P
   state.host.threads = threads.map(thread => ({ projectId: 'project', title: 'Task', modelId: '', status: 'idle', messages: [], requests: [], id: 'thread', ...thread }) as AgentThread)
   const command = vi.fn(async (_input: AgentCommand) => { void _input; return state })
   let available = true
-  const connection: DesktopHostConnection = { hostId, name, kind, available: () => available,
+  const connection: DesktopHostConnection = { hostId, name, kind, available: () => available, ...kind === 'remote' ? { clientId: 'desktop-a' } : {},
     service: { shell: () => state, subscribe: () => () => undefined, command }, detail: async threadId => ({ threadId, revision: 1, messages: [] }), observe: async () => undefined, preview: () => null }
   return { state, command, connection, away: () => { available = false } }
 }
@@ -47,6 +47,19 @@ describe('Stop, Settle and Restore across machines', () => {
       // The window's Stop goes to the thread's own machine alone; delegation reaches the rest.
       expect(forge.command).not.toHaveBeenCalled()
     } finally { router.dispose() }
+  })
+
+  it('keys each child under the thread that delegated to it, on whichever machine, only for this desktop\'s own callers', () => {
+    const { router } = machines()
+    try {
+      expect(router.get().host.threads.map(thread => [thread.id, thread.delegatedBy])).toEqual([[parentKey, undefined],
+        [hostEntityKey(FORGE, 'check'), parentKey], [hostEntityKey(MAC, 'mac-check'), hostEntityKey(FORGE, 'check')]])
+    } finally { router.dispose() }
+    // Another desktop's thread of the same ID is not this one's: its child stays keyed under its own host.
+    const other = machines(true, {}, { forge: { delegatedBy: 'relay:desktop-b:parent' } })
+    try {
+      expect(other.router.get().host.threads.find(thread => thread.id === hostEntityKey(FORGE, 'check'))?.delegatedBy).toBe(hostEntityKey(FORGE, 'relay:desktop-b:parent'))
+    } finally { other.router.dispose() }
   })
 
   it('says nothing of a thread that was not working when last read', async () => {
@@ -79,6 +92,11 @@ describe('Stop, Settle and Restore across machines', () => {
   it('does none of it in stable', async () => {
     const { router, forge, mac } = machines(false)
     try {
+      // Saved Owl links are kept as they are and keyed by their own host, as before: each child keeps its own row.
+      const links = router.get().host.threads.map(thread => [thread.id, thread.delegatedBy])
+      expect(links).toEqual([[parentKey, undefined], [hostEntityKey(FORGE, 'check'), hostEntityKey(FORGE, 'relay:desktop-a:parent')],
+        [hostEntityKey(MAC, 'mac-check'), hostEntityKey(MAC, `relay:desktop-a:${hostEntityKey(FORGE, 'check')}`)]])
+      expect(forge.state.host.threads[0]!.delegatedBy).toBe('relay:desktop-a:parent')
       forge.away(); mac.away()
       expect((await router.command({ type: 'interrupt', threadId: parentKey }, desktopWindowClient())).error).toBeNull()
       await router.command({ type: 'settle-thread', threadId: parentKey }, desktopWindowClient())
