@@ -369,9 +369,9 @@ export class BrowserService extends ToolOperations {
     this.desiredPageId[slot] = request.pageId
     this.setBounds(record, window, request.bounds)
     const detach = (): void => this.detach()
-    // A hidden or minimized window shows no page, and the window's own frame loop stops while it is hidden. A start
-    // still being checked is made stale too, so it cannot finish on the hidden window.
-    const hidden = (): void => { this.pointRequests.set(record.page.id, ++this.pointSessions); this.endPoint(record, 'hidden') }
+    // A hidden or minimized window shows no page, and the window's own frame loop stops while it is hidden. Ending it
+    // makes a start still being checked stale too, so it cannot finish on the hidden window.
+    const hidden = (): void => this.endPoint(record, 'hidden')
     // Detach on host reload/crash so native content cannot obscure a recovered app screen.
     window.webContents.on('did-start-loading', detach)
     window.webContents.on('render-process-gone', detach)
@@ -676,6 +676,9 @@ export class BrowserService extends ToolOperations {
   }
   /** Point mode off. `reason` tells the window why, when it was not the window's own doing. */
   private endPoint(record: PageRecord, reason: PointEnd | null): void {
+    // Whatever ends pointing, a navigation, a hide or Off, also makes a start still being checked for this page stale,
+    // so it cannot turn the overlay on once it is checked.
+    if (this.pages.has(record.page.id)) this.pointRequests.set(record.page.id, ++this.pointSessions)
     const point = record.point
     if (!point) return
     record.point = null

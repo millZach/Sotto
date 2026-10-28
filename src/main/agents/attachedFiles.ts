@@ -138,15 +138,21 @@ export function stripAttachedFilesNote(text: string): string {
 }
 
 /**
- * Whether a message's recorded attachments include a file that is not an image, or Point at something's picture:
- * the only messages Sotto adds a note to.
+ * A message's attachments, as far as reading its notes back needs them: a sent message's record marks Point at
+ * something's picture `pointed`, and a handle on its way to the provider still carries the picture's `browserFeedback`.
  */
-export function carriesAttachedFiles(attachments: readonly { readonly mimeType: string; readonly pointed?: true | undefined }[] | undefined): boolean {
-  return attachments?.some(attachment => !isImageAttachment(attachment.mimeType) || attachment.pointed === true) ?? false
+export type RecordedAttachments = readonly { readonly mimeType: string; readonly pointed?: true | undefined; readonly browserFeedback?: unknown }[]
+/** Whether an attachment is Point at something's picture, whose feedback block Sotto appends (ADR-0154). */
+const isPointed = (attachment: RecordedAttachments[number]): boolean => attachment.pointed === true || attachment.browserFeedback !== undefined
+
+/**
+ * Whether a message's attachments, recorded or still on their way, include a file that is not an image, or Point at
+ * something's picture: the only messages Sotto adds a note to.
+ */
+export function carriesAttachedFiles(attachments: RecordedAttachments | undefined): boolean {
+  return attachments?.some(attachment => !isImageAttachment(attachment.mimeType) || isPointed(attachment)) ?? false
 }
 
-/** A message's recorded attachments, as far as reading its notes back needs them. */
-type RecordedAttachments = readonly { readonly mimeType: string; readonly pointed?: true | undefined }[]
 /** The last block at the end of a text, a files note or a feedback block, with the one separator before it. */
 const LAST_BLOCK = new RegExp(`(?:\\n\\n|\\n)?(?:${NOTE_BODY}|${FEEDBACK_BODY})\\s*$`, 'u')
 
@@ -157,7 +163,7 @@ const LAST_BLOCK = new RegExp(`(?:\\n\\n|\\n)?(?:${NOTE_BODY}|${FEEDBACK_BODY})\
  */
 function appendedNotes(attachments: RecordedAttachments): RegExp | null {
   const blocks = [...(attachments.some(attachment => !isImageAttachment(attachment.mimeType)) ? [NOTE_BODY] : []),
-    ...attachments.filter(attachment => attachment.pointed === true).map(() => FEEDBACK_BODY)]
+    ...attachments.filter(isPointed).map(() => FEEDBACK_BODY)]
   return blocks.length ? new RegExp(`(?:\\n\\n|\\n)?${blocks.join('\\n\\n')}\\s*$`, 'u') : null
 }
 

@@ -4,7 +4,8 @@ import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { ClaudeSessionLog } from '../../../src/main/agents/claudeSessionLog'
+import { ClaudeSessionLog, claudeUserText } from '../../../src/main/agents/claudeSessionLog'
+import { browserFeedbackNote } from '../../../src/main/agents/attachedFiles'
 import type { ClaudeFrame } from '../../../src/main/agents/claudeProtocol'
 
 const roots: string[] = []
@@ -107,5 +108,21 @@ describe('Claude session log cursor', () => {
     resumed.resume(cursor)
     await resumed.poll()
     expect(second.map(frame => (frame.message as { content: string }).content)).toEqual(['Only'])
+  })
+})
+
+describe('a Claude prompt read back with Point at something feedback (ADR-0154)', () => {
+  const picture = { name: 'button · Sign in', mimeType: 'image/png', browserFeedback: { label: 'button · Sign in', comment: 'Match the header', context: 'Selector: #sign-in' } }
+  const handwritten = '<sotto-browser-feedback>\nI typed this myself.\n</sotto-browser-feedback>'
+  const recorded = [{ mimeType: 'image/png', pointed: true as const }]
+  it('takes off only the block Sotto appended for that prompt, and keeps one the user wrote', () => {
+    const note = browserFeedbackNote([picture])
+    // As Claude Code is sent it: the picture, the user's words (here only a block they typed), then Sotto's note.
+    const content = [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AA==' } }, { type: 'text', text: handwritten }, { type: 'text', text: note }]
+    expect(claudeUserText(content, recorded)).toBe(handwritten)
+    // A prompt sent as one text keeps the user's block too.
+    expect(claudeUserText(`Look\n\n${handwritten}\n\n${note}`, recorded)).toBe(`Look\n\n${handwritten}`)
+    // With no picture recorded, Sotto appended nothing, so nothing comes off.
+    expect(claudeUserText([{ type: 'text', text: 'Look' }, { type: 'text', text: handwritten }], [{ mimeType: 'image/png' }])).toBe(`Look\n${handwritten}`)
   })
 })

@@ -1904,11 +1904,14 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (frame.type === 'user' && !authoredClaudeUser(frame)) return
     const alias = this.aliases[id]!; const uuid = typeof frame.uuid === 'string' ? frame.uuid : ''
     let origin = alias.origins.find(value => value.uuid === uuid)
-    // A prompt's words without the note naming its attached files, only when the origin it matches recorded one (ADR-0131).
-    const words = frame.type === 'user' ? claudeUserText(message?.content) : text
-    if (words !== text) {
-      const owner = origin ?? (fromLog ? this.unreadOrigin(id, claudeDigest(words)) : undefined)
-      if (owner && carriesAttachedFiles(owner.attachments)) { text = words; origin = owner }
+    // A prompt's words without the notes Sotto appended, only when the origin it matches recorded an attached file or
+    // a Point at something picture, and only the notes Sotto appended for that origin (ADR-0131, ADR-0154). Every
+    // note-shaped block comes off to find the origin by digest; the origin's attachments then say which were Sotto's.
+    const candidate = frame.type === 'user' ? claudeUserText(message?.content) : text
+    if (candidate !== text) {
+      const owner = origin ?? (fromLog ? this.unreadOrigin(id, claudeDigest(candidate)) : undefined)
+      const words = owner && carriesAttachedFiles(owner.attachments) ? claudeUserText(message?.content, owner.attachments ?? []) : text
+      if (owner && words !== text) { text = words; origin = owner }
     }
     const digest = claudeDigest(text)
     if (fromLog && frame.type === 'user') {

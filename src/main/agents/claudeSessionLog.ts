@@ -3,7 +3,7 @@ import { open, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import { CLAUDE_MAX_FRAME_BYTES, object, type ClaudeFrame } from './claudeProtocol'
-import { isAttachedFilesNote, stripAttachedFilesNote } from './attachedFiles'
+import { carriesAttachedFiles, isAttachedFilesNote, stripAppendedNotes, stripAttachedFilesNote, type RecordedAttachments } from './attachedFiles'
 
 export const claudeDigest = (text: string): string => createHash('sha256').update(text).digest('hex')
 export function claudeText(content: unknown): string {
@@ -11,10 +11,21 @@ export function claudeText(content: unknown): string {
   return Array.isArray(content) ? content.map(block => object(block)).filter(block => block?.type === 'text').map(block => typeof block?.text === 'string' ? block.text : '').join('\n') : ''
 }
 /**
- * A user prompt's own words: its text blocks without the block naming its attached files, which Sotto sends apart from
- * them (ADR-0131), so a prompt reads back, and matches its origin's digest, as the user wrote it.
+ * A user prompt's own words: its text blocks without the block naming its attached files and its Point at something
+ * pictures, which Sotto sends apart from them (ADR-0131, ADR-0154), so a prompt reads back, and matches its origin's
+ * digest, as the user wrote it. Without `attachments`, every block in a note's shape is left out, which is enough to
+ * find the prompt's origin by its digest. With the origin's recorded `attachments`, only what Sotto appended for that
+ * message comes off: the last text block when it is exactly those notes, or that suffix of a prompt sent as one text,
+ * so a block the user wrote themselves stays.
  */
-export function claudeUserText(content: unknown): string {
+export function claudeUserText(content: unknown, attachments?: RecordedAttachments): string {
+  if (attachments) {
+    if (!Array.isArray(content)) return stripAppendedNotes(claudeText(content), attachments)
+    const last = content.findLastIndex(block => { const text = object(block); return text?.type === 'text' && typeof text.text === 'string' })
+    const note = last < 0 ? undefined : object(content[last])?.text
+    const appended = typeof note === 'string' && note !== '' && carriesAttachedFiles(attachments) && stripAppendedNotes(note, attachments) === ''
+    return claudeText(appended ? content.filter((_, index) => index !== last) : content)
+  }
   if (!Array.isArray(content)) return stripAttachedFilesNote(claudeText(content))
   return claudeText(content.filter(block => { const text = object(block); return !(text?.type === 'text' && typeof text.text === 'string' && isAttachedFilesNote(text.text)) }))
 }

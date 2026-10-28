@@ -240,6 +240,9 @@ describe('Point at something feedback travelling with its picture (ADR-0154)', (
     expect(isAttachedFilesNote(note)).toBe(true)
     expect(carriesAttachedFiles([{ mimeType: 'image/png', pointed: true }])).toBe(true)
     expect(carriesAttachedFiles([{ mimeType: 'image/png' }])).toBe(false)
+    // A handle on its way to the provider has no record yet; its feedback says the same, and the block it adds comes off.
+    expect(carriesAttachedFiles([pointed()])).toBe(true)
+    expect(stripAppendedNotes(sent, [pointed()])).toBe('Look at this')
   })
   it('takes off only the blocks Sotto appended for that message, never a block the user wrote', async () => {
     const { work } = await folders()

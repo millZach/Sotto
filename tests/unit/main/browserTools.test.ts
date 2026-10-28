@@ -869,6 +869,20 @@ describe('point at something (ADR-0154)', () => {
     expect(inspectModes(view)).not.toContain('searchForNode')
   })
 
+  it('makes a start still being checked stale when the page navigates, so Point never comes on for the new page', async () => {
+    const { service, target, view, files } = await browserFixture(true)
+    unwrap(await service.mount({ ...target, bounds }))
+    const real = files.resolveWorkspace.bind(files)
+    const checked = deferred<void>()
+    vi.spyOn(files, 'resolveWorkspace').mockImplementationOnce(async (...args) => { await checked.promise; return real(...args) })
+    const on = service.point({ ...target, on: true, color })
+    view.webContents.emit('did-start-navigation', {}, 'http://localhost:4321/next', false, true)
+    checked.resolve()
+    expect(unwrap(await on)).toEqual({ pointing: false })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(inspectModes(view)).not.toContain('searchForNode')
+  })
+
   it('turns the overlay back off when Off arrives while it is still being turned on (item 1)', async () => {
     const { service, target, view } = await browserFixture(true)
     unwrap(await service.mount({ ...target, bounds }))
