@@ -18,12 +18,13 @@ concurrency:
 jobs:
   testflight:
     name: Build and upload to TestFlight
-    runs-on: macos-26
+    # The iOS 27.1 SDK, the one the app is designed and captured against. Linked against an older SDK, iOS
+    # gives the app a window beside the Duo cover screen's strip, so its tab rail never shows (ADR-0151).
+    runs-on: xcode-27
     timeout-minutes: 45
     environment: testflight
     env:
-      # App Store Connect refuses builds made with an SDK older than iOS 26. Keep in step with ci.yml.
-      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4

@@ -507,6 +507,7 @@ private struct AboutPanel: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Sotto \(version)").font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
                 Text(connection).font(.sotto(.small)).foregroundStyle(Palette.muted)
+                Text(verbatim: layout).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
             }
         }
         .card()
@@ -520,6 +521,18 @@ private struct AboutPanel: View {
         let short = info?["CFBundleShortVersionString"] as? String ?? "?"
         guard let build = info?["CFBundleVersion"] as? String, !build.isEmpty else { return short }
         return "\(short) (\(build))"
+    }
+
+    /// The window against the screen and its safe area, read again when the size class changes, as folding the Duo
+    /// does. It tells whether the cover screen's strip is inside the window (ADR-0151).
+    @Environment(\.horizontalSizeClass) private var width
+    private var layout: String {
+        _ = width
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first,
+              let window = scene.keyWindow ?? scene.windows.first else { return "" }
+        let screen = scene.screen.bounds.size, frame = window.frame, inset = window.safeAreaInsets
+        func n(_ value: CGFloat) -> String { String(Int(value.rounded())) }
+        return "Window \(n(frame.width))×\(n(frame.height)) at \(n(frame.minX)),\(n(frame.minY)) on a \(n(screen.width))×\(n(screen.height)) screen. Safe area: top \(n(inset.top)), left \(n(inset.left)), bottom \(n(inset.bottom)), right \(n(inset.right))."
     }
 
     private var connection: String {
