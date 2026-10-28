@@ -176,7 +176,10 @@ describe('New Watcher', () => {
     native.requests = [{ id: 'watcher-card', kind: 'question', text: 'Which branch?', options: [],
       questions: [{ id: 'branch', question: 'Release from main or from release/1.4?', options: [{ id: 'main', label: 'main' }], multiSelect: false, allowFreeText: true }] }]
     await f.refresh()
-    expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.first.threadId, draftId: randomUUID(), text: 'Also tag it.' })).error).toBeNull()
+    const queuedDraft = randomUUID()
+    expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.first.threadId, draftId: queuedDraft, text: 'Also tag it.' })).error).toBeNull()
+    // Queued behind Watcher's turn, it is recorded as a continuation of the request that turn answers.
+    expect(f.service.state().requests.find(item => item.id === request.id)!.userFollowups?.map(item => item.draftId)).toContain(queuedDraft)
     expect(f.service.state().newWatcher).toBe('available')
     const interrupts = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'interrupt').length
     const before = interrupts()
@@ -192,6 +195,8 @@ describe('New Watcher', () => {
     expect(queue.find(item => item.text === 'Also tag it.')).toMatchObject({ threadId: next.threadId, status: 'paused',
       error: 'This was waiting for the last Watcher. Resume the queue to send it to this one, or remove it.' })
     expect(native.messages.some(message => message.text.includes('Also tag it.'))).toBe(false)
+    // It no longer continues the last Watcher's request: sent to the new one, it starts a request the new one's tools take.
+    expect(f.service.state().requests.some(item => item.userFollowups?.some(followup => followup.draftId === queuedDraft))).toBe(false)
     // The new Watcher's note says both, and the handover carries the question in its own words.
     expect(f.service.state().carried).toEqual({ questionClosed: true, moved: 1, unconfirmed: false, cannotStop: [] })
     const handover = f.service.readHandover()

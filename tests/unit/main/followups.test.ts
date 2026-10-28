@@ -886,3 +886,20 @@ it.each([false, true])('lets a Watcher queue go past old set-aside evidence (mis
   await vi.waitFor(() => expect(f.host.attempts.filter(command => command.type === 'send' && command.text === 'Automatic queued continuation')).toHaveLength(1))
   expect(f.host.attempts.filter(command => command.type === 'send' && command.text === 'Unconfirmed user prompt')).toHaveLength(missing ? 0 : 1)
 })
+
+it('moves a replaced Watcher’s unsent messages to the new one paused, keeping receipts within what the file holds (#1735)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-followups-')); roots.push(root)
+  const queue = new FollowupStore(root); await queue.load()
+  const enqueue = (threadId: string) => queue.enqueue({ threadId, draftId: randomUUID(), text: `Message ${randomUUID()}`, attachments: [] })
+  // A full queue moved from one Watcher to the next, again and again: more revisions than the saved file may hold.
+  for (let index = 0; index < 100; index++) await enqueue('watcher-0')
+  for (let round = 0; round < 7; round++) {
+    const moved = await queue.moveUserPrompts(`watcher-${round}`, `watcher-${round + 1}`, 'Moved.', 'Maybe arrived.')
+    expect(moved).toHaveLength(100)
+    expect(queue.peek().items.every(item => item.threadId === `watcher-${round + 1}` && item.status === 'paused' && item.error === 'Moved.')).toBe(true)
+  }
+  // What was saved loads again whole, rather than being read as damaged and dropped.
+  const reloaded = new FollowupStore(root); await reloaded.load()
+  expect(reloaded.peek().items).toHaveLength(100)
+  expect(reloaded.peek().items).toEqual(queue.peek().items)
+})

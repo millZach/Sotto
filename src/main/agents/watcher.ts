@@ -102,6 +102,8 @@ interface RoomReceipts {
   readonly hostId: string | undefined
   readonly reports: ReadonlyMap<string, boolean>
   readonly receipts: WatcherRoomState['receipts']
+  /** The operations not yet confirmed as gone, found in the same pass, for a new Watcher's handover (#1735). */
+  readonly pending: readonly WatcherOperation[]
 }
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 const nativeHead = (thread: AgentThread) => lastUserMessageIdOf(thread) ?? thread.summary?.lastUser?.id ?? null
@@ -1837,8 +1839,12 @@ export class WatcherService implements WatcherControlHooks {
     const reports = new Map<string, boolean>()
     const asked = (id: string) => { let answer = reports.get(id); if (answer === undefined) reports.set(id, answer = reportsOutcomes(id)); return answer }
     // Shared by every room built until it changes, so no reader may edit it.
-    const receipts = Object.freeze(operations.map(operation => { const outcome = this.outcomeOf(operation, asked); return outcome ? { ...operation, outcome } : operation })) as WatcherRoomState['receipts']
-    this.roomReceipted = { operations, hostId, reports, receipts }
+    const pending: WatcherOperation[] = []
+    const receipts = Object.freeze(operations.map(operation => {
+      if (operation.deliveryState === 'queued' || operation.deliveryState === 'dispatching' || operation.deliveryState === 'uncertain') pending.push(operation)
+      const outcome = this.outcomeOf(operation, asked); return outcome ? { ...operation, outcome } : operation
+    })) as WatcherRoomState['receipts']
+    this.roomReceipted = { operations, hostId, reports, receipts, pending }
     return receipts
   }
   /** The watched threads and what each waits on, in Sotto's words, for Watcher's state (#1189). */
@@ -1973,19 +1979,29 @@ export class WatcherService implements WatcherControlHooks {
     return carried && current && key(carried.to) === key(current.target) ? carried : null
   }
   /**
+   * What read_state works out from live data at its first page (#1274), and a new Watcher's handover tells it (#1735): the
+   * watched threads with their open pull requests, the merge queue, and what waits on the user, every host's.
+   */
+  private liveState() {
+    const watched = this.watchedState(this.state().watchedThreads, true), threads = this.stateThreads(watched.watching)
+    return { threads, waiting: watched.waiting, mergeQueue: watcherMergeQueue(threads),
+      watching: threads.map(({ open, ...row }) => ({ ...row, pullRequests: open.map(item => item.summary) })) }
+  }
+  /**
    * A handover's words with how things stand after them (#1735, `watcherHandoverState`): what the last replacement carried
    * over, and what read_state would work out now. Read when the handover is sent or read, never on an update.
    */
   private withState(text: string): string {
-    const record = this.view(), hostId = this.hostId()
-    const watched = this.watchedState(this.state().watchedThreads, true), threads = this.stateThreads(watched.watching)
+    const hostId = this.hostId(), live = this.liveState()
     const title = (target: WatcherThreadTarget) => this.owningThread(target.hostId, target.threadId)?.title ?? 'Untitled thread'
     const host = (target: WatcherThreadTarget) => target.hostId === hostId ? undefined : this.machineName(target.hostId) ?? 'another computer'
+    // The room state just built found the operations not yet gone in its own pass, so none is looked for here.
+    const pending = this.roomReceipted?.pending ?? []
     const section = watcherHandoverState({
-      watching: threads.map(({ open, ...row }) => ({ ...row, host: host(row.target), pullRequests: open.map(item => item.summary) })),
-      mergeQueue: watcherMergeQueue(threads), waitingOnUser: watched.waiting, kept: this.kept.read(), carried: this.currentCarried(),
-      pending: record.operations.flatMap(operation => operation.deliveryState === 'queued' || operation.deliveryState === 'dispatching' || operation.deliveryState === 'uncertain'
-        ? [{ operationId: operation.id, action: operation.action, title: title(operation.target), state: operation.deliveryState }] : []) })
+      watching: live.watching.map(row => ({ ...row, host: host(row.target) })),
+      mergeQueue: live.mergeQueue, waitingOnUser: live.waiting, kept: this.kept.read(), carried: this.currentCarried(),
+      pending: pending.map(operation => ({ operationId: operation.id, action: operation.action, title: title(operation.target),
+        state: operation.deliveryState as 'queued' | 'dispatching' | 'uncertain' })) })
     return section ? `${text}\n\n${section}` : text
   }
   /** The offer, while it is still for the current Watcher. */
@@ -2561,7 +2577,9 @@ export class WatcherService implements WatcherControlHooks {
    */
   private async prepareReplacement(thread: AgentThread): Promise<Pick<WatcherCarried, 'questions' | 'unconfirmed'>> {
     for (const until = Date.now() + TOOL_CALL_GRACE_MS; (this.invocations > 0 || this.active.size > 0) && Date.now() < until;) {
-      await Promise.race([Promise.allSettled([...this.active.values()]), new Promise(done => setTimeout(done, 100))])
+      // A call that only reads has no operation to wait on, so the timer is what this waits for then.
+      const tick = new Promise(done => setTimeout(done, 100))
+      await (this.active.size > 0 ? Promise.race([Promise.allSettled([...this.active.values()]), tick]) : tick)
     }
     const questions = thread.requests.map(watcherCardWords)
     // Nothing the user queued for the last Watcher goes to it once its turn ends: it moves to the new one (`carryOver`).
@@ -2634,9 +2652,20 @@ export class WatcherService implements WatcherControlHooks {
    * last message to it went unconfirmed, and the threads it started on a computer whose Sotto cannot hand them over.
    */
   private async carryOver(previous: WatcherIdentity, to: WatcherThreadTarget, prepared?: Pick<WatcherCarried, 'questions' | 'unconfirmed'>): Promise<void> {
-    const moved = await this.options.control.moveWatcherQueue(previous.target.threadId, to.threadId).catch(() => 0)
-    const record = this.view(), starts = new Set(record.operations.flatMap(operation => operation.action === 'start' ? [operation.id] : []))
-    const away = new Map(record.reservations.filter(item => item.target.hostId !== this.hostId() && starts.has(item.operationId) && !this.adopts(item.target.hostId))
+    const movedDrafts = await this.options.control.moveWatcherQueue(previous.target.threadId, to.threadId).catch(() => [] as string[])
+    const moved = movedDrafts.length
+    // Each moved message was queued as a continuation of the last Watcher's request. Sent to the new one, it starts a
+    // request of its own instead, which the new Watcher's tools take.
+    if (moved) {
+      const drafts = new Set(movedDrafts)
+      await this.options.control.updateWatcher(record => {
+        for (const request of record.requests) if (key(request.watcher) === key(previous.target) && request.userFollowups?.some(item => drafts.has(item.draftId))) {
+          request.userFollowups = request.userFollowups.filter(item => !drafts.has(item.draftId))
+        }
+      })
+    }
+    // A reservation is a thread Watcher started that is still working (#1183), one per thread, so this reads no history.
+    const away = new Map(this.view().reservations.filter(item => item.target.hostId !== this.hostId() && !this.adopts(item.target.hostId))
       .map(item => [key(item.target), item.target]))
     const questions = prepared?.questions ?? [], unconfirmed = prepared?.unconfirmed ?? false
     const cannotStop = [...away.values()].map(target => ({ title: this.owningThread(target.hostId, target.threadId)?.title ?? 'Untitled thread',
@@ -3505,9 +3534,8 @@ export class WatcherService implements WatcherControlHooks {
         // Computed from live data at each read (#1274), never kept, so none of it can go stale. The watched threads, the
         // merge queue and the pending settles are read once, at the first page, and paged together, a hundred of each to a
         // page; a later page reads on from what the first one found.
-        const watched = first ? this.watchedState(this.state().watchedThreads, true) : { watching: [], waiting: [] }
-        const threads = first ? this.stateThreads(watched.watching) : [], waiting = watched.waiting, settles = first ? this.pendingSettles(new Map(threads.map(row => [key(row.target), row.title]))) : []
-        const watching = threads.map(({ open, ...row }) => ({ ...row, pullRequests: open.map(item => item.summary) })), queue = watcherMergeQueue(threads)
+        const live = first ? this.liveState() : { threads: [], waiting: [], watching: [], mergeQueue: [] }
+        const { threads, waiting, watching, mergeQueue: queue } = live, settles = first ? this.pendingSettles(new Map(threads.map(row => [key(row.target), row.title]))) : []
         const rows: StatePageRow[] = Array.from({ length: Math.max(watching.length, queue.length, settles.length, waiting.length) },
           (_, at) => ({ watching: watching[at], queue: queue[at], settle: settles[at], waiting: waiting[at] }))
         const page = this.page('state', rows, input.cursor, 100), shown = page.rows as StatePageRow[]

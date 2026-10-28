@@ -774,13 +774,13 @@ export class AgentControl {
   /**
    * A new Watcher takes the user's messages to the one it replaced that have not gone (#1735): queued, paused, failed or
    * not confirmed, each moved to its queue, paused, so the user sends or removes it there and nothing goes twice. Says
-   * how many moved.
+   * which drafts moved.
    */
-  async moveWatcherQueue(from: string, to: string): Promise<number> {
+  async moveWatcherQueue(from: string, to: string): Promise<string[]> {
     const moved = await this.followupStore.moveUserPrompts(from, to,
       'This was waiting for the last Watcher. Resume the queue to send it to this one, or remove it.',
       'The last Watcher did not confirm this message, so it may have reached it. Check that conversation in Watcher history before you resume the queue.')
-    if (moved) { this.syncFollowups(); this.observe(); await this.persist(); this.publish() }
+    if (moved.length) { this.syncFollowups(); this.observe(); await this.persist(); this.publish() }
     return moved
   }
   async cancelWatcherQueue(operationIds: ReadonlySet<string>): Promise<void> {
