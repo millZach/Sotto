@@ -162,7 +162,10 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     await delegationRelay?.load()
     // A desktop's delegations here for threads on other machines (#1316 part 2), on the same Owl answer. Its callers are
     // read before the threads start, so news of what they made can find them.
-    const delegationRemote = crossMachineEnabled ? new HostRemoteCallers(directory, options.log ? { log: event => options.log?.(event) } : {}) : undefined
+    // A desktop's callers are held to its own standing here: still recorded, and Ask for approval without an answers grant.
+    let recordedDesktop: (clientId: string) => boolean = () => false
+    const delegationRemote = crossMachineEnabled ? new HostRemoteCallers(directory, { recorded: clientId => recordedDesktop(clientId), mayAnswer: desktopCounts,
+      ...options.log ? { log: (event: 'delegation-remote-news-failed') => options.log?.(event) } : {} }) : undefined
     await delegationRemote?.load()
     const runtime = await createAgentRuntime({
       observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, attachAnyFile, clearThreadsEnabled,
@@ -245,6 +248,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         // listener, which carries desktops the launch script recorded as well as phones (ADR-0053). This one, with the
         // administrative routes, stays reachable only from this machine and through the desktop's SSH (ADR-0050).
         const desktops = new DesktopClients(directory, options.log)
+        recordedDesktop = clientId => desktops.has(clientId)
         // One for both listeners, so an update one desktop runs over either is the only one running (ADR-0088).
         const selfUpdate = options.entryPath ? createHostSelfUpdate({ entry: options.entryPath, dataDirectory: directory, port: options.port,
           hostId, sottoVersion: options.sottoVersion ?? packageVersion, startedBy: options.startedBy,

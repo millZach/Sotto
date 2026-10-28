@@ -29,6 +29,7 @@ const fileSchema = z.object({ version: z.literal(1), callers: z.array(callerSche
 type RemoteFile = z.infer<typeof fileSchema>
 /** Callers kept past this many only while one of them has a delegation open. */
 const CALLERS_MAX = 1_000
+const FORGOTTEN = 'This machine no longer takes delegations from that desktop. Nothing was started or sent.'
 const NOT_HELD = 'This machine holds no delegation for that thread, so Sotto cannot prove whether it started. Nothing was sent again.'
 
 /**
@@ -53,6 +54,17 @@ export class HostRemoteCallers {
   private delegation: Pick<DelegationService, 'delegate' | 'read' | 'cancel' | 'retriedDelegation' | 'hasOpen'> | undefined
 
   constructor(directory: string, private readonly options: {
+    /**
+     * Whether a client is still one the launch script recorded as a desktop, read at every ask and every admission. A
+     * desktop no longer recorded addresses no caller here: its asks are refused, and a start of its still being admitted
+     * is refused when its thread would be made.
+     */
+    readonly recorded?: (clientId: string) => boolean
+    /**
+     * Whether a desktop may answer here now (its `remote-answer` grant), read at every admission and at the thread's
+     * creation. One that may not has its callers held to Ask for approval, whatever another desktop's defaults allow (#1316 review).
+     */
+    readonly mayAnswer?: (clientId: string) => boolean
     /** Stable event names only, never a brief, a reply or a thread. */
     readonly log?: (event: 'delegation-remote-news-failed') => void
   } = {}) {
@@ -66,7 +78,13 @@ export class HostRemoteCallers {
   useDelegation(delegation: Pick<DelegationService, 'delegate' | 'read' | 'cancel' | 'retriedDelegation' | 'hasOpen'>): void { this.delegation = delegation }
 
   /** What this host's delegation asks of a caller on another machine: as the desktop last named it, or none. */
-  caller(threadId: string): RelayedCaller | undefined { return this.callers.get(threadId) }
+  caller(threadId: string): RelayedCaller | undefined {
+    const caller = this.callers.get(threadId), key = caller ? parseKey(threadId) : undefined
+    if (!caller || !key) return undefined
+    // The asking desktop's own standing, read now: a desktop since forgotten names nothing, one without a grant asks first.
+    if (this.options.recorded && !this.options.recorded(key.clientId)) return undefined
+    return this.options.mayAnswer && !this.options.mayAnswer(key.clientId) ? { ...caller, runtimeMode: 'approval-required' } : caller
+  }
   /** A desktop's hello accepted `delegation-remote`: news of its callers' delegations goes to it from now on. */
   desktopConnected(desktop: RemoteDesktop): void {
     const at = this.desktops.indexOf(desktop)
@@ -91,6 +109,7 @@ export class HostRemoteCallers {
     const ask = delegationRemoteAskSchema.parse(raw)
     const delegation = this.delegation
     if (!delegation) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: 'This machine cannot delegate right now. Nothing was started.' }
+    if (this.options.recorded && !this.options.recorded(clientId)) return { status: 'refused', code: 'NOT_ADMITTED', message: FORGOTTEN }
     const key = remoteCallerKey(clientId, ask.caller)
     if (ask.type === 'read') {
       const delegationId = ask.delegation ?? (ask.retryKey ? delegation.retriedDelegation(key, ask.retryKey) : undefined)

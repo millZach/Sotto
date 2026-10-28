@@ -89,6 +89,51 @@ describe('a desktop\'s delegation on a paired host, on the host', () => {
   })
 })
 
+describe('a desktop\'s own authority on the host (review)', () => {
+  const model = { id: 'model', name: 'Model', providerId: 'codex', ready: true, reasoningEfforts: [], runtimeModes: ['approval-required', 'auto', 'full-access'] } as unknown as AgentModel
+  async function hostWith(grants: Map<string, boolean>, recorded: Set<string>) {
+    const root = await folder()
+    const snapshot: AgentHostSnapshot = { ...EMPTY_AGENT_HOST, connected: true, models: [model], projects: [{ id: 'mac-project', title: 'Project', path: join(root, 'project') }] as never, threads: [] }
+    const created: unknown[] = []
+    let beforeGuard: () => void = () => undefined
+    const callers = new HostRemoteCallers(root, { recorded: clientId => recorded.has(clientId), mayAnswer: clientId => grants.get(clientId) === true })
+    const control: DelegationCoordinator = { hostId: () => MAC, watcherSnapshot: () => snapshot, configuration: () => ({}),
+      useDelegation: () => () => undefined, commandFromDelegation: async (command, guard) => { beforeGuard(); guard(); created.push(command); return { host: snapshot } as never },
+      hasPendingThreadWork: () => false, hasUserDraft: () => false, refreshDelegationObservation: () => undefined, deliverWakeUp: async () => undefined }
+    // Desktop B, which may answer here, sent defaults that allow Full access.
+    const delegation = new DelegationService({ directory: root, control, host: { setDelegatedBy: async () => undefined, threadMessage: () => undefined }, historyEnabled: () => true,
+      newThreadCeiling: () => ({ mode: 'full-access' }), relayedCallers: callers })
+    await delegation.recover()
+    callers.useDelegation(delegation)
+    return { callers, created, setBeforeGuard: (given: () => void) => { beforeGuard = given } }
+  }
+  const wide = (caller: string) => ({ type: 'delegate' as const, caller, projectId: 'mac-project', levels: 0, rootUserMessageId: 'root-1', runtimeMode: 'full-access' as const,
+    input: { work: 'code-review', brief: 'Review it.', provider: 'codex', model: 'model', permission: 'full-access', wait_seconds: 0 }, waitMs: 0 })
+
+  it('holds a desktop without an answers grant to its own, whatever another desktop\'s defaults allow', async () => {
+    const grants = new Map([['desktop-a', false], ['desktop-b', true]]), recorded = new Set(['desktop-a', 'desktop-b'])
+    const f = await hostWith(grants, recorded)
+    expect(await f.callers.answer('desktop-a', wide('parent-a'))).toMatchObject({ status: 'refused', code: 'PERMISSION_TOO_WIDE' })
+    expect(f.created).toEqual([])
+    expect(await f.callers.answer('desktop-b', wide('parent-b'))).toMatchObject({ status: 'ok' })
+    expect(f.created).toHaveLength(1)
+  })
+
+  it('refuses at creation a start whose desktop lost its grant during admission, and any ask from a desktop no longer recorded', async () => {
+    const grants = new Map([['desktop-a', true]]), recorded = new Set(['desktop-a'])
+    const f = await hostWith(grants, recorded)
+    f.setBeforeGuard(() => grants.set('desktop-a', false))
+    const answer = await f.callers.answer('desktop-a', wide('parent-a')) as { delegation: { outcome: string } }
+    expect(f.created).toEqual([])
+    expect(answer.delegation.outcome).toBe('failed')
+    f.setBeforeGuard(() => undefined)
+    grants.set('desktop-a', true); recorded.delete('desktop-a')
+    expect(await f.callers.answer('desktop-a', wide('parent-a'))).toMatchObject({ status: 'refused', code: 'NOT_ADMITTED' })
+    expect(f.callers.caller(remoteCallerKey('desktop-a', 'parent-a'))).toBeUndefined()
+    expect(f.created).toEqual([])
+  })
+})
+
 describe('a delegation on a paired host, on the desktop', () => {
   it('starts it there, names it by its own ID and the thread by the host\'s key, and tells the thread what moved', async () => {
     const mac = host(ask => ask.type === 'delegate' ? { status: 'ok', delegation: { id: THERE, thread: 'child-mac', outcome: 'working' }, warning: 'Busy there.' }
