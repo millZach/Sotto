@@ -18,6 +18,7 @@
 .attached-file button { position: relative; display: grid; flex: none; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--tt-text-muted); cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .attached-file button::before { content: ''; position: absolute; inset: -5px; }
 .attached-file button:hover:not(:disabled) { background: var(--tt-hover); color: var(--tt-text); }
+.attached-file button:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .attached-file button:disabled { opacity: .5; cursor: default; }
 /* Drag-over: a quiet dashed edge in the focus colour and one line, over the whole composer. */
 .screenshot-input__drop { position: absolute; inset: -1px; z-index: 3; display: grid; place-items: center; border: 1.5px dashed var(--tt-focus-ring); border-radius: inherit; background: color-mix(in oklab, var(--tt-card) 80%, transparent); pointer-events: none; }

@@ -13,5 +13,6 @@
 .new-thread-hosts { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
 .new-thread-hosts button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; max-width: 100%; overflow: hidden; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-sm); background: var(--tt-surface); padding: 5px 12px; color: var(--tt-text); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .new-thread-hosts button:hover { background: var(--tt-hover); }
+.new-thread-hosts button:active:not(:disabled) { background: var(--tt-hover-strong); }
 .new-thread-hosts button[aria-pressed='true'] { border-color: var(--tt-accent-border); background: var(--tt-accent-surface); color: var(--tt-accent-surface-text); }
 .new-thread-hosts button > svg { flex: none; }

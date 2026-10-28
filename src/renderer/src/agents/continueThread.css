@@ -9,6 +9,7 @@
   background: transparent; color: var(--tt-text); font: inherit; font-size: 13.5px; white-space: nowrap; cursor: pointer;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .continue-chip:hover:not([aria-disabled='true']), .continue-chip[aria-pressed='true'] { border-color: var(--tt-border-faint); background: var(--tt-hover); }
+.continue-chip:active:not([aria-disabled='true']) { background: var(--tt-hover-strong); }
 .continue-chip[aria-pressed='true'] { border-color: var(--tt-accent-border); }
 /* A provider that cannot take the thread now keeps its place, dashed, with why beside its name. */
 .continue-chip[aria-disabled='true'] { border-style: dashed; color: var(--tt-text-muted); cursor: not-allowed; }
@@ -32,6 +33,7 @@
   background: transparent; color: var(--tt-text-2); cursor: pointer;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .continue-strip__dismiss:hover:not(:disabled) { background: var(--tt-hover); color: var(--tt-text); }
+.continue-strip__dismiss:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .continue-strip__dismiss:disabled { opacity: .55; cursor: default; }
 .continue-strip__chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 0 23px; }
 .continue-strip__chips .thread-chip { color: var(--tt-text); }

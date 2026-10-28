@@ -18,6 +18,7 @@
 .bring-back .tt-button[aria-busy='true'] { cursor: progress; }
 .bring-back__dismiss { display: grid; place-items: center; width: 28px; height: 28px; flex: none; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .bring-back__dismiss:hover { background: var(--tt-hover); }
+.bring-back__dismiss:active:not(:disabled) { background: var(--tt-hover-strong); }
 /* Git's own words, as Git said them. */
 .bring-back__git-said { margin: 6px 0 0; padding: 7px 10px; border: 1px solid var(--tt-error-border); border-radius: 6px; background: var(--tt-canvas); color: var(--tt-text);
   font: 12.5px/1.5 var(--tt-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9.5em; overflow-y: auto; }

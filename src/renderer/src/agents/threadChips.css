@@ -24,6 +24,7 @@
 .thread-prompt .thread-chip.model-picker__trigger { color: var(--tt-text-2); }
 .thread-prompt .thread-chip > svg:last-child { opacity: .7; }
 .thread-prompt .thread-chip:hover:not(:disabled), .thread-prompt .thread-chip[aria-expanded='true'] { border-color: transparent; background: var(--tt-hover); color: var(--tt-text); }
+.thread-prompt .thread-chip:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .thread-prompt .thread-chip.watch-on-send[aria-pressed='true'], .thread-prompt .thread-chip.watch-on-send[aria-pressed='true']:hover:not(:disabled) { border-color: var(--tt-accent-border); background: color-mix(in srgb, var(--tt-accent) 14%, transparent); color: var(--tt-accent-text); }
 
 /* Fast mode (ADR-0143, pick A of the prototype/composer-fast-mode tag): a square text button after the model chip. Off, a
@@ -64,6 +65,7 @@
 .thread-options__notice > span { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .thread-options__notice > button { flex: none; height: 26px; min-height: 26px; padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .thread-options__notice > button:hover:not(:disabled) { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
+.thread-options__notice > button:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .thread-options__notice > button:disabled { opacity: .55; cursor: default; }
 
 /* The effort and permission lists. */

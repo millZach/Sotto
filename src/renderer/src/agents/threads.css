@@ -44,6 +44,7 @@
 /* The header's icon buttons: the Tools toggle, the More menu, and anything a pane adds beside them. */
 .pane-action { display: grid; place-items: center; width: 30px; height: 30px; flex: none; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .pane-action:hover:not(:disabled), .pane-action[aria-pressed='true'], .pane-action[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.pane-action:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .pane-action:disabled { opacity: .5; cursor: default; }
 
 /* The More menu hangs under its button, inside the header, so the pane keeps the focus the menu hands out. */
@@ -97,6 +98,7 @@
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .thread-message__work:hover { background: var(--tt-hover); color: var(--tt-text-2); }
+.thread-message__work:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text-2); }
 .thread-message[data-turn-outcome='failed'] .thread-message__work { color: var(--tt-error-text); }
 .thread-message__work-body { margin: 0 0 12px 1px; padding: 4px 0 4px 14px; border-left: 1px solid var(--tt-hairline); }
 .thread-message__work-body > .thread-activity:last-child { margin-bottom: 0; }
@@ -243,6 +245,7 @@
 /* Beside typed text, Stop steps back to a flat key so the filled button is the one Enter presses. */
 .thread-prompt__actions > .thread-prompt__stop[data-beside], .thread-prompt__actions > .thread-prompt__stop[data-beside]:is(:hover, :active):not(:disabled) { background: transparent; color: var(--tt-text-muted); filter: none; }
 .thread-prompt__actions > .thread-prompt__stop[data-beside]:hover:not(:disabled) { background: var(--tt-hover); color: var(--tt-text); }
+.thread-prompt__actions > .thread-prompt__stop[data-beside]:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 /* While a turn runs, a light runs round Stop (docs/prototypes/prompt-send-stop-prototype.html, 9b): the control that
    ends the turn is the sign that it is running, and it stays on Stop when the button steps back. Only `transform`
    animates, so the compositor turns it without a repaint; a static mask keeps it to a 1.5px band round the button. */
@@ -311,6 +314,7 @@
 .thread-greeting__project { min-width: 0; max-width: 100%; }
 .pane-menu__trigger { display: inline-flex; align-items: center; gap: 5px; min-width: 0; margin: -2px -6px; padding: 2px 6px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .pane-menu__trigger:hover, .pane-menu__trigger[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.pane-menu__trigger:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .thread-greeting__project-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .thread-greeting__project .pane-menu__list { right: auto; left: 50%; transform: translateX(-50%); max-height: 260px; overflow-y: auto; text-align: left; }
 @container thread-pane (max-width: 720px) { .thread-greeting h3 { font-size: 23px; } }

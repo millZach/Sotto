@@ -12,6 +12,7 @@
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .thread-work__summary:hover { background: var(--tt-hover); color: var(--tt-text-2); }
+.thread-work__summary:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text-2); }
 .thread-work__body { padding: 8px 0 4px; }
 .thread-work__body > .thread-activity:last-child { margin-bottom: 12px; }
 /* A question a folded reply asked, quoted under the fold so it is read; the attention edge says the reply wanted the user. */
@@ -36,6 +37,7 @@
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .thread-activity__summary:hover { background: var(--tt-hover); color: var(--tt-text-2); }
+.thread-activity__summary:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text-2); }
 .thread-activity__summary--static { cursor: default; }
 .thread-activity__summary--static:hover { background: transparent; }
 .thread-activity__summary--static[data-status='failed'] .thread-activity__chevron { color: var(--tt-error); }
@@ -53,6 +55,7 @@
 }
 button.thread-activity__toggle { cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 button.thread-activity__toggle:hover { background: var(--tt-hover); }
+button.thread-activity__toggle:active:not(:disabled) { background: var(--tt-hover-strong); }
 .thread-activity__icon { color: var(--tt-text-muted); }
 .thread-activity__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-activity__lead { color: var(--tt-text-muted); }
@@ -71,6 +74,7 @@ button.thread-activity__toggle:hover { background: var(--tt-hover); }
 .thread-activity__earlier { margin: 0; }
 .thread-activity__more { min-height: 32px; padding: 0 6px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .thread-activity__more:hover { background: var(--tt-hover); color: var(--tt-text-2); }
+.thread-activity__more:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text-2); }
 
 /* Details line up with the row label, past the icon. */
 .thread-activity__details { display: grid; gap: 8px; margin: 2px 0 12px 30px; min-width: 0; }
@@ -111,6 +115,7 @@ button.thread-activity__toggle:hover { background: var(--tt-hover); }
 }
 button.thread-activity-live__line { cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 button.thread-activity-live__line:hover { background: var(--tt-hover); }
+button.thread-activity-live__line:active:not(:disabled) { background: var(--tt-hover-strong); }
 .thread-activity-live__state { flex: none; font-variant-numeric: tabular-nums; }
 /* Words change in place, so the line's own width must not shift with them. */
 .thread-activity-live__word { position: relative; display: inline-block; }
@@ -153,6 +158,7 @@ button.thread-activity-live__line:hover { background: var(--tt-hover); }
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .thread-browser__line:hover { background: var(--tt-hover); }
+.thread-browser__line:active:not(:disabled) { background: var(--tt-hover-strong); }
 .thread-browser__icon { flex: none; color: var(--tt-text-muted); }
 .thread-browser__dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tt-activity); }
 .thread-browser__dot:not([data-connected]) { background: var(--tt-text-muted); }
@@ -178,6 +184,7 @@ button.thread-activity-live__line:hover { background: var(--tt-hover); }
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .thread-changes__summary:hover { background: var(--tt-hover); color: var(--tt-text-2); }
+.thread-changes__summary:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text-2); }
 .thread-changes__list { display: grid; gap: 10px; margin: 4px 0 10px; padding: 0 0 0 20px; list-style: none; min-width: 0; }
 .thread-changes__list li { display: grid; gap: 6px; min-width: 0; }
 .thread-changes__list .rich-code { margin: 0; }
