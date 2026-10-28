@@ -370,7 +370,7 @@ private struct ComputerMenu: View {
         } label: {
             HStack(spacing: Space.s2) {
                 if case .only(let id) = model.show { ComputerDot(status: model.status(id)) } else { Light(tone: .accent) }
-                Text(title).lineLimit(1)
+                Text(title).lineLimit(1).minimumScaleFactor(0.8)
                 Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold))
             }
             .font(.sotto(.small, .semibold))
@@ -416,6 +416,7 @@ private struct ThreadCounts: View {
         .font(.sotto(.small))
         .foregroundStyle(Palette.muted)
         .lineLimit(1)
+        .minimumScaleFactor(0.85)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "\(workingWords), \(needsWords)", comment: "First %@ is how many threads are working, such as 3 working; second is how many requests need the user, such as 1 needs you."))
         .accessibilityIdentifier("thread-counts")
