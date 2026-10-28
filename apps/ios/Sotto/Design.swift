@@ -428,7 +428,7 @@ private struct BreathingLight: UIViewRepresentable {
 
 /// `Light`'s dot and halo as layers. The halo is the same radial fade as a still light's (`Light.haloStrength` of the
 /// colour at 0.3 of the dot's size out to clear at `Light.haloRadius`, both scaled by the glow), so a breathing light
-/// looks like a still one. With no glow the halo is hidden.
+/// looks like a still one. With no glow the halo layer is removed.
 final class LightLoopView: LoopingView {
     private let halo = CAGradientLayer()
     private let dot = CALayer()
@@ -437,7 +437,6 @@ final class LightLoopView: LoopingView {
         halo.type = .radial
         halo.startPoint = CGPoint(x: 0.5, y: 0.5)
         halo.endPoint = CGPoint(x: 1, y: 1)
-        stage.layer.addSublayer(halo)
         stage.layer.addSublayer(dot)
     }
     required init?(coder: NSCoder) { fatalError("LightLoopView is made in code") }
@@ -452,7 +451,12 @@ final class LightLoopView: LoopingView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         dot.backgroundColor = color.uiColor(1).cgColor
-        halo.isHidden = !glow.shows
+        // With no glow there is no halo layer at all.
+        if !glow.shows {
+            halo.removeFromSuperlayer()
+        } else if halo.superlayer == nil {
+            stage.layer.insertSublayer(halo, below: dot)
+        }
         halo.colors = [color.uiColor(glow.alpha(Light.haloStrength)).cgColor, color.uiColor(0).cgColor]
         CATransaction.commit()
         if reaches { setNeedsLayout() }
