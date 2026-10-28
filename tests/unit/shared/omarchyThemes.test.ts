@@ -180,7 +180,8 @@ describe('Omarchy M3 and readability check', () => {
     // solid colour arrived (ADR-0150), and when the collapsed rail's trays got their group colours (ADR-0146, October 28 amendment); none of them changes a palette.
     expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('5e43d8dae0a93190f59afd80f75f3400076c21aa2cb023b1aec0f8348ca8aac1')
     const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
-    expect(createHash('sha256').update(tokenText).digest('hex')).toBe('6effc1758095634b7f8265bde5360865d034e81daa258c9d5503269178cee4d4')
+    const tokenHash = createHash('sha256').update(tokenText).digest('hex')
+    expect(tokenHash, `tokens.css changed. If that was meant and no palette moved, update the pin to ${tokenHash} and say why above`).toBe('6effc1758095634b7f8265bde5360865d034e81daa258c9d5503269178cee4d4')
     // Existing Windows and macOS imports named Omarchy remain user themes.
     expect(parseCustomThemes([{ ...parseOmarchyTheme(fixtures.themes.hackerman.rendered), id: 'omarchy' }])[0]?.id).toBe('omarchy')
   })
