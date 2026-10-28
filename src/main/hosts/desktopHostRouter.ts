@@ -1501,7 +1501,8 @@ export class DesktopHostRouter {
         left.forEach((item, index) => {
           const machine = item.hostId ?? `\n${item.machine}`, key = item.hostId !== undefined && item.thread !== undefined ? hostEntityKey(item.hostId, item.thread) : `${machine}\n${index}`
           const named = item.hostId === undefined ? item.machine : name(item.hostId, item.machine)
-          if (item.reason === 'away' || item.hostId !== undefined && !reachable(item.hostId)) away.add(machine, named, key)
+          // A cancel that went stays unconfirmed, though its machine has gone since: it may have stopped the thread.
+          if (item.reason === 'away') away.add(machine, named, key)
           else if (!away.holds(machine, key)) unconfirmed.add(machine, named, key)
         })
         const message = stopLeftWords(away, unconfirmed)

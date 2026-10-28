@@ -87,7 +87,9 @@ describe('Stop, Settle and Restore across machines', () => {
       expect(stopsLeft).toHaveBeenCalledWith('parent')
       const published: (string | null | undefined)[] = []
       router.subscribe(state => { published.push(state.error) })
-      // Forge is connected, but its cancel's answer was lost; the Mac's thread is counted once.
+      // Forge's cancel went, but its answer was lost as forge dropped: it may have stopped, so it is not said to be unreached.
+      // The Mac's thread is counted once.
+      forge.away()
       answer([{ machine: 'forge', hostId: FORGE, thread: 'check', reason: 'unconfirmed' }, { machine: 'the Mac', hostId: MAC, thread: 'mac-check', reason: 'away' }])
       await vi.waitFor(() => expect(published).toHaveLength(1))
       expect(published[0]).toBe(`${unreached} Sotto couldn't confirm that 1 delegated thread on forge stopped. It may still be working there. Open it from Tools › Agents to see where it stands.`)
