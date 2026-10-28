@@ -3,9 +3,9 @@ import React, { useCallback, useEffect, useRef, useState, type KeyboardEvent, ty
 import { Globe, Minimize2, PanelRight, Pause, Play, X } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
 import type { AgentState } from '../../../shared/agents'
-import type { BrowserBounds, BrowserBridge, BrowserPage } from '../../../shared/browser'
+import type { BrowserBounds, BrowserBridge, BrowserPage, BrowserTask } from '../../../shared/browser'
 import { useOwlFeature } from '../state/owlFeature'
-import { pageLabel, useThreadBrowser, useBrowserTasks } from './browserStore'
+import { pageLabel, useThreadBrowser, useBrowserTasks, type ThreadBrowser } from './browserStore'
 import { useBrowserPageMount } from './useBrowserPageMount'
 import { useOverlayOpen } from './browserOverlay'
 import { toolsTarget, useToolsPanelChrome, type ToolsPanelStore } from './toolsPanelStore'
@@ -46,6 +46,19 @@ function BrowserPlayerFrame({ page, mount, boundary }: {
   </div>
 }
 
+/** The task the player shows for a thread: its newest, never one on the test iPhone, which floats in the phone player (ADR-0045). */
+export function playerTask(tasks: readonly BrowserTask[], threadId: string): BrowserTask | undefined {
+  return tasks.find(item => item.threadId === threadId && !item.device)
+}
+
+/**
+ * Whether the player has a page to draw for `task`. On the quiet pane (ADR-0154; Owl), a task whose page has closed
+ * has nothing left to float. Float the browser over the thread asks the same before it is offered.
+ */
+export function playerHasPage(task: BrowserTask, browser: ThreadBrowser | undefined, quiet: boolean): boolean {
+  return !(quiet && browser?.status === 'ready' && !browser.pages.some(item => item.id === task.pageId))
+}
+
 export interface BrowserPlayerProps {
   readonly state: AgentState
   readonly focusedThreadId: string | null
@@ -72,7 +85,7 @@ export function BrowserPlayer({ state, focusedThreadId, bridge, store, autoShow 
   useEffect(() => { store.browser.watchTasks(bridge, ids.split('\n').filter(Boolean)) }, [bridge, store, ids])
 
   // The test iPhone's tasks float in the phone player instead (ADR-0045).
-  const task = focusedThreadId === null ? undefined : tasks.find(item => item.threadId === focusedThreadId && !item.device && state.host.threads.some(thread => thread.id === item.threadId))
+  const task = focusedThreadId === null || !state.host.threads.some(thread => thread.id === focusedThreadId) ? undefined : playerTask(tasks, focusedThreadId)
   const threadId = task?.threadId ?? null
   const taskId = task?.id
   useEffect(() => { if (threadId && taskId) playerStore.taskSeen(threadId, taskId, autoShow) }, [threadId, taskId, autoShow, playerStore])
@@ -103,9 +116,7 @@ export function BrowserPlayer({ state, focusedThreadId, bridge, store, autoShow 
   // The quiet pane (ADR-0154; Owl) keeps the player away while Tools shows this thread's browser on any page: the two
   // share one place to draw a page, and the pane's strip offers the agent's page when it is not the one shown.
   const dockedSame = browserInTools && (quietBrowser || threadBrowser?.activePageId === task.pageId)
-  // On the quiet pane (ADR-0154; Owl), a task whose page has closed has nothing left to float.
-  const pageClosed = quietBrowser && threadBrowser?.status === 'ready' && !threadBrowser.pages.some(item => item.id === task.pageId)
-  if (visibility === 'hidden' || dockedSame || pageClosed) return null
+  if (visibility === 'hidden' || dockedSame || !playerHasPage(task, threadBrowser, quietBrowser)) return null
   // Measure the pane only when drawing the player. `rectFor` remains the one default for drawing, dragging and resizing.
   const rect = rawRect ? clampBrowserPlayerRect(rawRect, size) : playerStore.rectFor(size)
 
