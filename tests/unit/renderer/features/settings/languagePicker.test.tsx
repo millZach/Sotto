@@ -10,16 +10,22 @@ import { firstInterfaceLanguage, showInterfaceLanguage, startInterfaceLanguage }
 import type { InterfaceLanguageState } from '../../../../../src/shared/interfaceLanguages'
 import { DEFAULT_SETTINGS, type SettingsPatch } from '../../../../../src/shared/settings'
 
-// The row is an Owl feature (ADR-0072, ADR-0123); each test says whether this build has it.
-const gate = vi.hoisted(() => ({ owl: true }))
+// The row is an Owl feature (ADR-0072, ADR-0123) and is hidden until the desktop catalogs are drafted (#1684); each test
+// says whether this build has it and whether it is shown.
+const gate = vi.hoisted(() => ({ owl: true, shown: true }))
 vi.mock('../../../../../src/renderer/src/state/owlFeature', async importOriginal => ({
   ...await importOriginal<typeof import('../../../../../src/renderer/src/state/owlFeature')>(),
   useOwlFeature: (id: string) => id === 'interface-language' && gate.owl,
+}))
+vi.mock('../../../../../src/shared/interfaceLanguages', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../../../src/shared/interfaceLanguages')>(),
+  get INTERFACE_LANGUAGE_SHOWN() { return gate.shown },
 }))
 
 afterEach(async () => {
   cleanup()
   gate.owl = true
+  gate.shown = true
   await act(() => showInterfaceLanguage({ language: 'en', system: 'en' }))
 })
 
@@ -32,6 +38,15 @@ describe('Settings > Appearance > Language', () => {
     const onSave = vi.fn(async () => true)
     appearance(onSave)
     expect(screen.queryByRole('combobox', { name: /Language/u })).not.toBeInTheDocument()
+    expect(onSave).not.toHaveBeenCalled()
+  })
+
+  it('does not exist on Owl either while it is hidden, and the saved choice is left alone', () => {
+    gate.shown = false
+    const onSave = vi.fn(async () => true)
+    appearance(onSave)
+    expect(screen.queryByRole('combobox', { name: /Language/u })).not.toBeInTheDocument()
+    expect(document.querySelector('.language-picker')).toBeNull()
     expect(onSave).not.toHaveBeenCalled()
   })
 

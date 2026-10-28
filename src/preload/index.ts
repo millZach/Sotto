@@ -15,6 +15,7 @@ import { REQUEST_DRAFT_GET, REQUEST_DRAFT_STATUS, REQUEST_DRAFT_SAVE, REQUEST_DR
 import { contextBridge, ipcRenderer } from 'electron'
 import { VISUAL_PAGE_OPEN, visualPageRequestSchema, visualPageResultSchema, type VisualPagesBridge } from '../shared/visualPages'
 import { SUBAGENTS_PAGE, SUBAGENTS_ASSIGNMENTS, SUBAGENTS_CHANGED, subagentPageRequestSchema, subagentAssignmentsRequestSchema, subagentPageSchema, subagentAssignmentsPageSchema, subagentChangeSchema, type SubagentsBridge } from '../shared/subagents'
+import { CHECK_QUEUES_CHANGED, CHECK_QUEUES_READ, checkQueuesViewSchema, type CheckQueuesBridge } from '../shared/checkQueue'
 import { DELEGATION_BRIEF_READ, DELEGATIONS_READ, DELEGATIONS_CHANGED, DELEGATION_RENDERER_ARGUMENT, delegationBriefRequestSchema, delegationBriefSchema, delegationsReadSchema, delegationsRequestSchema, delegationsChangedSchema, type DelegationsBridge } from '../shared/delegation'
 import {
   OPENCODE_HOSTS_RENDERER_ARGUMENT, OPENCODE_RENDERER_ARGUMENT, OPENCODE_SIGN_IN_BROWSER, OPENCODE_SIGN_IN_CANCEL, OPENCODE_SIGN_IN_EXTERNAL, OPENCODE_SIGN_IN_FINISH, OPENCODE_SIGN_IN_KEY,
@@ -205,6 +206,24 @@ const updateResponseSchema = z.union([updateStatusSchema, unavailableSchema])
 const outputResultSchema = z.union([z.enum(['pasted', 'copied', 'clipboard-unavailable', 'empty']), unavailableSchema])
 const startupStateSchema = z.object({ enabled: z.boolean(), supported: z.boolean().optional(), approvalRequired: z.boolean().optional() }).strict()
 const voidSchema = z.undefined()
+const booleanSchema = z.boolean()
+const nullSchema = z.null()
+const projectDirectorySchema = z.string().min(1).max(4_096).nullable()
+const mainCheckoutProjectIdSchema = z.string().min(1).max(256)
+const hotkeyChordSchema = z.string().nullable()
+const dictationKeyRoleSchema = z.enum(['press', 'hold'])
+const startHandoverResultSchema = agentStartHandoverSchema.nullable()
+const activityBodyResultSchema = agentActivitySchema.nullable()
+const threadPromptsResultSchema = agentThreadPromptsSchema.nullable()
+const usageClearResultsSchema = usageClearResultSchema.array().max(USAGE_HOSTS_MAX)
+const cursorSignInReadSchema = cursorSignInViewSchema.nullable()
+const fileListingResultSchema = filesResultSchema(fileListingSchema)
+const filePreviewResultSchema = filesResultSchema(filePreviewSchema)
+const filePathResultSchema = filesResultSchema(filePathSchema)
+const fileLinkResultSchema = filesResultSchema(fileLinkSchema)
+const requestDraftsSchema = requestDraftSchema.array()
+const requestDraftResultSchema = requestDraftSchema.nullable()
+const dictationRecordResultSchema = dictationRecordSchema.nullable()
 
 async function invokeParsed<Output>(
   renderer: IpcRendererAdapter,
@@ -323,18 +342,18 @@ function createAgentBridge(renderer: IpcRendererAdapter): import('../shared/agen
       invokeParsed(renderer, AGENT_ATTACHMENT_STAGE, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema.parse(request)),
     attachmentContent: (request: import('../shared/agents').AgentAttachmentContentRequest) =>
       invokeParsed(renderer, AGENT_ATTACHMENT_CONTENT, agentAttachmentContentResultSchema, agentAttachmentContentRequestSchema.parse(request)),
-    chooseProjectDirectory: () => invokeParsed(renderer, AGENT_CHOOSE_PROJECT_DIRECTORY, z.string().min(1).max(4_096).nullable()),
+    chooseProjectDirectory: () => invokeParsed(renderer, AGENT_CHOOSE_PROJECT_DIRECTORY, projectDirectorySchema),
     workingCopyOptions: (projectId: string) => invokeParsed(renderer, AGENT_WORKING_COPY_OPTIONS, agentWorkingCopyOptionsSchema, agentWorkingCopyOptionsRequestSchema.parse(projectId)),
     gitRefs: (request: import('../shared/gitRefs').GitRefsRequest) => invokeParsed(renderer, AGENT_GIT_REFS, gitRefsPageSchema, gitRefsRequestSchema.parse(request)),
     gitChangedFiles: (request: import('../shared/gitChangedFiles').GitChangedFilesRequest) => invokeParsed(renderer, AGENT_GIT_CHANGED_FILES, gitChangedFilesSchema, gitChangedFilesRequestSchema.parse(request)),
     gitPullRequest: (request: import('../shared/gitPullRequests').GitPullRequestRequest) => invokeParsed(renderer, AGENT_GIT_PULL_REQUEST, gitPullRequestResultSchema, gitPullRequestRequestSchema.parse(request)),
     hostFolders: (request: import('../shared/hostFolders').HostFoldersClientRequest) => invokeParsed(renderer, AGENT_HOST_FOLDERS, hostFoldersResultSchema, hostFoldersClientRequestSchema.parse(request)),
     threadDetail: (threadId: string) => invokeParsed(renderer, AGENT_THREAD_DETAIL_GET, agentThreadDetailResultSchema, agentThreadDetailRequestSchema.parse(threadId)),
-    startHandover: (threadId: string) => invokeParsed(renderer, AGENT_START_HANDOVER, agentStartHandoverSchema.nullable(), agentThreadDetailRequestSchema.parse(threadId)),
+    startHandover: (threadId: string) => invokeParsed(renderer, AGENT_START_HANDOVER, startHandoverResultSchema, agentThreadDetailRequestSchema.parse(threadId)),
     // One record of a remote thread whole, for a row whose body its host sent cut (ADR-0025, October 18 amendment).
-    activityBody: (request: import('../shared/agents').AgentActivityBodyRequest) => invokeParsed(renderer, AGENT_ACTIVITY_BODY, agentActivitySchema.nullable(), agentActivityBodyRequestSchema.parse(request)),
+    activityBody: (request: import('../shared/agents').AgentActivityBodyRequest) => invokeParsed(renderer, AGENT_ACTIVITY_BODY, activityBodyResultSchema, agentActivityBodyRequestSchema.parse(request)),
     // The prompts above a pane's window, for the message scrubber (ADR-0109).
-    threadPrompts: (request: import('../shared/threadPrompts').AgentThreadPromptsRequest) => invokeParsed(renderer, AGENT_THREAD_PROMPTS, agentThreadPromptsSchema.nullable(), agentThreadPromptsRequestSchema.parse(request)),
+    threadPrompts: (request: import('../shared/threadPrompts').AgentThreadPromptsRequest) => invokeParsed(renderer, AGENT_THREAD_PROMPTS, threadPromptsResultSchema, agentThreadPromptsRequestSchema.parse(request)),
     // Whole details and the deltas between them share this channel, so the shape they share is the guard.
     onThreadDetail: (listener: (update: import('../shared/agents').AgentThreadDetailUpdate) => void) => subscribe(renderer, AGENT_THREAD_DETAIL,
       trustedState<import('../shared/agents').AgentThreadDetailUpdate>('threadId'), listener),
@@ -418,14 +437,19 @@ export function createSottoBridge(
   const onWindowVisible = createBufferedSubscription(
     renderer,
     APP_WINDOW_VISIBLE,
-    z.boolean(),
+    booleanSchema,
     1,
   )
   const bridge: SottoBridge = {
     ...(usageEnabled ? { usage: Object.freeze<UsageBridge>({
       read: query => invokeParsed(renderer, USAGE_READ, usageDashboardReadSchema, usageQuerySchema.parse(query)),
       refresh: query => invokeParsed(renderer, USAGE_REFRESH, usageDashboardReadSchema, usageRefreshQuerySchema.parse(query)),
-      clear: query => invokeParsed(renderer, USAGE_CLEAR, usageClearResultSchema.array().max(USAGE_HOSTS_MAX), usageClearQuerySchema.parse(query)),
+      clear: query => invokeParsed(renderer, USAGE_CLEAR, usageClearResultsSchema, usageClearQuerySchema.parse(query)),
+    }) } : {}),
+    // Every machine's check queue (#1312): only where the machines line is, so stable's window has no such bridge.
+    ...(watcherMachinesEnabled ? { checks: Object.freeze<CheckQueuesBridge>({
+      read: () => invokeParsed(renderer, CHECK_QUEUES_READ, checkQueuesViewSchema),
+      onChanged: listener => subscribe(renderer, CHECK_QUEUES_CHANGED, checkQueuesViewSchema, listener),
     }) } : {}),
     // Delegation between threads (ADR-0081): only while the Owl list turns it on, so stable's window has no such bridge.
     ...(delegationEnabled ? { delegations: Object.freeze<DelegationsBridge>({
@@ -449,7 +473,7 @@ export function createSottoBridge(
     // Cursor's sign-in from its tile (ADR-0128): only while Cursor's Owl feature is on. The page's address stays in main.
     ...(cursorEnabled ? { cursor: Object.freeze<CursorSignInBridge>({
       start: () => invokeParsed(renderer, CURSOR_SIGN_IN_START, cursorSignInStartSchema),
-      read: request => invokeParsed(renderer, CURSOR_SIGN_IN_READ, cursorSignInViewSchema.nullable(), cursorSignInRequestSchema.parse(request)),
+      read: request => invokeParsed(renderer, CURSOR_SIGN_IN_READ, cursorSignInReadSchema, cursorSignInRequestSchema.parse(request)),
       reopen: request => invokeParsed(renderer, CURSOR_SIGN_IN_REOPEN, cursorSignInDoneSchema, cursorSignInRequestSchema.parse(request)),
       cancel: request => invokeParsed(renderer, CURSOR_SIGN_IN_CANCEL, cursorSignInDoneSchema, cursorSignInRequestSchema.parse(request)),
       signOut: () => invokeParsed(renderer, CURSOR_SIGN_OUT, cursorSignInDoneSchema),
@@ -480,7 +504,7 @@ export function createSottoBridge(
     }) } : {}),
     ...(mainCheckoutEnabled ? { mainCheckout: Object.freeze<MainCheckoutBridge>({
       read: () => invokeParsed(renderer, MAIN_CHECKOUT_READ, mainCheckoutStateSchema),
-      changes: projectId => invokeParsed(renderer, MAIN_CHECKOUT_CHANGES, mainCheckoutChangesSchema, z.string().min(1).max(256).parse(projectId)),
+      changes: projectId => invokeParsed(renderer, MAIN_CHECKOUT_CHANGES, mainCheckoutChangesSchema, mainCheckoutProjectIdSchema.parse(projectId)),
       command: command => invokeParsed(renderer, MAIN_CHECKOUT_COMMAND, mainCheckoutStateSchema, mainCheckoutCommandSchema.parse(command)),
       onChanged: listener => subscribe(renderer, MAIN_CHECKOUT_CHANGED, mainCheckoutStateSchema, listener),
     }) } : {}),
@@ -488,7 +512,7 @@ export function createSottoBridge(
     ...(interfaceLanguage ? { interfaceLanguage: createInterfaceLanguageBridge(renderer, interfaceLanguage) } : {}),
     ...(desktopNotificationsEnabled ? { notifications: Object.freeze<NotificationsBridge>({
       test: () => invokeParsed(renderer, NOTIFICATION_TEST, notificationTestResultSchema),
-      onOpened: listener => subscribe(renderer, NOTIFICATION_OPENED, z.null(), () => listener()),
+      onOpened: listener => subscribe(renderer, NOTIFICATION_OPENED, nullSchema, () => listener()),
     }) } : {}),
     ...(nextPromptEnabled ? { nextPrompt: Object.freeze<NextPromptBridge>({
       read: () => invokeParsed(renderer, NEXT_PROMPT_READ, nextPromptEntriesSchema),
@@ -532,7 +556,7 @@ export function createSottoBridge(
     ...(platform === 'linux' ? { omarchySetup: Object.freeze<OmarchySetupBridge>({
       get: () => invokeParsed(renderer, OMARCHY_SETUP_GET, omarchySetupStateSchema),
       command: command => invokeParsed(renderer, OMARCHY_SETUP_COMMAND, omarchySetupStateSchema, omarchySetupCommandSchema.parse(command)),
-      onFocus: listener => subscribe(renderer, OMARCHY_SETUP_FOCUS, z.null(), listener),
+      onFocus: listener => subscribe(renderer, OMARCHY_SETUP_FOCUS, nullSchema, listener),
       onChanged: listener => subscribe(renderer, OMARCHY_SETUP_CHANGED, omarchySetupStateSchema, listener),
     }) } : {}),
     subagents: Object.freeze<SubagentsBridge>({
@@ -545,11 +569,11 @@ export function createSottoBridge(
       open: request => invokeParsed(renderer, VISUAL_PAGE_OPEN, visualPageResultSchema, visualPageRequestSchema.parse(request)),
     }),
     files: Object.freeze<FilesBridge>({
-      list: request => invokeParsed(renderer, FILES_LIST, filesResultSchema(fileListingSchema), fileListRequestSchema.parse(request)),
-      preview: request => invokeParsed(renderer, FILES_PREVIEW, filesResultSchema(filePreviewSchema), fileRequestSchema.parse(request)),
-      copyPath: request => invokeParsed(renderer, FILES_COPY_PATH, filesResultSchema(filePathSchema), fileRequestSchema.parse(request)),
-      reveal: request => invokeParsed(renderer, FILES_REVEAL, filesResultSchema(filePathSchema), fileRequestSchema.parse(request)),
-      revealLink: request => invokeParsed(renderer, FILES_REVEAL_LINK, filesResultSchema(fileLinkSchema), fileLinkRequestSchema.parse(request)),
+      list: request => invokeParsed(renderer, FILES_LIST, fileListingResultSchema, fileListRequestSchema.parse(request)),
+      preview: request => invokeParsed(renderer, FILES_PREVIEW, filePreviewResultSchema, fileRequestSchema.parse(request)),
+      copyPath: request => invokeParsed(renderer, FILES_COPY_PATH, filePathResultSchema, fileRequestSchema.parse(request)),
+      reveal: request => invokeParsed(renderer, FILES_REVEAL, filePathResultSchema, fileRequestSchema.parse(request)),
+      revealLink: request => invokeParsed(renderer, FILES_REVEAL_LINK, fileLinkResultSchema, fileLinkRequestSchema.parse(request)),
     }),
     memory: Object.freeze<MemoryBridge>({
       get: () => invokeParsed(renderer, MEMORY_GET, memorySnapshotSchema),
@@ -559,9 +583,9 @@ export function createSottoBridge(
     agents: createAgentBridge(renderer),
     requestDrafts: Object.freeze<RequestDraftBridge>({
       onChanged: listener => subscribe(renderer, REQUEST_DRAFT_CHANGED, requestDraftOwnerSchema, listener),
-      list: owner => invokeParsed(renderer, REQUEST_DRAFT_LIST, requestDraftSchema.array(), requestDraftOwnerSchema.parse(owner)),
-      discard: input => invokeParsed(renderer, REQUEST_DRAFT_DISCARD, z.boolean(), requestDraftDiscardSchema.parse(input)),
-      get: target => invokeParsed(renderer, REQUEST_DRAFT_GET, requestDraftSchema.nullable(), requestDraftTargetSchema.parse(target)),
+      list: owner => invokeParsed(renderer, REQUEST_DRAFT_LIST, requestDraftsSchema, requestDraftOwnerSchema.parse(owner)),
+      discard: input => invokeParsed(renderer, REQUEST_DRAFT_DISCARD, booleanSchema, requestDraftDiscardSchema.parse(input)),
+      get: target => invokeParsed(renderer, REQUEST_DRAFT_GET, requestDraftResultSchema, requestDraftTargetSchema.parse(target)),
       status: target => invokeParsed(renderer, REQUEST_DRAFT_STATUS, requestDraftStatusSchema, requestDraftTargetSchema.parse(target)),
       save: draft => invokeParsed(renderer, REQUEST_DRAFT_SAVE, requestDraftSchema, requestDraftSchema.parse(draft)),
       check: target => invokeParsed(renderer, REQUEST_DRAFT_CHECK, requestDraftCheckResultSchema, requestDraftTargetSchema.parse(target)),
@@ -580,22 +604,22 @@ export function createSottoBridge(
     listHistory: () => invokeParsed(renderer, HISTORY_LIST, historyEntriesSchema),
     addHistory: (entry) => invokeParsed(renderer, HISTORY_ADD, historyEntriesSchema, entry),
     searchHistory: (query) => invokeParsed(renderer, HISTORY_SEARCH, historyEntriesSchema, query),
-    deleteHistory: (id) => invokeParsed(renderer, HISTORY_DELETE, z.boolean(), id),
+    deleteHistory: (id) => invokeParsed(renderer, HISTORY_DELETE, booleanSchema, id),
     clearHistory: () => invokeParsed(renderer, HISTORY_CLEAR, voidSchema),
     listDictationRecords: () => invokeParsed(renderer, DICTATION_RECORDS_LIST, dictationRecordsSchema),
-    getDictationRecord: (id) => invokeParsed(renderer, DICTATION_RECORD_GET, dictationRecordSchema.nullable(), id),
+    getDictationRecord: (id) => invokeParsed(renderer, DICTATION_RECORD_GET, dictationRecordResultSchema, id),
 
-    getHotkey: () => invokeParsed(renderer, HOTKEY_GET, z.string().nullable()),
+    getHotkey: () => invokeParsed(renderer, HOTKEY_GET, hotkeyChordSchema),
     replaceHotkey: (accelerator) =>
       invokeParsed(renderer, HOTKEY_REPLACE, hotkeyResultSchema, accelerator),
     replaceDictationShortcuts: (change) =>
       invokeParsed(renderer, DICTATION_SHORTCUTS_REPLACE, dictationShortcutsResultSchema, dictationShortcutsChangeSchema.parse(change)),
-    suspendDictationShortcuts: (suspended) => invokeParsed(renderer, DICTATION_SHORTCUTS_SUSPEND, commandResultSchema, z.boolean().parse(suspended)),
+    suspendDictationShortcuts: (suspended) => invokeParsed(renderer, DICTATION_SHORTCUTS_SUSPEND, commandResultSchema, booleanSchema.parse(suspended)),
     recordDictationKeys: () => invokeParsed(renderer, DICTATION_KEYS_RECORD, keyRecordResultSchema),
     cancelDictationKeyRecord: () => invokeParsed(renderer, DICTATION_KEYS_RECORD_CANCEL, commandResultSchema),
     onDictationKeysHeld: listener => subscribe(renderer, DICTATION_KEYS_HELD, heldKeysSchema, listener),
     // Linux only: Sotto's Hyprland bindings stand down while Settings records keys.
-    ...(platform === 'linux' ? { onDictationKeysTaken: (listener: (role: 'press' | 'hold') => void) => subscribe(renderer, DICTATION_KEYS_TAKEN, z.enum(['press', 'hold']), listener) } : {}),
+    ...(platform === 'linux' ? { onDictationKeysTaken: (listener: (role: 'press' | 'hold') => void) => subscribe(renderer, DICTATION_KEYS_TAKEN, dictationKeyRoleSchema, listener) } : {}),
     getKeyListenerPermission: () => invokeParsed(renderer, KEY_LISTENER_PERMISSION_GET, keyListenerPermissionSchema),
     requestKeyListenerPermission: () => invokeParsed(renderer, KEY_LISTENER_PERMISSION_REQUEST, keyListenerPermissionSchema),
     onKeyListenerPermission: listener => subscribe(renderer, KEY_LISTENER_PERMISSION_CHANGED, keyListenerPermissionSchema, listener),
@@ -625,14 +649,14 @@ export function createSottoBridge(
     onSpeechModelStatus,
     checkOpenRouterKey: () => invokeParsed(renderer, OPENROUTER_CHECK_KEY, openRouterKeyCheckSchema),
     listOpenRouterModels: () => invokeParsed(renderer, OPENROUTER_LIST_MODELS, openRouterModelListSchema),
-    ensureMicrophoneAccess: () => invokeParsed(renderer, MICROPHONE_ENSURE_ACCESS, z.boolean()),
+    ensureMicrophoneAccess: () => invokeParsed(renderer, MICROPHONE_ENSURE_ACCESS, booleanSchema),
 
     getUpdateStatus: () => invokeParsed(renderer, UPDATE_GET_STATUS, updateResponseSchema),
     checkForUpdates: () => invokeParsed(renderer, UPDATE_CHECK, updateResponseSchema),
     downloadUpdate: () => invokeParsed(renderer, UPDATE_DOWNLOAD, commandResultSchema),
     installUpdate: () => invokeParsed(renderer, UPDATE_INSTALL, commandResultSchema),
     onUpdateStatus,
-    onUpdateCheckRequested: listener => subscribe(renderer, UPDATE_CHECK_REQUESTED, z.null(), () => listener()),
+    onUpdateCheckRequested: listener => subscribe(renderer, UPDATE_CHECK_REQUESTED, nullSchema, () => listener()),
 
     getStartup: () => invokeParsed(renderer, STARTUP_GET, startupStateSchema),
     setStartup: (enabled) => invokeParsed(renderer, STARTUP_SET, startupStateSchema, enabled),
@@ -645,9 +669,9 @@ export function createSottoBridge(
     reloadApp: () => invokeParsed(renderer, APP_RELOAD, voidSchema),
     minimizeApp: () => invokeParsed(renderer, APP_MINIMIZE, voidSchema),
     toggleMaximizeApp: () => invokeParsed(renderer, APP_TOGGLE_MAXIMIZE, voidSchema),
-    getWindowMaximized: () => invokeParsed(renderer, APP_MAXIMIZED, z.boolean()),
-    onWindowMaximized: listener => subscribe(renderer, APP_MAXIMIZED, z.boolean(), listener),
-    onWindowHidden: listener => subscribe(renderer, APP_WINDOW_HIDDEN, z.null(), () => listener()),
+    getWindowMaximized: () => invokeParsed(renderer, APP_MAXIMIZED, booleanSchema),
+    onWindowMaximized: listener => subscribe(renderer, APP_MAXIMIZED, booleanSchema, listener),
+    onWindowHidden: listener => subscribe(renderer, APP_WINDOW_HIDDEN, nullSchema, () => listener()),
     onWindowVisible,
     quitApp: () => invokeParsed(renderer, APP_QUIT, voidSchema),
   }

@@ -170,4 +170,35 @@ describe('Codex activity projection', () => {
     projection.turn(t, { id: 'new-turn', status: 'completed' }, true)
     expect(t.activities?.[0]?.afterMessageId).toBe('new-message')
   })
+
+  it("reads a sub-agent's own notifications against their shapes, refusing what does not parse and changing nothing", () => {
+    let now = 5_000
+    const t = thread(); const projection = new CodexActivityProjection(() => now)
+    projection.item(t, codexItemSchema.parse(activityItems.spawn), { ...context, phase: 'completed' })
+    const before = JSON.stringify(t)
+    const nested = { id: 'nested-spawn', type: 'collabAgentToolCall', tool: 'spawnAgent', status: 'completed', receiverThreadIds: ['native-grandchild'], agentsStates: { 'native-grandchild': { status: 'running' } } }
+    for (const [method, params] of [
+      ['item/completed', { item: nested }],
+      ['item/completed', { turnId: 'child-turn', item: { ...nested, id: 7 } }],
+      ['item/started', { turnId: 'child-turn', item: { id: 'reply', type: 'agentMessage', text: 'Done' } }],
+      ['item/completed', { turnId: 'child-turn', item: nested, startedAtMs: 'soon' }],
+      ['turn/completed', { turn: { status: 3 } }],
+      ['turn/completed', { turn: { status: 'completed', durationMs: -1 } }],
+      ['turn/completed', { turn: { status: 'failed', error: { code: 1 } } }],
+      ['turn/completed', { status: { type: 1 } }],
+      ['thread/status/changed', { status: { type: 'unheardOf' } }],
+      ['turn/aborted', { turn: { status: 'completed' } }],
+    ] as const) expect(projection.childNotification('native-child', method, params), `${method} ${JSON.stringify(params)}`).toBeUndefined()
+    expect(JSON.stringify(t)).toBe(before)
+
+    expect(projection.childNotification('native-child', 'item/completed', { turnId: 'child-turn', item: nested, startedAtMs: 4_000, completedAtMs: null })).toBe(t)
+    expect(t.activities?.some(record => record.agents?.some(agent => agent.status === 'running' && agent.id !== t.activities?.[0]?.agents?.[0]?.id))).toBe(true)
+    expect(JSON.stringify(t)).not.toContain('native-grandchild')
+
+    now = 6_000
+    expect(projection.childNotification('native-child', 'thread/status/changed', { status: { type: 'active' } })).toBe(t)
+    expect(t.activities?.[0]?.agents?.[0]?.status).toBe('running')
+    expect(projection.childNotification('native-child', 'turn/completed', { turn: { id: 'child-turn', status: 'completed', startedAt: 4, completedAt: 6, durationMs: 1_500 } })).toBe(t)
+    expect(t.activities?.[0]?.agents?.[0]).toMatchObject({ status: 'completed', durationMs: 1_500, startedAt: new Date(4_000).toISOString(), completedAt: new Date(6_000).toISOString() })
+  })
 })

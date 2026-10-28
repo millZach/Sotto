@@ -128,6 +128,7 @@ export async function readHistoryFile<State>(providerId: UsageProviderId, file: 
     batch.tokens.length = 0; batch.prompts.length = 0
     const encoded = reader.save(state, lines)
     sink.setCursors([{ key, cursor: { size, mtimeMs, offset: consumed, ...(encoded === undefined ? {} : { state: encoded }) } }])
+    await sink.settled?.()
     await yieldToEventLoop()
   }
   if (offset >= size) { await commit(); return true }

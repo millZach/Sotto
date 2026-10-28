@@ -7,6 +7,9 @@ import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, FILES_REVEAL_
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 import type { FilesService } from './service'
 
+/** Each call's arguments, checked against schemas built once rather than on every call. */
+const oneArgument = z.tuple([z.unknown()])
+
 /**
  * Files for a thread on a paired host, read on that host through the router (ADR-0025, October 5 amendment). Copy path
  * copies the host's own path to this computer's clipboard; there is no reveal, since the folder is not on this computer.
@@ -38,7 +41,7 @@ export function registerFilesIpc(ipc: IpcMainAdapter, files: FilesService, sende
   for (const [channel, method] of operations) {
     ipc.handle(channel, (event, ...args) => {
       if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('FILES_MAIN_WINDOW_REQUIRED')
-      const [request] = z.tuple([z.unknown()]).parse(args)
+      const [request] = oneArgument.parse(args)
       if (method === 'revealLink' && !revealLinks) return { ok: false, error: { code: 'unavailable', message: i18n._(REVEAL_LINK_OFF) } }
       return namesHostThread(request) ? onHost(method, request) : files[method](request)
     })

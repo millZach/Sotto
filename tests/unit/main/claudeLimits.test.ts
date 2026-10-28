@@ -2,16 +2,25 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ClaudeLimits, readClaudeLimits, type ClaudeControl } from '../../../src/main/agents/claudeLimits'
 import { ClaudeRejected } from '../../../src/main/agents/claudeProtocol'
+import { useGitLauncher } from '../../../src/main/agents/gitLauncher'
 import recordedUsage from '../../fixtures/claudeUsageAnswer.json'
+import { builtGitLauncherWorker } from '../../fixtures/gitLauncherWorker'
+import { mainThreadLaunches, resetMainThreadLaunches } from '../../fixtures/mainThreadLaunches'
 import { expectWithinBudget } from '../../fixtures/perfBudget'
+
+vi.mock('node:child_process', async importOriginal => (await import('../../fixtures/mainThreadLaunches')).timingLaunches(await importOriginal()))
 
 const fake = resolve('tests/fixtures/fakeClaudeUsage.mjs')
 const now = () => new Date('2099-10-14T18:00:00.000Z')
 let root = ''
 let log = ''
+// A probe starts on the Git launcher's worker thread, as it does in the app, so every probe here goes the way the app's does.
+let worker: Awaited<ReturnType<typeof builtGitLauncherWorker>>
+beforeAll(async () => { worker = await builtGitLauncherWorker(); await useGitLauncher(worker.path) }, 60_000)
+afterAll(async () => { await useGitLauncher(null); await worker?.dispose() })
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'sotto-claude-limits-')); log = join(root, 'spawns.jsonl') })
 afterEach(async () => { await rm(root, { recursive: true, force: true }) })
 
@@ -112,6 +121,20 @@ describe('reading Claude limits through a short probe', () => {
     for (const read of both) await expect(read).rejects.toThrow()
     expectWithinBudget(Date.now() - started, 5_000, 'aborted reads letting go')
     await expect(readClaudeLimits(probe('usage', { signal: all.signal }))).rejects.toThrow()
+  })
+  it('starts the probe on the launcher\'s worker thread, never on this one', async () => {
+    // On Windows a process start runs on the thread that asks, and on Electron's main thread it holds the window: the
+    // first start of Claude Code in a while held main for 655 ms (ADR-0083). This thread stands in for main here.
+    resetMainThreadLaunches()
+    expect(await readClaudeLimits(probe('usage'))).toMatchObject({ status: 'available', refreshable: true })
+    // The silent probe is let go once the fake has logged its start, not at a short deadline a loaded worker can miss.
+    const leaving = new AbortController()
+    const silent = readClaudeLimits(probe('silent', { signal: leaving.signal }))
+    await vi.waitFor(async () => expect(await spawns()).toHaveLength(2), { timeout: 30_000, interval: 25 })
+    leaving.abort()
+    await expect(silent).rejects.toThrow()
+    // Two probes were started, and neither was started from this thread.
+    expect(mainThreadLaunches.count).toBe(0)
   })
 })
 

@@ -11,11 +11,11 @@ import { dirname, join, resolve } from 'node:path'
 import { build } from 'vite'
 import { storeWorkerBuild } from '../../scripts/store-worker-build.mjs'
 
-export async function builtStoreWorker(): Promise<{ readonly path: string; dispose(): Promise<void> }> {
+export async function builtStoreWorker(worker: 'threadStoreWorker' | 'usageStoreWorker' = 'threadStoreWorker'): Promise<{ readonly path: string; dispose(): Promise<void> }> {
   const root = await mkdtemp(join(tmpdir(), 'sotto-store-worker-'))
-  await build(storeWorkerBuild({ root: resolve('.'), outDir: root, extension: 'cjs', logLevel: 'silent' }))
+  await build(storeWorkerBuild({ root: resolve('.'), outDir: root, extension: 'cjs', logLevel: 'silent', worker }))
   return {
-    path: join(root, 'threadStoreWorker.cjs'),
+    path: join(root, `${worker}.cjs`),
     dispose: async () => {
       if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-store-worker-')) throw new Error('Unexpected fixture directory')
       await rm(root, { recursive: true, force: true })

@@ -59,6 +59,15 @@ const configSchema = z.object({
   options: z.array(z.union([optionSchema, z.object({ group: z.string(), name: z.string(), options: z.array(optionSchema) })])).optional(),
 })
 const sessionSchema = z.object({ configOptions: z.array(configSchema) })
+const initializeSchema = z.object({
+  protocolVersion: z.literal(DEVIN_ACP_VERSION),
+  agentCapabilities: z.object({ loadSession: z.literal(true), mcpCapabilities: z.object({ http: z.boolean().optional() }).optional() }),
+  authMethods: z.array(z.object({ id: z.string() })),
+})
+const newSessionSchema = z.object({ sessionId: z.string().min(1) })
+const promptResponseSchema = z.object({ stopReason: z.string() })
+/** The ID Devin gives a user message, read for every chunk of one in a thread's history. */
+const clientMessageIdSchema = z.string().uuid()
 function sessionModeConfig(value: unknown) {
   const mode = sessionSchema.parse(value).configOptions.find(option => option.id === 'mode')
   if (!mode) throw new Error('Devin did not report its permission modes. Your threads are kept. Use a Devin CLI version Sotto has checked, then reconnect.')
@@ -452,11 +461,7 @@ export class DevinAcpHost implements AgentHost {
         clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, elicitation: { form: {} } },
         clientInfo: { name: 'sotto', version: appVersion },
       }, value => {
-        const result = z.object({
-          protocolVersion: z.literal(DEVIN_ACP_VERSION),
-          agentCapabilities: z.object({ loadSession: z.literal(true), mcpCapabilities: z.object({ http: z.boolean().optional() }).optional() }),
-          authMethods: z.array(z.object({ id: z.string() })),
-        }).parse(value)
+        const result = initializeSchema.parse(value)
         if (!result.authMethods.some(method => method.id === 'devin-browser')) throw new Error('Native Devin sign-in is required.')
         connection.httpToolServers = result.agentCapabilities.mcpCapabilities?.http === true
       })
@@ -550,7 +555,7 @@ export class DevinAcpHost implements AgentHost {
       let disposableSession: string | undefined
       await catalog.rpc.request('session/new', { cwd: this.catalogDirectory, mcpServers: [] }, value => {
         if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
-        disposableSession = z.object({ sessionId: z.string().min(1) }).parse(value).sessionId
+        disposableSession = newSessionSchema.parse(value).sessionId
         const model = modelConfig(value)
         const providerModes = offeredModes(sessionModeConfig(value).reported)
         this.state.models = model.models.map(option => ({
@@ -655,7 +660,7 @@ export class DevinAcpHost implements AgentHost {
       const mcpServers = await this.toolServers(id, connection, generation)
       await connection.rpc.request('session/new', { cwd: alias.cwd, mcpServers }, async value => {
         if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
-        alias.devinSessionId = z.object({ sessionId: z.string().min(1) }).parse(value).sessionId
+        alias.devinSessionId = newSessionSchema.parse(value).sessionId
         alias.emptyReleased = false; connection.fresh = true; await this.persist()
       })
       await connection.rpc.request('session/set_config_option', { sessionId: alias.devinSessionId, configId: 'model', value: alias.modelId }, value => {
@@ -792,7 +797,7 @@ export class DevinAcpHost implements AgentHost {
     const alias = this.aliases[id]!
     if (update.sessionUpdate === 'user_message_chunk') {
       const meta = record(update._meta)
-      const nativeId = z.string().uuid().parse(meta?.['cognition.ai/clientMessageId'])
+      const nativeId = clientMessageIdSchema.parse(meta?.['cognition.ai/clientMessageId'])
       const origin = alias.origins.find(item => item.nativeMessageId === nativeId)
       const messageId = origin?.messageId ?? 'devin-user-' + nativeId
       let message = transcript.messages.find(message => message.id === messageId)
@@ -966,7 +971,7 @@ export class DevinAcpHost implements AgentHost {
         const mcpServers = await this.toolServers(command.threadId, connection, generation)
         await connection.rpc.request('session/new', { cwd: alias.cwd, mcpServers }, async value => {
           if (generation !== this.generation || this.connections.get(command.threadId) !== connection) throw new DevinUncertain('Devin connection changed.')
-          alias.devinSessionId = z.object({ sessionId: z.string().min(1) }).parse(value).sessionId
+          alias.devinSessionId = newSessionSchema.parse(value).sessionId
           connection.fresh = true
           await this.persist()
         })
@@ -1128,7 +1133,7 @@ export class DevinAcpHost implements AgentHost {
       _meta: { 'cognition.ai/clientMessageId': origin.nativeMessageId },
     }, async value => {
       if (superseded()) { endTurn(turn); return }
-      const stopReason = z.object({ stopReason: z.string() }).parse(value).stopReason
+      const stopReason = promptResponseSchema.parse(value).stopReason
       // A completion alone is not taken as acceptance: one with no work streamed is checked against the replay.
       this.publishActive(id); this.active.delete(id); endTurn(turn); this.clearRequests(id); connection.tools.clear(); connection.toolBytes = 0
       const status = stopReason === 'end_turn' ? 'completed' : stopReason === 'cancelled' ? 'interrupted' : 'failed'

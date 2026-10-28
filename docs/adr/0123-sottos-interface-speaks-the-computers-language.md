@@ -44,3 +44,20 @@ Theme, Details and Motion, beside a preview. The **Language** row is no longer a
 the Details card, after the effort color, the creature and contrast. The page is short enough now that the row is in
 view or one scroll away, and Find a setting still reaches it by "Language" in English from any language. Everything
 else above holds: the row, its list, the English word beside the label and the immediate change.
+
+## Amendment, October 27, 2026: Language is hidden until the desktop catalogs are drafted
+
+Zach found that choosing a language on Owl changed almost nothing. The desktop catalogs were extracted, but the step
+above where a model drafts each language never ran for the desktop: each of the 29 languages has 40 of 6,637 messages
+translated, 29 in `settings` and 11 in `main`, and none in `threads`, `features`, `tools`, `shared` or `widget`. The
+iPhone's catalogs were drafted separately (#1550) and are not affected. Zach's call: "Just hide language for now. This
+is very low priority."
+
+`INTERFACE_LANGUAGE_SHOWN` in `src/shared/interfaceLanguages.ts` is `false`. With it off, Owl does what stable does
+under **Owl** above: the Language row does not exist, Sotto is English whatever the setting or the computer's language,
+and a saved choice is kept whole but not shown. Keeping the choice was chosen over resetting it: stable already works
+that way, nothing has to be migrated, and someone who picked a language gets it back when the row returns. The
+catalogs, their partial translations, the Lingui plumbing, the computer's-language matching and the
+`SOTTO_INTERFACE_LANGUAGE` override stay as they are; an unpackaged run shows nothing of them either, so the end-to-end
+tests of the row are skipped until the constant is `true` again. #1684 tracks drafting the catalogs; once they are
+drafted and checked, setting the constant back to `true` brings the row back.
