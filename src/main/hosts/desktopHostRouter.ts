@@ -779,10 +779,13 @@ export class DesktopHostRouter {
   private build(read: (connection: DesktopHostConnection) => AgentState, publish = false): AgentState {
     this.settleAnswerNotice()
     const multiple = this.hosts.size > 1
+    // A host's thread that this computer's own thread delegated to names it by this computer's own ID (#1316 part 3).
+    let desktopHostId: string | undefined
+    for (const { connection } of this.hosts.values()) if (connection.kind === 'local') desktopHostId = connection.hostId
     const entries = [...this.hosts.values()].map(({ connection }) => {
       const original = this.visibleState(read(connection), connection.hostId)
       const last = this.built.get(connection.hostId)
-      const projection = projectClientAgentState(original, last?.projection)
+      const projection = projectClientAgentState(original, last?.projection, desktopHostId)
       const threads = this.windowThreads(connection, original, projection.output, multiple, last)
       if (publish) this.built.set(connection.hostId, { projection, threads })
       return { connection, original, state: projection.output, threads: threads.made, remade: threads.remade, before: last?.threads.made }

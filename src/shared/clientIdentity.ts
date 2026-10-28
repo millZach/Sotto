@@ -89,7 +89,7 @@ type Fields = Readonly<Record<string, unknown>>
  * on every broadcast, and a host that had not changed was rewritten whole each time (#1335). The values are the ones
  * `clientAgentState` gives; only unchanged parts keep their identity, and nothing in a projection is written into.
  */
-export function projectClientAgentState(state: AgentState, previous?: ClientAgentStateProjection): ClientAgentStateProjection {
+export function projectClientAgentState(state: AgentState, previous?: ClientAgentStateProjection, desktopHostId?: string): ClientAgentStateProjection {
   const hostId = state.hostId ?? state.host.hostId
   if (hostId === undefined) return { hostId, input: state, output: state, fields: {}, hostFields: {}, threads: [] }
   const last = previous?.hostId === hostId ? previous : undefined
@@ -111,8 +111,8 @@ export function projectClientAgentState(state: AgentState, previous?: ClientAgen
   const replaced = !kept && last ? threadsReplacedSince(state.host, last.input.host) : undefined
   let threads: AgentThread[], projected: AgentThread[], moved: number[] | undefined
   if (kept) { threads = last.threads as AgentThread[]; projected = last.output.host.threads }
-  else if (replaced && last) ({ threads, projected, moved } = projectReplaced(state.host.threads, replaced, hostId, last))
-  else { threads = [...state.host.threads]; projected = projectThreads(threads, hostId, last) }
+  else if (replaced && last) ({ threads, projected, moved } = projectReplaced(state.host.threads, replaced, hostId, last, desktopHostId))
+  else { threads = [...state.host.threads]; projected = projectThreads(threads, hostId, last, desktopHostId) }
   const output = { ...mapped, hostId, host: { ...mappedHost, models: state.host.models, projects, threads: projected } }
   if (kept && last) noteThreadsReplaced(output.host, last.output.host, [])
   else if (moved && last) noteThreadsReplaced(output.host, last.output.host, moved)
@@ -124,7 +124,7 @@ export function projectClientAgentState(state: AgentState, previous?: ClientAgen
  * replaced in place: only those are read and projected again, each as `projectThreads` would, and every other is the last
  * projection's record. `moved` names the positions whose projected record changed.
  */
-function projectReplaced(input: readonly AgentThread[], replaced: ReadonlySet<number>, hostId: string, last: ClientAgentStateProjection): { threads: AgentThread[]; projected: AgentThread[]; moved: number[] } {
+function projectReplaced(input: readonly AgentThread[], replaced: ReadonlySet<number>, hostId: string, last: ClientAgentStateProjection, desktopHostId?: string): { threads: AgentThread[]; projected: AgentThread[]; moved: number[] } {
   const made = last.output.host.threads, before = last.threads
   const threads = before.slice(), moved: number[] = []
   let projected: AgentThread[] | undefined
@@ -133,14 +133,14 @@ function projectReplaced(input: readonly AgentThread[], replaced: ReadonlySet<nu
     threads[position] = thread
     const prior = before[position]!
     if (prior.id === thread.id && sameThreadRecord(prior, thread)) continue
-    ;(projected ??= made.slice())[position] = clientThread(thread, hostId)
+    ;(projected ??= made.slice())[position] = clientThread(thread, hostId, desktopHostId)
     moved.push(position)
   }
   return { threads, projected: projected ?? made, moved }
 }
 
 /** The host's threads as clients name them, each reused from `last` while its record holds the same values. */
-function projectThreads(threads: readonly AgentThread[], hostId: string, last: ClientAgentStateProjection | undefined): AgentThread[] {
+function projectThreads(threads: readonly AgentThread[], hostId: string, last: ClientAgentStateProjection | undefined, desktopHostId?: string): AgentThread[] {
   const made = last?.output.host.threads
   const before = last?.threads
   let positions: Map<string, number> | undefined
@@ -156,22 +156,39 @@ function projectThreads(threads: readonly AgentThread[], hostId: string, last: C
       }
     }
     unchanged = false
-    return clientThread(thread, hostId)
+    return clientThread(thread, hostId, desktopHostId)
   })
   return unchanged ? made! : projected
 }
 
 /** One thread as clients name it, from a host whose state names `hostId`. */
-function clientThread(thread: AgentThread, hostId: string): AgentThread {
+function clientThread(thread: AgentThread, hostId: string, desktopHostId?: string): AgentThread {
   const own = thread.hostId ?? hostId
   return { ...thread, id: clientThreadId(hostId, thread.id, thread.hostId), projectId: hostEntityKey(own, thread.projectId),
     // The thread that delegated to this one (ADR-0081), and the threads a continuation links (ADR-0089), are named as the
     // window names threads, so their links find them.
-    ...(thread.delegatedBy ? { delegatedBy: hostEntityKey(own, thread.delegatedBy) } : {}),
+    ...(thread.delegatedBy ? { delegatedBy: delegatingKey(own, thread.delegatedBy, desktopHostId) } : {}),
     ...(thread.continuedFrom ? { continuedFrom: keyedLinks(thread.continuedFrom, own) } : {}),
     ...(thread.continuedIn ? { continuedIn: keyedLinks(thread.continuedIn, own) } : {}),
     // So is the thread one began from (#1028), so its note opens it.
     ...(thread.startedFrom ? { startedFrom: keyedLinks(thread.startedFrom, own) } : {}) }
+}
+
+/** How a headless host keys a thread on another machine that delegated to one of its threads through a desktop (#1316 part 2). */
+const REMOTE_CALLER = /^relay:[^:]+:([\s\S]+)$/u
+/**
+ * The window's key for the thread that delegated to a thread on `own` (ADR-0081). A thread on the same machine is keyed by
+ * that machine, as every link is. One on another machine (#1316) already carries the window's key: a child the desktop
+ * relay started here names its parent `host:<hostId>:<threadId>`, and a child a desktop started on a host names its caller
+ * `relay:<client>:<caller>`, where the caller is that key or, for the desktop's own thread, its own ID, keyed by
+ * `desktopHostId` when the desktop projecting it says which machine it is. So a delegated thread is found under the thread
+ * that delegated to it, whichever machine each runs on (#1316 part 3).
+ */
+export function delegatingKey(own: string, delegatedBy: string, desktopHostId?: string): string {
+  if (parseHostEntityKey(delegatedBy)) return delegatedBy
+  const caller = REMOTE_CALLER.exec(delegatedBy)?.[1]
+  if (caller === undefined) return hostEntityKey(own, delegatedBy)
+  return parseHostEntityKey(caller) ? caller : desktopHostId !== undefined ? hostEntityKey(desktopHostId, caller) : hostEntityKey(own, delegatedBy)
 }
 
 /**

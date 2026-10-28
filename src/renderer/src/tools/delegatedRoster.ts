@@ -223,14 +223,20 @@ export function rosterByMachine(owner: RosterMachine, families: readonly Delegat
   const keyOf = (machine: RosterMachine): string => machine.remote ? machine.hostId ?? machine.name : ''
   const ownKey = keyOf(owner)
   const groups = new Map<string, { machine: RosterMachine; families: DelegatedRosterRow[][] }>([[ownKey, { machine: owner, families: [] }]])
+  const add = (machine: RosterMachine, family: DelegatedRosterRow[]): void => {
+    const key = keyOf(machine)
+    const group = groups.get(key) ?? { machine, families: [] }
+    group.families.push(family)
+    groups.set(key, group)
+  }
   for (const family of families) {
     const first = family[0]
     if (!first) continue
-    // Before #1316 a delegated thread runs where the thread that delegated to it runs, so a family stays together.
+    // A delegated thread may run on another machine than the thread that delegated to it (#1316): each row goes under its
+    // own machine's heading, a second-level one on its own there, still naming the thread that delegated to it.
     const key = keyOf(first.machine)
-    const group = groups.get(key) ?? { machine: first.machine, families: [] }
-    group.families.push(family)
-    groups.set(key, group)
+    add(first.machine, family.filter(row => keyOf(row.machine) === key))
+    for (const row of family) if (keyOf(row.machine) !== key) add(row.machine, [row])
   }
   const olderHost = (key: string, group: { readonly families: readonly DelegatedRosterRow[][] }): boolean => (key === ownKey && ownerRead?.unread === 'older-host')
     || group.families.some(family => family.some(row => reads.get(row.thread.id)?.unread === 'older-host'))
