@@ -1,5 +1,8 @@
-import React, { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Bot, Brain, ChevronRight, CircleAlert, FilePen, Info, ListChecks, Shrink, Square, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
+import React, { createContext, memo, useContext, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import {
+  ArrowDownUp, Bot, Brain, Camera, ChevronRight, CircleAlert, CircleCheck, CornerDownLeft, Eye, FilePen, Globe, Info, Keyboard, Link, ListChecks, MousePointerClick,
+  MoveHorizontal, Play, Pointer, Scaling, Shrink, Smartphone, Square, SquareTerminal, Wrench, type LucideIcon,
+} from 'lucide-react'
 import type { MessageDescriptor } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
@@ -19,6 +22,11 @@ import { shownCount } from '../state/interfaceNumbers'
 import { focusComposerFrom, TurnFailureReason, useOwnServerTurnActions, type OwnServerTurnActions } from './OwnServerTurn'
 import { retryingWords, stillWaitingNote, stillWaitingWords, stopName, stopWords } from './ownServerTurnWords'
 import { foldedTurns, setStepsOpen, useStepsOpen } from './stepsOpen'
+import {
+  browserLineName, browserLinesByTurn, browserRunWords, browserStepWords, foldBrowserRuns, linesStartingIn, PLACE, plainWords, sentenceWords, stepUnfinished, turnBrowserLines,
+  type ActivityItem, type BrowserLinesStore, type BrowserRun, type BrowserVerb, type BrowserWords, type TurnLinesView,
+} from './browserLine'
+import { useOwlFeature } from '../state/owlFeature'
 import './activity.css'
 
 /** A running turn shows its newest rows; older ones stay one click away. */
@@ -324,11 +332,19 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
   const [showAll, setShowAll] = useState(false)
   const listId = useId()
   const stepsOpen = useStepsOpen()
+  const quiet = useOwlFeature('quiet-browser')
   const expanded = choice ?? (live || stepsOpen)
   const headline = turnHeadline(group.turn, threadRunning)
   const summary = groupSummary(group.records)
-  // Work done for a subagent or tool sits under it.
-  const shown: readonly ActivityNode[] = expanded ? nestActivities(group.records) : []
+  // Work done for a subagent or tool sits under it, and on Owl a run of calls to Sotto's browser is one line (ADR-0154).
+  const nodes: readonly ActivityNode[] = expanded ? nestActivities(group.records) : []
+  // Within a transcript a line stands for its whole turn, and the group hears only of its own turn's lines; a view outside
+  // one reads its own records.
+  const shared = useTurnBrowserLines(quiet ? group.turnId : null)
+  const records = group.records
+  const lines = useMemo(() => !quiet ? null : shared ? shared.lines : turnBrowserLines(browserLinesByTurn(records), group.turnId),
+    [quiet, shared, records, group.turnId])
+  const shown: readonly ActivityItem[] = lines ? foldBrowserRuns(nodes, lines) : nodes.map(node => ({ node }))
   const earlier = live && expanded && !showAll ? Math.max(0, shown.length - LIVE_ROWS) : 0
   const rows = earlier ? shown.slice(-LIVE_ROWS) : shown
   const canFold = !live && group.records.length > 0
@@ -349,7 +365,9 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
     {rows.length ? <ul id={listId} className="thread-activity__rows">
       {earlier ? <li className="thread-activity__earlier"><button type="button" className="thread-activity__more tt-focusable"
         onClick={event => { onDisclosure?.(event.currentTarget); setShowAll(true) }}><Trans comment="Shows the rows of work above the newest ones.">Show {earlier} earlier</Trans></button></li> : null}
-      {rows.map(node => <ActivityRow key={node.record.id} node={node} connected={connected} provider={provider} quietUnknown={(group.turn?.status ?? outcome) === 'unknown'} onDisclosure={onDisclosure} />)}
+      {rows.map(item => item.run
+        ? <BrowserLine key={item.run.key} as="li" run={item.run} going={item.run.key === shared?.goingKey} connected={connected} onDisclosure={onDisclosure} />
+        : <ActivityRow key={item.node.record.id} node={item.node} connected={connected} provider={provider} quietUnknown={(group.turn?.status ?? outcome) === 'unknown'} onDisclosure={onDisclosure} />)}
     </ul> : null}
   </section>
 })
@@ -446,7 +464,16 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   const turnId = liveTurnId(thread)
   const turn = turnId === null ? undefined : thread.activities?.find(record => record.turnId === turnId && isTurnRecord(record))
   const activities = thread.activities
-  const steps = useMemo(() => turnId === null ? [] : turnSteps({ activities }, turnId), [activities, turnId])
+  // On Owl the calls a browser line stands for are in the transcript already (ADR-0154), so they are not here too. A call
+  // under a subagent keeps its row, under that subagent.
+  const quiet = useOwlFeature('quiet-browser')
+  const shared = useTurnBrowserLines(quiet ? turnId : null)
+  const steps = useMemo(() => {
+    const all = turnId === null ? [] : turnSteps({ activities }, turnId)
+    if (!quiet || turnId === null) return all
+    const folded = (shared ? shared.lines : turnBrowserLines(browserLinesByTurn(activities), turnId)).folded
+    return folded.size ? all.filter(record => !folded.has(record.id)) : all
+  }, [activities, turnId, quiet, shared])
   // A turn on one of the user's own model servers (ADR-0124, October 24 amendment) says so while OpenCode tries the
   // server again, and once the server has sent nothing for 30 seconds.
   const own = useOwnServerTurnActions()
@@ -502,6 +529,102 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
       <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
     </button>
     {disclosure.opened}
+  </div>
+}
+
+const STEP_ICONS: Record<BrowserVerb, LucideIcon> = {
+  open: Globe, 'phone-open': Smartphone, start: Play, navigate: Globe, click: MousePointerClick, type: Keyboard, key: CornerDownLeft,
+  scroll: ArrowDownUp, tap: Pointer, swipe: MoveHorizontal, inspect: Eye, screenshot: Camera, viewport: Scaling, work: Globe,
+  status: Info, pages: ListChecks, finish: CircleCheck,
+  'cloud-open': Smartphone, 'cloud-tap': Pointer, 'cloud-swipe': MoveHorizontal, 'cloud-type': Keyboard, 'cloud-key': CornerDownLeft,
+  'cloud-button': CornerDownLeft, 'cloud-url': Link, 'cloud-inspect': Eye, 'cloud-screenshot': Camera, 'cloud-work': Smartphone,
+  'cloud-status': Info, 'cloud-finish': CircleCheck,
+}
+
+/**
+ * A run of the agent's calls to Sotto's own browser as one quiet line that updates in place (ADR-0154; Owl only):
+ * "Browsing localhost:5173 · clicked in the page" while the run goes on, "Browsed localhost:5173 · 9 steps" once the turn
+ * has moved on. A press opens the steps in plain words, a failed one marked, and Escape folds them. The dot holds still:
+ * the page itself is in Tools, so the line only says where the agent is.
+ */
+export function BrowserLine({ run, going, connected, onDisclosure, as: Tag = 'div' }: {
+  readonly run: BrowserRun
+  /** The run is the turn's newest work and the agent has not finished its task. */
+  readonly going: boolean
+  readonly connected: boolean
+  readonly onDisclosure?: ((element: HTMLElement) => void) | undefined
+  /** An item among a group's rows, or a line of its own in the transcript. */
+  readonly as?: 'li' | 'div'
+}): ReactNode {
+  useInterfaceLanguageState()
+  const [open, setOpen] = useState(false)
+  const listId = useId()
+  const { headline, detail } = browserRunWords(run, going)
+  const Icon = run.kind === 'cloud' ? Smartphone : Globe
+  const lastFailed = going ? run.steps.at(-1)!.failed : run.steps.some(step => stepUnfinished(step, true))
+  const said = plainWords(headline)
+  return <Tag className="thread-browser" data-kind={run.kind} data-going={going || undefined} data-open={open || undefined}
+    onKeyDown={foldOnEscape(open, summary => { onDisclosure?.(summary); setOpen(false) })}>
+    <button type="button" className="thread-browser__line tt-focusable" aria-expanded={open} aria-controls={open ? listId : undefined}
+      aria-label={browserLineName(run, open, `${said} · ${plainWords(detail)}`)}
+      onClick={event => { onDisclosure?.(event.currentTarget); setOpen(value => !value) }}>
+      <Icon className="thread-browser__icon" size={14} strokeWidth={1.8} aria-hidden="true" />
+      {going ? <i className="thread-browser__dot" data-connected={connected || undefined} aria-hidden="true" /> : null}
+      <span className="thread-browser__words"><Words words={headline} /> <span className="thread-browser__detail" data-failed={lastFailed || undefined}>· <Words words={detail} /></span></span>
+      <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
+    </button>
+    {open ? <ol id={listId} className="thread-browser__steps" aria-label={said}>
+      {run.steps.map(step => {
+        const unfinished = stepUnfinished(step, !going)
+        const StepIcon = unfinished ? CircleAlert : STEP_ICONS[step.verb]
+        return <li key={step.record.id} data-failed={unfinished || undefined}>
+          <StepIcon className="thread-browser__step-icon" size={14} strokeWidth={1.8} aria-hidden="true" />
+          <span className="thread-browser__step"><Words words={sentenceWords(browserStepWords(step, !going))} /></span>
+        </li>
+      })}
+    </ol> : null}
+  </Tag>
+}
+
+/**
+ * Translated words with an address or key name kept left to right in its own element, in a sentence of either direction
+ * (ADR-0123).
+ */
+function Words({ words }: { readonly words: BrowserWords }): ReactNode {
+  if (words.place === undefined) return words.text
+  const at = words.text.indexOf(PLACE)
+  return <>{words.text.slice(0, at)}<span className="thread-browser__place" dir="ltr">{words.place}</span>{words.text.slice(at + PLACE.length)}</>
+}
+
+/**
+ * The transcript's browser lines (ADR-0154; Owl only), one view a turn. The store itself never changes, so nothing is drawn
+ * again for providing it; each part reads its own turn with `useTurnBrowserLines`. Null on stable, and outside a transcript.
+ */
+export const BrowserLinesContext = createContext<BrowserLinesStore | null>(null)
+
+const NO_SUBSCRIPTION = (): (() => void) => () => undefined
+
+/** One turn's browser lines, drawn again only when that turn's own view changes. Null outside a transcript or with no turn. */
+function useTurnBrowserLines(turnId: string | null): TurnLinesView | null {
+  const store = useContext(BrowserLinesContext)
+  return useSyncExternalStore(store === null || turnId === null ? NO_SUBSCRIPTION : store.subscriberFor(turnId), () => store === null || turnId === null ? null : store.view(turnId))
+}
+
+/**
+ * The running turn's browser line where its first call happened in the transcript (ADR-0154; Owl only), one for Sotto's
+ * browser and one for the cloud iPhone at most. The rest of the turn's work stays folded under its working line.
+ */
+export function LiveBrowserLines({ group, connected, onDisclosure }: {
+  readonly group: ActivityGroup; readonly connected: boolean
+  readonly onDisclosure?: ((element: HTMLElement) => void) | undefined
+}): ReactNode {
+  const shared = useTurnBrowserLines(group.turnId)
+  const records = group.records, lines = shared?.lines
+  // Read again only when the group's records or its turn's lines change, not for each word of a reply streaming in.
+  const runs = useMemo(() => lines === undefined ? [] : linesStartingIn(records, lines), [records, lines])
+  if (shared === null || !runs.length) return null
+  return <div className="thread-browser-lines">
+    {runs.map(run => <BrowserLine key={run.key} run={run} going={run.key === shared.goingKey} connected={connected} onDisclosure={onDisclosure} />)}
   </div>
 }
 
