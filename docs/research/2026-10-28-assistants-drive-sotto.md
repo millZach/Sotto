@@ -1,5 +1,7 @@
 # Assistants that drive Sotto: Grok Bot and Hermes Agent
 
+Decision 2026-10-28: Zach chose not to pursue this; kept for reference.
+
 October 28, 2026. Zach asked how an outside assistant, Grok Bot or Hermes Agent, could connect to Sotto and drive it. The assistant would start and watch threads in projects, read status and replies, see what waits on Zach, steer and follow up, and report back wherever Zach talks to it, such as Grok Bot on his phone. Sotto exposes the interface. The assistant stays outside it, and Sotto neither hosts nor runs it. This note is research. It builds nothing.
 
 Each claim is labelled. **Documented** means the vendor or project says it, and the page is named. **Observed** means I read it in source code or a raw file, and the file is named. **Inferred** means my reasoning from those. **Not verified** means I did not confirm it.
