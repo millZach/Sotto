@@ -355,14 +355,14 @@ struct AttachPhotosButton: View {
             model.photoNotices[box.id] = refusal
             return
         }
-        if !files.isEmpty { attached += 1; model.attachFiles(ref, from: files) }
+        if !files.isEmpty { model.attachFiles(ref, from: files) }
         if let photoRefusal { model.photoNotices[box.id] = photoRefusal }
         else if !photos.isEmpty {
-            attached += 1
             model.attachPhotos(box, from: photos.map { url in
                 PhotoSource(name: url.deletingPathExtension().lastPathComponent) { try await Task.detached { try PickedFile.read(url) }.value }
             })
         }
+        if !files.isEmpty || !photos.isEmpty { attached += 1 }
     }
     /// The camera asks for access the first time. Once it has been refused, iOS won't ask again, so say where to turn it on.
     private func openCamera() {

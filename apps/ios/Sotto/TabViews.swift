@@ -46,7 +46,6 @@ struct ThreadsView: View {
     @State private var settledExpanded = false
     @State private var sent: [String: CardAnswer] = [:]
     @State private var searchBox = FrameBox()
-    @State private var retries = 0
     @FocusState private var searching: Bool
     @Environment(\.sottoTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -167,47 +166,9 @@ struct ThreadsView: View {
         }
         if query.isEmpty {
             ForEach(model.lists.filter { model.show.admits($0.hostID) && $0.status != .online }, id: \.hostID) { computer in
-                connectionNote(computer)
+                ConnectionNote(computer: computer, trying: computer.status == .connecting)
             }
         }
-    }
-
-    private func connectionNote(_ computer: ComputerThreads) -> some View {
-        let trying = computer.status == .connecting
-        let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-        return HStack(spacing: Space.s3) {
-            Image(systemName: "desktopcomputer").foregroundStyle(Palette.muted).accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                (trying ? Text("Checking \(computer.name)…") : Text(String(localized: "computer-row.cant-reach", defaultValue: "Can’t reach \(computer.name).", comment: "Over a computer's last shared threads when it can't be reached. %@ is the computer's name")))
-                    .font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
-                if !trying {
-                    Text("Showing its last shared threads.").font(.sotto(.small)).foregroundStyle(Palette.muted)
-                        .paragraphDirection()
-                }
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: Space.s2)
-            Button { retries += 1; Task { await model.connect(computer.hostID) } } label: {
-                if trying {
-                    HStack(spacing: 6) { ProgressView().controlSize(.mini); Text("Trying", comment: "On the button while Sotto tries to reach a computer again.") }
-                } else {
-                    Text("Try again")
-                }
-            }
-            .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
-            .sensoryFeedback(.impact(flexibility: .soft), trigger: retries)
-            .disabled(trying)
-            .accessibilityLabel(trying ? String(localized: "Trying to reach \(computer.name)", comment: "%@ is the computer's name.")
-                                : String(localized: "Try reaching \(computer.name) again", comment: "%@ is the computer's name."))
-        }
-        .padding(.vertical, Space.s3).padding(.leading, Space.s4).padding(.trailing, Space.s3)
-        .background {
-            LinearGradient(colors: [trying ? theme.color(.surface) : theme.tinted(.surface, with: .danger, 0.09), theme.color(.surface)],
-                           startPoint: .leading, endPoint: UnitPoint(x: 0.7, y: 0.5))
-        }
-        .clipShape(shape)
-        .overlay(shape.strokeBorder(Palette.hairline, lineWidth: 1))
-        .padding(.top, Space.s4)
     }
 
     // MARK: Sections
@@ -356,6 +317,53 @@ struct ThreadsView: View {
 }
 
 // MARK: - The computer menu and the summary
+
+/// One unreachable computer's note. Try again is its own view so one press gives one press's feedback, however many
+/// computers are offline.
+private struct ConnectionNote: View {
+    let computer: ComputerThreads
+    let trying: Bool
+    @EnvironmentObject var model: AppModel
+    @Environment(\.sottoTheme) private var theme
+    @State private var retries = 0
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+        HStack(spacing: Space.s3) {
+            Image(systemName: "desktopcomputer").foregroundStyle(Palette.muted).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                (trying ? Text("Checking \(computer.name)…") : Text(String(localized: "computer-row.cant-reach", defaultValue: "Can’t reach \(computer.name).", comment: "Over a computer's last shared threads when it can't be reached. %@ is the computer's name")))
+                    .font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
+                if !trying {
+                    Text("Showing its last shared threads.").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                        .paragraphDirection()
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: Space.s2)
+            Button { retries += 1; Task { await model.connect(computer.hostID) } } label: {
+                if trying {
+                    HStack(spacing: 6) { ProgressView().controlSize(.mini); Text("Trying", comment: "On the button while Sotto tries to reach a computer again.") }
+                } else {
+                    Text("Try again")
+                }
+            }
+            .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
+            .sensoryFeedback(.impact(flexibility: .soft), trigger: retries)
+            .disabled(trying)
+            .accessibilityLabel(trying ? String(localized: "Trying to reach \(computer.name)", comment: "%@ is the computer's name.")
+                                : String(localized: "Try reaching \(computer.name) again", comment: "%@ is the computer's name."))
+        }
+        .padding(.vertical, Space.s3).padding(.leading, Space.s4).padding(.trailing, Space.s3)
+        .background {
+            LinearGradient(colors: [trying ? theme.color(.surface) : theme.tinted(.surface, with: .danger, 0.09), theme.color(.surface)],
+                           startPoint: .leading, endPoint: UnitPoint(x: 0.7, y: 0.5))
+        }
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(Palette.hairline, lineWidth: 1))
+        .padding(.top, Space.s4)
+    }
+}
 
 private struct ComputerMenu: View {
     @EnvironmentObject var model: AppModel
@@ -738,6 +746,23 @@ private struct WorkingCard: View {
     let row: HostedThread
     private var state: ThreadState { ThreadState(row.thread) }
     var body: some View {
+        Group {
+            if model.canChangeWatch(row.ref) {
+                link.contextMenu {
+                    let watched = model.watchedByWatcher(row.ref)
+                    Button { Task { await model.setWatched(row.ref, !watched, title: row.thread.title) } } label: {
+                        Label(watched ? String(localized: "Stop watching", comment: "Context menu: Watcher stops watching this thread") : String(localized: "Watch", comment: "Context menu: Watcher keeps this thread going"), systemImage: watched ? "eye.slash" : "eye")
+                    }
+                }
+            } else {
+                link
+            }
+        }
+        .accessibilityLabel(spokenLabel)
+        .accessibilityHint("Opens the thread")
+        .accessibilityIdentifier("thread-\(row.id)")
+    }
+    @ViewBuilder private var link: some View {
         NavigationLink(value: ThreadRoute(ref: row.ref)) {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: Space.s2) {
@@ -767,17 +792,6 @@ private struct WorkingCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
-        .contextMenu {
-            if model.canChangeWatch(row.ref) {
-                let watched = model.watchedByWatcher(row.ref)
-                Button { Task { await model.setWatched(row.ref, !watched, title: row.thread.title) } } label: {
-                    Label(watched ? String(localized: "Stop watching", comment: "Context menu: Watcher stops watching this thread") : String(localized: "Watch", comment: "Context menu: Watcher keeps this thread going"), systemImage: watched ? "eye.slash" : "eye")
-                }
-            }
-        }
-        .accessibilityLabel(spokenLabel)
-        .accessibilityHint("Opens the thread")
-        .accessibilityIdentifier("thread-\(row.id)")
     }
     private var place: String {
         let provider = Words.provider(row.thread.providerId)
@@ -842,6 +856,22 @@ private struct ThreadRow: View {
     /// Settled is quiet: a settled thread whose last turn failed doesn't say so here.
     private var failed: Bool { row.failed }
     var body: some View {
+        Group {
+            if model.canChangeWatch(row.ref) {
+                link.contextMenu {
+                    Button { Task { await model.setWatched(row.ref, !watched, title: row.thread.title) } } label: {
+                        Label(watched ? String(localized: "Stop watching", comment: "Context menu: Watcher stops watching this thread") : String(localized: "Watch", comment: "Context menu: Watcher keeps this thread going"), systemImage: watched ? "eye.slash" : "eye")
+                    }
+                }
+            } else {
+                link
+            }
+        }
+        .accessibilityLabel(watched ? String(localized: "\(label), watched by Watcher", comment: "%@ is what VoiceOver reads of the thread before this: its title and where it runs.") : label)
+        .accessibilityHint("Opens the thread")
+        .accessibilityIdentifier("thread-\(row.id)")
+    }
+    @ViewBuilder private var link: some View {
         NavigationLink(value: ThreadRoute(ref: row.ref)) {
             HStack(alignment: .top, spacing: Space.s3) {
                 Light(tone: unread ? .accent : failed ? .danger : .off).padding(.top, 6)
@@ -863,16 +893,6 @@ private struct ThreadRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
-        .contextMenu {
-            if model.canChangeWatch(row.ref) {
-                Button { Task { await model.setWatched(row.ref, !watched, title: row.thread.title) } } label: {
-                    Label(watched ? String(localized: "Stop watching", comment: "Context menu: Watcher stops watching this thread") : String(localized: "Watch", comment: "Context menu: Watcher keeps this thread going"), systemImage: watched ? "eye.slash" : "eye")
-                }
-            }
-        }
-        .accessibilityLabel(watched ? String(localized: "\(label), watched by Watcher", comment: "%@ is what VoiceOver reads of the thread before this: its title and where it runs.") : label)
-        .accessibilityHint("Opens the thread")
-        .accessibilityIdentifier("thread-\(row.id)")
     }
     /// What the row says under its title: just finished, can't be reached, failed, or where it lives.
     private var line: String {
