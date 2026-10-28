@@ -453,7 +453,7 @@ private struct StepBar: View {
                 Capsule()
                     .fill(index <= filled ? theme.color(.accent) : theme.color(.fillSoft))
                     .frame(height: 4)
-                    .softShadow(Capsule(), color: theme.color(.accent).opacity(0.6), radius: 5, showing: index <= filled)
+                    .glow(Capsule(), color: theme.color(.accent), alpha: 0.6, radius: 5, showing: index <= filled)
             }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: filled)

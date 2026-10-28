@@ -1620,7 +1620,7 @@ private struct WatcherDock: View {
         .background {
             ZStack {
                 SoftShadow(shape: shape, color: Color.black.opacity(0.22), radius: 16, y: 8).opacity(focused ? 0 : 1)
-                SoftShadow(shape: shape, color: theme.color(.accent).opacity(0.35), radius: 18).opacity(focused ? 1 : 0)
+                GlowShadow(shape: shape, color: theme.color(.accent), alpha: 0.35, radius: 18).opacity(focused ? 1 : 0)
             }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: focused)

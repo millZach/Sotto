@@ -92,13 +92,14 @@ struct MainTabs: View {
     }
     #if DEBUG
     /// Captures of the UI fixture open a page at launch: `--ui-open-thread <id>` opens one of the laptop's threads, and
-    /// `--ui-open-watcher` the Watcher tab.
+    /// `--ui-open-watcher` the Watcher tab and `--ui-open-settings` Settings.
     private func openForCapture() {
         let arguments = ProcessInfo.processInfo.arguments
         if let index = arguments.firstIndex(of: "--ui-open-thread"), index + 1 < arguments.count {
             threadPath = NavigationPath([ThreadRoute(ref: ThreadRef(hostID: "11111111-1111-4111-8111-111111111111", threadID: arguments[index + 1]))])
         }
         if arguments.contains("--ui-open-watcher"), model.watcherHostID != nil { tab = .watcher }
+        if arguments.contains("--ui-open-settings") { tab = .settings }
     }
     #endif
     private func openAlerted(_ ref: ThreadRef?) {

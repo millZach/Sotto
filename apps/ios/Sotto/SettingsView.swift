@@ -14,6 +14,7 @@ struct SettingsView: View {
             VStack(spacing: Space.s3) {
                 AppearancePanel()
                 ThemePanel { toast = $0 }
+                GlowPanel()
                 TextSizePanel()
                 DensityPanel()
             }
@@ -87,7 +88,7 @@ private struct ThemeChoice: View {
                     .padding(3)
                     .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous)
                         .strokeBorder(selected ? theme.color(.accent) : Color.clear, lineWidth: 2))
-                    .softShadow(RoundedRectangle(cornerRadius: 17, style: .continuous), color: theme.color(.accent).opacity(0.45), radius: 10, showing: selected)
+                    .glow(RoundedRectangle(cornerRadius: 17, style: .continuous), color: theme.color(.accent), alpha: 0.45, radius: 10, showing: selected)
                 HStack(spacing: 6) {
                     Text(palette.name).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink).lineLimit(1).minimumScaleFactor(0.8)
                     if selected {
@@ -129,7 +130,7 @@ private struct ThemeRoom: View {
                         Capsule().fill(swatch.messageSurface.color).frame(width: width * 0.46, height: 14)
                             .offset(x: width * 0.54 - 10, y: 44)
                         Capsule().fill(swatch.accent.color).frame(width: 26, height: 12)
-                            .softShadow(Capsule(), color: swatch.accent.color, radius: 6)
+                            .glow(Capsule(), color: swatch.accent.color, alpha: 1, radius: 6)
                             .offset(x: 10, y: height - 22)
                     }
                     .frame(width: width, height: height, alignment: .topLeading)
@@ -190,7 +191,7 @@ private struct TextSizeStep: View {
                     if selected {
                         shape.fill(scheme == .dark ? Palette.raised : Palette.surface)
                             .overlay(shape.strokeBorder(theme.color(.accent).opacity(0.35), lineWidth: 1))
-                            .softShadow(shape, color: theme.color(.accent).opacity(0.4), radius: 8)
+                            .glow(shape, color: theme.color(.accent), alpha: 0.4, radius: 8)
                     }
                 }
                 .contentShape(shape)
@@ -219,6 +220,30 @@ private struct TextSample: View {
         .background(Palette.canvas, in: shape)
         .overlay(shape.strokeBorder(Palette.hairline, lineWidth: 1))
         .accessibilityHidden(true)
+    }
+}
+
+/// How strongly the lights shine, from none to twice the look as drawn. The page under the finger follows as it moves,
+/// and the light beside the slider shows it at once.
+private struct GlowPanel: View {
+    @AppStorage(PhonePreferenceKey.glow) private var glow = PhoneGlow.standard
+    @Environment(\.sottoTheme) private var theme
+    var body: some View {
+        let value = glow == 0 ? String(localized: "Off") : (Double(glow) / 100).formatted(.percent)
+        VStack(alignment: .leading, spacing: Space.s3) {
+            PanelHeader(title: String(localized: "Glow", comment: "Settings panel heading and slider name: how strongly the lights around working threads, questions and chosen controls shine."), value: value)
+            HStack(spacing: Space.s4) {
+                Light(tone: .accent, size: 10, breathing: true)
+                    .frame(width: 24)
+                Slider(value: Binding(get: { Double(glow) }, set: { glow = Int($0.rounded()) }), in: 0...100, step: 5)
+                    .tint(theme.color(.accent))
+                    .accessibilityLabel("Glow")
+                    .accessibilityValue(value)
+                    .accessibilityIdentifier("setting-glow")
+            }
+            .frame(minHeight: 44)
+        }
+        .card()
     }
 }
 
@@ -504,7 +529,7 @@ private struct AboutPanel: View {
             Text("S").font(.custom("Figtree-Bold", fixedSize: 20)).foregroundStyle(Palette.onAccent)
                 .frame(width: 44, height: 44)
                 .background(Palette.accent, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-                .softShadow(RoundedRectangle(cornerRadius: 13, style: .continuous), color: theme.color(.accent).opacity(0.5), radius: 10)
+                .glow(RoundedRectangle(cornerRadius: 13, style: .continuous), color: theme.color(.accent), alpha: 0.5, radius: 10)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Sotto \(version)").font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)

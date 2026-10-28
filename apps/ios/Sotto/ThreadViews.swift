@@ -1851,7 +1851,7 @@ private struct ReplyDock: View, Equatable {
         .background {
             ZStack {
                 SoftShadow(shape: shape, color: Color.black.opacity(0.22), radius: 16, y: 8).opacity(focused ? 0 : 1)
-                SoftShadow(shape: shape, color: theme.color(.accent).opacity(0.35), radius: 18).opacity(focused ? 1 : 0)
+                GlowShadow(shape: shape, color: theme.color(.accent), alpha: 0.35, radius: 18).opacity(focused ? 1 : 0)
             }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: focused)
@@ -2533,7 +2533,7 @@ private struct OptionLabel: View {
                 .opacity(chosen ? 1 : 0)
         }
         .frame(width: 22, height: 22)
-        .softShadow(Circle(), color: theme.color(.accent).opacity(0.6), radius: 6, showing: chosen)
+        .glow(Circle(), color: theme.color(.accent), alpha: 0.6, radius: 6, showing: chosen)
         .animation(.easeInOut(duration: 0.25), value: chosen)
         .accessibilityHidden(true)
     }
@@ -2554,7 +2554,7 @@ private struct PermissionCommand: View {
         .padding(Space.s4)
         .background(Palette.code, in: shape)
         .overlay(shape.strokeBorder(theme.color(.warning).opacity(0.3), lineWidth: 1))
-        .softShadow(shape, color: theme.color(.warning).opacity(0.3), radius: 16, y: 8)
+        .glow(shape, color: theme.color(.warning), alpha: 0.3, radius: 16, y: 8)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Command: \(command)")
     }
