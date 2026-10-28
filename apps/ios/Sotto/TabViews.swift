@@ -764,6 +764,14 @@ private struct WorkingCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
+        .contextMenu {
+            if model.canChangeWatch(row.ref) {
+                let watched = model.watchedByWatcher(row.ref)
+                Button { Task { await model.setWatched(row.ref, !watched, title: row.thread.title) } } label: {
+                    Label(watched ? String(localized: "Stop watching", comment: "Context menu: Watcher stops watching this thread") : String(localized: "Watch", comment: "Context menu: Watcher keeps this thread going"), systemImage: watched ? "eye.slash" : "eye")
+                }
+            }
+        }
         .accessibilityLabel(spokenLabel)
         .accessibilityHint("Opens the thread")
         .accessibilityIdentifier("thread-\(row.id)")
@@ -825,6 +833,7 @@ private struct ThreadRow: View {
     let unread: Bool
     /// Watcher works with it: the owl follows its provider's logo.
     var watched = false
+    @EnvironmentObject var model: AppModel
     @Environment(\.sottoDensity) private var density
     private var state: ThreadState { ThreadState(row.thread) }
     /// Settled is quiet: a settled thread whose last turn failed doesn't say so here.
@@ -851,6 +860,13 @@ private struct ThreadRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
+        .contextMenu {
+            if model.canChangeWatch(row.ref) {
+                Button { Task { await model.setWatched(row.ref, !watched, title: row.thread.title) } } label: {
+                    Label(watched ? String(localized: "Stop watching", comment: "Context menu: Watcher stops watching this thread") : String(localized: "Watch", comment: "Context menu: Watcher keeps this thread going"), systemImage: watched ? "eye.slash" : "eye")
+                }
+            }
+        }
         .accessibilityLabel(watched ? String(localized: "\(label), watched by Watcher", comment: "%@ is what VoiceOver reads of the thread before this: its title and where it runs.") : label)
         .accessibilityHint("Opens the thread")
         .accessibilityIdentifier("thread-\(row.id)")
