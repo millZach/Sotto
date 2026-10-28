@@ -5,7 +5,7 @@ import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 
 import type { SottoPlatform } from '../../../../shared/platform'
-import type { InterfaceLanguageSetting } from '../../../../shared/interfaceLanguages'
+import { INTERFACE_LANGUAGE_SHOWN, type InterfaceLanguageSetting } from '../../../../shared/interfaceLanguages'
 import type { AppSettings, ReducedMotion, SettingsPatch } from '../../../../shared/settings'
 import { APPEARANCE_CONTRAST, type ThemeDefinition } from '../../../../shared/themes/library'
 import { Button } from '../../components/Button'
@@ -78,7 +78,8 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, on
   const systemDark = useSystemPrefersDark()
   const menuBarOwl = useOwlFeature('menu-bar-owl') && platform === 'darwin'
   const creatureToggle = useOwlFeature('creature-toggle')
-  const interfaceLanguage = useOwlFeature('interface-language')
+  // Hidden on Owl too until the desktop catalogs are drafted (#1684).
+  const interfaceLanguage = useOwlFeature('interface-language') && INTERFACE_LANGUAGE_SHOWN
   const watcherOn = useOwlFeature('watcher')
   const nightFalls = useOwlFeature('night-falls') && watcherOn
   const { system: computerLanguage } = useInterfaceLanguageState()

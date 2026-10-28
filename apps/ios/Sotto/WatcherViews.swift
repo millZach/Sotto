@@ -53,7 +53,6 @@ struct WatcherView: View {
                 .accessibilityHidden(true)
         }
         .background(Palette.canvas)
-        .background(TabItemAccessibility(title: "Watcher", value: model.watcherTab.spoken))
         .navigationTitle("Watcher")
         .toolbar(.hidden, for: .navigationBar)
         .onAppear { model.watcherOnScreen = true; barAway = false }
