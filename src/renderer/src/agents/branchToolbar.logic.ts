@@ -91,6 +91,8 @@ export function workspaceOptions(thread: ToolbarThread, threads: readonly Toolba
   for (const { thread: other } of recent) {
     const worktree = other.worktree
     if (!worktree || worktree.mode !== 'independent' || worktree.status !== 'ready' || !worktree.path || worktree.reclaimedAt) continue
+    // The machine's check worktree is the checks' own (#1312): the next check moves it, so no thread is offered it (Zach, October 27).
+    if (worktree.check && worktree.reused) continue
     const key = folderKey(worktree.path)
     if (seen.has(key)) continue
     seen.add(key)

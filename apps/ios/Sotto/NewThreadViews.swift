@@ -236,7 +236,7 @@ struct NewThreadSheet: View {
 
     /// Its folder and how many threads it holds.
     private func projectDetail(_ project: Project) -> String? {
-        let threads = model.lists.first { $0.hostID == hostID }?.threads.filter { $0.projectId == project.id }.count ?? 0
+        let threads = model.lists.first { $0.hostID == hostID }?.threads.filter { $0.projectId == project.id && !ThreadGroups.isUnsent($0) }.count ?? 0
         let count: String? = threads == 0 ? nil : threads == 1 ? String(localized: "1 thread") : String(localized: "\(threads) threads")
         let parts = [project.path, count].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
