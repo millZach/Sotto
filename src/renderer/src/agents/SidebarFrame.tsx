@@ -151,13 +151,10 @@ function RailWatcher(): ReactNode {
   const { t } = useLingui()
   const thread = watcherId === null ? undefined : threads?.find(item => item.id === watcherId)
   const ring = thread === undefined ? 'done' : thread.requests.length ? 'needs' : thread.status === 'running' ? 'working' : 'done'
-  return <>
-    <button type="button" className="thread-nav__rail-thread thread-nav__rail-watcher tt-focusable" aria-label={t`Open Watcher`} title={t`Open Watcher`}
-      aria-current={app?.navigation === 'watcher' ? 'page' : undefined} onClick={() => app?.actions.navigate('watcher')}>
-      <WatcherOwl size={18} /><span className="thread-nav__ring" data-state={ring} aria-hidden="true" />
-    </button>
-    <span className="thread-nav__rail-rule" aria-hidden="true" />
-  </>
+  return <button type="button" className="thread-nav__rail-thread thread-nav__rail-watcher tt-focusable" aria-label={t`Open Watcher`} title={t`Open Watcher`}
+    aria-current={app?.navigation === 'watcher' ? 'page' : undefined} onClick={() => app?.actions.navigate('watcher')}>
+    <WatcherOwl size={18} /><span className="thread-nav__ring" data-state={ring} aria-hidden="true" />
+  </button>
 }
 
 type SidebarSize = ReturnType<typeof useSidebarSize>

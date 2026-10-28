@@ -577,10 +577,10 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const settledShown = settledOpen || searching
   let owlRail: ReactNode = null
   if (railOn) {
-    // Owl's rail (ADR-0146): the threads Watcher watches right under its tile, each with the owl at its corner, then a
-    // hairline and the rest. Each part runs what waits on you (the Needs you queue's order, settled threads included,
-    // edged in the attention colour), then what is moving, then the resting ones smaller; the rest keeps a hairline
-    // before its resting ones. A watched thread shows here even once settled.
+    // Owl's rail (ADR-0146): the threads Watcher watches right under its tile, each with the owl at its corner, then the
+    // rest. Each part runs what waits on you (the Needs you queue's order, settled threads included, edged in the
+    // attention colour), then what is moving, then the resting ones smaller; the rest's resting ones are a part of their
+    // own. A watched thread shows here even once settled.
     const queued = organization.needsYou.entries.map(entry => entry.row)
     const waitingIds = new Set(queued.map(row => row.thread.id))
     const pool = [...new Map([...queued, ...railRows, ...settled.flatMap(folder => folder.rows).filter(row => watchedIds.has(row.thread.id))].map(row => [row.thread.id, row])).values()]
@@ -596,13 +596,16 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
     }
     const watched = ordered(true), rest = ordered(false)
     const restAwake = rest.filter(item => !item.resting), restResting = rest.filter(item => item.resting)
-    owlRail = <>
-      {watched.length ? <div className="thread-nav__rail-watched" role="group" aria-label={t`Watched by Watcher`}>{watched.map(item => railTile(item, true))}</div> : null}
-      {watched.length && rest.length ? <span className="thread-nav__rail-rule" aria-hidden="true" /> : null}
-      {restAwake.map(item => railTile(item, false))}
-      {restAwake.length && restResting.length ? <span className="thread-nav__rail-rule" aria-hidden="true" /> : null}
-      {restResting.map(item => railTile(item, false))}
-    </>
+    // A part of two or more tiles sits in a tray of its own colour, the trays taking the theme's group colours in turn;
+    // a lone tile stands bare.
+    let trays = 0
+    const part = (items: RailItem[], watchedPart: boolean): ReactNode => {
+      if (!items.length) return null
+      const tray = items.length > 1 ? ++trays : undefined
+      return <div className={`thread-nav__rail-group${watchedPart ? ' thread-nav__rail-watched' : ''}${tray ? ' thread-nav__rail-tray' : ''}`} data-hue={tray}
+        role={watchedPart ? 'group' : undefined} aria-label={watchedPart ? t`Watched by Watcher` : undefined}>{items.map(item => railTile(item, watchedPart))}</div>
+    }
+    owlRail = <>{part(watched, true)}{part(restAwake, false)}{part(restResting, false)}</>
   }
   // The chord opens the chooser (what the top button does) only while no thread is focused; a focused thread
   // answers it from its own project's pen instead, so the top button's aria-keyshortcuts stands down then.
