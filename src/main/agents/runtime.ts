@@ -457,8 +457,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       ...placingWatcher ? { machines: { list: () => placingWatcher.machines(), place: (ask, project, setting) => placingWatcher.placement(ask, project, setting),
         name: hostId => placingWatcher.machineName(hostId), setting: () => options.settings().newWorkerMachine } } : {},
       // Offered with the machines, as the tool server offers from_my_branch and test_run only with them (#1033). This
-      // computer's checks run one at a time, in the order asked (#1312).
-      ...placingWatcher && branchMoves && checks ? { branchMoves, checks, ...options.clockTime ? { clockTime: options.clockTime } : {} } : {},
+      // computer's checks run one at a time, in the order asked (#1312), and the window's row of one quotes its reply's
+      // first line and reads the rest on a press (Zach's pick C, October 28, 2026).
+      ...placingWatcher && branchMoves && checks ? { branchMoves, checks, checkReplies: true, ...options.clockTime ? { clockTime: options.clockTime } : {} } : {},
       // A delegated thread's own worktree is made from the delegating thread's branch, so it can bring changes back (#1030).
       ...crossMachine ? { bringBack: true } : {},
       ...remote ? { remote } : {},

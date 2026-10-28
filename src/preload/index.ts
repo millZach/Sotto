@@ -16,7 +16,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { VISUAL_PAGE_OPEN, visualPageRequestSchema, visualPageResultSchema, type VisualPagesBridge } from '../shared/visualPages'
 import { SUBAGENTS_PAGE, SUBAGENTS_ASSIGNMENTS, SUBAGENTS_CHANGED, subagentPageRequestSchema, subagentAssignmentsRequestSchema, subagentPageSchema, subagentAssignmentsPageSchema, subagentChangeSchema, type SubagentsBridge } from '../shared/subagents'
 import { CHECK_QUEUES_CHANGED, CHECK_QUEUES_READ, checkQueuesViewSchema, type CheckQueuesBridge } from '../shared/checkQueue'
-import { DELEGATION_BRIEF_READ, DELEGATIONS_READ, DELEGATIONS_CHANGED, DELEGATION_RENDERER_ARGUMENT, delegationBriefRequestSchema, delegationBriefSchema, delegationsReadSchema, delegationsRequestSchema, delegationsChangedSchema, type DelegationsBridge } from '../shared/delegation'
+import { DELEGATION_BRIEF_READ, DELEGATION_CHECK_REPLY_READ, DELEGATIONS_READ, DELEGATIONS_CHANGED, DELEGATION_RENDERER_ARGUMENT, delegationBriefRequestSchema, delegationBriefSchema, delegationCheckReplyRequestSchema, delegationCheckReplySchema,
+  delegationsReadSchema, delegationsRequestSchema, delegationsChangedSchema, type DelegationsBridge } from '../shared/delegation'
 import {
   OPENCODE_HOSTS_RENDERER_ARGUMENT, OPENCODE_RENDERER_ARGUMENT, OPENCODE_SIGN_IN_BROWSER, OPENCODE_SIGN_IN_CANCEL, OPENCODE_SIGN_IN_EXTERNAL, OPENCODE_SIGN_IN_FINISH, OPENCODE_SIGN_IN_KEY,
   OPENCODE_SIGN_IN_REOPEN, OPENCODE_SIGN_IN_WAIT, OPENCODE_SIGN_OUT, OPENCODE_SOURCES_READ, modelSourcesSchema, signInAttemptRequestSchema, signInDoneSchema,
@@ -455,6 +456,8 @@ export function createSottoBridge(
     ...(delegationEnabled ? { delegations: Object.freeze<DelegationsBridge>({
       read: request => invokeParsed(renderer, DELEGATIONS_READ, delegationsReadSchema, delegationsRequestSchema.parse(request)),
       brief: request => invokeParsed(renderer, DELEGATION_BRIEF_READ, delegationBriefSchema, delegationBriefRequestSchema.parse(request)),
+      // A check's reply on a press (#1312): only where checks are offered, with Watcher and Work across machines on.
+      ...(watcherMachinesEnabled ? { checkReply: request => invokeParsed(renderer, DELEGATION_CHECK_REPLY_READ, delegationCheckReplySchema, delegationCheckReplyRequestSchema.parse(request)) } : {}),
       onChanged: listener => subscribe(renderer, DELEGATIONS_CHANGED, delegationsChangedSchema, listener),
     }) } : {}),
     // Signing Sotto's OpenCode in to model sources (#1104): only while OpenCode's Owl feature is on. A key goes to main

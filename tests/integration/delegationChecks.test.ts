@@ -16,8 +16,9 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) awai
 
 /** A delegating thread in its project's checkout, a repository on `feat/p`, with This computer's check queue. */
 async function fixture() {
-  // The interface language's time, as main passes it, so the words are known whatever this computer's region.
-  const f = await delegationFixture(cleanups, { branchStarts: true, checks: true, delegation: { clockTime: () => '2:02 PM' } })
+  // The interface language's time, as main passes it, so the words are known whatever this computer's region. The
+  // window's read shows checks, as the desktop's does where they are offered.
+  const f = await delegationFixture(cleanups, { branchStarts: true, checks: true, delegation: { clockTime: () => '2:02 PM', checkReplies: true } })
   const parent = await f.userThread('claude')
   const folder = f.control.shell().host.threads.find(thread => thread.id === parent)!.workingDirectory!
   git(folder, 'init', '-q'); await commitFile(folder, 'README.md', '# Project\n', 'Start the project')
@@ -60,6 +61,27 @@ it('runs one check at a time on This computer and starts the next, in the order 
   await vi.waitFor(() => expect(f.made(third.delegation.thread) && f.native(third.delegation.thread).status).toBe('running'))
   const running = f.ok(await f.read(f.parent, third.delegation.id)) as CheckResult
   expect(running.delegation.check).toBeUndefined()
+})
+
+it('saves a start that queued as a check, and its row quotes the first line of its reply once answered (#1312, pick C)', async () => {
+  const f = await fixture()
+  const check = await f.check(f.parent)
+  const review = f.ok(await f.delegate(f.parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0 }))
+  await vi.waitFor(() => expect(f.native(check.delegation.thread).status).toBe('running'))
+  // Working, it is marked and quotes nothing: its card is today's, with no place in line.
+  const row = (id: string) => f.service.views(f.parent).made.find(view => view.id === id)!
+  expect(row(check.delegation.id)).toMatchObject({ check: true, outcome: 'working' })
+  expect(row(check.delegation.id)).not.toHaveProperty('checkReply')
+  expect(row(review.delegation.id)).not.toHaveProperty('check')
+  await f.endTurn(check.delegation.thread, 'Failed: 2 of 1,214 tests.\n1,209 passed, 2 failed, 3 skipped.')
+  await vi.waitFor(() => expect(row(check.delegation.id)).toMatchObject({ outcome: 'answered', check: true, checkReply: { excerpt: 'Failed: 2 of 1,214 tests.', truncated: false } }))
+  expect(f.service.checkReply(f.parent, check.delegation.id)).toEqual({ text: 'Failed: 2 of 1,214 tests.\n1,209 passed, 2 failed, 3 skipped.', truncated: false })
+  // A later brief to the check's thread does not queue, so it is no check of its own.
+  const again = f.ok(await f.delegate(f.parent, { thread: check.delegation.thread, wait_seconds: 0 }))
+  expect(row(again.delegation.id)).not.toHaveProperty('check')
+  // The record keeps it a check after a restart; its reply is still read as read_delegation reads it.
+  await f.restart()
+  expect(row(check.delegation.id)).toMatchObject({ check: true, checkReply: { excerpt: 'Failed: 2 of 1,214 tests.' } })
 })
 
 it('takes a waiting check out of the queue when it is cancelled or its thread is stopped, starting nothing for it (#1312)', async () => {
