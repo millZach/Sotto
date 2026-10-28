@@ -312,6 +312,23 @@
      from the canvas as the sidebar's is from the sidebar: the canvas is the darkest surface, so a little lighter
      than it, chroma lifted, on the same hue. */
   --tt-owl-room-night: oklch(from var(--tt-canvas) calc(l + .04) min(calc(c + .028), .055) var(--owl-night-hue));
+  /* The collapsed rail's trays (agents/threadSidebar.css) take these in turn: the accent, then the accent turned round
+     the hue wheel at its own lightness and chroma, so a quiet accent gives quiet trays. A grey accent borrows the
+     Sotto Owl night's blue and a little chroma, so its trays still differ. A turned hue that lands on red, orange or
+     amber (under 75), the error and attention colours, turns a further 120 degrees. On Citrine they are its yellow,
+     a blue, a green and a pink. Like --owl-night-hue, the --rail-* parts are channel expressions, valid only inside
+     a relative oklch(). */
+  --rail-chroma: calc(c + .1 * (1 - clamp(0, (c - .001) * 100000, 1)));
+  --rail-turn-2: calc(var(--owl-night-hue) + 155);
+  --rail-turn-3: calc(var(--owl-night-hue) + 60);
+  --rail-turn-4: calc(var(--owl-night-hue) + 245);
+  --rail-hue-2: calc(var(--rail-turn-2) - 360 * clamp(0, (var(--rail-turn-2) - 360) * 100000, 1));
+  --rail-hue-3: calc(var(--rail-turn-3) - 360 * clamp(0, (var(--rail-turn-3) - 360) * 100000, 1));
+  --rail-hue-4: calc(var(--rail-turn-4) - 360 * clamp(0, (var(--rail-turn-4) - 360) * 100000, 1));
+  --tt-rail-group-1: oklch(from var(--tt-accent) l var(--rail-chroma) var(--owl-night-hue));
+  --tt-rail-group-2: oklch(from var(--tt-accent) l var(--rail-chroma) calc(var(--rail-hue-2) + 120 * clamp(0, (75 - var(--rail-hue-2)) * 100000, 1)));
+  --tt-rail-group-3: oklch(from var(--tt-accent) l var(--rail-chroma) calc(var(--rail-hue-3) + 120 * clamp(0, (75 - var(--rail-hue-3)) * 100000, 1)));
+  --tt-rail-group-4: oklch(from var(--tt-accent) l var(--rail-chroma) calc(var(--rail-hue-4) + 120 * clamp(0, (75 - var(--rail-hue-4)) * 100000, 1)));
 
   --tt-success: oklch(0.79 0.13 165);
   --tt-provider-codex: #d7dbe1;
