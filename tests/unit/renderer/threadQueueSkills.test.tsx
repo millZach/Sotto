@@ -486,7 +486,8 @@ describe('sending a prompt', () => {
 describe('Steer now', () => {
   it('steers the running turn with the exact draft revision only when the provider supports it', async () => {
     const { live, prompt } = mount(manualState({ running: true, capabilities: { steer: true } }))
-    expect(screen.getByRole('button', { name: 'Steer now' })).toBeDisabled()
+    // Nothing typed, nothing to steer: the button is not drawn until there is (ADR-0153).
+    expect(screen.queryByRole('button', { name: 'Steer now' })).not.toBeInTheDocument()
     type(prompt(), 'Use the staging database instead')
     fireEvent.click(within(prompt().closest('form')!).getByRole('button', { name: 'Steer now' }))
     expect(screen.getByLabelText('Pending message')).toHaveTextContent('Use the staging database instead')
@@ -513,6 +514,7 @@ describe('Steer now', () => {
     expect(screen.queryByText(/steer a running turn/u)).not.toBeInTheDocument()
     type(prompt(), 'Queue instead')
     expect(screen.getByRole('button', { name: 'Queue prompt' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Steer now' })).not.toBeInTheDocument()
   })
 
   it('is not offered to an idle thread', () => {

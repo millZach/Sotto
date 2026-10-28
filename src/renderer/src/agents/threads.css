@@ -226,15 +226,28 @@
 .thread-prompt__status[data-tone='warning'] { color: var(--threads-warning-text); }
 .thread-prompt__link { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
 .thread-prompt__actions { display: flex; flex: none; align-items: center; gap: 6px; }
-/* The composer's keys (ADR-0153): each button says what it does and the key that does the same. The one filled button
-   is always what Enter does, the theme's own ink on its text colour (the pill pair every theme keeps apart); Stop beside
-   typed text and Steer now are flat keys. The full names live in the label and the title, so Queue prompt is never
-   called Send. */
-.thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop, .thread-prompt__steer) { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none; height: 28px; min-height: 28px; padding: 0 4px 0 8px; border: 1px solid transparent; border-radius: 6px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+/* The composer's keys (ADR-0153): each button is its glyph and the key that does the same (Drake's pick 2.2 of
+   docs/prototypes/prompt-send-refine-2.html). The one filled button is always what Enter does, the theme's own ink on its
+   text colour (the pill pair every theme keeps apart); Stop beside typed text and Steer now are flat keys. The full
+   names live in the label and the title, so Queue prompt is never called Send. */
+.thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop, .thread-prompt__steer) { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none; height: 28px; min-height: 28px; padding: 0 4px 0 7px; border: 1px solid transparent; border-radius: 6px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop):not([data-wide]):not(:has(> .thread-prompt__key)) { width: 28px; padding: 0; }
+.thread-prompt__glyph { flex: none; }
 .thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop) { background: var(--tt-pill); color: var(--tt-pill-ink); }
-.thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop):hover:not(:disabled) { border-color: transparent; background: var(--tt-pill); color: var(--tt-pill-ink); filter: brightness(1.08); }
-.thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop):active:not(:disabled) { background: var(--tt-pill); filter: brightness(.94); }
-.thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop, .thread-prompt__steer):disabled { opacity: .45; }
+/* Pointed at and pressed, the plate mixes toward the card: brightness() cannot lighten a plate that is already white. */
+.thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop):hover:not(:disabled) { border-color: transparent; background: color-mix(in oklab, var(--tt-pill) 84%, var(--tt-card)); color: var(--tt-pill-ink); filter: none; }
+.thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop):active:not(:disabled) { background: color-mix(in oklab, var(--tt-pill) 70%, var(--tt-card)); filter: none; transform: scale(.94); }
+.thread-prompt__actions > :is(.thread-prompt__stop, .thread-prompt__steer):disabled { opacity: .45; }
+/* With nothing to send the plate dims rather than lets the card through, so its glyph stays a glyph. */
+.thread-prompt__actions > .thread-prompt__send:disabled { opacity: 1; background: color-mix(in oklab, var(--tt-pill) 16%, var(--tt-card)); color: var(--tt-text-muted); }
+/* The plate fills as text arrives and springs back from a press (ADR-0153); the rest of the row's motion is in composerPlate.tsx. */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop) {
+    transition: background-color 160ms cubic-bezier(.2, .8, .2, 1), color 160ms cubic-bezier(.2, .8, .2, 1), transform 220ms cubic-bezier(.2, .9, .3, 1.3); }
+  :root:not([data-reduced-motion='on']) .thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop):active:not(:disabled) { transition-duration: 160ms, 160ms, 80ms; transition-timing-function: ease-out; }
+}
+:root[data-reduced-motion='on'] .thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop):active { transform: none; }
+@media (prefers-reduced-motion: reduce) { .thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop):active { transform: none; } }
 .thread-prompt__key { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 4px; background: color-mix(in oklab, currentcolor 14%, transparent); font: inherit; font-size: 11.5px; letter-spacing: .02em; }
 /* Beside typed text, Stop steps back to a flat key so the filled button is the one Enter presses. */
 .thread-prompt__actions > .thread-prompt__stop[data-beside], .thread-prompt__actions > .thread-prompt__stop[data-beside]:is(:hover, :active):not(:disabled) { background: transparent; color: var(--tt-text-muted); filter: none; }
@@ -256,7 +269,7 @@
 /* A narrow pane, as the 820px window with its sidebar open leaves, and the slim composer show the keys alone. */
 @container thread-pane (max-width: 600px) {
   .thread-prompt__actions > * > .thread-prompt__word:has(+ .thread-prompt__key) { display: none; }
-  .thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop, .thread-prompt__steer):has(> .thread-prompt__key) { padding: 0 4px; }
+  .thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop, .thread-prompt__steer):has(> .thread-prompt__word + .thread-prompt__key) { padding: 0 4px; }
 }
 .thread-prompt--saved { width: min(520px, 100%); margin: 12px 0; text-align: left; }
 /* The saved draft is read, not edited: its words lie on the card with no field around them. */
