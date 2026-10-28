@@ -9,6 +9,7 @@ import { onReleaseTrack } from './support/releaseTrack'
 import { captureWindow } from './support/sottoCapture'
 import { openThreads } from './support/sottoLaunch'
 import { resizeContentWindow } from './support/sottoWindow'
+import { seedWatcherRoom } from './support/watcherRoom'
 
 // The click effect (ADR-0156): a press sends waves of 0s and 1s in the accent through the room, under the page.
 const evidence = evidenceDirectory('artifacts/click-effect')
@@ -98,6 +99,61 @@ test.describe('the click effect', () => {
       }))
     })
   }
+
+  for (const [width, height] of [[1600, 1000], [820, 560]] as const) {
+    test(`fills the window at ${width} by ${height}, at the ceiling as the canvas's own opacity`, async () => {
+      await onReleaseTrack('owl', () => withSotto(launchOptions('dark'), async (launched) => {
+        const { page } = launched
+        await resizeContentWindow(launched, width, height)
+        await openConversation(page)
+        await expect.poll(() => running(page), { timeout: 30_000 }).toBe(false)
+        const at = await openSpace(page, 0.4)
+        await page.mouse.click(at.x, at.y)
+        await expect.poll(() => glyphs(page)).toBeGreaterThan(50)
+        const drawn = await layer(page).evaluate(canvas => {
+          const c = canvas as HTMLCanvasElement
+          return { width: c.width / devicePixelRatio, height: c.height / devicePixelRatio, innerWidth, innerHeight, opacity: Number(getComputedStyle(c).opacity), ceiling: Number(c.dataset.clickEffectCeiling) }
+        })
+        expect(drawn.width).toBe(drawn.innerWidth)
+        expect(drawn.height).toBe(drawn.innerHeight)
+        expect(drawn.opacity).toBeCloseTo(drawn.ceiling, 3)
+        await mkdir(evidence, { recursive: true })
+        await page.waitForTimeout(300)
+        await captureWindow(launched.app, resolve(evidence, `spreading-dark-${width}x${height}.png`))
+      }))
+    })
+  }
+
+  test("in Watcher's room the waves keep to the margins, clear of the column the night scene already inks", async () => {
+    await onReleaseTrack('owl', () => withSotto({ ...launchOptions('dark'), scenario: 'phase3-workspace' }, async (launched) => {
+      const { page } = launched
+      await openThreads(page)
+      await seedWatcherRoom(page, { watched: ['footer-links', 'visual-gate', 'weekly-note'], idPrefix: 'column' })
+      await page.getByRole('tablist', { name: 'Page' }).getByRole('tab', { name: 'Watcher', exact: true }).click()
+      await expect(page.getByRole('heading', { level: 1, name: 'Watcher' })).toBeVisible()
+      await resizeContentWindow(launched, 1280, 800)
+      await expect.poll(() => running(page), { timeout: 30_000 }).toBe(false)
+      const press = await page.evaluate(() => {
+        const card = document.querySelector('#watcher-pane > .thread-workspace__compose > .thread-prompt')!.getBoundingClientRect()
+        return { x: card.left - 40, y: card.top * 0.5 }
+      })
+      await page.mouse.click(press.x, press.y)
+      await expect.poll(() => glyphs(page)).toBeGreaterThan(50)
+      const lit = await page.evaluate(() => {
+        const canvas = document.querySelector<HTMLCanvasElement>('canvas.click-effect')!, scale = canvas.width / innerWidth
+        const card = document.querySelector('#watcher-pane > .thread-workspace__compose > .thread-prompt')!.getBoundingClientRect()
+        const count = (x0: number, x1: number, y0: number, y1: number): number => {
+          const data = canvas.getContext('2d')!.getImageData(Math.round(x0 * scale), Math.round(y0 * scale), Math.round((x1 - x0) * scale), Math.round((y1 - y0) * scale)).data
+          let n = 0
+          for (let i = 3; i < data.length; i += 4) if (data[i]) n++
+          return n
+        }
+        return { column: count(card.left + 2, card.right - 2, 120, innerHeight - 10), margin: count(0, card.left - 2, 120, innerHeight - 10) }
+      })
+      expect(lit.column).toBe(0)
+      expect(lit.margin).toBeGreaterThan(0)
+    }))
+  })
 
   test('a theme changed while waves run takes the new accent in the next frames', async () => {
     await onReleaseTrack('owl', () => withSotto(launchOptions('dark'), async ({ page }) => {

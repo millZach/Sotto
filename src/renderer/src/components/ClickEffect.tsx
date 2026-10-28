@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, type ReactNode } from 'react'
+import { rootStyleUnchanged } from '../state/appearance'
 import { useClickEffectOn } from '../state/clickEffect'
 import { toRgb } from '../watcher/canvasColor'
 import { columnCeiling, type Word } from '../watcher/nightScene'
@@ -63,8 +64,9 @@ function ClickEffectLayer(): ReactNode {
     const pixel = Object.assign(document.createElement('canvas'), { width: 1, height: 1 }).getContext('2d', { willReadFrequently: true })
     let water: ClickWater | null = null
     let ink: Ink | null = null
-    /** The ink and the quiet column are read again before the next frame: a run starts, or the theme changed. */
+    /** The ink is read again before the next frame: a run starts, or the theme changed. */
     let stale = true
+    /** Watcher's column and header, measured every frame, so a room opened or resized mid-run is kept clear at once. */
     let quiet: readonly Rect[] = []
     let request: number | null = null
     let last = 0
@@ -146,13 +148,19 @@ function ClickEffectLayer(): ReactNode {
       for (let step = 0; step < Math.min(due, MAX_STEPS); step++) water.step()
       water.age(due - MAX_STEPS)
       if (water.calm) { stop(); return }
-      if (stale || ink === null) { ink = inkNow(); quiet = sceneColumn(); stale = false }
-      const { digits, ceiling } = ink
-      const width = GLYPH_W * 1.4, height = GLYPH_H, strength = ceiling / GLYPH_ALPHA
+      if (stale || ink === null) {
+        ink = inkNow()
+        // The ceiling is the canvas's own opacity, so glyphs that overlap still add up to no more than it.
+        canvas.style.opacity = String(ink.ceiling)
+        stale = false
+      }
+      quiet = sceneColumn()
+      const { digits } = ink
+      const width = GLYPH_W * 1.4, height = GLYPH_H
       ctx.clearRect(0, 0, water.width, water.height)
       const stamped = water.draw((digit, x, y, alpha) => {
         if (quiet.some(rect => x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom)) return
-        ctx.globalAlpha = alpha * strength
+        ctx.globalAlpha = alpha / GLYPH_ALPHA
         ctx.drawImage(digits[digit], x - width / 2, y - height / 2, width, height)
       })
       ctx.globalAlpha = 1
@@ -182,8 +190,9 @@ function ClickEffectLayer(): ReactNode {
       water = null
     }
     // A theme or mode change is read again before the next frame, so waves already running take the new accent.
-    const theme = new MutationObserver(() => { stale = true })
-    theme.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'data-theme', 'data-theme-id'] })
+    // The theme inspector's probes, which restore the root's style in the same task, are not a change (ADR-0011).
+    const theme = new MutationObserver(records => { if (!rootStyleUnchanged(records, document.documentElement)) stale = true })
+    theme.observe(document.documentElement, { attributes: true, attributeOldValue: true, attributeFilter: ['style', 'data-theme', 'data-theme-id'] })
     window.addEventListener('pointerdown', press, { capture: true, passive: true })
     window.addEventListener('resize', resized)
     const unwatchResolution = watchResolution(resized)

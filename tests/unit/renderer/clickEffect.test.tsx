@@ -85,7 +85,7 @@ describe('the click effect', () => {
   })
 
   it('marks the shell while its layer is there, so the shell stacks it under the page, and never otherwise', () => {
-    const shell = (): Element | null => render(<AppShell navigation={null} platform="win32">room</AppShell>).container.querySelector('.app-shell')
+    const shell = (): Element | null => render(<AppShell navigation={null} platform="win32" onMinimize={() => undefined} onMaximize={() => undefined} onClose={() => undefined}>room</AppShell>).container.querySelector('.app-shell')
     expect(shell()?.hasAttribute('data-click-effect')).toBe(true)
     expect(document.querySelector('.app-shell > canvas.click-effect')).not.toBeNull()
     cleanup()
