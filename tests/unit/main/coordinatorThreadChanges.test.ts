@@ -263,6 +263,9 @@ async function differences({ changed, whole }: Stack): Promise<string[]> {
     return activity && { ...activity, metadata: { ...activity.metadata, startedAt: undefined } }
   }
   const [changedUsage, wholeUsage] = [await saved(changed), await saved(whole)]
+  const pageBookkeeping = (seen: Downstream) => (seen.control as unknown as { questionPages: { entries: Map<string, { goneAt?: number }>; lingering: Set<string> } }).questionPages
+  const lingeringPages = (seen: Downstream) => [...pageBookkeeping(seen).lingering].sort()
+  const gonePages = (seen: Downstream) => [...pageBookkeeping(seen).entries].filter(([, entry]) => entry.goneAt !== undefined).map(([key]) => key).sort()
   const targets = changed.targets()
   const aspects: [string, unknown, unknown][] = [
     ['the coordinator\'s host snapshot', changed.control.watcherSnapshot(), whole.control.watcherSnapshot()],
@@ -275,6 +278,8 @@ async function differences({ changed, whole }: Stack): Promise<string[]> {
     ['the threads whose usage was read', usage(changed), usage(whole)],
     ['the usage records saved', changedUsage, wholeUsage],
     ['the prototype and page records', records(changed), records(whole)],
+    ['the question pages lingering', lingeringPages(changed), lingeringPages(whole)],
+    ['the question pages gone', gonePages(changed), gonePages(whole)],
   ]
   return aspects.flatMap(([aspect, left, right]) => { const a = text(left), b = text(right); return a === b ? [] : [`${aspect} ${where(a, b)}`] })
 }
@@ -491,6 +496,38 @@ describe('the coordinator at its limits', () => {
     made.adapter.log.add('s5', { id: 'unrelated', role: 'user', text: 'Unrelated', createdAt: AT }); publish()
     await agree(made, 'later marks filling the kept marks')
     expect([b, c, d].map(session => markedIn(changed, sotto(session)))).toEqual([false, false, true])
+  }, 120_000)
+
+  /**
+   * #1535: a thread whose kept reply another thread's mark lets go is read again at its place in the same pass, but the
+   * pages read in (a) still had that reply kept. The next change has to name it, as the whole path examines every thread
+   * there, or its old page never starts lingering and its token keeps being served.
+   */
+  it('examines the page of a thread whose kept reply a mark let go on the next change', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
+    const made = await stack({ watcherEnabled: true })
+    const { changed, whole, sotto, at, publish } = made
+    for (const each of [changed, whole]) await each.control.command({ type: 'connect' })
+    const [n, c] = ['s2', 's5']
+    // N and C are marked; N is archived, which lets its kept reply go while its page stays found.
+    await markWithPages(made, [n])
+    await markWithPages(made, [c])
+    at(n).archivedAt = AT; publish(n)
+    await agree(made, 'N archived')
+    // C keeps its page through its kept reply alone once it replies naming no page.
+    made.adapter.log.add(c, { id: 'plain-c', role: 'assistant', text: 'Nothing else to show.', createdAt: new Date().toISOString() }); publish(c)
+    await agree(made, 'C replying again')
+    // The kept marks are filled past C, so C's is the oldest.
+    for (const each of [changed, whole]) fillKept(each, 'old')
+    expect(keptOf(changed)[0]).toBe(sotto(c))
+    // C and N are named in one change: (a) reads C with its kept reply still kept, then N's mark lets it go.
+    at(c).title = 'Thread C again'; at(n).archivedAt = undefined
+    publish(c, n)
+    await expect.poll(() => [keptOf(changed).includes(sotto(c)), keptOf(whole).includes(sotto(c))], { timeout: 10_000 }).toEqual([false, false])
+    // The whole path reads C without its kept reply here; the changes path has to name C again on the next change.
+    made.adapter.log.add('s1', { id: 'unrelated', role: 'user', text: 'Unrelated', createdAt: AT }); publish()
+    await quiet()
+    expect(await differences(made)).toEqual([])
   }, 120_000)
 
   /**
