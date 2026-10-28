@@ -1031,6 +1031,46 @@ import UIKit
     /// The Watcher tab sits between Threads and Computers, with a dot while Watcher works that VoiceOver reads; its page
     /// shows Watcher's model and computer, its conversation and one card of what it did for each reply. A message the
     /// user writes goes to Watcher and its answer arrives under it.
+    /// Words selected in a reply offer Add to prompt, which quotes them after what the box already holds, in the
+    /// desktop's words, and puts the caret in the box (ADR-0129): on Watcher's page and on a thread's.
+    func testWordsSelectedInAReplyAreAddedToThePrompt() {
+        launch(Self.watcher)
+        openWatcher()
+        let box = byID("watcher-reply")
+        XCTAssertTrue(box.waitForExistence(timeout: 5))
+        box.tap()
+        box.typeText("Why?")
+        dismissKeyboard()
+        let words = text("Started it.")
+        XCTAssertTrue(words.waitForExistence(timeout: 5))
+        revealInWatcher(words)
+        words.doubleTap()
+        let add = labelled("Add to prompt")
+        XCTAssertTrue(add.waitForExistence(timeout: 5), "A selection in Watcher's reply offers Add to prompt")
+        capture("reply-quote-menu-watcher")
+        add.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "The box takes focus")
+        let watcherDraft = box.value as? String ?? ""
+        XCTAssertTrue(watcherDraft.hasPrefix("Why?\n\nFrom your earlier reply:\n> "), "The quote follows the draft: \(watcherDraft)")
+        capture("reply-quote-added-watcher")
+
+        launch(Self.fixture)
+        let thread = row("iphone")
+        reveal(thread)
+        thread.tap()
+        let reply = byID("thread-reply")
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        let update = threadText("Still working through the review fixes")
+        XCTAssertTrue(update.waitForExistence(timeout: 5))
+        update.doubleTap()
+        let addHere = labelled("Add to prompt")
+        XCTAssertTrue(addHere.waitForExistence(timeout: 5), "A selection in a thread's reply offers Add to prompt")
+        addHere.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "The reply box takes focus")
+        let threadDraft = reply.value as? String ?? ""
+        XCTAssertTrue(threadDraft.hasPrefix("From your earlier reply:\n> "), "The quote is the draft: \(threadDraft)")
+    }
+
     func testTheWatcherTabOpensAndTakesAMessage() {
         launch(Self.watcher)
         let labels = app.tabButtons.allElementsBoundByIndex.map(\.label)

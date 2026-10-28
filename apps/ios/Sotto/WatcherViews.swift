@@ -657,6 +657,9 @@ private struct WatcherConversationPane: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(reader { follow.newest = $0.maxY })
+                        .environment(\.replyQuoteBox, ReplyQuoteBox(key: model.watcherDraftKey(hostID)) { [model, hostID] in
+                            model.quoteReply($0, into: model.watcherDraftKey(hostID))
+                        })
                     }
                     ForEach(Array((model.watcherSetAside[hostID] ?? []).enumerated()), id: \.offset) { _, words in
                         SetAsideCard(hostID: hostID, words: words)
@@ -960,7 +963,7 @@ private struct WatcherMessage: View, Equatable {
                         .accessibilityHidden(true)
                     Text(verbatim: time.map { "Watcher · \($0)" } ?? "Watcher").font(.sotto(.caption, .semibold)).foregroundStyle(Palette.muted)
                 }
-                MarkdownText(text: message.text).equatable().foregroundStyle(Palette.ink)
+                MarkdownText(text: message.text, quotable: true).equatable().foregroundStyle(Palette.ink)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -1593,6 +1596,8 @@ private struct WatcherDock: View {
                     .foregroundStyle(Palette.ink)
                     .lineLimit(1...6)
                     .focused($focused)
+                    // Words added from a reply put the caret after them, here (ADR-0129).
+                    .onChange(of: draftStore.focus) { _, focus in if focus?.key == model.watcherDraftKey(hostID) { focused = true } }
                     .padding(.vertical, 11)
                     .accessibilityLabel("Ask Watcher")
                     .accessibilityIdentifier("watcher-reply")
