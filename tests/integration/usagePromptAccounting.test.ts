@@ -14,6 +14,7 @@ import { UsageStore } from '../../src/main/agents/usageStore'
 import type { AgentHostCommand } from '../../src/main/agents/host'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { RESUME_NOTE } from '../../src/shared/restartResume'
+import { DeferredUsageStore } from '../fixtures/deferredUsageStore'
 
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice(0).reverse()) await close() })
@@ -31,6 +32,39 @@ async function fixture() {
 }
 
 describe('coordinator numeric prompt acceptance', () => {
+  it('sends to the provider while the Usage writer is busy, and records the original selection after', async () => {
+    const f = await workspaceFixture()
+    const credentials = await testCredentials(join(f.root, 'vault'), { mode: 'unavailable' })
+    const store = new UsageStore(join(f.root, 'usage.sqlite'))
+    // A writer that answers nothing until drained: the send must not wait for it (ADR-0078, October 27 amendment).
+    const writer = new DeferredUsageStore(store)
+    const usage = new UsageService({ directory: f.root, host: f.host, client: writer,
+      acceptedPromptIdentities: identities => f.host.recordedUserMessages(identities) })
+    usage.start()
+    const control = createAgentControl({ directory: f.root, host: f.host, credentials, usage })
+    cleanup.push(async () => { control.dispose(); await control.privacyChanged(); usage.close(); await f.stop(); await f.remove() })
+    await control.start(); await control.command({ type: 'connect' })
+    const thread = control.get().host.threads.find(item => item.providerId === 'codex')!
+    // Timers stand still while the send runs, so a send that waited for Usage, even with a deadline, never got there.
+    const realTimeout = globalThis.setTimeout
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval'] })
+    let sent: Awaited<ReturnType<typeof control.command>> | undefined
+    try {
+      const sending = control.command({ type: 'manual-send', threadId: thread.id, draftId: randomUUID(), text: 'Sent while Usage is busy' })
+      sent = await Promise.race([sending, new Promise<undefined>(resolve => { realTimeout(() => resolve(undefined), 5_000) })])
+    } finally { vi.useRealTimers() }
+    expect(sent?.error).toBeNull()
+    expect(f.adapters.codex.commands.filter(command => command.type === 'send')).toHaveLength(1)
+    // Nothing was written yet: the store open, the selection and anything after it are all still held.
+    expect(writer.held).toBeGreaterThan(0)
+    const reading = usage.read()
+    await writer.drain()
+    const activity = (await reading).activity!
+    expect(activity.totals.prompts).toMatchObject({ user: 1, total: 1 })
+    // The model selected when it was sent: this fake reports no tokens, so no served model replaces it.
+    expect(activity.models.filter(row => row.prompts.total > 0).map(row => row.modelId)).toEqual([canonicalModelId('codex', thread.modelId!)])
+  })
+
   it('counts a restarted runtime\'s resume note once as a wake-up without replaying or relabeling the original prompt', async () => {
     const f = await workspaceFixture()
     cleanup.push(async () => { await f.stop(); await f.registry.flush(); await f.remove() })

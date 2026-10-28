@@ -98,6 +98,7 @@ describe('starting from a branch with Work across machines', () => {
     for (const roles of [false, true]) for (const machines of [false, true]) {
       const properties = tool(watcherToolDefinitions(roles, machines), 'start_thread')!.schema.properties
       expect(properties).not.toHaveProperty('fromMove')
+      expect(properties).not.toHaveProperty('fromOrigin')
       for (const name of ['fromThread', 'testRun']) expect(Object.hasOwn(properties, name)).toBe(machines)
       expect(tool(watcherToolDefinitions(roles, machines), 'start_thread')!.description.includes('fromThread')).toBe(machines)
     }

@@ -165,6 +165,12 @@
       "reason": "The session store's parser, made in the constructor and run when the store is read at start."
     }
   },
+  "src/renderer/src/state/appearance.ts": {
+    "readCachedAppearance": {
+      "count": 1,
+      "reason": "Runs once, when the window reads its saved look before the first frame (main.tsx), and builds only on Linux."
+    }
+  },
   "src/shared/agents.ts": {
     "imageBytes": {
       "count": 1,

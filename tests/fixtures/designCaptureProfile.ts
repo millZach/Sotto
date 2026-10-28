@@ -50,6 +50,8 @@ async function createProfile(
     readonly lightTheme?: string
     readonly darkTheme?: string
     readonly memory?: boolean
+    /** The click effect (ADR-0156); off unless asked, so a press in a capture or a pixel check sends no waves under it. */
+    readonly clickEffect?: boolean
   },
 ): Promise<string> {
   const owner = await ownedE2EProfile({ prefix: 'sotto-e2e-design-' })
@@ -63,6 +65,7 @@ async function createProfile(
     lightTheme: options.lightTheme ?? DEFAULT_SETTINGS.lightTheme,
     darkTheme: options.darkTheme ?? DEFAULT_SETTINGS.darkTheme,
     memoryEnabled: options.memory === true,
+    clickEffect: options.clickEffect === true,
   }
   await writeFile(join(profile, 'settings.json'), `${JSON.stringify(settings, null, 2)}\n`, 'utf8')
   await writeFile(join(profile, 'history.json'), `${JSON.stringify(options.history ?? [], null, 2)}\n`, 'utf8')
@@ -86,6 +89,8 @@ export async function withSotto(
     readonly lightTheme?: string
     readonly darkTheme?: string
     readonly memory?: boolean
+    /** The click effect (ADR-0156); off unless asked, so a press in a capture or a pixel check sends no waves under it. */
+    readonly clickEffect?: boolean
   },
   run: (launched: LaunchedSotto) => Promise<void>,
 ): Promise<void> {

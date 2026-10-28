@@ -1,17 +1,18 @@
 // @vitest-environment node
 /**
- * Where main builds zod schemas inside a function. A zod 4 schema is expensive to make: its constructor sets up every
+ * Where Sotto builds zod schemas inside a function. A zod 4 schema is expensive to make: its constructor sets up every
  * check and method, and an object schema compiles a parser of its own the first time it parses. Built once at module
  * scope, that cost is paid at start. Built inside a function, it is paid on every call. In October 2026 two schemas
  * built inside `CodexActivityProjection.childNotification` cost main 1.4 s a minute while Codex sub-agents worked, in
- * bursts of 370 ms. Each such site looked harmless where it was written.
+ * bursts of 370 ms, and the preload built a result schema on every call the window made over the files, tools and
+ * themes bridges. Each such site looked harmless where it was written.
  *
- * This finds every schema built inside a function body in `src/main`, `src/shared` and `src/host` and holds the count
- * per function to `tests/fixtures/zodSchemaSites.json`, where each function that still builds one gives its reason. A
- * reason is one of two kinds: the build runs once, at start or when something is registered or initialised; or the
- * schema needs the call's own values (a field's limits, the model a send asked for), and the reason names what it
- * depends on and how often it runs. A new site fails until it is built once at module scope, or until the list gains
- * it with its reason and the PR says why.
+ * This finds every schema built inside a function body in `src/main`, `src/shared`, `src/host`, `src/preload` and
+ * `src/renderer` and holds the count per function to `tests/fixtures/zodSchemaSites.json`, where each function that
+ * still builds one gives its reason. A reason is one of two kinds: the build runs once, at start or when something is
+ * registered or initialised; or the schema needs the call's own values (a field's limits, the model a send asked for),
+ * and the reason names what it depends on and how often it runs. A new site fails until it is built once at module
+ * scope, or until the list gains it with its reason and the PR says why.
  *
  * What counts as building a schema: a call on zod's `z` namespace (`z.object(...)`, `z.iso.datetime()`, apart from the
  * helpers in `notBuilders`) or on a factory imported from zod by name (`import { object } from 'zod'`); a schema method
@@ -37,9 +38,9 @@ import { describe, expect, it } from 'vitest'
 
 const root = resolve(__dirname, '../../..')
 const listFile = join(root, 'tests/fixtures/zodSchemaSites.json')
-const folders = ['src/main', 'src/shared', 'src/host']
+const folders = ['src/main', 'src/shared', 'src/host', 'src/preload', 'src/renderer']
 // End-to-end test hooks run only in test builds.
-const skipped = ['src/main/e2e/']
+const skipped = ['src/main/e2e/', 'src/renderer/src/e2e/']
 /** Reading and walking every file takes seconds on a busy runner; this deadline is never what the test asserts. */
 const SCAN_DEADLINE_MS = 120_000
 

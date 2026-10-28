@@ -116,7 +116,7 @@ interface Downstream {
  * the first's reads the workspace's thread changes, the second's its activity snapshots. Each usage reads usage through
  * `visitUsage`, which fails for the sessions in `failingUsage`.
  */
-async function stack(control: TestControlOptions = {}, threads = 6, projectEach = false) {
+async function stack(control: TestControlOptions = {}, threads = 6, projectEach = false, reconnects = true) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-coordinator-changes-'))
   cleanup.push(() => rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 }))
   await mkdir(join(root, 'project'), { recursive: true })
@@ -147,6 +147,12 @@ async function stack(control: TestControlOptions = {}, threads = 6, projectEach 
     if (name === 'whole') (coordinator as unknown as { acceptsWhole: boolean }).acceptsWhole = true
     // Sotto's note to a thread about its prototype question is taken by the provider, as one that goes through is.
     vi.spyOn(coordinator as unknown as { sendPrototypeQuestionBack(): Promise<boolean> }, 'sendPrototypeQuestionBack').mockResolvedValue(true)
+    // Each coordinator retries a disconnected provider it counts as enabled (codex, the default) on a real five-second timer,
+    // and the retry connects the provider both share. A long run outlasts it on a loaded runner: the first timer's retry
+    // connects codex and names it enabled, and the second finds it connected and names nothing, so the two differ by when a
+    // timer fired, not by how they take changes in (#1597). Reconnecting is not what the long runs compare, so there neither
+    // retries.
+    if (!reconnects) vi.spyOn(coordinator as unknown as { scheduleProviderReconnects(): void }, 'scheduleProviderReconnects').mockImplementation(() => undefined)
     const requests = sottoRequests()
     coordinator.useSottoRequests(requests.requests)
     await coordinator.start()
@@ -341,7 +347,7 @@ function prng(seed: number): (below: number) => number {
 /** The seeded run, with every operation family once in a fixed order first and then a seeded mix of them. */
 async function equivalenceRun(control: TestControlOptions, seed: number, rounds = 110) {
   vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
-  const made = await stack(control)
+  const made = await stack(control, 6, false, false)
   const { adapter, workspace, changed, whole, sessions, sotto, at, publish, failingUsage } = made
   const both = [changed, whole]
   // The changes path takes most publications in as changes; the whole path never subscribes to them.

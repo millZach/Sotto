@@ -52,6 +52,7 @@ it.each([[undefined], [false]] as const)('offers no machine choice and reports n
     expect(host.hostService.supportsWatcherCheckQueue).toBe(false)
     expect(startOffers(host)).not.toContain('fromThread')
     expect(host.hostService.supportsProjectOrigins).toBe(false)
+    expect(host.hostService.supportsProjectSetup).toBe(false)
   } finally { await host.close() }
 })
 
@@ -70,6 +71,7 @@ it('offers the choice on the desktop when the Owl answer is on, and a headless h
     expect(startOffers(desktop)).toEqual(expect.arrayContaining(['fromThread', 'testRun']))
     expect(desktop.hostService.supportsProjectOrigins).toBe(true)
     expect(await desktop.hostService.projectOrigins()).toEqual({ projects: expect.any(Array) })
+    expect(desktop.hostService.supportsProjectSetup).toBe(true)
   } finally { await desktop.close() }
   const headless = await runtime(true, 'headless-host')
   try {
@@ -77,6 +79,7 @@ it('offers the choice on the desktop when the Owl answer is on, and a headless h
     // A headless host moves branches only when the desktop asks over its socket; it places and moves nothing itself.
     expect(movers(headless)[0]).toBeUndefined()
     expect(headless.hostService.supportsProjectOrigins).toBe(true)
+    expect(headless.hostService.supportsProjectSetup).toBe(true)
     // A host keeps its own queue, shared by its own threads' checks and the desktop's Watcher starts on it (#1312).
     // Named as the relay's away words name the host: its own machine name until a desktop sends the name it saved (#1316).
     expect(watcherChecks(headless)?.machine).toBe(hostname().trim().slice(0, 64) || 'this machine')

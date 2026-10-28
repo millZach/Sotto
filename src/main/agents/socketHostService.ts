@@ -41,7 +41,7 @@ import { hostMachineReportSchema, type HostMachineReport } from '../../shared/ho
 import { branchMoveStepTimeoutMs, type HostBranchMoveRequest } from '../../shared/branchMoves'
 import { HOST_UPDATE_ANSWER_DEADLINES_MS, hostUpdateAnswerSchema, type HostUpdateAnswer, type HostUpdateRequest } from '../../shared/hostSelfUpdate'
 import type { HostUpdateStep } from '../../shared/hostUpdates'
-import { projectOriginsSchema, type ProjectOrigins } from '../../shared/workerMachine'
+import { projectOriginsSchema, projectSetupResultSchema, type ProjectOrigins, type ProjectSetupRequest, type ProjectSetupResult } from '../../shared/workerMachine'
 import { desktopDefaultsReceiptSchema, type DesktopDefaultsInput, type DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
 import type { DelegationRelayAsk, RelayedReply } from '../../shared/delegationRelay'
 import type { DelegationNews } from '../../shared/delegation'
@@ -1322,6 +1322,17 @@ export class SocketHostService implements HostService {
   async projectOrigins(): Promise<ProjectOrigins> {
     this.offers('project-origins')
     return this.read(projectOriginsSchema, await this.call({ op: 'project-origins' }, undefined, undefined, 10000))
+  }
+  /** The host lists `project-setup`: it gives itself a copy of a repository for a worker placed there (#1690). An older host's cannot. */
+  get supportsProjectSetup(): boolean { return this.features.includes('project-setup') }
+  /** A clone may take minutes: the host stops its own after ten, and this waits a minute longer for its answer. */
+  async setUpProject(request: ProjectSetupRequest): Promise<ProjectSetupResult> {
+    this.offers('project-setup')
+    const result = this.read(projectSetupResultSchema, await this.call({ op: 'project-setup', request }, undefined, undefined, 11 * 60_000))
+    // The host's shell push naming the new project may come later than this answer; the start is admitted against the shell
+    // held here, so it is read now. A failed read leaves admission to say the project is unavailable, as it would have.
+    if (result.ok) await this.readShell().catch(() => undefined)
+    return result
   }
   /**
    * The host lists `host-delegation`: its own threads delegate on its machine and it keeps the desktop defaults this
