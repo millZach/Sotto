@@ -4,7 +4,7 @@ October 27, 2026, on `feat/iphone-duo-tab-rail`. This is ADR-0151's second amend
 
 ## Where the strip is
 
-A probe logged the folded Duo's scene at launch: the screen is 466×678 points (1398×2034 pixels at 3x), the app's window is the same 466×678, and its safe-area insets are 0 top, 0 left, 34 bottom and 84 right. The strip under the clock and battery is the 84-point trailing inset, inside the window, so the app may draw there. Before Sotto drew its own bar, the system's tab rail stood in it (`artifacts/iphone-duo-layout/00-now-folded-watcher.jpg`).
+A probe logged the folded Duo's scene at launch: the screen is 466×678 points (1398×2034 pixels at 3x), the app's window is the same 466×678, and its safe-area insets are 0 top, 0 left, 34 bottom and 84 right. The strip under the clock and battery is the 84-point trailing inset, inside the window, so the app may draw there. Before Sotto drew its own bar, the system's tab rail stood in it (`artifacts/iphone-duo-layout/00-now-folded-watcher.jpg` at the tag `prototype/iphone-duo-layout`).
 
 ## What the captures show
 
@@ -13,6 +13,6 @@ A probe logged the folded Duo's scene at launch: the screen is 466×678 points (
 3. **Folded, a thread** (`folded-thread.jpg`): the rail goes under the thread, and iOS puts the thread's Back button in the strip.
 4. **Unfolded** (`open-threads.jpg`): unchanged, the bar along the bottom.
 
-A one-off UI test, not committed, found `tab-computers` at x 382, 84×52 points, in the 466×678 window, and a tap on it, then on `tab-watcher`, chose each.
+Arabic, captured with `-AppleLanguages (ar)`, keeps the rail in the right strip, since the app is always left to right. A one-off UI test, not committed, found `tab-computers` at x 382, 84×52 points, in the 466×678 window, and a tap on it, then on `tab-watcher`, chose each.
 
 Not checked here: a real Duo, light appearance, VoiceOver order, and the accessibility text sizes in the rail (icons only, so no text to grow).

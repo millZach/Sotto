@@ -22,16 +22,16 @@ struct MainTabs: View {
     enum Tab: Hashable { case threads, watcher, computers, settings }
     @Environment(\.horizontalSizeClass) private var width
     var body: some View {
-        GeometryReader { frame in tabs(railEdge: railEdge(frame.safeAreaInsets), strip: abs(frame.safeAreaInsets.trailing - frame.safeAreaInsets.leading)) }
+        GeometryReader { frame in tabs(strip: strip(frame.safeAreaInsets)) }
     }
-    /// The iPhone Duo's cover screen leaves a strip down one side, under the clock and battery, outside the safe area
-    /// but inside the window (ADR-0151, amended). There the bar stands in the strip as a rail, as the system's did,
+    /// The iPhone Duo's cover screen leaves a strip down its right edge, under the clock and battery, outside the safe
+    /// area but inside the window (ADR-0151, amended). There the bar stands in the strip as a rail, as the system's did,
     /// and the pages get the whole height. An upright iPhone has no side insets, and one held sideways has two alike.
-    private func railEdge(_ insets: EdgeInsets) -> HorizontalAlignment? {
-        guard width == .compact, abs(insets.trailing - insets.leading) >= 60 else { return nil }
-        return insets.trailing > insets.leading ? .trailing : .leading
+    /// The app is always left to right, so the strip is the trailing inset.
+    private func strip(_ insets: EdgeInsets) -> CGFloat? {
+        width == .compact && insets.trailing - insets.leading >= 60 ? insets.trailing : nil
     }
-    private func tabs(railEdge: HorizontalAlignment?, strip: CGFloat) -> some View {
+    private func tabs(strip: CGFloat?) -> some View {
         // The bar sits under the pages rather than in their safe area, which a NavigationStack doesn't pass on to its
         // pages: they end above it, as they did above the system's.
         VStack(spacing: 0) {
@@ -54,15 +54,15 @@ struct MainTabs: View {
                     .toolbar(.hidden, for: .tabBar)
                     .tag(Tab.settings)
             }
-            if covered.isEmpty && !keyboard && railEdge == nil {
+            if covered.isEmpty && !keyboard && strip == nil {
                 TabsBar(tab: $tab, threadsBadge: model.threadsBadge, watcher: model.watcherHostID == nil ? nil : model.watcherTab)
             }
         }
-        .overlay(alignment: Alignment(horizontal: railEdge ?? .trailing, vertical: .bottom)) {
-            if let railEdge, covered.isEmpty && !keyboard {
+        .overlay(alignment: .bottomTrailing) {
+            if let strip, covered.isEmpty && !keyboard {
                 TabsBar(tab: $tab, threadsBadge: model.threadsBadge, watcher: model.watcherHostID == nil ? nil : model.watcherTab, rail: true)
                     .frame(width: strip)
-                    .offset(x: railEdge == .trailing ? strip : -strip)
+                    .offset(x: strip)
             }
         }
         .environment(\.tabsCovered, $covered)
