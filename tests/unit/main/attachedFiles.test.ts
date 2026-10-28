@@ -5,9 +5,9 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ATTACHED_FILE_CLASH, ATTACHED_FILES_FOLDER_IS_LINK, ATTACHED_FILES_NOT_IGNORED, ATTACHED_FILES_NOT_SAVED, attachedFileRelativePath, attachedFileSafeName, attachedFilesNote,
-  carriesAttachedFiles, deliverAttachments, isAttachedFilesNote, readBackUserText, stripAttachedFilesNote, withAttachedFilesNote,
+  carriesAttachedFiles, deliverAttachments, isAttachedFilesNote, readBackUserText, stripAppendedNotes, stripAttachedFilesNote, withAttachedFilesNote,
 } from '../../../src/main/agents/attachedFiles'
-import { ATTACHED_FILES_NEED_A_FOLDER } from '../../../src/shared/agents'
+import { ATTACHED_FILES_NEED_A_FOLDER, attachmentReferences } from '../../../src/shared/agents'
 import { PIXEL_PNG, promptImageOf } from '../../fixtures/stagedImages'
 import { tinyPdf } from '../../fixtures/tinyPdfs'
 
@@ -215,5 +215,59 @@ describe('reading a user message back (ADR-0131)', () => {
     const byText = (text: string) => text === 'Typed by hand' ? undefined : text === typed ? plain : undefined
     expect(readBackUserText(typed, byText)).toEqual({ text: typed, origin: plain })
     expect(readBackUserText('No note', text => text === 'No note' ? withFile : undefined)).toEqual({ text: 'No note', origin: withFile })
+  })
+})
+
+describe('Point at something feedback travelling with its picture (ADR-0154)', () => {
+  const pointed = () => ({ ...promptImageOf(PIXEL_PNG, 'pointed', 'button · Sign in'), browserFeedback: { label: 'button · Sign in', comment: 'Match the <header>.\nAnd the footer.', context: 'Browser feedback: http://localhost:5173/\nSelector: #sign-in' } })
+  it('goes to the provider as a block apart from the user\'s words, and writes nothing to the folder', async () => {
+    const { work } = await folders()
+    const delivered = await deliverAttachments(work, [pointed()])
+    expect(delivered.images).toHaveLength(1)
+    expect(delivered.note).toBe([
+      '<sotto-browser-feedback>',
+      'The user pointed at this element on a page in Sotto\'s browser. Its picture is attached, with the element outlined.',
+      'Picture: button · Sign in', 'Browser feedback: http://localhost:5173/', 'Selector: #sign-in',
+      'The user\'s comment:', 'Match the ‹header›.', 'And the footer.', '</sotto-browser-feedback>',
+    ].join('\n'))
+    expect(await readdir(work)).toEqual([])
+  })
+  it('comes off a message read back, as an attached file\'s note does, for an origin that recorded the picture', async () => {
+    const { work } = await folders()
+    const { note } = await deliverAttachments(work, [pointed()])
+    const sent = withAttachedFilesNote('Look at this', note)
+    expect(stripAttachedFilesNote(sent)).toBe('Look at this')
+    expect(isAttachedFilesNote(note)).toBe(true)
+    expect(carriesAttachedFiles([{ mimeType: 'image/png', pointed: true }])).toBe(true)
+    expect(carriesAttachedFiles([{ mimeType: 'image/png' }])).toBe(false)
+    // A handle on its way to the provider has no record yet; its feedback says the same, and the block it adds comes off.
+    expect(carriesAttachedFiles([pointed()])).toBe(true)
+    expect(stripAppendedNotes(sent, [pointed()])).toBe('Look at this')
+  })
+  it('takes off only the blocks Sotto appended for that message, never a block the user wrote', async () => {
+    const { work } = await folders()
+    const report = promptImageOf(new Uint8Array(Buffer.from('%PDF-1.7 report')), 'report', 'report.pdf', 'application/pdf')
+    const handwritten = '<sotto-browser-feedback>\nI typed this myself.\n</sotto-browser-feedback>'
+    // A message with a PDF, whose words end with a block the user typed: only the files note is Sotto's.
+    const withPdf = await deliverAttachments(work, [report])
+    const sentWithPdf = withAttachedFilesNote(`Read this\n\n${handwritten}`, withPdf.note)
+    const pdfOrigin = { id: 'pdf', attachments: [{ mimeType: 'application/pdf' }] }
+    // Matched by ID, as OpenCode matches, so the words alone cannot vouch for what was cut.
+    expect(readBackUserText(sentWithPdf, () => pdfOrigin)).toEqual({ text: `Read this\n\n${handwritten}`, origin: pdfOrigin })
+    // A message with a PDF and one picture: both of Sotto's blocks come off, and the user's stays.
+    const both = await deliverAttachments(work, [report, pointed()])
+    const bothOrigin = { id: 'both', attachments: [{ mimeType: 'application/pdf' }, { mimeType: 'image/png', pointed: true as const }] }
+    expect(readBackUserText(withAttachedFilesNote(`Look\n\n${handwritten}`, both.note), () => bothOrigin)).toEqual({ text: `Look\n\n${handwritten}`, origin: bothOrigin })
+    // A message with no picture keeps a feedback block at its end: Sotto wrote none for it.
+    expect(readBackUserText(`Look\n\n${handwritten}`, () => pdfOrigin).text).toBe(`Look\n\n${handwritten}`)
+    expect(stripAppendedNotes(`Look\n\n${handwritten}`, [{ mimeType: 'image/png' }])).toBe(`Look\n\n${handwritten}`)
+  })
+})
+
+describe('a message\'s record of Point at something\'s picture (ADR-0154)', () => {
+  it('marks the reference as pointed, so its note comes off when read back, and keeps nothing else of the feedback', () => {
+    const handle = { ...promptImageOf(PIXEL_PNG, 'pointed', 'button · Sign in'), browserFeedback: { label: 'button · Sign in', comment: 'Hi', context: 'Selector: #x' } }
+    expect(attachmentReferences([handle])).toEqual([{ id: 'pointed', name: 'button · Sign in', mimeType: 'image/png', sizeBytes: PIXEL_PNG.byteLength, pointed: true }])
+    expect(attachmentReferences([promptImageOf(PIXEL_PNG)])[0]).not.toHaveProperty('pointed')
   })
 })

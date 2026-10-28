@@ -23,10 +23,10 @@ import type { HostThreadToolReads } from './threadToolReads'
 import type { HostAnswerTarget, HostAttachmentFile, HostAttachmentFileRequest, HostErrorCode } from '../../shared/hostProtocol'
 import { mayGrantLocally, REMOTE_PERMISSION_DENIED } from './authority'
 import type { HostMachineReport } from '../../shared/hostFacts'
-import type { ProjectOrigins } from '../../shared/workerMachine'
+import type { ProjectOrigins, ProjectSetupRequest, ProjectSetupResult } from '../../shared/workerMachine'
 import type { HostBranchMoveRequest } from '../../shared/branchMoves'
 import type { DesktopDefaultsInput, DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
-import type { DelegationRelayAsk, RelayedReply } from '../../shared/delegationRelay'
+import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../shared/delegationRelay'
 import type { DelegationNews } from '../../shared/delegation'
 import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
 import type { DelegationViews } from './delegationIpc'
@@ -127,6 +127,12 @@ export interface HostService {
    */
   readonly supportsProjectOrigins?: boolean
   projectOrigins?(): Promise<ProjectOrigins>
+  /**
+   * The host sets up a copy of a GitHub repository for a worker placed on it (#1690), present exactly where it reports its
+   * projects' origins. A setup that cannot finish answers in plain words; only a host out of reach rejects.
+   */
+  readonly supportsProjectSetup?: boolean
+  setUpProject?(request: ProjectSetupRequest): Promise<ProjectSetupResult>
   /** The host moves branches with this desktop over its socket (`branch-moves`, ADR-0105 decision 8); a remote host's only. */
   readonly supportsBranchMoves?: boolean
   branchMove?(request: HostBranchMoveRequest): Promise<unknown>
@@ -166,6 +172,16 @@ export interface HostService {
   answerDelegationRelay?(askId: string, answer: unknown): Promise<void>
   delegationRelayName?(name: string): Promise<void>
   delegationRelayNews?(threadId: string, news: DelegationNews, replies?: readonly RelayedReply[]): Promise<void>
+  /**
+   * This desktop asks the host for delegations there for threads on other machines (`delegation-remote`, #1316 part 2):
+   * `delegationRemoteAsk` asks and returns the host's own delegation's result, and `subscribeDelegationRemoteNews` hears
+   * the host say one moved, naming the caller as this desktop named it.
+   */
+  readonly supportsDelegationRemote?: boolean
+  /** Whether the host takes second briefs relayed from its threads (`delegation-relay-send`). */
+  readonly supportsDelegationRelaySend?: boolean
+  delegationRemoteAsk?(ask: DelegationRemoteAsk, timeoutMs: number): Promise<unknown>
+  subscribeDelegationRemoteNews?(listener: (caller: string, news: DelegationNews, replies: readonly RelayedReply[]) => void): () => void
   /** The host continues agents as threads and forks at a reply (#1028): it takes `continue-agent` and reads `startHandover`. */
   readonly supportsThreadStarts?: boolean
   /** The host keeps which failed threads have been seen and takes `dismiss-failures` (ADR-0092); without it its failed
@@ -373,6 +389,8 @@ export class LocalHostService implements HostService {
     agentsView?: { delegations?(threadId: string, threads: readonly AgentThread[]): HostThreadDelegations }
     /** Each project's GitHub origin (#1032), present only when the host's Owl answer turns on Work across machines. */
     projectOrigins?: (projects: readonly AgentProject[]) => Promise<ProjectOrigins>
+    /** Setting up a copy of a repository for a worker placed here (#1690), present only where `projectOrigins` is. */
+    setUpProject?: (request: ProjectSetupRequest) => Promise<ProjectSetupResult>
     /** Where a headless host keeps the desktop defaults (#1310), present only where it runs delegation for its own threads. */
     desktopDefaults?: { record(clientId: string, defaults: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> }
     /** Delegation's own record of the host's threads (#1310), present only where a headless host runs delegation for them. */
@@ -393,6 +411,11 @@ export class LocalHostService implements HostService {
   get supportsHostFacts(): boolean { return this.options.facts !== undefined }
   get supportsThreadStarts(): boolean { return this.options.threadStarts !== undefined }
   get supportsProjectOrigins(): boolean { return this.options.projectOrigins !== undefined }
+  get supportsProjectSetup(): boolean { return this.options.setUpProject !== undefined }
+  setUpProject(request: ProjectSetupRequest): Promise<ProjectSetupResult> {
+    if (!this.options.setUpProject) return Promise.reject(new Error('This host does not set up copies of projects.'))
+    return this.options.setUpProject(request)
+  }
   get supportsHostDelegation(): boolean { return this.options.desktopDefaults !== undefined }
   /** Keeps a desktop's defaults for the client that sent them; the socket listener admits only a recorded desktop. */
   desktopDefaults(defaults: DesktopDefaultsInput, client: ClientIdentity): Promise<DesktopDefaultsReceipt> {

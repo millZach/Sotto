@@ -14,6 +14,8 @@ export interface RelayDesktop {
   readonly clientId: string
   /** Pushes the ask; false when the socket would not take it. */
   push(askId: string, ask: DelegationRelayAsk): boolean
+  /** Its hello accepted `delegation-relay-send` too: it takes second briefs (#1316 part 2). */
+  readonly sends?: boolean
 }
 /** Why an ask has no answer: no desktop was connected to send it to, or the answer never came. */
 export class RelayUnanswered extends Error {
@@ -25,6 +27,8 @@ const uuidSchema = z.uuid()
 const recordSchema = z.object({
   /** The ID the delegating thread knows it by: the desktop's delegation ID, or the host's `relayId` when the start's answer was lost. */
   id: z.uuid(), relayId: z.uuid(), delegatingThreadId: id, work: delegationWorkSchema,
+  /** A second brief to a thread started before (#1316 part 2); a start has none. */
+  action: z.literal('send').optional(),
   /** The desktop's delegation ID, once its answer named one. */
   delegation: z.uuid().optional(),
   /** The delegated thread on the other machine, by that machine's Sotto thread ID, once the desktop named it. */
@@ -49,6 +53,9 @@ const SETTLED: ReadonlySet<WatcherOutcome> = new Set(['answered', 'failed', 'sto
 const LAST_READ = 'This computer is not connected now, so this is the outcome Sotto last read there. Sotto reads it again when this computer is back, and sends this thread a wake-up if it changed. Nothing was sent again.'
 /** What a start whose answer was lost says (ADR-0058): Sotto cannot tell whether it started, and sends nothing again. */
 const LOST_START = 'Sotto asked This computer to start this delegation, but its answer was lost, so Sotto cannot tell whether it started. Nothing will be sent again. Call read_delegation with this delegation once this computer is back to see what happened.'
+const LOST_SEND = 'Sotto asked This computer to send this brief, but its answer was lost, so Sotto cannot tell whether it was sent. Nothing will be sent again. Call read_delegation with this delegation once this computer is back to see what happened.'
+/** A second brief to a thread on another machine, which the desktop that relays cannot carry: one from before #1316 part 2. */
+export const RELAY_SEND_LATER = 'That thread is on another machine, and Sotto cannot send it another brief from here yet. Start a new delegation instead, or ask the user to send it there. Nothing was sent.'
 const LOST_CANCEL = 'This computer did not answer, so Sotto cannot tell whether it was stopped. Call read_delegation with this delegation to see where it stands.'
 const now = (): string => new Date().toISOString()
 /** How many replies wait in memory for their wake-up to be worded. */
@@ -176,12 +183,29 @@ export class HostDelegationRelay {
   async start(callerId: string, work: DelegationWork, ask: Omit<Extract<DelegationRelayAsk, { type: 'start' }>, 'type' | 'relayId' | 'threadId'>): Promise<Record<string, unknown>> {
     if (!this.reachable()) throw new RelayUnanswered('away')
     const relayId = randomUUID(), time = now()
-    const record: RelayedRecord = { id: relayId, relayId, delegatingThreadId: callerId, work, outcome: 'working', createdAt: time, updatedAt: time }
+    return await this.asking({ id: relayId, relayId, delegatingThreadId: callerId, work, outcome: 'working', createdAt: time, updatedAt: time },
+      { type: 'start', relayId, threadId: callerId, ...ask }, ask.waitMs)
+  }
+  /**
+   * Sends another brief to `thread`, a thread `callerId` delegated to through the relay, as the desktop named it (#1316 part
+   * 2). The desktop charges it against the same four briefs per thread per user message as any brief. A desktop from
+   * before it is told nothing: the call is refused, and nothing is sent.
+   */
+  async send(callerId: string, work: DelegationWork, thread: string, ask: Omit<Extract<DelegationRelayAsk, { type: 'send' }>, 'type' | 'relayId' | 'threadId'>): Promise<Record<string, unknown>> {
+    const desktop = this.relaying()
+    if (!desktop) throw new RelayUnanswered('away')
+    if (desktop.sends !== true) return { status: 'refused', code: 'UNKNOWN_THREAD', message: RELAY_SEND_LATER }
+    const relayId = randomUUID(), time = now()
+    return await this.asking({ id: relayId, relayId, delegatingThreadId: callerId, work, action: 'send', thread, outcome: 'working', createdAt: time, updatedAt: time },
+      { type: 'send', relayId, threadId: callerId, ...ask, input: { ...ask.input, thread } }, ask.waitMs)
+  }
+  private async asking(record: RelayedRecord, body: DelegationRelayAsk, waitMs: number): Promise<Record<string, unknown>> {
+    const callerId = record.delegatingThreadId
     this.records.push(record)
     this.trim()
     await this.save()
     let answer: Record<string, unknown>
-    const asked = this.ask({ type: 'start', relayId, threadId: callerId, ...ask }, ask.waitMs + DELEGATION_RELAY_ANSWER_GRACE_MS)
+    const asked = this.ask(body, waitMs + DELEGATION_RELAY_ANSWER_GRACE_MS)
     const waiting = this.starting.get(callerId) ?? new Set<Promise<unknown>>()
     waiting.add(asked); this.starting.set(callerId, waiting)
     void asked.catch(() => undefined).finally(() => { waiting.delete(asked); if (!waiting.size && this.starting.get(callerId) === waiting) this.starting.delete(callerId) })
@@ -192,7 +216,8 @@ export class HostDelegationRelay {
       this.options.log?.('delegation-relay-answer-lost')
       this.update(record, saved => { saved.outcome = 'unknown'; saved.told = 'unknown'; saved.unread = true })
       await this.persist()
-      return { status: 'ok', delegation: { id: relayId, work, action: 'start', outcome: 'unknown', note: LOST_START, createdAt: record.createdAt } }
+      return { status: 'ok', delegation: { id: record.id, ...record.thread ? { thread: record.thread } : {}, work: record.work, action: record.action ?? 'start', outcome: 'unknown',
+        note: record.action === 'send' ? LOST_SEND : LOST_START, createdAt: record.createdAt } }
     }
     const delegation = isObject(answer.delegation) ? answer.delegation : undefined
     if (answer.status !== 'ok' || !delegation || typeof delegation.id !== 'string') { this.forget(record); await this.persist(); return answer }
@@ -243,9 +268,9 @@ export class HostDelegationRelay {
     } catch { return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: LOST_CANCEL } }
   }
   /** `callerId`'s relayed delegations as `read_delegation` lists them, newest twenty, oldest first. */
-  list(callerId: string): { id: string; thread?: string; work: DelegationWork; action: 'start'; outcome: WatcherOutcome; machine?: string; createdAt: string }[] {
+  list(callerId: string): { id: string; thread?: string; work: DelegationWork; action: 'start' | 'send'; outcome: WatcherOutcome; machine?: string; createdAt: string }[] {
     return this.records.filter(record => record.delegatingThreadId === callerId).slice(-20).map(record => ({ id: record.id, ...(record.thread ? { thread: record.thread } : {}),
-      work: record.work, action: 'start' as const, outcome: record.outcome, ...(record.machine ? { machine: record.machine } : {}), createdAt: record.createdAt }))
+      work: record.work, action: record.action ?? 'start' as const, outcome: record.outcome, ...(record.machine ? { machine: record.machine } : {}), createdAt: record.createdAt }))
   }
   /** The machines the desktop lists, or undefined while it is away or does not answer. */
   async machines(): Promise<Record<string, unknown> | undefined> {
@@ -348,7 +373,7 @@ export class HostDelegationRelay {
     return isObject(answer.delegation) ? { ...answer, delegation: { ...answer.delegation, id: record.id } } : answer
   }
   private lastRead(record: RelayedRecord): Record<string, unknown> {
-    return { id: record.id, ...(record.thread ? { thread: record.thread } : {}), work: record.work, action: 'start', outcome: record.outcome, note: LAST_READ, createdAt: record.createdAt }
+    return { id: record.id, ...(record.thread ? { thread: record.thread } : {}), work: record.work, action: record.action ?? 'start', outcome: record.outcome, note: LAST_READ, createdAt: record.createdAt }
   }
   private awayStop(): string { return `This computer isn't connected to ${this.hereName()}, so Sotto could not stop this delegation there.` }
   private find(callerId: string, delegationId: string): RelayedRecord | undefined {

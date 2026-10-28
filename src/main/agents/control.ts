@@ -742,6 +742,26 @@ export class AgentControl {
     guard(); this.watcherOrigins.set(parsed, { guard, userSetup: true })
     return this.admitCommandShell(parsed)
   }
+  /**
+   * Adds a folder on this machine as a project for a worker Sotto placed here (#1690): a copy of the start's repository it
+   * found or cloned. A project that already has the folder is reused. It carries a guard as Sotto's own commands do, so it
+   * is never taken for the user's command, leaves the window's selection where it is and announces nothing. Resolves with
+   * the project's ID; a refusal rejects with its words.
+   */
+  async addProjectForPlacement(title: string, path: string): Promise<string> {
+    const parsed = agentCommandSchema.parse({ type: 'create-project', title, path, useExisting: true })
+    const guard = () => { if (this.disposed) throw new Error('Sotto is stopping.') }
+    guard(); this.watcherOrigins.set(parsed, { guard })
+    const answer = await this.admitCommandShell(parsed)
+    if (answer.error) throw new Error(answer.error)
+    const key = (value: string): string => process.platform === 'win32' ? resolve(value).toLowerCase() : resolve(value)
+    const provider = this.state.configuration.provider
+    const project = this.state.host.projects.find(item => key(item.path) === key(path) && (!item.providerId || item.providerId === provider))
+    if (!project) throw new Error('The project did not appear in the list. Try again.')
+    return project.id
+  }
+  /** Where new projects go by default, as the user configured it; empty for none. Read without copying the state. */
+  projectsDirectory(): string { return this.state.configuration.projectsDirectory }
   hasWatcherQueue(operationIds: ReadonlySet<string>): boolean { return this.followupStore.peek().items.some(item => item.watcherOperationId && operationIds.has(item.watcherOperationId)) }
   async cancelWatcherQueue(operationIds: ReadonlySet<string>): Promise<void> {
     const failed = await this.followupStore.cancelWatcher(operationIds)
@@ -2193,10 +2213,14 @@ export class AgentControl {
     if (this.attachmentPreviews.contentCleanupBlocked()) return
     await this.attachments.sweep(() => this.ownedAttachments(), undefined, previewed)
   }
-  /** A staged image as the adapter receives it: the handle, and its bytes read from the store only when asked. */
+  /**
+   * A staged image as the adapter receives it: the handle, and its bytes read from the store only when asked. Point at
+   * something's feedback goes with it, since delivery writes it for the provider and marks the message's record
+   * (ADR-0154).
+   */
   private promptImage(handle: AgentAttachmentHandle): PromptImage {
-    const { id, name, mimeType, sizeBytes, digest } = handle
-    return { id, name, mimeType, sizeBytes, digest, read: async () => {
+    const { id, name, mimeType, sizeBytes, digest, browserFeedback } = handle
+    return { id, name, mimeType, sizeBytes, digest, ...(browserFeedback ? { browserFeedback } : {}), read: async () => {
       const bytes = await this.attachments.read(digest)
       if (!bytes) throw new Error(this.attachments.missing)
       return bytes
@@ -4809,7 +4833,8 @@ export class AgentControl {
           if (!origin && selectionRevision === this.selectionRevision) {
             this.state.activeProjectId = known.id; this.state.activeThreadId = null
           }
-          this.observe(); this.say(`Opened ${known.title}.`)
+          // Sotto's own setup of a copy for a worker (#1690) announces nothing.
+          this.observe(); if (!origin || origin.userSetup) this.say(`Opened ${known.title}.`)
           return
         }
         if (!existing) await mkdir(path, { recursive: true })
@@ -4820,7 +4845,7 @@ export class AgentControl {
           this.state.activeProjectId = projectId; this.state.activeThreadId = null
         }
         this.observe()
-        this.say(`Created ${command.title} in ${path}.`)
+        if (!origin || origin.userSetup) this.say(`Created ${command.title} in ${path}.`)
         return
       }
       case 'settle-project':

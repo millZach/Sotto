@@ -1093,6 +1093,8 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   // The desktop relay (#1316): each host whose threads delegate to This computer through this desktop is heard from here.
   const delegationRelay = 'delegationRelay' in localRuntime ? localRuntime.delegationRelay : undefined
   delegationRelay?.useHosts(hostRouter)
+  // This computer's delegations on its paired hosts (#1316 part 2): each host is heard from, and read again, as it connects.
+  if ('delegationRemote' in localRuntime) localRuntime.delegationRemote?.useHosts(hostRouter)
   // A child on another machine brings its changes back by moving its branch first (#1030), only while Work across machines is on.
   if (localRuntime.branchMoves) hostRouter.useBranchMoves(localRuntime.branchMoves)
   // Desktop defaults (#1310): this computer's new-thread default and, while worker roles are on, its worker roles, sent to
@@ -2078,6 +2080,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         destination: async () => (await settingsCoordinator.getSettings()).webLinkDestination,
         openExternal: url => shell.openExternal(url),
         byDefault: () => workingCopySettings.browserWithoutAsking,
+        pointAtSomething: owlFeatures['quiet-browser'],
       })
       cloudIphoneService = new CloudIphoneService({
         files, credentials,

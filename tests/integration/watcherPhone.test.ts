@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
@@ -29,7 +29,8 @@ const MACHINE_REPORT = { facts: { observedAt: new Date().toISOString(), os: { fa
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 /** `steers`: Watcher's provider takes a steer into its running turn, as Codex and Claude Code do and Grok Build does not. */
-async function fixture(phoneFeature = true, usageEnabled = false, steers = false, machines = false) {
+/** `writingClock`: the monotonic clock the listener times a phone's Watcher window on. */
+async function fixture(phoneFeature = true, usageEnabled = false, steers = false, machines = false, writingClock?: () => number) {
   const workspace = await workspaceFixture()
   cleanups.push(workspace.remove)
   if (steers) workspace.adapters.codex.state.capabilities.steer = true
@@ -53,7 +54,7 @@ async function fixture(phoneFeature = true, usageEnabled = false, steers = false
   const phone = new WatcherPhoneService(f.control, watcher, machines)
   const service = new LocalHostService({ control: f.control, ...(phoneFeature ? { watcherPhone: phone } : {}) })
   const pairing = new PairedClients(workspace.root); await pairing.load()
-  const server = await startSocketServer({ service, pairing, admin: false, mayAnswer: () => canAnswer })
+  const server = await startSocketServer({ service, pairing, admin: false, mayAnswer: () => canAnswer, ...writingClock ? { watcherWritingClock: writingClock } : {} })
   cleanups.push(() => server.close())
   const pair = async (accepts: string[] = ['watcher-phone', 'watcher-phone-stop-all']) => {
     const paired = await pairing.redeem(pairing.issuePairingCode().code, 'Synthetic phone')
@@ -946,6 +947,82 @@ it('pushes a phone no shell whose only news is when Watcher\'s page was read, an
     await publish(); await received()
     expect(shells()).toHaveLength(3)
   } finally { vi.useRealTimers() }
+})
+
+/**
+ * Watcher writing its reply changes its page with every word, and its page rides on every shell a phone with Watcher is
+ * pushed. Before October 28, 2026 that sent the phone its whole shell with every publish while Watcher wrote, about twenty
+ * a second, and the iPhone read each one whole and drew Watcher's page again.
+ */
+describe('a phone while Watcher writes its reply', () => {
+  type Pushed = { state: { watcher?: { working: boolean; conversation: { messages: { id: string; text: string }[] } }; clientCapabilities?: { mayAnswer: boolean } } }
+  type Phone = Awaited<ReturnType<Awaited<ReturnType<typeof fixture>>['pair']>>
+  /** Watcher writing on phones paired before it starts, with the listener's window timed on `clock.at`. */
+  async function writing(phones = 1) {
+    const clock = { at: 0 }
+    const f = await fixture(true, false, false, false, () => clock.at)
+    const paired: Phone[] = []
+    for (let index = 0; index < phones; index++) paired.push(await f.pair())
+    await paired[0]!.call('send', f.send(paired[0]!.paired.clientId))
+    const native = f.native(f.target.threadId)
+    const reply = { id: 'synthetic-streamed-reply', role: 'assistant' as const, text: 'Synthetic', createdAt: new Date().toISOString() }
+    const shells = (phone: Phone) => phone.messages.filter(message => message.event === 'shell') as unknown as Pushed[]
+    const latest = (phone: Phone) => shells(phone).at(-1)?.state
+    const shown = (phone: Phone) => latest(phone)?.watcher?.conversation.messages.find(message => message.id === reply.id)?.text
+    // A publish reads the shell once, as it sends, and an answer to a later request comes behind any shell it wrote.
+    const reads = vi.spyOn(f.service, 'shell')
+    let asked = 0
+    /** Watcher's page holds what it wrote, a publish since has been read, and every phone has been sent what it carried. */
+    const published = async () => {
+      await expect.poll(() => f.phone.state(false).conversation.messages.find(message => message.id === reply.id)?.text).toBe(reply.text)
+      const before = reads.mock.calls.length
+      await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+      await expect.poll(() => reads.mock.calls.length).toBeGreaterThan(before)
+      for (const phone of paired) await phone.call(`after-${++asked}`, { op: 'events', afterSeq: 0, threadId: f.target.threadId })
+    }
+    const write = async (words: string) => { reply.text += words; f.workspace.adapters.codex.emit(); await published() }
+    native.status = 'running'; native.messages.push(reply); f.workspace.adapters.codex.emit()
+    // Watcher working is news of its own, so it goes at once.
+    for (const phone of paired) await expect.poll(() => latest(phone)?.watcher?.working).toBe(true)
+    await published()
+    return { f, clock, phones: paired, native, reply, shown, latest, write }
+  }
+
+  it('is pushed Watcher\'s newest words once a window has passed since its last shell, and not before', async () => {
+    const { clock, phones, reply, shown, write } = await writing(2)
+    const sent = reply.text
+    // Before, every publish went: each of these was a shell to each phone.
+    await write(' one'); clock.at = 249; await write(' two')
+    for (const phone of phones) expect(shown(phone)).not.toBe(reply.text)
+    for (const phone of phones) expect([undefined, sent]).toContain(shown(phone))
+    // The window closes 250 ms after the last shell, and a publish then goes with the newest words, to both phones.
+    clock.at = 250; await write(' three')
+    for (const phone of phones) expect(shown(phone)).toBe(reply.text)
+    // Words written in the next window wait for it, and go once it has closed with nothing more published.
+    await write(' four')
+    for (const phone of phones) expect(shown(phone)).not.toBe(reply.text)
+    clock.at = 500
+    for (const phone of phones) await expect.poll(() => shown(phone)).toBe(reply.text)
+  })
+
+  it('is pushed anything else at once, with the newest words', async () => {
+    // The window never closes here, so only news other than Watcher's words reaches the phone.
+    const { f, phones: [phone], native, reply, shown, latest, write } = await writing()
+    await write(' one')
+    expect(shown(phone!)).not.toBe(reply.text)
+    // Watcher finishing goes at once and carries what it wrote.
+    native.status = 'idle'; f.workspace.adapters.codex.emit()
+    await expect.poll(() => latest(phone!)?.watcher?.working).toBe(false)
+    expect(shown(phone!)).toBe(reply.text)
+    // So do Watcher starting again and a change to the phone's own standing.
+    native.status = 'running'; f.workspace.adapters.codex.emit()
+    await expect.poll(() => latest(phone!)?.watcher?.working).toBe(true)
+    await write(' two')
+    expect(shown(phone!)).not.toBe(reply.text)
+    f.canAnswer(true); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+    await expect.poll(() => latest(phone!)?.clientCapabilities?.mayAnswer).toBe(true)
+    expect(shown(phone!)).toBe(reply.text)
+  })
 })
 
 it('knows the threads Watcher started from an index of its record, for the phone’s machines line (#1032)', async () => {

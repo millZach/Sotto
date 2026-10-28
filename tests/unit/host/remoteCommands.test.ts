@@ -130,6 +130,9 @@ describe('remote command allow-list', () => {
       'host-facts',
       // Each project's GitHub repository, read only by a desktop that lists project-origins, to place a worker (#1032).
       'project-origins',
+      // A copy of a GitHub repository set up for a worker placed there (#1690), only for a desktop that lists project-setup,
+      // as create-project already takes a path from a paired client. It answers nothing and grants nothing.
+      'project-setup',
       // A recorded desktop's new-thread default and worker roles for host delegation (#1310): settings, never a grant.
       'desktop-defaults',
       // A host thread's delegations and a delegated thread's newest brief, reads for a recorded desktop's window on a
@@ -151,7 +154,10 @@ describe('remote command allow-list', () => {
       // listener that offers delegation-relay, from a recorded desktop whose hello accepted it. Neither answers or grants anything.
       'delegation-relay-answer', 'delegation-relay-news',
       // The name the relaying desktop saved for this host, kept as words for the away refusal (Zach, October 27, 2026).
-      'delegation-relay-name']
+      'delegation-relay-name',
+      // A delegation on this host for a thread on another machine, asked by a recorded desktop on a listener that offers
+      // delegation-remote (#1316 part 2): admitted by the host's own delegation under its own rules, never a grant.
+      'delegation-remote-ask']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
     expect(ops.sort()).toEqual([...decided].sort())
   })

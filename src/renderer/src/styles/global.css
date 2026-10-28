@@ -335,6 +335,12 @@ textarea.tt-input {
   resize: vertical;
 }
 
+/* Every text box draws its resize grip only while the pointer is over it (Drake's ask, October 27, 2026);
+   the corner still resizes the box at rest. */
+:is(textarea, [contenteditable]):not(:hover)::-webkit-resizer {
+  display: none;
+}
+
 /* Numeric and address fields read as instrument entry. */
 .tt-input[inputmode='numeric'],
 .tt-input[inputmode='url'],

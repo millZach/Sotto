@@ -428,6 +428,23 @@ describe('browser feedback', () => {
       expect(staged).toHaveLength(1)
     } finally { vi.unstubAllGlobals() }
   })
+  it('adds a pointed-at element as one draft item that carries its comment and context, leaving the text alone (ADR-0154)', async () => {
+    const staged: AgentAttachmentStageRequest[] = []
+    vi.stubGlobal('sotto', { agents: { stageAttachment: vi.fn(async (request: AgentAttachmentStageRequest) => { staged.push(request); return handleOf(request.bytes, 'pointed', request.name) }) } })
+    try {
+      const drafts = new ThreadDraftStore(vi.fn(async () => null), 60_000)
+      drafts.edit('visual-gate', { text: 'Keep this thought' })
+      const pointed = { ...capture, element: { tag: 'button', role: 'button', name: 'Sign in', text: 'Sign in', selector: '#sign-in' } }
+      expect(await appendBrowserFeedback(drafts, 'visual-gate', pointed, ' Match the header ', true, { pointed: { label: 'button · Sign in', box: { x: 10.4, y: 20, width: 120, height: 39.6 } } })).toBeNull()
+      expect(staged).toEqual([expect.objectContaining({ name: 'button · Sign in' })])
+      // The composer's text is the user's alone; the item carries the rest, so removing it removes all of it.
+      expect(drafts.draft('visual-gate').text).toBe('Keep this thought')
+      const [item] = drafts.draft('visual-gate').attachments
+      expect(item).toMatchObject({ id: 'pointed', name: 'button · Sign in', browserFeedback: { label: 'button · Sign in', comment: 'Match the header' } })
+      expect(item!.browserFeedback!.context).toContain('Selected element: button (button) - Sign in\nSelector: #sign-in\nOutlined in the screenshot at 10, 20, 120 x 40\n')
+      expect(item!.browserFeedback!.context).not.toContain('Match the header')
+    } finally { vi.unstubAllGlobals() }
+  })
   it('shows a staging refusal in its own words, without the channel Electron names', async () => {
     vi.stubGlobal('sotto', { agents: { stageAttachment: vi.fn(async () => { throw new Error("Error invoking remote method 'sotto:agents:stage-attachment': Error: This host is disconnected. Connect again before attaching images. Nothing was attached.") }) } })
     try {

@@ -1,5 +1,5 @@
 import { agentThreadPromptsSchema } from './threadPrompts'
-import { delegationRelayAskSchema, delegationRelayNewsSchema, relayedRepliesSchema, type DelegationRelayAsk } from './delegationRelay'
+import { delegationRelayAskSchema, delegationRelayNewsSchema, delegationRemoteAskSchema, DELEGATION_REMOTE_CALLER_MAX, relayedRepliesSchema, type DelegationRelayAsk } from './delegationRelay'
 import { z } from 'zod'
 import { watcherPhoneStateSchema, watcherPhoneSendSchema, watcherPhonePreviewSchema, watcherPhoneRemoveFollowupSchema, watcherPhoneAnswerSchema, watcherPhoneStopOutcomeSchema, watcherPhoneManageOutcomeSchema, type WatcherPhoneManageOutcome, watcherPhoneSetPermissionSchema, watcherPhoneWatchSchema, type WatcherPhoneStopOutcome, type WatcherPhoneState } from './watcherPhone'
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema } from './watcherHost'
@@ -14,6 +14,7 @@ import { gitReviewRequestSchema } from './gitChanges'
 import { toolListRequestSchema } from './tools'
 import { subagentAssignmentsRequestSchema, subagentPageRequestSchema } from './subagents'
 import { desktopDefaultsSchema } from './desktopDefaults'
+import { projectSetupRequestSchema } from './workerMachine'
 import { DELEGATIONS_CHANGED_MAX } from './delegation'
 import { PASTED_CODE_MAX } from './hostProviders'
 import { opencodeHostCallSchema } from './opencodeSignIn'
@@ -261,6 +262,12 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * names, host, owner and name only, so a desktop placing a worker can find the same project on this machine (#1032). Only
  * a host whose Owl answer turns on Work across machines lists it, and only to a desktop; one that does not cannot be
  * matched by repository, and a start must name one of its projects instead.
+ * `project-setup`: the host takes `project-setup`, which names a GitHub repository and a project title, and gives itself a
+ * copy of that repository for a worker a desktop places there (#1690): a clone already in its usual projects folder becomes
+ * a project and is brought up to date when nothing stands in the way, else the host clones the repository there. It
+ * answers the project, how it was set up and whether it is current, or a refusal in plain words; it never prompts for a
+ * password and removes nothing of the user's. Offered exactly where `project-origins` is; a desktop refuses a start on a
+ * host without it that has no copy, and says to update it.
  * `host-delegation`: the host runs delegation for its own threads (#1310), so a thread there may delegate to threads on
  * the same machine, and it takes `desktop-defaults`, the desktop's new-thread default and worker roles, which it keeps and
  * holds those threads to. Only a host whose Owl answer turns on Work across machines lists it, and only to a desktop the
@@ -284,6 +291,13 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * Work across machines, and only to a desktop the launch script recorded; a desktop accepts it only where its own Owl
  * answer turns Work across machines on. While no such desktop is connected, a start elsewhere is refused by name and
  * nothing is queued.
+ * `delegation-relay-send`: with `delegation-relay`, the host may push a `send` ask, another brief to a thread one of its
+ * threads delegated to through the desktop (#1316 part 2). Listed and accepted under the same conditions.
+ * `delegation-remote`: the desktop may ask this host, with `delegation-remote-ask`, to start a delegated thread here for a
+ * thread on another machine, send it briefs, read it and cancel it, admitted by this host's own delegation (#1316 part 2,
+ * ADR-0105 decision 1). The host pushes `delegation-remote-news` to that desktop when an outcome changes. Only a host that
+ * runs delegation for its own threads lists it, where its Owl answer turns on Work across machines, and only to a desktop
+ * the launch script recorded; a desktop accepts it only where its own Owl answer turns Work across machines on.
  * `watcher-check-stop`: a `stop_thread` the desktop's Watcher sends in `watcher-control` for a check still waiting in the
  * host's own queue (`watcher-check-queue`) takes it out (#1637): the host fails the waiting start as stopped, starts
  * nothing, and accepts the stop. A check whose turn has come is stopped as any thread is. Only a host that lists
@@ -296,13 +310,13 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * Owl answer turns on Work across machines, and only to a desktop the launch script recorded; a desktop accepts it only
  * where its own Owl answer turns Work across machines on. A desktop that does not accept it is pushed nothing.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'watcher-check-stop', 'check-queue-views'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'watcher-check-stop', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
  * (ADR-0053). Its health lists them; a phone's hello does not, and their requests are refused for a phone.
  */
-export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'client-update-outcomes', 'client-update-not-listed', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'watcher-cursor', 'host-update', 'opencode-sign-in', 'activity-bodies', 'thread-prompts', 'project-origins', 'host-delegation', 'delegation-views', 'branch-moves', 'delegation-relay', 'check-queue-views']
+export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'client-update-outcomes', 'client-update-not-listed', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'watcher-cursor', 'host-update', 'opencode-sign-in', 'activity-bodies', 'thread-prompts', 'project-origins', 'host-delegation', 'delegation-views', 'branch-moves', 'delegation-relay', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote']
 /**
  * The providers a host sends only to a client whose hello accepts their feature (#1107, ADR-0087). A desktop or phone from
  * before a provider joined Sotto reads provider IDs against a list without it, and refuses a whole shell that names one, so
@@ -519,6 +533,8 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('host-facts') }).strict(),
   /** The GitHub repository of each of the host's projects, read on request and never pushed (#1032). */
   z.object({ ...base, op: z.literal('project-origins') }).strict(),
+  /** A copy of a GitHub repository set up on the host for a worker placed there (#1690). */
+  z.object({ ...base, op: z.literal('project-setup'), request: projectSetupRequestSchema }).strict(),
   /** A desktop's new-thread default and worker roles, which a host that runs delegation for its own threads keeps (#1310). */
   z.object({ ...base, op: z.literal('desktop-defaults'), defaults: desktopDefaultsSchema }).strict(),
   /** One activity record whole, for a desktop that was sent it with a cut body; read when its row opens (`activity-bodies`). */
@@ -558,6 +574,8 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   /** The name the desktop saved for this host, which the host's refusal says while no desktop is connected (Zach, October 27, 2026). */
   z.object({ ...base, op: z.literal('delegation-relay-name'), name: z.string().trim().min(1).max(64) }).strict(),
   z.object({ ...base, op: z.literal('delegation-relay-news'), threadId: id, news: delegationRelayNewsSchema, replies: relayedRepliesSchema.optional() }).strict(),
+  /** A delegation on this host for a thread on another machine (`delegation-remote`, #1316 part 2): a `delegate`, read or cancel, answered with its result. */
+  z.object({ ...base, op: z.literal('delegation-remote-ask'), ask: delegationRemoteAskSchema }).strict(),
 ])
 export type HostRequest = z.infer<typeof hostRequestSchema>
 export type HostOperation = HostRequest extends infer R ? R extends HostRequest ? Omit<R, 'v' | 'id' | 'session'> : never : never
@@ -591,6 +609,8 @@ export type HostPush = { v: 1; event: 'shell'; state: HostWireShell; eventPage?:
   | { v: 1; event: 'delegation-relay-ask'; askId: string; ask: DelegationRelayAsk }
   /** The host's own check queue, the running check first (#1312); only to a desktop whose hello accepted `check-queue-views`. */
   | { v: 1; event: 'check-queue'; checks: CheckQueueEntry[] }
+  /** A delegation this host holds for a thread on another machine changed (#1316 part 2); only to the desktop that asked, whose hello accepted `delegation-remote`. */
+  | { v: 1; event: 'delegation-remote-news'; caller: string; news: z.infer<typeof delegationRelayNewsSchema>; replies?: z.infer<typeof relayedRepliesSchema> | undefined }
 export interface HostEventPage { events: StoredThreadEvent[]; latestSeq: number; hasMore: boolean }
 /**
  * What a headless host says about itself in health and hello (ADR-0053, ADR-0054). `tailnetAddress` is the address
@@ -680,6 +700,8 @@ export const hostPushSchema = z.discriminatedUnion('event', [
   z.object({ v: z.literal(1), event: z.literal('delegation-relay-ask'), askId: z.uuid(), ask: delegationRelayAskSchema }),
   /** The host's own check queue (`check-queue-views`), only to a desktop whose hello accepted it. */
   z.object({ v: z.literal(1), event: z.literal('check-queue'), checks: checkQueueSchema }),
+  /** News of a delegation this host holds for a thread on another machine (`delegation-remote`), only to the desktop that asked. */
+  z.object({ v: z.literal(1), event: z.literal('delegation-remote-news'), caller: z.string().min(1).max(DELEGATION_REMOTE_CALLER_MAX), news: delegationRelayNewsSchema, replies: relayedRepliesSchema.optional() }),
 ])
 export const hostReceiptSchema = z.object({ status: z.enum(['pending', 'completed', 'unknown']), error: hostProtocolErrorSchema.optional(),
   answerDelivered: z.boolean().optional(), acceptedAnswer: hostAnswerTargetSchema.extend({ decisionId: id }).optional(),

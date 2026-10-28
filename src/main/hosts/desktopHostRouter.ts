@@ -44,7 +44,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsBringBack' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop'>
+  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsBringBack' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -223,7 +223,8 @@ export class DesktopHostRouter {
       } } : {},
       hosts: () => this.options.watcherEnabled !== true ? [] : [...this.hosts.values()].filter(item => item.connection.kind === 'remote').map(({ connection: host }) => ({
         hostId: host.hostId, name: host.name, facts: host.service.supportsHostFacts === true && host.service.hostFacts !== undefined,
-        origins: host.service.supportsProjectOrigins === true && host.service.projectOrigins !== undefined, control: host.service.supportsWatcherControl === true, reads: host.service.supportsWatcherReads === true, standingWatch: host.service.supportsWatcherStandingWatch === true,
+        origins: host.service.supportsProjectOrigins === true && host.service.projectOrigins !== undefined,
+        setUp: host.service.supportsProjectSetup === true && host.service.setUpProject !== undefined, control: host.service.supportsWatcherControl === true, reads: host.service.supportsWatcherReads === true, standingWatch: host.service.supportsWatcherStandingWatch === true,
         workSettled: host.service.supportsWatcherWorkSettled === true, outcomes: host.service.supportsWatcherOutcomes === true,
         // The host keeps its own check queue, which a Watcher start marked as a check waits in (#1312).
         checks: host.service.supportsWatcherCheckQueue === true,
@@ -280,6 +281,10 @@ export class DesktopHostRouter {
       projectOrigins: async id => {
         const host = connection(id)
         return host.service.supportsProjectOrigins === true && host.service.projectOrigins ? host.service.projectOrigins() : undefined
+      },
+      setUpProject: async (id, request) => {
+        const host = connection(id)
+        return host.service.supportsProjectSetup === true && host.service.setUpProject ? host.service.setUpProject(request) : undefined
       },
       branchMoves: id => {
         const entry = this.hosts.get(id)?.connection

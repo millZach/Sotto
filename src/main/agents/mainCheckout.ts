@@ -344,28 +344,11 @@ export class MainCheckoutKeeper {
     return { branch, behind, blocked }
   }
 
-  private async blocked(top: string, branch: string, ahead: number): Promise<MainCheckoutBlock | null> {
-    for (const [marker, operation] of IN_PROGRESS) {
-      const path = (await this.git(top, ['rev-parse', '--git-path', marker]).catch(() => '')).trim()
-      if (path && await stat(isAbsolute(path) ? path : join(top, path)).then(() => true, () => false)) return { reason: 'in-progress', operation }
-    }
-    const current = (await this.git(top, ['symbolic-ref', '--short', '-q', 'HEAD']).catch(() => '')).trim()
-    if (current !== branch) return { reason: 'branch', checkedOut: current || null }
-    if (ahead > 0) return { reason: 'diverged', ahead }
-    const porcelain = await this.git(top, ['status', '--porcelain=v1', '-z', '--untracked-files=no'])
-    if (porcelain.length > 0) return { reason: 'changes' }
-    return null
+  private blocked(top: string, branch: string, ahead: number): Promise<MainCheckoutBlock | null> {
+    return checkoutBlock((cwd, args) => this.git(cwd, args), top, branch, ahead)
   }
 
-  /** `origin`'s default branch (`origin/HEAD`), else a remote `main` or `master`. */
-  private async defaultBranch(top: string): Promise<string | null> {
-    const head = (await this.git(top, ['symbolic-ref', '--short', '-q', 'refs/remotes/origin/HEAD']).catch(() => '')).trim()
-    if (head.startsWith('origin/') && head.length > 'origin/'.length) return head.slice('origin/'.length)
-    for (const candidate of ['main', 'master']) {
-      if (await this.git(top, ['rev-parse', '--verify', '-q', `refs/remotes/origin/${candidate}^{commit}`]).then(() => true, () => false)) return candidate
-    }
-    return null
-  }
+  private defaultBranch(top: string): Promise<string | null> { return originDefaultBranch((cwd, args) => this.git(cwd, args), top) }
 
   private async topLevel(folder: string): Promise<string | null> {
     const top = (await this.git(folder, ['rev-parse', '--show-toplevel']).catch(() => '')).trim()
@@ -381,6 +364,36 @@ export class MainCheckoutKeeper {
     this.lastPublished = fingerprint
     for (const listener of this.listeners) { try { listener(state) } catch { /* A listener's failure is its own. */ } }
   }
+}
+
+/** Runs Git in a checkout and resolves with what it printed: how Keep main up to date and setting up a copy (#1690) ask. */
+export type CheckoutGit = (cwd: string, args: readonly string[]) => Promise<string>
+
+/**
+ * What stands in the way of fast-forwarding `branch` in the checkout at `top`, which has `ahead` commits of its own: a
+ * merge or rebase under way, another branch checked out, its own commits, or tracked changes. Null when nothing does.
+ */
+export async function checkoutBlock(git: CheckoutGit, top: string, branch: string, ahead: number): Promise<MainCheckoutBlock | null> {
+  for (const [marker, operation] of IN_PROGRESS) {
+    const path = (await git(top, ['rev-parse', '--git-path', marker]).catch(() => '')).trim()
+    if (path && await stat(isAbsolute(path) ? path : join(top, path)).then(() => true, () => false)) return { reason: 'in-progress', operation }
+  }
+  const current = (await git(top, ['symbolic-ref', '--short', '-q', 'HEAD']).catch(() => '')).trim()
+  if (current !== branch) return { reason: 'branch', checkedOut: current || null }
+  if (ahead > 0) return { reason: 'diverged', ahead }
+  const porcelain = await git(top, ['status', '--porcelain=v1', '-z', '--untracked-files=no'])
+  if (porcelain.length > 0) return { reason: 'changes' }
+  return null
+}
+
+/** `origin`'s default branch (`origin/HEAD`), else a remote `main` or `master`; null for none. */
+export async function originDefaultBranch(git: CheckoutGit, top: string): Promise<string | null> {
+  const head = (await git(top, ['symbolic-ref', '--short', '-q', 'refs/remotes/origin/HEAD']).catch(() => '')).trim()
+  if (head.startsWith('origin/') && head.length > 'origin/'.length) return head.slice('origin/'.length)
+  for (const candidate of ['main', 'master']) {
+    if (await git(top, ['rev-parse', '--verify', '-q', `refs/remotes/origin/${candidate}^{commit}`]).then(() => true, () => false)) return candidate
+  }
+  return null
 }
 
 /** The tracked changes `status --porcelain=v1 -z` lists, as Show changes names them. */
