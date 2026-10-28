@@ -115,7 +115,7 @@ export interface DelegationServiceOptions {
    * is on: the branch, or for a test run a snapshot of uncommitted work too, lands in the project's incoming ref for the
    * new thread's worktree, and is let go again when the start is refused before it runs.
    */
-  readonly branchMoves?: Pick<DesktopBranchMoves, 'forStart' | 'forgetHere' | 'forget'>
+  readonly branchMoves?: Pick<DesktopBranchMoves, 'forStart' | 'forgetHere' | 'forget' | 'pin'>
   /**
    * This machine's checks (#1312), present only while Work across machines is on and `test_run` is offered: a new thread
    * started as a check waits in the queue until the check ahead of it on this machine has finished, then starts. Absent, a
@@ -352,8 +352,10 @@ interface DelegateContext {
   readonly placement?: WorkerPlacement
   /** The caller's branch, which the desktop already landed in this host's project for this start (#1316 part 2). */
   readonly landed?: RemoteLandedBranch
-  /** When a relayed caller asked, as its own computer writes the time, which a check's snapshot words say (#1316 part 2). */
+  /** When a relayed caller's check snapshot was taken, as its own computer writes the time, which its words say (#1316 part 2). */
   readonly takenAt?: string
+  /** The check snapshot a relayed caller's machine took and pinned as it asked, which the move sends (#1316 part 2). */
+  readonly pinned?: string
   /** Where a check that named a machine was placed here, before it joined this machine's queue (#1316 part 2). */
   readonly placedHere?: WorkerPlacementReceipt | undefined
 }
@@ -642,7 +644,7 @@ export class DelegationService {
     // A check that named a machine and was placed here takes its place in this machine's queue now, before its snapshot.
     if (ticket === undefined && this.options.checks && input.test_run === true && input.thread === undefined && !('placedHere' in context)
       && (input.machine !== undefined || input.os !== undefined)) return await this.queued(threadId, input, { ...context, placedHere: placed }, randomUUID())
-    const branch = context.landed ? this.landedHere(threadId, context.landed) : await this.fromBranch(threadId, input, context.takenAt)
+    const branch = context.landed ? this.landedHere(threadId, context.landed) : await this.fromBranch(threadId, input, context)
     if (branch && 'status' in branch) return branch
     let admitted: { record: DelegationRecord; retry: boolean; start?: DelegatedStart; role?: RoleReceipt }
     try { admitted = await this.transaction(() => this.admit(threadId, input)) }
@@ -944,14 +946,22 @@ export class DelegationService {
     const asked = await this.elsewhereCaller(threadId, input, context, DELEGATION_RELAY_ANSWER_GRACE_MS)
     if ('status' in asked) return asked
     const { machine, os } = input
-    // The snapshot is taken as the desktop takes the ask, so its words carry when this thread asked, as this computer writes it.
-    const takenAt = input.test_run === true && input.from_my_branch === true ? (this.options.clockTime ?? systemClockTime)(new Date(this.clock())) : undefined
+    // A check's snapshot is taken here, now, as this thread asks, and pinned for the desktop's move to send, so work changed
+    // after is never in it; its words say when it was taken, as this computer writes the time (#1316 part 2).
+    let pinned: string | undefined, takenAt: string | undefined
+    if (input.test_run === true && input.from_my_branch === true && this.options.branchMoves) {
+      let pin: Awaited<ReturnType<DesktopBranchMoves['pin']>>
+      try { pin = await this.options.branchMoves.pin(threadId) }
+      catch { return delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not read this thread\'s branch just now. Nothing was started. Try again.') }
+      if ('type' in pin) return await this.refused(threadId, input, delegationRefusal('BRANCH_UNAVAILABLE', pin.message))
+      pinned = pin.pinned; takenAt = (this.options.clockTime ?? systemClockTime)(new Date(this.clock()))
+    }
     const carried = { ...input.from_my_branch !== undefined ? { from_my_branch: input.from_my_branch } : {}, ...input.test_run !== undefined ? { test_run: input.test_run } : {} }
     let answer: Record<string, unknown>
     try {
       answer = await relay.start(asked.caller.id, input.work, { levels: asked.levels, rootUserMessageId: asked.root, ...(asked.head ? { callerMessageId: asked.head } : {}),
         runtimeMode: asked.own, projectId: asked.caller.projectId, ...(machine ? { machine } : {}), ...(os ? { os } : {}), input: { ...asked.rest, ...branching ? carried : {} },
-        waitMs: asked.waitMs, ...takenAt ? { takenAt } : {} })
+        waitMs: asked.waitMs, ...pinned ? { pinned } : {}, ...takenAt ? { takenAt } : {} })
     } catch (error) {
       if (error instanceof RelayUnanswered && error.stage === 'away') return await this.refused(threadId, input, delegationRefusal('MACHINE_UNAVAILABLE', relay.awayWords()), true)
       return delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not start this delegation. Nothing was started.')
@@ -973,7 +983,7 @@ export class DelegationService {
     const asked = await this.elsewhereCaller(threadId, input, context, 2_000)
     if ('status' in asked) return asked
     // The branch, or a check's snapshot, goes to that host's project first, taken now, as this start is asked for.
-    const branch = await this.fromBranch(threadId, input, context.takenAt, { hostId: placement.hostId, projectId: placement.projectId, name })
+    const branch = await this.fromBranch(threadId, input, context, { hostId: placement.hostId, projectId: placement.projectId, name })
     if (branch && 'status' in branch) return branch
     const { retry_key: retryKey, ...rest } = asked.rest
     // A check waits in that host's own queue, which its delegation joins for `test_run` (#1312).
@@ -1027,7 +1037,7 @@ export class DelegationService {
    * when there is nothing to land: no branch asked for, a send to a thread, a retry, or a caller admission refuses. A
    * test run with no branch to start from is a check all the same: it queues, and starts where any start does (#1312).
    */
-  private async fromBranch(threadId: string, input: DelegateInput, takenAtGiven?: string, to?: { readonly hostId: string; readonly projectId: string; readonly name: string }): Promise<LandedBranch | DelegationRefusal | undefined> {
+  private async fromBranch(threadId: string, input: DelegateInput, given: Pick<DelegateContext, 'takenAt' | 'pinned'> = {}, to?: { readonly hostId: string; readonly projectId: string; readonly name: string }): Promise<LandedBranch | DelegationRefusal | undefined> {
     if (input.from_my_branch === undefined && input.test_run === undefined) return undefined
     // A host's thread may ask for a check, which queues there (#1312), but has no branch to start from.
     const moves = this.options.branchMoves
@@ -1039,14 +1049,14 @@ export class DelegationService {
     if (!source || !local || !this.admits(threadId)) return undefined
     if (this.retried(threadId, input.retry_key)) return undefined
     // A check's snapshot is taken now, when it is asked for, even when the check then waits its turn (#1312). A relayed
-    // caller's machine said when it asked, as its own computer writes the time (#1316 part 2).
-    const moveId = randomUUID(), takenAt = takenAtGiven ?? (this.options.clockTime ?? systemClockTime)(new Date(this.clock()))
+    // caller's machine took and pinned it as it asked, and said when, as its own computer writes the time (#1316 part 2).
+    const moveId = randomUUID(), takenAt = given.takenAt ?? (this.options.clockTime ?? systemClockTime)(new Date(this.clock()))
     // Where it starts: this machine's copy of the caller's project, or a paired host's the start was placed on (#1316 part 2).
     const destination = to ?? { hostId: local, projectId: source.projectId, name: this.options.hereName?.() ?? 'This computer' }
     let moved: Awaited<ReturnType<DesktopBranchMoves['forStart']>>
     try {
       moved = await moves.forStart({ from: { hostId: source.hostId, threadId: source.threadId }, to: { hostId: destination.hostId, projectId: destination.projectId },
-        here: local, moveId, snapshot: input.test_run === true })
+        here: local, moveId, snapshot: input.test_run === true, ...given.pinned ? { pinned: given.pinned } : {} })
     } catch { return delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not read this thread\'s branch just now. Nothing was started. Try again.') }
     if (moved.type === 'refused') return await this.refused(threadId, input, delegationRefusal('BRANCH_UNAVAILABLE', moved.message))
     const name = destination.name

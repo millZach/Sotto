@@ -43,6 +43,12 @@ const recordsSchema = z.object({ v: z.literal(1), moves: z.record(z.string(), z.
 type Records = z.infer<typeof recordsSchema>
 /** Records kept, newest by time; one a later move pushes out only stops an old retry being recognised. */
 const RECORDS_MAX = 1000
+/**
+ * How long a check snapshot pinned when it was asked for waits for the move that sends it (#1316 part 2), and how many wait
+ * at once, oldest let go first. In memory only: a restart lets go of every one, and its check is refused, not resent.
+ */
+export const SNAPSHOT_PIN_MS = 30 * 60 * 1000
+export const SNAPSHOTS_PINNED_MAX = 64
 
 /**
  * The bundle and test-run snapshot index file names this module stages, so a start clears what a crash left and nothing else: the move, then the
@@ -118,6 +124,8 @@ export class BranchBundles {
   private recording: Promise<void> = Promise.resolve()
   /** Each move's outgoing ref in use, so two attempts at one move never point, bundle or remove it at the same time. */
   private readonly outgoing = new Map<string, Promise<unknown>>()
+  /** Check snapshots taken when they were asked for, by pin, with the working copy each came from, until a move sends them. */
+  private readonly pins = new Map<string, { readonly workingCopy: string; readonly source: BranchSource; readonly timer: ReturnType<typeof setTimeout> }>()
   constructor(private readonly options: BranchBundlesOptions) {
     this.run = options.run ?? runGitStatusCommand
     this.maxBytes = Math.min(options.maxBytes ?? BRANCH_BUNDLE_MAX_BYTES, BRANCH_BUNDLE_MAX_BYTES)
@@ -174,9 +182,33 @@ export class BranchBundles {
     } catch { return branchMoveRefusal('failed', branchMoveWords.failed) }
   }
 
-  /** `branchOf` for a move, or `snapshotOf` for a test run, which carries uncommitted work rather than refusing it. */
-  sourceOf(workingCopy: string, snapshot: boolean): Promise<BranchSource | BranchMoveRefusal> {
-    return snapshot ? this.snapshotOf(workingCopy) : this.branchOf(workingCopy)
+  /**
+   * `branchOf` for a move, or `snapshotOf` for a test run, which carries uncommitted work rather than refusing it. A test run
+   * whose snapshot was pinned when it was asked for (`pin`) sends that one, taken from the same working copy, not a new one.
+   */
+  async sourceOf(workingCopy: string, snapshot: boolean, pinned?: string): Promise<BranchSource | BranchMoveRefusal> {
+    if (snapshot && pinned !== undefined) {
+      const held = this.pins.get(pinned)
+      return held && resolve(held.workingCopy) === resolve(workingCopy) ? held.source : branchMoveRefusal('failed', branchMoveWords.snapshotGone)
+    }
+    return snapshot ? await this.snapshotOf(workingCopy) : await this.branchOf(workingCopy)
+  }
+  /**
+   * Takes a check's snapshot of `workingCopy` now, as it is asked for, and holds it under a new pin for the move that sends
+   * it later (#1316 part 2), so work changed in between stays out of it. Refused as `snapshotOf` refuses.
+   */
+  async pin(workingCopy: string): Promise<{ readonly pinned: string; readonly source: BranchSource } | BranchMoveRefusal> {
+    const source = await this.snapshotOf(workingCopy)
+    if ('type' in source) return source
+    const pinned = randomUUID()
+    const timer = setTimeout(() => { this.pins.delete(pinned) }, SNAPSHOT_PIN_MS)
+    timer.unref?.()
+    this.pins.set(pinned, { workingCopy, source, timer })
+    for (const [oldest, held] of this.pins) {
+      if (this.pins.size <= SNAPSHOTS_PINNED_MAX) break
+      clearTimeout(held.timer); this.pins.delete(oldest)
+    }
+    return { pinned, source }
   }
 
   /**

@@ -50,9 +50,11 @@ export const delegationRelayAskSchema = z.discriminatedUnion('type', [
     machine: z.uuid().optional(), os: workerSystemSchema.optional(), input: relayedInputSchema,
     waitMs: z.number().int().min(0).max(DELEGATION_RELAY_WAIT_MAX_MS),
     /**
-     * With `from_my_branch` and `test_run` (`delegation-branch-starts`): the time the host's thread asked, as the host's own
-     * computer writes it, which a check's snapshot words say. The snapshot is taken as the desktop takes the ask.
+     * With `from_my_branch` and `test_run` (`delegation-branch-starts`): the check snapshot the host took of its thread's
+     * working copy as the thread asked, pinned there for the desktop's move to send, and when it was taken, as the host's
+     * own computer writes the time, which the snapshot's words say.
      */
+    pinned: z.uuid().optional(),
     takenAt: z.string().trim().min(1).max(DELEGATION_TAKEN_AT_MAX).optional() }).strict(),
   /**
    * Send another brief to a thread this host's thread delegated to through the relay (#1316 part 2), named in `input.thread`

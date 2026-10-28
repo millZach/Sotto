@@ -28,7 +28,7 @@ afterEach(async () => {
 const folder = async () => { const root = await mkdtemp(join(tmpdir(), 'sotto-branch-elsewhere-')); roots.push(root); return root }
 const FORGE = '11111111-1111-4111-8111-111111111111', DESKTOP = '22222222-2222-4222-8222-222222222222', MAC = '33333333-3333-4333-8333-333333333333'
 const THERE = '44444444-4444-4444-8444-444444444444'
-const MOVE = '66666666-6666-4666-8666-666666666666'
+const MOVE = '66666666-6666-4666-8666-666666666666', PIN = '88888888-8888-4888-8888-888888888888'
 const model = { id: 'model', name: 'Model', providerId: 'codex', ready: true, reasoningEfforts: [], runtimeModes: ['approval-required', 'auto', 'full-access'] } as unknown as AgentModel
 const macPlacement = { hostId: MAC, projectId: 'mac-project', receipt: { hostId: MAC, name: 'the Mac', awayFromDefault: false } }
 const start = { work: 'code-review', brief: 'Run the tests.', provider: 'codex', model: 'model', permission: 'auto', wait_seconds: 0 }
@@ -36,7 +36,7 @@ const snapshot3 = { untracked: ['a.txt', 'b.txt', 'c.txt'], untrackedCount: 3 }
 
 /** A fake of the desktop's branch moves: records each move and each let-go, and lands every branch as feat/x. */
 function moves(refuse?: string) {
-  const asked: unknown[] = [], forgotten: unknown[] = []
+  const asked: unknown[] = [], forgotten: unknown[] = [], pinned: string[] = []
   return { asked, forgotten, moves: {
     forStart: async (input: { readonly snapshot: boolean; readonly moveId: string }) => {
       asked.push(input)
@@ -45,7 +45,11 @@ function moves(refuse?: string) {
     },
     forgetHere: async (input: unknown) => { forgotten.push({ here: input }) },
     forget: async (input: unknown) => { forgotten.push(input) },
-  } as unknown as NonNullable<DelegationServiceOptions['branchMoves']> }
+    pin: async (threadId: string) => {
+      pinned.push(threadId)
+      return refuse ? { type: 'refused' as const, reason: 'uncommitted' as const, message: refuse } : { pinned: PIN, branch: 'feat/x', snapshot: snapshot3 }
+    },
+  } as unknown as NonNullable<DelegationServiceOptions['branchMoves']>, pinned }
 }
 /** A fake of the desktop's delegations on its paired hosts, answering each start as `answer` says. */
 function remoteOf(answer: () => Promise<Record<string, unknown>>, takes = true) {
@@ -181,6 +185,7 @@ describe('a host\'s start from a branch the desktop landed there', () => {
 })
 
 describe('a thread on a host starting elsewhere from its branch, through the desktop', () => {
+  let clock = '9:15 AM'
   const relayOf = (carries: boolean, reachable = true) => {
     const asked: Record<string, unknown>[] = []
     const relay = { start: async (_callerId: string, _work: string, ask: Record<string, unknown>) => { asked.push(ask); return { status: 'ok', delegation: { id: THERE, outcome: 'working' } } },
@@ -188,7 +193,7 @@ describe('a thread on a host starting elsewhere from its branch, through the des
       detail: () => undefined, send: async () => ({}), reachable: () => reachable, carriesBranches: () => carries } as unknown as NonNullable<DelegationServiceOptions['relay']>
     return { relay, asked }
   }
-  async function forge(relay: NonNullable<DelegationServiceOptions['relay']>) {
+  async function forge(relay: NonNullable<DelegationServiceOptions['relay']>, branchMoves?: NonNullable<DelegationServiceOptions['branchMoves']>) {
     const root = await folder()
     const thread = { id: 'parent', projectId: 'project', providerId: 'codex', title: 'p', modelId: 'model', status: 'idle', runtimeMode: 'full-access',
       messages: [{ id: 'parent-ask', role: 'user', text: 'Do it.' }], requests: [] } as unknown as AgentThread
@@ -197,20 +202,34 @@ describe('a thread on a host starting elsewhere from its branch, through the des
       commandFromDelegation: async () => ({ host: snapshot }) as never, hasPendingThreadWork: () => false, hasUserDraft: () => false, refreshDelegationObservation: () => undefined, deliverWakeUp: async () => undefined }
     const checks = new CheckQueue('forge')
     const delegation = new DelegationService({ directory: root, control, host: { setDelegatedBy: async () => undefined, threadMessage: () => undefined }, historyEnabled: () => true,
-      newThreadCeiling: () => ({ mode: 'full-access' }), checks, clockTime: () => '9:15 AM', relay,
+      newThreadCeiling: () => ({ mode: 'full-access' }), checks, clockTime: () => clock, relay, ...branchMoves ? { branchMoves } : {},
       machines: { list: async () => ({}), name: () => 'This computer', setting: () => 'this-computer',
         place: async () => ({ hostId: DESKTOP, projectId: 'desktop-project', receipt: { hostId: DESKTOP, name: 'This computer', awayFromDefault: false } }) } })
     await delegation.recover()
     return { delegation, checks }
   }
 
-  it('asks the desktop with from_my_branch, test_run and when it asked as forge writes it, and holds no place in forge\'s queue', async () => {
-    const r = relayOf(true)
-    const f = await forge(r.relay)
+  it('takes and pins the check snapshot on forge as its thread asks, then asks the desktop with it, and holds no place in forge\'s queue', async () => {
+    const r = relayOf(true), m = moves()
+    // The pin takes a moment; the time said is when it was taken, in forge's format.
+    const pin = m.moves.pin.bind(m.moves)
+    m.moves.pin = async threadId => { const pinned = await pin(threadId); clock = '9:16 AM'; return pinned }
+    const f = await forge(r.relay, m.moves)
+    clock = '9:15 AM'
     await f.delegation.delegate('parent', { ...start, machine: DESKTOP, from_my_branch: true, test_run: true })
-    expect(r.asked).toEqual([expect.objectContaining({ takenAt: '9:15 AM', input: expect.objectContaining({ from_my_branch: true, test_run: true }) })])
+    expect(m.pinned).toEqual(['parent'])
+    expect(m.asked).toEqual([])
+    expect(r.asked).toEqual([expect.objectContaining({ pinned: PIN, takenAt: '9:16 AM', input: expect.objectContaining({ from_my_branch: true, test_run: true }) })])
     expect(f.checks.view()).toEqual([])
     expect(delegationRelayAskSchema.safeParse({ type: 'start', relayId: THERE, threadId: 'parent', ...r.asked[0] }).success).toBe(true)
+  })
+
+  it('refuses a check whose snapshot cannot be taken on forge as it asks, and asks the desktop nothing', async () => {
+    const r = relayOf(true), m = moves('A submodule in this thread has uncommitted changes, and a check can\'t carry them. Commit them inside the submodule first, then start again. Nothing was started.')
+    const f = await forge(r.relay, m.moves)
+    expect(await f.delegation.delegate('parent', { ...start, machine: DESKTOP, from_my_branch: true, test_run: true }))
+      .toMatchObject({ status: 'refused', code: 'BRANCH_UNAVAILABLE', message: expect.stringContaining('A submodule in this thread') })
+    expect(r.asked).toEqual([])
   })
 
   it('refuses before asking a desktop from before it, and says the desktop is away when none is connected', async () => {
@@ -228,10 +247,17 @@ describe('the desktop starting a relayed thread\'s branch', () => {
   it('moves it from forge to This computer, with forge\'s time, and keeps forge\'s thread and this desktop on the new worktree', async () => {
     const m = moves()
     const f = await desktop({ branchMoves: m.moves, relayedCallers })
-    const answer = await f.delegation.delegate(caller.id, { ...start, from_my_branch: true, test_run: true }, { takenAt: '9:15 AM' })
+    const answer = await f.delegation.delegate(caller.id, { ...start, from_my_branch: true, test_run: true }, { takenAt: '9:15 AM', pinned: PIN })
     expect(answer).toMatchObject({ status: 'ok', startedFrom: { note: 'Started on This computer from feat/x with your uncommitted changes as they were at 9:15 AM (3 untracked files).' } })
-    expect(m.asked).toEqual([expect.objectContaining({ from: { hostId: FORGE, threadId: 'forge-parent' }, to: { hostId: DESKTOP, projectId: 'project' }, snapshot: true })])
+    expect(m.asked).toEqual([expect.objectContaining({ from: { hostId: FORGE, threadId: 'forge-parent' }, to: { hostId: DESKTOP, projectId: 'project' }, snapshot: true, pinned: PIN })])
     expect(f.created[0]).toEqual(expect.objectContaining({ startFromMove: (m.asked[0] as { moveId: string }).moveId, check: true, madeFrom: { thread: 'forge-parent', host: FORGE, by: DESKTOP } }))
+  })
+
+  it('moves the snapshot forge pinned to a third machine, never a new one', async () => {
+    const m = moves(), r = remoteOf(async () => ({ status: 'ok', delegation: { id: THERE, outcome: 'working' } }))
+    const f = await desktop({ branchMoves: m.moves, relayedCallers, remote: r.remote })
+    await f.delegation.delegate(caller.id, { ...start, from_my_branch: true, test_run: true }, { pinned: PIN, takenAt: '9:15 AM', placement: macPlacement })
+    expect(m.asked).toEqual([expect.objectContaining({ to: { hostId: MAC, projectId: 'mac-project' }, snapshot: true, pinned: PIN })])
   })
 
   it('moves it from forge to a third machine, and sends that host the landed move', async () => {
