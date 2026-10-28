@@ -74,7 +74,7 @@
 .terminal-tabs__close:hover { background: var(--tools-hover); color: var(--tt-text); }
 .terminal-tabs__close:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .terminal-tabs__close:disabled { opacity: .5; cursor: default; }
-.terminal-tabs__dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-success); }
+.terminal-tabs__dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-success); transition: background-color 200ms ease; }
 .terminal-tabs__tab:not([data-status='running']) .terminal-tabs__dot { border: 1px solid var(--tt-text-muted); background: transparent; }
 .terminal-tabs__tab[data-status='unavailable'] .terminal-tabs__dot { border-color: var(--tt-error); }
 .terminal-bar__actions { display: flex; flex: none; align-items: center; gap: 2px; }

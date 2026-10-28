@@ -28,7 +28,7 @@
 
 .phone-player__status { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 6px 6px 6px 12px; border: 1px solid var(--tt-border); border-radius: 17px; background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 10px 32px color-mix(in srgb, var(--tt-code-bg) 40%, transparent); }
 .phone-player__line { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 22px; }
-.phone-player__dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-activity); animation: phone-player-pulse 1.6s ease-in-out infinite; }
+.phone-player__dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-activity); animation: phone-player-pulse 1.6s ease-in-out infinite; transition: background-color 200ms ease; }
 .phone-player__dot[data-state='waiting'] { background: var(--tt-attention); animation: none; }
 .phone-player__dot[data-state='idle'] { background: var(--tt-text-muted); animation: none; }
 @keyframes phone-player-pulse { 50% { opacity: .35; } }
