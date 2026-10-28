@@ -37,7 +37,7 @@
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .thread-activity__summary:hover { background: var(--tt-hover); color: var(--tt-text-2); }
-.thread-activity__summary:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text-2); }
+button.thread-activity__summary:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text-2); }
 .thread-activity__summary--static { cursor: default; }
 .thread-activity__summary--static:hover { background: transparent; }
 .thread-activity__summary--static[data-status='failed'] .thread-activity__chevron { color: var(--tt-error); }
