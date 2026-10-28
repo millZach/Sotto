@@ -446,6 +446,7 @@
    that sending starts it with a handover of the last one, what that carries and leaves out, and offers it to read. The
    send button says Continue while it stands. The first message then shows the handover as Sotto's, beside the user's. */
 .watcher-handover { margin: 0 0 8px; padding: 10px 12px; border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); color: var(--tt-text); font-size: 13.5px; line-height: 1.45; }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .watcher-handover { animation: tt-band-arrive 160ms cubic-bezier(.2, .8, .2, 1); } }
 .watcher-handover__lead { display: flex; align-items: flex-start; gap: 8px; }
 .watcher-handover__lead > svg { flex: none; margin-top: 2px; color: var(--tt-accent-text); }
 .watcher-handover__lead > p { flex: 1 1 auto; min-width: 0; margin: 0; }

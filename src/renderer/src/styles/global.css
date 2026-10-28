@@ -534,6 +534,14 @@ textarea.tt-input {
   }
 }
 
+/* A notice band settles in from just above its place. */
+@keyframes tt-band-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
 /* A popover's arrival: down from its anchor, or up when it opens above it. */
 @keyframes tt-pop-down {
   from {

@@ -6,6 +6,11 @@
 .restart-bands { display: grid; flex: none; gap: 8px; margin: 0 8px 8px; }
 .restart-band { padding: 8px 10px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-surface-elevated); color: var(--tt-text-2);
   font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .restart-band {
+    animation: tt-band-arrive 160ms cubic-bezier(.2, .8, .2, 1);
+  }
+}
 .restart-band__words { display: flex; align-items: flex-start; gap: 8px; margin: 0; }
 .restart-band__words > svg { flex: none; margin-top: 2px; color: var(--tt-text-muted); }
 .restart-band__words strong { color: var(--tt-text); font-weight: 600; }

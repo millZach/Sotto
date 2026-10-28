@@ -17,6 +17,7 @@
 
 /* The notice above the composer: the stage as it runs, then the toast with its next step. */
 .git-action-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 10px; padding: 10px 12px 10px 14px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); color: var(--tt-text-2); }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .git-action-notice { animation: tt-band-arrive 160ms cubic-bezier(.2, .8, .2, 1); } }
 .git-action-notice[data-tone='error'] { border-color: var(--tt-error-border); background: var(--tt-error-surface); color: var(--tt-error-text); }
 .git-action-notice > p { flex: 1 1 240px; min-width: 0; margin: 0; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
 .git-action-notice strong { color: var(--tt-text); font-weight: 500; }

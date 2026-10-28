@@ -36,6 +36,7 @@
 .thread-nav__seg { display: inline-flex; flex: none; justify-content: center; gap: 6px; -webkit-app-region: no-drag; }
 
 .thread-nav__error { display: flex; align-items: flex-start; gap: 6px; margin: 0 8px 8px; padding: 8px 6px 8px 10px; border: 1px solid var(--tt-hairline); border-radius: 8px; color: var(--threads-warning-text); font-size: 13px; line-height: 1.45; }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .thread-nav__error { animation: tt-band-arrive 160ms cubic-bezier(.2, .8, .2, 1); } }
 .threads-search { position: relative; display: flex; flex: none; align-items: center; height: 32px; margin: 0 8px 8px; color: var(--tt-text-muted); }
 .threads-search > svg { position: absolute; left: 9px; top: 50%; translate: 0 -50%; pointer-events: none; }
 .threads-search .tt-input { width: 100%; height: 100%; min-height: 0; padding: 0 28px 0 32px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: var(--threads-field); font-size: 13.5px; font-weight: 400; }

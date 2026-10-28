@@ -222,6 +222,7 @@
 .followup-editor .prompt-editor { display: block; width: 100%; min-height: 104px; max-height: min(320px, calc(100vh - 200px)); overflow-y: auto; padding: 10px 12px; border: 1px solid var(--tt-field-border, var(--tt-hairline)); border-radius: 12px; outline: 0; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 16px; line-height: 1.55; resize: vertical; scrollbar-width: thin; }
 .followup-editor .prompt-editor:focus { border-color: var(--tt-field-border-focus, var(--tt-focus-ring)); }
 .thread-prompt__notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin: -2px 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--tt-hairline); color: var(--threads-warning-text); font-size: 13px; }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .thread-prompt__notice { animation: tt-band-arrive 160ms cubic-bezier(.2, .8, .2, 1); } }
 .thread-prompt__notice .tt-button { min-height: 30px; font-size: 13px; }
 /* One row under the prompt: what the thread is set to, then the key that sends it. A caption long enough to
    need words of its own wraps below the pill rather than squeezing either end of the row. */

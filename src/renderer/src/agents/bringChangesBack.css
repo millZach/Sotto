@@ -2,6 +2,11 @@
    It sits in the Git action's slot and reads like its notice. Every colour is a theme role. */
 .bring-back { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 10px; padding: 10px 12px 10px 14px; border: 1px solid var(--tt-hairline);
   border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); color: var(--tt-text-2); font-size: 14px; line-height: 1.45; }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .bring-back {
+    animation: tt-band-arrive 160ms cubic-bezier(.2, .8, .2, 1);
+  }
+}
 .bring-back[data-tone='ask'] { border-color: var(--tt-accent-border); }
 .bring-back[data-tone='error'] { border-color: var(--tt-error-border); background: var(--tt-error-surface); color: var(--tt-error-text); }
 .bring-back:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }

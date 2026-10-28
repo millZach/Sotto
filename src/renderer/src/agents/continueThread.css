@@ -24,6 +24,11 @@
 /* Over the composer, as Watcher's handover offer is: what sending does, where the new thread works, what it carries. */
 .continue-strip { margin: 0 0 8px; padding: 10px 12px; border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated);
   color: var(--tt-text); font-size: 13.5px; line-height: 1.45; }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .continue-strip {
+    animation: tt-band-arrive 160ms cubic-bezier(.2, .8, .2, 1);
+  }
+}
 .continue-strip[data-tone='error'] { border-color: var(--tt-error-border); }
 .continue-strip__lead { display: flex; align-items: flex-start; gap: 8px; }
 .continue-strip__lead > svg { flex: none; margin-top: 2px; color: var(--tt-accent-text); }
