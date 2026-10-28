@@ -181,4 +181,13 @@ describe('Settings › Keyboard (ADR-0133)', () => {
     expect(within(row('Dictate')).getByRole('status')).toHaveTextContent('Threads already uses Ctrl + 6')
     expect(within(row('Threads')).getByRole('status')).toHaveTextContent('Dictate already uses Ctrl + 6')
   })
+
+  it('still refuses a third row the keys two saved page shortcuts meet on', async () => {
+    const { onUpdateSettings, user } = setup({ choices: { 'page-dictate': 'mod+6', 'page-threads': 'mod+6' } })
+    await user.click(screen.getByRole('button', { name: 'Change shortcut, Ctrl 5' }))
+    press('ControlLeft', 'Digit6')
+    release('Digit6')
+    expect(await within(row('Settings')).findByRole('alert')).toHaveTextContent('Dictate already uses Ctrl + 6. Pick other keys.')
+    expect(onUpdateSettings).not.toHaveBeenCalled()
+  })
 })

@@ -168,8 +168,9 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
       // Changes may be answering to its shifted fallback while dictation holds its plain chord, so the keys
       // it holds are the ones it answers to, not only the ones it is set to.
       const other = row.id === 'changes' ? changesChord(resolved(row.id), settings.hotkey, platform)
-        // A page shortcut standing down for a saved thread shortcut answers to nothing; that thread shortcut is named instead.
-        : isPageShortcut(row.id) && pageChordHolder(settings, row.id, platform, gates) !== null ? null : resolved(row.id)
+        // A page shortcut standing down at its default holds nothing; the saved row it stands down for is named instead.
+        // One the user saved still holds its keys against a new recording, even while another saved row meets it.
+        : isPageShortcut(row.id) && !Object.hasOwn(choices, row.id) && pageChordHolder(settings, row.id, platform, gates) !== null ? null : resolved(row.id)
       if (other !== null && sameThreadKeys(chord, other, platform)) {
         const name = i18n._(row.label)
         return msg`${name} already uses ${keys}. Pick other keys.`
