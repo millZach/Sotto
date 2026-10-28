@@ -1552,11 +1552,18 @@ test.describe("Watcher's room on the built app", () => {
       { id: randomUUID(), whose: 'watcher', thread: hostEntityKey(FORGE, 'capture'), title: 'Omarchy capture check' },
       { id: randomUUID(), whose: 'thread', by: hostEntityKey(hostId, 'footer-links'), thread: hostEntityKey(FORGE, 'journeys'), title: 'Linux journeys for the footer fix', work: 'building', provider: 'codex' },
       { id: randomUUID(), whose: 'watcher', title: 'Linux unit suite for the footer fix' }] }] })
+    // Watcher placed Footer links here, so the line reads the machines once, as it does for every placement.
+    const more = (hostId: string, requestId: string): Partial<WatcherRoomState> => {
+      const operation = { id: randomUUID(), requestId, retryKey: randomUUID(), digest: '0'.repeat(64), action: 'start' as const, target: { hostId, threadId: 'footer-links' },
+        generation: 0, deliveryState: 'accepted' as const, createdAt: at(8), updatedAt: at(8), receiptId: randomUUID(), cardId: randomUUID() }
+      return { receipts: [operation], receiptReplies: [{ operationId: operation.id, messageId: 'watcher-reply' }],
+        receiptPlacements: [{ operationId: operation.id, placement: { hostId, name: 'This computer', awayFromDefault: false } }] }
+    }
     await onReleaseTrack('owl', async () => {
       for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance, 'reduced'), async (launched) => {
         const { page } = launched
         await openThreads(page)
-        await seedRoom(page, { current: true, machines, checks })
+        await seedRoom(page, { current: true, more, machines, checks })
         await resizeContentWindow(launched, 1280, 800)
         await openRoom(page)
         const wide = page.getByRole('group', { name: 'Machines and what works on each' }).locator('.watcher-machines__wide')
