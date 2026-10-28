@@ -2483,3 +2483,28 @@ it('keeps a host check’s waiting words on the user’s Stop, and refuses Watch
   expect(f.operation(f.waiting.receipt!.operationId).deliveryState).toBe('queued')
   expect(await f.refs()).toContain(f.landed)
 })
+
+it('refuses Watcher’s stop of a check waiting on a paired host when its Watcher was replaced while the stop was being admitted, leaving the check waiting (#1637)', async () => {
+  const f = await waitingOnHost()
+  // The host's own Watcher holds the stop between admitting it and acting on it; meanwhile the host hears of a newer
+  // Watcher conversation on this desktop, so the old one's authority is gone.
+  type HostWatcher = { record(): { remoteMasters?: { clientId: string; masterHostId: string; createdAt: string }[]; operations: { id: string; deliveryState: string }[] }
+    options: { control: { updateWatcher(update: (record: { remoteMasters?: { clientId: string; masterHostId: string; creationOperationId: string; createdAt: string }[] }) => void): Promise<void> } } }
+  const prototype = WatcherService.prototype as unknown as { stopQueuedCheck(this: HostWatcher, stop: unknown): Promise<boolean> }
+  const original = prototype.stopQueuedCheck, reached = deferred<HostWatcher>(), held = deferred<void>()
+  vi.spyOn(prototype, 'stopQueuedCheck').mockImplementation(async function (this: HostWatcher, stop) { reached.resolve(this); await held.promise; return original.call(this, stop) })
+  const stopping = f.stop(f.waiting.target)
+  const host = await reached.promise
+  const master = f.watcher.state().current!
+  await host.options.control.updateWatcher(record => {
+    const later = new Date(Date.parse(master.createdAt) + 60_000).toISOString()
+    const retained = record.remoteMasters?.find(item => item.clientId === f.pairing.clientId && item.masterHostId === master.target.hostId)
+    if (retained) { retained.createdAt = later; retained.creationOperationId = randomUUID() }
+    else (record.remoteMasters ??= []).push({ clientId: f.pairing.clientId, masterHostId: master.target.hostId, creationOperationId: randomUUID(), createdAt: later })
+  })
+  held.resolve()
+  expect(await stopping).toMatchObject({ status: 'refused', code: 'NOT_CURRENT_WATCHER' })
+  // The check still waits there, and its branch stays.
+  expect(host.record().operations.find(item => item.id === f.waiting.receipt!.operationId)?.deliveryState).toBe('queued')
+  expect(await f.refs()).toContain(f.landed)
+})

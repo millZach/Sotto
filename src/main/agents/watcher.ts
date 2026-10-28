@@ -1410,6 +1410,9 @@ export class WatcherService implements WatcherControlHooks {
     if (!check?.waiting) return false
     let stopped = false
     await this.options.control.updateWatcher(record => {
+      // The stop's authority is read again as it acts, as any operation's is before it is sent: admission waited for the
+      // record to save, and meanwhile the desktop may have gone or its Watcher been replaced.
+      this.guardOperation(stop.id, true)
       const start = record.operations.find(item => item.id === check.operationId), saved = record.operations.find(item => item.id === stop.id)
       const asked = record.requests.find(item => item.id === start?.requestId), stopping = record.requests.find(item => item.id === stop.requestId)
       if (!start || !saved || start.deliveryState !== 'queued' || !asked || !stopping || key(asked.watcher) !== key(stopping.watcher)
@@ -3187,13 +3190,14 @@ export class WatcherService implements WatcherControlHooks {
     const live = new Set(this.view().operations.filter(item => this.active.has(item.id) || ['queued', 'dispatching', 'uncertain'].includes(item.deliveryState)).map(item => item.id))
     for (const id of this.remoteGuards.keys()) if (!live.has(id)) this.remoteGuards.delete(id)
   }
-  guardOperation(operationId: string): void {
-    try { this.checkOperation(operationId) } catch (error) {
+  /** `queued`: a stop of a check still waiting its turn here, which has no thread yet to check (#1637). */
+  guardOperation(operationId: string, queued = false): void {
+    try { this.checkOperation(operationId, queued) } catch (error) {
       if (error instanceof Refusal) this.dispatchRefusals.set(operationId, error)
       throw error
     }
   }
-  private checkOperation(operationId: string): void {
+  private checkOperation(operationId: string, queued = false): void {
     if (this.closed) refuse('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was sent.')
     const record = this.record(), operation = record.operations.find(item => item.id === operationId)
     if (!operation) refuse('UNKNOWN_OPERATION', 'This operation is unavailable.')
@@ -3223,6 +3227,7 @@ export class WatcherService implements WatcherControlHooks {
       ? this.takenOverRefusal(record, operation.target, request, 'send') : 'The user sent this thread an instruction first, so this was not sent. Read it before sending again.')
     if (participant.automationStopped && (operation.action === 'start' || operation.action === 'send')) refuse('REQUEST_NOT_ACTIVE', 'Watcher stopped this participation. It will not send another prompt for this request.')
     if (operation.action === 'start' && !this.options.control.watcherSnapshot().threads.some(item => item.id === operation.target.threadId)) return
+    if (queued && operation.action === 'stop') return
     const thread = this.thread(operation.target); this.protect(thread)
     if (!this.connected(thread)) refuse('HOST_DISCONNECTED', 'This thread is disconnected. Nothing was sent. Reconnect its provider.', true)
     if (operation.action === 'stop') this.checkStopTurn(thread, record, operation.requestId)
