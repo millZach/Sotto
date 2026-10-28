@@ -1596,6 +1596,7 @@ private struct WatcherDock: View {
                 .contentShape(Circle())
             }
             .buttonStyle(PressStyle())
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: canSend)
             .sensoryFeedback(.impact(flexibility: .soft), trigger: sent)
             .disabled(!canSend)
             .accessibilityLabel(preparing ? String(localized: "watcher-send.sending", defaultValue: "Sending to Watcher", comment: "The send button's name while a message is on its way to Watcher") : label)
