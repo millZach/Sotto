@@ -107,7 +107,7 @@ export interface AgentRuntimeOptions {
   /** Clearing settled threads (ADR-0140): the Owl list's answer, read once at start. Absent, nothing is deleted. */
   clearThreadsEnabled?: boolean
   /** What clearing did, as stable event names with a count or a reason's code. */
-  clearLog?: (event: 'threads-cleared' | 'thread-clear-kept', detail: string) => void
+  clearLog?: (event: 'threads-cleared' | 'thread-clear-kept' | 'unsent-threads-removed', detail: string) => void
   /**
    * Keep main up to date (ADR-0142): the Owl list's answer, read once by the process owner, and its log of stable event
    * names. Absent fails closed, and a headless host builds none whatever it says.
@@ -479,6 +479,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // never a headless host's, which has no Settings to choose it in (clearsOnItsOwn).
   const worktreeCleanup = new WorktreeCleanup({ host: agentHost, rules: () => options.settings().worktreeCleanup,
     autoSettleMerged: () => options.settings().autoSettleMergedThreads, ...options.worktreeCleanup,
+    removeUnsentThreads: () => agentControl.removeUnsentThreads(),
     ...clearsOnItsOwn(options) ? { clearSettledThreads: { afterDays: () => options.settings().clearSettledThreadsAfterDays,
       clear: (days: number, keep?: (thread: AgentThread) => Promise<ThreadClearKeptReason | null>) => agentControl.clearSettledThreads(days, keep) } } : {},
     ...merged && github ? { pullRequestMerged: (repositoryRoot: string, branch: string) => merged(repositoryRoot, branch, github) } : {},

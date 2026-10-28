@@ -1,9 +1,18 @@
 // @vitest-environment node
-import { describe, expect, it } from 'vitest'
-import { describeNeedsYou, describeThreads, groupThreads, listThreads, providerKey } from '../../../../src/renderer/src/agents/threadFacts'
+import { i18n } from '@lingui/core'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describeNeedsYou, describeThreads, groupThreads, listThreads, providerKey, threadDescriber, type ThreadDescriber } from '../../../../src/renderer/src/agents/threadFacts'
 import { threadsStateFixture as stateFixture } from '../../../fixtures/agentState'
 import { E2E_THREADS_NOW as NOW } from '../../../../src/shared/e2e'
 import type { AgentRequest, AgentState, AgentThread } from '../../../../src/shared/agents'
+
+// `describe` resolves each row's model once, so this counts the rows a describer described rather than handed back.
+const resolved = vi.hoisted(() => ({ ids: [] as (string | null | undefined)[] }))
+vi.mock('../../../../src/shared/modelCatalog', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../../../src/shared/modelCatalog')>()
+  const resolveModel: typeof actual.resolveModel = (models, modelId) => { resolved.ids.push(modelId); return actual.resolveModel(models, modelId) }
+  return { ...actual, resolveModel }
+})
 
 describe('thread grouping and states from Sotto state', () => {
   it('groups explicit settled work separately from open idle and running threads', () => {
@@ -156,5 +165,98 @@ describe('the Needs you queue (ADR-0135)', () => {
     const queue = describeNeedsYou([{ ...row, waitingIn: 'Child thread' }], NOW)
     expect(queue.entries).toHaveLength(1)
     expect(queue.entries[0]).toMatchObject({ action: 'open', request: undefined })
+  })
+})
+
+describe("a page's describer, which describes again only what an update could have changed", () => {
+  const editHost = (state: AgentState, patch: Partial<AgentState['host']>): AgentState => ({ ...state, host: { ...state.host, ...patch } })
+  /** The rows one call described, as `describeThreads` would, and how many threads it described rather than handed back. */
+  const run = (describeRows: ThreadDescriber, state: AgentState, now: number, options?: { readonly continued?: boolean }) => {
+    const expected = describeThreads(state, now, options)
+    resolved.ids = []
+    const rows = describeRows(state, now, options)
+    expect(rows).toEqual(expected)
+    return { rows, described: resolved.ids.length }
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    if (i18n.locale !== 'en') i18n.loadAndActivate({ locale: 'en', messages: {} })
+  })
+
+  it('describes only a changed thread and hands back every other row as it was', () => {
+    const describeRows = threadDescriber()
+    const state = stateFixture()
+    const first = run(describeRows, state, NOW)
+    expect(first.described).toBe(state.host.threads.length)
+    const next = editHost(state, { threads: state.host.threads.map(thread => thread.id === 'weekly-note' ? { ...thread, title: 'Weekly note, edited' } : thread) })
+    const after = run(describeRows, next, NOW)
+    expect(after.described).toBe(1)
+    expect(after.rows.filter((row, index) => row !== first.rows[index]).map(row => row.thread.id)).toEqual(['weekly-note'])
+    expect(run(describeRows, { ...next }, NOW)).toEqual({ rows: after.rows, described: 0 })
+    expect(describeRows({ ...next }, NOW)).toBe(after.rows)
+  })
+
+  it("describes a thread again when its project, its host's catalog, the host's name or its connection changes", () => {
+    const describeRows = threadDescriber()
+    let state = stateFixture()
+    const all = state.host.threads.length
+    run(describeRows, state, NOW)
+    const described = (next: AgentState): number => { state = next; return run(describeRows, next, NOW).described }
+    // A renamed project re-describes its own threads, which then name it.
+    const workshop = state.host.threads.filter(thread => thread.projectId === 'workshop').length
+    expect(workshop).toBeGreaterThan(0)
+    expect(described(editHost(state, { projects: state.host.projects.map(project => project.id === 'workshop' ? { ...project, title: 'Workshop, renamed' } : project) }))).toBe(workshop)
+    expect(describeRows(state, NOW).find(row => row.thread.projectId === 'workshop')!.project?.title).toBe('Workshop, renamed')
+    // A new catalog re-describes every thread of the host: a model's provider and name can move.
+    expect(described(editHost(state, { models: state.host.models.map(model => model.id === 'claude:sonnet' ? { ...model, provider: 'Acme', name: 'Claude-ish 9' } : model) }))).toBe(all)
+    expect(describeRows(state, NOW).find(row => row.thread.id === 'visual-gate')).toMatchObject({ provider: 'Acme', providerKey: 'other' })
+    // The host's name and its connection are read by every row.
+    expect(described(editHost(state, { name: 'Renamed host' }))).toBe(all)
+    expect(described(editHost(state, { connected: false }))).toBe(all)
+    expect(describeRows(state, NOW).every(row => !row.connected)).toBe(true)
+    expect(described({ ...state })).toBe(0)
+  })
+
+  it("describes every thread again when continuing is turned on or off, or the language, its messages or the window's language change", () => {
+    const describeRows = threadDescriber()
+    const state = stateFixture()
+    const all = state.host.threads.length
+    const described = (options?: { readonly continued?: boolean }): number => run(describeRows, state, NOW, options).described
+    expect(described()).toBe(all)
+    expect(described({ continued: true })).toBe(all)
+    expect(described({ continued: true })).toBe(0)
+    expect(described({ continued: false })).toBe(all)
+    i18n.loadAndActivate({ locale: 'fr', messages: {} })
+    expect(described()).toBe(all)
+    i18n.load('fr', {})
+    expect(described()).toBe(all)
+    expect(described()).toBe(0)
+    // Every row's clock is formatted in the window's language and time zone.
+    vi.stubGlobal('navigator', { language: 'de-DE' })
+    expect(described()).toBe(all)
+    expect(described()).toBe(0)
+  })
+
+  it('describes a working thread again when the clock moves, and no other', () => {
+    const describeRows = threadDescriber()
+    const state = stateFixture()
+    const first = run(describeRows, state, NOW).rows
+    const working = first.filter(row => row.state === 'working')
+    expect(working.length).toBeGreaterThan(0)
+    const later = run(describeRows, state, NOW + 61_000)
+    expect(later.described).toBe(working.length)
+    expect(later.rows.filter(row => row.state === 'working').map(row => row.when)).not.toEqual(working.map(row => row.when))
+    for (const [index, row] of later.rows.entries()) if (row.state !== 'working') expect(row).toBe(first[index])
+    // A clock moved back counts too: a working row's time is the clock it was described with, not the latest one.
+    expect(run(describeRows, state, NOW).described).toBe(working.length)
+  })
+
+  it('forgets a thread that left and describes it afresh when it is back', () => {
+    const describeRows = threadDescriber()
+    const state = stateFixture()
+    run(describeRows, state, NOW)
+    expect(run(describeRows, editHost(state, { threads: state.host.threads.filter(thread => thread.id !== 'weekly-note') }), NOW).described).toBe(0)
+    expect(run(describeRows, state, NOW).described).toBe(1)
   })
 })
