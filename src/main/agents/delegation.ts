@@ -155,13 +155,13 @@ export interface DelegationServiceOptions {
    * A headless host's side of the relay (#1316, Owl `cross-machine-work`): a thread here delegates to a thread on another
    * machine through the desktop that relays, while one is connected.
    */
-  readonly relay?: Pick<HostDelegationRelay, 'start' | 'send' | 'holds' | 'holdsThread' | 'read' | 'cancel' | 'list' | 'useDelivery' | 'awayWords' | 'detail' | 'reachable' | 'carriesBranches' | 'answerLost'>
+  readonly relay?: Pick<HostDelegationRelay, 'start' | 'send' | 'holds' | 'holdsThread' | 'read' | 'cancel' | 'stopFor' | 'list' | 'useDelivery' | 'awayWords' | 'detail' | 'reachable' | 'carriesBranches' | 'answerLost'>
   /**
    * The desktop's delegations on its paired hosts (#1316 part 2, Owl `cross-machine-work`): a start placed on another machine
    * goes to that machine's host, which admits it with its own delegation and keeps its record, and every later brief, read
    * and cancel of it goes there too. Absent, a start placed elsewhere is refused, as on a host.
    */
-  readonly remote?: Pick<DesktopRemoteDelegations, 'start' | 'send' | 'holds' | 'holdsThread' | 'read' | 'cancel' | 'list' | 'useDelivery' | 'detail' | 'retried' | 'isOpen' | 'hasOpen' | 'takesBranches' | 'reservePlace' | 'releasePlace'>
+  readonly remote?: Pick<DesktopRemoteDelegations, 'start' | 'send' | 'holds' | 'holdsThread' | 'read' | 'cancel' | 'stopFor' | 'list' | 'useDelivery' | 'detail' | 'retried' | 'isOpen' | 'hasOpen' | 'takesBranches' | 'reservePlace' | 'releasePlace'>
   /**
    * This machine's own name, as a host says it to a thread on another machine that delegates here (#1316 part 2, Zach,
    * October 28): its refusals, notes and warning name it, "That model is not ready on the Mac", where a thread of its own
@@ -1712,7 +1712,12 @@ export class DelegationService {
    */
   private async stopThreads(threadIds: readonly string[], above: ReadonlySet<string>): Promise<void> {
     const targets = [...new Set(threadIds.flatMap(threadId => [threadId, ...this.below(threadId)]))]
-    if (!targets.length) return
+    // What these threads delegated to on other machines is stopped there too, through the asks each delegation already makes
+    // there, and each is a stop it asked for, so it is not news to them either (#1316 part 3, Owl `cross-machine-work`). A
+    // thread whose delegated threads are all on other machines has none here to stop.
+    const elsewhere = (threads: Iterable<string>): Promise<unknown>[] => [...threads].flatMap(threadId => [this.options.relay?.stopFor(threadId), this.options.remote?.stopFor(threadId)])
+      .filter((stopping): stopping is Promise<string[]> => stopping !== undefined)
+    if (!targets.length) { await Promise.allSettled(elsewhere(above)); return }
     const quiet = new Set([...above, ...targets])
     for (const record of this.records) if (targets.includes(record.delegatedThreadId) && quiet.has(record.delegatingThreadId)) {
       if (this.open(record)) record.told = 'stopped'
@@ -1722,8 +1727,9 @@ export class DelegationService {
     for (const delegatingId of quiet) for (const record of this.records) if (record.delegatingThreadId === delegatingId) this.waiters.get(record.id)?.forEach(wake => wake())
     await this.persist()
     const threads = new Map(this.snapshot().threads.map(thread => [thread.id, thread]))
-    await Promise.allSettled(targets.filter(threadId => { const thread = threads.get(threadId); return thread !== undefined && isThreadTurnRunning(thread) })
-      .map(threadId => this.options.control.commandFromDelegation({ type: 'interrupt', threadId }, () => { if (this.closed) throw new Error('Sotto is stopping.') })))
+    await Promise.allSettled([...targets.filter(threadId => { const thread = threads.get(threadId); return thread !== undefined && isThreadTurnRunning(thread) })
+      .map(threadId => this.options.control.commandFromDelegation({ type: 'interrupt', threadId }, () => { if (this.closed) throw new Error('Sotto is stopping.') })),
+    ...elsewhere(quiet)])
   }
 
   /**

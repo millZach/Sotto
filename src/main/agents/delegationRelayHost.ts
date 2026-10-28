@@ -283,6 +283,27 @@ export class HostDelegationRelay {
       return this.asKnown(record, answer)
     } catch { return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: LOST_CANCEL } }
   }
+  /**
+   * Stops what `callerId` delegated through the relay that is still open, as the user's Stop on it stops what it delegated
+   * on this machine (#1316 part 3): each delegated thread once, by its newest open delegation, cancelled on the desktop as
+   * `cancel_delegation` is, which stops it and what it delegated in turn. A stop it asked for is not news to it. Answers the
+   * machines it could not reach, all of them while no desktop that relays is connected; nothing is queued for them.
+   */
+  async stopFor(callerId: string): Promise<string[]> {
+    const open = this.records.filter(record => record.delegatingThreadId === callerId && (record.unread === true || !SETTLED.has(record.outcome)))
+    if (!open.length) return []
+    const left = new Set<string>(), seen = new Set<string>()
+    await Promise.all(open.reverse().map(async record => {
+      const thread = record.thread ?? record.id
+      if (seen.has(thread)) return
+      seen.add(thread)
+      const answer = record.delegation && this.reachable() ? await this.cancel(callerId, record.id).catch(() => undefined) : undefined
+      if (answer?.status !== 'ok') left.add(record.machine ?? 'This computer')
+    }))
+    for (const record of open) if (record.unread === true || !SETTLED.has(record.outcome)) record.told = 'stopped'
+    await this.persist()
+    return [...left]
+  }
   /** `callerId`'s relayed delegations as `read_delegation` lists them, newest twenty, oldest first. */
   list(callerId: string): { id: string; thread?: string; work: DelegationWork; action: 'start' | 'send'; outcome: WatcherOutcome; machine?: string; createdAt: string }[] {
     return this.records.filter(record => record.delegatingThreadId === callerId).slice(-20).map(record => ({ id: record.id, ...(record.thread ? { thread: record.thread } : {}),

@@ -388,6 +388,30 @@ export class DesktopRemoteDelegations {
   }
 
   /**
+   * Stops what `callerId` delegated on paired hosts that is still open, as the user's Stop on it stops what it delegated on
+   * this computer (#1316 part 3): each delegated thread once, by its newest open delegation, cancelled on its host as
+   * `cancel_delegation` is, which stops it and what it delegated in turn. A stop it asked for is not news to it. Reads only
+   * the live records, so a Stop does no more work for a longer history. Answers the machines it could not reach, by the
+   * names this computer saved for them; nothing is queued for them.
+   */
+  async stopFor(callerId: string): Promise<string[]> {
+    const open: RemoteRecord[] = []
+    for (const records of this.live.values()) for (const record of records) if (record.callerId === callerId && this.open(record)) open.push(record)
+    if (!open.length) return []
+    open.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    const left = new Set<string>(), seen = new Set<string>()
+    await Promise.all(open.map(async record => {
+      const thread = `${record.hostId}\n${record.thread ?? record.id}`
+      if (seen.has(thread)) return
+      seen.add(thread)
+      const answer = record.delegation && this.connection(record.hostId) ? await this.cancel(callerId, record.id).catch(() => undefined) : undefined
+      if (answer?.status !== 'ok') left.add(this.name(record))
+    }))
+    for (const record of open) if (this.open(record)) this.update(record, saved => { saved.told = 'stopped' })
+    await this.persist()
+    return [...left]
+  }
+  /**
    * A host's news of delegations it holds for `caller`: each moved outcome is kept, and told to the thread that delegated,
    * and counts as told only once delivered. News naming one this computer has not matched yet, as when a start's answer
    * was lost, reads that host's open delegations again.
