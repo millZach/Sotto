@@ -310,6 +310,9 @@ import XCTest
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.tap()
         let keyboard = app.keyboards.firstMatch
+        // On CI's large simulator a tap once left the field without the keyboard (PR #1657). This journey is about Return,
+        // so the field is tapped once more; the scroll journey still holds a single tap to opening it.
+        if !keyboard.waitForExistence(timeout: 5) { search.tap() }
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "Search opens the keyboard")
         search.typeText("Sim")
         search.typeText("\n")

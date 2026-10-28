@@ -458,7 +458,7 @@ describe('the installed client, in provider settings', () => {
     provide(state)
     render(<ProvidersSettings />)
     openRow('Codex')
-    expect(screen.getByText('0.163.0 is installed. mise does not list 0.164.0 yet, even with its cache cleared, so Sotto did not install it. Try again later.')).toBeTruthy()
+    expect(screen.getByText('0.163.0 is installed. mise does not list 0.164.0 yet, so Sotto could not install it. Try again later.')).toBeTruthy()
   })
 
   it('says when a client is newer than the version Sotto checked', () => {
