@@ -63,6 +63,7 @@
 .needs-you__oldest { margin-left: auto; color: var(--tt-text-muted); font-size: 11.5px; white-space: nowrap; }
 .needs-you__entries { margin: 2px 0 0; padding: 0; list-style: none; }
 .needs-you__entry { padding: 7px 0 5px; border-top: 2px solid var(--tt-card-inset); }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .needs-you__entry { animation: tt-band-arrive 160ms cubic-bezier(.2, .8, .2, 1); } }
 .needs-you__top { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .needs-you__title { flex: 1 1 auto; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-size: 13px; font-weight: 600; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .needs-you__wait { flex: none; color: var(--tt-text-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
