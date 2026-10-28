@@ -9,7 +9,7 @@ import { DELEGATION_RELAY_ANSWER_GRACE_MS, DELEGATION_RELAY_READ_MS, DELEGATION_
 import { watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
 import type { WorkerPlacementReceipt } from '../../shared/workerMachine'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import { RelayUnanswered } from './delegationRelayHost'
+import { RelayUnanswered, type StopLeft } from './delegationRelayHost'
 import type { DelegationNewsDetail } from './delegationNews'
 
 /** A host connection as remote delegation uses it: the asks it takes and the news it pushes (`delegation-remote`). */
@@ -94,6 +94,11 @@ const retryIndex = (callerId: string, retryKey: string): string => `${callerId}\
 const REREAD_MS = 5_000
 /** How many replies wait in memory for their wake-up to be worded. */
 const REPLIES_KEPT = 200
+/**
+ * Whether a host ask never left this computer: the socket's `HostRequestUnanswered` at its `unsent` stage. Read by that
+ * stage rather than the class, since the socket's module is the desktop's alone and this one is built into a host too.
+ */
+const neverSent = (error: unknown): boolean => error instanceof Error && 'stage' in error && error.stage === 'unsent'
 
 /** Model-facing words, said of the machine by the name this computer saved for it (#1316 part 2). Not settled with Zach. */
 export const REMOTE_LOST_START = (machine: string): string =>
@@ -378,15 +383,53 @@ export class DesktopRemoteDelegations {
     const connection = this.connection(record.hostId)
     if (!connection) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: REMOTE_CANCEL_AWAY(this.name(record)) }
     if (!record.delegation) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: `${REMOTE_LOST_CANCEL(this.name(record))} Nothing was stopped.` }
+    const answer = await this.cancelling(record, record.delegation, connection)
+    if (typeof answer === 'string') return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: REMOTE_LOST_CANCEL(this.name(record)) }
+    await this.persist()
+    return this.asKnown(record, answer)
+  }
+  /**
+   * Asks its host to cancel one and keeps what it answered, saving nothing. Without an answer, `unsent` when the ask never
+   * left this computer, and `lost` when it went and its answer did not come back as one. Never asked twice.
+   */
+  private async cancelling(record: RemoteRecord, delegation: string, connection: RemoteDelegationConnection): Promise<Record<string, unknown> | 'unsent' | 'lost'> {
     try {
-      const answer = await connection.service.delegationRemoteAsk!({ type: 'cancel', caller: callerId, delegation: record.delegation }, DELEGATION_RELAY_READ_MS)
-      if (!isObject(answer)) throw new RelayUnanswered('lost')
+      const answer = await connection.service.delegationRemoteAsk!({ type: 'cancel', caller: record.callerId, delegation }, DELEGATION_RELAY_READ_MS)
+      if (!isObject(answer)) return 'lost'
       this.fromRead(record, answer)
-      await this.persist()
-      return this.asKnown(record, answer)
-    } catch { return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: REMOTE_LOST_CANCEL(this.name(record)) } }
+      return answer
+    } catch (error) { return neverSent(error) ? 'unsent' : 'lost' }
   }
 
+  /**
+   * Stops what these threads delegated on paired hosts that is still open, as the user's Stop on them stops what they
+   * delegated on this computer (#1316 part 3): each delegated thread once per thread that delegated to it, by its newest open
+   * delegation, cancelled on its host as `cancel_delegation` is, which stops it and what it delegated in turn. A stop they
+   * asked for is not news to them. Reads only the live records, once for the whole Stop, so it does no more work for a
+   * longer history, and saves once. Answers each delegated thread it did not see stop, by its host and the name this computer
+   * saved for that host: one on a host not connected, for which nothing is queued, and one whose cancel the host refused,
+   * whose delegation it never named, or whose answer was lost, which is not asked again.
+   */
+  async stopFor(callerIds: Iterable<string>): Promise<StopLeft[]> {
+    const callers = new Set(callerIds), open: RemoteRecord[] = []
+    if (callers.size) for (const records of this.live.values()) for (const record of records) if (callers.has(record.callerId) && this.open(record)) open.push(record)
+    if (!open.length) return []
+    open.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    const left: StopLeft[] = [], seen = new Set<string>()
+    await Promise.all(open.map(async record => {
+      const thread = `${record.callerId}\n${record.hostId}\n${record.thread ?? record.id}`
+      if (seen.has(thread)) return
+      seen.add(thread)
+      const connection = this.connection(record.hostId)
+      const answer = record.delegation && connection ? await this.cancelling(record, record.delegation, connection) : undefined
+      if (typeof answer === 'object' && answer.status === 'ok') return
+      // A cancel that never left this computer is as one never sent: its host was not there to take it.
+      left.push({ machine: this.name(record), hostId: record.hostId, ...record.thread ? { thread: record.thread } : {}, reason: connection && answer !== 'unsent' ? 'unconfirmed' : 'away' })
+    }))
+    for (const record of open) if (this.open(record)) this.update(record, saved => { saved.told = 'stopped' })
+    await this.persist()
+    return left
+  }
   /**
    * A host's news of delegations it holds for `caller`: each moved outcome is kept, and told to the thread that delegated,
    * and counts as told only once delivered. News naming one this computer has not matched yet, as when a start's answer

@@ -1065,6 +1065,12 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
 /// and the Threads list underneath it evaluate their bodies again.
 @MainActor final class DraftStore: ObservableObject {
     @Published var text: [String: String] = [:]
+    /// The reply box that should take focus, by its draft key: asked for each time words from a reply are added to it.
+    @Published var focus: Focus?
+    struct Focus: Equatable {
+        let key: String
+        let id = UUID()
+    }
 }
 
 /// The open thread's history. A store of its own for the same reason: a working thread's message arrives a few words at
@@ -1144,6 +1150,14 @@ struct HeldDetail {
     var drafts: [String: String] {
         get { draftStore.text }
         set { draftStore.text = newValue; publishOnModelIfComparing() }
+    }
+    /// Words selected in a reply, added to the end of the draft under `key` as a reply quote, the box then focused
+    /// (ADR-0129). False when the words are only white space, which adds nothing.
+    @discardableResult func quoteReply(_ words: String, into key: String) -> Bool {
+        guard let draft = ReplyQuote.appending(words, to: drafts[key] ?? "") else { return false }
+        drafts[key] = draft
+        draftStore.focus = DraftStore.Focus(key: key)
+        return true
     }
     /// The open thread's history, in `detailStore`, which publishes on its own in the same way.
     let detailStore = DetailStore()

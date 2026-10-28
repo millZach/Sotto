@@ -250,6 +250,10 @@ extension Font {
     /// the root's typesetting language points at the interface language (ADR-0123). Urdu is set in the iPhone's
     /// Nastaliq face, the way Urdu is written, rather than the Naskh shapes the fallback would give it.
     static func figtree(_ size: CGFloat, _ style: Font.TextStyle, _ weight: Font.Weight = .regular) -> Font {
+        .custom(figtreeFace(weight), size: size, relativeTo: style)
+    }
+    /// The face `figtree` draws a weight in.
+    static func figtreeFace(_ weight: Font.Weight) -> String {
         let bold: Bool
         let face: String
         switch weight {
@@ -257,12 +261,18 @@ extension Font {
         case .semibold, .medium: face = "Figtree-SemiBold"; bold = true
         default: face = "Figtree-Regular"; bold = false
         }
-        if Interface.languageCode == "ur" {
-            return .custom(bold ? "NotoNastaliqUrdu-Bold" : "NotoNastaliqUrdu", size: size, relativeTo: style)
-        }
-        return .custom(face, size: size, relativeTo: style)
+        if Interface.languageCode == "ur" { return bold ? "NotoNastaliqUrdu-Bold" : "NotoNastaliqUrdu" }
+        return face
     }
     static let mono = Font.system(.subheadline, design: .monospaced)
+}
+
+extension UIFont {
+    /// Figtree as `Font.figtree` draws it, for a text view, scaled to the text size in `traits`.
+    static func figtree(_ size: CGFloat, _ style: UIFont.TextStyle, _ weight: Font.Weight = .regular, traits: UITraitCollection) -> UIFont {
+        let base = UIFont(name: Font.figtreeFace(weight), size: size) ?? .systemFont(ofSize: size)
+        return UIFontMetrics(forTextStyle: style).scaledFont(for: base, compatibleWith: traits)
+    }
 }
 
 /// The spacing scale.

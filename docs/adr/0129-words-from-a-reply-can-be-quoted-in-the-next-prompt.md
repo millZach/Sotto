@@ -36,3 +36,7 @@ then the user's message, then any review comments, joined by blank lines. Blank 
 - The quote's text is the selected part of the reply read as plain text, the way a reply's copy control copies it as plain text: a code block's language and Copy control and text kept for screen readers are left out, code keeps its indentation, and a code block arrives as its lines without its fence. Markdown emphasis and links are lost. Quoting the reply's Markdown source for the selected range would keep them; it is not worth the mapping yet.
 - A quote is the user's evidence for the agent, like any prompt text. It answers nothing and grants nothing.
 - Sending the feature to stable flips its entry's `sentToStable`.
+
+## Amendment, October 28, 2026: the iPhone has it too
+
+The iPhone's thread and Watcher pages offer **Add to prompt** in the menu over words selected in a reply, and write the quote, in decision 4's words, at the end of that page's reply box rather than as a chip; it is on in every build, since the phone has no Owl switch, and code blocks and table cells are not yet selectable in part.
