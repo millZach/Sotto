@@ -1,9 +1,8 @@
 /**
  * What a thread is told about asking the user (ADR-0005, ADR-0080): a question that needs the user's answer goes through
  * the provider's own question tool, which Sotto shows as a question card, and not only into a reply, which a finished
- * turn folds away. What the user must read before answering goes in the reply or the question, never only in thinking:
- * Watcher once asked whether the user had read commands it had written only there. Each provider adds it to its own
- * instructions; it replaces nothing the provider says.
+ * turn folds away. What the user must read before answering goes in the reply or the question, never only in thinking.
+ * Each provider adds it to its own instructions; it replaces nothing the provider says.
  * `keepsWorking` is for a tool whose question leaves the turn running (Codex's request_user_input in Default mode).
  */
 export function questionInstructions(tool: string, keepsWorking: boolean): string {

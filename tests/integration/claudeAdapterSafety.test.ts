@@ -634,6 +634,15 @@ describe('Claude recovery and safety', () => {
       expect(args.filter(argument => argument === '--append-system-prompt')).toHaveLength(1)
     }
   })
+  it('keeps the prose a thread writes before a tool call as its reply, not a summary filed as thinking', async () => {
+    // Under thinking shown as updates the server may replace that prose with a summary, and a question card then shows
+    // with no reply above it.
+    const created = randomUUID()
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: created, projectId: f.projectId, title: 'Prose', modelId: f.modelId })
+    const frames = (await f.driver.requests()).filter(record => record.method === 'launch' || record.method === 'resume').map(record => record.params?.frame as { thinkingDisplayUpdates: string | null })
+    expect(frames.length).toBeGreaterThan(0)
+    for (const frame of frames) expect(frame.thinkingDisplayUpdates).toBe('0')
+  })
   it('says the approval surface was refused when a session offers no question tool', async () => {
     f.host.disconnect(); await f.adapter.closed()
     f = await claudeFixture(f.root); await f.host.connect()
