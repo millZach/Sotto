@@ -3,7 +3,7 @@ import { open, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import { CLAUDE_MAX_FRAME_BYTES, object, type ClaudeFrame } from './claudeProtocol'
-import { carriesAttachedFiles, isAttachedFilesNote, stripAppendedNotes, stripAttachedFilesNote, type RecordedAttachments } from './attachedFiles'
+import { carriesAttachedFiles, isAttachedFilesNote, stripAppendedNotes, stripAttachedFilesNote, withoutTrailingNotes, type RecordedAttachments } from './attachedFiles'
 
 export const claudeDigest = (text: string): string => createHash('sha256').update(text).digest('hex')
 export function claudeText(content: unknown): string {
@@ -15,19 +15,46 @@ export function claudeText(content: unknown): string {
  * pictures, which Sotto sends apart from them (ADR-0131, ADR-0154), so a prompt reads back, and matches its origin's
  * digest, as the user wrote it. Without `attachments`, every block in a note's shape is left out, which is enough to
  * find the prompt's origin by its digest. With the origin's recorded `attachments`, only what Sotto appended for that
- * message comes off: the last text block when it is exactly those notes, or that suffix of a prompt sent as one text,
- * so a block the user wrote themselves stays.
+ * message comes off the end of the last text block: the whole block when it is exactly those notes, or that suffix
+ * when they were appended inside the user's own block or a prompt sent as one text, so a block the user wrote
+ * themselves stays.
  */
 export function claudeUserText(content: unknown, attachments?: RecordedAttachments): string {
   if (attachments) {
     if (!Array.isArray(content)) return stripAppendedNotes(claudeText(content), attachments)
     const last = content.findLastIndex(block => { const text = object(block); return text?.type === 'text' && typeof text.text === 'string' })
     const note = last < 0 ? undefined : object(content[last])?.text
-    const appended = typeof note === 'string' && note !== '' && carriesAttachedFiles(attachments) && stripAppendedNotes(note, attachments) === ''
-    return claudeText(appended ? content.filter((_, index) => index !== last) : content)
+    if (typeof note !== 'string' || !carriesAttachedFiles(attachments)) return claudeText(content)
+    const words = stripAppendedNotes(note, attachments)
+    if (words === note) return claudeText(content)
+    return claudeText(words === '' ? content.filter((_, index) => index !== last) : content.map((block, index) => index === last ? { ...object(block), text: words } : block))
   }
   if (!Array.isArray(content)) return stripAttachedFilesNote(claudeText(content))
   return claudeText(content.filter(block => { const text = object(block); return !(text?.type === 'text' && typeof text.text === 'string' && isAttachedFilesNote(text.text)) }))
+}
+/**
+ * A user prompt read back from Claude Code, and the origin Sotto recorded for it. `known` is the origin found by the
+ * frame's own ID; without one, `byDigest` finds an origin by the digest of the user's words. Those words are tried as
+ * read, then with one trailing note-shaped block taken off, then two, up to the most Sotto could have appended, and the
+ * first whose digest names an origin wins, so a block the user wrote themselves does not hide the prompt from its
+ * origin. A shorter candidate is accepted only when its origin recorded notes and taking exactly those off leaves that
+ * candidate (ADR-0131, ADR-0154). With `known`, its recorded attachments say which blocks were Sotto's. The origin
+ * comes back only when notes came off; otherwise the caller matches the text as it is.
+ */
+export function claudeReadBack<T extends { readonly attachments?: RecordedAttachments | undefined }>(content: unknown, known: T | undefined,
+  byDigest: ((digest: string) => T | undefined) | undefined): { readonly text: string; readonly origin: T | undefined } {
+  const text = claudeText(content)
+  if (known) {
+    const words = carriesAttachedFiles(known.attachments) ? claudeUserText(content, known.attachments ?? []) : text
+    return { text: words, origin: known }
+  }
+  // The text as read comes first: a prompt whose own digest names an origin is that prompt, matched by the caller.
+  if (!byDigest || byDigest(claudeDigest(text))) return { text, origin: undefined }
+  for (const candidate of withoutTrailingNotes(text)) {
+    const owner = byDigest(claudeDigest(candidate))
+    if (owner && carriesAttachedFiles(owner.attachments) && claudeUserText(content, owner.attachments ?? []) === candidate) return { text: candidate, origin: owner }
+  }
+  return { text, origin: undefined }
 }
 export function authoredClaudeUser(frame: ClaudeFrame): boolean {
   if (frame.type !== 'user' || frame.isMeta === true || frame.isSynthetic === true || frame.isCompactSummary === true || frame.is_compact_summary === true || frame.isSidechain === true || frame.parent_tool_use_id) return false

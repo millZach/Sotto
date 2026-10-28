@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { lstat, mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { ATTACHED_FILES_NEED_A_FOLDER, AGENT_GENERIC_FILE_MIME_TYPE, isImageAttachment, type AgentBrowserFeedback } from '../../shared/agents'
+import { ATTACHED_FILES_NEED_A_FOLDER, AGENT_GENERIC_FILE_MIME_TYPE, AGENT_MAX_ATTACHMENTS, isImageAttachment, type AgentBrowserFeedback } from '../../shared/agents'
 import { attachmentExtension, fileTypeLabel, formatAttachmentSize } from '../../shared/attachmentLabels'
 import type { PromptImage } from './host'
 import { isPdfBytes, nativePdfSelection } from './pdfPages'
@@ -165,6 +165,22 @@ function appendedNotes(attachments: RecordedAttachments): RegExp | null {
   const blocks = [...(attachments.some(attachment => !isImageAttachment(attachment.mimeType)) ? [NOTE_BODY] : []),
     ...attachments.filter(isPointed).map(() => FEEDBACK_BODY)]
   return blocks.length ? new RegExp(`(?:\\n\\n|\\n)?${blocks.join('\\n\\n')}\\s*$`, 'u') : null
+}
+
+/**
+ * A text with its trailing note-shaped blocks taken off one at a time, the nearest the end first: the candidates for
+ * the words the sender wrote when only a digest of those words can say which blocks were Sotto's. At most the number
+ * Sotto could have appended, one files note and one feedback block per attachment.
+ */
+export function withoutTrailingNotes(text: string, most = AGENT_MAX_ATTACHMENTS + 1): string[] {
+  const candidates: string[] = []
+  let rest = text
+  while (candidates.length < most) {
+    const shorter = rest.replace(LAST_BLOCK, '')
+    if (shorter === rest) break
+    candidates.push(rest = shorter)
+  }
+  return candidates
 }
 
 /** Text without exactly the blocks Sotto appended for a message whose record holds `attachments`, and nothing more. */

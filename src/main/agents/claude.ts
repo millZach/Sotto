@@ -44,8 +44,8 @@ import { verifyFileMentions } from './promptFiles'
 import { ClaudeSubscriptionClient } from './subscriptionClaude'
 import { ClaudeProtocol, ClaudeRejected, ClaudeWritePending, object, type ClaudeFrame } from './claudeProtocol'
 import { claudeLimitStop, claudeTurnAborted, claudeTurnFailure } from './claudeTurnFailure'
-import { authoredClaudeUser, claudeDigest, ClaudeSessionLog, claudeText, claudeUserText } from './claudeSessionLog'
-import { carriesAttachedFiles, deliverAttachments } from './attachedFiles'
+import { authoredClaudeUser, claudeDigest, claudeReadBack, ClaudeSessionLog, claudeText } from './claudeSessionLog'
+import { deliverAttachments } from './attachedFiles'
 import { claudeAnswer, claudeDenial, claudePending, type ClaudePending } from './claudeRequests'
 import { unreadableRequest } from './nativeRequests'
 import { effortAfterChange, fastModeRuns, validatePromptAttachments, validateThreadOptions } from './threadOptions'
@@ -1905,13 +1905,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const alias = this.aliases[id]!; const uuid = typeof frame.uuid === 'string' ? frame.uuid : ''
     let origin = alias.origins.find(value => value.uuid === uuid)
     // A prompt's words without the notes Sotto appended, only when the origin it matches recorded an attached file or
-    // a Point at something picture, and only the notes Sotto appended for that origin (ADR-0131, ADR-0154). Every
-    // note-shaped block comes off to find the origin by digest; the origin's attachments then say which were Sotto's.
-    const candidate = frame.type === 'user' ? claudeUserText(message?.content) : text
-    if (candidate !== text) {
-      const owner = origin ?? (fromLog ? this.unreadOrigin(id, claudeDigest(candidate)) : undefined)
-      const words = owner && carriesAttachedFiles(owner.attachments) ? claudeUserText(message?.content, owner.attachments ?? []) : text
-      if (owner && words !== text) { text = words; origin = owner }
+    // a Point at something picture, and only the notes Sotto appended for that origin (ADR-0131, ADR-0154).
+    if (frame.type === 'user') {
+      const read = claudeReadBack(message?.content, origin, fromLog ? digest => this.unreadOrigin(id, digest) : undefined)
+      text = read.text; origin = read.origin
     }
     const digest = claudeDigest(text)
     if (fromLog && frame.type === 'user') {

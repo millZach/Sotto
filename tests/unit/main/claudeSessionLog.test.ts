@@ -4,7 +4,7 @@ import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { ClaudeSessionLog, claudeUserText } from '../../../src/main/agents/claudeSessionLog'
+import { claudeDigest, claudeReadBack, ClaudeSessionLog, claudeUserText } from '../../../src/main/agents/claudeSessionLog'
 import { browserFeedbackNote } from '../../../src/main/agents/attachedFiles'
 import type { ClaudeFrame } from '../../../src/main/agents/claudeProtocol'
 
@@ -124,5 +124,29 @@ describe('a Claude prompt read back with Point at something feedback (ADR-0154)'
     expect(claudeUserText(`Look\n\n${handwritten}\n\n${note}`, recorded)).toBe(`Look\n\n${handwritten}`)
     // With no picture recorded, Sotto appended nothing, so nothing comes off.
     expect(claudeUserText([{ type: 'text', text: 'Look' }, { type: 'text', text: handwritten }], [{ mimeType: 'image/png' }])).toBe(`Look\n${handwritten}`)
+  })
+  it('takes Sotto\'s note off the end of the user\'s own text block when it was appended inside it', () => {
+    const note = browserFeedbackNote([picture])
+    const content = [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AA==' } }, { type: 'text', text: `Look\n\n${handwritten}\n\n${note}` }]
+    expect(claudeUserText(content, recorded)).toBe(`Look\n\n${handwritten}`)
+  })
+  it('finds the origin by digest when the user wrote a note-shaped block themselves, and takes off only Sotto\'s', () => {
+    const note = browserFeedbackNote([picture])
+    const image = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AA==' } }
+    // The user's prompt is only a block they typed in the note's shape, in a text part of its own, so taking off every
+    // note-shaped part leaves nothing that matches.
+    const typedOnly = { uuid: 'typed-only', digest: claudeDigest(handwritten), attachments: recorded }
+    expect(claudeReadBack([image, { type: 'text', text: handwritten }, { type: 'text', text: note }], undefined, (digest: string) => digest === typedOnly.digest ? typedOnly : undefined))
+      .toEqual({ text: handwritten, origin: typedOnly })
+    // A prompt sent as one text: words, the user's block, then Sotto's note.
+    const words = `Look\n\n${handwritten}`
+    const origin = { uuid: 'sent', digest: claudeDigest(words), attachments: recorded }
+    const byDigest = (digest: string) => digest === origin.digest ? origin : undefined
+    expect(claudeReadBack(`${words}\n\n${note}`, undefined, byDigest)).toEqual({ text: words, origin })
+    // No frame ID matches, so only the digest of the user's words can find the origin.
+    const content = [image, { type: 'text', text: words }, { type: 'text', text: note }]
+    expect(claudeReadBack(content, undefined, byDigest)).toEqual({ text: words, origin })
+    // A prompt with no note of Sotto's is matched as it is, and nothing comes off.
+    expect(claudeReadBack([{ type: 'text', text: words }], undefined, byDigest)).toEqual({ text: words, origin: undefined })
   })
 })
