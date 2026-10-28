@@ -6,7 +6,13 @@ import SottoCore
 struct RootView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
-        if model.computers.isEmpty { PairFlow() } else { MainTabs() }
+        // The whole screen, safe areas included, for Glass's backdrop on every page, pairing included.
+        GeometryReader { frame in
+            let insets = frame.safeAreaInsets
+            Group { if model.computers.isEmpty { PairFlow() } else { MainTabs() } }
+                .environment(\.sottoScreen, CGSize(width: frame.size.width + insets.leading + insets.trailing,
+                                                    height: frame.size.height + insets.top + insets.bottom))
+        }
     }
 }
 
@@ -23,12 +29,7 @@ struct MainTabs: View {
     @Environment(\.horizontalSizeClass) private var width
     @Environment(\.sottoGlass) private var glass
     var body: some View {
-        GeometryReader { frame in
-            let insets = frame.safeAreaInsets
-            tabs(strip: strip(insets))
-                .environment(\.sottoScreen, CGSize(width: frame.size.width + insets.leading + insets.trailing,
-                                                    height: frame.size.height + insets.top + insets.bottom))
-        }
+        GeometryReader { frame in tabs(strip: strip(frame.safeAreaInsets)) }
     }
     /// The iPhone Duo's cover screen leaves a strip down its right edge, under the clock and battery, outside the safe
     /// area but inside the window (ADR-0151, amended). There the bar stands in the strip as a rail, as the system's did,
