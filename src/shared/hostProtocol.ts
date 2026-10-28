@@ -225,7 +225,7 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * desktop may ask it to check afresh whatever its readings hold (ADR-0077, October 21 amendment). A host that does not
  * list it may set those findings aside when it checks.
  * `client-update-not-listed`: offered with `client-updates`. A client update's `failure` may be `not-listed`, when mise's
- * version list did not have the published version and nothing was installed (October 23, 2026). A desktop whose hello does
+ * version list did not have the published version and Sotto could not install it (October 23 and 27, 2026). A desktop whose hello does
  * not accept it reads that failure as `installer`, since its strict schema refuses a value it does not know.
  * `agents-view`: the host offers the iPhone's Agents view (ADR-0103) and answers `thread-delegations` with what delegation's
  * record knows of each thread delegated below one thread, both levels: the delegating thread, the kind of work, when it
