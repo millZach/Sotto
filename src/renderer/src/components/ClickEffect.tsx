@@ -9,26 +9,18 @@ const MAX_STEPS = 4
 const STEP_MS = 1000 / STEP_HZ
 /** A digit's sprite: a little wider than its cell, so a glyph nudged along the water's slope keeps its edges. */
 const SPRITE_W = GLYPH_W * 1.4
-/** Where a press sends no waves: every composer, the thread's, Watcher's and a new thread's draft (Zach, October 27). */
-const QUIET = '.thread-prompt'
-/** The sidebar, on every page that has one (Threads, Watcher, Settings), where a press sends no waves either (Zach, October 27). */
-const SIDEBAR = '.thread-nav'
-
-/** A menu or dialog a composer opens (its model picker); it lives inside the composer in the page but is not its card. */
-const COMPOSER_MENU = 'dialog, [role="dialog"], [role="menu"], [role="listbox"]'
+/**
+ * The room's bare backdrop: the open space behind the panes, around a thread's messages and around its composer, in the
+ * Threads page, Watcher's room and the Dictate room. Each surface where the room's background shows wears this mark.
+ */
+const BACKDROP = 'data-room-backdrop'
 
 /**
- * Whether a press lands on a composer's own card. A menu the composer opens is not the card, wherever it stands, and
- * neither is that menu's backdrop over the conversation: a press on either still sends waves.
+ * Whether a press lands on the bare backdrop itself (Zach, October 28): never on a message, its words, a card, a control,
+ * a menu, a dialog, the sidebar or Settings, nor anything inside them, so only the element pressed counts, not those
+ * around it.
  */
-function onComposer(event: PointerEvent): boolean {
-  const composer = event.target instanceof Element ? event.target.closest(QUIET) : null
-  if (composer === null) return false
-  const menu = (event.target as Element).closest(COMPOSER_MENU)
-  if (menu !== null && composer.contains(menu)) return false
-  const card = composer.getBoundingClientRect()
-  return event.clientX >= card.left && event.clientX <= card.right && event.clientY >= card.top && event.clientY <= card.bottom
-}
+const onBackdrop = (event: PointerEvent): boolean => event.target instanceof Element && event.target.hasAttribute(BACKDROP)
 
 /** What a run draws with: a 0 and a 1 in the accent, in the theme's monospace face. */
 interface Ink {
@@ -37,13 +29,12 @@ interface Ink {
 }
 
 /**
- * The click effect (ADR-0156): a press anywhere in the main window but a composer or the sidebar sends waves of 0s and 1s in
- * the theme's accent through the room behind it, as strong in every theme (Zach's pick N, October 27). The canvas lies
- * under the window's content, over only the room's own background, so a card, a bubble or the composer sits over the
- * waves and nothing pressed is ever covered; it never takes the pointer either. A theme change takes effect in the next
- * frame. It exists only while the effect is on, draws only while the water moves, and clears itself and stops when the
- * water is calm, the window is hidden or the effect goes. The shell mounts it only while `useClickEffectOn` says the
- * effect is on.
+ * The click effect (ADR-0156): a press on the room's bare backdrop sends waves of 0s and 1s in the theme's accent through
+ * the room, as strong in every theme (Zach's pick N, October 27). The canvas lies under the window's content, over only
+ * the room's own background, so a card, a bubble or the composer sits over the waves; it never takes the pointer either.
+ * A theme change takes effect in the next frame. It exists only while the effect is on, draws only while the water moves,
+ * and clears itself and stops when the water is calm, the window is hidden or the effect goes. The shell mounts it only
+ * while `useClickEffectOn` says the effect is on.
  */
 export function ClickEffect(): ReactNode {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -146,11 +137,11 @@ export function ClickEffect(): ReactNode {
       request = requestAnimationFrame(frame)
     }
 
-    // Every primary press in the window, seen in the capture phase and passively, so nothing the page does can stop it or
+    // Every primary press on the backdrop, seen in the capture phase and passively, so nothing the page does can stop it or
     // wait on it. Many fast presses only add drops to the same water; the work per frame stays the same.
     const press = (event: PointerEvent): void => {
       if (event.button !== 0 || document.visibilityState === 'hidden') return
-      if (onComposer(event) || (event.target instanceof Element && event.target.closest(SIDEBAR) !== null)) return
+      if (!onBackdrop(event)) return
       waterNow().press(event.clientX, event.clientY)
       if (request !== null) return
       stale = true

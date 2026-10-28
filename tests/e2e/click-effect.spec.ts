@@ -7,7 +7,7 @@ import { withSotto } from '../fixtures/designCaptureProfile'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { onReleaseTrack } from './support/releaseTrack'
 import { captureWindow } from './support/sottoCapture'
-import { openThreads } from './support/sottoLaunch'
+import { openPage, openThreads } from './support/sottoLaunch'
 import { resizeContentWindow } from './support/sottoWindow'
 import { seedWatcherRoom } from './support/watcherRoom'
 
@@ -47,12 +47,20 @@ function litIn(page: Page, part: Part): Promise<number> {
   }, part)
 }
 
-/** A point in the conversation's open space, beside the column of messages. */
-async function openSpace(page: Page, share: number): Promise<{ x: number; y: number }> {
-  return page.getByLabel('Thread transcript').evaluate((transcript, at) => {
-    const box = transcript.getBoundingClientRect()
-    return { x: box.left + box.width * 0.5, y: box.top + box.height * at }
-  }, share)
+/**
+ * A point on the conversation's bare backdrop, beside or between its messages: the nearest to the given shares of the
+ * transcript's width and height where nothing but the backdrop is under the pointer.
+ */
+async function openSpace(page: Page, share: number, across = 0.5): Promise<{ x: number; y: number }> {
+  return page.getByLabel('Thread transcript').evaluate((transcript, [at, from]) => {
+    const box = transcript.getBoundingClientRect(), y = box.top + box.height * at, start = box.left + box.width * from
+    for (let step = 0; step < box.width; step += 8) {
+      for (const x of [start - step, start + step]) {
+        if (x > box.left && x < box.right && document.elementFromPoint(x, y)?.hasAttribute('data-room-backdrop')) return { x, y }
+      }
+    }
+    throw new Error('Nothing but the backdrop at that height')
+  }, [share, across] as const)
 }
 
 test.describe('the click effect', () => {
@@ -69,19 +77,29 @@ test.describe('the click effect', () => {
         // Whatever earlier presses sent calms, and then nothing runs until the next press that counts.
         await expect.poll(() => running(page), { timeout: 30_000 }).toBe(false)
         const calm = await frames(page)
-        // A press on a thread's row in the sidebar sends no waves, and nor does one in the composer.
+        // Only a press on the bare backdrop sends waves: none for the sidebar's rows, the composer, a message's words, its
+        // copy action, an answer to a request, or Settings.
         await page.getByRole('button', { name: 'Footer links', exact: true }).click({ position: { x: 16, y: 12 } })
         const composer = page.locator('.thread-prompt :is(.prompt-editor, textarea)').first()
         await composer.click()
         await page.locator('.thread-prompt').first().click({ position: { x: 8, y: 8 } })
+        const transcript = page.getByLabel('Thread transcript')
+        await transcript.locator('.rich-message p').first().click()
+        await transcript.getByRole('button', { name: 'Copy message as Markdown' }).first().click()
+        await page.getByRole('button', { name: 'Visual gate flake', exact: true }).click({ position: { x: 16, y: 12 } })
+        await transcript.getByRole('button', { name: 'Allow', exact: true }).click()
+        await openPage(page, 'Settings')
+        await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
+        await page.locator('.settings-scroll').click({ position: { x: 8, y: 8 } })
+        await openConversation(page)
         await page.waitForTimeout(400)
         expect(await running(page)).toBe(false)
         expect(await frames(page)).toBe(calm)
 
         await mkdir(evidence, { recursive: true })
         for (const [index, share] of [0.3, 0.55, 0.42].entries()) {
-          const at = await openSpace(page, share)
-          await page.mouse.click(at.x + (index - 1) * 220, at.y)
+          const at = await openSpace(page, share, 0.3 + index * 0.2)
+          await page.mouse.click(at.x, at.y)
           await page.waitForTimeout(140)
         }
         await expect.poll(() => glyphs(page)).toBeGreaterThan(200)
@@ -141,9 +159,12 @@ test.describe('the click effect', () => {
       await expect(page.getByRole('heading', { level: 1, name: 'Watcher' })).toBeVisible()
       await resizeContentWindow(launched, 1280, 800)
       await expect.poll(() => running(page), { timeout: 30_000 }).toBe(false)
+      // Halfway up the margin, left of the column and its scrubber, where only the backdrop is under the pointer.
       const press = await page.evaluate(() => {
         const card = document.querySelector('#watcher-pane > .thread-workspace__compose > .thread-prompt')!.getBoundingClientRect()
-        return { x: card.left - 40, y: card.top * 0.5 }
+        const y = card.top * 0.5
+        for (let x = card.left - 40; x > 0; x -= 8) if (document.elementFromPoint(x, y)?.hasAttribute('data-room-backdrop')) return { x, y }
+        throw new Error('Nothing but the backdrop in the margin')
       })
       await page.mouse.click(press.x, press.y)
       await expect.poll(() => glyphs(page)).toBeGreaterThan(50)
