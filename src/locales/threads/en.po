@@ -1847,12 +1847,12 @@ msgid "Ask for approval"
 msgstr "Ask for approval"
 
 #: src/renderer/src/agents/delegationWords.ts
-msgid "Asked for {asked}. {machine} can start threads on {machine} or on This computer for now."
-msgstr "Asked for {asked}. {machine} can start threads on {machine} or on This computer for now."
-
-#: src/renderer/src/agents/delegationWords.ts
 msgid "Asked for {asked}. {machine} can start threads only on {machine} for now. Nothing was started."
 msgstr "Asked for {asked}. {machine} can start threads only on {machine} for now. Nothing was started."
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Asked for {asked}. This computer couldn't start it there, so nothing was started."
+msgstr "Asked for {asked}. This computer couldn't start it there, so nothing was started."
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Asking the server for its models…"

@@ -154,7 +154,7 @@ describe('a remote parent\'s roster', () => {
     expect(delegationRefusalLine({ action: 'start', refusal: 'MACHINE_UNAVAILABLE', away: true }, 'forge', 'the Mac'))
       .toBe('This computer isn\'t connected to forge, so nothing was started there. Start it on forge instead, or try again when this computer is back.')
     expect(delegationRefusalLine({ action: 'start', refusal: 'MACHINE_UNAVAILABLE', relayed: true }, 'forge', 'the Mac'))
-      .toBe('Asked for the Mac. forge can start threads on forge or on This computer for now.')
+      .toBe('Asked for the Mac. This computer couldn\'t start it there, so nothing was started.')
     expect(askedFor({ machine: '55555555-5555-4555-8555-555555555555' }, names)).toBe('another machine')
     // A record from before it kept what was asked for keeps the prototype's words.
     expect(delegationRefusalLine({ action: 'start', refusal: 'MACHINE_UNAVAILABLE' }, 'forge'))

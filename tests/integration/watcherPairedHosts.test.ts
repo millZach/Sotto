@@ -241,6 +241,11 @@ it('shows each machine’s live load and work placed but not started with Work a
   // Once the host holds it, it is counted once, by the host or as running there, and never twice.
   for (let index = 0; index < 5; index++) expect((await machines())[1]!.placedNotStarted).toBeLessThanOrEqual(1)
   await expect.poll(async () => (await machines())[1]).toMatchObject({ placedNotStarted: 0 })
+  // A delegated start this desktop asked the host for, not yet settled, counts there too (#1316 review): before the host is
+  // asked and after it answers, as Watcher's own reservations do.
+  f.watcher.useDelegationStarts(hostId => hostId === f.pairing.hostId ? ['synthetic-remote-delegation'] : [])
+  expect((await machines())[1]).toMatchObject({ placedNotStarted: 1 })
+  f.watcher.useDelegationStarts(() => [])
   // A host whose own answer has the feature off sends its facts alone, as it did before: its load reads unknown.
   const report = await f.socket.hostFacts()
   vi.spyOn(f.socket, 'hostFacts').mockResolvedValue({ facts: report.facts, runningThreads: report.runningThreads })

@@ -154,7 +154,10 @@ describe('remote command allow-list', () => {
       // listener that offers delegation-relay, from a recorded desktop whose hello accepted it. Neither answers or grants anything.
       'delegation-relay-answer', 'delegation-relay-news',
       // The name the relaying desktop saved for this host, kept as words for the away refusal (Zach, October 27, 2026).
-      'delegation-relay-name']
+      'delegation-relay-name',
+      // A delegation on this host for a thread on another machine, asked by a recorded desktop on a listener that offers
+      // delegation-remote (#1316 part 2): admitted by the host's own delegation under its own rules, never a grant.
+      'delegation-remote-ask']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
     expect(ops.sort()).toEqual([...decided].sort())
   })
