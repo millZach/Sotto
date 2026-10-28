@@ -34,6 +34,7 @@ import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage,
 import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import type { HostThreadToolReads } from '../agents/threadToolReads'
 import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
+import type { CheckQueueEntry, MachineChecks } from '../../shared/checkQueue'
 import { RemoteDelegationReads } from './remoteDelegations'
 import { HostConnectionError, REMOTE_COMPOSE_UNSAVED } from '../agents/socketHostService'
 import { USAGE_HOSTS_MAX, usageClearQuerySchema, usageDashboardReadSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageProviderIdSchema, usageQuerySchema, usageRefreshQuerySchema, type UsageClearQuery, type UsageClearResult, type UsageDashboardRead, type UsageHostRead, type UsageProviderId, type UsageQuery, type UsageRefreshQuery } from '../../shared/usageDashboard'
@@ -43,7 +44,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsBringBack' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName'>
+  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsBringBack' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -305,6 +306,7 @@ export class DesktopHostRouter {
   /** Told once of each host connection the router takes, new or in place of one it had, as it takes it. */
   private readonly connectedListeners = new Set<(connection: DesktopHostConnection) => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
+  private readonly checkListeners = new Set<() => void>()
   /** The window's reads of each remote host's own threads' delegations, and what Sotto last read there (#1310). */
   private readonly delegations = new RemoteDelegationReads({
     connection: hostId => { const connection = this.hosts.get(hostId)?.connection; return connection?.kind === 'remote' ? connection : undefined },
@@ -552,6 +554,9 @@ export class DesktopHostRouter {
     if (connection.kind === 'remote' && connection.service.subscribeDelegationViews) off.push(connection.service.subscribeDelegationViews(change => {
       if (this.hosts.get(connection.hostId)?.connection === connection) this.delegations.heard(connection.hostId, change)
     }))
+    if (connection.kind === 'remote' && connection.service.subscribeCheckQueue) off.push(connection.service.subscribeCheckQueue(() => {
+      if (this.hosts.get(connection.hostId)?.connection === connection) this.checksChanged()
+    }))
     if (connection.subscribeDetail) off.push(connection.subscribeDetail(detail => {
       if (!this.watcherAvailable(connection, detail.threadId)) return
       const scoped = this.toWindowRevisions(connection, this.hosts.get(connection.hostId)?.run, mapHostReferences(detail, id => hostEntityKey(connection.hostId, id)))
@@ -568,6 +573,8 @@ export class DesktopHostRouter {
     this.emit()
     this.connected(connection)
     if (connection.kind === 'remote') this.delegations.taken(connection.hostId)
+    // The host pushed its check queue after the hello, before this connection was taken, so the queue it holds is told now.
+    if (connection.kind === 'remote' && connection.service.checkQueue?.() !== undefined) this.checksChanged()
   }
   /**
    * Hears each host connection as the router takes it, new or in place of one it had (a reconnect), so what a host must
@@ -599,6 +606,8 @@ export class DesktopHostRouter {
     this.emit()
     this.connected(connection)
     if (connection.kind === 'remote') this.delegations.taken(connection.hostId)
+    // In place of the old connection's queue, the one this connection's hello brought, or none.
+    if (connection.kind === 'remote') this.checksChanged()
   }
   /** Marks a connected host's threads as reconnecting, or no longer: while it is set they read Reconnecting, not Disconnected. */
   setReconnecting(hostId: string, value: boolean): void {
@@ -621,6 +630,32 @@ export class DesktopHostRouter {
     if (this.selectedThreadId && parseHostEntityKey(this.selectedThreadId)?.hostId === hostId) this.selectedThreadId = null
     this.emit()
     this.delegations.removed(hostId)
+    this.checksChanged()
+  }
+  /**
+   * Every connected host's own check queue as it last pushed it (#1312, fourth part), each thread by the window's key for
+   * it. Read only when a queue changed or the window asks, never on the update path. A host that sends none, or whose
+   * connection is closed, is left out: the window says nothing of a queue it cannot read now.
+   */
+  hostCheckQueues(): MachineChecks[] {
+    const machines: MachineChecks[] = []
+    for (const [hostId, { connection }] of this.hosts) {
+      if (connection.kind !== 'remote') continue
+      const checks = connection.service.checkQueue?.()
+      if (checks === undefined) continue
+      machines.push({ hostId, thisComputer: false, checks: checks.map((check): CheckQueueEntry => ({ ...check,
+        ...check.thread !== undefined ? { thread: hostEntityKey(hostId, check.thread) } : {},
+        ...check.by !== undefined ? { by: hostEntityKey(hostId, check.by) } : {} })) })
+    }
+    return machines
+  }
+  /** Hears a connected host's check queue change, or a host with one leave. Returns the way to stop. */
+  subscribeCheckQueues(listener: () => void): () => void {
+    this.checkListeners.add(listener)
+    return () => { this.checkListeners.delete(listener) }
+  }
+  private checksChanged(): void {
+    for (const listener of [...this.checkListeners]) { try { listener() } catch { /* A listener's failure is its own. */ } }
   }
   /**
    * Main reports the window's focus as it moves. Each remote host that keeps what is shown hears it with the threads the
