@@ -258,9 +258,9 @@ interface WatcherCheck {
   /**
    * A check this desktop sent to a paired host, waiting in that host's own queue: the branch this desktop landed there for
    * it, which it lets go of if the check is stopped or fails before its thread is made, and what the host last said of its
-   * place. It holds no place in this machine's queue.
+   * place, unless its answer was lost (#1637). It holds no place in this machine's queue.
    */
-  away?: { readonly landed: LandedMove | undefined; readonly input: WatcherToolInput<'start_thread'>; readonly ahead: number; readonly note: string } | undefined
+  away?: { readonly landed: LandedMove | undefined; readonly input: WatcherToolInput<'start_thread'>; readonly place?: { readonly ahead: number; readonly note: string } | undefined } | undefined
   /** While it waits its turn: what it starts with, and the branch landed for it. */
   waiting?: { readonly input: WatcherToolInput<'start_thread'>; readonly landed: LandedMove | undefined } | undefined
 }
@@ -3685,7 +3685,7 @@ export class WatcherService implements WatcherControlHooks {
       // with the place that host last gave.
       const check = this.checkOf.get(admitted.operation.id), operation = this.record().operations.find(item => item.id === admitted.operation.id) ?? admitted.operation
       if (check?.waiting && operation.deliveryState === 'queued') return this.waitingCheckResult(operation, check.waiting.input)
-      if (check?.away && operation.deliveryState === 'queued') return { ...this.waitingCheckResult(operation, check.away.input), check: { ahead: check.away.ahead, note: check.away.note } }
+      if (check?.away?.place && operation.deliveryState === 'queued') return { ...this.waitingCheckResult(operation, check.away.input), check: check.away.place }
       return this.operationResult(name, admitted.operation, input)
     }
     const running = admitted.operation.target.hostId !== this.hostId() ? this.executeRemote(name, admitted.operation, input) : this.executeOperation(name, admitted.operation, input, { ticket })
@@ -4085,16 +4085,20 @@ ${operation.draftId}`)
         // A host that takes Watcher's stop_thread for it is described as This computer is (#1637); one that does not, by the user's Stop alone.
         const stops = this.remote!.hosts().find(host => host.hostId === operation.target.hostId)?.checkStop === true
         const note = checkWaitingWords(waitingOn, waitingThere.ahead, stops ? WATCHER_CHECK_STOP : WATCHER_CHECK_STOP_AWAY)
-        this.checkOf.set(operation.id, { ticket: operation.id, operationId: operation.id, away: { landed, input: input as WatcherToolInput<'start_thread'>, ahead: waitingThere.ahead, note } })
+        this.checkOf.set(operation.id, { ticket: operation.id, operationId: operation.id, away: { landed, input: input as WatcherToolInput<'start_thread'>, place: { ahead: waitingThere.ahead, note } } })
         this.releaseChecks()
       }
       return parsed.status === 'ok' ? { ...parsed, limits: this.limits(this.record().operations.find(item => item.id === operation.id)!),
         ...(name === 'start_thread' ? { ...this.roleBlock(operation.id), ...this.placementBlock(operation.id), ...this.branchStartBlock(operation.id, waitingThere !== undefined), ...this.machineWorkingWarning(operation.target),
-          ...waitingThere && waitingOn ? { check: { ahead: waitingThere.ahead, note: this.checkOf.get(operation.id)!.away!.note } } : {} } : {}),
+          ...waitingThere && waitingOn ? { check: this.checkOf.get(operation.id)!.away!.place! } : {} } : {}),
         ...(name === 'send_to_thread' ? this.fallbackBlock(operation.id) : {}) } : parsed
     } catch (error) {
       if (!sent) await this.releaseMove(landed)
-      // Sent, but the answer was lost: the host may have failed the start, and reconciling finds out.
+      // Sent, but the answer was lost: the host may be holding a check in its queue, so it is followed as one waiting there,
+      // which Watcher's stop reaches once reconciling reads it queued, and whose branch goes as a waiting one's does (#1637).
+      else if (name === 'start_thread' && (input as WatcherToolInput<'start_thread'>).check === true) this.checkOf.set(operation.id, { ticket: operation.id, operationId: operation.id,
+        away: { landed, input: input as WatcherToolInput<'start_thread'> } })
+      // Otherwise the host may have failed the start, and reconciling finds out.
       else if (landed) this.rememberLostStartMove(operation.id, landed)
       if (error instanceof Refusal) {
         await this.options.control.updateWatcher(record => this.recordRemoteRefusal(record, operation.id, error.result.code))
