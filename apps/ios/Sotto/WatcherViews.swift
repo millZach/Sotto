@@ -1624,6 +1624,7 @@ private struct WatcherPermissionChip: View {
     @EnvironmentObject var watcherStore: WatcherStore
     let hostID: String
     @State private var choosing = false
+    @State private var picks = 0
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
@@ -1639,12 +1640,14 @@ private struct WatcherPermissionChip: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .sheet(isPresented: $choosing) {
             WatcherPermissionSheet(hostID: hostID) { mode in
+                picks += 1
                 choosing = false
                 Task { await model.setWatcherPermission(mode, on: hostID) }
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+        .sensoryFeedback(.selection, trigger: picks)
     }
 
     private func chip(pending: Bool, fixed: Bool) -> some View {
