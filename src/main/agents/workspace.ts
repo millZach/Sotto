@@ -1684,12 +1684,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     return { ...view, linked, branch }
   }
   /** A press on the Pull request surface, for a pull request the thread knows. GitHub moved, so the badge and the Git action read it again. */
-  runPullRequestAction(command: { threadId: string; url: string; action: GitPullRequestAction; method?: GitPullRequestMergeMethod | undefined }): Promise<{ snapshot: AgentHostSnapshot; notice: string }> {
+  runPullRequestAction(command: { threadId: string; url: string; action: GitPullRequestAction; method?: GitPullRequestMergeMethod | undefined; matchHeadCommit?: string | undefined }): Promise<{ snapshot: AgentHostSnapshot; notice: string }> {
     return this.thenReadRemoteStatus(command.threadId, this.onLane(command.threadId, async () => {
       await this.initialize()
       const service = this.pullRequestsOrRefuse()
       if (!this.knowsPullRequest(this.thread(command.threadId), command.url)) throw new GitPullRequestRefusal('Link this pull request to the thread before acting on it.')
-      const after = await service.act(this.threadRepositoryFolder(command.threadId, 'pull requests'), command.url, command.action, command.method)
+      const after = await service.act(this.threadRepositoryFolder(command.threadId, 'pull requests'), command.url, command.action, command.method, command.matchHeadCommit)
       const link = this.thread(command.threadId).pullRequests?.find(item => pullRequestKey(item.url) === pullRequestKey(command.url))
       if (after) this.observePullRequest(after)
       if (after && link) { this.linkPullRequestRecord(command.threadId, after, link.source); await this.saveLinks() }

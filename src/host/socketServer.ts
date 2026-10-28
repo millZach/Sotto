@@ -13,7 +13,8 @@ import { ModelCatalogRevisions } from '../main/agents/agentStateBroadcast'
 import { RefusedImage } from '../main/agents/attachmentStore'
 import { FileUploadRefusal, FileUploads } from './fileUploads'
 import { pullRequestReadFailureOf } from '../main/agents/gitPullRequests'
-import type { GitPullRequestReadFailure } from '../shared/gitPullRequests'
+import { gitCommitIdSchema, isPullRequestLimited, needsConfirmationReceipt, type GitPullRequestReadFailure } from '../shared/gitPullRequests'
+import { PullRequestConfirmations } from './pullRequestConfirmations'
 import { shellForProtocolV1, clientUpdateForOlderClient, clientUpdateWithoutNotListed, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, providersUnknownTo, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostWireShell } from '../shared/hostProtocol'
 import { hostCatalogKey, isImageAttachment, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentThreadSummary } from '../shared/agents'
 import { foldAgentThreadDetailUpdates, isAgentThreadDetailDelta } from '../shared/agentThreadDetail'
@@ -135,6 +136,11 @@ export interface SocketServerOptions {
    * retried after a move between them is not run twice (ADR-0053). Without one the listener keeps its own.
    */
   receipts?: CommandReceipts
+  /**
+   * The confirmation receipts this listener gives and takes for merges, closes and auto-merges (#1691). A headless host's
+   * two listeners share one, as they share command receipts. Without one the listener keeps its own.
+   */
+  pullRequestConfirmations?: PullRequestConfirmations
   /**
    * The key this listener's observed threads are kept under in the host service. Two listeners over one service each
    * need their own, or one's observations would replace the other's.
@@ -304,6 +310,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'usage-muse-opencode' || (service.supportsUsage === true && service.usageRead !== undefined))
     && (feature !== 'usage-background-refresh' || (service.supportsUsage === true && service.usageRefresh !== undefined))
     && (feature !== 'pull-request-babysit' || service.supportsBabysitting === true)
+    // A confirmation receipt is bound to the pull request as the host read it for the client, so only a host that reads them gives one (#1691).
+    && (feature !== 'pull-request-confirmation' || service.gitPullRequest !== undefined)
     // Host facts are for a desktop placing work (#1031): a headless host offers them on both listeners, to desktops only,
     // and the desktop's own phone listener, which serves no desktop, never does.
     && (feature !== 'host-facts' || service.supportsHostFacts === true && service.hostFacts !== undefined && (options.admin !== false || options.tailnet !== undefined))
@@ -424,6 +432,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   const adminToken = randomBytes(32).toString('base64url')
   const peers = new Set<Peer>(), operations = new Set<Promise<unknown>>()
   const receipts = options.receipts ?? new CommandReceipts()
+  const confirmations = options.pullRequestConfirmations ?? new PullRequestConfirmations()
   const observationKey = options.observationKey ?? 'socket-observations'
   let closing = false
   const httpBudgets = new HttpBudgets()
@@ -958,6 +967,19 @@ export async function startSocketServer(options: SocketServerOptions) {
       const thread = service.shell().host.threads.find(thread => thread.id === input.threadId)
       if (!thread?.requests.some(item => item.id === input.requestId && !item.delivery)) throw new Refusal('stale_request')
     }
+    // A merge, close or auto-merge runs only on this client's own confirmation receipt for exactly this press, spent here
+    // (#1691). The coordinator is told the head commit the receipt was given on, never the receipt.
+    let dispatched: AgentCommand = input
+    if (input.type === 'git-pull-request-action') {
+      const { confirmation, ...press } = input
+      const { action } = press
+      dispatched = press
+      if (needsConfirmationReceipt(action)) {
+        const redeemed = confirmations.redeem(peer.client.clientId, confirmation, { threadId: press.threadId, url: press.url, action, method: press.method })
+        if (!redeemed.ok) throw new Refusal('forbidden', redeemed.message)
+        if (redeemed.head && action !== 'close') dispatched = { ...press, matchHeadCommit: redeemed.head }
+      }
+    }
     const receipt: HostReceipt = { status: 'pending' }
     let privateError: string | null | undefined
     const task = (async () => {
@@ -979,7 +1001,7 @@ export async function startSocketServer(options: SocketServerOptions) {
               if (!authenticated(peer) || peer.frames.isClosed || closing || !admits(peer.client.clientId)) throw new Refusal('unauthenticated')
               if (!options.mayAnswer?.(peer.client)) throw new Refusal('forbidden')
             }) : await service.command(input, client, answerDecisionId(peer.client.clientId, request.id))
-            : await service.command(input, client)
+            : await service.command(dispatched, client)
           if (input.type === 'compose' && result.error) peer.editingThreadId = previousEditor
           if (['cancel-draft', 'send'].includes(input.type) && !result.error) peer.editingThreadId = null
           // Continuing an agent answers in the agent's row (#1028): its refusal is this command's alone, as a send's is.
@@ -1313,9 +1335,25 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'git-changed-files':
         if (!service.gitChangedFiles) throw new Refusal('invalid_request')
         try { return await service.gitChangedFiles(request.request) } catch { throw new Refusal('unavailable') }
-      case 'git-pull-request':
+      case 'git-pull-request': {
         if (!service.gitPullRequest) throw new Refusal('invalid_request')
-        try { return await service.gitPullRequest(request.request) } catch (error) { throw new Refusal('unavailable', undefined, pullRequestReadFailureOf(error)) }
+        let read: Awaited<ReturnType<NonNullable<HostService['gitPullRequest']>>>
+        try { read = await service.gitPullRequest(request.request) } catch (error) { throw new Refusal('unavailable', undefined, pullRequestReadFailureOf(error)) }
+        // What this client was shown is what a confirmation receipt it asks for next stands for (#1691).
+        if (read && !isPullRequestLimited(read)) {
+          const head = gitCommitIdSchema.safeParse(read.headId)
+          confirmations.read(peer.client.clientId, request.request.threadId, read.url, head.success ? head.data : null)
+        }
+        return read
+      }
+      // A receipt for the merge, close or auto-merge this client is about to send (#1691). Pairing is enough to ask: it is
+      // evidence of a second step, not a grant, and answers no permission.
+      case 'pull-request-confirmation': {
+        if (!offers(peer, 'pull-request-confirmation')) throw new Refusal('invalid_request')
+        const issued = confirmations.issue(peer.client.clientId, request.request)
+        if (!issued.ok) throw new Refusal('forbidden', issued.message)
+        return issued.receipt
+      }
       case 'host-folders':
         if (!service.hostFolders) throw new Refusal('invalid_request')
         try { return await service.hostFolders(request.request) } catch { throw new Refusal('unavailable') }

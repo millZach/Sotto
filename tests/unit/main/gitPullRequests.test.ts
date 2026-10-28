@@ -320,6 +320,32 @@ describe('acting on a pull request, one press at a time', () => {
     await expect(service.act('C:/repo', URL_74, 'update-branch', 'rebase')).rejects.toThrow('Could not update this branch. GitHub refused it. A rebase stops at the first commit that does not apply cleanly')
     await expect(service.act('C:/repo', URL_74, 'update-branch')).rejects.toThrow('Could not update this branch. GitHub refused it. Check that you have write access to the branch')
   })
+  it('holds a paired client\'s merge and auto-merge to the head its receipt was given on, and says so when the head moved (#1691)', async () => {
+    const confirmed = 'a'.repeat(40), moved = 'b'.repeat(40)
+    let head = confirmed
+    const { service, calls } = scripted(args => {
+      if (args[0] === 'pr') return args.includes(`--match-head-commit=${head}`) || !args.some(arg => arg.startsWith('--match-head-commit')) ? ''
+        : new Error('GraphQL: Head branch was modified. Review and try the merge again. (mergePullRequest)')
+      return reads(() => answerJson({ pull: { headRefOid: head } }))(args) ?? new Error('unexpected')
+    })
+    await service.act('C:/repo', URL_74, 'merge', 'squash', confirmed)
+    await service.act('C:/repo', URL_74, 'enable-auto-merge', 'merge', confirmed)
+    // Closing takes no head; the window's own presses on this computer carry none, and run as they always have.
+    await service.act('C:/repo', URL_74, 'close', undefined, confirmed)
+    await service.act('C:/repo', URL_74, 'merge', 'squash')
+    expect(calls.filter(call => call[0] === 'pr')).toEqual([
+      ['pr', 'merge', URL_74, '--squash', `--match-head-commit=${confirmed}`],
+      ['pr', 'merge', URL_74, '--auto', '--merge', `--match-head-commit=${confirmed}`],
+      ['pr', 'close', URL_74], ['pr', 'merge', URL_74, '--squash'],
+    ])
+    head = moved
+    await expect(service.act('C:/repo', URL_74, 'merge', 'squash', confirmed)).rejects.toThrow('Could not merge this pull request. It has new commits since you confirmed, so nothing was merged. Refresh it, look at the new commits, then press Merge again.')
+    await expect(service.act('C:/repo', URL_74, 'enable-auto-merge', 'squash', confirmed)).rejects.toThrow('auto-merge was not turned on')
+    // Anything but a commit ID is never handed to gh.
+    const before = calls.length
+    await expect(service.act('C:/repo', URL_74, 'merge', 'squash', '--admin')).rejects.toThrow('Nothing was changed.')
+    expect(calls).toHaveLength(before)
+  })
   it('refuses before asking GitHub: a merge with no method, a squash update, a pull request outside GitHub', async () => {
     const { service, calls } = scripted(() => '')
     await expect(service.act('C:/repo', URL_74, 'merge')).rejects.toThrow('Choose a merge method first.')

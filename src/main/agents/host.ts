@@ -416,8 +416,11 @@ export interface AgentHost {
   publishThreadRepository?(threadId: string, options: { repository: string; visibility: 'private' | 'public' }): Promise<{ snapshot: AgentHostSnapshot; url: string }>
   /** One pull request of the thread's through `gh`: by reference, else its branch's own or the one last linked (ADR-0027). */
   readThreadPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestRead>
-  /** A press on the Pull request surface; answers with what happened, in T3's words. */
-  runPullRequestAction?(command: { threadId: string; url: string; action: GitPullRequestAction; method?: GitPullRequestMergeMethod | undefined }): Promise<{ snapshot: AgentHostSnapshot; notice: string }>
+  /**
+   * A press on the Pull request surface; answers with what happened, in T3's words. `matchHeadCommit` is the head a paired
+   * client's confirmation receipt was given on, which a merge or an auto-merge holds GitHub to (#1691).
+   */
+  runPullRequestAction?(command: { threadId: string; url: string; action: GitPullRequestAction; method?: GitPullRequestMergeMethod | undefined; matchHeadCommit?: string | undefined }): Promise<{ snapshot: AgentHostSnapshot; notice: string }>
   linkThreadPullRequest?(threadId: string, reference: string): Promise<{ snapshot: AgentHostSnapshot; link: GitPullRequestLink }>
   unlinkThreadPullRequest?(threadId: string, url: string): Promise<AgentHostSnapshot>
   /** T3's Checkout pull request, Local or Worktree. */

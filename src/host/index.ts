@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import { openHostCredentials } from './credentials'
 import { PairedClients } from '../main/agents/pairing'
 import { startSocketServer } from './socketServer'
+import { PullRequestConfirmations } from './pullRequestConfirmations'
 import { githubPullRequestMerged, githubPullRequestState } from '../main/agents/worktreeCleanup'
 import { acquireHostLock, HOST_LOCK_HELD_EXIT_CODE, HostLockError, HostLockHeldError, readBootId, releaseHostLock, type HostLease } from './lock'
 import { ProviderSignIns, type ProviderSignInOptions } from './providerSignIn'
@@ -244,6 +245,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         // The host's two listeners keep one set of command receipts, so a desktop that moves between them never runs a
         // retried command twice (ADR-0053).
         const receipts = new CommandReceipts()
+        // And one set of confirmation receipts, so a receipt given on one listener is spent once on either (#1691).
+        const pullRequestConfirmations = new PullRequestConfirmations()
         // Phone access opens its own loopback listener, on a port it remembers, for Tailscale Serve to carry: the tailnet
         // listener, which carries desktops the launch script recorded as well as phones (ADR-0053). This one, with the
         // administrative routes, stays reachable only from this machine and through the desktop's SSH (ADR-0050).
@@ -264,13 +267,13 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         // The host's own OpenCode signed in to model sources from a desktop (#1107), only where its OpenCode runs.
         const opencodeSignIn = runtime.opencodeSignIn ? { opencodeSignIn: runtime.opencodeSignIn } : {}
         phones = startHostPhoneAccess({ directory, service: runtime.hostService, pairing, policy, settings, startup,
-          desktops, listener: { signIns, ...opencodeSignIn, watcherDesktops: desktops, clientUpdates: true, receipts, about, delegation, ...hostUpdate, ...moves, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}) },
+          desktops, listener: { signIns, ...opencodeSignIn, watcherDesktops: desktops, clientUpdates: true, receipts, pullRequestConfirmations, about, delegation, ...hostUpdate, ...moves, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}) },
           ...(options.tailscale ? { tailscale: options.tailscale } : {}), ...(options.log ? { log: options.log } : {}) })
         const tailnet = phones
         listener = await startSocketServer({ service: runtime.hostService, pairing, port: options.port, signIns, ...opencodeSignIn, clientUpdates: true, phones: tailnet.administration,
           watcherDesktops: desktops, delegation, ...hostUpdate, ...moves,
           ...(options.origins ? { origins: options.origins } : {}), ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}),
-          receipts, about, phoneAccess: () => tailnet.summary(), onRevoked: clientId => tailnet.revoked(clientId),
+          receipts, pullRequestConfirmations, about, phoneAccess: () => tailnet.summary(), onRevoked: clientId => tailnet.revoked(clientId),
           mayAnswer: client => policy?.mayGrant(client).allowed ?? false,
           setAnswers: (clientId, allowed) => {
             if (!policy) throw new Error('Permission policies are unavailable on this host.')
