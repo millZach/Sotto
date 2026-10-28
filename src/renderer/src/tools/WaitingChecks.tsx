@@ -3,12 +3,11 @@ import { ChevronRight } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import { PROVIDER_LABELS } from '../../../shared/agents'
-import { DELEGATION_WORK_TITLES } from '../../../shared/delegation'
 import { ProviderMark } from '../agents/ProviderMark'
 import { DELEGATION_OUTCOME_WORDS } from '../agents/delegationWords'
 import { CheckQueueList, checkTitle } from '../watcher/CheckQueueList'
 import { checkOfThread, unmadeChecks, useCheckQueues, type UnmadeCheck } from '../watcher/checkQueues'
-import { checkWaitingSentence } from '../watcher/checkQueueWords'
+import { checkWaitingSentence, checkWorkWords } from '../watcher/checkQueueWords'
 import '../agents/delegation.css'
 
 const NO_CHECKS: readonly UnmadeCheck[] = []
@@ -100,7 +99,7 @@ export const WaitingCheckRow = memo(function WaitingCheckRow({ waiting, machine,
   const thisComputer = waiting.machine.thisComputer
   const title = checkTitle(check, threadOf)
   const provider = check.provider ? PROVIDER_LABELS[check.provider] : undefined
-  const meta = [provider, check.work ? DELEGATION_WORK_TITLES[check.work] : undefined, machine].filter((fact): fact is string => fact !== undefined && fact !== '')
+  const meta = [provider, check.work ? checkWorkWords(check.work) : undefined, machine].filter((fact): fact is string => fact !== undefined && fact !== '')
   const status = DELEGATION_OUTCOME_WORDS.working
   const where = at > 0 ? checkWaitingSentence(machine, thisComputer, at) : t`Its turn has come, and its thread is being made.`
   const close = (event: React.KeyboardEvent): void => {

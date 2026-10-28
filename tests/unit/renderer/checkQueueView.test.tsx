@@ -1,6 +1,8 @@
 // #1312, fourth part (Zach's pick C): a machine's checks show on the machines line, in its panel and in Tools › Agents, and
 // nowhere while Work across machines is off.
 import React from 'react'
+import { i18n } from '@lingui/core'
+import { generateMessageId } from '@lingui/message-utils/generateMessageId'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentState, AgentThread } from '../../../src/shared/agents'
@@ -160,5 +162,15 @@ describe('A delegated check waiting its turn in Tools › Agents (#1312)', () =>
     expect(head).toHaveAttribute('aria-expanded', 'false')
     expect(head).toHaveFocus()
     expect(screen.queryByRole('region', { name: 'Checks on forge, one at a time' })).toBeNull()
+  })
+
+  it('names its kind of work in the interface language, as every word on the row is (ADR-0123)', () => {
+    vi.mocked(useOptionalApp).mockReturnValue({ update: { owlFeatures: { 'cross-machine-work': true } } } as unknown as ReturnType<typeof useOptionalApp>)
+    i18n.loadAndActivate({ locale: 'de', messages: { [generateMessageId('Building', 'kind of work')]: 'Bauen' } })
+    try {
+      const waiting = unmadeChecks(QUEUES, new Set([key(LOCAL, 'paste')]), () => false)[0]!
+      render(<ul><WaitingCheckRow waiting={waiting} machine="forge" threadOf={id => THREADS.find(item => item.id === id)} /></ul>)
+      expect(document.querySelector('.subagent-meta')).toHaveTextContent('Grok Build · Bauen · forge')
+    } finally { act(() => i18n.activate('en')) }
   })
 })

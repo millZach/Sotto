@@ -1064,6 +1064,12 @@ msgstr "Bars"
 msgid "blocked"
 msgstr "blocked"
 
+#. The kind of work a delegated thread or check was asked for.
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgctxt "kind of work"
+msgid "Building"
+msgstr "Building"
+
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "Busiest hour"
 msgstr "Busiest hour"
@@ -1342,6 +1348,12 @@ msgstr "Close to {point}."
 msgid "Close: the recording stays in its folder"
 msgstr "Close: the recording stays in its folder"
 
+#. The kind of work a delegated thread or check was asked for.
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgctxt "kind of work"
+msgid "Code review"
+msgstr "Code review"
+
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Codex app"
 msgstr "Codex app"
@@ -1414,6 +1426,12 @@ msgstr "Computer"
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Computer {number}"
 msgstr "Computer {number}"
+
+#. The kind of work a delegated thread or check was asked for.
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgctxt "kind of work"
+msgid "Computer use"
+msgstr "Computer use"
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Confidence"
@@ -3858,6 +3876,12 @@ msgstr "Replaced by"
 msgid "Replacement memory"
 msgstr "Replacement memory"
 
+#. The kind of work a delegated thread or check was asked for.
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgctxt "kind of work"
+msgid "Research"
+msgstr "Research"
+
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "Reset safely"
 msgstr "Reset safely"
@@ -5361,6 +5385,12 @@ msgstr "Turning speech into text."
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Type"
 msgstr "Type"
+
+#. The kind of work a delegated thread or check was asked for.
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgctxt "kind of work"
+msgid "UI work"
+msgstr "UI work"
 
 #: src/renderer/src/features/usage/UsageCharts.tsx
 #: src/renderer/src/features/usage/UsageModels.tsx

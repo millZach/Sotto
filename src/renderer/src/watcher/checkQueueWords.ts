@@ -1,5 +1,7 @@
-import { plural, t } from '@lingui/core/macro'
+import { i18n, type MessageDescriptor } from '@lingui/core'
+import { msg, plural, t } from '@lingui/core/macro'
 import type { CheckQueueEntry } from '../../../shared/checkQueue'
+import type { WorkerKind } from '../../../shared/workerRoles'
 
 /**
  * A machine's checks in words, in the interface language (ADR-0123), for the machines line, the machine's panel and Tools ›
@@ -52,6 +54,16 @@ export function checkStateWords(at: number, installing: boolean): string {
   if (at === 0) return installing ? t`installing packages first, because package-lock.json changed` : t({ message: 'running', comment: 'The check whose turn it is on its machine.' })
   return plural(at, { one: '# ahead', other: '# ahead' })
 }
+
+const WORK: Readonly<Record<WorkerKind, MessageDescriptor>> = {
+  building: msg({ message: 'Building', context: 'kind of work', comment: 'The kind of work a delegated thread or check was asked for.' }),
+  ui: msg({ message: 'UI work', context: 'kind of work', comment: 'The kind of work a delegated thread or check was asked for.' }),
+  'code-review': msg({ message: 'Code review', context: 'kind of work', comment: 'The kind of work a delegated thread or check was asked for.' }),
+  research: msg({ message: 'Research', context: 'kind of work', comment: 'The kind of work a delegated thread or check was asked for.' }),
+  'computer-use': msg({ message: 'Computer use', context: 'kind of work', comment: 'The kind of work a delegated thread or check was asked for.' }),
+}
+/** The kind of work a check was asked for, in the interface language: "Building", "Code review". */
+export function checkWorkWords(work: WorkerKind): string { return i18n._(WORK[work]) }
 
 /** A check with no title the window can show. */
 export function untitledCheck(): string { return t`A check` }
