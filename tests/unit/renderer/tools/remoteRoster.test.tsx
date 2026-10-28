@@ -347,4 +347,31 @@ describe('a roster whose delegated threads run on several machines (#1316 part 3
       ['This computer', false, [[[HERE, 1, undefined]]]]])
     expect(groups.map(group => machineCount(group, undefined))).toEqual(['0 threads', '1 thread · 1 working', '1 thread · 1 working'])
   })
+
+  it('takes how fresh a row is from its own machine, not from the machine of the thread that delegated to it', () => {
+    // The parent runs on forge, which is not connected; it delegated a check to the Mac, which is.
+    const state = remoteState(false)
+    state.host.threads = state.host.threads.filter(item => item.delegatedBy === undefined)
+    state.host.threads.push({ id: ON_MAC, title: 'Check on the Mac', projectId: 'workshop', modelId: 'codex:gpt', providerId: 'codex', status: 'idle', delegatedBy: PARENT,
+      requests: [], updatedAt: at(6), messages: [], remoteHost: true, hostId: MAC, hostLabel: 'the Mac' })
+    state.connections = [...state.connections!, { hostId: MAC, name: 'the Mac', kind: 'remote', connected: true }]
+    const machineOf = (thread: AgentThread) => rosterMachine(state.connections, thread)
+    const started = view(ON_MAC, 6)
+    // Forge's read is as Sotto last read it there, the check still working; the Mac's own read is current: it answered.
+    const read = new Map<string, DelegationReadOf>([[PARENT, { made: [started], received: [], lastReadAt: LOST }],
+      [ON_MAC, { made: [], received: [{ ...started, outcome: 'answered', outcomeAt: at(1) }] }]])
+    const row = delegatedRoster(PARENT, state.host.threads, read, state.host, machineOf).flat()[0]!
+    expect(row).toMatchObject({ lastRead: false, status: 'answered', machine: { name: 'the Mac', connected: true } })
+    expect(delegatedStatusWord(row)).toBe('Answered')
+    // The Mac away too: greyed, as of when Sotto last read it there.
+    const away = remoteState(false)
+    away.host.threads = state.host.threads
+    away.connections = [...away.connections!, { hostId: MAC, name: 'the Mac', kind: 'remote', connected: false }]
+    const awayRead = new Map<string, DelegationReadOf>([[PARENT, read.get(PARENT)!], [ON_MAC, { ...read.get(ON_MAC)!, lastReadAt: Date.parse(at(3)) }]])
+    const greyed = delegatedRoster(PARENT, away.host.threads, awayRead, away.host, thread => rosterMachine(away.connections, thread)).flat()[0]!
+    expect(greyed).toMatchObject({ lastRead: true, asOf: Date.parse(at(3)), status: 'answered' })
+    // On the same machine as the thread that delegated, that thread's read still says how fresh the row is.
+    const forgeRows = delegatedRoster(PARENT, remoteState(false).host.threads, reads(LOST), remoteState(false).host, thread => rosterMachine(remoteState(false).connections, thread)).flat()
+    expect(forgeRows.find(item => item.thread.id === REVIEW)).toMatchObject({ lastRead: true, asOf: LOST })
+  })
 })

@@ -136,12 +136,20 @@ const delegatedViewsOf = (threadId: string, made: readonly DelegationView[]): De
  * One delegated thread's row, from what its delegating thread's read holds of it and, where that read no longer holds
  * the brief that started it (main returns every open delegation but only the newest finished ones), from the thread's
  * own read of the briefs it was sent. Its start is only ever the brief that started it, never a later send's. Once both
- * reads have answered and neither holds anything of it, its outcome is unknown, never guessed.
+ * reads have answered and neither holds anything of it, its outcome is unknown, never guessed. `parentMachine` is the
+ * machine of the thread that delegated to it, whose read that is.
  */
 function rowOf(thread: AgentThread, level: 1 | 2, delegatedBy: string | undefined, parent: DelegationReadOf | undefined, own: DelegationReadOf | undefined, host: AgentHostSnapshot,
-  machine: RosterMachine): DelegatedRosterRow {
-  const known = new Map(delegatedViewsOf(thread.id, parent?.made ?? []).map(view => [view.id, view] as const))
-  for (const view of own?.received ?? []) if (!known.has(view.id)) known.set(view.id, view)
+  machine: RosterMachine, parentMachine: RosterMachine | undefined): DelegatedRosterRow {
+  // The delegating thread's read is made on its own machine (#1316 part 3). From another machine, its being as Sotto last
+  // read it there says nothing of this thread's machine, and this thread's own read, made on its machine, is the newer.
+  const parentHere = parentMachine === undefined || parentMachine.hostId === machine.hostId
+  const parentStale = !parentHere && parent?.lastReadAt !== undefined
+  const known = new Map<string, DelegatedView>()
+  const keep = (views: readonly DelegatedView[]): void => { for (const view of views) if (!known.has(view.id)) known.set(view.id, view) }
+  if (!parentStale) keep(delegatedViewsOf(thread.id, parent?.made ?? []))
+  keep(own?.received ?? [])
+  if (parentStale) keep(delegatedViewsOf(thread.id, parent?.made ?? []))
   const views = [...known.values()].sort((first, second) => time(first.createdAt) - time(second.createdAt))
   const newest = views.at(-1)
   const start = views.find(view => view.action === 'start')
@@ -162,9 +170,10 @@ function rowOf(thread: AgentThread, level: 1 | 2, delegatedBy: string | undefine
   const outcome = remote ? (isThreadTurnRunning(thread) ? 'working' : undefined)
     : newest?.outcome ?? (parent !== undefined && own !== undefined ? 'unknown' : undefined)
   const status = threadNeedsYou(thread) ? 'needs' : outcome
-  // What Sotto holds of a thread on another machine is as it last read it there whenever main says so (`lastReadAt`), a
-  // failed read on a connection still up included, and whenever that machine is not connected: greyed, never current.
-  const markedAt = parent?.lastReadAt ?? own?.lastReadAt
+  // What Sotto holds of a thread on another machine is as it last read it there whenever main says so of a read made on its
+  // machine (`lastReadAt`), a failed read on a connection still up included, and whenever that machine is not connected:
+  // greyed, never current.
+  const markedAt = (parentHere ? parent?.lastReadAt : undefined) ?? own?.lastReadAt
   const lastRead = machine.remote && (!machine.connected || markedAt !== undefined)
   const asOf = lastRead ? markedAt ?? Number.NaN : Number.NaN
   return { thread, level, delegatedBy, newest, startedAt, endedAt: working ? Number.NaN : time(newest?.outcomeAt), waitingFor,
@@ -185,9 +194,11 @@ const newestFirst = (first: { readonly startedAt: number }, second: { readonly s
  */
 export function delegatedRoster(ownerId: string, threads: readonly AgentThread[], reads: DelegationReads, host: AgentHostSnapshot,
   machineOf: (thread: AgentThread) => RosterMachine = () => THIS_COMPUTER): DelegatedRosterRow[][] {
-  return families(ownerId, threads).map(({ thread, below }) => ({ row: rowOf(thread, 1, undefined, reads.get(ownerId), reads.get(thread.id), host, machineOf(thread)), below }))
+  const owner = threads.find(thread => thread.id === ownerId)
+  const ownerMachine = owner ? machineOf(owner) : undefined
+  return families(ownerId, threads).map(({ thread, below }) => ({ row: rowOf(thread, 1, undefined, reads.get(ownerId), reads.get(thread.id), host, machineOf(thread), ownerMachine), below }))
     .sort((first, second) => newestFirst(first.row, second.row))
-    .map(({ row, below }) => [row, ...below.map(child => rowOf(child, 2, row.thread.title, reads.get(row.thread.id), reads.get(child.id), host, machineOf(child))).sort(newestFirst)])
+    .map(({ row, below }) => [row, ...below.map(child => rowOf(child, 2, row.thread.title, reads.get(row.thread.id), reads.get(child.id), host, machineOf(child), row.machine)).sort(newestFirst)])
 }
 
 /**
