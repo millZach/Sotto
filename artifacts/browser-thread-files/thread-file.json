@@ -1,0 +1,8 @@
+{
+  "opened": "<thread folder>/docs/prototypes/trail-prototype.html?variant=B",
+  "servedAt": "http://127.0.0.1:<port>/page/<token>/trail-prototype.html?variant=B",
+  "title": "Trail picker, variant B, styled",
+  "outsideRefusal": "Only HTML files inside this thread's folder can open in Sotto's browser. <outside folder>\\elsewhere.html is outside it. Nothing was opened. Copy the page into the thread's folder, or serve it and open its http address.",
+  "inspectRan": true,
+  "errors": []
+}

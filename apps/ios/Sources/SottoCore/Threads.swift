@@ -160,6 +160,13 @@ public enum ThreadGroups {
         }
         return tops
     }
+    /// A thread opened and never sent to, as the desktop's sidebar reads it (`isUnsentThread` in
+    /// src/shared/threadActivity.ts): on its default title, at rest, asking nothing, not delegated, not settled, and with no
+    /// messages. A computer that doesn't say how many messages it holds or where its title came from never makes one.
+    public static func isUnsent(_ thread: ThreadSummary) -> Bool {
+        thread.titleSource == "default" && thread.status == "idle" && thread.requests.isEmpty && thread.delegatedBy == nil
+            && thread.summary?.messageCount == 0 && !isSettled(thread)
+    }
     /// Match shared/threadActivity.ts: workspace settlement is inherited, while an explicit active
     /// provider override clears provider settlement but never an archive or workspace grouping.
     public static func isSettled(_ thread: ThreadSummary, project: Project? = nil) -> Bool {
