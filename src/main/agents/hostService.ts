@@ -30,6 +30,8 @@ import type { DelegationRelayAsk, RelayedReply } from '../../shared/delegationRe
 import type { DelegationNews } from '../../shared/delegation'
 import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
 import type { DelegationViews } from './delegationIpc'
+import type { CheckQueue } from './checkQueue'
+import type { CheckQueueEntry } from '../../shared/checkQueue'
 import type { QuestionPageTarget } from './questionPages'
 import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery, type UsageProviderId } from '../../shared/usageDashboard'
 
@@ -96,6 +98,8 @@ export interface HostService {
    * check running there, its own delegations' checks included. Only where its Owl answer turns on Work across machines.
    */
   readonly supportsWatcherCheckQueue?: boolean
+  /** Watcher's stop_thread on a check waiting in the host's queue takes it out of that queue (`watcher-check-stop`, #1637). */
+  readonly supportsWatcherCheckStop?: boolean
   /** The host takes requests from a Watcher on Muse; without it a desktop whose Watcher is on Muse leaves the host alone. */
   readonly supportsWatcherMuse?: boolean
   /** The host lists `watcher-cursor`: it takes Watcher requests whose identity names Cursor (ADR-0128). */
@@ -141,6 +145,15 @@ export interface HostService {
   delegationViews?(threadId: string): Promise<DelegationsRead>
   delegationBrief?(threadId: string): Promise<DelegationBrief>
   subscribeDelegationViews?(listener: (change: DelegationViewsChange) => void): () => void
+  /**
+   * The host's own check queue as its machine's panel shows it (`check-queue-views`, #1312, fourth part), the running check
+   * first, present only where it keeps one. Thread IDs are the host's own. `subscribeCheckQueue` hears it change; on a
+   * desktop's connection to a host, `checkQueue` is what the host last pushed, and undefined before a push or while the
+   * host does not send one.
+   */
+  readonly supportsCheckQueueViews?: boolean
+  checkQueue?(): readonly CheckQueueEntry[] | undefined
+  subscribeCheckQueue?(listener: () => void): () => void
   /**
    * The host's threads delegate to other machines through this desktop (`delegation-relay`, #1316), on a desktop's
    * connection to a host whose hello it accepted: `subscribeDelegationRelay` hears each ask the host pushes,
@@ -362,6 +375,8 @@ export class LocalHostService implements HostService {
     desktopDefaults?: { record(clientId: string, defaults: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> }
     /** Delegation's own record of the host's threads (#1310), present only where a headless host runs delegation for them. */
     delegationViews?: DelegationViews
+    /** The host's own check queue (#1312), present only where a headless host keeps one: what its desktops' windows show of it. */
+    checks?: CheckQueue
     /** Bringing changes back (#1030), true only when the host's Owl answer turns it on and it runs Git. */
     bringBack?: boolean }) {
     this.control = options.control
@@ -397,6 +412,10 @@ export class LocalHostService implements HostService {
   subscribeDelegationViews(listener: (change: DelegationViewsChange) => void): () => void {
     return this.options.delegationViews?.onViewsChanged(threadIds => listener({ threadIds })) ?? (() => undefined)
   }
+  get supportsCheckQueueViews(): boolean { return this.options.checks !== undefined }
+  /** The queue's own view, taken only after it changed, so a read copies nothing. */
+  checkQueue(): readonly CheckQueueEntry[] | undefined { return this.options.checks?.view() }
+  subscribeCheckQueue(listener: () => void): () => void { return this.options.checks?.subscribe(listener) ?? (() => undefined) }
   /** Read from the projects as the host last published them, without copying them. */
   projectOrigins(): Promise<ProjectOrigins> {
     if (!this.options.projectOrigins) return Promise.reject(new Error('This host does not report the repositories of its projects.'))

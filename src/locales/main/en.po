@@ -833,6 +833,10 @@ msgstr "Only the latest completed checkpoint with unchanged native history can b
 msgid "Open Agents in the main Sotto window."
 msgstr "Open Agents in the main Sotto window."
 
+#: src/main/agents/checkQueueIpc.ts
+msgid "Open checks in the main Sotto window."
+msgstr "Open checks in the main Sotto window."
+
 #: src/main/agents/delegationIpc.ts
 msgid "Open delegations in the main Sotto window."
 msgstr "Open delegations in the main Sotto window."

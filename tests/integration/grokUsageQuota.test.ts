@@ -1,17 +1,26 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { afterEach, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import type { RecordedRpc } from '../fixtures/adapterFixture'
 import { grokFixture, LOST_REPLY_DEADLINE_MS } from '../fixtures/fakeGrokThreadFixture'
+import { builtGitLauncherWorker } from '../fixtures/gitLauncherWorker'
+import { mainThreadLaunches, resetMainThreadLaunches } from '../fixtures/mainThreadLaunches'
+import { useGitLauncher } from '../../src/main/agents/gitLauncher'
 import type { GrokAcpOptions } from '../../src/main/agents/grok'
+
+vi.mock('node:child_process', async importOriginal => (await import('../fixtures/mainThreadLaunches')).timingLaunches(await importOriginal()))
 
 // Usage reads Grok's limits through `_x.ai/billing` on a signed-in Grok process (ADR-0083). Starting a process held
 // main for seconds on a busy Windows computer (#1456), so a refresh asks a thread's process that is already running and
 // signed in. With none running, a refresh Usage makes on its own when it opens reuses a recent reading, and Read again
-// still reads afresh. No quota read creates, loads or prompts a session.
+// still reads afresh. A process started for the question starts on the Git launcher's worker thread, as it does in
+// the app, so every read here goes the way the app's does. No quota read creates, loads or prompts a session.
 type Recorded = RecordedRpc & { process?: number }
 let f: Awaited<ReturnType<typeof grokFixture>> | undefined
+let worker: Awaited<ReturnType<typeof builtGitLauncherWorker>>
+beforeAll(async () => { worker = await builtGitLauncherWorker(); await useGitLauncher(worker.path) }, 60_000)
 afterEach(async () => { await f?.cleanup(); f = undefined })
+afterAll(async () => { await useGitLauncher(null); await worker?.dispose() })
 
 const records = async () => (await f!.driver.requests()) as Recorded[]
 const started = async () => (await records()).filter(record => record.method === 'fixture/process').length
@@ -68,6 +77,31 @@ it('reuses a recent reading for a refresh Usage makes on its own, and reads afre
   expect((await quota(true)).windows[0]).toMatchObject({ usedPercent: 64 })
   expect(await started()).toBe(processes + 2)
   expect(await sessionCalls()).toBe(0)
+})
+
+it('starts the process it asks on the launcher\'s worker thread, never on this one', async () => {
+  // On Windows a process start runs on the thread that asks, and on Electron's main thread it holds the window: the
+  // first start of Grok Build in a while held main for over a second (ADR-0083). This thread stands in for main here.
+  await open()
+  const processes = await started()
+  resetMainThreadLaunches()
+  expect(await quota(true)).toMatchObject({ providerId: 'grok', status: 'available' })
+  expect(await quota(true)).toMatchObject({ providerId: 'grok', status: 'available' })
+  // Two processes were started and asked, and neither was started from this thread.
+  expect(await started()).toBe(processes + 2)
+  expect(await billing()).toHaveLength(2)
+  expect(mainThreadLaunches.count).toBe(0)
+})
+
+it('stops a process still asking when Grok disconnects, though it was started off this thread', async () => {
+  await open()
+  await f!.script({ holdBilling: true })
+  const read = quota(true)
+  await expect.poll(async () => (await records()).some(record => record.method === 'fixture/billing-held')).toBe(true)
+  f!.host.disconnect()
+  expect(await read).toMatchObject({ providerId: 'grok', status: 'unavailable', reason: 'not-connected' })
+  // Every Grok process this connection started has exited, the asking one included.
+  await f!.host.closed()
 })
 
 it('reports a refused read as read-failed without harming the live process it asked', async () => {

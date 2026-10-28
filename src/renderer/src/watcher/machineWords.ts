@@ -3,6 +3,7 @@ import { plural, t } from '@lingui/core/macro'
 import type { MachineEntry, MachineProblem } from '../../../shared/machineLine'
 import { unknownReason } from '../../../shared/machineLine'
 import { WORKING_THREADS_QUIET_MAX } from '../../../shared/workingThreads'
+import { checksWaitingWords } from './checkQueueWords'
 
 /**
  * The machines line's words, and its panel's and Settings', in the interface language (ADR-0123). What the line says is
@@ -32,41 +33,49 @@ export function problemWords(problem: MachineProblem): string {
   }
 }
 
-/** "3 working", or "3 working, 1 starting" while work placed there has not begun; nothing for a machine not connected. */
-export function countWords(entry: MachineEntry, withStarting = true): string {
+/**
+ * "3 working", or "3 working, 1 starting" while work placed there has not begun; nothing for a machine not connected. With
+ * checks waiting their turn there (#1312, Owl only), "3 working, 2 checks waiting", and "2 waiting" on the narrow line.
+ */
+export function countWords(entry: MachineEntry, withStarting = true, waiting = 0): string {
   if (!entry.connected) return ''
   const working = entry.working, starting = entry.starting
   const parts = [plural(working, { one: '# working', other: '# working' })]
   if (withStarting && starting > 0) parts.push(plural(starting, { one: '# starting', other: '# starting' }))
+  if (waiting > 0) parts.push(checksWaitingWords(waiting, !withStarting))
   return listWords(parts)
 }
 
 /** What follows a machine's name on the line: "3 working, busy", "not connected". */
-export function tailWords(entry: MachineEntry, withStarting = true): string {
-  return listWords([countWords(entry, withStarting), ...entry.problems.map(problemWords)])
+export function tailWords(entry: MachineEntry, withStarting = true, waiting = 0): string {
+  return listWords([countWords(entry, withStarting, waiting), ...entry.problems.map(problemWords)])
 }
 
 /** One machine as the line reads it, in words: "forge 3 working, busy", "forge not connected". */
-export function lineText(entry: MachineEntry, withStarting = true): string {
-  const name = machineName(entry), tail = tailWords(entry, withStarting)
+export function lineText(entry: MachineEntry, withStarting = true, waiting = 0): string {
+  const name = machineName(entry), tail = tailWords(entry, withStarting, waiting)
   return tail ? t`${name} ${tail}` : name
 }
 
 /** What a press on a machine's name does, with what the line shows of it first, for its accessible name. */
-export function machineLabel(entry: MachineEntry, withStarting = true): string {
-  const shown = listWords([machineName(entry), countWords(entry, withStarting), ...entry.problems.map(problemWords)])
+export function machineLabel(entry: MachineEntry, withStarting = true, waiting = 0): string {
+  const shown = listWords([machineName(entry), countWords(entry, withStarting, waiting), ...entry.problems.map(problemWords)])
   const name = entry.name
   return entry.thisComputer ? t`${shown}. Show this computer’s load and what runs there.` : t`${shown}. Show ${name}’s load and what runs there.`
 }
 
-/** The short line when nothing is wrong on any machine: "3 machines, 5 working", the press that shows every machine. */
-export function calmWords(entries: readonly MachineEntry[]): string {
+/**
+ * The short line when nothing is wrong on any machine: "3 machines, 5 working", the press that shows every machine. With
+ * checks waiting on any of them (#1312, Owl only), "3 machines, 5 working, 2 waiting".
+ */
+export function calmWords(entries: readonly MachineEntry[], waiting = 0): string {
   const machines = entries.length, working = entries.reduce((sum, entry) => sum + entry.working, 0)
-  return listWords([plural(machines, { one: '# machine', other: '# machines' }), plural(working, { one: '# working', other: '# working' })])
+  return listWords([plural(machines, { one: '# machine', other: '# machines' }), plural(working, { one: '# working', other: '# working' }),
+    ...waiting > 0 ? [checksWaitingWords(waiting, true)] : []])
 }
 /** The calm line's accessible name. */
-export function calmLabel(entries: readonly MachineEntry[]): string {
-  const calm = calmWords(entries)
+export function calmLabel(entries: readonly MachineEntry[], waiting = 0): string {
+  const calm = calmWords(entries, waiting)
   return t`${calm}, nothing wrong. Show every machine`
 }
 /** "2 more", the press that shows every machine the short line left out. */

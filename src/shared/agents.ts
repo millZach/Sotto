@@ -750,8 +750,8 @@ export type ClientChannel = z.infer<typeof clientChannelSchema>
 /**
  * Why an update did not finish, as a code the tile words for itself: `download` when the installer could not fetch the
  * new version, `install-step` when mise installed Grok Build but its package's own install step did not finish,
- * `not-listed` when mise's version list did not have the published version even after Sotto cleared mise's cache of it,
- * so nothing was installed, and `installer` for anything else the installer refused.
+ * `not-listed` when mise's version list did not have the published version even after Sotto cleared mise's cache of it
+ * and either held another build of it, so nothing was installed, or installing it anyway failed, and `installer` for anything else the installer refused.
  */
 export const clientUpdateFailureSchema = z.enum(['download', 'install-step', 'installer', 'not-listed'])
 export type ClientUpdateFailure = z.infer<typeof clientUpdateFailureSchema>
