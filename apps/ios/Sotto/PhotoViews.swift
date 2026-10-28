@@ -222,6 +222,7 @@ private struct DraftPhotoView: View {
     let count: Int
     let locked: Bool
     let remove: () -> Void
+    @State private var removed = 0
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Group {
@@ -235,12 +236,15 @@ private struct DraftPhotoView: View {
             .accessibilityElement()
             .accessibilityLabel("Photo \(number) of \(count)")
             .accessibilityValue(photo.preparing ? String(localized: "Getting it ready", comment: "Accessibility value: a photo in the reply box is being prepared.") : photo.staging ? String(localized: "Sending it to the computer", comment: "Accessibility value: a photo in the reply box is being sent to the computer.") : String(localized: "Ready", comment: "Accessibility value: a photo in the reply box is ready to send."))
-            Button(action: remove) {
+            Button {
+                removed += 1
+                remove()
+            } label: {
                 Image(systemName: "xmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Palette.canvas)
                     .frame(width: 22, height: 22).background(Palette.ink.opacity(0.85), in: Circle())
                     .frame(width: 44, height: 44, alignment: .topTrailing).padding(4).contentShape(Rectangle())
             }
-            .buttonStyle(.plain).offset(x: 4, y: -4).disabled(locked)
+            .buttonStyle(.plain).sensoryFeedback(.impact(flexibility: .soft), trigger: removed).offset(x: 4, y: -4).disabled(locked)
             .accessibilityLabel("Remove photo \(number)")
         }
     }
