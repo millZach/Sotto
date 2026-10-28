@@ -247,6 +247,9 @@ export class DesktopBranchMoves {
     return { pinned: pinned.pinned, branch: pinned.source.branch, ...pinned.source.snapshot ? { snapshot: pinned.source.snapshot } : {} }
   }
 
+  /** Lets go of a check snapshot pinned here once the start that would send it has its answer, or was never asked. */
+  unpin(pinned: string): void { this.options.bundles.unpin(pinned) }
+
   /** Lets go of a move landed in a project on this computer for a start that was then refused, so no ref holds its commits. */
   async forgetHere(input: { readonly projectId: string; readonly moveId: string }): Promise<void> {
     const repository = this.options.folders.projectFolder(input.projectId)

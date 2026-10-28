@@ -89,6 +89,8 @@ export class HostDelegationRelay {
    * that carries them is worded, as delegation keeps none on disk (ADR-0105 decision 6).
    */
   private readonly replies = new Map<string, NonNullable<DelegationNewsDetail['reply']>>()
+  /** This machine's own answers for a start or brief whose desktop answer was lost, so a caller can tell them from the desktop's. */
+  private readonly lost = new WeakSet<object>()
   /** Starts still waiting for the desktop's answer, by the thread that asked: news may name what they made before they hear. */
   private readonly starting = new Map<string, Set<Promise<unknown>>>()
   private closed = false
@@ -206,6 +208,11 @@ export class HostDelegationRelay {
     return await this.asking({ id: relayId, relayId, delegatingThreadId: callerId, work, action: 'send', thread, outcome: 'working', createdAt: time, updatedAt: time },
       { type: 'send', relayId, threadId: callerId, ...ask, input: { ...ask.input, thread } }, ask.waitMs)
   }
+  /**
+   * Whether `answer` is this machine's own word that the desktop's answer was lost, so what the desktop did is not known
+   * yet, rather than the desktop's answer (#1316 part 2).
+   */
+  answerLost(answer: object): boolean { return this.lost.has(answer) }
   private async asking(record: RelayedRecord, body: DelegationRelayAsk, waitMs: number): Promise<Record<string, unknown>> {
     const callerId = record.delegatingThreadId
     this.records.push(record)
@@ -223,8 +230,10 @@ export class HostDelegationRelay {
       this.options.log?.('delegation-relay-answer-lost')
       this.update(record, saved => { saved.outcome = 'unknown'; saved.told = 'unknown'; saved.unread = true })
       await this.persist()
-      return { status: 'ok', delegation: { id: record.id, ...record.thread ? { thread: record.thread } : {}, work: record.work, action: record.action ?? 'start', outcome: 'unknown',
+      const unknown = { status: 'ok', delegation: { id: record.id, ...record.thread ? { thread: record.thread } : {}, work: record.work, action: record.action ?? 'start', outcome: 'unknown',
         note: record.action === 'send' ? LOST_SEND : LOST_START, createdAt: record.createdAt } }
+      this.lost.add(unknown)
+      return unknown
     }
     const delegation = isObject(answer.delegation) ? answer.delegation : undefined
     if (answer.status !== 'ok' || !delegation || typeof delegation.id !== 'string') { this.forget(record); await this.persist(); return answer }

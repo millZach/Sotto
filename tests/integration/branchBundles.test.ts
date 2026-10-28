@@ -391,5 +391,8 @@ describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8
     // A pin is the working copy's own: another, or one never pinned, is refused rather than snapshotted afresh.
     expect(await laptop.sourceOf(machines.forge, true, pinned.pinned)).toEqual({ type: 'refused', reason: 'failed', message: branchMoveWords.snapshotGone })
     expect(await laptop.sourceOf(machines.laptop, true, randomUUID())).toEqual({ type: 'refused', reason: 'failed', message: branchMoveWords.snapshotGone })
+    // Once its move has its answer it is let go of, so finished pins never crowd out one still waiting for its move.
+    laptop.unpin(pinned.pinned)
+    expect(await laptop.sourceOf(machines.laptop, true, pinned.pinned)).toEqual({ type: 'refused', reason: 'failed', message: branchMoveWords.snapshotGone })
   })
 })

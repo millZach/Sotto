@@ -96,6 +96,9 @@ describe('the host side of the relay', () => {
     const answer = await starting
     const relayId = (answer.delegation as { id: string }).id
     expect(answer).toMatchObject({ status: 'ok', delegation: { outcome: 'unknown', note: expect.stringContaining('Nothing will be sent again') } })
+    // Its own word that the answer was lost, told apart from any answer the desktop gave (#1316 part 2).
+    expect(relay.answerLost(answer)).toBe(true)
+    expect(relay.answerLost({ ...answer })).toBe(false)
     // While away, a read says it is the last outcome read, and asks nothing.
     expect(await relay.read('thread-a', relayId)).toMatchObject({ status: 'ok', delegation: { id: relayId, outcome: 'unknown', note: expect.stringContaining('last read') } })
     // Back: the open delegation is read by its relay ID, exactly once, and the thread hears what it was.

@@ -36,8 +36,8 @@ const snapshot3 = { untracked: ['a.txt', 'b.txt', 'c.txt'], untrackedCount: 3 }
 
 /** A fake of the desktop's branch moves: records each move and each let-go, and lands every branch as feat/x. */
 function moves(refuse?: string) {
-  const asked: unknown[] = [], forgotten: unknown[] = [], pinned: string[] = []
-  return { asked, forgotten, moves: {
+  const asked: unknown[] = [], forgotten: unknown[] = [], pinned: string[] = [], unpinned: string[] = []
+  return { asked, forgotten, unpinned, moves: {
     forStart: async (input: { readonly snapshot: boolean; readonly moveId: string }) => {
       asked.push(input)
       return refuse ? { type: 'refused' as const, reason: 'uncommitted' as const, message: refuse }
@@ -49,6 +49,7 @@ function moves(refuse?: string) {
       pinned.push(threadId)
       return refuse ? { type: 'refused' as const, reason: 'uncommitted' as const, message: refuse } : { pinned: PIN, branch: 'feat/x', snapshot: snapshot3 }
     },
+    unpin: (pin: string) => { unpinned.push(pin) },
   } as unknown as NonNullable<DelegationServiceOptions['branchMoves']>, pinned }
 }
 /** A fake of the desktop's delegations on its paired hosts, answering each start as `answer` says. */
@@ -302,9 +303,10 @@ describe('a host\'s start from a branch the desktop landed there', () => {
 
 describe('a thread on a host starting elsewhere from its branch, through the desktop', () => {
   let clock = '9:15 AM'
-  const relayOf = (carries: boolean, reachable = true) => {
-    const asked: Record<string, unknown>[] = []
-    const relay = { start: async (_callerId: string, _work: string, ask: Record<string, unknown>) => { asked.push(ask); return { status: 'ok', delegation: { id: THERE, outcome: 'working' } } },
+  const relayOf = (carries: boolean, reachable = true, answer: () => Record<string, unknown> = () => ({ status: 'ok', delegation: { id: THERE, outcome: 'working' } })) => {
+    const asked: Record<string, unknown>[] = [], lost = new WeakSet<object>()
+    const relay = { start: async (_callerId: string, _work: string, ask: Record<string, unknown>) => { asked.push(ask); const given = answer(); if (given.lost) lost.add(given); return given },
+      answerLost: (given: object) => lost.has(given),
       holds: () => false, holdsThread: () => false, read: async () => ({}), cancel: async () => ({}), list: () => [], useDelivery: () => undefined, awayWords: () => relayAwayWords('forge'),
       detail: () => undefined, send: async () => ({}), reachable: () => reachable, carriesBranches: () => carries } as unknown as NonNullable<DelegationServiceOptions['relay']>
     return { relay, asked }
@@ -338,6 +340,16 @@ describe('a thread on a host starting elsewhere from its branch, through the des
     expect(r.asked).toEqual([expect.objectContaining({ pinned: PIN, takenAt: '9:16 AM', input: expect.objectContaining({ from_my_branch: true, test_run: true }) })])
     expect(f.checks.view()).toEqual([])
     expect(delegationRelayAskSchema.safeParse({ type: 'start', relayId: THERE, threadId: 'parent', ...r.asked[0] }).success).toBe(true)
+  })
+
+  it('lets go of the pinned snapshot once the desktop answers, used or refused, and keeps it while the answer is lost (Sol re-check)', async () => {
+    for (const [answer, kept] of [[{ status: 'ok', delegation: { id: THERE, outcome: 'working' } }, false], [{ status: 'refused', code: 'PERMISSION_TOO_WIDE', message: 'Too wide.' }, false],
+      [{ status: 'ok', delegation: { id: THERE, outcome: 'unknown' }, lost: true }, true]] as const) {
+      const r = relayOf(true, true, () => ({ ...answer })), m = moves()
+      const f = await forge(r.relay, m.moves)
+      await f.delegation.delegate('parent', { ...start, machine: DESKTOP, from_my_branch: true, test_run: true })
+      expect(m.unpinned, JSON.stringify(answer)).toEqual(kept ? [] : [PIN])
+    }
   })
 
   it('refuses a check whose snapshot cannot be taken on forge as it asks, and asks the desktop nothing', async () => {

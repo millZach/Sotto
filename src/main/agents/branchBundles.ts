@@ -210,6 +210,12 @@ export class BranchBundles {
     }
     return { pinned, source }
   }
+  /** Lets go of a pinned snapshot whose move has ended or will never be asked for (#1316 part 2). */
+  unpin(pinned: string): void {
+    const held = this.pins.get(pinned)
+    if (!held) return
+    clearTimeout(held.timer); this.pins.delete(pinned)
+  }
 
   /**
    * A test run's source (ADR-0105 decision 8): the branch and its commit when the working copy is clean, and otherwise a

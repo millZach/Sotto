@@ -115,7 +115,7 @@ export interface DelegationServiceOptions {
    * is on: the branch, or for a test run a snapshot of uncommitted work too, lands in the project's incoming ref for the
    * new thread's worktree, and is let go again when the start is refused before it runs.
    */
-  readonly branchMoves?: Pick<DesktopBranchMoves, 'forStart' | 'forgetHere' | 'forget' | 'pin'>
+  readonly branchMoves?: Pick<DesktopBranchMoves, 'forStart' | 'forgetHere' | 'forget' | 'pin' | 'unpin'>
   /**
    * This machine's checks (#1312), present only while Work across machines is on and `test_run` is offered: a new thread
    * started as a check waits in the queue until the check ahead of it on this machine has finished, then starts. Absent, a
@@ -155,7 +155,7 @@ export interface DelegationServiceOptions {
    * A headless host's side of the relay (#1316, Owl `cross-machine-work`): a thread here delegates to a thread on another
    * machine through the desktop that relays, while one is connected.
    */
-  readonly relay?: Pick<HostDelegationRelay, 'start' | 'send' | 'holds' | 'holdsThread' | 'read' | 'cancel' | 'list' | 'useDelivery' | 'awayWords' | 'detail' | 'reachable' | 'carriesBranches'>
+  readonly relay?: Pick<HostDelegationRelay, 'start' | 'send' | 'holds' | 'holdsThread' | 'read' | 'cancel' | 'list' | 'useDelivery' | 'awayWords' | 'detail' | 'reachable' | 'carriesBranches' | 'answerLost'>
   /**
    * The desktop's delegations on its paired hosts (#1316 part 2, Owl `cross-machine-work`): a start placed on another machine
    * goes to that machine's host, which admits it with its own delegation and keeps its record, and every later brief, read
@@ -1002,9 +1002,14 @@ export class DelegationService {
         runtimeMode: asked.own, projectId: asked.caller.projectId, ...(machine ? { machine } : {}), ...(os ? { os } : {}), input: { ...asked.rest, ...branching ? carried : {} },
         waitMs: asked.waitMs, ...pinned ? { pinned } : {}, ...takenAt ? { takenAt } : {} })
     } catch (error) {
+      // Nothing reached the desktop, so nothing will send the pinned snapshot.
+      if (pinned) this.options.branchMoves?.unpin(pinned)
       if (error instanceof RelayUnanswered && error.stage === 'away') return await this.refused(threadId, input, delegationRefusal('MACHINE_UNAVAILABLE', relay.awayWords()), true)
       return delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not start this delegation. Nothing was started.')
     }
+    // The desktop answered, so its move of the pinned snapshot has ended, used or not. One whose answer was lost may still
+    // be moving it, so the pin waits for its expiry.
+    if (pinned && !relay.answerLost(answer)) this.options.branchMoves?.unpin(pinned)
     if (answer.status !== 'refused') return answer
     return await this.refusedElsewhere(threadId, input, answer, 'This computer could not start this delegation. Nothing was started.', true)
   }
