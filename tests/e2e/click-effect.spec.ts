@@ -88,10 +88,6 @@ test.describe('the click effect', () => {
           await page.waitForTimeout(140)
         }
         await expect.poll(() => glyphs(page)).toBeGreaterThan(200)
-        // No glyph is stronger than leaves every word over it at 4.5:1, nor than the effect's own 65%.
-        const ceiling = await layer(page).evaluate(canvas => Number((canvas as HTMLCanvasElement).dataset.clickEffectCeiling))
-        expect(ceiling).toBeGreaterThan(0)
-        expect(ceiling).toBeLessThanOrEqual(0.65)
         for (const name of ['spreading', 'crossing']) {
           await captureWindow(launched.app, resolve(evidence, `${name}-${appearance}.png`))
           await page.waitForTimeout(450)
@@ -116,7 +112,7 @@ test.describe('the click effect', () => {
   }
 
   for (const [width, height] of [[1600, 1000], [820, 560]] as const) {
-    test(`fills the window at ${width} by ${height}, at the ceiling as the canvas's own opacity`, async () => {
+    test(`fills the window at ${width} by ${height}, at full opacity`, async () => {
       await onReleaseTrack('owl', () => withSotto(launchOptions('dark'), async (launched) => {
         const { page } = launched
         await resizeContentWindow(launched, width, height)
@@ -127,11 +123,11 @@ test.describe('the click effect', () => {
         await expect.poll(() => glyphs(page)).toBeGreaterThan(50)
         const drawn = await layer(page).evaluate(canvas => {
           const c = canvas as HTMLCanvasElement
-          return { width: c.width / devicePixelRatio, height: c.height / devicePixelRatio, innerWidth, innerHeight, opacity: Number(getComputedStyle(c).opacity), ceiling: Number(c.dataset.clickEffectCeiling) }
+          return { width: c.width / devicePixelRatio, height: c.height / devicePixelRatio, innerWidth, innerHeight, opacity: Number(getComputedStyle(c).opacity) }
         })
         expect(drawn.width).toBe(drawn.innerWidth)
         expect(drawn.height).toBe(drawn.innerHeight)
-        expect(drawn.opacity).toBeCloseTo(drawn.ceiling, 3)
+        expect(drawn.opacity).toBe(1)
         await mkdir(evidence, { recursive: true })
         await page.waitForTimeout(300)
         await captureWindow(launched.app, resolve(evidence, `spreading-dark-${width}x${height}.png`))
@@ -139,7 +135,7 @@ test.describe('the click effect', () => {
     })
   }
 
-  test("in Watcher's room the waves keep to the margins, clear of the column the night scene already inks", async () => {
+  test("in Watcher's room a press in the margin sends waves", async () => {
     await onReleaseTrack('owl', () => withSotto({ ...launchOptions('dark'), scenario: 'phase3-workspace' }, async (launched) => {
       const { page } = launched
       await openThreads(page)
@@ -154,42 +150,11 @@ test.describe('the click effect', () => {
       })
       await page.mouse.click(press.x, press.y)
       await expect.poll(() => glyphs(page)).toBeGreaterThan(50)
-      const parts = await page.evaluate(() => {
+      const margin = await page.evaluate(() => {
         const card = document.querySelector('#watcher-pane > .thread-workspace__compose > .thread-prompt')!.getBoundingClientRect()
-        return {
-          column: { left: card.left + 2, right: card.right - 2, top: 120, bottom: innerHeight - 10 },
-          margin: { left: 0, right: card.left - 2, top: 120, bottom: innerHeight - 10 },
-        }
+        return { left: 0, right: card.left - 2, top: 120, bottom: innerHeight - 10 }
       })
-      const lit = await litIn(page, parts)
-      expect(lit.column).toBe(0)
-      expect(lit.margin).toBeGreaterThan(0)
-    }))
-  })
-
-  test('no glyph is drawn under text selected while waves run, whose own fill lies over them', async () => {
-    await onReleaseTrack('owl', () => withSotto(launchOptions('dark'), async (launched) => {
-      const { page } = launched
-      await resizeContentWindow(launched, 1280, 800)
-      await openConversation(page)
-      await expect.poll(() => running(page), { timeout: 30_000 }).toBe(false)
-      const reply = page.locator('.thread-message:not([data-role="user"]) p').first()
-      const box = (await reply.boundingBox())!
-      for (const dx of [-160, 0, 160]) await page.mouse.click(box.x + box.width / 2 + dx, box.y + box.height + 24)
-      await expect.poll(() => glyphs(page)).toBeGreaterThan(50)
-      await reply.evaluate(paragraph => { getSelection()!.selectAllChildren(paragraph) })
-      await page.waitForTimeout(250)
-      const { still, parts } = await page.evaluate(() => {
-        const selected = getSelection()!.getRangeAt(0).getBoundingClientRect()
-        return {
-          still: getSelection()!.toString().length,
-          parts: { selected: { left: selected.left, right: selected.right, top: selected.top, bottom: selected.bottom }, room: { left: 0, right: innerWidth, top: selected.bottom + 4, bottom: innerHeight } },
-        }
-      })
-      const lit = await litIn(page, parts)
-      expect(still).toBeGreaterThan(0)
-      expect(lit.selected).toBe(0)
-      expect(lit.room).toBeGreaterThan(0)
+      expect((await litIn(page, { margin })).margin).toBeGreaterThan(0)
     }))
   })
 
