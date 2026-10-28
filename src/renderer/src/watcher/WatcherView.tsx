@@ -155,8 +155,8 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
   const modelName = model?.name
   const accountProvider = providerName ?? model?.provider
   return <>
-    <div className="thread-transcript">
-      <div className="thread-workspace__transcript watcher-first">
+    <div className="thread-transcript" data-room-backdrop="">
+      <div className="thread-workspace__transcript watcher-first" data-room-backdrop="">
         <div className="watcher-first__intro">
           <WatcherOwl size={28} className="watcher-first__owl" />
           <h2><Trans>Start Watcher</Trans></h2>
@@ -169,7 +169,7 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
         </div>
       </div>
     </div>
-    {model !== undefined ? <div className="thread-workspace__compose">
+    {model !== undefined ? <div className="thread-workspace__compose" data-room-backdrop="">
       {error ? <p className="agent-error watcher-first__error tt-paragraph" role="alert">{error}</p> : null}
       <form className="thread-prompt" onSubmit={event => { event.preventDefault(); void start() }}>
         <EffortTrace />
@@ -578,12 +578,12 @@ export function WatcherView({ now: fixedNow, update = null }: {
 
   const beside = besideRow !== undefined && state !== null
   const share = shownShare(width, view.share)
-  return <Marked>{marks => <div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`} data-beside={beside || undefined} {...marks}>
-    <section className="thread-workspace" aria-label={t`Watcher’s room`}>
-      <div className="thread-workspace__body" data-panes>
-        <div className="thread-panes">
-          <div ref={area} className="thread-panes__area" style={{ '--watcher-share': share } as CSSProperties}>
-            <Marked>{paneMarks => <section id={WATCHER_PANE_ID} className="thread-pane watcher-pane" {...paneMarks} data-thread-id={watcherId ?? undefined} data-focused={focusedPane === 'watcher' || !beside || undefined}
+  return <Marked>{marks => <div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`} data-beside={beside || undefined} data-room-backdrop="" {...marks}>
+    <section className="thread-workspace" data-room-backdrop="" aria-label={t`Watcher’s room`}>
+      <div className="thread-workspace__body" data-room-backdrop="" data-panes>
+        <div className="thread-panes" data-room-backdrop="">
+          <div ref={area} className="thread-panes__area" data-room-backdrop="" style={{ '--watcher-share': share } as CSSProperties}>
+            <Marked>{paneMarks => <section id={WATCHER_PANE_ID} className="thread-pane watcher-pane" data-room-backdrop="" {...paneMarks} data-thread-id={watcherId ?? undefined} data-focused={focusedPane === 'watcher' || !beside || undefined}
               data-under-controls={!beside || undefined} role="region" aria-label="Watcher"
               onFocusCapture={() => setFocusedPane('watcher')} onPointerDownCapture={() => setFocusedPane('watcher')}>
               <WatcherNightScene shown={sceneShown} held={fixedNow !== undefined} place={app?.settings?.watcherScene} owls={owls} glowing={glowing} onOpen={openThread} onShowAll={showAll} />

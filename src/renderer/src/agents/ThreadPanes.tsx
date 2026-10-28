@@ -377,7 +377,7 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
       layout={shown} size={divider.target.axis === 'columns' ? width : height} label={label} controls={before.map(paneDomId).join(' ')} area={area}
       onLayoutChange={next => change(next)} />])
   })
-  return <div className="thread-panes" ref={container} role="group" aria-label={label} data-split={split || undefined} data-narrow={single || undefined}
+  return <div className="thread-panes" data-room-backdrop="" ref={container} role="group" aria-label={label} data-split={split || undefined} data-narrow={single || undefined}
     data-zoomed={split && layout.zoomed || undefined} data-rows={multiRow || undefined} data-dragging={dragging !== null || moving !== null || undefined} onKeyDown={onAreaKey}>
     {single ? <div className="thread-panes__tabs" role="tablist" aria-label={t`Open panes`}>
       {paneIds.map((id, index) => {
@@ -391,7 +391,7 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
         </button>
       })}
     </div> : null}
-    <div className="thread-panes__area" ref={area} style={areaStyle}>
+    <div className="thread-panes__area" data-room-backdrop="" ref={area} style={areaStyle}>
       {paneIds.map((id, index) => {
         const focused = id === focusedId
         const hidden = single && id !== shownId
@@ -401,7 +401,7 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
         const zooms = !narrow || layout.zoomed
         const name = title(id)
         const controls = (arranges ? 1 : 0) + (placed ? 1 : 0) + (zooms ? 1 : 0) + 1
-        return <React.Fragment key={id}><Marked>{marks => <section id={paneDomId(id)} className="thread-pane" data-thread-id={id} data-focused={focused || undefined} data-hidden={hidden || undefined}
+        return <React.Fragment key={id}><Marked>{marks => <section id={paneDomId(id)} className="thread-pane" data-room-backdrop="" data-thread-id={id} data-focused={focused || undefined} data-hidden={hidden || undefined}
           data-placed={placed !== null || undefined} data-under-controls={index === underControls || undefined} data-controls={split ? controls : undefined} {...marks}
           aria-label={paneName(id)} role={single ? 'tabpanel' : 'region'} style={placed ? boxStyle(`pane-${index}`) : undefined}
           // A hidden pane stays mounted for its scroll position and draft, but out of reach.
