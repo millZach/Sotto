@@ -403,6 +403,16 @@ textarea.tt-input {
   transition: background-color 120ms ease, border-color 120ms ease;
 }
 
+/* Keyboard focus rings the switch, as macOS does, not the row of words. */
+.tt-toggle:focus-visible {
+  outline: none;
+}
+
+.tt-toggle:focus-visible .tt-toggle__track {
+  outline: 3px solid var(--tt-focus-ring);
+  outline-offset: 2px;
+}
+
 .tt-toggle__thumb {
   position: absolute;
   top: 2px;
