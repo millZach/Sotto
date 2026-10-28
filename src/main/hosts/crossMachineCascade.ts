@@ -101,8 +101,8 @@ export function stopUnreachedWords(left: readonly { readonly name: string; reado
 /**
  * What Stop says of delegated threads on machines that are connected but did not say they stopped (#1316 part 3): a cancel
  * the machine refused, one that could not name its delegation, or one whose answer was lost. How many on each machine, that
- * they may still be working, and where to see. It never says they stopped, and nothing is sent again. Drafted; to be
- * checked with Zach.
+ * they may still be working, and where to see. It never says they stopped, and nothing is sent again. Settled with Zach
+ * on October 28, 2026.
  */
 export function stopUnconfirmedWords(left: readonly { readonly name: string; readonly count: number }[]): string {
   const parts = left.map(({ name, count }) => plural(count, {
@@ -218,7 +218,7 @@ export class CascadedSettles {
 /**
  * What Settle says when it could not settle delegated threads on other machines (#1316 part 3): how many on each machine,
  * and what to do. A machine not connected, one that refused, and one whose answer was lost read alike: the thread may be
- * open there. Drafted; to be checked with Zach.
+ * open there. Settled with Zach on October 28, 2026.
  */
 export function settleLeftWords(left: readonly { readonly name: string; readonly count: number }[]): string {
   const parts = left.map(({ name, count }) => plural(count, {
@@ -232,7 +232,10 @@ export function settleLeftWords(left: readonly { readonly name: string; readonly
   })
   return [...parts, next].join(' ')
 }
-/** What Restore says when it could not restore delegated threads on other machines that the thread's Settle settled (#1316 part 3). Drafted. */
+/**
+ * What Restore says when it could not restore delegated threads on other machines that the thread's Settle settled (#1316
+ * part 3). Settled with Zach on October 28, 2026.
+ */
 export function restoreLeftWords(left: readonly { readonly name: string; readonly count: number }[]): string {
   const parts = left.map(({ name, count }) => plural(count, {
     one: `Sotto couldn't restore # delegated thread on ${name}.`,
