@@ -112,14 +112,24 @@ describe('a start that names a machine', () => {
         note: 'Studio had no copy of Sotto, so Sotto cloned millZach/Sotto into /Users/zach/Projects/Sotto there.' } })
     // It is asked for the repository and the project's title, never a path or a URL.
     expect(read.setUps).toEqual([[MAC, { repository: sotto, title: 'Sotto' }]])
-    const added = (current: boolean, reason?: string): Machine => forge({ projects: [{ id: 'forge-other', title: 'Other' }],
-      setUp: { ok: true, projectId: 'forge-sotto', title: 'Sotto', path: '/home/zach/Projects/Sotto', how: 'added', current, ...reason ? { reason } : {} } })
+    const added = (current: boolean, reason?: string, fetched?: string): Machine => forge({ projects: [{ id: 'forge-other', title: 'Other' }],
+      setUp: { ok: true, projectId: 'forge-sotto', title: 'Sotto', path: '/home/zach/Projects/Sotto', how: 'added', current, ...reason ? { reason } : {}, ...fetched ? { fetched } : {} } })
     expect((await placeWorker({ machine: FORGE }, 'this-computer', onLaptop, sources([laptop(), added(true)]))).receipt).toMatchObject({
       setUp: { how: 'added', path: '/home/zach/Projects/Sotto', current: true },
       note: 'Sotto added the copy of Sotto already at /home/zach/Projects/Sotto to forge\'s projects and brought it up to date.' })
     expect((await placeWorker({ machine: FORGE }, 'this-computer', onLaptop, sources([laptop(), added(false, 'it has uncommitted changes')]))).receipt).toMatchObject({
       setUp: { how: 'added', current: false },
       note: 'Sotto added the copy of Sotto already at /home/zach/Projects/Sotto to forge\'s projects; it was left as it was because it has uncommitted changes, so the worker starts from that checkout\'s commit.' })
+    // Fetched all the same: a new worktree starts from origin's branch as just fetched, and the checkout stays as it is (Zach, October 27).
+    const fresh = await placeWorker({ machine: FORGE, newWorktree: true }, 'this-computer', onLaptop, sources([laptop(), added(false, 'it is on another branch', 'main')]))
+    expect(fresh.fromOrigin).toBe('main')
+    expect(fresh.receipt).toMatchObject({ setUp: { how: 'added', current: false, startsFrom: 'origin/main' },
+      note: 'Sotto added the copy of Sotto already at /home/zach/Projects/Sotto to forge\'s projects; it was left as it was because it is on another branch, so the worker\'s new worktree starts from origin/main as just fetched.' })
+    // A worker in the checkout itself, or one whose fetch failed, starts from the checkout's commit.
+    const shared = await placeWorker({ machine: FORGE }, 'this-computer', onLaptop, sources([laptop(), added(false, 'it is on another branch', 'main')]))
+    expect(shared.fromOrigin).toBeUndefined()
+    expect(shared.receipt.note).toMatch(/so the worker starts from that checkout's commit\.$/u)
+    expect((await placeWorker({ machine: FORGE, newWorktree: true }, 'this-computer', onLaptop, sources([laptop(), added(false, 'Sotto could not fetch it from GitHub')]))).fromOrigin).toBeUndefined()
   })
   it('joins the sentence of the setup to the one saying why Sotto placed it there', async () => {
     const cloned: ProjectSetupResult = { ok: true, projectId: 'mac-sotto', title: 'Sotto', path: '/Users/zach/Projects/Sotto', how: 'cloned', current: true }

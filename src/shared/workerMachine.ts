@@ -42,7 +42,9 @@ export type NewWorkersStart = z.infer<typeof newWorkersStartSchema>
  */
 export const workerPlacementReceiptSchema = z.object({ hostId: z.string().min(1).max(512), name: z.string().min(1).max(200),
   awayFromDefault: z.boolean(), defaultName: z.string().min(1).max(200).optional(), note: z.string().min(1).max(2_000).optional(),
-  setUp: z.object({ how: z.enum(['added', 'cloned']), path: z.string().min(1).max(4_096), current: z.boolean() }).strict().optional() }).strict()
+  setUp: z.object({ how: z.enum(['added', 'cloned']), path: z.string().min(1).max(4_096), current: z.boolean(),
+    // The fetched default branch a new worktree starts from when the checkout itself was left behind (#1690).
+    startsFrom: z.string().min(1).max(255).optional() }).strict().optional() }).strict()
 export type WorkerPlacementReceipt = z.infer<typeof workerPlacementReceiptSchema>
 
 /**
@@ -75,12 +77,15 @@ export type ProjectSetupRequest = z.infer<typeof projectSetupRequestSchema>
  * What setting up a copy did. `added`: a clone already in the machine's usual projects folder became a project, brought up
  * to date when nothing stood in the way. `cloned`: Sotto cloned the repository there. `current` says whether the copy is at
  * its default branch's newest commit on GitHub, and `reason` why not, as the end of a sentence ("it has uncommitted
- * changes"). A refusal says in `message`, in plain words, what happened and what to do; nothing was started and nothing of
- * the user's removed. Read leniently, as project origins are, so a later host's additions still read.
+ * changes"). `fetched` names `origin`'s default branch when a copy left behind was fetched all the same, so a new worktree
+ * can start from what was fetched without moving the checkout. A refusal says in `message`, in plain words, what happened
+ * and what to do; nothing was started and nothing of the user's removed. Read leniently, as project origins are, so a later
+ * host's additions still read.
  */
 export const projectSetupResultSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(true), projectId: z.string().min(1).max(6_144), title: z.string().min(1).max(512), path: z.string().min(1).max(4_096),
-    how: z.enum(['added', 'cloned']), current: z.boolean(), reason: z.string().min(1).max(500).optional().catch(undefined) }),
+    how: z.enum(['added', 'cloned']), current: z.boolean(), reason: z.string().min(1).max(500).optional().catch(undefined),
+    fetched: z.string().min(1).max(255).optional().catch(undefined) }),
   z.object({ ok: z.literal(false), message: z.string().min(1).max(2_000) }),
 ])
 export type ProjectSetupResult = z.infer<typeof projectSetupResultSchema>

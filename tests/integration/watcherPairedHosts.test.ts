@@ -1819,6 +1819,8 @@ it('refuses a start from a thread with uncommitted work in the move’s words, a
   expect(await f.run('stash', 'list')).toBe('')
   // Watcher never names a move itself.
   expect(await f.startHere({ ...f.staysHere(), workingCopy: { kind: 'new-worktree' }, fromMove: randomUUID() })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+  // Nor the fetched branch a copy Sotto set up starts from (#1690).
+  expect(await f.startHere({ ...f.staysHere(), workingCopy: { kind: 'new-worktree' }, fromOrigin: 'main' })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
 })
 
 for (const where of ['paired', 'here'] as const) {

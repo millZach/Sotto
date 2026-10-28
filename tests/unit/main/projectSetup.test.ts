@@ -67,13 +67,15 @@ describe('setting up a copy of a project (#1690)', () => {
   it('leaves a copy with uncommitted changes or on another branch as it was, and says why', async () => {
     const path = await userClone('Sotto')
     const before = await git(path, 'rev-parse', 'HEAD')
-    await moveGitHubOn()
+    const newest = await moveGitHubOn()
     await writeFile(join(path, 'README.md'), '# Mine\n')
-    expect(await copies().setup.setUp({ repository, title: 'Sotto' })).toMatchObject({ ok: true, how: 'added', current: false, reason: 'it has uncommitted changes' })
+    // Fetched all the same, so a new worktree can start from origin/main without the checkout moving.
+    expect(await copies().setup.setUp({ repository, title: 'Sotto' })).toMatchObject({ ok: true, how: 'added', current: false, reason: 'it has uncommitted changes', fetched: 'main' })
     expect(await git(path, 'rev-parse', 'HEAD')).toBe(before)
+    expect(await git(path, 'rev-parse', 'refs/remotes/origin/main')).toBe(newest)
     expect(await readFile(join(path, 'README.md'), 'utf8')).toBe('# Mine\n')
     await git(path, 'switch', '-q', '-c', 'feat/mine')
-    expect(await copies().setup.setUp({ repository, title: 'Sotto' })).toMatchObject({ ok: true, current: false, reason: 'it is on another branch' })
+    expect(await copies().setup.setUp({ repository, title: 'Sotto' })).toMatchObject({ ok: true, current: false, reason: 'it is on another branch', fetched: 'main' })
     expect(await git(path, 'symbolic-ref', '--short', 'HEAD')).toBe('feat/mine')
   }, 60_000)
 

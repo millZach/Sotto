@@ -1271,9 +1271,9 @@ export class WatcherService implements WatcherControlHooks {
    * its project is, as before. A retry of a recorded start is placed nowhere again: it reads the first call's receipt.
    */
   private async placeStart(input: WatcherToolInput<'start_thread'>): Promise<PlacedStart | undefined> {
-    const { machine, os, fromThread, testRun, fromMove, madeFrom, check, ...start } = input
+    const { machine, os, fromThread, testRun, fromMove, madeFrom, check, fromOrigin, ...start } = input
     // A move and a check's place are Sotto's to name, from the thread and test run a start names, never Watcher's.
-    if (fromMove !== undefined || madeFrom !== undefined || check !== undefined || !this.options.workerMachine && (machine !== undefined || os !== undefined || fromThread !== undefined || testRun !== undefined)) {
+    if (fromMove !== undefined || madeFrom !== undefined || check !== undefined || fromOrigin !== undefined || !this.options.workerMachine && (machine !== undefined || os !== undefined || fromThread !== undefined || testRun !== undefined)) {
       refuse('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema.')
     }
     if (!this.options.workerMachine) return undefined
@@ -1282,7 +1282,7 @@ export class WatcherService implements WatcherControlHooks {
     // A working copy or base branch was read for the project where it was named, and means nothing on another machine: a
     // start that names neither machine nor system stays there, and one that names another is refused.
     const pinnedBy = input.workingCopy.kind === 'existing-worktree' ? 'existing-worktree' as const : input.baseRefChoiceId ? 'base-branch' as const : undefined
-    const placed = await this.placement({ machine, os, pinnedBy }, input.project)
+    const placed = await this.placement({ machine, os, pinnedBy, newWorktree: input.workingCopy.kind === 'new-worktree' && !fromThread }, input.project)
     if ('status' in placed) throw new Refusal(placed)
     if (placed.hostId !== input.project.hostId && (input.workingCopy.kind === 'existing-worktree' || input.baseRefChoiceId)) {
       refuse('WORKING_COPY_CHANGED', `Those working-copy choices are for the project where it was named, not its copy on ${placed.receipt.name}. Start on the shared checkout or a new worktree there, or read that project's choices. Nothing was started.`)
@@ -1299,7 +1299,9 @@ export class WatcherService implements WatcherControlHooks {
     // host's own where the host keeps one. On a host that keeps none it starts at once, as before.
     const queues = placed.hostId === this.hostId() ? this.options.checks !== undefined : this.remote?.hosts().find(host => host.hostId === placed.hostId)?.checks === true
     const queued = testRun === true && queues ? { check: true as const } : {}
-    return { original: input, input: { ...start, project: { hostId: placed.hostId, projectId: placed.projectId }, ...from, ...queued }, placement: placed.receipt }
+    // A copy set up for this start whose checkout stayed behind gives its new worktree the branch it just fetched (#1690).
+    const origin = placed.fromOrigin && !moveId ? { fromOrigin: placed.fromOrigin } : {}
+    return { original: input, input: { ...start, project: { hostId: placed.hostId, projectId: placed.projectId }, ...from, ...queued, ...origin }, placement: placed.receipt }
   }
   /**
    * A start from a thread's branch names a thread Sotto knows, other than Watcher's own, and asks for a new worktree with
@@ -3684,7 +3686,7 @@ export class WatcherService implements WatcherControlHooks {
         const modelId = create.modelId
         if (!modelId) throw new Error('model-missing')
         // Only with Work across machines on: a move named while it is off, by any path, starts nothing.
-        if (create.fromMove && this.options.crossMachine !== true) refuse('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema.')
+        if ((create.fromMove || create.fromOrigin) && this.options.crossMachine !== true) refuse('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema.')
         // A check takes its place in this machine's queue before its snapshot is taken, so one whose snapshot takes longer
         // is never overtaken by one asked after it (#1312). A machine that keeps no queue refuses it.
         const checks = create.check ? this.options.checks : undefined
@@ -3714,7 +3716,9 @@ export class WatcherService implements WatcherControlHooks {
           // Read inside the try: a permission that no longer fits once the branch has landed lets go of its ref too.
           // A start from a moved branch gets a new worktree made from it, on this machine as on a paired host (#1033).
           const copies = create.fromMove ? { workingCopy: 'independent' as const, startFromMove: create.fromMove, ...create.madeFrom ? { madeFrom: create.madeFrom } : {} }
-            : await this.resolveCopies(create)
+            // A copy set up for this start whose checkout stayed behind: its new worktree starts from what was just fetched (#1690).
+            : create.fromOrigin && create.workingCopy.kind === 'new-worktree' ? { workingCopy: 'independent' as const, baseBranch: create.fromOrigin, startFromOrigin: true }
+              : await this.resolveCopies(create)
           // A check this machine queues works in the machine's check worktree when it gets a new worktree (#1312).
           const choices = checks ? { ...copies, check: true as const } : copies
           const limits = this.permissionLimits(this.record().requests.find(item => item.id === operation.requestId), this.hostId())
@@ -4333,7 +4337,7 @@ ${operation.draftId}`)
         || operation.expectedTurnId !== ('expectedTurnId' in call.input ? call.input.expectedTurnId : undefined)
         || operation.expectedLastUserMessageId !== ('expectedLastUserMessageId' in call.input ? call.input.expectedLastUserMessageId : undefined)
         // A start from a moved branch is Work across machines' (#1033): a host with it off takes none, from any desktop.
-        || (call.name === 'start_thread' && call.input.fromMove !== undefined && this.options.crossMachine !== true)) refuse('INVALID_INPUT', 'The machine operation does not match its request and target. Nothing was sent.')
+        || (call.name === 'start_thread' && (call.input.fromMove !== undefined || call.input.fromOrigin !== undefined) && this.options.crossMachine !== true)) refuse('INVALID_INPUT', 'The machine operation does not match its request and target. Nothing was sent.')
       await this.transaction(async () => {
         guard()
         this.checkRemoteMaster(master, clientId)

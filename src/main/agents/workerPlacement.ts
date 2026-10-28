@@ -61,6 +61,8 @@ export interface PlacementAsk {
    * system to that machine: an existing worktree it reuses, or the base branch it starts from (Zach, October 25, 2026).
    */
   readonly pinnedBy?: 'existing-worktree' | 'base-branch' | undefined
+  /** The start gets a new worktree, which can start from a fetched branch where a copy's checkout stays behind (#1690). */
+  readonly newWorktree?: boolean | undefined
 }
 /** Why a start that the machine new workers start on would have taken stayed on This computer instead. */
 const PINNED_WORDS = { 'existing-worktree': 'It reuses a worktree on This computer', 'base-branch': 'Its base branch was read on This computer' } as const
@@ -68,6 +70,8 @@ export interface WorkerPlacement {
   readonly hostId: string
   readonly projectId: string
   readonly receipt: WorkerPlacementReceipt
+  /** `origin`'s branch, just fetched, that the start's new worktree is made from instead of the copy's checkout (#1690). */
+  readonly fromOrigin?: string
 }
 /** A start Sotto will not place as asked, with Watcher's refusal code for it and the words that say why. */
 export class PlacementRefusal extends Error {
@@ -142,13 +146,14 @@ export async function placeWorker(ask: PlacementAsk, setting: WorkerMachineSetti
   if (target.hostId === project.hostId) return { hostId: target.hostId, projectId: project.projectId, receipt: receipt(target, note) }
   if (!from) refuse('UNKNOWN_TARGET', 'That project is unavailable. Read the project list again. Nothing was started.')
   let found: FoundProject
-  try { found = await sameProject(from, target, project.projectId, sources) } catch (error) {
+  try { found = await sameProject(from, target, project.projectId, sources, ask.newWorktree === true) } catch (error) {
     if (!moved || !(error instanceof PlacementRefusal)) throw error
     // Sotto moved it, so it never refuses what would have run here: it comes back to This computer, and says so.
     return { hostId: local.hostId, projectId: project.projectId,
       receipt: receipt(local, `This computer is ${moved.state}, so Sotto tried ${named(moved.machine)}, which has room, but could not start this one there, so it started on This computer.`) }
   }
-  return { hostId: target.hostId, projectId: found.projectId, receipt: { ...receipt(target, note, found.note), ...found.setUp ? { setUp: found.setUp } : {} } }
+  return { hostId: target.hostId, projectId: found.projectId, receipt: { ...receipt(target, note, found.note), ...found.setUp ? { setUp: found.setUp } : {} },
+    ...found.fromOrigin ? { fromOrigin: found.fromOrigin } : {} }
 }
 
 /**
@@ -173,13 +178,13 @@ async function roomElsewhere(local: PlacementMachine, machines: readonly Placeme
   return { machine: chosen, state, why: `This computer is ${state}, so Sotto started this one on ${named(chosen)}, which has room.` }
 }
 
-interface FoundProject { readonly projectId: string; readonly setUp?: NonNullable<WorkerPlacementReceipt['setUp']>; readonly note?: string }
+interface FoundProject { readonly projectId: string; readonly setUp?: NonNullable<WorkerPlacementReceipt['setUp']>; readonly note?: string; readonly fromOrigin?: string }
 
 /**
  * The project on `target` that is a copy of the same GitHub repository as `projectId` on `from`. A machine with none gets
  * one set up (#1690), and what that did rides along for the receipt.
  */
-async function sameProject(from: PlacementMachine, target: PlacementMachine, projectId: string, sources: PlacementSources): Promise<FoundProject> {
+async function sameProject(from: PlacementMachine, target: PlacementMachine, projectId: string, sources: PlacementSources, newWorktree: boolean): Promise<FoundProject> {
   const title = sources.projects(from.hostId).find(item => item.id === projectId)?.title
     ?? refuse('UNKNOWN_TARGET', 'That project is unavailable. Read the project list again. Nothing was started.')
   const read = async (machine: PlacementMachine, update: string) => {
@@ -196,11 +201,11 @@ async function sameProject(from: PlacementMachine, target: PlacementMachine, pro
   const there = sources.projects(target.hostId)
   const copies = there.filter(item => targetOrigins.projects.some(origin => origin.projectId === item.id && origin.repository && sameRepository(origin.repository, repository)))
   if (copies.length) return { projectId: (copies.find(item => item.title === title) ?? copies[0]!).id }
-  return setUpCopy(target, title, repository, sources)
+  return setUpCopy(target, title, repository, sources, newWorktree)
 }
 
 /** Gives `target` a copy of the repository through its host (#1690), or refuses in plain words saying what to do. */
-async function setUpCopy(target: PlacementMachine, title: string, repository: ProjectSetupRequest['repository'], sources: PlacementSources): Promise<FoundProject> {
+async function setUpCopy(target: PlacementMachine, title: string, repository: ProjectSetupRequest['repository'], sources: PlacementSources, newWorktree: boolean): Promise<FoundProject> {
   const machine = capital(named(target)), repo = `${repository.owner}/${repository.name}`
   let result: ProjectSetupResult | undefined
   try { result = await sources.setUp?.(target.hostId, { repository: { host: repository.host, owner: repository.owner, name: repository.name }, title }) } catch {
@@ -208,10 +213,15 @@ async function setUpCopy(target: PlacementMachine, title: string, repository: Pr
   }
   if (!result) refuse('HOST_FEATURE_UNAVAILABLE', `${machine} has no copy of ${title}, and its Sotto is too old to set one up. Update Sotto on it, or add the project there. Nothing was started.`)
   if (!result.ok) refuse('UNKNOWN_TARGET', `${machine} has no copy of ${title}, and Sotto could not set one up. ${result.message} Nothing was started.`)
-  const setUp = { how: result.how, path: result.path, current: result.current }
+  // A checkout left behind after a good fetch is no reason to start from old code: a new worktree needs no checkout moved,
+  // so it starts from the branch just fetched (Zach, October 27). Only a failed fetch leaves it on the checkout's commit.
+  const fromOrigin = !result.current && newWorktree && result.how === 'added' ? result.fetched : undefined
+  const setUp = { how: result.how, path: result.path, current: result.current, ...fromOrigin ? { startsFrom: `origin/${fromOrigin}` } : {} }
   const added = `Sotto added the copy of ${title} already at ${result.path} to ${named(target)}'s projects`
+  const left = `it was left as it was because ${result.reason ?? 'Sotto could not bring it up to date'}`
   const note = result.how === 'cloned' ? `${machine} had no copy of ${title}, so Sotto cloned ${repo} into ${result.path} there.`
     : result.current ? `${added} and brought it up to date.`
-      : `${added}; it was left as it was because ${result.reason ?? 'Sotto could not bring it up to date'}, so the worker starts from that checkout's commit.`
-  return { projectId: result.projectId, setUp, note }
+      : fromOrigin ? `${added}; ${left}, so the worker's new worktree starts from origin/${fromOrigin} as just fetched.`
+        : `${added}; ${left}, so the worker starts from that checkout's commit.`
+  return { projectId: result.projectId, setUp, note, ...fromOrigin ? { fromOrigin } : {} }
 }
