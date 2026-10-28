@@ -28,15 +28,19 @@ const originalGetContext = HTMLCanvasElement.prototype.getContext
 let drawn = 0
 let cleared = 0
 
+/** jsdom has no canvas; a stand-in counts what the layer draws, and reads `pixel` for every colour it is asked for. */
+function stubCanvas(pixel: readonly number[]): void {
+  HTMLCanvasElement.prototype.getContext = (() => ({
+    setTransform() {}, scale() {}, fillText() {}, save() {}, restore() {}, globalAlpha: 1, font: '', fillStyle: '', textAlign: '', textBaseline: '',
+    clearRect() { cleared++ }, drawImage() { drawn++ }, fillRect() {}, getImageData: () => ({ data: pixel }),
+  })) as never
+}
+
 beforeEach(() => {
   vi.useFakeTimers()
   drawn = 0
   cleared = 0
-  // jsdom has no canvas; a stand-in counts what the layer draws, and reads one colour for every colour it is asked for.
-  HTMLCanvasElement.prototype.getContext = (() => ({
-    setTransform() {}, scale() {}, fillText() {}, save() {}, restore() {}, globalAlpha: 1, font: '', fillStyle: '', textAlign: '', textBaseline: '',
-    clearRect() { cleared++ }, drawImage() { drawn++ }, fillRect() {}, getImageData: () => ({ data: [20, 20, 20, 255] }),
-  })) as never
+  stubCanvas([20, 20, 20, 255])
 })
 
 afterEach(() => {
@@ -134,10 +138,7 @@ describe('the click effect', () => {
 
   it('moves no water for a theme that leaves no room for the glyphs, and starts nothing for a press after, until the theme changes', async () => {
     // Every colour reads as transparent, so the ceiling is nothing.
-    HTMLCanvasElement.prototype.getContext = (() => ({
-      setTransform() {}, scale() {}, fillText() {}, save() {}, restore() {}, globalAlpha: 1, font: '', fillStyle: '', textAlign: '', textBaseline: '',
-      clearRect() { cleared++ }, drawImage() { drawn++ }, fillRect() {}, getImageData: () => ({ data: [0, 0, 0, 0] }),
-    })) as never
+    stubCanvas([0, 0, 0, 0])
     const step = vi.spyOn(ClickWater.prototype, 'step')
     render(<ClickEffect />)
     pressAt(document.body, 300, 200)
