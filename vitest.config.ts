@@ -1,6 +1,8 @@
 import { lingui } from '@lingui/vite-plugin'
 import { configDefaults, defineConfig } from 'vitest/config'
 
+import { DurationShardSequencer } from './tests/shardSequencer'
+
 export default defineConfig({
   // The same macro transform and catalogs the app is built with; tests/setup.ts shows English (ADR-0123).
   plugins: [lingui({ macroTransform: true })],
@@ -11,6 +13,8 @@ export default defineConfig({
     // Refuses a temporary folder inside a Git repository before any test makes a folder there (`tests/globalSetup.ts`).
     globalSetup: ['./tests/globalSetup.ts'],
     setupFiles: ['./tests/setup.ts'],
+    // --shard splits by each file's recorded time, so CI's six shards end together (tests/shardSequencer.ts).
+    sequence: { sequencer: DurationShardSequencer },
     // Waiting is not the assertion. A two-core CI runner with two workers on it takes several times
     // longer over a provider round trip or a child process start than a developer machine does, and a
     // deadline that expires there describes the machine, not the code: what is being tested still
