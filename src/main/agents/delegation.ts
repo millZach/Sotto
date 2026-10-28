@@ -27,8 +27,9 @@ import { delegationNewsText, foldDelegationNews, heldWords, type DelegationNewsD
 import { WATCHER_QUIET_MS } from '../../shared/watcherOverview'
 import type { AgentState } from '../../shared/agents'
 import type { HostThreadsView } from './control'
-import { RelayUnanswered, type HostDelegationRelay } from './delegationRelayHost'
+import { RELAY_SEND_LATER, RelayUnanswered, type HostDelegationRelay } from './delegationRelayHost'
 import { DELEGATION_RELAY_ANSWER_GRACE_MS, DELEGATION_RELAY_WAIT_MAX_MS, type RelayedReply } from '../../shared/delegationRelay'
+import { REMOTE_AWAY, type DesktopRemoteDelegations } from './delegationRemoteDesktop'
 
 /** The commands delegation sends on a thread's behalf: create the delegated thread, send it a brief, stop it. */
 export type DelegationCommand = Extract<AgentCommand, { type: 'create-thread' | 'manual-send' | 'interrupt' }>
@@ -152,7 +153,13 @@ export interface DelegationServiceOptions {
    * A headless host's side of the relay (#1316, Owl `cross-machine-work`): a thread here delegates to a thread on another
    * machine through the desktop that relays, while one is connected.
    */
-  readonly relay?: Pick<HostDelegationRelay, 'start' | 'holds' | 'holdsThread' | 'read' | 'cancel' | 'list' | 'useDelivery' | 'awayWords' | 'detail'>
+  readonly relay?: Pick<HostDelegationRelay, 'start' | 'send' | 'holds' | 'holdsThread' | 'read' | 'cancel' | 'list' | 'useDelivery' | 'awayWords' | 'detail'>
+  /**
+   * The desktop's delegations on its paired hosts (#1316 part 2, Owl `cross-machine-work`): a start placed on another machine
+   * goes to that machine's host, which admits it with its own delegation and keeps its record, and every later brief, read
+   * and cancel of it goes there too. Absent, a start placed elsewhere is refused, as on a host.
+   */
+  readonly remote?: Pick<DesktopRemoteDelegations, 'start' | 'send' | 'holds' | 'holdsThread' | 'read' | 'cancel' | 'list' | 'useDelivery' | 'detail' | 'retried' | 'isOpen' | 'hasOpen'>
   /** The clock a held background outcome's release reads, and how it waits for it; tests give their own. */
   readonly now?: () => number
   readonly schedule?: (callback: () => void, delay: number) => () => void
@@ -171,8 +178,17 @@ export interface RelayedCaller {
 }
 /** What a relayed start asked that the relay does not carry yet (#1316 part 1): a branch to start from. */
 export const RELAY_NO_BRANCH = 'A thread started on another machine cannot start from your branch yet. Leave out from_my_branch and test_run, or start it on this machine. Nothing was started.'
-/** A second brief to a thread on another machine, which the relay does not carry yet (#1316 part 1). */
-export const RELAY_SEND_LATER = 'That thread is on another machine, and Sotto cannot send it another brief from here yet. Start a new delegation instead, or ask the user to send it there. Nothing was sent.'
+export { RELAY_SEND_LATER }
+/**
+ * What a start on a paired host that asked for a branch is told (#1316 part 2): starting from the delegating thread's branch
+ * on another machine comes in a later part. Not settled with Zach; named here so it changes in one place.
+ */
+export const REMOTE_NO_BRANCH = (machine: string): string => `A thread started on ${machine} cannot start from your branch yet. Leave out from_my_branch and test_run, or start it on This computer. Nothing was started.`
+/**
+ * Whether a delegated thread that names no machine starts where Settings say new workers start (#1316 part 2). Off, it
+ * starts on This computer and the result says so, as before the desktop could start one on a paired host. Not settled with Zach.
+ */
+export const DELEGATION_FOLLOWS_NEW_WORKER_MACHINE = false
 /** A start's worker role as the `delegate` result says it (#1041). Never saved: a retry's result has none. */
 interface RoleReceipt { readonly work: DelegationWork; readonly named: RoleField[]; readonly note: string }
 
@@ -339,6 +355,8 @@ const LEVEL_LIMIT = 'This thread was started by a delegated thread, and delegati
 
 /** `place`'s answer for a start the desktop relays to another machine (#1316). */
 const RELAYED = Symbol('relayed')
+/** `place`'s answer for a start on one of the desktop's paired hosts (#1316 part 2): where it goes. */
+interface Elsewhere { readonly elsewhere: WorkerPlacement }
 /** The threads `caller` made for relayed callers, so their turn's root is read from their machine's word. */
 const relayedThreads = new WeakSet<AgentThread>()
 /**
@@ -485,6 +503,11 @@ export class DelegationService {
     this.options.host.admitDelegationCommands?.()
     // News of relayed delegations reaches the thread that delegated as delegation's own does (#1316).
     this.options.relay?.useDelivery((threadId, news) => this.options.control.deliverWakeUp(threadId, news, { tool: this.options.tool?.(threadId) ?? false }))
+    // News of delegations on a paired host (#1316 part 2) reaches the thread that delegated here as a wake-up, or a thread on
+    // a third machine that asked through the relay on its own machine, with each answered one's reply.
+    this.options.remote?.useDelivery((callerId, news, replies) => this.options.relayedCallers?.caller(callerId)
+      ? this.options.relayedCallers.tell(callerId, news, replies)
+      : this.options.control.deliverWakeUp(callerId, news, { tool: this.options.tool?.(callerId) ?? false }))
     this.unhook = this.options.control.useDelegation({
       userCommand: (command, threadId, answersQuestion) => this.userCommand(command, threadId, answersQuestion),
       observe: (snapshot, threads) => this.observe(snapshot, threads),
@@ -526,24 +549,32 @@ export class DelegationService {
    * The delegation a caller's call with this retry key made, from the record admission saves before anything is sent
    * (#1316): how the desktop relay finds what a relayed start made after its answer was lost, or after a restart.
    */
-  retriedDelegation(callerId: string, retryKey: string): string | undefined { return this.retried(callerId, retryKey)?.id }
+  retriedDelegation(callerId: string, retryKey: string): string | undefined { return this.retried(callerId, retryKey)?.id ?? this.options.remote?.retried(callerId, retryKey) }
   /** Whether a delegation is still open, or a thread has one open: what the relay's record keeps whatever its size (#1316). */
-  isOpen(delegationId: string): boolean { const record = this.record(delegationId); return record !== undefined && this.open(record) }
-  hasOpen(delegatingThreadId: string): boolean { return (this.byDelegating.get(delegatingThreadId) ?? []).some(record => this.open(record)) }
+  isOpen(delegationId: string): boolean { const record = this.record(delegationId); return record !== undefined ? this.open(record) : this.options.remote?.isOpen(delegationId) === true }
+  hasOpen(delegatingThreadId: string): boolean {
+    return (this.byDelegating.get(delegatingThreadId) ?? []).some(record => this.open(record)) || this.options.remote?.hasOpen(delegatingThreadId) === true
+  }
   /** Whether this thread is offered `sotto_delegate` (decisions 1 and 2), asked at every launch and every call. */
   admits(threadId: string): boolean {
     if (this.closed) return false
     try { this.caller(threadId, this.snapshot()); return true } catch { return false }
   }
 
-  async delegate(threadId: string, args: unknown, context: { readonly waitMs?: number } = {}): Promise<unknown> {
+  /**
+   * A `delegate` call. `context.placement` is where the desktop relay already placed a start for a thread on another machine
+   * (#1316 part 2), on one of this computer's paired hosts.
+   */
+  async delegate(threadId: string, args: unknown, context: { readonly waitMs?: number; readonly placement?: WorkerPlacement } = {}): Promise<unknown> {
     const parsed = delegateInputSchema.safeParse(args)
     if (!parsed.success) {
       return this.admits(threadId) ? delegationRefusal('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema. Nothing was started.')
         : delegationRefusal('NOT_ADMITTED', NOT_ADMITTED)
     }
     const input = parsed.data
-    if (input.thread !== undefined && this.options.relay?.holdsThread(threadId, input.thread)) return delegationRefusal('UNKNOWN_THREAD', RELAY_SEND_LATER)
+    // A thread on another machine is sent its brief there: through the desktop that relays, or by the paired host it runs on (#1316).
+    if (input.thread !== undefined && this.options.relay?.holdsThread(threadId, input.thread)) return await this.elsewhereSend(threadId, input, context, 'relay')
+    if (input.thread !== undefined && this.options.remote?.holdsThread(threadId, input.thread)) return await this.elsewhereSend(threadId, input, context, 'remote')
     // A check takes its place in this machine's queue as it is asked for, before its snapshot is taken (#1312), so a check
     // whose snapshot takes longer is never overtaken by one asked after it. A call that ends without a check keeps none.
     const checks = this.options.checks
@@ -553,9 +584,10 @@ export class DelegationService {
     try { return await this.ask(threadId, input, context, ticket) }
     finally { if (!this.ticketRecords.has(ticket)) checks.leave(ticket) }
   }
-  private async ask(threadId: string, input: DelegateInput, context: { readonly waitMs?: number }, ticket?: string): Promise<unknown> {
-    const placed = await this.place(threadId, input)
+  private async ask(threadId: string, input: DelegateInput, context: { readonly waitMs?: number; readonly placement?: WorkerPlacement }, ticket?: string): Promise<unknown> {
+    const placed = context.placement ? { elsewhere: context.placement } : await this.place(threadId, input)
     if (placed === RELAYED) return await this.relayStart(threadId, input, context)
+    if (placed && 'elsewhere' in placed) return await this.remoteStart(threadId, input, context, placed.elsewhere)
     if (placed && 'status' in placed) return placed
     const branch = await this.fromBranch(threadId, input)
     if (branch && 'status' in branch) return branch
@@ -729,6 +761,8 @@ export class DelegationService {
       if (refused) return this.refusedResult(refused)
       // One relayed to another machine is read there, exactly, while the desktop is connected (#1316).
       if (this.options.relay?.holds(caller.id, parsed.data.delegation)) return await this.options.relay.read(caller.id, parsed.data.delegation)
+      // One on a paired host is read there, exactly, while it is connected (#1316 part 2).
+      if (this.options.remote?.holds(caller.id, parsed.data.delegation)) return await this.options.remote.read(caller.id, parsed.data.delegation)
       const record = this.owned(caller.id, parsed.data.delegation)
       return await this.result(record, true)
     } catch (error) { return error instanceof Refusal ? error.result : delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not read this delegation just now. Nothing was changed.') }
@@ -742,6 +776,7 @@ export class DelegationService {
       const refused = this.refusedOf(caller.id, parsed.data.delegation)
       if (refused) return { ...this.refusedResult(refused), note: REFUSED_CANCEL }
       if (this.options.relay?.holds(caller.id, parsed.data.delegation)) return await this.options.relay.cancel(caller.id, parsed.data.delegation)
+      if (this.options.remote?.holds(caller.id, parsed.data.delegation)) return await this.options.remote.cancel(caller.id, parsed.data.delegation)
       const record = this.owned(caller.id, parsed.data.delegation)
       if (!this.open(record)) return { ...(await this.result(record)), note: 'This delegation had already ended. Nothing was stopped.' }
       // A stop it asked for is not news to it, however it lands. A check still waiting its turn leaves the queue.
@@ -768,13 +803,14 @@ export class DelegationService {
 
   private snapshot(): AgentHostSnapshot { return this.options.control.watcherSnapshot() }
   /**
-   * Where a new delegated thread starts (#1032): This computer, the only machine delegation reaches for now (#1316). A
-   * machine or system the call named is placed as Watcher's starts are, and one that resolves anywhere else is refused in
-   * plain words and recorded. With none named, a setting that puts new workers on another machine is noted, not followed.
-   * Undefined when there is nothing to say: Work across machines is off, the call sends to a thread, or retries one. With
-   * the feature off, a call naming a machine or system is refused as invalid, since the tool offers neither.
+   * Where a new delegated thread starts (#1032): This computer, or, on the desktop, a paired host the call named (#1316
+   * part 2). A machine or system the call named is placed as Watcher's starts are, and one that cannot be is refused in
+   * plain words and recorded. With none named, a setting that puts new workers on another machine is noted, not followed,
+   * unless `DELEGATION_FOLLOWS_NEW_WORKER_MACHINE` says so. Undefined when there is nothing to say: Work across machines is
+   * off, the call sends to a thread, or retries one. With the feature off, a call naming a machine or system is refused as
+   * invalid, since the tool offers neither.
    */
-  private async place(threadId: string, input: DelegateInput): Promise<WorkerPlacementReceipt | DelegationRefusal | typeof RELAYED | undefined> {
+  private async place(threadId: string, input: DelegateInput): Promise<WorkerPlacementReceipt | DelegationRefusal | typeof RELAYED | Elsewhere | undefined> {
     const asks = input.machine !== undefined || input.os !== undefined
     const machines = this.options.machines
     if (!machines) return asks ? delegationRefusal('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema. Nothing was started.') : undefined
@@ -782,24 +818,61 @@ export class DelegationService {
     // A caller that may not delegate is refused by admission, under its own rule; a retry reads the first call's result.
     const caller = this.snapshot().threads.find(thread => thread.id === threadId), local = this.options.control.hostId()
     if (!caller || !local || !this.admits(threadId)) return undefined
-    if (this.retried(caller.id, input.retry_key)) return undefined
+    if (this.retried(caller.id, input.retry_key) || input.retry_key && this.options.remote?.retried(caller.id, input.retry_key)) return undefined
+    let setting: WorkerMachineSetting = 'this-computer'
     if (!asks) {
       const away = workerMachineHostId(machines.setting())
       if (away === undefined || away === local) return undefined
-      const name = machines.name(away)
-      return { hostId: local, name: 'This computer', awayFromDefault: true,
-        note: `New workers start on ${name ?? 'another machine'}, but a delegated thread starts on This computer for now.` }
+      if (!DELEGATION_FOLLOWS_NEW_WORKER_MACHINE || !this.options.remote) {
+        const name = machines.name(away)
+        return { hostId: local, name: 'This computer', awayFromDefault: true,
+          note: `New workers start on ${name ?? 'another machine'}, but a delegated thread starts on This computer for now.` }
+      }
+      setting = machines.setting()
     }
     let placed: WorkerPlacement | WatcherRefusal
-    try { placed = await machines.place({ machine: input.machine, os: input.os }, { hostId: local, projectId: caller.projectId }, 'this-computer') }
+    try { placed = await machines.place({ machine: input.machine, os: input.os }, { hostId: local, projectId: caller.projectId }, setting) }
     catch { return delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not read the machines just now. Nothing was started. Try again.') }
     // A host with no desktop that relays connected refuses by name (#1316); its card says so in Zach's words.
     if ('status' in placed) return await this.refused(threadId, input, delegationRefusal('MACHINE_UNAVAILABLE', placed.message), this.options.relay && placed.code === 'HOST_DISCONNECTED')
-    // Elsewhere, through the desktop that relays, where this machine has one (#1316).
+    // Elsewhere, through the desktop that relays, where this machine has one (#1316), or on the desktop's paired host (part 2).
     if (placed.hostId !== local && this.options.relay) return RELAYED
+    if (placed.hostId !== local && this.options.remote) return { elsewhere: placed }
     if (placed.hostId !== local) return await this.refused(threadId, input, delegationRefusal('MACHINE_UNAVAILABLE',
       `A delegated thread starts only on This computer for now, so it cannot start on ${placed.receipt.name}. Leave out the machine and system to start it here. Nothing was started.`))
     return { ...placed.receipt, awayFromDefault: false }
+  }
+  /**
+   * What a start or a brief on another machine carries of its caller (#1316): admitted here as any of this thread's calls
+   * is, its turn's root, how many threads delegated above it, its permission held to this machine's new-thread default, and
+   * the arguments that machine takes. A refusal of this machine's own is recorded, as any is.
+   */
+  private async elsewhereCaller(threadId: string, input: DelegateInput, context: { readonly waitMs?: number }, graceMs: number):
+    Promise<DelegationRefusal | { caller: AgentThread; root: string; levels: number; own: AgentRuntimeMode; head: string | null; rest: Record<string, unknown>; waitMs: number }> {
+    let caller: AgentThread, root: string, levels: number
+    try {
+      const snapshot = this.snapshot()
+      caller = this.caller(threadId, snapshot); root = this.rootOf(caller)
+      // A thread on another machine that asked through the relay is as deep as the desktop proved it; one here, as its links say.
+      levels = this.options.relayedCallers?.caller(caller.id)?.levels ?? this.levelOf(caller.id, snapshot.threads)
+    } catch (error) {
+      if (error instanceof Refusal) return await this.refused(threadId, input, error.result)
+      return delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not start this delegation. Nothing was started.')
+    }
+    const index = (mode: AgentRuntimeMode) => RUNTIME_MODE_ORDER.indexOf(mode)
+    const asked: AgentRuntimeMode = caller.providerMode ? 'approval-required' : caller.runtimeMode ?? 'approval-required', configured = this.newThreadDefault().mode
+    const { machine: _machine, os: _os, from_my_branch: _branch, test_run: _test, ...rest } = input
+    void _machine; void _os; void _branch; void _test
+    // The other machine's answer must come back inside this call's own deadline, with room for the way there and back.
+    const asking = Math.min((input.wait_seconds ?? DELEGATION_WAIT_MAX_SECONDS) * 1000, DELEGATION_RELAY_WAIT_MAX_MS)
+    const waitMs = Math.max(0, Math.min(asking, context.waitMs === undefined ? Infinity : context.waitMs - graceMs - 5_000))
+    return { caller, root, levels, own: index(asked) < index(configured) ? asked : configured, head: nativeHead(caller), rest, waitMs }
+  }
+  /** A refusal another machine answered, recorded here as this machine's own are. */
+  private async refusedElsewhere(threadId: string, input: DelegateInput, answer: Record<string, unknown>, fallback: string, relayed: boolean): Promise<DelegationRefusal> {
+    const code = delegationRefusalCodeSchema.safeParse(answer.code)
+    const message = typeof answer.message === 'string' && answer.message.trim() ? answer.message.slice(0, REFUSAL_MESSAGE_MAX) : fallback
+    return await this.refused(threadId, input, delegationRefusal(code.success ? code.data : 'PROVIDER_UNAVAILABLE', message), false, relayed)
   }
   /**
    * A start on another machine through the desktop that relays (#1316): admitted here as any start of this thread's is,
@@ -809,33 +882,68 @@ export class DelegationService {
   private async relayStart(threadId: string, input: DelegateInput, context: { readonly waitMs?: number }): Promise<unknown> {
     const relay = this.options.relay!
     if (input.from_my_branch === true || input.test_run === true) return await this.refused(threadId, input, delegationRefusal('BRANCH_UNAVAILABLE', RELAY_NO_BRANCH))
-    let caller: AgentThread, root: string, levels: number
-    try {
-      const snapshot = this.snapshot()
-      caller = this.caller(threadId, snapshot); root = this.rootOf(caller); levels = this.levelOf(caller.id, snapshot.threads)
-    } catch (error) {
-      if (error instanceof Refusal) return await this.refused(threadId, input, error.result)
-      return delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not start this delegation. Nothing was started.')
-    }
-    const own: AgentRuntimeMode = caller.providerMode ? 'approval-required' : caller.runtimeMode ?? 'approval-required'
-    const { machine, os, from_my_branch: _branch, test_run: _test, ...rest } = input
-    void _branch; void _test
-    // The desktop's answer must come back inside this call's own deadline, with room for the way there and back.
-    const budget = context.waitMs === undefined ? DELEGATION_RELAY_WAIT_MAX_MS : context.waitMs - DELEGATION_RELAY_ANSWER_GRACE_MS - 5_000
-    const waitMs = Math.max(0, Math.min(DELEGATION_RELAY_WAIT_MAX_MS, budget))
-    const head = nativeHead(caller)
+    const asked = await this.elsewhereCaller(threadId, input, context, DELEGATION_RELAY_ANSWER_GRACE_MS)
+    if ('status' in asked) return asked
+    const { machine, os } = input
     let answer: Record<string, unknown>
     try {
-      answer = await relay.start(caller.id, input.work, { levels, rootUserMessageId: root, ...(head ? { callerMessageId: head } : {}), runtimeMode: own,
-        projectId: caller.projectId, ...(machine ? { machine } : {}), ...(os ? { os } : {}), input: rest, waitMs })
+      answer = await relay.start(asked.caller.id, input.work, { levels: asked.levels, rootUserMessageId: asked.root, ...(asked.head ? { callerMessageId: asked.head } : {}),
+        runtimeMode: asked.own, projectId: asked.caller.projectId, ...(machine ? { machine } : {}), ...(os ? { os } : {}), input: asked.rest, waitMs: asked.waitMs })
     } catch (error) {
       if (error instanceof RelayUnanswered && error.stage === 'away') return await this.refused(threadId, input, delegationRefusal('MACHINE_UNAVAILABLE', relay.awayWords()), true)
       return delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not start this delegation. Nothing was started.')
     }
     if (answer.status !== 'refused') return answer
-    const code = delegationRefusalCodeSchema.safeParse(answer.code)
-    const message = typeof answer.message === 'string' && answer.message.trim() ? answer.message.slice(0, REFUSAL_MESSAGE_MAX) : 'This computer could not start this delegation. Nothing was started.'
-    return await this.refused(threadId, input, delegationRefusal(code.success ? code.data : 'PROVIDER_UNAVAILABLE', message), false, true)
+    return await this.refusedElsewhere(threadId, input, answer, 'This computer could not start this delegation. Nothing was started.', true)
+  }
+  /**
+   * A start on one of the desktop's paired hosts (#1316 part 2): admitted here as any start of this thread's is, then asked
+   * of that host, which admits it again under its own rules, the desktop defaults it was sent among them (#1310), and
+   * starts it. The caller may be a thread on a third machine that asked through the relay. A start whose answer was lost
+   * reads `unknown` and is never asked again (ADR-0058).
+   */
+  private async remoteStart(threadId: string, input: DelegateInput, context: { readonly waitMs?: number }, placement: WorkerPlacement): Promise<unknown> {
+    const remote = this.options.remote!, name = placement.receipt.name
+    if (input.from_my_branch === true || input.test_run === true) return await this.refused(threadId, input, delegationRefusal('BRANCH_UNAVAILABLE', REMOTE_NO_BRANCH(name)))
+    const asked = await this.elsewhereCaller(threadId, input, context, 2_000)
+    if ('status' in asked) return asked
+    const { retry_key: retryKey, ...rest } = asked.rest
+    let answer: Record<string, unknown>
+    try {
+      answer = await remote.start(asked.caller.id, input.work, placement, { levels: asked.levels, rootUserMessageId: asked.root, ...(asked.head ? { callerMessageId: asked.head } : {}),
+        runtimeMode: asked.own, input: rest, ...typeof retryKey === 'string' ? { retryKey } : {}, waitMs: asked.waitMs })
+    } catch (error) {
+      if (error instanceof RelayUnanswered && error.stage === 'away') return await this.refused(threadId, input, delegationRefusal('MACHINE_UNAVAILABLE', REMOTE_AWAY(name)))
+      return delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not start this delegation. Nothing was started.')
+    }
+    if (answer.status !== 'refused') return answer
+    return await this.refusedElsewhere(threadId, input, answer, `${name} could not start this delegation. Nothing was started.`, false)
+  }
+  /**
+   * Another brief to a thread on another machine (#1316 part 2): through the desktop that relays, or to the paired host the
+   * thread runs on. Charged there against the same four briefs per thread per user message as any brief, never here.
+   */
+  private async elsewhereSend(threadId: string, input: DelegateInput, context: { readonly waitMs?: number }, via: 'relay' | 'remote'): Promise<unknown> {
+    const asked = await this.elsewhereCaller(threadId, input, context, via === 'relay' ? DELEGATION_RELAY_ANSWER_GRACE_MS : 2_000)
+    if ('status' in asked) return asked
+    const thread = input.thread!
+    let answer: Record<string, unknown>
+    try {
+      if (via === 'relay') {
+        answer = await this.options.relay!.send(asked.caller.id, input.work, thread, { levels: asked.levels, rootUserMessageId: asked.root, ...(asked.head ? { callerMessageId: asked.head } : {}),
+          runtimeMode: asked.own, projectId: asked.caller.projectId, input: asked.rest, waitMs: asked.waitMs })
+      } else {
+        const { retry_key: retryKey, thread: _thread, ...rest } = asked.rest
+        void _thread
+        answer = await this.options.remote!.send(asked.caller.id, input.work, thread, { levels: asked.levels, rootUserMessageId: asked.root, ...(asked.head ? { callerMessageId: asked.head } : {}),
+          runtimeMode: asked.own, input: rest, ...typeof retryKey === 'string' ? { retryKey } : {}, waitMs: asked.waitMs })
+      }
+    } catch (error) {
+      if (error instanceof RelayUnanswered && error.stage === 'away' && via === 'relay') return await this.refused(threadId, input, delegationRefusal('PROVIDER_UNAVAILABLE', this.options.relay!.awayWords()))
+      return delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not send this brief. Nothing was sent.')
+    }
+    if (answer.status !== 'refused') return answer
+    return await this.refusedElsewhere(threadId, input, answer, 'The other machine could not send this brief. Nothing was sent.', false)
   }
   /**
    * Lands the delegating thread's branch for a new thread that starts from it (#1033): in the incoming ref of a move of
@@ -1704,7 +1812,11 @@ export class DelegationService {
     for (const item of folded.items) {
       const record = this.record(item.delegationId)
       // A delegation relayed to another machine (#1316) carries its reply as that machine sent it with the news.
-      if (!record) { const relayed = this.options.relay?.detail(item.delegationId); if (relayed && item.outcome === 'answered') details.set(item.delegationId, relayed); continue }
+      if (!record) {
+        const elsewhere = this.options.relay?.detail(item.delegationId) ?? this.options.remote?.detail(item.delegationId)
+        if (elsewhere && item.outcome === 'answered') details.set(item.delegationId, elsewhere)
+        continue
+      }
       if (record.delegatingThreadId !== threadId) continue
       if (record.deliveryState === 'failed') details.set(record.id, { notSent: FAILURE_NOTES[record.failure ?? 'provider'] })
       else if (item.outcome === 'answered' && this.outcomeOf(record) === 'answered') details.set(record.id, this.replyOf(record, threads.get(record.delegatedThreadId)))
@@ -1727,7 +1839,7 @@ export class DelegationService {
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(-20)
       .map(({ thread, refusal, ...item }) => ({ ...item, ...(thread ? { thread } : {}), ...(refusal ? { refusal } : {}) }))
     // Those started on another machine through the desktop (#1316), with the machine, as last read there.
-    const elsewhere = this.options.relay?.list(caller.id) ?? []
+    const elsewhere = [...this.options.relay?.list(caller.id) ?? [], ...this.options.remote?.list(caller.id) ?? []]
     const ready = this.ready(snapshot).map(model => ({ provider: model.providerId!, model: model.id, name: model.name,
       efforts: withoutUltracode(model.reasoningEfforts ?? []), permissions: model.runtimeModes ?? [] }))
     // On a headless host (#1310), the new-thread default it holds starts to, and why when it holds them to Ask for approval.
