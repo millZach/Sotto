@@ -11,8 +11,9 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
  * Stop and settle reaching every machine (#1316 part 3, Owl `cross-machine-work`). Stopping or settling a thread stops or
  * settles the threads it delegated to, at both levels, as on one machine (ADR-0081 decisions 6 and 11, #1253). Delegation
  * stops those on another machine through the asks it already makes there; settling one there is the same Settle the window
- * sends any thread on that machine. These are the window's side of both: which delegated threads are on another machine,
- * and what Stop says of those it could not reach.
+ * sends any thread on that machine. These are the window's side of both: which delegated threads its own machine's
+ * cascade does not reach, what Stop, Settle and Restore say of those they could not move, and the record of which ones a
+ * Settle settled, which its Restore brings back.
  */
 
 /**

@@ -391,7 +391,8 @@ export class DesktopHostRouter {
     babysittingRetired?: boolean
     /**
      * This desktop's Owl answer for Work across machines, read once at start: with it, Stop, Settle and Restore of a thread
-     * reach the threads it delegated to on other machines, and Stop says which it could not reach (#1316 part 3).
+     * reach the threads it delegated to on other machines and say which they could not move, and a delegated thread's link
+     * is keyed on whichever machine the thread that delegated runs (#1316 part 3).
      */
     crossMachineWork?: boolean
     /**
@@ -1466,8 +1467,9 @@ export class DesktopHostRouter {
       : startsThread(command) ? { ...shell, error: inPlace ?? null } : shell
   }
   /**
-   * The thread the window names on `hostId`, as the window last showed it, with its delegated threads, both levels, that run
-   * on other machines (#1316 part 3). Read in place from what was last published, never a copy.
+   * The thread the window names on `hostId`, as the window last showed it, with its delegated threads, both levels, that its
+   * own machine's cascade does not reach (`delegatedElsewhere`, #1316 part 3). Read in place from what was last published,
+   * never a copy.
    */
   private delegatedAcross(hostId: string, threadId: string): { readonly settledAt: string | null; readonly elsewhere: readonly DelegatedElsewhere[] } {
     const key = hostEntityKey(hostId, threadId), threads = this.lastPublished().host.threads
