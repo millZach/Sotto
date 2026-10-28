@@ -20,7 +20,18 @@ struct MainTabs: View {
     @State private var covered = Set<UUID>()
     @State private var keyboard = false
     enum Tab: Hashable { case threads, watcher, computers, settings }
+    @Environment(\.horizontalSizeClass) private var width
     var body: some View {
+        GeometryReader { frame in tabs(railEdge: railEdge(frame.safeAreaInsets), strip: abs(frame.safeAreaInsets.trailing - frame.safeAreaInsets.leading)) }
+    }
+    /// The iPhone Duo's cover screen leaves a strip down one side, under the clock and battery, outside the safe area
+    /// but inside the window (ADR-0151, amended). There the bar stands in the strip as a rail, as the system's did,
+    /// and the pages get the whole height. An upright iPhone has no side insets, and one held sideways has two alike.
+    private func railEdge(_ insets: EdgeInsets) -> HorizontalAlignment? {
+        guard width == .compact, abs(insets.trailing - insets.leading) >= 60 else { return nil }
+        return insets.trailing > insets.leading ? .trailing : .leading
+    }
+    private func tabs(railEdge: HorizontalAlignment?, strip: CGFloat) -> some View {
         // The bar sits under the pages rather than in their safe area, which a NavigationStack doesn't pass on to its
         // pages: they end above it, as they did above the system's.
         VStack(spacing: 0) {
@@ -43,8 +54,15 @@ struct MainTabs: View {
                     .toolbar(.hidden, for: .tabBar)
                     .tag(Tab.settings)
             }
-            if covered.isEmpty && !keyboard {
+            if covered.isEmpty && !keyboard && railEdge == nil {
                 TabsBar(tab: $tab, threadsBadge: model.threadsBadge, watcher: model.watcherHostID == nil ? nil : model.watcherTab)
+            }
+        }
+        .overlay(alignment: Alignment(horizontal: railEdge ?? .trailing, vertical: .bottom)) {
+            if let railEdge, covered.isEmpty && !keyboard {
+                TabsBar(tab: $tab, threadsBadge: model.threadsBadge, watcher: model.watcherHostID == nil ? nil : model.watcherTab, rail: true)
+                    .frame(width: strip)
+                    .offset(x: railEdge == .trailing ? strip : -strip)
             }
         }
         .environment(\.tabsCovered, $covered)
@@ -104,8 +122,11 @@ struct TabsBar: View {
     @Binding var tab: MainTabs.Tab
     let threadsBadge: Int
     let watcher: WatcherTabState?
+    /// Stacked in the Duo cover screen's side strip, icons only, as the system drew its rail there.
+    var rail = false
     var body: some View {
-        HStack(spacing: 0) {
+        let layout = rail ? AnyLayout(VStackLayout(spacing: Space.s2)) : AnyLayout(HStackLayout(spacing: 0))
+        layout {
             item(.threads, Image(systemName: "bubble.left"), Text("Threads"), badge: threadsBadge, spoken: threadsBadge > 0 ? "\(threadsBadge)" : "")
             if let watcher {
                 item(.watcher, Image(watcher.working ? "WatcherTabWorking" : "WatcherTab"), Text("Watcher"), badge: watcher.needs, spoken: watcher.spoken)
@@ -113,8 +134,8 @@ struct TabsBar: View {
             item(.computers, Image(systemName: "desktopcomputer"), Text("Computers"), badge: 0, spoken: "")
             item(.settings, Image(systemName: "slider.horizontal.3"), Text("Settings"), badge: 0, spoken: "")
         }
-        .padding(.horizontal, Space.s2)
-        .padding(.top, Space.s1)
+        .padding(rail ? .vertical : .horizontal, Space.s2)
+        .padding(.top, rail ? 0 : Space.s1)
         .background(Palette.canvas)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isTabBar)
@@ -135,10 +156,10 @@ struct TabsBar: View {
                                 .offset(x: 12, y: -6)
                         }
                     }
-                title.font(.sotto(.caption, .medium)).lineLimit(1).minimumScaleFactor(0.8)
+                if !rail { title.font(.sotto(.caption, .medium)).lineLimit(1).minimumScaleFactor(0.8) }
             }
             .foregroundStyle(chosen ? Palette.accentText : Palette.muted)
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .frame(maxWidth: .infinity, minHeight: rail ? 52 : 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
