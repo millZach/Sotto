@@ -1,14 +1,34 @@
 .screenshot-input { min-width: 0; }
-.screenshot-previews { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
-.screenshot-previews figure { position: relative; width: 88px; margin: 0; padding: 4px; border: 1px solid var(--tt-field-border); border-radius: 9px; background: var(--tt-field); }
-.screenshot-previews img, .screenshot-previews__placeholder { display: block; width: 78px; height: 60px; border-radius: 5px; object-fit: cover; }
+.screenshot-previews { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; margin-top: 12px; }
+.screenshot-previews figure { position: relative; margin: 0; }
+.screenshot-previews__picture { position: relative; display: block; overflow: hidden; border-radius: 8px; box-shadow: 0 0 0 1px var(--tt-field-border), 0 2px 6px var(--tt-shadow-color); }
+.screenshot-previews img, .screenshot-previews__placeholder { display: block; width: 100%; height: 72px; object-fit: cover; }
 .screenshot-previews__placeholder { background: var(--tt-hover-strong); }
-.screenshot-previews figcaption { margin-top: 5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--tt-text-muted); font-size: 10px; }
-.screenshot-previews__resized { display: block; margin-top: 2px; color: var(--tt-text-muted); font-size: 10px; }
-/* Point at something's picture (ADR-0154) is wider, so the element's name and the comment under it can be read. */
-.screenshot-previews figure[data-pointed] { width: 168px; }
-.screenshot-previews figure[data-pointed] img, .screenshot-previews figure[data-pointed] .screenshot-previews__placeholder { width: 158px; }
-.screenshot-previews__note { display: block; margin-top: 2px; overflow: hidden; color: var(--tt-text-2); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+/* A scaled-down image's sizes (ADR-0030), on the picture's corner. The joined sizes break it into two lines at most. */
+.screenshot-previews__resized { position: absolute; bottom: 4px; left: 4px; max-width: calc(100% - 8px); padding: 1px 5px; border-radius: 4px; background: color-mix(in oklab, var(--tt-surface-elevated) 90%, transparent); color: var(--tt-text); font-size: 9px; line-height: 1.3; font-variant-numeric: tabular-nums; }
+/* Plain images rest as a deck: the first card on top and up to two peeking out behind it, which fan out into their row
+   under the pointer or the keyboard. The deck always takes the row's width, so fanning moves nothing around it. */
+.screenshot-deck { display: flex; flex: 0 1 auto; gap: 8px; min-width: 0; isolation: isolate; }
+.screenshot-deck figure { z-index: calc(8 - var(--i)); flex: 0 1 auto; width: 128px; min-width: 40px; transition: transform 180ms ease-out, opacity 180ms ease-out; }
+.screenshot-deck figure:nth-child(2) { transform: translateX(calc(var(--i) * (-100% - 8px))) translate(5px, -2px) rotate(2deg); }
+.screenshot-deck figure:nth-child(n + 3) { transform: translateX(calc(var(--i) * (-100% - 8px))) translate(10px, -4px) rotate(4deg); }
+.screenshot-deck figure:nth-child(n + 4) { opacity: 0; }
+.screenshot-deck__count { position: absolute; right: -6px; bottom: -6px; z-index: 2; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 5px; background: var(--tt-accent); color: var(--tt-on-accent); font-size: 11px; font-weight: 600; line-height: 20px; text-align: center; transition: opacity 180ms ease-out; }
+.screenshot-deck .screenshot-previews__resized { opacity: 0; transition: opacity 180ms ease-out; }
+.screenshot-deck button { opacity: 0; transition: opacity 180ms ease-out, background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.screenshot-deck:is(:hover, :focus-within) figure { transform: none; opacity: 1; }
+.screenshot-deck:is(:hover, :focus-within) .screenshot-previews__resized, .screenshot-deck:is(:hover, :focus-within) button { opacity: 1; }
+.screenshot-deck:is(:hover, :focus-within) .screenshot-deck__count { opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .screenshot-deck figure, .screenshot-deck__count, .screenshot-deck .screenshot-previews__resized, .screenshot-deck button { transition: none; }
+}
+:root[data-reduced-motion='on'] :is(.screenshot-deck figure, .screenshot-deck__count, .screenshot-deck .screenshot-previews__resized, .screenshot-deck button) { transition: none; }
+/* Point at something's picture (ADR-0154) is a tile of its own, wide enough to read the element's name and the comment under it. */
+.screenshot-previews figure[data-pointed] { width: 168px; padding: 4px; border: 1px solid var(--tt-field-border); border-radius: 9px; background: var(--tt-field); }
+.screenshot-previews figure[data-pointed] .screenshot-previews__picture { border-radius: 5px; box-shadow: none; }
+.screenshot-previews figcaption { min-width: 0; margin-top: 5px; color: var(--tt-text-muted); font-size: 10px; }
+.screenshot-previews figcaption > span, .screenshot-previews__note { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.screenshot-previews__note { margin-top: 2px; color: var(--tt-text-2); }
 .screenshot-previews button { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 1px solid var(--tt-border-faint); border-radius: 4px; background: var(--tt-hover-strong); color: var(--tt-text); cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 /* Attached files that are not images (ADR-0131): one-line pills under the image tiles, the name cut in the middle. */
 .attached-files { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
@@ -42,8 +62,8 @@
 .new-thread-dialog .thread-options { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 12px; }
 .new-thread-dialog .thread-options label:first-child { grid-column: 1 / -1; }
 .new-thread-dialog .thread-options select { max-width: none; width: 100%; }
-/* An attachment settles onto the composer as a queued message does. */
+/* An attachment settles onto the composer as a queued message does; the deck settles as one, so its cards keep their stack. */
 @media (prefers-reduced-motion: no-preference) {
-  :root:not([data-reduced-motion='on']) :is(.screenshot-previews figure, .attached-file) { animation: attachment-arrive 160ms cubic-bezier(.2, .8, .2, 1); }
+  :root:not([data-reduced-motion='on']) :is(.screenshot-previews > figure, .screenshot-deck, .attached-file) { animation: attachment-arrive 160ms cubic-bezier(.2, .8, .2, 1); }
 }
 @keyframes attachment-arrive { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }

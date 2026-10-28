@@ -285,7 +285,7 @@
 /* The thread's model, reasoning and permissions are three chips in the composer footer, each opening its own list. */
 .threads-view .thread-options-bar { position: relative; display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
 .threads-view .thread-options-bar > small { margin-top: 0; font-size: 12px; }
-.threads-view .screenshot-previews figcaption, .threads-view .screenshot-previews__resized, .threads-view .screenshot-previews__note, .threads-view .screenshot-input__tools small { font-size: 12px; }
+.threads-view .screenshot-previews figcaption, .threads-view .screenshot-previews__note, .threads-view .screenshot-input__tools small { font-size: 12px; }
 .threads-view .screenshot-input__tools .tt-button { width: 30px; min-height: 30px; border-radius: 8px; }
 
 
@@ -354,23 +354,12 @@
   .thread-prompt .prompt-editor { min-height: 36px; max-height: 150px; }
   .thread-workspace__compose .thread-options-bar .thread-options { row-gap: 0; }
   .thread-workspace__compose .thread-options-bar > small { margin-top: 0; }
-  /* An attached image rests as one row, thumbnail, name and remove, so the card keeps its prompt and actions above the footer. */
-  .threads-view .thread-workspace__compose .screenshot-previews { gap: 6px; margin-top: 6px; }
-  .threads-view .thread-workspace__compose .screenshot-previews figure { display: grid; grid-template-columns: 40px minmax(0, 1fr) 24px; align-items: center; gap: 8px; width: auto; max-width: 240px; padding: 3px; }
-  .threads-view .thread-workspace__compose .screenshot-previews img { width: 40px; height: 30px; border-radius: 5px; }
-  .threads-view .thread-workspace__compose .screenshot-previews figcaption { margin-top: 0; }
-  /* A scaled-down image says so under its name, and Point at something's picture shows its comment there (ADR-0154):
-     each on a line of its own, the comment first, and the thumbnail and remove button span every line. */
-  .threads-view .thread-workspace__compose .screenshot-previews figure:has(.screenshot-previews__resized, .screenshot-previews__note) { row-gap: 0; }
-  .threads-view .thread-workspace__compose .screenshot-previews figure:has(.screenshot-previews__resized, .screenshot-previews__note) img { grid-row: 1 / span 2; }
-  .threads-view .thread-workspace__compose .screenshot-previews figure:has(.screenshot-previews__resized, .screenshot-previews__note) button { grid-column: 3; grid-row: 1 / span 2; }
-  .threads-view .thread-workspace__compose .screenshot-previews figure:has(.screenshot-previews__resized):has(.screenshot-previews__note) img { grid-row: 1 / span 3; }
-  .threads-view .thread-workspace__compose .screenshot-previews figure:has(.screenshot-previews__resized):has(.screenshot-previews__note) button { grid-row: 1 / span 3; }
-  .threads-view .thread-workspace__compose .screenshot-previews__resized, .threads-view .thread-workspace__compose .screenshot-previews__note { grid-column: 2; grid-row: 2; margin-top: 0; }
-  .threads-view .thread-workspace__compose .screenshot-previews__note ~ .screenshot-previews__resized { grid-row: 3; }
-  .threads-view .thread-workspace__compose .screenshot-previews figure[data-pointed] img { width: 40px; }
-  .threads-view .thread-workspace__compose .screenshot-previews button { position: static; width: 24px; height: 24px; border-color: transparent; background: transparent; color: var(--tt-text-muted); }
-  .threads-view .thread-workspace__compose .screenshot-previews button:hover:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
+  /* Attached images are shorter, so the card keeps its prompt and actions above the footer; Point at something's picture
+     (ADR-0154) puts its name and comment beside the picture rather than under it. */
+  .threads-view .thread-workspace__compose .screenshot-previews { margin-top: 8px; }
+  .threads-view .thread-workspace__compose .screenshot-previews img, .threads-view .thread-workspace__compose .screenshot-previews__placeholder { height: 48px; }
+  .threads-view .thread-workspace__compose .screenshot-previews figure[data-pointed] { display: grid; grid-template-columns: 128px minmax(0, 1fr); align-items: center; gap: 8px; width: 280px; max-width: 100%; }
+  .threads-view .thread-workspace__compose .screenshot-previews figure[data-pointed] figcaption { margin-top: 0; }
 }
 
 /* The copy control's reveal and check pop are motion; reduced motion keeps them instant. */
