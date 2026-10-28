@@ -101,6 +101,7 @@ private struct ThemeChoice: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
+        .sensoryFeedback(trigger: selected) { _, isSelected in isSelected ? .selection : nil }
         .accessibilityLabel("\(palette.name) theme")
         .accessibilityValue(selected ? String(localized: "Selected", comment: "Accessibility value: this choice is the one in use.") : String(localized: "Not selected", comment: "Accessibility value: this choice is not the one in use."))
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -195,6 +196,7 @@ private struct TextSizeStep: View {
                 .contentShape(shape)
         }
         .buttonStyle(PressStyle())
+        .sensoryFeedback(trigger: selected) { _, isSelected in isSelected ? .selection : nil }
         .accessibilityLabel(size.title)
         .accessibilityValue(selected ? String(localized: "Selected", comment: "Accessibility value: this choice is the one in use.") : String(localized: "Not selected", comment: "Accessibility value: this choice is not the one in use."))
         .accessibilityAddTraits(selected ? .isSelected : [])
