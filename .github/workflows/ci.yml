@@ -241,8 +241,11 @@ jobs:
       - name: Unit and integration tests
         run: npm test -- --maxWorkers=2 --shard=${{ matrix.shard }}/6
 
-  # Informational until the owner decides to require it. A skipped or failed Changed areas job
-  # must not make skipped Linux shards look green.
+  # Not a required check, by Drake's decision on October 28, 2026: Linux shards flaked often (coordinatorThreadChanges
+  # failed 22 times in two days before its fix, and a workspaceThreadChanges 15 s timeout is still open), so requiring
+  # it would put every Linux flake in every merge's path. The cost is that a pull request can merge before Linux ends:
+  # #1709 merged two minutes before Tests (Linux, 6/6) went red. Read Linux result before merging when it has ended.
+  # A skipped or failed Changed areas job must not make skipped Linux shards look green.
   linux-result:
     name: Linux result
     needs: [changes, linux-tests]
