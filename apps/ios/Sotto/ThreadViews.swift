@@ -143,6 +143,7 @@ private struct WatchToggle: View {
     let title: String?
     @State private var presses = 0
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         let watched = model.watchedByWatcher(ref)
         let compact = typeSize.isAccessibilitySize
@@ -161,6 +162,7 @@ private struct WatchToggle: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: watched)
         .sensoryFeedback(.selection, trigger: presses)
         .disabled(!model.canChangeWatch(ref))
         .accessibilityLabel("Watch")
@@ -1895,6 +1897,8 @@ private struct ReplyDock: View, Equatable {
             .contentShape(Circle())
         }
         .buttonStyle(PressStyle())
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: canSend)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: queues)
         .sensoryFeedback(.impact(flexibility: .soft), trigger: sent)
         .disabled(!canSend)
         .accessibilityLabel(queues ? (preparing ? String(localized: "Queuing reply") : String(localized: "Queue for after this turn")) : (preparing ? String(localized: "Sending reply") : String(localized: "Send reply")))
