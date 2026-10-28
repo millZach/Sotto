@@ -311,6 +311,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/owlSky.css',
       'src/renderer/src/watcher/watcher.css',
       'src/renderer/src/watcher/nightScene.css',
+      'src/renderer/src/watcher/checkQueue.css',
       'src/renderer/src/agents/workingCopy.css',
       'src/renderer/src/agents/threadClear.css',
       'src/renderer/src/agents/branchToolbar.css',

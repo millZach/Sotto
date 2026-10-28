@@ -53,7 +53,6 @@ struct WatcherView: View {
                 .accessibilityHidden(true)
         }
         .background(Palette.canvas)
-        .background(TabItemAccessibility(title: "Watcher", value: model.watcherTab.spoken))
         .navigationTitle("Watcher")
         .toolbar(.hidden, for: .navigationBar)
         .onAppear { model.watcherOnScreen = true; barAway = false }
@@ -614,7 +613,7 @@ private struct WatcherConversationPane: View {
 
     var body: some View {
         let page = model.watcherPage(hostID)
-        let sending = model.watcherSending[hostID]
+        let sending = model.watcherSendingShown(hostID)?.text
         let sendingPhotos = model.watcherSendingPhotos[hostID] ?? []
         // The photos of Watcher's messages are its thread's, read through Watcher's page.
         let ref = page?.current.map { ThreadRef(hostID: hostID, threadID: $0.target.threadId) }

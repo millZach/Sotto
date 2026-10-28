@@ -15,7 +15,7 @@
 export function localeFormatter(options: Readonly<Intl.DateTimeFormatOptions>): (date: Date) => string {
   let built: { readonly key: string; readonly format: Intl.DateTimeFormat } | undefined
   return date => {
-    const key = defaultsKey()
+    const key = localeFormatKey()
     if (built === undefined || built.key !== key) built = { key, format: new Intl.DateTimeFormat(undefined, options) }
     return built.format.format(date)
   }
@@ -26,7 +26,11 @@ const JULY = new Date(Date.UTC(2026, 6, 1))
 const ZONE_NAME_CHECK_MS = 1_000
 let zoneName: { readonly name: string; readonly readAt: number } | undefined
 
-function defaultsKey(): string {
+/**
+ * What every `localeFormatter` is built for right now: the window's language and time zone. Text kept from an earlier
+ * format, such as a described thread row's clock, is still what a formatter would say while this is unchanged.
+ */
+export function localeFormatKey(): string {
   const language = typeof navigator === 'undefined' ? '' : navigator.language
   return `${language}|${JANUARY.getTimezoneOffset()}|${JULY.getTimezoneOffset()}|${currentZoneName()}`
 }

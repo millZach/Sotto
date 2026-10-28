@@ -2,6 +2,7 @@
 // #1312: a machine runs one check at a time, and the rest wait their turn in the order they were asked for.
 import { describe, expect, it, vi } from 'vitest'
 import { CHECK_TURN_CEILING_MS, checkWaitingWords, CheckQueue } from '../../../src/main/agents/checkQueue'
+import { CHECK_QUEUE_TITLE_MAX, CHECK_QUEUE_VIEW_MAX } from '../../../src/shared/checkQueue'
 
 const settle = () => new Promise<void>(resolve => queueMicrotask(resolve))
 
@@ -85,5 +86,52 @@ describe('CheckQueue', () => {
     expect(checkWaitingWords(queue.machine, 1)).toMatch(/^Waiting for forge-box's check to finish\. 1 ahead\./u)
     name = 'forge'
     expect(checkWaitingWords(queue.machine, 1)).toMatch(/^Waiting for forge's check to finish\. 1 ahead\./u)
+  })
+
+  it('shows the window whose each check is and what names it, the running one first, taken only after the queue changed (#1312, fourth part)', () => {
+    const queue = new CheckQueue('forge')
+    queue.join('a', vi.fn(), { whose: 'watcher', title: '  Omarchy capture check  ' })
+    queue.join('b', vi.fn(), { whose: 'thread', by: 'parent', work: 'building', title: 'x'.repeat(CHECK_QUEUE_TITLE_MAX + 40) })
+    const first = queue.view()
+    // The same array until the queue changes, so a read that repeats copies nothing.
+    expect(queue.view()).toBe(first)
+    expect(first).toEqual([{ id: 'a', whose: 'watcher', title: 'Omarchy capture check' },
+      { id: 'b', whose: 'thread', by: 'parent', work: 'building', title: 'x'.repeat(CHECK_QUEUE_TITLE_MAX) }])
+    queue.describe('b', { thread: 'child', provider: 'codex' })
+    const named = queue.view()
+    expect(named).not.toBe(first)
+    expect(named[1]).toEqual({ id: 'b', whose: 'thread', by: 'parent', work: 'building', title: 'x'.repeat(CHECK_QUEUE_TITLE_MAX), thread: 'child', provider: 'codex' })
+    // Saying the same again changes nothing, and a check not in the queue is not added.
+    queue.describe('b', { thread: 'child' }); queue.describe('gone', { thread: 'other' })
+    expect(queue.view()).toBe(named)
+    queue.leave('a')
+    expect(queue.view().map(entry => entry.id)).toEqual(['b'])
+    // A check whose owner said nothing of it keeps its place in the view.
+    queue.join('c', vi.fn())
+    expect(queue.view().at(-1)).toEqual({ id: 'c' })
+  })
+
+  it('tells its listeners once for every change made in one turn, and nothing after they stop', async () => {
+    const queue = new CheckQueue('forge')
+    const heard = vi.fn()
+    const stop = queue.subscribe(heard)
+    queue.join('a', vi.fn(), { whose: 'watcher', title: 'One' }); queue.join('b', vi.fn(), { whose: 'thread' }); queue.describe('b', { thread: 'child' })
+    expect(heard).not.toHaveBeenCalled()
+    await settle()
+    expect(heard).toHaveBeenCalledTimes(1)
+    queue.leave('b')
+    await settle()
+    expect(heard).toHaveBeenCalledTimes(2)
+    stop()
+    queue.leave('a')
+    await settle()
+    expect(heard).toHaveBeenCalledTimes(2)
+  })
+
+  it('lists at most CHECK_QUEUE_VIEW_MAX checks, though every one still waits its turn', () => {
+    const queue = new CheckQueue('forge')
+    for (let index = 0; index < CHECK_QUEUE_VIEW_MAX + 5; index++) queue.join(`c${index}`, vi.fn(), { whose: 'thread' })
+    expect(queue.view()).toHaveLength(CHECK_QUEUE_VIEW_MAX)
+    expect(queue.ids()).toHaveLength(CHECK_QUEUE_VIEW_MAX + 5)
   })
 })

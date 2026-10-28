@@ -2,7 +2,8 @@
  * The interface language (ADR-0123) in the built app with the `interface-language` Owl feature on: Settings > Appearance
  * > Language changes the window at once, the English word Language stays beside the label, the window keeps its
  * left-to-right layout, the row fits at the 820x560 minimum, and with the feature off nothing of it shows. An end-to-end
- * run reads English as the computer's language unless SOTTO_E2E_SYSTEM_LANGUAGES says otherwise.
+ * run reads English as the computer's language unless SOTTO_E2E_SYSTEM_LANGUAGES says otherwise. Until the desktop
+ * catalogs are drafted (#1684) Owl shows nothing of it either, and the tests of the row wait for INTERFACE_LANGUAGE_SHOWN.
  *
  *   npm run build && npx playwright test tests/e2e/interface-language.spec.ts
  *
@@ -11,12 +12,14 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
+import { INTERFACE_LANGUAGE_SHOWN } from '../../src/shared/interfaceLanguages'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { settingsLayoutProblems } from './support/settingsChecks'
 import { closeSotto, launchSotto, type LaunchedSotto } from './support/sottoLaunch'
 import { resizeWindow } from './support/sottoWindow'
 
 const shots = evidenceDirectory('artifacts/interface-language')
+const HIDDEN = 'Language is hidden until the desktop catalogs are drafted (#1684)'
 
 async function launch(options: { enabled: boolean; systemLanguages?: string }): Promise<LaunchedSotto> {
   const previous = { features: process.env['SOTTO_OWL_FEATURES'], system: process.env['SOTTO_E2E_SYSTEM_LANGUAGES'] }
@@ -84,6 +87,7 @@ async function capture(launched: LaunchedSotto, appearance: Locator, name: strin
 }
 
 test('Appearance chooses the interface language, and the window follows at once in every language', async () => {
+  test.skip(!INTERFACE_LANGUAGE_SHOWN, HIDDEN)
   test.setTimeout(240_000)
   await mkdir(shots, { recursive: true })
   const launched = await launch({ enabled: true })
@@ -158,6 +162,7 @@ test('Appearance chooses the interface language, and the window follows at once 
 })
 
 test('follows the computer\'s language under Same as this computer', async () => {
+  test.skip(!INTERFACE_LANGUAGE_SHOWN, HIDDEN)
   test.setTimeout(120_000)
   const launched = await launch({ enabled: true, systemLanguages: 'ko-KR,ja-JP' })
   try {
@@ -169,20 +174,35 @@ test('follows the computer\'s language under Same as this computer', async () =>
   }
 })
 
-test('stable has no Language row and stays in English, whatever the computer\'s language', async () => {
-  test.setTimeout(120_000)
-  const launched = await launch({ enabled: false, systemLanguages: 'ja-JP' })
-  try {
-    const appearance = await openAppearance(launched.page)
-    await expect(appearance.getByRole('heading', { level: 2, name: 'Appearance' })).toBeVisible()
-    await expect(appearance.locator('.language-picker')).toHaveCount(0)
-    await expect(launched.page.locator('html')).toHaveAttribute('lang', 'en')
-  } finally {
-    await closeSotto(launched)
-  }
-})
+// While Language is hidden, Owl is English as stable is (#1684).
+for (const build of INTERFACE_LANGUAGE_SHOWN ? ['stable'] as const : ['stable', 'Owl'] as const) {
+  test(`${build} has no Language row and stays in English, whatever the computer's language`, async () => {
+    test.setTimeout(120_000)
+    const launched = await launch({ enabled: build === 'Owl', systemLanguages: 'ja-JP' })
+    try {
+      const appearance = await openAppearance(launched.page)
+      await expect(appearance.getByRole('heading', { level: 2, name: 'Appearance' })).toBeVisible()
+      await expect(appearance.locator('.language-picker')).toHaveCount(0)
+      await expect(launched.page.locator('html')).toHaveAttribute('lang', 'en')
+      if (build === 'Owl') {
+        await mkdir(shots, { recursive: true })
+        // The end of the Details card, where the row stood.
+        const details = appearance.getByRole('region', { name: 'Details' })
+        for (const [width, height] of SIZES) {
+          await resizeWindow(launched, width, height)
+          await details.evaluate(card => card.scrollIntoView({ block: 'end' }))
+          await launched.page.mouse.move(0, 0)
+          await launched.page.screenshot({ path: join(shots, `owl-hidden-${width}x${height}.png`), animations: 'disabled', caret: 'hide' })
+        }
+      }
+    } finally {
+      await closeSotto(launched)
+    }
+  })
+}
 
 test('an unpackaged run shows a pseudo-language for layout checks, which the picker never lists', async () => {
+  test.skip(!INTERFACE_LANGUAGE_SHOWN, HIDDEN)
   test.setTimeout(120_000)
   await mkdir(shots, { recursive: true })
   for (const code of ['en-XA', 'ar-XB']) {
