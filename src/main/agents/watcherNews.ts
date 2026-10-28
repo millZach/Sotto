@@ -141,7 +141,8 @@ export function watcherNewsText(news: WatcherNews, detail?: WatcherNewsDetail, h
  * WATCHER_NEWS_REPLY_CHARS characters; read_operation has the rest when the turn answers an operation (`operation`), and
  * read_thread when it does not. A reply given whole says so, since that is what lets Watcher act on it without a read (#1419).
  * "Whole" is said only when the message is all the turn said (#1434): when it said more before this one (`more`), the
- * line names it the last message and sends Watcher to the rest.
+ * line names it the last message and sends Watcher to read_thread for the turn's earlier messages, since read_operation
+ * carries only the one reply an operation answers with.
  */
 export function watcherReplyStart(thread: Pick<AgentThread, 'status' | 'lastTurn'>, turnId: string | undefined, reply: Pick<AgentMessage, 'text'> | undefined, operation = false, more = false): string | undefined {
   if (thread.status === 'running' || !thread.lastTurn || thread.lastTurn.id !== turnId || !reply?.text.trim()) return undefined
@@ -149,7 +150,7 @@ export function watcherReplyStart(thread: Pick<AgentThread, 'status' | 'lastTurn
   const cut = characters.length > WATCHER_NEWS_REPLY_CHARS
   const said = JSON.stringify(characters.slice(0, WATCHER_NEWS_REPLY_CHARS).join(''))
   if (cut) return `Its reply begins, in the worker's words: ${said} (cut; ${operation ? 'read_operation' : 'read_thread'} has the rest).`
-  if (more) return `Its last message, in the worker's words: ${said} (the turn said more before it; ${operation ? 'read_operation' : 'read_thread'} has the rest).`
+  if (more) return `Its last message, in the worker's words: ${said} (the turn said more before it; read_thread has the rest).`
   return `Its whole reply, in the worker's words: ${said}.`
 }
 const ATTENTION_WORDS: Record<Exclude<WatcherAttentionKind, 'remarks'>, string> = {

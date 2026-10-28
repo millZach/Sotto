@@ -928,7 +928,8 @@ export class GrokAcpHost implements AgentHost {
     const refusal = clientRefusal(client)
     if (refusal) throw new Error(`Grok Build was updated, but Sotto cannot run the new version. ${refusal.message} Threads that are working carry on and nothing was lost. Install a Grok Build version Sotto supports, then connect Grok Build again.`, { cause: refusal })
     // Set together with the version, so a process is started either from the old client and counted old, or from the new one.
-    this.executable = executable; this.clientRevision++
+    // The new client's first quota read, not the old one's, is the latest.
+    this.executable = executable; this.clientRevision++; this.quotaLatest = undefined
     this.applyClient(client)
     for (const [id, entry] of this.processes) if (entry.clientRevision < this.clientRevision) this.outdated.add(id)
     this.emit()

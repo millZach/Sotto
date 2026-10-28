@@ -1125,14 +1125,16 @@ export class WatcherService implements WatcherControlHooks {
     // A provider may report the thread idle before its turn's completion arrives.
     if (isThreadTurnRunning(thread)) refuse('THREAD_BUSY', 'Wait for this thread to finish before settling it.')
     // Sub-agents still working, or not yet known to have ended, count as Settle finished threads counts them. The refusal
-    // names what it counted, in the same pieces as that count.
+    // names what it counted in that count's own pieces: the larger of background tasks and those agents once, since both
+    // can describe the same sub-agents, then the monitors.
     const backgroundTasks = thread.backgroundWork?.length ?? 0
     const workingAgents = (thread.subagentSummary?.working ?? 0) + (thread.subagentSummary?.unknown ?? 0)
     const monitors = thread.monitoring?.length ?? 0
     if (watcherBackgroundWorkCount(thread) > 0) {
       const counted = [
-        backgroundTasks ? `${backgroundTasks} background task${backgroundTasks === 1 ? '' : 's'}` : '',
-        workingAgents ? `${workingAgents} agent${workingAgents === 1 ? '' : 's'} still working or not known to have ended` : '',
+        backgroundTasks >= workingAgents && backgroundTasks
+          ? `${backgroundTasks} background task${backgroundTasks === 1 ? '' : 's'}`
+          : workingAgents ? `${workingAgents} agent${workingAgents === 1 ? '' : 's'} still working or not known to have ended` : '',
         monitors ? `${monitors} monitor${monitors === 1 ? '' : 's'}` : '',
       ].filter(Boolean).join(', ')
       refuse('BACKGROUND_WORK_RUNNING', `This thread still has background work: ${counted}. Stop it explicitly before settling.`)

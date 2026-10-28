@@ -1720,7 +1720,8 @@ it('calls a reply its last message, not the whole turn, when the turn said more 
   expect(watcherNewestTurnSaidMore(thread)).toBe(true)
   expect(watcherReplyStart(thread, 'turn-1', reply, false, watcherNewestTurnSaidMore(thread)))
     .toBe('Its last message, in the worker\'s words: "Done, see above." (the turn said more before it; read_thread has the rest).')
-  expect(watcherReplyStart(thread, 'turn-1', reply, true, watcherNewestTurnSaidMore(thread))).toContain('read_operation')
+  expect(watcherReplyStart(thread, 'turn-1', reply, true, watcherNewestTurnSaidMore(thread)))
+    .toBe('Its last message, in the worker\'s words: "Done, see above." (the turn said more before it; read_thread has the rest).')
   // One message is the whole turn, and the whole sentence stands.
   thread.messages = [thread.messages[0]!, { id: 'reply-3', role: 'assistant', text: 'Done, see above.', createdAt: centerTime }]
   expect(watcherNewestTurnSaidMore(thread)).toBe(false)
