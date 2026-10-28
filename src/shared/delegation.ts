@@ -44,7 +44,7 @@ export const delegateInputSchema = z.object({
   effort: z.string().min(1).max(64).optional().describe('For a new thread: a reasoning effort the model offers, required when it offers any.'),
   permission: agentRuntimeModeSchema.optional().describe('For a new thread, required: approval-required, auto-accept-edits, auto or full-access, one the model offers. Never wider than this thread\'s own or the user\'s new-thread default.'),
   working_copy: z.enum(['shared', 'independent']).optional().describe('For a new thread: share this project\'s checkout (the default) or start its own worktree.'),
-  machine: z.uuid().optional().describe(`For a new thread: the machine it starts on, a host ID from ${LIST_MACHINES_TOOL}. A delegated thread starts only on This computer for now.`),
+  machine: z.uuid().optional().describe(`For a new thread: the machine it starts on, a host ID from ${LIST_MACHINES_TOOL}.`),
   os: workerSystemSchema.optional().describe('For a new thread: the system it needs, windows, macos or linux. Never falls back to another system.'),
   from_my_branch: z.boolean().optional().describe('For a new thread: start it in a worktree of its own on this thread\'s branch, with this thread\'s commits. Uncommitted work here refuses it; commit first, or set test_run.'),
   test_run: z.boolean().optional().describe('For a new thread that is there to run tests, which the user calls a check. One check runs at a time on a machine; a later one waits its turn, working. With from_my_branch, this thread\'s uncommitted work goes too, as a snapshot taken now, and nothing in this thread changes. Sotto never guesses it from commands.'),

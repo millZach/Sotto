@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CodexSessionLogWatcher, promptDigest } from '../../../src/main/agents/codexSessionLog'
+import { browserFeedbackNote, carriesAttachedFiles } from '../../../src/main/agents/attachedFiles'
 import { rolloutLine } from '../../fixtures/codexFixture'
 import type { AgentMessage } from '../../../src/shared/agents'
 import { deferred } from '../../fixtures/deferred'
@@ -243,5 +244,22 @@ describe('Codex session log', () => {
     await watcher.poll(); expect(messages).toHaveLength(2)
     await appendFile(path, rolloutLine(6, { type: 'item_completed', item: { type: 'user_message', id: 'foreign', content: [{ type: 'text', text: 'CLI prompt' }] } }))
     await watcher.poll(); expect(messages.at(-1)).toMatchObject({ id: 'foreign', text: 'CLI prompt' }); expect(messages.every(m => m.commandId === undefined)).toBe(true)
+  })
+})
+
+describe('a Point at something send read back from the rollout (ADR-0154)', () => {
+  it('knows the feedback block on a send that carries only a picture is Sotto\'s, and does not show the prompt again', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-codex-log-')); roots.push(root)
+    const directory = join(root, 'sessions'); await mkdir(directory)
+    const messages: AgentMessage[] = []
+    const watcher = new CodexSessionLogWatcher({ codexHome: root, onMessage: (_id, message) => messages.push(message) })
+    watchers.push(watcher)
+    // The handle as the adapter is sent it: a picture carrying its feedback, with no file beside it.
+    const picture = { name: 'button · Sign in', mimeType: 'image/png', browserFeedback: { label: 'button · Sign in', comment: 'Match the header', context: 'Selector: #sign-in' } }
+    watcher.sent('thread', 'own-client', 'Look at this', carriesAttachedFiles([picture]))
+    // Codex's rollout joins the input's text items, the feedback block among them.
+    await writeFile(join(directory, 'rollout-thread.jsonl'), rolloutLine(1, { type: 'user_message', client_id: 'own-client', message: `Look at this\n\n${browserFeedbackNote([picture])}` }))
+    await watcher.pollThread('thread')
+    expect(messages).toEqual([])
   })
 })

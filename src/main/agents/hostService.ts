@@ -26,7 +26,7 @@ import type { HostMachineReport } from '../../shared/hostFacts'
 import type { ProjectOrigins, ProjectSetupRequest, ProjectSetupResult } from '../../shared/workerMachine'
 import type { HostBranchMoveRequest } from '../../shared/branchMoves'
 import type { DesktopDefaultsInput, DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
-import type { DelegationRelayAsk, RelayedReply } from '../../shared/delegationRelay'
+import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../shared/delegationRelay'
 import type { DelegationNews } from '../../shared/delegation'
 import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
 import type { DelegationViews } from './delegationIpc'
@@ -172,6 +172,16 @@ export interface HostService {
   answerDelegationRelay?(askId: string, answer: unknown): Promise<void>
   delegationRelayName?(name: string): Promise<void>
   delegationRelayNews?(threadId: string, news: DelegationNews, replies?: readonly RelayedReply[]): Promise<void>
+  /**
+   * This desktop asks the host for delegations there for threads on other machines (`delegation-remote`, #1316 part 2):
+   * `delegationRemoteAsk` asks and returns the host's own delegation's result, and `subscribeDelegationRemoteNews` hears
+   * the host say one moved, naming the caller as this desktop named it.
+   */
+  readonly supportsDelegationRemote?: boolean
+  /** Whether the host takes second briefs relayed from its threads (`delegation-relay-send`). */
+  readonly supportsDelegationRelaySend?: boolean
+  delegationRemoteAsk?(ask: DelegationRemoteAsk, timeoutMs: number): Promise<unknown>
+  subscribeDelegationRemoteNews?(listener: (caller: string, news: DelegationNews, replies: readonly RelayedReply[]) => void): () => void
   /** The host continues agents as threads and forks at a reply (#1028): it takes `continue-agent` and reads `startHandover`. */
   readonly supportsThreadStarts?: boolean
   /** The host keeps which failed threads have been seen and takes `dismiss-failures` (ADR-0092); without it its failed

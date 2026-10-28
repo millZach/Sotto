@@ -81,12 +81,12 @@ describe('delegate with Work across machines', () => {
     }
     expect(DELEGATION_TOOL_DEFINITIONS).toEqual(delegationToolDefinitions(false, false))
   })
-  it('offers a machine, a system and the machine list while it is on, and says a delegated thread starts on This computer for now', () => {
+  it('offers a machine, a system and the machine list while it is on, and says a machine that is not connected is refused', () => {
     for (const roles of [false, true]) {
       const definitions = delegationToolDefinitions(roles, true), delegate = tool(definitions, 'delegate')!
       expect(delegate.schema.properties['machine']!.description).toContain(LIST_MACHINES_TOOL)
       expect(delegate.schema.properties['os']!.enum).toEqual(['windows', 'macos', 'linux'])
-      expect(delegate.description).toContain('a delegated thread starts only on This computer for now')
+      expect(delegate.description).toContain('only while that machine is connected')
       expect(tool(definitions, LIST_MACHINES_TOOL)!.description).toContain('newWorkersStart')
     }
   })

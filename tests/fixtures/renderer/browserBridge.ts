@@ -23,7 +23,7 @@ export function browserBridgeFixture(options: { workspace: FileWorkspace; pages?
   const bridge: BrowserBridge = {
     list: vi.fn<BrowserBridge['list']>(async () => ({ ok: true, value: { workspace: options.workspace, pages } })),
     tasks: vi.fn<BrowserBridge['tasks']>(async () => ({ ok: true, value: tasks })),
-    create: vi.fn<BrowserBridge['create']>(), navigate: vi.fn<BrowserBridge['navigate']>(), back: vi.fn<BrowserBridge['back']>(), forward: vi.fn<BrowserBridge['forward']>(), reload: vi.fn<BrowserBridge['reload']>(), close: vi.fn<BrowserBridge['close']>(), share: vi.fn<BrowserBridge['share']>(), viewport: vi.fn<BrowserBridge['viewport']>(), capture: vi.fn<BrowserBridge['capture']>(),
+    create: vi.fn<BrowserBridge['create']>(), navigate: vi.fn<BrowserBridge['navigate']>(), back: vi.fn<BrowserBridge['back']>(), forward: vi.fn<BrowserBridge['forward']>(), reload: vi.fn<BrowserBridge['reload']>(), close: vi.fn<BrowserBridge['close']>(), share: vi.fn<BrowserBridge['share']>(), viewport: vi.fn<BrowserBridge['viewport']>(), capture: vi.fn<BrowserBridge['capture']>(), point: vi.fn<BrowserBridge['point']>(async request => ({ ok: true, value: { pointing: request.on } })),
     controlTask: vi.fn<BrowserBridge['controlTask']>(), answerAction: vi.fn<BrowserBridge['answerAction']>(), mount: vi.fn<BrowserBridge['mount']>(async () => ({ ok: true, value: undefined })),
     stopGrant: vi.fn<BrowserBridge['stopGrant']>(async () => ({ ok: true, value: undefined })), openLink: vi.fn<BrowserBridge['openLink']>(), onEvent: events.subscribe, ...options.commands,
   }

@@ -1164,8 +1164,14 @@ export class WatcherService implements WatcherControlHooks {
    * whose paired host did not answer in time and may still start them (`timedOutStarts`).
    */
   private startsNotYetSentOn(hostId: string): string[] {
-    return this.reservedStarts().flatMap(start => start.notYetSent && start.target.hostId === hostId ? [start.target.threadId] : [])
+    const own = this.reservedStarts().flatMap(start => start.notYetSent && start.target.hostId === hostId ? [start.target.threadId] : [])
+    const delegated = this.delegationStarts?.(hostId)
+    return delegated?.length ? [...own, ...delegated] : own
   }
+  /** The delegated starts this desktop asked a paired host for and has not seen settled (#1316 part 2), by host. */
+  private delegationStarts: ((hostId: string) => readonly string[]) | undefined
+  /** Lets a machine's count add the delegated starts on their way there, as it adds Watcher's own (the counting rule). */
+  useDelegationStarts(source: (hostId: string) => readonly string[]): void { this.delegationStarts = source }
   /** Distinct threads among the reserved starts: the phone's page asks on every build. */
   private inFlight(): number {
     const starts = this.reservedStarts()

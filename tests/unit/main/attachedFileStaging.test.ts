@@ -219,6 +219,16 @@ describe('attached files through the coordinator (ADR-0131)', () => {
     expect(Buffer.from(await attached!.read())).toEqual(pdf.bytes)
   })
 
+  it('hands Point at something\'s feedback to the provider with its picture, so delivery can write it (ADR-0154)', async () => {
+    const f = await coordinator(true)
+    const image = await f.control.stageAttachment({ name: 'button · Sign in', mimeType: 'image/png', bytes: PIXEL_PNG })
+    const browserFeedback = { label: 'button · Sign in', comment: 'Match the header', context: 'Selector: #sign-in' }
+    await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Look', attachments: [{ ...image, browserFeedback }] })
+    const sent = f.host.attempts.find(command => command.type === 'send')
+    const [attached] = (sent as Extract<AgentHostCommand, { type: 'send' }>).attachments!
+    expect(attached).toMatchObject({ id: image.id, name: 'button · Sign in', browserFeedback })
+  })
+
   it('refuses to send a file once the Owl feature is off, before the provider hears anything, even though the store still keeps it', async () => {
     const root = await directory(); const host = new Host()
     const credentials = await testCredentials(root, { mode: 'unavailable' })
