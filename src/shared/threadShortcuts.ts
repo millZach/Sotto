@@ -91,6 +91,8 @@ export function isThreadChord(chord: string): boolean {
 }
 
 const threadChordSchema = z.string().min(1).max(64).refine(isThreadChord)
+const threadShortcutIdSchema = z.enum(THREAD_SHORTCUT_IDS)
+const threadChordChoiceSchema = threadChordSchema.nullable()
 export const threadShortcutChoicesSchema = z.partialRecord(z.enum(THREAD_SHORTCUT_IDS), threadChordSchema.nullable())
 /**
  * The rows the user chose under Settings › Keyboard, by shortcut. A row left out follows its default in
@@ -104,8 +106,8 @@ export function parseThreadShortcutChoices(input: unknown): ThreadShortcutChoice
   if (typeof input !== 'object' || input === null || Array.isArray(input)) return {}
   const choices: ThreadShortcutChoices = {}
   for (const [key, value] of Object.entries(input)) {
-    const id = z.enum(THREAD_SHORTCUT_IDS).safeParse(key)
-    const chord = threadChordSchema.nullable().safeParse(value)
+    const id = threadShortcutIdSchema.safeParse(key)
+    const chord = threadChordChoiceSchema.safeParse(value)
     if (id.success && chord.success) choices[id.data] = chord.data
   }
   return choices

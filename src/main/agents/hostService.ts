@@ -35,6 +35,8 @@ import type { CheckQueueEntry } from '../../shared/checkQueue'
 import type { QuestionPageTarget } from './questionPages'
 import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery, type UsageProviderId } from '../../shared/usageDashboard'
 
+const usageProviderIdsSchema = usageProviderIdSchema.array().max(usageProviderIdSchema.options.length)
+
 type RequestAnswerCheckRefusalReason = 'stale-question' | 'provider-disconnected' | 'forbidden' | 'unsupported' | 'answer-in-progress' | 'answer-changed'
 const requestAnswerCheckRefusals: Record<RequestAnswerCheckRefusalReason, { code: HostErrorCode; message: string }> = {
   'stale-question': { code: 'stale_request', message: 'The original question changed or is no longer pending. Your saved answer is kept.' },
@@ -98,6 +100,8 @@ export interface HostService {
    * check running there, its own delegations' checks included. Only where its Owl answer turns on Work across machines.
    */
   readonly supportsWatcherCheckQueue?: boolean
+  /** Watcher's stop_thread on a check waiting in the host's queue takes it out of that queue (`watcher-check-stop`, #1637). */
+  readonly supportsWatcherCheckStop?: boolean
   /** The host takes requests from a Watcher on Muse; without it a desktop whose Watcher is on Muse leaves the host alone. */
   readonly supportsWatcherMuse?: boolean
   /** The host lists `watcher-cursor`: it takes Watcher requests whose identity names Cursor (ADR-0128). */
@@ -450,7 +454,7 @@ export class LocalHostService implements HostService {
   }
   usageRefresh(providerIds?: ProviderId[], background = false): Promise<UsageLocalHostRead> {
     if (!this.usage) return Promise.reject(new Error('Usage is unavailable on this host.'))
-    const named = providerIds === undefined ? undefined : usageProviderIdSchema.array().max(usageProviderIdSchema.options.length).parse(providerIds)
+    const named = providerIds === undefined ? undefined : usageProviderIdsSchema.parse(providerIds)
     return background ? this.usage.refresh(named, true) : this.usage.refresh(named)
   }
   usageClear(request: UsageLocalClearRequest, client: ClientIdentity): Promise<UsageLocalClearResult> {

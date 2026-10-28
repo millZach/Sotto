@@ -41,6 +41,7 @@ const sqlFields: Record<UsageTokenField, string> = {
 const promptColumns = ['prompt_user', 'prompt_watcher', 'prompt_wake_up', 'prompt_total', 'prompt_steered'] as const
 const bucketKey = ['provider', 'thread_id', 'model_id', 'source', 'client', 'sub_agent', 'bucket'] as const
 /** History cursors name a file by a digest the reader chose, never by its path. */
+const usageProviderIdsSchema = usageProviderIdSchema.array()
 const cursorKeySchema = z.string().min(1).max(256).regex(/^[^\s\p{Cc}/\\]+$/u)
 
 /**
@@ -456,7 +457,7 @@ export class UsageStore {
       GROUP BY source,client,sub_agent ORDER BY source DESC,client,sub_agent LIMIT ?`).all(USAGE_CLIENT_ROWS_MAX)
       .map((row): UsageClientAggregate => ({ ...aggregate(row), source: usageSourceSchema.parse(row.source),
         clientId: usageClientSchema.parse(row.client), subAgent: row.sub_agent === 1,
-        providerIds: usageProviderIdSchema.array().parse(String(row.providers ?? '').split(',').filter(Boolean).sort()) }))
+        providerIds: usageProviderIdsSchema.parse(String(row.providers ?? '').split(',').filter(Boolean).sort()) }))
     return {
       metadata, totals: aggregate(totalRow), providers, timeZone,
       models: modelRows.map(row => ({ ...aggregate(row), providerId: usageProviderIdSchema.parse(row.provider), modelId: String(row.model) })),
