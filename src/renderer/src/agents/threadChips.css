@@ -63,7 +63,7 @@
 .thread-prompt > .thread-options-notices, .thread-workspace__compose .agent-composer > .thread-options-notices { grid-column: 2; }
 .thread-options__notice { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0; color: var(--threads-warning-text, var(--tt-error-text)); font-size: 12.5px; line-height: 1.4; }
 .thread-options__notice > span { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
-.thread-options__notice > button { flex: none; height: 26px; min-height: 26px; padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.thread-options__notice > button { flex: none; height: 26px; min-height: 26px; padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
 .thread-options__notice > button:hover:not(:disabled) { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
 .thread-options__notice > button:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .thread-options__notice > button:disabled { opacity: .55; cursor: default; }

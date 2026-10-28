@@ -98,7 +98,7 @@
 .terminal-search input:focus { outline: none; border-color: color-mix(in srgb, var(--tt-accent) 55%, var(--tt-field-border)); }
 .terminal-search input:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 1px; }
 .terminal-search output { flex: none; min-width: 50px; padding: 0 6px; color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: center; }
-.terminal-search button { display: grid; place-items: center; flex: none; width: 26px; height: 26px; min-height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); cursor: pointer; transition: opacity 120ms ease; }
+.terminal-search button { display: grid; place-items: center; flex: none; width: 26px; height: 26px; min-height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); cursor: pointer; transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease; }
 .terminal-search button:hover { color: var(--tt-text); background: var(--tt-hover); }
 .terminal-search button:active:not(:disabled) { color: var(--tt-text); background: var(--tt-hover-strong); }
 .terminal-search button:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }

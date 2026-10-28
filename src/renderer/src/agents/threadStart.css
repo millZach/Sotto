@@ -35,7 +35,7 @@
 
 /* Fork from here, in the transcript (#1028, E5b): the press under a reply, its card, and what the fork does not carry. */
 .thread-message__fork { position: absolute; right: 0; bottom: 0; display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 6px; border: 0; border-radius: var(--tt-radius-sm);
-  background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; cursor: pointer; opacity: 0; transition: opacity 120ms ease; }
+  background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; cursor: pointer; opacity: 0; transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease; }
 .thread-message__fork:hover, .thread-message__fork[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
 .thread-message__fork:active:not(:disabled):not([aria-expanded='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .thread-message__fork[aria-disabled='true'] { cursor: default; }

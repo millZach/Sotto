@@ -92,7 +92,7 @@
 .usage-link { padding: 0; border: 0; background: none; color: var(--tt-link); font: inherit; font-size: 13px; cursor: pointer; }
 .usage-link:hover { text-decoration: underline; text-underline-offset: 3px; }
 .usage-dash { color: var(--tt-text-faint); }
-.usage-button { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 13px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: transparent; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.usage-button { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 13px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: transparent; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
 .usage-button:hover:not([aria-disabled='true']) { background: var(--usage-hover-soft); color: var(--tt-text); }
 .usage-button:active:not([aria-disabled='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .usage-button[aria-disabled='true'] { opacity: .6; cursor: default; }

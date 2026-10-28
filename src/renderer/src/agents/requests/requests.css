@@ -77,7 +77,7 @@
 .agent-request__optional { color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
 .agent-request__unavailable { margin: 0; padding: 2px 0 2px 10px; border-left: 2px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
 .agent-request__unavailable[data-required] { border-left-color: var(--tt-warning); }
-.agent-request__clear { justify-self: start; min-height: 28px; margin: -2px 0 0 20px; padding: 0 8px; border: 0; border-radius: var(--tt-radius-sm); background: none; color: var(--tt-text-muted); font: inherit; font-size: 13px; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.agent-request__clear { justify-self: start; min-height: 28px; margin: -2px 0 0 20px; padding: 0 8px; border: 0; border-radius: var(--tt-radius-sm); background: none; color: var(--tt-text-muted); font: inherit; font-size: 13px; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
 .agent-request__clear:hover:not(:disabled) { color: var(--tt-text); background: var(--tt-hover); }
 .agent-request__clear:active:not(:disabled) { color: var(--tt-text); background: var(--tt-hover-strong); }
 .agent-request__clear:disabled { cursor: default; opacity: .72; }

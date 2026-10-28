@@ -106,7 +106,7 @@
 /* The copy control sits in the message's bottom-left corner and appears while the message is hovered,
    holds focus, or is mid-confirmation. A message that has one keeps room for it under its last line:
    replies line its icon up with their text, user bubbles pin it inside their padding. */
-.thread-message__copy { position: absolute; bottom: 0; left: -5px; display: inline-flex; align-items: center; gap: 5px; min-width: 28px; height: 28px; min-height: 28px; padding: 0 5px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; cursor: pointer; opacity: 0; transition: opacity 120ms ease; }
+.thread-message__copy { position: absolute; bottom: 0; left: -5px; display: inline-flex; align-items: center; gap: 5px; min-width: 28px; height: 28px; min-height: 28px; padding: 0 5px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; cursor: pointer; opacity: 0; transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease; }
 .thread-message__copy:hover { background: var(--tt-hover); color: var(--tt-text); }
 .thread-message__copy:active { background: var(--tt-hover-strong); color: var(--tt-text); }
 .thread-message__copy[data-copied] { color: var(--tt-success); }

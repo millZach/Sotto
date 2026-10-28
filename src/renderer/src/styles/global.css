@@ -306,7 +306,7 @@ h1[tabindex='-1']:focus {
   color: var(--tt-text);
   font-size: 13.5px;
   font-weight: 500;
-  transition: border-color 120ms ease, background-color 120ms ease;
+  transition: border-color 120ms ease, background-color 120ms ease, opacity 120ms ease;
 }
 
 .tt-select {

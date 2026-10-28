@@ -76,7 +76,7 @@
 /* A sunken track with the chosen segment raised out of it (ADR-0110). On a card the track sinks to the card's inset. */
 .segmented-control { grid-area: control; display: inline-flex; align-items: center; justify-self: end; padding: 3px; border: 0; border-radius: 6px; gap: 2px; background: var(--tt-surface-sunken); }
 .settings-rows .segmented-control { background: var(--tt-card-inset); }
-.segmented-control button { min-height: 30px; padding: 2px 12px; border: 0; border-radius: 4px; font: inherit; font-size: 14px; white-space: nowrap; color: var(--tt-text-muted); background: none; cursor: pointer; transition: background-color 120ms ease, color 120ms ease; }
+.segmented-control button { min-height: 30px; padding: 2px 12px; border: 0; border-radius: 4px; font: inherit; font-size: 14px; white-space: nowrap; color: var(--tt-text-muted); background: none; cursor: pointer; transition: background-color 120ms ease, color 120ms ease, opacity 120ms ease; }
 .segmented-control button:hover:not(:disabled) { color: var(--tt-text); }
 .segmented-control button:active:not(:disabled):not([aria-checked='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .segmented-control button:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
@@ -100,7 +100,7 @@
 /* Linux draws no window controls, so its notice keeps only the gutter the left side has, at every width. */
 [data-platform='linux'] .settings-view .settings-feedback { padding-right: 6vw; }
 .settings-view .settings-subnav { position: static; display: flex; flex-direction: column; align-self: auto; gap: 4px; padding: 0; border: 0; overflow: visible; }
-.settings-subnav button { position: relative; display: flex; align-items: center; gap: 11px; width: 100%; min-height: 42px; padding: 10px 12px; border: 0; border-radius: 8px; color: var(--tt-text-muted); background: transparent; text-align: left; font: inherit; font-size: 14px; line-height: 1.35; cursor: pointer; transition: background 160ms ease, color 160ms ease; }
+.settings-subnav button { position: relative; display: flex; align-items: center; gap: 11px; width: 100%; min-height: 42px; padding: 10px 12px; border: 0; border-radius: 8px; color: var(--tt-text-muted); background: transparent; text-align: left; font: inherit; font-size: 14px; line-height: 1.35; cursor: pointer; transition: background 160ms ease, color 160ms ease, background-color 120ms ease, color 120ms ease; }
 .settings-subnav button > span { flex: 1; }
 .settings-subnav button > svg { flex: none; }
 .settings-subnav button:hover { background: var(--theme-sidebar-row-hover); color: var(--tt-text); }
