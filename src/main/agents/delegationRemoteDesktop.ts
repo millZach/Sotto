@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { appendFile, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import type { AgentRuntimeMode } from '../../shared/agents'
@@ -67,6 +68,11 @@ const SETTLED: ReadonlySet<WatcherOutcome> = new Set(['answered', 'failed', 'sto
 const now = (): string => new Date().toISOString()
 const capital = (name: string): string => name.charAt(0).toUpperCase() + name.slice(1)
 const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
+/** The settled delegations kept as history, newest first; an open one is never dropped to stay under it. */
+const SETTLED_KEPT = DELEGATION_RELAY_RECORDS_MAX * 4
+const targetIndex = (hostId: string, delegation: string): string => `${hostId}\n${delegation}`
+const threadIndex = (callerId: string, hostId: string, thread: string): string => `${callerId}\n${hostId}\n${thread}`
+const retryIndex = (callerId: string, retryKey: string): string => `${callerId}\n${retryKey}`
 /** How many replies wait in memory for their wake-up to be worded. */
 const REPLIES_KEPT = 200
 
@@ -103,7 +109,27 @@ const REMOTE_LOST_CANCEL = (machine: string): string => `${capital(machine)} did
  */
 export class DesktopRemoteDelegations {
   private readonly store: AtomicJsonStore<RemoteFile>
-  private records: RemoteRecord[] = []
+  /**
+   * The record, by this computer's ID in the order made, with an index for each way it is looked up, so a news update,
+   * a read or a send touches only the records it names, however long the history (AGENTS.md, #1316 review).
+   */
+  private readonly byId = new Map<string, RemoteRecord>()
+  private readonly byCaller = new Map<string, RemoteRecord[]>()
+  /** By host and the host's own delegation ID: what its news names. */
+  private readonly byTarget = new Map<string, RemoteRecord>()
+  /** The first delegation to each thread, by caller, host and the host's thread ID: where a second brief goes. */
+  private readonly byThread = new Map<string, RemoteRecord>()
+  private readonly byRetry = new Map<string, RemoteRecord>()
+  /**
+   * Each host's live records: open, untold, or never matched to the host's own ID. Only these are in
+   * `delegation-remote.json`, written whole on a change; the rest are history, appended once to
+   * `delegation-remote-settled.jsonl` as each settles, so an outcome update never writes the history out again.
+   */
+  private readonly live = new Map<string, Set<RemoteRecord>>()
+  private readonly dirty = new Set<RemoteRecord>()
+  private readonly settledPath: string
+  private settledLines = 0
+  private settledTail: Promise<void> = Promise.resolve()
   private readonly followed = new WeakSet<object>()
   private source: RemoteDelegationHosts | undefined
   private unfollow: (() => void) | undefined
@@ -127,11 +153,28 @@ export class DesktopRemoteDelegations {
     readonly log?: (event: 'delegation-remote-answer-lost' | 'delegation-remote-reconciled') => void
   }) {
     this.store = new AtomicJsonStore(join(directory, 'delegation-remote.json'), input => fileSchema.parse(input), (): RemoteFile => ({ version: 1, delegations: [] }))
+    this.settledPath = join(directory, 'delegation-remote-settled.jsonl')
   }
   async load(): Promise<void> {
+    // History first, newest line of each winning, then the live records, which are newer still.
+    const lines = (await readFile(this.settledPath, 'utf8').catch(() => '')).split('\n')
+    const settled = new Map<string, RemoteRecord>()
+    for (const line of lines) {
+      if (!line.trim()) continue
+      let parsed: unknown
+      try { parsed = JSON.parse(line) } catch { continue }
+      const record = recordSchema.safeParse(parsed)
+      if (record.success) { settled.delete(record.data.id); settled.set(record.data.id, record.data); this.settledLines++ }
+    }
     const file = await this.store.read().catch((): RemoteFile => ({ version: 1, delegations: [] }))
-    this.records = file.delegations
-    for (const record of this.records) if (record.action === 'start' && record.delegation === undefined && record.unread === true) this.reserve(record)
+    for (const record of file.delegations) settled.delete(record.id)
+    for (const record of [...settled.values(), ...file.delegations].sort((a, b) => a.createdAt.localeCompare(b.createdAt))) this.add(record)
+    for (const record of file.delegations) {
+      if (record.action === 'start' && record.delegation === undefined && record.unread === true) this.reserve(record)
+      // A settled record in the live file, as one from before the history was split off, goes to the history at the next save.
+      if (!this.isLive(record)) this.dirty.add(record)
+    }
+    if (this.settledLines > SETTLED_KEPT * 2) await this.compact().catch(() => undefined)
   }
   /** The starts on `hostId` not yet settled there, which its machine count adds (`placedNotStartedWith`). */
   pendingStarts(hostId: string): readonly string[] { return [...this.pending.get(hostId) ?? []] }
@@ -164,14 +207,14 @@ export class DesktopRemoteDelegations {
   /** Whether `threadKey` (`host:<hostId>:<threadId>`) is a thread on a paired host that `callerId` delegated to. */
   holdsThread(callerId: string, threadKey: string): boolean {
     const key = parseHostEntityKey(threadKey)
-    return key !== null && this.records.some(record => record.callerId === callerId && record.hostId === key.hostId && record.thread === key.id)
+    return key !== null && this.byThread.has(threadIndex(callerId, key.hostId, key.id))
   }
   /** The delegation `callerId` made under its own `retryKey`, if any. */
   retried(callerId: string, retryKey: string): string | undefined {
-    return this.records.findLast(record => record.callerId === callerId && record.callerRetryKey === retryKey)?.id
+    return this.byRetry.get(retryIndex(callerId, retryKey))?.id
   }
-  isOpen(delegationId: string): boolean { const record = this.records.find(item => item.id === delegationId); return record !== undefined && this.open(record) }
-  hasOpen(callerId: string): boolean { return this.records.some(record => record.callerId === callerId && this.open(record)) }
+  isOpen(delegationId: string): boolean { const record = this.byId.get(delegationId); return record !== undefined && this.open(record) }
+  hasOpen(callerId: string): boolean { return (this.byCaller.get(callerId) ?? []).some(record => this.open(record)) }
   /** An answered delegation's reply for the wake-up that tells it, as the host sent it; none once worded or never sent. */
   detail(delegationId: string): DelegationNewsDetail | undefined {
     const reply = this.replies.get(delegationId)
@@ -179,7 +222,7 @@ export class DesktopRemoteDelegations {
   }
   /** `callerId`'s delegations on paired hosts as `read_delegation` lists them, newest twenty, oldest first. */
   list(callerId: string): { id: string; thread?: string; work: DelegationWork; action: 'start' | 'send'; outcome: WatcherOutcome; machine: string; createdAt: string }[] {
-    return this.records.filter(record => record.callerId === callerId).slice(-20).map(record => ({ id: record.id,
+    return (this.byCaller.get(callerId) ?? []).slice(-20).map(record => ({ id: record.id,
       ...(record.thread ? { thread: hostEntityKey(record.hostId, record.thread) } : {}), work: record.work, action: record.action, outcome: record.outcome,
       machine: record.machine, createdAt: record.createdAt }))
   }
@@ -190,7 +233,7 @@ export class DesktopRemoteDelegations {
    * when the host is not connected, since then nothing was asked.
    */
   async start(callerId: string, work: DelegationWork, placement: { readonly hostId: string; readonly projectId: string; readonly receipt: WorkerPlacementReceipt }, ask: RemoteAsk): Promise<Record<string, unknown>> {
-    const retried = ask.retryKey ? this.records.findLast(record => record.callerId === callerId && record.callerRetryKey === ask.retryKey) : undefined
+    const retried = ask.retryKey ? this.byRetry.get(retryIndex(callerId, ask.retryKey)) : undefined
     if (retried) return await this.read(callerId, retried.id)
     return await this.ask({ callerId, hostId: placement.hostId, projectId: placement.projectId, machine: placement.receipt.name, action: 'start', work }, ask,
       answer => ({ ...answer, placement: { ...placement.receipt, awayFromDefault: placement.receipt.awayFromDefault } }))
@@ -198,8 +241,8 @@ export class DesktopRemoteDelegations {
   /** Sends another brief to `threadKey`, a thread `callerId` delegated to on a paired host, charged there as any brief is. */
   async send(callerId: string, work: DelegationWork, threadKey: string, ask: RemoteAsk): Promise<Record<string, unknown>> {
     const key = parseHostEntityKey(threadKey)!
-    const first = this.records.find(record => record.callerId === callerId && record.hostId === key.hostId && record.thread === key.id)!
-    const retried = ask.retryKey ? this.records.findLast(record => record.callerId === callerId && record.callerRetryKey === ask.retryKey) : undefined
+    const first = this.byThread.get(threadIndex(callerId, key.hostId, key.id))!
+    const retried = ask.retryKey ? this.byRetry.get(retryIndex(callerId, ask.retryKey)) : undefined
     if (retried) return await this.read(callerId, retried.id)
     if (!this.connection(first.hostId)) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: REMOTE_SEND_AWAY(this.name(first)) }
     return await this.ask({ callerId, hostId: first.hostId, projectId: first.projectId, machine: first.machine, action: 'send', work, thread: key.id },
@@ -212,7 +255,7 @@ export class DesktopRemoteDelegations {
     if (!connection || this.closed) throw new RelayUnanswered('away')
     const time = now()
     const record: RemoteRecord = { id: randomUUID(), ...base, ...ask.retryKey ? { callerRetryKey: ask.retryKey } : {}, outcome: 'working', createdAt: time, updatedAt: time }
-    this.records.push(record)
+    this.add(record); this.dirty.add(record)
     if (record.action === 'start') this.reserve(record)
     await this.save()
     let answer: unknown
@@ -231,7 +274,7 @@ export class DesktopRemoteDelegations {
     }
     const delegation = isObject(answer) && isObject(answer.delegation) ? answer.delegation : undefined
     if (!isObject(answer) || answer.status !== 'ok' || !delegation || typeof delegation.id !== 'string') {
-      this.records = this.records.filter(item => item !== record); this.release(record); await this.persist()
+      this.forget(record); this.release(record); await this.persist()
       return isObject(answer) ? this.asKnown(record, answer) : { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: `${capital(this.name(record))} could not start this delegation. Nothing was started.` }
     }
     this.adopt(record, delegation)
@@ -289,7 +332,7 @@ export class DesktopRemoteDelegations {
    * was lost, reads that host's open delegations again.
    */
   async news(hostId: string, caller: string, news: DelegationNews, replies: readonly RelayedReply[]): Promise<void> {
-    const recordOf = (delegationId: string) => this.records.find(saved => saved.hostId === hostId && saved.callerId === caller && saved.delegation === delegationId)
+    const recordOf = (delegationId: string) => { const record = this.byTarget.get(targetIndex(hostId, delegationId)); return record?.callerId === caller ? record : undefined }
     let unmatched = false
     const items = news.items.flatMap(item => {
       const record = recordOf(item.delegationId)
@@ -316,7 +359,7 @@ export class DesktopRemoteDelegations {
     const running = this.reconciling.get(hostId)
     if (running) return unresolvedOf === undefined ? running : running.then(() => this.reconcile(hostId, unresolvedOf))
     const run = (async () => {
-      const open = this.records.filter(record => record.hostId === hostId && (record.unread === true || !SETTLED.has(record.outcome) || record.told !== record.outcome
+      const open = [...this.live.get(hostId) ?? []].filter(record => (record.unread === true || !SETTLED.has(record.outcome) || record.told !== record.outcome
         || record.callerId === unresolvedOf && record.delegation === undefined))
       const moved = new Map<string, { record: RemoteRecord; item: DelegationNews['items'][number] }[]>()
       for (const record of open) {
@@ -347,7 +390,7 @@ export class DesktopRemoteDelegations {
     const service = connection.service
     if (connection.kind !== 'remote' || !service.subscribeDelegationRemoteNews) return
     // Every new connection, a reconnect included, reads that host's open delegations again.
-    if (service.supportsDelegationRemote && this.records.some(record => record.hostId === connection.hostId)) void this.reconcile(connection.hostId)
+    if (service.supportsDelegationRemote && this.live.has(connection.hostId)) void this.reconcile(connection.hostId)
     if (this.followed.has(service)) return
     this.followed.add(service)
     const hostId = connection.hostId
@@ -366,7 +409,7 @@ export class DesktopRemoteDelegations {
       return reply ? [{ delegationId: record.id, ...reply }] : []
     })
     await this.deliver(callerId, { source: 'delegation', items: items.map(({ item }) => item) }, replies)
-    for (const { record, item } of items) record.told = item.outcome
+    for (const { record, item } of items) this.update(record, saved => { saved.told = item.outcome })
     await this.persist()
   }
   /** What a read or cancel answered: the host's outcome, or `unknown` when it holds nothing it can prove. */
@@ -419,18 +462,70 @@ export class DesktopRemoteDelegations {
   private name(record: RemoteRecord): string { return this.options.machineName(record.hostId) ?? record.machine }
   private open(record: RemoteRecord): boolean { return record.unread === true || !SETTLED.has(record.outcome) }
   private find(callerId: string, delegationId: string): RemoteRecord | undefined {
-    return this.records.find(record => record.callerId === callerId && record.id === delegationId)
+    const record = this.byId.get(delegationId)
+    return record?.callerId === callerId ? record : undefined
   }
-  private update(record: RemoteRecord, change: (record: RemoteRecord) => void): void { change(record); record.updatedAt = now() }
-  /** Keeps the newest, dropping only settled ones, oldest first: one still open, or whose read was lost, is never forgotten. */
-  private trim(): void {
-    let excess = this.records.length - DELEGATION_RELAY_RECORDS_MAX * 4
-    if (excess <= 0) return
-    this.records = this.records.filter(record => excess <= 0 || this.open(record) || excess-- <= 0)
+  private update(record: RemoteRecord, change: (record: RemoteRecord) => void): void {
+    change(record); record.updatedAt = now()
+    this.indexed(record); this.dirty.add(record)
   }
-  private save(): Promise<void> {
-    this.trim()
-    return this.store.writeLatest(() => ({ version: 1, delegations: this.records }))
+  /** Whether a record is kept in the live file: open, its outcome untold, or never matched to the host's own ID. */
+  private isLive(record: RemoteRecord): boolean { return this.open(record) || record.told !== record.outcome || record.delegation === undefined }
+  private add(record: RemoteRecord): void {
+    this.byId.set(record.id, record)
+    const own = this.byCaller.get(record.callerId) ?? []
+    own.push(record); this.byCaller.set(record.callerId, own)
+    if (record.callerRetryKey) this.byRetry.set(retryIndex(record.callerId, record.callerRetryKey), record)
+    this.indexed(record)
+  }
+  /** Files a record under what it has learned since it was made: the host's ID, its thread, and whether it is live. */
+  private indexed(record: RemoteRecord): void {
+    if (record.delegation) this.byTarget.set(targetIndex(record.hostId, record.delegation), record)
+    if (record.thread) { const key = threadIndex(record.callerId, record.hostId, record.thread); if (!this.byThread.has(key)) this.byThread.set(key, record) }
+    const live = this.live.get(record.hostId)
+    if (this.isLive(record)) { if (live) live.add(record); else this.live.set(record.hostId, new Set([record])) }
+    else if (live?.delete(record) && !live.size) this.live.delete(record.hostId)
+  }
+  private forget(record: RemoteRecord): void {
+    this.byId.delete(record.id); this.dirty.delete(record)
+    const own = this.byCaller.get(record.callerId)
+    if (own) { const at = own.indexOf(record); if (at !== -1) own.splice(at, 1); if (!own.length) this.byCaller.delete(record.callerId) }
+    const drop = (index: Map<string, RemoteRecord>, key: string) => { if (index.get(key) === record) index.delete(key) }
+    if (record.delegation) drop(this.byTarget, targetIndex(record.hostId, record.delegation))
+    if (record.thread) drop(this.byThread, threadIndex(record.callerId, record.hostId, record.thread))
+    if (record.callerRetryKey) drop(this.byRetry, retryIndex(record.callerId, record.callerRetryKey))
+    const live = this.live.get(record.hostId)
+    if (live?.delete(record) && !live.size) this.live.delete(record.hostId)
+  }
+  /**
+   * Writes what changed: each record that left the live file, or changed outside it, is appended to the history once, and
+   * the live records are written whole. An outcome update so writes the live records and that one line, never the history.
+   */
+  private async save(): Promise<void> {
+    const settled = [...this.dirty].filter(record => this.byId.has(record.id) && !this.isLive(record))
+    this.dirty.clear()
+    if (settled.length) {
+      const appended = this.settledTail.catch(() => undefined).then(async () => {
+        await appendFile(this.settledPath, settled.map(record => `${JSON.stringify(record)}\n`).join(''), { encoding: 'utf8', mode: 0o600 })
+        this.settledLines += settled.length
+        if (this.settledLines > SETTLED_KEPT * 2) await this.compact()
+      })
+      this.settledTail = appended
+      await appended
+    }
+    await this.store.writeLatest(() => ({ version: 1, delegations: [...this.live.values()].flatMap(records => [...records]) }))
+  }
+  /**
+   * Keeps the newest `SETTLED_KEPT` settled records and forgets older ones, rewriting the history once it has grown to twice
+   * that, so each line is written a bounded number of times. A live record is never forgotten.
+   */
+  private async compact(): Promise<void> {
+    const settled = [...this.byId.values()].filter(record => !this.isLive(record))
+    for (const record of settled.slice(0, Math.max(0, settled.length - SETTLED_KEPT))) this.forget(record)
+    const kept = settled.slice(-SETTLED_KEPT), temporary = `${this.settledPath}.${process.pid}.tmp`
+    await writeFile(temporary, kept.map(record => `${JSON.stringify(record)}\n`).join(''), { encoding: 'utf8', mode: 0o600 })
+    await rename(temporary, this.settledPath)
+    this.settledLines = kept.length
   }
   private persist(): Promise<void> { return this.save().catch(() => undefined) }
 }
