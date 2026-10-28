@@ -585,6 +585,10 @@ export class DelegationService {
     finally { if (!this.ticketRecords.has(ticket)) checks.leave(ticket) }
   }
   private async ask(threadId: string, input: DelegateInput, context: { readonly waitMs?: number; readonly placement?: WorkerPlacement }, ticket?: string): Promise<unknown> {
+    // A retry of a start made on a paired host reads that start there, before anything is placed or admitted here, so a
+    // retry never makes a second thread on either machine (#1316 review).
+    const elsewhere = input.thread === undefined && input.retry_key !== undefined ? this.options.remote?.retried(threadId, input.retry_key) : undefined
+    if (elsewhere !== undefined) return await this.options.remote!.read(threadId, elsewhere)
     const placed = context.placement ? { elsewhere: context.placement } : await this.place(threadId, input)
     if (placed === RELAYED) return await this.relayStart(threadId, input, context)
     if (placed && 'elsewhere' in placed) return await this.remoteStart(threadId, input, context, placed.elsewhere)
@@ -818,7 +822,7 @@ export class DelegationService {
     // A caller that may not delegate is refused by admission, under its own rule; a retry reads the first call's result.
     const caller = this.snapshot().threads.find(thread => thread.id === threadId), local = this.options.control.hostId()
     if (!caller || !local || !this.admits(threadId)) return undefined
-    if (this.retried(caller.id, input.retry_key) || input.retry_key && this.options.remote?.retried(caller.id, input.retry_key)) return undefined
+    if (this.retried(caller.id, input.retry_key)) return undefined
     let setting: WorkerMachineSetting = 'this-computer'
     if (!asks) {
       const away = workerMachineHostId(machines.setting())

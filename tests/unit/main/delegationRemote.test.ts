@@ -220,6 +220,19 @@ describe('the desktop\'s delegation reaching a paired host', () => {
     const g = await service({ remote: away.remote })
     expect(await g.delegation.delegate('parent', { ...start, machine: MAC })).toMatchObject({ status: 'refused', code: 'MACHINE_UNAVAILABLE', message: REMOTE_AWAY('the Mac') })
   })
+
+  it('reads a retried start on a paired host from that host, and never starts it here or there again (review)', async () => {
+    const mac = host(() => ({ status: 'ok', delegation: { id: THERE, thread: 'child-mac', outcome: 'working' } }))
+    const remote = new DesktopRemoteDelegations(await folder(), { machineName: () => 'the Mac' })
+    remote.useDelivery(async () => undefined)
+    remote.useHosts(hosts([mac.connection]).source)
+    const f = await service({ remote })
+    const first = await f.delegation.delegate('parent', { ...start, machine: MAC, retry_key: RETRY }) as { delegation: { id: string } }
+    const again = await f.delegation.delegate('parent', { ...start, machine: MAC, retry_key: RETRY }) as { delegation: { id: string } }
+    expect(again.delegation.id).toBe(first.delegation.id)
+    expect(mac.asked.map(ask => ask.type)).toEqual(['delegate', 'read'])
+    expect(f.created).toEqual([])
+  })
 })
 
 describe('the relay to a third machine', () => {
