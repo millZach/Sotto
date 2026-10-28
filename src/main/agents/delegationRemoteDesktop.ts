@@ -112,6 +112,12 @@ export class DesktopRemoteDelegations {
   private readonly replies = new Map<string, NonNullable<DelegationNewsDetail['reply']>>()
   private readonly waiters = new Map<string, Set<() => void>>()
   private readonly reconciling = new Map<string, Promise<void>>()
+  /**
+   * Each host's starts this computer asked for that the host has not yet said became a thread or never did, by this
+   * computer's delegation ID: from before the host is asked, through a lost answer, until an exact read settles it. The
+   * machine's count adds them, so a start it may be making is never missed (the counting rule, Zach, October 23).
+   */
+  private readonly pending = new Map<string, Set<string>>()
   private closed = false
 
   constructor(directory: string, private readonly options: {
@@ -125,6 +131,17 @@ export class DesktopRemoteDelegations {
   async load(): Promise<void> {
     const file = await this.store.read().catch((): RemoteFile => ({ version: 1, delegations: [] }))
     this.records = file.delegations
+    for (const record of this.records) if (record.action === 'start' && record.delegation === undefined && record.unread === true) this.reserve(record)
+  }
+  /** The starts on `hostId` not yet settled there, which its machine count adds (`placedNotStartedWith`). */
+  pendingStarts(hostId: string): readonly string[] { return [...this.pending.get(hostId) ?? []] }
+  private reserve(record: RemoteRecord): void {
+    const held = this.pending.get(record.hostId) ?? new Set<string>()
+    held.add(record.id); this.pending.set(record.hostId, held)
+  }
+  private release(record: RemoteRecord): void {
+    const held = this.pending.get(record.hostId)
+    if (held?.delete(record.id) && !held.size) this.pending.delete(record.hostId)
   }
   /** How news reaches the thread that delegated: its hidden wake-up here, or its own machine's through the relay. */
   useDelivery(deliver: (callerId: string, news: DelegationNews, replies: readonly RelayedReply[]) => Promise<void>): void { this.deliver = deliver }
@@ -196,6 +213,7 @@ export class DesktopRemoteDelegations {
     const time = now()
     const record: RemoteRecord = { id: randomUUID(), ...base, ...ask.retryKey ? { callerRetryKey: ask.retryKey } : {}, outcome: 'working', createdAt: time, updatedAt: time }
     this.records.push(record)
+    if (record.action === 'start') this.reserve(record)
     await this.save()
     let answer: unknown
     try {
@@ -213,7 +231,7 @@ export class DesktopRemoteDelegations {
     }
     const delegation = isObject(answer) && isObject(answer.delegation) ? answer.delegation : undefined
     if (!isObject(answer) || answer.status !== 'ok' || !delegation || typeof delegation.id !== 'string') {
-      this.records = this.records.filter(item => item !== record); await this.persist()
+      this.records = this.records.filter(item => item !== record); this.release(record); await this.persist()
       return isObject(answer) ? this.asKnown(record, answer) : { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: `${capital(this.name(record))} could not start this delegation. Nothing was started.` }
     }
     this.adopt(record, delegation)
@@ -361,12 +379,13 @@ export class DesktopRemoteDelegations {
         this.keepReply(record.id, { messageId: reply.messageId, text: reply.text, truncated: reply.truncated === true })
     } else if (answer.status === 'refused' || answer.status === 'ok' && !outcome.success) {
       this.update(record, saved => { saved.outcome = 'unknown'; if (tells) saved.told = 'unknown'; delete saved.unread })
+      this.release(record)
     }
   }
   private adopt(record: RemoteRecord, delegation: Record<string, unknown>, tells = true): void {
     const outcome = watcherOutcomeSchema.safeParse(delegation.outcome)
     this.update(record, saved => {
-      if (typeof delegation.id === 'string' && z.uuid().safeParse(delegation.id).success) saved.delegation = delegation.id
+      if (typeof delegation.id === 'string' && z.uuid().safeParse(delegation.id).success) { saved.delegation = delegation.id; this.release(saved) }
       if (typeof delegation.thread === 'string' && id.safeParse(delegation.thread).success) saved.thread = delegation.thread
       saved.outcome = outcome.success ? outcome.data : 'unknown'
       // A call's own result tells the thread; a read after a reconnect does not, so what moved is sent as news.

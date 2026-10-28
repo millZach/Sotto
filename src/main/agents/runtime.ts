@@ -432,6 +432,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       // This computer's delegations start threads on its paired hosts too (#1316 part 2), each admitted there by that host.
       delegationRemote = new DesktopRemoteDelegations(directory, { machineName: hostId => placingWatcher.machineName(hostId) })
       await delegationRemote.load()
+      const remoteStarts = delegationRemote
+      placingWatcher.useDelegationStarts(hostId => remoteStarts.pendingStarts(hostId))
       delegationRelay = new DesktopDelegationRelay(directory, { placement: placingWatcher, localHostId: () => agentControl.hostId(), elsewhere: true })
       await delegationRelay.load()
     }

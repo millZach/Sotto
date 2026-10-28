@@ -234,6 +234,32 @@ describe('a delegation on a paired host, on the desktop', () => {
     expect(mac.asked.filter(ask => ask.type === 'delegate')).toHaveLength(1)
   })
 
+  it('counts a start on its machine from before it is asked until the host says what became of it (review)', async () => {
+    let answer: (value: unknown) => void = () => undefined, lose = false
+    const mac = host(ask => ask.type === 'read' ? { status: 'ok', delegation: { id: THERE, thread: 'child-mac', outcome: 'working' } }
+      : lose ? Promise.reject(new Error('The request timed out.')) : new Promise(resolve => { answer = resolve }))
+    const remote = new DesktopRemoteDelegations(await folder(), { machineName: () => 'the Mac' })
+    remote.useDelivery(async () => undefined)
+    const router = hosts([mac.connection])
+    remote.useHosts(router.source)
+    const starting = remote.start('parent-1', 'code-review', macPlacement, askOf)
+    // Counted while the Mac is admitting it, before any answer.
+    await expect.poll(() => mac.asked.length).toBe(1)
+    expect(remote.pendingStarts(MAC)).toHaveLength(1)
+    expect(remote.pendingStarts(DESKTOP)).toEqual([])
+    answer({ status: 'ok', delegation: { id: THERE, thread: 'child-mac', outcome: 'working' } })
+    await starting
+    // The Mac holds it now and counts it itself.
+    expect(remote.pendingStarts(MAC)).toEqual([])
+    // A start whose answer was lost may still run there: it counts until an exact read settles it.
+    lose = true
+    await remote.start('parent-1', 'code-review', macPlacement, askOf)
+    expect(remote.pendingStarts(MAC)).toHaveLength(1)
+    router.connected.length = 0
+    router.connect(mac.connection)
+    await expect.poll(() => remote.pendingStarts(MAC)).toEqual([])
+  })
+
   it('refuses while the host is away, starts nothing, and reads what it last read', async () => {
     const remote = new DesktopRemoteDelegations(await folder(), { machineName: () => 'the Mac' })
     remote.useHosts(hosts([]).source)
