@@ -16,6 +16,12 @@ const change = (id = 'change', turnId = 'user', paths = ['src/a.ts']): AgentActi
   afterMessageId: 'user', kind: 'file-change', title: 'File changes', status: 'completed', changes: paths.map(path => ({ path, kind: 'edit' })) })
 
 describe('Watcher own changes', () => {
+  it('has a watched thread end its turn on a pushed pull request and Watcher act on its checks news', () => {
+    expect(WATCHER_SYSTEM_PROMPT).toContain('A watched thread that pushed to a pull request ends its turn instead of watching CI itself')
+    expect(WATCHER_SYSTEM_PROMPT).toContain('once any check fails, before the rest finish')
+    expect(WATCHER_SYSTEM_PROMPT).toContain('When the required checks pass, send it to merge')
+  })
+
   it('has no mark for missing threads, unproved paths, shell output or a dirty checkout', () => {
     expect(watcherOwnChanges(undefined)).toEqual([])
     const t = thread()
