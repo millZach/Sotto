@@ -10,6 +10,7 @@
 .reply-quote-pop__add {
   display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 0; border-radius: 6px;
   background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .reply-quote-pop__add:hover { background: var(--tt-hover-strong); }
 .reply-quote-pop__add svg { flex: none; color: var(--tt-text-muted); }
