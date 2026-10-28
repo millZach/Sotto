@@ -5,7 +5,7 @@
 .menu-bar-owl__part + .menu-bar-owl__part { margin-top: 12px; }
 .menu-bar-owl__title { margin: 0 0 6px; color: var(--tt-text-muted); font-size: 13px; font-weight: 500; line-height: 18px; }
 .menu-bar-owl__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 14px; }
-.menu-bar-owl__choice { display: flex; justify-self: start; align-items: center; gap: 8px; min-width: 0; margin: 0 -4px; padding: 6px 4px; border: 0; border-radius: 8px; background: none; color: var(--tt-text); font: inherit; font-size: 14px; font-weight: 500; line-height: 20px; text-align: left; cursor: pointer; }
+.menu-bar-owl__choice { display: flex; justify-self: start; align-items: center; gap: 8px; min-width: 0; margin: 0 -4px; padding: 6px 4px; border: 0; border-radius: 8px; background: none; color: var(--tt-text); font: inherit; font-size: 14px; font-weight: 500; line-height: 20px; text-align: left; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .menu-bar-owl__choice:hover { background: var(--tt-hover); }
 .menu-bar-owl__choice[aria-pressed='true'] { font-weight: 600; }
 .menu-bar-owl__swatch { flex: none; width: 16px; height: 16px; border-radius: 50%; box-shadow: 0 0 0 1px var(--tt-border); }
