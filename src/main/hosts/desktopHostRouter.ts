@@ -573,6 +573,8 @@ export class DesktopHostRouter {
     this.emit()
     this.connected(connection)
     if (connection.kind === 'remote') this.delegations.taken(connection.hostId)
+    // The host pushed its check queue after the hello, before this connection was taken, so the queue it holds is told now.
+    if (connection.kind === 'remote' && connection.service.checkQueue?.() !== undefined) this.checksChanged()
   }
   /**
    * Hears each host connection as the router takes it, new or in place of one it had (a reconnect), so what a host must
@@ -604,6 +606,8 @@ export class DesktopHostRouter {
     this.emit()
     this.connected(connection)
     if (connection.kind === 'remote') this.delegations.taken(connection.hostId)
+    // In place of the old connection's queue, the one this connection's hello brought, or none.
+    if (connection.kind === 'remote') this.checksChanged()
   }
   /** Marks a connected host's threads as reconnecting, or no longer: while it is set they read Reconnecting, not Disconnected. */
   setReconnecting(hostId: string, value: boolean): void {
