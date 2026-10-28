@@ -22,11 +22,13 @@ export const CHECK_TRAY_LINES = 60
 /** The tray's height when the window allows it, and the least it keeps however short the window. */
 const TRAY_MOST = 400, TRAY_LEAST = 200
 
-interface OpenTray { readonly id: string; readonly opener: HTMLElement }
+/** A check's reply as main gave it on the press, cut at 32 KiB. */
+interface ShownReply { readonly text: string; readonly truncated: boolean }
+interface OpenTray { readonly id: string; readonly opener: HTMLElement; readonly reply: ShownReply }
 interface CheckTrays {
   readonly open: OpenTray | null
-  /** Opens the tray for a row, or closes it when that row's is the one open. */
-  readonly toggle: (id: string, opener: HTMLElement) => void
+  /** Opens a row's tray with the reply its press read, in place of any other row's. */
+  readonly show: (id: string, opener: HTMLElement, reply: ShownReply) => void
   /** Closes a row's tray, if it is the one open; `returning`, focus goes back to the control that opened it. */
   readonly close: (id: string, returning: boolean) => void
 }
@@ -37,7 +39,10 @@ export function CheckTraysProvider({ children }: { readonly children: ReactNode 
   const [open, setOpen] = useState<OpenTray | null>(null)
   const current = useRef(open)
   current.current = open
-  const toggle = useCallback((id: string, opener: HTMLElement) => setOpen(held => held?.id === id ? null : { id, opener }), [])
+  const show = useCallback((id: string, opener: HTMLElement, reply: ShownReply) => {
+    current.current = { id, opener, reply }
+    setOpen(current.current)
+  }, [])
   const close = useCallback((id: string, returning: boolean) => {
     const held = current.current
     if (held?.id !== id) return
@@ -45,7 +50,7 @@ export function CheckTraysProvider({ children }: { readonly children: ReactNode 
     setOpen(null)
     if (returning && held.opener.isConnected) held.opener.focus({ preventScroll: true })
   }, [])
-  const trays = useMemo(() => ({ open, toggle, close }), [open, toggle, close])
+  const trays = useMemo(() => ({ open, show, close }), [open, show, close])
   return <CheckTraysContext.Provider value={trays}>{children}</CheckTraysContext.Provider>
 }
 
@@ -60,13 +65,23 @@ export interface CheckNames { readonly title: string; readonly machine: string }
 /**
  * The second line of an answered check's row: "It replied" and the excerpt in quotes, "· cut at 32 KiB" when Sotto cut the
  * reply, and Read its reply; or, when its reply was not kept here, a sentence saying so, with no tray. Nothing while it
- * works, so a waiting check's card is today's.
+ * works, so a waiting check's card is today's. Read its reply reads the reply from main first, and opens the tray only
+ * with it: a reply main no longer holds turns the line into the not-kept sentence, with the focus on it, never an empty
+ * tray (Sol on #1312).
  */
 export function CheckReplyLine({ reply, delegation, names, read, onOpenCheck }: { readonly reply: CheckReplyExcerpt | undefined; readonly delegation: DelegatedView
   readonly names: CheckNames; readonly read: ((delegationId: string) => Promise<DelegationCheckReply>) | undefined; readonly onOpenCheck: (() => void) | undefined }): ReactNode {
   const { t } = useLingui()
   const trays = useContext(CheckTraysContext)
   const trayId = useId()
+  // The excerpt a press found no longer held, so the row says so until main's next read; and whether that press moves the focus.
+  const [gone, setGone] = useState<CheckReplyExcerpt | undefined>(undefined)
+  const asking = useRef(false), mounted = useRef(true), unkept = useRef<HTMLParagraphElement>(null), toUnkept = useRef(false)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  const notKept = reply !== undefined && (gone === reply || 'unavailable' in reply)
+  useEffect(() => {
+    if (notKept && toUnkept.current) { toUnkept.current = false; unkept.current?.focus({ preventScroll: true }) }
+  }, [notKept])
   useInterfaceLanguageState()
   const held = trays?.open?.id === delegation.id ? trays.open : undefined
   // The tray goes with its row: a fold closed over it, or another thread in the pane, closes it.
@@ -74,7 +89,7 @@ export function CheckReplyLine({ reply, delegation, names, read, onOpenCheck }: 
   useEffect(() => () => close?.(id, false), [close, id])
   const closeTray = useCallback((returning: boolean) => close?.(id, returning), [close, id])
   if (reply === undefined) return null
-  if ('unavailable' in reply) return <p className="check-unkept tt-paragraph">{t`Its reply wasn't kept here. Open the check to read it in its thread.`}</p>
+  if (notKept || 'unavailable' in reply) return <p ref={unkept} className="check-unkept tt-paragraph" tabIndex={-1}>{t`Its reply wasn't kept here. Open the check to read it in its thread.`}</p>
   const { title, machine } = names
   const kib = shownCount(WATCHER_REPLY_BYTES_MAX / 1024)
   const canRead = trays !== null && read !== undefined
@@ -85,9 +100,21 @@ export function CheckReplyLine({ reply, delegation, names, read, onOpenCheck }: 
     {reply.truncated ? <>{' '}<span className="check-excerpt__cut"><span aria-hidden="true">· </span>{t({ message: `cut at ${kib} KiB`, comment: 'Sotto passed on only the first {kib} KiB of a check\'s reply.' })}</span></> : null}
     {canRead ? <>{' '}<button type="button" className="check-open tt-focusable" aria-expanded={open} aria-controls={open ? trayId : undefined}
       aria-label={t({ message: `Read the reply from ${title}, the check on ${machine}`, comment: '{title} is the check\'s thread; {machine} is "this computer" or a host\'s name.' })}
-      onClick={event => trays.toggle(id, event.currentTarget)}>{t`Read its reply`}</button></> : null}
+      onClick={event => {
+        if (open) { trays.close(id, false); return }
+        if (asking.current) return
+        const opener = event.currentTarget, shown = reply
+        asking.current = true
+        const answered = (answer: DelegationCheckReply): void => {
+          asking.current = false
+          if (!mounted.current) return
+          if (answer) trays.show(id, opener, { text: answer.text, truncated: answer.truncated })
+          else { toUnkept.current = opener === document.activeElement; setGone(shown) }
+        }
+        read(id).then(answered, () => answered(null))
+      }}>{t`Read its reply`}</button></> : null}
   </p>
-  {open ? <CheckReplyTray id={trayId} delegation={delegation} names={names} opener={held.opener} read={read}
+  {open ? <CheckReplyTray id={trayId} delegation={delegation} names={names} opener={held.opener} reply={held.reply}
     onClose={closeTray} onOpenCheck={onOpenCheck} /> : null}</>
 }
 
@@ -104,22 +131,14 @@ export function trayLines(text: string): { readonly shown: string; readonly line
  * Escape and Close return focus to Read its reply. It stops short of its row, which stays in view above it, at the
  * window's minimum too.
  */
-function CheckReplyTray({ id, delegation, names, opener, read, onClose, onOpenCheck }: { readonly id: string; readonly delegation: DelegatedView; readonly names: CheckNames
-  readonly opener: HTMLElement; readonly read: (delegationId: string) => Promise<DelegationCheckReply>; readonly onClose: (returning: boolean) => void
-  readonly onOpenCheck: (() => void) | undefined }): ReactNode {
+function CheckReplyTray({ id, delegation, names, opener, reply, onClose, onOpenCheck }: { readonly id: string; readonly delegation: DelegatedView; readonly names: CheckNames
+  readonly opener: HTMLElement; readonly reply: ShownReply; readonly onClose: (returning: boolean) => void; readonly onOpenCheck: (() => void) | undefined }): ReactNode {
   const { t } = useLingui()
   const whoId = useId()
   const tray = useRef<HTMLElement>(null)
   const text = useRef<HTMLDivElement>(null)
-  // Undefined while main reads it; null when it is no longer held.
-  const [reply, setReply] = useState<{ readonly text: string; readonly truncated: boolean } | null | undefined>(undefined)
   const [more, setMore] = useState(false)
   useInterfaceLanguageState()
-  useEffect(() => {
-    let current = true
-    read(delegation.id).then(answer => { if (current) setReply(answer ? { text: answer.text, truncated: answer.truncated } : null) }, () => { if (current) setReply(null) })
-    return () => { current = false }
-  }, [read, delegation.id])
 
   // Where it goes: over the bottom of the transcript, in its column, above the composer.
   const [host] = useState<HTMLElement>(() => opener.closest<HTMLElement>('.thread-transcript') ?? document.body)
@@ -166,15 +185,13 @@ function CheckReplyTray({ id, delegation, names, opener, read, onClose, onOpenCh
     ? t({ message: `Its reply, in its own words, on ${machine}`, comment: 'Heads the tray with a check\'s reply. {machine} is "this computer" or a host\'s name.' })
     : t({ message: `Its reply, in its own words, on ${machine} · ${time}`, comment: 'Heads the tray with a check\'s reply. {machine} is "this computer" or a host\'s name; {time} is when it answered.' })
   const kib = shownCount(WATCHER_REPLY_BYTES_MAX / 1024)
-  const lines = reply ? trayLines(reply.text) : undefined
-  const first = lines?.more ? t`Its first ${{ count: shownCount(CHECK_TRAY_LINES) }} lines.` : undefined
-  const rest = reply === null ? t`Its reply wasn't kept here. Open the check to read it in its thread.`
-    : reply === undefined || lines === undefined ? undefined
-      : reply.truncated ? t`Its reply was longer than ${kib} KiB, so this thread was given only the first ${kib} KiB. All of it is in the check's thread.`
-        : lines.left ? plural(lines.left, { one: '# more line is in its thread.', other: '# more lines are in its thread.' })
-          : t`That is all of its reply.`
+  const lines = trayLines(reply.text)
+  const first = lines.more ? t`Its first ${{ count: shownCount(CHECK_TRAY_LINES) }} lines.` : undefined
+  const rest = reply.truncated ? t`Its reply was longer than ${kib} KiB, so this thread was given only the first ${kib} KiB. All of it is in the check's thread.`
+    : lines.left ? plural(lines.left, { one: '# more line is in its thread.', other: '# more lines are in its thread.' })
+      : t`That is all of its reply.`
   const foot = [first, rest].filter(Boolean).join(' ')
-  const scrolls = lines !== undefined && lines.lines > 8
+  const scrolls = lines.lines > 8
   const openCheck = onOpenCheck === undefined ? null : <button type="button" className="check-open tt-focusable"
     aria-label={t({ message: `Open ${title}, the check on ${machine}, to read all of its reply`, comment: '{title} is the check\'s thread; {machine} is "this computer" or a host\'s name.' })}
     onClick={() => { onClose(false); onOpenCheck() }}>{t`Open the check`}</button>
@@ -183,11 +200,11 @@ function CheckReplyTray({ id, delegation, names, opener, read, onClose, onOpenCh
       <h3 className="check-tray__who" id={whoId}><b>{title}</b><span>{whose}</span></h3>
       <button type="button" className="check-tray__close tt-focusable" aria-label={t`Close the reply`} onClick={() => onClose(true)}><X size={16} aria-hidden="true" /></button>
     </div>
-    {reply === null ? null : <div ref={text} className="check-tray__text" aria-busy={reply === undefined || undefined} data-more={more || undefined}
+    <div ref={text} className="check-tray__text" data-more={more || undefined}
       onScroll={event => { const body = event.currentTarget; setMore(body.scrollTop + body.clientHeight < body.scrollHeight - 2) }}
       {...scrolls ? { tabIndex: 0, role: 'region', 'aria-label': lines.more ? t`The reply's first ${{ count: shownCount(CHECK_TRAY_LINES) }} lines` : t`Its whole reply` } : {}}>
-      {lines ? <pre className="check-pre">{lines.shown}</pre> : null}
-    </div>}
-    {foot || openCheck ? <p className="check-tray__foot tt-paragraph">{foot ? <span>{foot}</span> : null}{openCheck}</p> : null}
+      <pre className="check-pre">{lines.shown}</pre>
+    </div>
+    <p className="check-tray__foot tt-paragraph"><span>{foot}</span>{openCheck}</p>
   </section>, host)
 }

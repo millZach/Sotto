@@ -33,8 +33,11 @@ const record = (patch: Record<string, unknown>) => ({ id: randomUUID(), delegati
   rootUserMessageId: 'root', inputDigest: 'a'.repeat(64), draftId: randomUUID(), messageId: randomUUID(), expectedLastUserMessageId: null,
   deliveryState: 'accepted', outcome: 'answered', outcomeAt: at, told: 'answered', charged: true, createdAt: at, updatedAt: at, ...patch })
 
-/** Delegation over a saved record and a thread store holding `replies` by message ID, with checks shown or not. */
-async function service(records: Record<string, unknown>[], replies: Record<string, string>, options: { checkReplies?: boolean; history?: boolean } = {}) {
+/**
+ * Delegation over a saved record, as it stands after a restart, and a thread store holding `replies` by message ID, with
+ * checks shown or not. `history` is Keep local history, read each time it is asked, as the setting is.
+ */
+async function service(records: Record<string, unknown>[], replies: Record<string, string>, options: { checkReplies?: boolean; history?: boolean | (() => boolean) } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-check-replies-')); roots.push(root)
   await writeFile(join(root, 'delegations.json'), JSON.stringify({ version: 1, delegations: [], links: [], roots: [] }))
   const snapshot: AgentHostSnapshot = { ...EMPTY_AGENT_HOST, connected: true, threads: [] }
@@ -44,12 +47,16 @@ async function service(records: Record<string, unknown>[], replies: Record<strin
     refreshDelegationObservation: () => undefined, deliverWakeUp: async () => undefined,
   }
   const threadMessage = vi.fn((_threadId: string, messageId: string) => replies[messageId] === undefined ? undefined : { id: messageId, role: 'assistant', text: replies[messageId]! })
-  const delegation = new DelegationService({ directory: root, control, host: { setDelegatedBy: async () => undefined, threadMessage }, historyEnabled: () => options.history ?? true,
+  const history = options.history
+  const delegation = new DelegationService({ directory: root, control, host: { setDelegatedBy: async () => undefined, threadMessage },
+    historyEnabled: typeof history === 'function' ? history : () => history ?? true,
     ...options.checkReplies === false ? {} : { checkReplies: true } })
   await delegation.recover()
   // As they stand in this run, so a check still working is not ended as a restart would end it.
   ;(delegation as unknown as { records: unknown[] }).records = records
-  return { delegation, threadMessage }
+  const changed: string[][] = []
+  delegation.onViewsChanged(threadIds => { changed.push([...threadIds]) })
+  return { delegation, threadMessage, changed }
 }
 const made = (delegation: DelegationService): DelegatedView[] => delegation.views('parent').made as DelegatedView[]
 
@@ -109,6 +116,39 @@ describe('a check\'s reply excerpt', () => {
     expect(made(f.delegation)[0]).not.toHaveProperty('checkReply')
     expect(f.delegation.checkReply('parent', check.id)).toBeUndefined()
     expect(f.threadMessage).not.toHaveBeenCalled()
+  })
+})
+
+describe('a check\'s reply that is no longer kept', () => {
+  it('is not quoted once Keep local history is turned off, though its excerpt was read while it was on (Sol on #1312)', async () => {
+    const replyId = randomUUID()
+    const check = record({ check: true, replyMessageId: replyId })
+    let history = true
+    // Sotto restarted with Keep local history on, so the check answered in an earlier run.
+    const f = await service([check], { [replyId]: FAILED }, { history: () => history })
+    expect(made(f.delegation)[0]!.checkReply).toEqual({ excerpt: 'Failed: 2 of 1,214 tests.', truncated: false })
+    expect(f.delegation.checkReply('parent', check.id)).toEqual({ text: FAILED, truncated: false })
+    // Turned off: that reply is not kept, as read_delegation says, so neither its row nor a press shows it.
+    history = false
+    expect(made(f.delegation)[0]!.checkReply).toEqual({ unavailable: true })
+    expect(f.delegation.checkReply('parent', check.id)).toBeUndefined()
+    // On again, the reply is held still, so its row quotes it again.
+    history = true
+    expect(made(f.delegation)[0]!.checkReply).toEqual({ excerpt: 'Failed: 2 of 1,214 tests.', truncated: false })
+  })
+
+  it('is found gone by the press, which lets go of its excerpt and tells the window, so the row says it was not kept', async () => {
+    const replyId = randomUUID()
+    const check = record({ check: true, replyMessageId: replyId })
+    const replies: Record<string, string> = { [replyId]: FAILED }
+    const f = await service([check], replies)
+    expect(made(f.delegation)[0]!.checkReply).toMatchObject({ excerpt: 'Failed: 2 of 1,214 tests.' })
+    // Its thread's record no longer holds the message, as after the thread was deleted.
+    delete replies[replyId]
+    expect(f.delegation.checkReply('parent', check.id)).toBeUndefined()
+    await new Promise(resolve => queueMicrotask(() => resolve(undefined)))
+    expect(f.changed).toEqual([['parent', 'child']])
+    expect(made(f.delegation)[0]!.checkReply).toEqual({ unavailable: true })
   })
 })
 

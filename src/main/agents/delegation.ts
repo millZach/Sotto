@@ -886,10 +886,14 @@ export class DelegationService {
   /**
    * An answered check's reply excerpt for its row (#1312, Zach's pick C on October 28, 2026), read from the reply as
    * `read_delegation` reads it the first time a read shows it, then kept for that reply; or that it is not held, which is
-   * read again each time, since the thread's record may not have been ready. Nothing before it has answered.
+   * read again each time, since the thread's record may not have been ready. Whether its reply may be shown at all is asked
+   * on every read, as `read_delegation` asks it, before anything kept is used: with Keep local history off, a reply from
+   * before Sotto restarted is not kept, whatever was read while it was on. A reply whose message is gone since is found
+   * by the press that asks for it (`checkReply`), which lets go of the excerpt. Nothing before it has answered.
    */
   private checkExcerpt(record: DelegationRecord, outcome: WatcherOutcome): { readonly checkReply?: CheckReplyExcerpt } {
     if (outcome !== 'answered') return {}
+    if (!this.replyKept(record)) return { checkReply: { unavailable: true } }
     const kept = this.checkExcerpts.get(record.id)
     if (kept && kept.messageId === record.replyMessageId) return { checkReply: kept.excerpt }
     const reply = this.replyOf(record, undefined).reply
@@ -914,7 +918,10 @@ export class DelegationService {
     const record = this.byDelegating.get(threadId)?.findLast(item => item.id === delegationId)
     if (!record?.check || this.outcomeOf(record) !== 'answered') return undefined
     const reply = this.replyOf(record, undefined).reply
-    return reply ? { text: reply.text, truncated: reply.truncated } : undefined
+    if (reply) return { text: reply.text, truncated: reply.truncated }
+    // Gone since its excerpt was read: the row is told, and says its reply was not kept.
+    if (this.checkExcerpts.delete(record.id)) this.touched(record)
+    return undefined
   }
   /** A refused delegation as the window shows it: the rule that turned it down, and the turn the call was made in. */
   private refusedView(refused: RefusedDelegation): RefusedView {
@@ -2071,10 +2078,12 @@ export class DelegationService {
    * An answered brief's reply, cut to `WATCHER_REPLY_BYTES_MAX`, as `read_delegation` and the hidden news both give it, or
    * why it is not there: with Keep local history off, a reply from before a restart is not kept.
    */
+  /** Whether an answered brief's reply may be given at all: with Keep local history off, only one answered in this run. */
+  private replyKept(record: DelegationRecord): boolean { return this.options.historyEnabled() || this.answeredThisRun.has(record.id) }
   private replyOf(record: DelegationRecord, thread: AgentThread | undefined): DelegationNewsDetail {
     const replyId = record.replyMessageId
     if (!replyId) return {}
-    if (!this.options.historyEnabled() && !this.answeredThisRun.has(record.id)) return { replyUnavailable: 'Keep local history is off, so Sotto did not keep this reply after it restarted. Read the delegated thread for what it said.' }
+    if (!this.replyKept(record)) return { replyUnavailable: 'Keep local history is off, so Sotto did not keep this reply after it restarted. Read the delegated thread for what it said.' }
     const message = thread?.messages.find(item => item.id === replyId && item.role === 'assistant') ?? this.options.host.threadMessage(record.delegatedThreadId, replyId)
     if (!message || message.role !== 'assistant') return { replyUnavailable: 'Sotto no longer holds this reply. Read the delegated thread for what it said.' }
     const text = cutUtf8(message.text, WATCHER_REPLY_BYTES_MAX)
