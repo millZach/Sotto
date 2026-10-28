@@ -195,7 +195,9 @@ export class DesktopDelegationRelay {
     // Saved before the start, so a read after a lost answer finds the ask by its retry key, and an ask never recorded reads as unproved.
     await this.save()
     const input = { ...ask.input, retry_key: retryKey }
-    const result = await delegation.delegate(key, input, { waitMs: ask.waitMs + 2_000, ...placement ? { placement } : {} })
+    // A check's snapshot words say when the asking thread asked, as its own machine writes the time (#1316 part 2).
+    const takenAt = ask.type === 'start' ? ask.takenAt : undefined
+    const result = await delegation.delegate(key, input, { waitMs: ask.waitMs + 2_000, ...placement ? { placement } : {}, ...takenAt ? { takenAt } : {} })
     const made = isObject(result) && isObject(result.delegation) && typeof result.delegation.id === 'string' ? result.delegation.id : undefined
     if (made) { const saved = this.asks.findLast(item => item.key === key && item.relayId === ask.relayId); if (saved) saved.delegation = made; await this.save().catch(() => undefined) }
     return result

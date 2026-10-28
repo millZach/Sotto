@@ -68,7 +68,7 @@ import { readProjectOrigins } from './projectOrigins'
 import { ProjectCopies } from './projectSetup'
 import { threadDelegations } from './agentsView'
 import { BranchBundles } from './branchBundles'
-import { desktopBranchMoves, foldersOfSnapshot } from './branchMoves'
+import { DesktopBranchMoves, desktopBranchMoves, foldersOfSnapshot } from './branchMoves'
 import { DesktopDefaultsStore, hostDelegationMachines } from './hostDelegation'
 import type { HostDelegationRelay } from './delegationRelayHost'
 import type { HostRemoteCallers } from './delegationRemoteHost'
@@ -404,10 +404,15 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // moves branches, asked once here with the Owl answer. Its own bundles wait in its data folder while they cross.
   // The mover reaches hosts through Watcher's view of them, which exists only once Watcher is made below.
   const moving: { watcher?: WatcherService | undefined } = {}
-  const branchMoves = desktopBranchMoves(crossMachine && options.runsAs !== 'headless-host', {
-    bundles: new BranchBundles({ stagingDirectory: join(directory, 'branch-moves'), recordsPath: join(directory, 'branch-moves.json') }),
-    folders: foldersOfSnapshot(() => agentControl.watcherSnapshot()), host: hostId => moving.watcher?.branchMoveHost(hostId),
-    hostName: hostId => moving.watcher?.machineName(hostId) ?? 'That machine' })
+  // One set of bundles per data folder: a headless host's socket moves use these too, so its records have one writer.
+  const branchBundles = crossMachine ? new BranchBundles({ stagingDirectory: join(directory, 'branch-moves'), recordsPath: join(directory, 'branch-moves.json') }) : undefined
+  const branchMoves = branchBundles ? desktopBranchMoves(options.runsAs !== 'headless-host', {
+    bundles: branchBundles, folders: foldersOfSnapshot(() => agentControl.watcherSnapshot()), host: hostId => moving.watcher?.branchMoveHost(hostId),
+    hostName: hostId => moving.watcher?.machineName(hostId) ?? 'That machine' }) : undefined
+  // A headless host's own threads start from their branch on this machine, and let go of a branch a desktop landed here
+  // for a start that never ran (#1316 part 2). Only this machine's folders: it reaches no other machine.
+  const hostBranchMoves = branchBundles && options.runsAs === 'headless-host'
+    ? new DesktopBranchMoves({ bundles: branchBundles, folders: foldersOfSnapshot(() => agentControl.watcherSnapshot()), host: () => undefined, hostName: () => 'That machine' }) : undefined
   // One check queue per machine (#1312): this machine's delegations and Watcher's starts marked as checks wait in the same
   // one, in the order asked. On the desktop it is This computer's; on a headless host, the host's own, which the desktop's
   // Watcher starts there share with the host's own delegations. Only while Work across machines is on. A host names itself
@@ -466,8 +471,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       newThreadCeiling: () => defaults.ceiling(clientId => hostDelegation.counts(clientId), clientId => hostDelegation.revoked?.(clientId) === true),
       ...hostDelegation.roles ? { roles: () => defaults.roles(clientId => hostDelegation.counts(clientId)) } : {},
       warning: count => machineWorkingThreadsWarning(count, 'this machine'),
-      // A check here waits in this host's own queue, shared with the desktop's Watcher starts on it (#1312).
-      ...checks ? { checks } : {},
+      // A check here waits in this host's own queue, shared with the desktop's Watcher starts on it (#1312). A thread here
+      // starts from its branch on this machine, and a branch the desktop landed here for a start is let go if it never runs.
+      ...checks ? { checks } : {}, ...hostBranchMoves && checks ? { branchMoves: hostBranchMoves, ...options.clockTime ? { clockTime: options.clockTime } : {} } : {},
       ...hostDelegation.relay ? { relay: hostDelegation.relay } : {},
       // A thread on another machine that delegates here through the desktop (#1316 part 2) is admitted as one of this host's own.
       ...hostDelegation.remote ? { relayedCallers: hostDelegation.remote, hereName: () => relayed?.hereName() ?? (hostname().trim().slice(0, 64) || 'this machine') } : {},
@@ -720,5 +726,5 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     signedOut: async () => { await agentControl.command({ type: 'disconnect', provider: 'cursor' }) },
   }) : undefined
   idleCompaction.start()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, delegationRelay, delegationRemote, continuation, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, cursorSignIn, branchMoves, checks, prepareForShutdown, close }
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, delegationRelay, delegationRemote, continuation, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, cursorSignIn, branchMoves, branchBundles, checks, prepareForShutdown, close }
 }

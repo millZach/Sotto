@@ -152,7 +152,8 @@ export class HostRemoteCallers {
     const release = this.hold(clientId, ask)
     try {
       await this.save()
-      return await delegation.delegate(key, ask.input, { waitMs: ask.waitMs + 2_000 })
+      // A start from the caller's branch finds it already landed here by the desktop (#1316 part 2).
+      return await delegation.delegate(key, ask.input, { waitMs: ask.waitMs + 2_000, ...ask.branch ? { landed: ask.branch } : {} })
     } finally {
       const count = (this.admitting.get(key) ?? 1) - 1
       if (count > 0) this.admitting.set(key, count); else this.admitting.delete(key)

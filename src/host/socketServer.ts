@@ -340,6 +340,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'delegation-relay' && feature !== 'delegation-relay-send' || options.delegationRelay !== undefined && service.supportsHostDelegation === true && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
     // A desktop's delegations here for threads on other machines (#1316 part 2), on the same terms.
     && (feature !== 'delegation-remote' || options.delegationRemote !== undefined && service.supportsHostDelegation === true && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    // Starts from a delegating thread's branch, and checks, either way between machines (#1316 part 2), with remote delegation.
+    && (feature !== 'delegation-branch-starts' || options.delegationRemote !== undefined && service.supportsHostDelegation === true && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
     // Deleting settled threads (ADR-0140) only where the host's Owl answer turns clearing on, and only for a desktop: the
     // desktop's own phone listener, which serves no desktop, never offers it, and neither phone app deletes.
     && (feature !== 'thread-delete' || service.supportsThreadDelete === true && (options.admin !== false || options.tailnet !== undefined))
@@ -370,7 +372,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     .filter(feature => feature !== 'host-update' || mayUpdate(peer))
     .filter(feature => feature !== 'branch-moves' || (options.watcherDesktops?.has(peer.client.clientId) ?? false))
     // Desktop defaults come only from a client the launch script recorded as a desktop (#1310).
-    .filter(feature => feature !== 'host-delegation' && feature !== 'delegation-views' && feature !== 'delegation-relay' && feature !== 'delegation-relay-send' && feature !== 'delegation-remote' && feature !== 'check-queue-views'
+    .filter(feature => feature !== 'host-delegation' && feature !== 'delegation-views' && feature !== 'delegation-relay' && feature !== 'delegation-relay-send' && feature !== 'delegation-remote' && feature !== 'delegation-branch-starts' && feature !== 'check-queue-views'
       || options.watcherDesktops?.has(peer.client.clientId) === true)
   const watcherScopes = new WeakMap<Peer, WatcherHostRead>()
   const watcherRevisions = new WeakMap<Peer, string>()
@@ -1217,7 +1219,9 @@ export async function startSocketServer(options: SocketServerOptions) {
           const relayPeer = peer
           // A desktop that also accepted `delegation-relay-send` is pushed second briefs too (#1316 part 2).
           const sends = (request.accepts?.includes('delegation-relay-send') ?? false) && offers(peer, 'delegation-relay-send')
-          peer.delegationRelay ??= { clientId: peer.client.clientId, sends,
+          // And one that accepted `delegation-branch-starts` is pushed starts from a thread's branch, and checks (#1316 part 2).
+          const branches = (request.accepts?.includes('delegation-branch-starts') ?? false) && offers(peer, 'delegation-branch-starts')
+          peer.delegationRelay ??= { clientId: peer.client.clientId, sends, branches,
             push: (askId, ask) => !relayPeer.frames.isClosed && authenticated(relayPeer) && push(relayPeer, { v: 1, event: 'delegation-relay-ask', askId, ask }) }
           // Told once this hello's answer has gone, so the asks a reconnect reads again reach a desktop that knows the feature.
           const relay = options.delegationRelay, handle = peer.delegationRelay

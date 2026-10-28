@@ -5,7 +5,7 @@ import { z } from 'zod'
 import type { AgentRuntimeMode } from '../../shared/agents'
 import { hostEntityKey, parseHostEntityKey } from '../../shared/clientIdentity'
 import { delegationWorkSchema, type DelegationNews, type DelegationWork } from '../../shared/delegation'
-import { DELEGATION_RELAY_ANSWER_GRACE_MS, DELEGATION_RELAY_READ_MS, DELEGATION_RELAY_RECORDS_MAX, type DelegationRemoteAsk, type RelayedReply } from '../../shared/delegationRelay'
+import { DELEGATION_RELAY_ANSWER_GRACE_MS, DELEGATION_RELAY_READ_MS, DELEGATION_RELAY_RECORDS_MAX, type DelegationRemoteAsk, type RelayedReply, type RemoteLandedBranch } from '../../shared/delegationRelay'
 import { watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
 import type { WorkerPlacementReceipt } from '../../shared/workerMachine'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -18,6 +18,8 @@ export interface RemoteDelegationConnection {
   readonly kind: 'local' | 'remote'
   readonly service: {
     readonly supportsDelegationRemote?: boolean | undefined
+    /** The host takes a start from a branch this computer landed there, and a check (`delegation-branch-starts`, #1316 part 2). */
+    readonly supportsDelegationBranchStarts?: boolean | undefined
     delegationRemoteAsk?(ask: DelegationRemoteAsk, timeoutMs: number): Promise<unknown>
     subscribeDelegationRemoteNews?(listener: (caller: string, news: DelegationNews, replies: readonly RelayedReply[]) => void): () => void
   }
@@ -39,6 +41,8 @@ export interface RemoteAsk {
   readonly retryKey?: string | undefined
   /** How long the call waits here for the outcome. */
   readonly waitMs: number
+  /** The caller's branch, which this computer already landed in the host's project for this start (#1316 part 2). */
+  readonly branch?: RemoteLandedBranch | undefined
 }
 
 const id = z.string().min(1).max(512)
@@ -212,6 +216,11 @@ export class DesktopRemoteDelegations {
     this.rereads.clear()
   }
 
+  /**
+   * Whether `hostId` is connected now and takes a start from a branch this computer lands there, or a check
+   * (`delegation-branch-starts`, #1316 part 2). A host from before it, or one not connected, does not.
+   */
+  takesBranches(hostId: string): boolean { return this.connection(hostId)?.service.supportsDelegationBranchStarts === true }
   /** Whether `delegationId` is one of `callerId`'s delegations on a paired host. */
   holds(callerId: string, delegationId: string): boolean { return this.find(callerId, delegationId) !== undefined }
   /** Whether `threadKey` (`host:<hostId>:<threadId>`) is a thread on a paired host that `callerId` delegated to. */
@@ -273,7 +282,7 @@ export class DesktopRemoteDelegations {
       // The host answers at once: a call that waits for its outcome waits here, on the news, so nothing stays open there.
       answer = await connection.service.delegationRemoteAsk!({ type: 'delegate', caller: base.callerId, levels: ask.levels, rootUserMessageId: ask.rootUserMessageId,
         ...ask.callerMessageId ? { callerMessageId: ask.callerMessageId } : {}, runtimeMode: ask.runtimeMode, projectId: base.projectId,
-        input: { ...ask.input, retry_key: record.id, wait_seconds: 0 }, waitMs: 0 }, DELEGATION_RELAY_ANSWER_GRACE_MS + DELEGATION_RELAY_READ_MS)
+        input: { ...ask.input, retry_key: record.id, wait_seconds: 0 }, waitMs: 0, ...ask.branch ? { branch: ask.branch } : {} }, DELEGATION_RELAY_ANSWER_GRACE_MS + DELEGATION_RELAY_READ_MS)
     } catch {
       // The counting rule (Zach, October 23): what cannot be told apart from a start counts as one, and is read once the host is back.
       this.options.log?.('delegation-remote-answer-lost')

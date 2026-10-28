@@ -16,6 +16,8 @@ export interface RelayDesktop {
   push(askId: string, ask: DelegationRelayAsk): boolean
   /** Its hello accepted `delegation-relay-send` too: it takes second briefs (#1316 part 2). */
   readonly sends?: boolean
+  /** Its hello accepted `delegation-branch-starts` too: it takes starts from a thread's branch, and checks (#1316 part 2). */
+  readonly branches?: boolean
 }
 /** Why an ask has no answer: no desktop was connected to send it to, or the answer never came. */
 export class RelayUnanswered extends Error {
@@ -131,6 +133,11 @@ export class HostDelegationRelay {
   private relaying(): RelayDesktop | undefined { return this.desktops.findLast(desktop => this.options.counts?.(desktop.clientId) ?? true) }
   /** Whether a desktop that relays is connected now. */
   reachable(): boolean { return this.relaying() !== undefined }
+  /**
+   * Whether the desktop that relays now takes a start from the asking thread's branch, or a check (#1316 part 2). One from
+   * before that, or none, does not: such a start is refused here, and nothing is asked.
+   */
+  carriesBranches(): boolean { return this.relaying()?.branches === true }
   /** The words for a start elsewhere while no desktop that relays is connected (Zach, October 23, 2026). */
   awayWords(): string { return relayAwayWords(this.hereName()) }
 
