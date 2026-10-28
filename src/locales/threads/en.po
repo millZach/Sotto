@@ -1720,6 +1720,10 @@ msgstr "Already the project {existingTitle}"
 msgid "An answer from an earlier thread is saved."
 msgstr "An answer from an earlier thread is saved."
 
+#: src/renderer/src/agents/ThreadComposer.tsx
+msgid "An earlier send is still on its way; Steer waits for it"
+msgstr "An earlier send is still on its way; Steer waits for it"
+
 #: src/renderer/src/agents/MessageScrubber.tsx
 msgid "An empty message"
 msgstr "An empty message"
@@ -8934,6 +8938,10 @@ msgstr "Visibility"
 msgid "Visual: {title}"
 msgstr "Visual: {title}"
 
+#: src/renderer/src/agents/ThreadComposer.tsx
+msgid "Wait for the attachment to be read"
+msgstr "Wait for the attachment to be read"
+
 #: src/renderer/src/agents/ForkFromHere.tsx
 msgid "Wait for this turn to finish before forking"
 msgstr "Wait for this turn to finish before forking"
@@ -9295,6 +9303,10 @@ msgstr "Write my own answer"
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Write what {continueTarget} should do next. It goes with the handover."
 msgstr "Write what {continueTarget} should do next. It goes with the handover."
+
+#: src/renderer/src/agents/ThreadComposer.tsx
+msgid "Write what to send into the running turn first"
+msgstr "Write what to send into the running turn first"
 
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Write your answer…"
