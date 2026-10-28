@@ -15,12 +15,17 @@ import {
 } from '../shared/themes/bridge'
 import type { IpcRendererAdapter } from './index'
 
+/** Each channel's answer, built once: building a schema costs far more than parsing with one. */
+const exportResult = themesResultSchema(themeExportResultSchema)
+const searchResult = themesResultSchema(openVsxSearchResultSchema)
+const installResult = themesResultSchema(openVsxInstallResultSchema)
+
 export function createThemesBridge(renderer: IpcRendererAdapter): ThemesBridge {
-  const call = async <T>(channel: string, input: z.ZodType, output: z.ZodType<T>, payload: unknown): Promise<z.infer<ReturnType<typeof themesResultSchema<z.ZodType<T>>>>> =>
-    themesResultSchema(output).parse(await renderer.invoke(channel, input.parse(payload)))
+  const call = async <Result extends z.ZodType>(channel: string, input: z.ZodType, result: Result, payload: unknown): Promise<z.output<Result>> =>
+    result.parse(await renderer.invoke(channel, input.parse(payload)))
   return Object.freeze<ThemesBridge>({
-    exportTheme: request => call(THEMES_EXPORT, themeExportRequestSchema, themeExportResultSchema, request) as ReturnType<ThemesBridge['exportTheme']>,
-    searchOpenVsx: request => call(THEMES_SEARCH, openVsxSearchRequestSchema, openVsxSearchResultSchema, request) as ReturnType<ThemesBridge['searchOpenVsx']>,
-    installOpenVsx: request => call(THEMES_INSTALL, openVsxInstallRequestSchema, openVsxInstallResultSchema, request) as ReturnType<ThemesBridge['installOpenVsx']>,
+    exportTheme: request => call(THEMES_EXPORT, themeExportRequestSchema, exportResult, request) as ReturnType<ThemesBridge['exportTheme']>,
+    searchOpenVsx: request => call(THEMES_SEARCH, openVsxSearchRequestSchema, searchResult, request) as ReturnType<ThemesBridge['searchOpenVsx']>,
+    installOpenVsx: request => call(THEMES_INSTALL, openVsxInstallRequestSchema, installResult, request) as ReturnType<ThemesBridge['installOpenVsx']>,
   })
 }
