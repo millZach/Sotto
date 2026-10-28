@@ -1,6 +1,7 @@
 // @vitest-environment node
 // #1316 review: an outcome update of a delegation on a paired host does work for the delegations it names, never for the
 // history behind them, at the owner's scale or a quarter of it (AGENTS.md: work per update must not grow with history).
+import { randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -57,4 +58,21 @@ it('writes the same for an outcome update whatever history is behind it, the own
   expect(owner).toEqual(quarter)
   expect(owner.appended).toBe(0)
   expect(owner.live).toBeLessThan(2_000)
+})
+
+it('keeps a thread its caller still briefs when compaction drops the start that made it (review)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-remote-scale-')); roots.push(root)
+  const at = (index: number) => new Date(Date.UTC(2026, 9, 20) + index * 1_000).toISOString()
+  const record = (index: number, fields: Record<string, unknown>) => ({ id: randomUUID(), hostId: MAC, callerId: 'parent-old', action: 'start', work: 'code-review',
+    projectId: 'synthetic-project', delegation: randomUUID(), machine: 'the Mac', outcome: 'answered', told: 'answered', createdAt: at(index), updatedAt: at(index), ...fields })
+  // The start that made the thread, oldest; then twice the history kept of other settled work; then a brief to that thread.
+  const lines = [record(0, { thread: 'kept-child' }), ...Array.from({ length: REMOTE_DELEGATION_HISTORY * 2 }, (_, index) => record(index + 1, { thread: `child-${index}` })),
+    record(REMOTE_DELEGATION_HISTORY * 2 + 1, { action: 'send', thread: 'kept-child' })]
+  await writeFile(join(root, 'delegation-remote-settled.jsonl'), lines.map(line => `${JSON.stringify(line)}\n`).join(''))
+  const remote = new DesktopRemoteDelegations(root, { machineName: () => 'the Mac' })
+  await remote.load()
+  // Compaction kept the newest, the brief among them, and dropped the start.
+  expect(remote.list('parent-old').at(-1)).toMatchObject({ action: 'send', thread: `host:${MAC}:kept-child` })
+  expect(remote.holdsThread('parent-old', `host:${MAC}:kept-child`)).toBe(true)
+  expect(remote.holdsThread('parent-old', `host:${MAC}:child-0`)).toBe(false)
 })

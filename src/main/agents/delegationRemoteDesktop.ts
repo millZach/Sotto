@@ -492,7 +492,14 @@ export class DesktopRemoteDelegations {
     if (own) { const at = own.indexOf(record); if (at !== -1) own.splice(at, 1); if (!own.length) this.byCaller.delete(record.callerId) }
     const drop = (index: Map<string, RemoteRecord>, key: string) => { if (index.get(key) === record) index.delete(key) }
     if (record.delegation) drop(this.byTarget, targetIndex(record.hostId, record.delegation))
-    if (record.thread) drop(this.byThread, threadIndex(record.callerId, record.hostId, record.thread))
+    if (record.thread) {
+      // A later brief to the same thread that is still kept takes its place, so its caller still holds the thread (#1316 review).
+      const key = threadIndex(record.callerId, record.hostId, record.thread)
+      if (this.byThread.get(key) === record) {
+        const next = own?.find(item => item.hostId === record.hostId && item.thread === record.thread)
+        if (next) this.byThread.set(key, next); else this.byThread.delete(key)
+      }
+    }
     if (record.callerRetryKey) drop(this.byRetry, retryIndex(record.callerId, record.callerRetryKey))
     const live = this.live.get(record.hostId)
     if (live?.delete(record) && !live.size) this.live.delete(record.hostId)
