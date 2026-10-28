@@ -8,8 +8,8 @@ Ctrl+1 to Ctrl+5 (⌘ on a Mac) open Dictate, Watcher, Threads, Usage and Settin
 They are thread shortcuts by another name: the same setting (`threadShortcuts`), recorder and rules, listed in a new
 **Switch pages** group first on Settings › Keyboard. A room opened this way takes focus on its lit tab in the room
 switch, as pressing that tab does, the room already open included; with the sidebar folded to its rail, the page's
-main room takes focus instead. The room tabs and page links name their keys in their title and `aria-keyshortcuts`. A
-thread shortcut saved on one of these keys before keeps it, and the page's row says so. With dictation turned off,
+main room takes focus instead. Usage lands on its page link. The room tabs and page links name their keys in their title
+and `aria-keyshortcuts`. Another shortcut saved on one of these keys keeps it, and the page's row says so. With dictation turned off,
 Dictate has no row and Ctrl+1 does nothing.
 
 ## How it was checked
@@ -41,8 +41,8 @@ a Sotto thread's worktree does: the spec's results folder and the live Sotto's O
 live Omarchy and Hyprland trees were unchanged.
 
 Unit: `tests/unit/renderer/pageShortcuts.test.tsx` (the listener: each key's page, ⌘ on a Mac, a chosen or removed
-key, focus on the open room's lit tab and handed on from Memory, the main room when no switch takes it, a thread
-shortcut saved on the same keys, a text box, a terminal, a dialog, a page left out, setup not finished, dictation's own
+key, focus on the open room's lit tab and handed on from Memory, Usage's link, the main room when no control takes it,
+the open room with its switch folded away, a thread or page shortcut saved on the same keys, a text box, a terminal, a dialog, a page left out, setup not finished, dictation's own
 keys, a press already taken and a repeat), the keys on the room tabs and page links in
 `tests/unit/renderer/roomSwitch.test.tsx`, the Switch pages cases in
 `tests/unit/renderer/features/settings/threadShortcuts.test.tsx`, the defaults in

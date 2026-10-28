@@ -13,6 +13,11 @@ import type { SottoPlatform } from './platform'
 export const PAGE_SHORTCUT_IDS = ['page-dictate', 'page-watcher', 'page-threads', 'page-usage', 'page-settings'] as const
 export type PageShortcutId = (typeof PAGE_SHORTCUT_IDS)[number]
 
+/** Whether a shortcut opens a page rather than acting in threads. */
+export function isPageShortcut(id: string): id is PageShortcutId {
+  return (PAGE_SHORTCUT_IDS as readonly string[]).includes(id)
+}
+
 export const THREAD_SHORTCUT_IDS = [
   ...PAGE_SHORTCUT_IDS,
   'new-thread',

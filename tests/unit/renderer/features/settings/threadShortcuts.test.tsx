@@ -170,4 +170,9 @@ describe('Settings › Keyboard (ADR-0133)', () => {
     expect(await within(row('Settle thread')).findByRole('alert')).toHaveTextContent('New thread already uses Ctrl + 1. Pick other keys.')
     expect(onUpdateSettings).not.toHaveBeenCalled()
   })
+
+  it('says which page shortcut saved while a page was hidden holds that page’s default keys', () => {
+    setup({ choices: { 'page-threads': 'mod+1' } })
+    expect(within(row('Dictate')).getByRole('status')).toHaveTextContent('Threads already uses Ctrl + 1, so these keys do nothing here until one of the two changes.')
+  })
 })

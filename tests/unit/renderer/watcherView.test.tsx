@@ -815,8 +815,8 @@ describe('the room switch', () => {
   it('puts the owl between Dictate and Threads, every tile named and tipped, with one tab stop', () => {
     const { tabs } = foot('home')
     expect(tabs().map(tab => tab.getAttribute('aria-label'))).toEqual(['Dictate', 'Watcher', 'Threads'])
-    // A closed room's tip names its page shortcut too (ADR-0158); the lit one, Dictate here, only its name.
-    expect(tabs().map(tab => tab.getAttribute('title'))).toEqual(['Dictate', 'Watcher (Ctrl+2)', 'Threads (Ctrl+3)'])
+    // Every tile's tip names its page shortcut too (ADR-0158).
+    expect(tabs().map(tab => tab.getAttribute('title'))).toEqual(['Dictate (Ctrl+1)', 'Watcher (Ctrl+2)', 'Threads (Ctrl+3)'])
     expect(tabs().map(tab => tab.tabIndex)).toEqual([0, -1, -1])
   })
 

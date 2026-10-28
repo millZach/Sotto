@@ -99,6 +99,34 @@ describe('page shortcuts (ADR-0158)', () => {
     main.remove()
   })
 
+  it('puts focus in the main room for the room already open when its switch is folded away', () => {
+    setup({ navigation: 'threads' })
+    const composer = document.body.appendChild(document.createElement('textarea'))
+    const main = document.body.appendChild(Object.assign(document.createElement('main'), { id: 'main-content', tabIndex: -1 }))
+    composer.focus()
+    ctrl('3', composer)
+    expect(main).toHaveFocus()
+    composer.remove(); main.remove()
+  })
+
+  it('lands on the page’s own link once it draws, as a click on the link leaves focus there', async () => {
+    const { navigate } = setup({ navigation: 'home' })
+    const link = document.body.appendChild(Object.assign(document.createElement('a'), { href: '#usage' }))
+    link.setAttribute('aria-current', 'page')
+    ctrl('4')
+    expect(navigate).toHaveBeenCalledWith('usage')
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    await new Promise(resolve => requestAnimationFrame(resolve))
+    expect(link).toHaveFocus()
+    link.remove()
+  })
+
+  it('stands down where another page shortcut was saved on its default keys while its page was hidden', () => {
+    const { navigate } = setup({ choices: { 'page-threads': 'mod+1' } })
+    ctrl('1')
+    expect(navigate.mock.calls.map(([destination]) => destination)).toEqual(['threads'])
+  })
+
   it('stands down where a thread shortcut was saved on the same keys before, and the other keys still answer', () => {
     const { navigate } = setup({ choices: { 'new-thread': 'mod+1' } })
     ctrl('1')

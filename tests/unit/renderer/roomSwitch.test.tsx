@@ -74,7 +74,7 @@ describe('the keys that open each room and page (ADR-0158)', () => {
     app.value = loaded()
     render(<RoomSwitch className="thread-nav__seg" iconOnly />)
     expect(screen.getAllByRole('tab').map(tab => [tab.getAttribute('title'), tab.getAttribute('aria-keyshortcuts')])).toEqual([
-      ['Dictate (Ctrl+1)', 'Control+1'], ['Watcher (Ctrl+2)', 'Control+2'], ['Threads', 'Control+3'],
+      ['Dictate (Ctrl+1)', 'Control+1'], ['Watcher (Ctrl+2)', 'Control+2'], ['Threads (Ctrl+3)', 'Control+3'],
     ])
   })
 

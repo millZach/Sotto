@@ -31,13 +31,11 @@ export function pageShortcutShown(id: PageShortcutId, gates: PageShortcutGates):
   return true
 }
 
-const isPageShortcut = (id: ThreadShortcutId): id is PageShortcutId => (PAGE_SHORTCUT_IDS as readonly string[]).includes(id)
-
 /**
- * The thread shortcut the user set to the same keys as this page shortcut, or null. Digits were already allowed on
- * thread shortcuts before the page shortcuts took Ctrl+1 to Ctrl+5 as defaults, and a saved choice beats a new default:
- * the page shortcut at its default stands down until one of the two moves. Settings refuses a new clash, so only a
- * page shortcut's default can meet a saved thread shortcut.
+ * The shortcut the user set to the same keys as this page shortcut's default, or null. A saved choice beats a default:
+ * the page shortcut stands down until one of the two moves. Two ways lead here, since Settings refuses a new clash
+ * only among the rows it shows: a thread shortcut saved on a digit before the page shortcuts took Ctrl+1 to Ctrl+5,
+ * and any shortcut saved on a hidden page's keys (Dictate's while dictation was off) before the page came back.
  */
 export function pageChordHolder(settings: Pick<ThreadShortcutSettings, 'threadShortcuts'> | null | undefined, id: PageShortcutId, platform: SottoPlatform): ThreadShortcutId | null {
   const saved = settings?.threadShortcuts ?? {}
@@ -45,7 +43,7 @@ export function pageChordHolder(settings: Pick<ThreadShortcutSettings, 'threadSh
   if (chord === null || Object.hasOwn(saved, id)) return null
   return THREAD_SHORTCUT_IDS.find(other => {
     const held = saved[other]
-    return !isPageShortcut(other) && typeof held === 'string' && sameThreadKeys(held, chord, platform)
+    return other !== id && typeof held === 'string' && sameThreadKeys(held, chord, platform)
   }) ?? null
 }
 
@@ -81,19 +79,29 @@ export function pageShortcutFor(destination: ManagementNavigation): PageShortcut
 }
 
 /**
- * Focus for a room a press opened. A room already open takes it on its lit tab at once, as a click on that tab does;
- * another is handed it, for its page's switch to take once drawn. Where no switch on screen takes it (the sidebar
- * folded to its rail), the page's main room does, so focus never falls to nowhere.
+ * Where focus lands after a press, as a click on the page's own control leaves it: on the room's lit tab or the page's
+ * link, where one is on screen, and otherwise on the page's main room (the sidebar folded to its rail, or Settings,
+ * which draws no link to itself), so focus never falls to the document.
  */
-function focusRoom(room: AppRoom, open: boolean): void {
-  const litTab = (): HTMLElement | undefined => [...document.querySelectorAll<HTMLElement>(`[role="tab"][data-room="${room}"][aria-selected="true"]`)]
-    .find(tab => tab.checkVisibility?.() !== false)
-  if (open) { litTab()?.focus(); return }
-  handRoomFocus(room)
+function landFocus(destination: ManagementNavigation, room: AppRoom | null): void {
+  const selector = room !== null ? `[role="tab"][data-room="${room}"][aria-selected="true"]` : `a[href="#${destination}"][aria-current="page"]`
+  const control = [...document.querySelectorAll<HTMLElement>(selector)].find(element => element.checkVisibility?.() !== false)
+  ;(control ?? document.getElementById('main-content'))?.focus({ preventScroll: true })
+}
+
+/**
+ * Focus for a press. The page already open lands at once. Another room is handed focus for its switch to take as it
+ * draws, as a switch press hands it; then, once the page has drawn, focus lands as above, unless the user has already
+ * put it somewhere since.
+ */
+function focusAfterPress(destination: ManagementNavigation, room: AppRoom | null, open: boolean): void {
+  if (open) { landFocus(destination, room); return }
+  if (room !== null) handRoomFocus(room)
+  const before = document.activeElement
   requestAnimationFrame(() => requestAnimationFrame(() => {
-    if (document.activeElement !== null && document.activeElement !== document.body) return
-    const main = document.getElementById('main-content')
-    main?.focus({ preventScroll: true })
+    const active = document.activeElement
+    const moved = active !== null && active !== document.body && active !== before && !(room !== null && active.matches(`[role="tab"][data-room="${room}"]`))
+    if (!moved) landFocus(destination, room)
   }))
 }
 
@@ -128,8 +136,8 @@ export function usePageShortcuts({ settings, platform, navigation, navigate }: P
       if (index < 0) return
       event.preventDefault()
       const { destination, room } = PAGE_SHORTCUT_PAGES[PAGE_SHORTCUT_IDS[index]!]
-      if (room !== null) focusRoom(room, navigation === destination)
       navigate(destination)
+      focusAfterPress(destination, room, navigation === destination)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)

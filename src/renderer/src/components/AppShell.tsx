@@ -148,7 +148,8 @@ export function useRoomSwitch(room: AppRoom | null, rooms: ReadonlyArray<Room>, 
       'aria-selected': target.id === room,
       'aria-label': target.label,
       'aria-keyshortcuts': shortcut?.keys,
-      title: target.id === room ? undefined : shortcut ? `${target.label} ${shortcut.suffix}` : target.label,
+      // Its keys on every tab; its name alone only on a closed one, since the lit tab shows its name.
+      title: shortcut ? `${target.label} ${shortcut.suffix}` : target.id === room ? undefined : target.label,
       tabIndex: target.id === focusable ? 0 : -1,
       onClick: () => enter(target),
       onKeyDown: event => {
