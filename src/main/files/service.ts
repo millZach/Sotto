@@ -37,6 +37,14 @@ export class FilesService {
     return this.run(async () => (await this.workspace(threadId, expected, false)).value)
   }
 
+  /**
+   * Whether Sotto still lists the thread, read from its binding alone: no folder is looked at, so a thread file page can
+   * ask it on every request (ADR-0085, October 27 amendment).
+   */
+  hasThread(threadId: string): boolean {
+    try { return this.dependencies.resolveBinding(threadId)?.threadId === threadId } catch { return false }
+  }
+
   private async run<T>(operation: () => Promise<T>): Promise<FilesResult<T>> {
     if (this.active >= FILES_MAX_CONCURRENT_REQUESTS) return { ok: false, error: { code: 'busy', message: 'Files is busy. Try again shortly.' } }
     this.active++

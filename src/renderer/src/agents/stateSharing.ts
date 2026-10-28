@@ -10,7 +10,8 @@ import { useRef } from 'react'
  * borrowed from the old one.
  *
  * It covers what agent state is made of: plain objects, arrays, maps and primitives. Anything else
- * (a class instance, a function, a Date) is taken from the new value as it is.
+ * (a class instance, a function, a Date) is taken from the new value as it is. Values compare as `Object.is` does, so
+ * a part holding NaN, such as a row's unknown activity time, is unchanged when it is NaN on both sides.
  */
 
 type Plain = Record<string, unknown>
@@ -25,7 +26,9 @@ function isPlain(value: unknown): value is Plain {
 /**
  * How an array's elements are matched across two states: by their own identity where they carry one, so an
  * item that moved keeps its reference. Sotto's lists are keyed by `id`, by the thread they belong to, or by
- * the draft a delivery reports on.
+ * the draft a delivery reports on. An item the old array already held, the same reference, is matched to itself
+ * wherever it moved, so a list of derived facts re-sorted around one changed item (a project folder's rows) is not
+ * walked item against neighbour.
  */
 function keyOf(value: unknown): string | undefined {
   if (!isPlain(value)) return undefined
@@ -37,45 +40,61 @@ function keyOf(value: unknown): string | undefined {
 
 function shareArray(previous: readonly unknown[], next: readonly unknown[], arrays?: SharedArrays): readonly unknown[] {
   const byKey = new Map<string, unknown>()
+  const held = new Set<unknown>()
   for (const item of previous) {
+    held.add(item)
     const key = keyOf(item)
     if (key !== undefined && !byKey.has(key)) byKey.set(key, item)
   }
   let same = previous.length === next.length
+  let borrowed = false
   const shared = next.map((item, index) => {
+    if (held.has(item)) {
+      if (!Object.is(item, previous[index])) same = false
+      return item
+    }
     const key = keyOf(item)
     const candidate = key !== undefined && byKey.has(key) ? byKey.get(key) : previous[index]
     const value = shareValue(candidate, item, arrays)
-    if (value !== previous[index]) same = false
+    if (!Object.is(value, previous[index])) same = false
+    if (!Object.is(value, item)) borrowed = true
     return value
   })
-  return same ? previous : shared
+  return same ? previous : borrowed ? shared : next
 }
 
 function shareMap(previous: ReadonlyMap<unknown, unknown>, next: ReadonlyMap<unknown, unknown>, arrays?: SharedArrays): ReadonlyMap<unknown, unknown> {
   let same = previous.size === next.size
+  let borrowed = false
   const shared = new Map<unknown, unknown>()
   for (const [key, value] of next) {
     const held = shareValue(previous.get(key), value, arrays)
-    if (!previous.has(key) || previous.get(key) !== held) same = false
+    if (!previous.has(key) || !Object.is(previous.get(key), held)) same = false
+    if (!Object.is(held, value)) borrowed = true
     shared.set(key, held)
   }
-  return same ? previous : shared
+  return same ? previous : borrowed ? shared : next
 }
 
 function shareObject(previous: Plain, next: Plain, arrays?: SharedArrays): Plain {
   const keys = Object.keys(next)
   let same = keys.length === Object.keys(previous).length
+  let borrowed = false
   const shared: Plain = {}
   for (const key of keys) {
     const value = shareValue(previous[key], next[key], arrays)
-    if (!(key in previous) || previous[key] !== value) same = false
+    if (!(key in previous) || !Object.is(previous[key], value)) same = false
+    if (!Object.is(value, next[key])) borrowed = true
     shared[key] = value
   }
-  return same ? previous : shared
+  return same ? previous : borrowed ? shared : next
 }
 
-/** The new value with every unchanged part replaced by the old value's reference for it. */
+/**
+ * The new value with every unchanged part replaced by the old value's reference for it. A new value that borrows
+ * nothing is handed back as it is, so a value already shared against the old one comes back the same reference when
+ * shared against it again (a page's described rows, then `useShared` over them).
+ */
 export function share<T>(previous: unknown, next: T): T {
   return shareValue(previous, next)
 }

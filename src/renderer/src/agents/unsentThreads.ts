@@ -1,22 +1,13 @@
 import { useMemo, useSyncExternalStore } from 'react'
-import type { AgentThread } from '../../../shared/agents'
-import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
+import { isUnsentThread } from '../../../shared/threadActivity'
 import { firstMessageTitle, THREAD_TITLE_MAX_CHARACTERS } from '../../../shared/threadTitle'
 import type { ThreadRow } from './threadFacts'
 import { hasDraftContent, type ComposerDraft, type ThreadDraftStore } from './threadDraftStore'
 
+export { isUnsentThread }
+
 /** Enough of a draft for its title, so a long paste is not reread on every keystroke. */
 const TITLE_SOURCE_CHARACTERS = 4 * THREAD_TITLE_MAX_CHARACTERS
-
-/**
- * A thread opened and never sent to: on its default title, at rest, with nothing in its transcript, open, and not a
- * delegated thread, which lives under the thread that delegated to it.
- */
-export function isUnsentThread(thread: AgentThread): boolean {
-  return thread.titleSource === 'default' && thread.status === 'idle' && thread.delegatedBy === undefined
-    && !isThreadClosed(thread) && !isWorkspaceThreadSettled(thread)
-    && (thread.summary?.messageCount ?? thread.messages.length) === 0
-}
 
 /** What the sidebar calls an unsent thread: what its first message would name it, or null while there are no words. */
 export function unsentTitle(text: string): string | null {

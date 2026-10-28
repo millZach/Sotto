@@ -1,8 +1,8 @@
-import { createReadStream } from 'node:fs'
-import { realpath, stat } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { open } from 'node:fs/promises'
 import { request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http'
 import path from 'node:path'
-import { inside, type QuestionPageTarget } from '../main/agents/questionPages'
+import { canonicalInside, folderIdentity, hiddenOnTheWay, inside, type QuestionPageTarget } from '../main/agents/questionPages'
 
 /** A page route's path: the token and whatever follows it. */
 export const QUESTION_PAGE_PATH = /^\/page\/([A-Za-z0-9_-]{32})(\/[^?#]*)?$/u
@@ -45,6 +45,9 @@ const PROXY_TIMEOUT_MS = 15_000
  */
 const PAGE_MEDIA = /^(?:text\/(?:html|css|javascript)|application\/(?:javascript|x-javascript|ecmascript|wasm)|image\/|font\/|audio\/|video\/)/u
 
+/** Why a file in a page's folder is refused, for a question's page and a thread file page alike. */
+const REFUSED_LINE = 'A page Sotto serves from a folder opens the files a web page is made of, such as pages, styles, scripts, images and fonts, from the page’s own folder, and nothing else.'
+
 const escape = (value: string): string => value.replace(/[&<>"']/gu, character => `&#${character.charCodeAt(0)};`)
 
 /** A page that says what happened in plain words, with nothing loaded from anywhere. */
@@ -65,6 +68,14 @@ const finished = (response: ServerResponse): Promise<void> => new Promise(resolv
 /** A web file in the folder, as it is after links are followed: no hidden part on the way to it, and a kind a page is made of. */
 const servable = (root: string, file: string): boolean => file !== root && inside(root, file)
   && !path.relative(root, file).split(path.sep).some(part => part.startsWith('.')) && CONTENT_TYPES[path.extname(file).toLowerCase()] !== undefined
+/** How many page requests a minute one listener answers, all pages together (ADR-0085): a page loads many files. */
+export const PAGE_REQUESTS_PER_MINUTE = 1200
+
+/** The answer to a page request past the listener's budget, in words. */
+export function refuseBusyPage(response: ServerResponse): void {
+  explain(response, 429, 'Too many requests for this page', ['Sotto answers at most 1,200 page requests a minute here, and this minute’s are spent. Nothing was lost.',
+    'Wait a minute, then reload the page.'])
+}
 
 /**
  * Answers one request on a question page's route (ADR-0085): `/page/<token>/<path>`. A file page serves its folder
@@ -76,12 +87,15 @@ export async function serveQuestionPage(request: IncomingMessage, response: Serv
   target: (token: string) => QuestionPageTarget | undefined
   ownPort: () => number | undefined
   opened?: (token: string) => void
+  /** What a token nobody holds says, when the listener serves pages other than a question's (a thread file page). */
+  closed?: { readonly title: string; readonly lines: readonly string[] }
 }): Promise<void> {
   const url = new URL(request.url ?? '/', 'http://page.invalid')
   const match = QUESTION_PAGE_PATH.exec(url.pathname)
   const target = match ? options.target(match[1]!) : undefined
   if (!match || !target) {
-    explain(response, 404, 'This page has closed', ['The question it belonged to was answered over an hour ago, or Sotto restarted since it was asked. Nothing was lost.',
+    if (options.closed) explain(response, 404, options.closed.title, options.closed.lines)
+    else explain(response, 404, 'This page has closed', ['The question it belonged to was answered over an hour ago, or Sotto restarted since it was asked. Nothing was lost.',
       'Open the page again from the question, or ask the agent for it.'])
     return
   }
@@ -105,30 +119,49 @@ async function serveFile(request: IncomingMessage, response: ServerResponse, tar
   const extension = path.extname(parts.at(-1) ?? '').toLowerCase()
   const type = CONTENT_TYPES[extension]
   if (refused || !type) {
-    explain(response, 403, 'Sotto does not serve this file', ['A question’s page opens the files a web page is made of, such as pages, styles, scripts, images and fonts, from the page’s own folder, and nothing else.'])
+    explain(response, 403, 'Sotto does not serve this file', [REFUSED_LINE])
     return
   }
-  // The folder is the one found when the question was asked, after links were followed. If it has since become a link to
-  // somewhere else, it is not that folder any more, and nothing in it is served.
-  const root = await realpath(target.root).catch(() => undefined) === target.root ? target.root : undefined
-  const file = root ? await realpath(path.join(root, ...parts)).catch(() => undefined) : undefined
+  // The folder is the one found when the page was admitted. It is walked again from the thread's folder on every request,
+  // each link judged before it is followed, before the folder itself is looked at: if it has since become a link to
+  // somewhere else, outside or on a share, nothing there is touched, and if it now leads anywhere but where it was
+  // admitted, it is not that folder any more and nothing in it is served.
+  // The thread's folder is the walk's anchor, so it is checked first, with `lstat` alone: still a folder, not a link or
+  // junction put in its place, and the very folder admission found. A page directly in it has no other part to walk.
+  const anchor = target.folder === undefined ? undefined : await folderIdentity(target.folder)
+  const anchored = target.folder === undefined
+    || (!!anchor && !!target.folderIdentity && anchor.dev === target.folderIdentity.dev && anchor.ino === target.folderIdentity.ino)
+  const again = anchored ? await canonicalInside(target.folder ?? path.parse(target.root).root, target.root) : undefined
+  const root = again && 'file' in again && again.file === target.root ? target.root : undefined
   // A link in the folder is followed before it is judged, so `look.css` that leads to `.env` is refused as `.env` would be.
-  if (file && root && !servable(root, file)) {
-    explain(response, 403, 'Sotto does not serve this file', ['A question’s page opens the files a web page is made of, such as pages, styles, scripts, images and fonts, from the page’s own folder, and nothing else.'])
+  // It is followed without leaving the folder: a link to a share or outside is refused before anything there is touched.
+  // The file is judged by the file system's own spelling of it, so `WORKTR~1` is judged as `.worktrees`.
+  const walked = root ? await canonicalInside(root, path.join(root, ...parts)) : undefined
+  const file = walked && 'file' in walked ? walked : undefined
+  const hidden = file !== undefined && target.folder !== undefined && hiddenOnTheWay(target.folder, file.file, target.hidden ?? 'git-only')
+  if ((walked && 'reason' in walked && walked.reason === 'outside') || (file && root && (!servable(root, file.file) || hidden))) {
+    explain(response, 403, 'Sotto does not serve this file', [REFUSED_LINE])
     return
   }
-  const info = file && root ? await stat(file).catch(() => undefined) : undefined
-  if (!info?.isFile()) {
+  // The file is opened, then checked to be the one the walk found: a folder on the way swapped for a link between the walk
+  // and the open would open another file, and that file is not served.
+  // Only a plain file is opened, as the walk saw it, so a pipe or device named `look.css` is never opened; and it is opened
+  // without waiting where the system can, so one swapped in after the walk cannot hold the open, then refused below.
+  const handle = file?.identity?.regular ? await open(file.file, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0)).catch(() => undefined) : undefined
+  const info = handle ? await handle.stat({ bigint: true }).catch(() => undefined) : undefined
+  const same = !!info && !!file?.identity && info.dev === file.identity.dev && info.ino === file.identity.ino && info.ctimeNs === file.identity.changed
+  if (!handle || !info?.isFile() || !same) {
+    await handle?.close().catch(() => undefined)
     const missingPage = path.join(target.root, ...parts) === target.file
     explain(response, 404, missingPage ? 'The prototype file was moved or deleted' : 'This file is not in the page’s folder',
       missingPage ? ['Nothing else changed. Ask the agent where the page is now.'] : ['The page asked for a file that is not there. The rest of the page may still work.'])
     return
   }
-  response.writeHead(200, { ...PAGE_HEADERS, 'Content-Type': CONTENT_TYPES[path.extname(file!).toLowerCase()] ?? type, 'Content-Length': info.size })
+  response.writeHead(200, { ...PAGE_HEADERS, 'Content-Type': CONTENT_TYPES[path.extname(file!.file).toLowerCase()] ?? type, 'Content-Length': Number(info.size) })
   answered()
-  if (request.method === 'HEAD') { response.end(); return }
+  if (request.method === 'HEAD') { await handle.close().catch(() => undefined); response.end(); return }
   // The file is closed when the browser goes away part way, which a plain pipe would not do on its own.
-  const stream = createReadStream(file!)
+  const stream = handle.createReadStream()
   response.once('close', () => stream.destroy())
   stream.on('error', () => response.destroy())
   stream.pipe(response)

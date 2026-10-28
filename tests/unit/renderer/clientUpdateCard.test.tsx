@@ -76,7 +76,7 @@ describe('the client update card', () => {
     provide(fixture([behind({ channel: 'mise', state: 'failed', failure: 'not-listed', step: 1, error: 'mise does not list Grok Build 1.0.40 yet.' })]))
     render(<ClientUpdateCard />)
     expect(screen.getByText('Grok Build did not update.')).toBeTruthy()
-    expect(screen.getByText('mise does not list Grok Build 1.0.40 yet, even with its cache cleared, so Sotto did not install it. 1.0.5 is still installed. Try again later.')).toBeTruthy()
+    expect(screen.getByText('mise does not list Grok Build 1.0.40 yet, so Sotto could not install it. 1.0.5 is still installed. Try again later.')).toBeTruthy()
     expect(screen.queryByText(/Another app may be using/u)).toBeNull()
     expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy()
   })
