@@ -3,7 +3,7 @@ import { rootStyleUnchanged } from '../state/appearance'
 import { useClickEffectOn } from '../state/clickEffect'
 import { toRgb } from '../watcher/canvasColor'
 import { columnCeiling, type Word } from '../watcher/nightScene'
-import { surfaceOf, toWord } from '../watcher/WatcherNightScene'
+import { measureRoom, surfaceOf, toWord } from '../watcher/WatcherNightScene'
 import { watchResolution } from '../watcher/watchResolution'
 import { ClickWater, GLYPH_ALPHA, GLYPH_H, GLYPH_W, STEP_HZ } from './clickWater'
 import './clickEffect.css'
@@ -27,17 +27,20 @@ interface Rect { readonly left: number; readonly top: number; readonly right: nu
 
 /**
  * Where Watcher's night scene already spends what the words over it allow (ADR-0126): the conversation's column and the
- * header above it. Waves drawn under the scene's glyphs there would add to them, so none are; the margins keep theirs.
+ * header band above it, measured as the scene measures them (`measureRoom`). Waves drawn under the scene's glyphs there
+ * would add to them, so none are; the margins keep theirs. A room the scene cannot measure is kept clear whole.
  */
 function sceneColumn(): readonly Rect[] {
   const pane = document.querySelector<HTMLElement>('.watcher-pane')
   if (pane?.querySelector(':scope > .watcher-scene--land') == null) return []
-  const room = pane.getBoundingClientRect()
-  const card = pane.querySelector(':scope > .thread-workspace__compose > .thread-prompt')?.getBoundingClientRect()
-  const header = Math.max(room.top, ...[...pane.querySelectorAll(':scope > :is(.watcher-head, .watcher-glance)')].map(band => band.getBoundingClientRect().bottom))
+  const base = pane.getBoundingClientRect()
+  const room = measureRoom(pane)
+  if (room === null) return [{ left: base.left, top: base.top, right: base.right, bottom: base.bottom }]
+  // The scene measures in the pane's scrolled content; the canvas draws in the window.
+  const down = base.top - pane.scrollTop
   return [
-    { left: room.left, top: room.top, right: room.right, bottom: header },
-    ...card === undefined ? [] : [{ left: card.left, top: room.top, right: card.right, bottom: room.bottom }],
+    { left: base.left, top: base.top, right: base.right, bottom: down + room.header },
+    { left: base.left + room.composer.x, top: base.top, right: base.left + room.composer.x + room.composer.w, bottom: base.bottom },
   ]
 }
 
@@ -124,6 +127,8 @@ function ClickEffectLayer(): ReactNode {
         return sprite
       }
       ink = { key, digits: [draw('0'), draw('1')], ceiling }
+      // The face may still be loading; the 0s and 1s are drawn again once it has (fontsLoaded below).
+      void document.fonts?.load(`500 11px ${style.fontFamily}`).catch(() => undefined)
       if (counted) { canvas.dataset.clickEffectCeiling = String(ceiling); canvas.dataset.clickEffectInk = style.outlineColor }
       return ink
     }
@@ -159,7 +164,8 @@ function ClickEffectLayer(): ReactNode {
       const width = GLYPH_W * 1.4, height = GLYPH_H
       ctx.clearRect(0, 0, water.width, water.height)
       const stamped = water.draw((digit, x, y, alpha) => {
-        if (quiet.some(rect => x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom)) return
+        // A glyph whose box reaches into a quiet part is not drawn, so none spills over its edge.
+        if (quiet.some(rect => x + width / 2 > rect.left && x - width / 2 < rect.right && y + height / 2 > rect.top && y - height / 2 < rect.bottom)) return
         ctx.globalAlpha = alpha / GLYPH_ALPHA
         ctx.drawImage(digits[digit], x - width / 2, y - height / 2, width, height)
       })
@@ -191,6 +197,9 @@ function ClickEffectLayer(): ReactNode {
     }
     // A theme or mode change is read again before the next frame, so waves already running take the new accent.
     // The theme inspector's probes, which restore the root's style in the same task, are not a change (ADR-0011).
+    // A face that finished loading draws the 0s and 1s again, in it rather than its fallback.
+    const fontsLoaded = (): void => { ink = null; stale = true }
+    document.fonts?.addEventListener('loadingdone', fontsLoaded)
     const theme = new MutationObserver(records => { if (!rootStyleUnchanged(records, document.documentElement)) stale = true })
     theme.observe(document.documentElement, { attributes: true, attributeOldValue: true, attributeFilter: ['style', 'data-theme', 'data-theme-id'] })
     window.addEventListener('pointerdown', press, { capture: true, passive: true })
@@ -199,6 +208,7 @@ function ClickEffectLayer(): ReactNode {
     document.addEventListener('visibilitychange', hidden)
     return () => {
       theme.disconnect()
+      document.fonts?.removeEventListener('loadingdone', fontsLoaded)
       window.removeEventListener('pointerdown', press, { capture: true })
       window.removeEventListener('resize', resized)
       unwatchResolution()
