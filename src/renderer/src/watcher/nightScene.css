@@ -68,9 +68,6 @@
    card is 92%, which holds for every built-in theme. This is the one composer that is not solid (ADR-0084, amended by
    ADR-0126); asking for less transparency makes it solid again. */
 .watcher-pane > .thread-workspace__compose > .thread-prompt { background: color-mix(in srgb, var(--tt-card) var(--watcher-glass, 92%), transparent); -webkit-backdrop-filter: blur(14px) saturate(1.1); backdrop-filter: blur(14px) saturate(1.1); }
-/* The glass is as thick as the muted tier needs. On it the placeholder takes that tier whole, not the 55% the solid
-   fields thin it to (#1646). */
-.watcher-pane > .thread-workspace__compose .prompt-editor { --placeholder-ink: var(--tt-text-muted); }
 @media (prefers-reduced-transparency: reduce) {
   .watcher-pane > .thread-workspace__compose > .thread-prompt { background: var(--tt-card); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
