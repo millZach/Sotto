@@ -1912,6 +1912,8 @@ private struct WatchedPane: View {
                     .onAppear { moved(content.frame(in: .global)) }
                     .onChange(of: content.frame(in: .global)) { _, frame in moved(frame) }
             })
+            // Once for the page, not once for each layout ViewThatFits builds, so one press plays one tap.
+            .sensoryFeedback(.impact(weight: .medium), trigger: stopPresses)
         }
         .refreshable { await model.readWatcher(hostID) }
         // What a Stop watching press did, with Undo, over the tab bar.
@@ -2011,7 +2013,6 @@ private struct WatchedPane: View {
                 }
             }
             .buttonStyle(PillButtonStyle(kind: .danger))
-            .sensoryFeedback(.impact(weight: .medium), trigger: stopPresses)
             .disabled(!model.online(hostID) || model.watcherStopping.contains(hostID))
             .accessibilityHint("Asks first, then stops the threads Watcher started")
             .accessibilityIdentifier("watcher-stop-all")

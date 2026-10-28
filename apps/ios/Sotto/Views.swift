@@ -227,29 +227,31 @@ enum Words {
 struct FeedbackBanner: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
-        if let feedback = model.feedback {
-            HStack(alignment: .top, spacing: Space.s2) {
-                Text(feedback).font(.sotto(.small)).foregroundStyle(Palette.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, Space.s3)
-                    .paragraphDirection()
-                Button { model.feedback = nil } label: {
-                    Image(systemName: "xmark").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.muted)
-                        .frame(width: 44, height: 44).contentShape(Rectangle())
+        Group {
+            if let feedback = model.feedback {
+                HStack(alignment: .top, spacing: Space.s2) {
+                    Text(feedback).font(.sotto(.small)).foregroundStyle(Palette.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, Space.s3)
+                        .paragraphDirection()
+                    Button { model.feedback = nil } label: {
+                        Image(systemName: "xmark").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.muted)
+                            .frame(width: 44, height: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressStyle())
+                    .accessibilityLabel("Dismiss message")
                 }
-                .buttonStyle(PressStyle())
-                .accessibilityLabel("Dismiss message")
-            }
-            .padding(.leading, Space.s4)
-            .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            .accessibilityAddTraits(.updatesFrequently)
-            .transition(.opacity)
-            .sensoryFeedback(trigger: model.feedback) { _, now in now == nil ? nil : .warning }
-            .task(id: model.passing) {
-                if let id = model.passing, model.confirmationShown(id) { UIAccessibility.post(notification: .announcement, argument: feedback) }
+                .padding(.leading, Space.s4)
+                .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .accessibilityAddTraits(.updatesFrequently)
+                .transition(.opacity)
+                .task(id: model.passing) {
+                    if let id = model.passing, model.confirmationShown(id) { UIAccessibility.post(notification: .announcement, argument: feedback) }
+                }
             }
         }
+        .sensoryFeedback(trigger: model.feedback) { _, now in now == nil || model.passing != nil ? nil : .warning }
     }
 }
 

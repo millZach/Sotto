@@ -1843,6 +1843,7 @@ private struct ReplyDock: View, Equatable {
             trailingButtons
         }
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: model.canInterrupt(ref))
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: written)
         .padding(6)
         .glass(in: shape)
         .overlay(shape.strokeBorder(theme.color(.accent).opacity(focused ? 0.55 : 0), lineWidth: 1))
@@ -1856,12 +1857,16 @@ private struct ReplyDock: View, Equatable {
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: focused)
     }
 
+    /// Whether the box holds something to send: words, photos or files.
+    private var written: Bool {
+        !(model.drafts[ref.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.photos(ref).isEmpty
+            || !model.files(ref).isEmpty
+    }
+
     /// Stop while the turn can be stopped, and beside it, once the box holds something, the button that queues it for
     /// after the turn. Otherwise Send, as before.
     @ViewBuilder private var trailingButtons: some View {
         let stops = model.canInterrupt(ref)
-        let written = !(model.drafts[ref.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.photos(ref).isEmpty
-            || !model.files(ref).isEmpty
         if stops { stopButton.transition(.scale(scale: 0.8).combined(with: .opacity)) }
         if !stops || written { sendButton.transition(.scale(scale: 0.8).combined(with: .opacity)) }
     }
