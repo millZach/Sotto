@@ -5,8 +5,8 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
-import { DelegationService, RELAY_NO_BRANCH, type DelegationCoordinator, type DelegationServiceOptions, type RelayedCaller } from '../../../src/main/agents/delegation'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { CHECK_RESERVATION_MS, DelegationService, RELAY_NO_BRANCH, type DelegationCoordinator, type DelegationServiceOptions, type RelayedCaller } from '../../../src/main/agents/delegation'
 import { CheckQueue } from '../../../src/main/agents/checkQueue'
 import { HostRemoteCallers, remoteCallerKey } from '../../../src/main/agents/delegationRemoteHost'
 import { RelayUnanswered } from '../../../src/main/agents/delegationRelayHost'
@@ -206,6 +206,30 @@ describe('one check queue per machine, in the order asked (Sol review)', () => {
     // A reserve on an open connection, never released, still holds its place.
     expect(await callers.answer('desktop-a', { type: 'reserve', caller: 'parent', reservation: MOVE, work: 'code-review' }, () => true)).toEqual({ status: 'ok' })
     expect(checks.ids()).toHaveLength(1)
+    delegation.close()
+  })
+
+  it('forgets a place that expired unclaimed in the host\'s own record too, so nothing is left to let go later (Sol re-check)', async () => {
+    const root = await folder()
+    const snapshot: AgentHostSnapshot = { ...EMPTY_AGENT_HOST, connected: true, models: [model], projects: [], threads: [] }
+    const control: DelegationCoordinator = { hostId: () => MAC, watcherSnapshot: () => snapshot, configuration: () => ({}), useDelegation: () => () => undefined,
+      commandFromDelegation: async () => ({ host: snapshot }) as never, hasPendingThreadWork: () => false, hasUserDraft: () => false, refreshDelegationObservation: () => undefined, deliverWakeUp: async () => undefined }
+    const callers = new HostRemoteCallers(root), checks = new CheckQueue('the Mac')
+    const delegation = new DelegationService({ directory: root, control, host: { setDelegatedBy: async () => undefined, threadMessage: () => undefined }, historyEnabled: () => true,
+      newThreadCeiling: () => ({ mode: 'full-access' }), relayedCallers: callers, hereName: () => 'the Mac', checks })
+    await delegation.recover()
+    callers.useDelegation(delegation)
+    const desktopA = { clientId: 'desktop-a', push: () => true }
+    callers.desktopConnected(desktopA)
+    vi.useFakeTimers()
+    try {
+      expect(await callers.answer('desktop-a', { type: 'reserve', caller: 'parent', reservation: RESERVED, work: 'code-review' })).toEqual({ status: 'ok' })
+      vi.advanceTimersByTime(CHECK_RESERVATION_MS)
+    } finally { vi.useRealTimers() }
+    expect(checks.ids()).toEqual([])
+    const released = vi.spyOn(delegation, 'releaseReservation')
+    callers.desktopGone(desktopA)
+    expect(released).not.toHaveBeenCalled()
     delegation.close()
   })
 

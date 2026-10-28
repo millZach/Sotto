@@ -642,15 +642,15 @@ export class DelegationService {
   /**
    * Holds a place at the end of this machine's check queue for a check a desktop is about to start here for `threadId`,
    * before its branch moves (#1316 part 2). The start that names `reservation` takes it; `releaseReservation`, or
-   * CHECK_RESERVATION_MS unclaimed, lets it go. False without a queue.
+   * CHECK_RESERVATION_MS unclaimed, lets it go, and `expired` is told of the latter. False without a queue.
    */
-  reserveCheck(threadId: string, reservation: string, work: DelegateInput['work']): boolean {
+  reserveCheck(threadId: string, reservation: string, work: DelegateInput['work'], expired?: () => void): boolean {
     const checks = this.options.checks
     if (!checks || this.closed) return false
     const key = `${threadId}\n${reservation}`
     if (this.reservations.has(key)) return true
     const ticket = randomUUID()
-    const timer = setTimeout(() => { this.releaseReservation(threadId, reservation) }, CHECK_RESERVATION_MS)
+    const timer = setTimeout(() => { this.releaseReservation(threadId, reservation); expired?.() }, CHECK_RESERVATION_MS)
     timer.unref?.()
     this.reservations.set(key, { ticket, timer })
     checks.join(ticket, () => this.checkTurn(ticket), { whose: 'thread', by: threadId, work })

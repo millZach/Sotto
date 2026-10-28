@@ -168,14 +168,15 @@ export class HostRemoteCallers {
       // Fenced: a place released before it was held, or asked for on a connection that has since closed, is never held.
       const fence = `${clientId}\n${key}\n${ask.reservation}`
       if (this.released.delete(fence) || !open()) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: PLACE_LET_GO }
-      if (!delegation.reserveCheck?.(key, ask.reservation, ask.work)) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: NO_QUEUE }
+      // One that expires unclaimed is forgotten here too, so this record never outgrows the places held.
+      if (!delegation.reserveCheck?.(key, ask.reservation, ask.work, () => { this.unplace(clientId, key, ask.reservation) })) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: NO_QUEUE }
       const places = this.reserved.get(clientId) ?? new Map<string, { readonly key: string; readonly reservation: string }>()
       places.set(`${key}\n${ask.reservation}`, { key, reservation: ask.reservation }); this.reserved.set(clientId, places)
       return { status: 'ok' }
     }
     if (ask.type === 'release') {
       // Remembered, so a `reserve` for the same place that is still on its way holds nothing when it arrives.
-      if (!this.reserved.get(clientId)?.delete(`${key}\n${ask.reservation}`)) {
+      if (!this.unplace(clientId, key, ask.reservation)) {
         this.released.add(`${clientId}\n${key}\n${ask.reservation}`)
         if (this.released.size > RELEASED_KEPT) this.released.delete(this.released.values().next().value!)
       }
@@ -191,13 +192,20 @@ export class HostRemoteCallers {
     try {
       await this.save()
       // A start from the caller's branch finds it already landed here by the desktop, and a check the place reserved for it (#1316 part 2).
-      if (ask.reservation) this.reserved.get(clientId)?.delete(`${key}\n${ask.reservation}`)
+      if (ask.reservation) this.unplace(clientId, key, ask.reservation)
       return await delegation.delegate(key, ask.input, { waitMs: ask.waitMs + 2_000, ...ask.branch ? { landed: ask.branch } : {}, ...ask.reservation ? { reserved: ask.reservation } : {} })
     } finally {
       const count = (this.admitting.get(key) ?? 1) - 1
       if (count > 0) this.admitting.set(key, count); else this.admitting.delete(key)
       release()
     }
+  }
+  /** Forgets a place `clientId` reserved, once it was taken, released or expired; answers whether it was held. */
+  private unplace(clientId: string, key: string, reservation: string): boolean {
+    const places = this.reserved.get(clientId)
+    const held = places?.delete(`${key}\n${reservation}`) === true
+    if (places && !places.size) this.reserved.delete(clientId)
+    return held
   }
   /**
    * Keeps the newest callers, dropping only those with nothing open and no admission running, so an open delegation can
