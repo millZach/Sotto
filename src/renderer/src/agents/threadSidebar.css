@@ -113,7 +113,7 @@
 .thread-nav__action:disabled { opacity: .5; cursor: not-allowed; }
 .thread-folder__actions .thread-nav__action { width: 24px; height: 24px; min-height: 24px; }
 /* Row and folder actions stay reachable by keyboard and appear on hover, focus and the open row. */
-.thread-folder__actions, .thread-nav__row-actions { opacity: 0; }
+.thread-folder__actions, .thread-nav__row-actions { opacity: 0; transition: opacity 120ms ease; }
 .thread-folder__head:hover .thread-folder__actions, .thread-folder__head:focus-within .thread-folder__actions, .thread-folder__head[data-peeking] .thread-folder__actions,
 .thread-nav__row:hover .thread-nav__row-actions, .thread-nav__row:focus-within .thread-nav__row-actions, .thread-nav__row[data-current] .thread-nav__row-actions { opacity: 1; }
 /* Reserve the actions' width even before hover, so neither the name nor the host can sit under them. */

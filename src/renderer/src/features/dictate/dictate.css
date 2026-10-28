@@ -339,11 +339,13 @@
   min-height: 32px;
   padding: 0 13px;
   visibility: hidden;
+  opacity: 0;
+  transition: opacity 120ms ease, visibility 0s linear 120ms;
 }
 
 .journal-entry:hover .journal-entry__copy,
 .journal-entry:focus-within .journal-entry__copy,
-.journal-entry[aria-current='true'] .journal-entry__copy { visibility: visible; }
+.journal-entry[aria-current='true'] .journal-entry__copy { visibility: visible; opacity: 1; transition-delay: 0s; }
 
 .journal-entry__delete { grid-column: 3; grid-row: 3; align-self: start; position: relative; z-index: 1; margin-top: 6px; }
 .journal-entry__delete .tt-button { min-height: 32px; padding: 0 12px; }
