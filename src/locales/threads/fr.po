@@ -1085,6 +1085,16 @@ msgstr ""
 msgid "{reviews, plural, one {# review} other {# reviews}}"
 msgstr ""
 
+#. A browser line step whose outcome is not known. {said} is the step, such as took a picture of the page.
+#: src/renderer/src/agents/browserLine.ts
+msgid "{said} · outcome unknown"
+msgstr ""
+
+#. A browser line step that was stopped before it was answered. {said} is the step, such as took a picture of the page.
+#: src/renderer/src/agents/browserLine.ts
+msgid "{said} · stopped"
+msgstr ""
+
 #. {scope} is where the skill comes from: Personal, Project, System or Admin.
 #: src/renderer/src/agents/SkillPill.tsx
 msgid "{scope} skill, sent as <0>{token}</0>"
@@ -1133,6 +1143,11 @@ msgstr ""
 
 #: src/renderer/src/agents/FilePicker.tsx
 msgid "{spaced, plural, one {# entry has a space in its name and cannot be mentioned} other {# entries have spaces in their names and cannot be mentioned}}"
+msgstr ""
+
+#. The settled browser line: how many steps, and how many failed, were stopped or ended unknown. {steps} is such as 9 steps.
+#: src/renderer/src/agents/browserLine.ts
+msgid "{steps}, {unfinished, plural, one {# did not finish} other {# did not finish}}"
 msgstr ""
 
 #: src/renderer/src/agents/threadActivityView.ts
@@ -2033,6 +2048,16 @@ msgstr ""
 msgid "Browse with Finder"
 msgstr ""
 
+#. The browser line once the agent has moved on. {host} is the site, such as localhost:5173.
+#: src/renderer/src/agents/browserLine.ts
+msgid "Browsed {host}"
+msgstr ""
+
+#. The browser line while the agent uses Sotto's browser. {host} is the site, such as localhost:5173.
+#: src/renderer/src/agents/browserLine.ts
+msgid "Browsing {host}"
+msgstr ""
+
 #. Stops a sign-in that is waiting for the user.
 #: src/renderer/src/agents/CursorConnection.tsx
 #: src/renderer/src/agents/DeleteThread.tsx
@@ -2127,6 +2152,11 @@ msgstr ""
 msgid "Changed files are not available in this window."
 msgstr ""
 
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "changed the page size"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Changes"
 msgstr ""
@@ -2168,6 +2198,16 @@ msgstr ""
 #. {path} is the folder of the worktree that has the branch.
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "Checked out in {path}"
+msgstr ""
+
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "checked the browser task"
+msgstr ""
+
+#. A step in the cloud iPhone line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "checked the cloud iPhone"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
@@ -2294,6 +2334,11 @@ msgstr ""
 
 #: src/renderer/src/agents/SidebarFrame.tsx
 msgid "Clear search"
+msgstr ""
+
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "clicked in the page"
 msgstr ""
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
@@ -2808,6 +2853,11 @@ msgstr ""
 msgid "Could not add this file. Nothing was attached. Try again."
 msgstr ""
 
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not change the page size"
+msgstr ""
+
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "Could not change the workspace. Your choice is retained."
 msgstr ""
@@ -2818,6 +2868,21 @@ msgstr ""
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Could not check for client updates. Try again."
+msgstr ""
+
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not check the browser task"
+msgstr ""
+
+#. A step in the cloud iPhone line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not check the cloud iPhone"
+msgstr ""
+
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not click in the page"
 msgstr ""
 
 #: src/renderer/src/agents/addProject.ts
@@ -2861,6 +2926,31 @@ msgstr ""
 msgid "Could not create {name}."
 msgstr ""
 
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not finish the browser task"
+msgstr ""
+
+#. A step in the cloud iPhone line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not finish the cloud iPhone session"
+msgstr ""
+
+#. A step in the browser line; starts lowercase. {url} is a web address.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not go to {url}"
+msgstr ""
+
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not go to another page"
+msgstr ""
+
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not list its pages"
+msgstr ""
+
 #. {place} is "this computer" or a saved host's name.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "Could not list the folders on {place}. Nothing was changed. Try again."
@@ -2870,9 +2960,44 @@ msgstr ""
 msgid "Could not load this thread’s messages."
 msgstr ""
 
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not look at the page"
+msgstr ""
+
+#. A step in the cloud iPhone line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not look at the screen"
+msgstr ""
+
 #. {failedHost} is a web site's host name or an email address.
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Could not open {failedHost}."
+msgstr ""
+
+#. A step in the browser line; starts lowercase. {url} is a web address.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not open {url}"
+msgstr ""
+
+#. A step in the browser line; starts lowercase. {url} is a web address.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not open {url} on the test iPhone"
+msgstr ""
+
+#. A step in the cloud iPhone line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not open a link"
+msgstr ""
+
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not open a page"
+msgstr ""
+
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not open a page on the test iPhone"
 msgstr ""
 
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
@@ -2881,6 +3006,21 @@ msgstr ""
 
 #: src/renderer/src/agents/addProject.ts
 msgid "Could not open the project. Nothing was changed. Try again."
+msgstr ""
+
+#. A step in the browser line; starts lowercase. {key} is a key's name, such as Enter.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not press {key}"
+msgstr ""
+
+#. A step in the cloud iPhone line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not press a button"
+msgstr ""
+
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not press a key"
 msgstr ""
 
 #: src/renderer/src/agents/ClientUpdateCard.tsx
@@ -2911,6 +3051,61 @@ msgstr ""
 msgid "Could not save. Check the value and try again."
 msgstr ""
 
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not scroll the page"
+msgstr ""
+
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not start a browser task"
+msgstr ""
+
+#. A step in the cloud iPhone line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not start a cloud iPhone"
+msgstr ""
+
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not swipe in the page"
+msgstr ""
+
+#. A step in the cloud iPhone line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not swipe the screen"
+msgstr ""
+
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not take a picture of the page"
+msgstr ""
+
+#. A step in the cloud iPhone line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not take a picture of the screen"
+msgstr ""
+
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not tap in the page"
+msgstr ""
+
+#. A step in the cloud iPhone line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not tap the screen"
+msgstr ""
+
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not type into the page"
+msgstr ""
+
+#. A step in the cloud iPhone line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not type on the cloud iPhone"
+msgstr ""
+
 #. {providerName} is a provider's name.
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Could not update {providerName}. Try again."
@@ -2922,6 +3117,16 @@ msgstr ""
 
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "Could not use that worktree. Your choice is retained."
+msgstr ""
+
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not work in the page"
+msgstr ""
+
+#. A step in the cloud iPhone line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not work on the cloud iPhone"
 msgstr ""
 
 #. {reason} says why.
@@ -3751,6 +3956,16 @@ msgstr ""
 msgid "Finish this form in the provider’s app."
 msgstr ""
 
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "finished the browser task"
+msgstr ""
+
+#. A step in the cloud iPhone line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "finished the cloud iPhone session"
+msgstr ""
+
 #. {hostName} is the name of a saved host, or "the host".
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Finishes on {hostName} itself, so not from this computer."
@@ -3966,6 +4181,16 @@ msgstr ""
 #. Hides the list under a project
 #: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "Hide"
+msgstr ""
+
+#. The browser line's button when its steps show. {line} is what the line says, such as Browsing localhost:5173 · clicked in the page.
+#: src/renderer/src/agents/browserLine.ts
+msgid "Hide browser steps: {line}"
+msgstr ""
+
+#. The cloud iPhone line's button when its steps show. {line} is what the line says.
+#: src/renderer/src/agents/browserLine.ts
+msgid "Hide cloud iPhone steps: {line}"
 msgstr ""
 
 #: src/renderer/src/agents/HostUpdates.tsx
@@ -4421,6 +4646,11 @@ msgstr ""
 msgid "Links from the message above"
 msgstr ""
 
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "listed its pages"
+msgstr ""
+
 #: src/renderer/src/agents/FilePicker.tsx
 msgid "Loading files…"
 msgstr ""
@@ -4461,6 +4691,16 @@ msgstr ""
 
 #: src/renderer/src/agents/ProjectChooser.tsx
 msgid "Local folder"
+msgstr ""
+
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "looked at the page"
+msgstr ""
+
+#. A step in the cloud iPhone line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "looked at the screen"
 msgstr ""
 
 #. A reasoning effort level.
@@ -5425,6 +5665,31 @@ msgstr ""
 msgid "OpenCode tried it {ten} times over about a minute and a half. Nothing in the thread was lost. Check that {name} is on and this computer can reach {host}, then try again."
 msgstr ""
 
+#. A step in the browser line; starts lowercase. {url} is a web address.
+#: src/renderer/src/agents/browserLine.ts
+msgid "opened {url}"
+msgstr ""
+
+#. A step in the browser line; starts lowercase. {url} is a web address.
+#: src/renderer/src/agents/browserLine.ts
+msgid "opened {url} on the test iPhone"
+msgstr ""
+
+#. A step in the cloud iPhone line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "opened a link"
+msgstr ""
+
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "opened a page"
+msgstr ""
+
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "opened a page on the test iPhone"
+msgstr ""
+
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Opened in Sotto’s browser. Open Tools > Browser in this thread to see it."
 msgstr ""
@@ -5633,6 +5898,21 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Preparing the working copy."
+msgstr ""
+
+#. A step in the browser line; starts lowercase. {key} is a key's name, such as Enter.
+#: src/renderer/src/agents/browserLine.ts
+msgid "pressed {key}"
+msgstr ""
+
+#. A step in the cloud iPhone line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "pressed a button"
+msgstr ""
+
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "pressed a key"
 msgstr ""
 
 #: src/renderer/src/agents/MessageContent.tsx
@@ -6397,6 +6677,11 @@ msgstr ""
 msgid "Screenshot files"
 msgstr ""
 
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "scrolled the page"
+msgstr ""
+
 #. {label} is a provider's name.
 #: src/renderer/src/agents/ProviderModelList.tsx
 msgid "Search {label} models"
@@ -6633,8 +6918,18 @@ msgstr ""
 msgid "Show all waiting threads"
 msgstr ""
 
+#. The browser line's button when its steps are folded. {line} is what the line says, such as Browsing localhost:5173 · clicked in the page.
+#: src/renderer/src/agents/browserLine.ts
+msgid "Show browser steps: {line}"
+msgstr ""
+
 #: src/renderer/src/agents/mainCheckoutLine.logic.ts
 msgid "Show changes"
+msgstr ""
+
+#. The cloud iPhone line's button when its steps are folded. {line} is what the line says.
+#: src/renderer/src/agents/browserLine.ts
+msgid "Show cloud iPhone steps: {line}"
 msgstr ""
 
 #: src/renderer/src/agents/HostUpdates.tsx
@@ -7183,6 +7478,16 @@ msgstr ""
 msgid "Start the {name} thread"
 msgstr ""
 
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "started a browser task"
+msgstr ""
+
+#. A step in the cloud iPhone line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "started a cloud iPhone"
+msgstr ""
+
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Started at Ask for approval: {machine} had no new-thread default from this computer yet."
 msgstr ""
@@ -7395,6 +7700,16 @@ msgstr ""
 msgid "Suggested next prompts (Up in an empty prompt)"
 msgstr ""
 
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "swiped in the page"
+msgstr ""
+
+#. A step in the cloud iPhone line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "swiped the screen"
+msgstr ""
+
 #. {sent} is a Git branch name.
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Switch back to {sent}?"
@@ -7434,6 +7749,16 @@ msgstr ""
 
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Takes longer and catches more."
+msgstr ""
+
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "tapped in the page"
+msgstr ""
+
+#. A step in the cloud iPhone line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "tapped the screen"
 msgstr ""
 
 #: src/renderer/src/agents/movedWorktreeWords.ts
@@ -8203,6 +8528,16 @@ msgstr ""
 msgid "Too complex to draw safely. This diagram exceeds the node, connection, nesting or label limits; its source is available."
 msgstr ""
 
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "took a picture of the page"
+msgstr ""
+
+#. A step in the cloud iPhone line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "took a picture of the screen"
+msgstr ""
+
 #. A diagram that took too long to draw.
 #: src/renderer/src/agents/diagrams/diagramRenderer.ts
 msgid "Took too long to draw."
@@ -8285,6 +8620,16 @@ msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Type your answer…"
+msgstr ""
+
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "typed into the page"
+msgstr ""
+
+#. A step in the cloud iPhone line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "typed on the cloud iPhone"
 msgstr ""
 
 #. The effort level past Max on Claude models, where Claude Code plans the work and runs it as a team of agents. Ultracode is Claude Code’s own name; keep it as it is.
@@ -8545,6 +8890,16 @@ msgstr ""
 msgid "Use this folder"
 msgstr ""
 
+#. The browser line once the agent has moved on, when it opened no address.
+#: src/renderer/src/agents/browserLine.ts
+msgid "Used the browser"
+msgstr ""
+
+#. The cloud iPhone line once the agent has moved on.
+#: src/renderer/src/agents/browserLine.ts
+msgid "Used the cloud iPhone"
+msgstr ""
+
 #. {host} is the name of a saved host.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Uses a sign-in already on {host}."
@@ -8577,6 +8932,16 @@ msgstr ""
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Uses your Muse sign-in on this computer. Run muse login in a terminal before connecting."
+msgstr ""
+
+#. The browser line while the agent uses Sotto's browser and has opened no address.
+#: src/renderer/src/agents/browserLine.ts
+msgid "Using the browser"
+msgstr ""
+
+#. The cloud iPhone line while the agent uses it.
+#: src/renderer/src/agents/browserLine.ts
+msgid "Using the cloud iPhone"
 msgstr ""
 
 #. A kind of suggested next prompt: check the work.
@@ -8735,6 +9100,16 @@ msgstr ""
 msgid "Watcher’s permissions:"
 msgstr ""
 
+#. A step in the browser line; starts lowercase. {url} is a web address.
+#: src/renderer/src/agents/browserLine.ts
+msgid "went to {url}"
+msgstr ""
+
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "went to another page"
+msgstr ""
+
 #: src/renderer/src/agents/threadGreeting.logic.ts
 msgid "What are we building?"
 msgstr ""
@@ -8814,6 +9189,16 @@ msgstr ""
 
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "Worked for {took}"
+msgstr ""
+
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "worked in the page"
+msgstr ""
+
+#. A step in the cloud iPhone line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "worked on the cloud iPhone"
 msgstr ""
 
 #. A provider's background agent's state: it is running.
