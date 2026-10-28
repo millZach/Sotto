@@ -25,6 +25,8 @@ struct WatcherView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @State private var stopPreview: WatcherStopPreview?
+    /// Counts confirmed stops, so the view that carries the alert can give the destructive act a warning buzz.
+    @State private var stopsConfirmed = 0
     @State private var reviewing: ReviewedCard?
     enum Pane: Hashable { case conversation, watched }
 
@@ -71,12 +73,14 @@ struct WatcherView: View {
                isPresented: Binding(get: { stopPreview != nil }, set: { if !$0 { stopPreview = nil } }),
                presenting: stopPreview) { preview in
             Button(WatcherWords.stopButton(preview.targets.count), role: .destructive) {
+                stopsConfirmed += 1
                 Task { await model.confirmWatcherStop(preview, on: hostID) }
             }
             Button("Cancel", role: .cancel) {}
         } message: { preview in
             Text(stopMessage(preview))
         }
+        .sensoryFeedback(.warning, trigger: stopsConfirmed)
     }
 
     /// What stays, then each thread Stop all would stop and where it runs: "Fix login test, Claude Code on Laptop".
