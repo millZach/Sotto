@@ -1,7 +1,7 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import type { UsageQuotaRead } from '../../shared/usageDashboard'
 import { withCliPath } from './cliLookup'
+import { launchInteractiveProcess, type InteractiveProcess } from './gitLauncher'
 import { dropExpiredQuotaWindows, mergeClaudeQuota, parseClaudeQuota, parseClaudeUsage, unavailableProviderQuota } from './providerQuota'
 import { claudeEnvironment } from './subscriptionClaude'
 
@@ -11,6 +11,10 @@ import { claudeEnvironment } from './subscriptionClaude'
  * own sign-in. Only the documented window figures are kept (`parseClaudeUsage`); nothing here logs or stores the
  * answer. The request is marked experimental by Claude Code, so a client that refuses it or never answers gives an
  * unavailable read and the passive `rate_limit_event` path stays the fallback.
+ *
+ * The probe starts on the Git launcher's worker thread (`launchInteractiveProcess`), not on the thread that asks: on
+ * Windows a start holds the thread that asks, and the first start in a while of Claude Code's binary held it for over
+ * half a second while Windows checked the file (ADR-0083). Only the start moved; the exchange stays here.
  */
 
 /** A live Claude runtime's control channel: sends one control request and resolves with the success body. */
@@ -85,10 +89,10 @@ function probe(options: ClaudeLimitsOptions & { executable: string; workingDirec
   return new Promise((resolve, reject) => {
     if (signal.aborted) { reject(abortError(signal)); return }
     const environment = options.environment ?? claudeEnvironment()
-    let child: ChildProcessWithoutNullStreams
+    let child: InteractiveProcess
     try {
-      child = spawn(options.executable, [...(options.prefixArgs ?? []), ...PROBE_FLAGS], {
-        cwd: options.workingDirectory, env: withCliPath(environment, options.executable), shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
+      child = launchInteractiveProcess(options.executable, [...(options.prefixArgs ?? []), ...PROBE_FLAGS], {
+        cwd: options.workingDirectory, env: withCliPath(environment, options.executable),
       })
     } catch { resolve({ kind: 'none' }); return }
     const initialize = randomUUID()
@@ -102,7 +106,6 @@ function probe(options: ClaudeLimitsOptions & { executable: string; workingDirec
       settled = true
       clearTimeout(timer)
       signal.removeEventListener('abort', stop)
-      child.stdout.removeAllListeners('data')
       if ('error' in answer || answer.kind === 'none') kill()
       else {
         // EOF lets the client exit on its own; a client that lingers is stopped so no probe outlives its read.
@@ -135,7 +138,9 @@ function probe(options: ClaudeLimitsOptions & { executable: string; workingDirec
       }
     }
     child.stdout.setEncoding('utf8')
-    child.stdout.on('data', (chunk: string) => {
+    // Once settled, what the client still prints is read and dropped.
+    child.stdout.on('data', chunk => {
+      if (settled) return
       bytes += Buffer.byteLength(chunk)
       if (bytes > PROBE_OUTPUT_LIMIT_BYTES) { settle({ kind: 'none' }); return }
       pending += chunk
@@ -146,7 +151,7 @@ function probe(options: ClaudeLimitsOptions & { executable: string; workingDirec
       }
     })
     // Claude Code's diagnostics are never kept; reading them only stops a full pipe from stalling the client.
-    child.stderr.resume()
+    child.stderr.on('data', () => undefined)
     child.on('error', () => settle({ kind: 'none' }))
     child.stdin.on('error', () => settle({ kind: 'none' }))
     child.on('close', () => settle({ kind: 'none' }))
