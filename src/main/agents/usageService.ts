@@ -3,16 +3,18 @@ import type { AgentHostSnapshot } from '../../shared/agents'
 import {
   usageLocalClearRequestSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageQuotaReadSchema,
   usageTokenObservationSchema, usagePromptSubmissionSchema, usagePromptIdentitySchema,
-  isUsageProviderId, USAGE_HISTORY_BATCH_MAX, USAGE_LIMIT_PROVIDERS,
+  isUsageProviderId, USAGE_LIMIT_PROVIDERS,
   type UsageLimitProviderId, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery,
   type UsagePromptSubmission, type UsageQuotaRead, type UsageTokenObservation,
-  type UsagePromptIdentity, type UsageProviderId,
+  type UsageMetadata, type UsagePromptIdentity, type UsageProviderId,
 } from '../../shared/usageDashboard'
 import type { AgentHost } from './host'
 import { subscribeActivitySnapshots } from './activitySnapshots'
 import { ThreadMap, type ActivityChangesSubscription, type AgentHostChanges } from './threadChanges'
 import { unavailableProviderQuota } from './providerQuota'
-import { UsageStore, USAGE_PENDING_RECONCILIATION_BATCH_MAX } from './usageStore'
+import { USAGE_PENDING_RECONCILIATION_BATCH_MAX } from './usageStore'
+import { UsageStoreOnMain, usageStoreClient, type Maybe, type UsageStoreClient } from './usageStoreClient'
+import type { UsageFlushOutcome, UsageHistoryWrite, UsagePromptWrite, UsageRequestStore } from './usageStoreRequests'
 import { UsageHistoryImporter, type UsageHistoryStore } from './usageHistory/importer'
 
 /** OpenCode reports no account limits, so it is never asked for any (ADR-0087). */
@@ -26,21 +28,39 @@ const QUOTA_READ_WAIT_MS = 6_000
 
 /** Numeric-only callbacks at the coordinator's durable intent and exact echo boundaries. */
 export interface UsagePromptRecorder {
+  /**
+   * Keeps the prompt's original selection, handed to the store without waiting: on the usage store worker it is written
+   * just after the send, and always ahead of the echo that accepts it (ADR-0078, October 27 amendment).
+   */
   submitPrompt(submission: UsagePromptSubmission): void
   acceptPrompt(threadId: string, messageId: string): void
   discardPrompt(threadId: string, messageId: string): void
 }
 
-type Store = Pick<UsageStore, 'open' | 'close' | 'metadata' | 'observeTokenBatch' | 'submitPrompt' | 'acceptSubmittedPrompt' |
-  'discardSubmittedPrompt' | 'pendingPromptReconciliationEnd' | 'pendingPromptIdentities' | 'markLegacySeedCompleted' | 'query' | 'clear'>
-  & Partial<Omit<UsageHistoryStore, 'metadata'>>
-interface PromptWrite { submission?: UsagePromptSubmission; action?: 'accept' | 'discard' }
+type Store = UsageRequestStore & { close(): void }
+
+/** One flush handed to the store and not yet answered: what it carried, so what did not commit is buffered again. */
+interface Flight {
+  readonly tokens: readonly (readonly [string, UsageTokenObservation])[]
+  readonly prompts: readonly (readonly [string, UsagePromptWrite])[]
+  readonly seed: boolean
+  landed?: Promise<void>
+}
+
+/** What failed flushes left unsaved, held until every flush behind them has been answered. */
+interface Unsaved { tokens: (readonly [string, UsageTokenObservation])[]; prompts: (readonly [string, UsagePromptWrite])[]; seed: boolean }
 
 /** Created only by an owning host whose startup Usage answer is on. Never sends a provider prompt. */
 export class UsageService implements UsagePromptRecorder {
-  private readonly store: Store
+  private readonly client: UsageStoreClient
   private readonly tokens = new Map<string, UsageTokenObservation>()
-  private readonly prompts = new Map<string, PromptWrite>()
+  private readonly prompts = new Map<string, UsagePromptWrite>()
+  /** Flushes handed to the store and not yet answered, oldest first. The store answers them in this order. */
+  private readonly flights: Flight[] = []
+  private unsaved: Unsaved | undefined
+  /** The next flush follows one that failed, so the store takes it again (`UsageFlush.retry`). */
+  private retry = false
+  private historyPasses = 0
   private readonly quotas = new Map<UsageLimitProviderId, UsageQuotaRead>()
   /** Where in the order refreshes began the newest refresh to answer for each provider began. */
   private readonly quotaStarted = new Map<UsageLimitProviderId, number>()
@@ -63,6 +83,8 @@ export class UsageService implements UsagePromptRecorder {
   private started = false
   private receivedSnapshot = false
   private opened = false
+  /** The store opening on the worker; every request asked meanwhile waits behind it there. */
+  private opening: Promise<void> | undefined
   private failed = false
   private lost = false
   private seedPending = false
@@ -71,11 +93,20 @@ export class UsageService implements UsagePromptRecorder {
 
   constructor(private readonly options: {
     directory: string; host: AgentHost; store?: Store
+    /**
+     * The built usage store worker (`usageStoreWorker.js`); null keeps the store on main. By default the one beside this
+     * bundle where it is built, and on main where it is not, as under the test runner. A given `store` is on main.
+     */
+    worker?: string | null
+    /** How the store is reached, for a test that answers requests later, as the worker does. Wins over `store` and `worker`. */
+    client?: UsageStoreClient
     /** Exact role/ID evidence from the owning host's event store; reads no words. */
     hasAcceptedPrompt?: (threadId: string, messageId: string) => boolean
     /** Preferred bounded recovery lookup: one host flush and event scan for the whole batch. */
     acceptedPromptIdentities?: (identities: readonly UsagePromptIdentity[]) => readonly UsagePromptIdentity[]
-  }) { this.store = options.store ?? new UsageStore(join(options.directory, 'usage.sqlite')) }
+  }) {
+    this.client = options.client ?? (options.store ? new UsageStoreOnMain(options.store) : usageStoreClient(join(options.directory, 'usage.sqlite'), options.worker))
+  }
 
   start(): void {
     if (this.started || this.closed) return
@@ -106,7 +137,7 @@ export class UsageService implements UsagePromptRecorder {
   private startHistory(): void {
     const host = this.options.host
     if (!host.scanUsageHistory && !host.visitRecordedUserMessages) return
-    if (!this.store.importPrompts || !this.store.historyCursor || !this.store.setHistoryCursors || !this.store.setHistoryStatus) return
+    if (!this.client.takesHistory) return
     this.history = new UsageHistoryImporter({
       source: {
         ...(host.scanUsageHistory ? { scanUsageHistory: (sink, signal) => host.scanUsageHistory!(sink, signal) } : {}),
@@ -115,10 +146,50 @@ export class UsageService implements UsagePromptRecorder {
       store: () => {
         // Live rows waiting in the buffer go first, so a history row never lands under a row about to replace it.
         this.flush()
-        return this.opened && !this.closed ? this.store as Store & UsageHistoryStore : undefined
+        return this.opened && !this.closed ? this.historyStore() : undefined
       },
     })
     this.history.start()
+  }
+
+  /**
+   * One history pass's way to the store. Its writes carry the pass, so once one of them fails the store refuses the
+   * pass's later rows and cursors untried, wherever it answers them; `settled` lets the reader wait for the writer.
+   */
+  private historyStore(): UsageHistoryStore {
+    const pass = ++this.historyPasses
+    let unanswered = 0
+    /** A row or cursor write of this pass failed: known before anyone waiting for the pass to settle is let go. */
+    let failed = false
+    const waiting: { ahead: number; resolve: () => void; reject: (error: Error) => void }[] = []
+    const settledFailure = (): Error => new Error('Usage history could not be saved')
+    const write = (history: UsageHistoryWrite): Maybe<null> => {
+      const answer = this.client.request({ kind: 'history', pass, write: history })
+      if (!(answer instanceof Promise)) return answer
+      unanswered += 1
+      return answer.then(value => value, (error: unknown) => {
+        if (history.kind !== 'status') failed = true
+        throw error
+      }).finally(() => {
+        unanswered -= 1
+        for (const wait of waiting.filter(item => unanswered <= item.ahead)) {
+          waiting.splice(waiting.indexOf(wait), 1)
+          if (wait.ahead === 0 && failed) wait.reject(settledFailure()); else wait.resolve()
+        }
+      })
+    }
+    return {
+      metadata: () => this.client.request({ kind: 'metadata' }),
+      historyCursors: () => this.client.request({ kind: 'history-cursors' }),
+      observeTokenBatch: batch => write({ kind: 'tokens', batch }),
+      importPrompts: batch => write({ kind: 'prompts', batch }),
+      setHistoryCursors: entries => write({ kind: 'cursors', entries }),
+      setHistoryStatus: status => write({ kind: 'status', status }),
+      settled: ahead => {
+        if (unanswered > ahead) return new Promise<void>((resolve, reject) => { waiting.push({ ahead, resolve, reject }) })
+        return ahead === 0 && failed ? Promise.reject(settledFailure()) : undefined
+      },
+    }
   }
 
   submitPrompt(input: UsagePromptSubmission): void {
@@ -128,7 +199,9 @@ export class UsageService implements UsagePromptRecorder {
     const key = promptKey(parsed.data.threadId, parsed.data.messageId)
     const previous = this.prompts.get(key)
     if (previous?.submission === undefined) this.put(this.prompts, key, { ...previous, submission: parsed.data })
-    // Original selection must reach disk before native execute. Failure costs usage alone.
+    // The original selection is flushed at once, ahead of the echo that accepts it. On main it is written before the
+    // provider hears the prompt; on the worker just after, and a crash between the two can only count this prompt under
+    // the wrong model (ADR-0078, October 27 amendment). Failure costs usage alone.
     this.flush()
   }
 
@@ -151,14 +224,16 @@ export class UsageService implements UsagePromptRecorder {
 
   async read(input: UsageLocalQuery = {}): Promise<UsageLocalHostRead> {
     const query = usageLocalQuerySchema.parse(input)
-    this.flush()
+    // Everything buffered before the read is written before the store reads.
+    const flushed = this.flushing()
     this.history?.poke()
     // Limits and activity are read together: a slow provider never holds the history back.
     const quotas = this.readQuotas(query.providerIds, false)
     let activity: UsageLocalHostRead['activity']
     try {
+      await flushed
       if (!this.opened) throw new Error('Usage store is unavailable')
-      activity = this.store.query(query)
+      activity = await this.client.request({ kind: 'query', query })
     } catch {
       this.failed = true
       this.schedule(RETRY_MS)
@@ -176,10 +251,12 @@ export class UsageService implements UsagePromptRecorder {
 
   async clear(input: UsageLocalClearRequest): Promise<UsageLocalClearResult> {
     const request = usageLocalClearRequestSchema.parse(input)
-    this.flush()
-    if (!this.opened || this.failed || this.tokens.size || this.prompts.size) throw new Error('Usage could not be saved')
+    await this.flushing()
+    // Everything buffered before Clear was pressed is written, or Clear is refused. What arrives after it is written
+    // after the clear, as the store always ordered them.
+    if (!this.opened || this.failed || this.unsaved) throw new Error('Usage could not be saved')
     // The revision includes every flushed row. A changed revision requires another user confirmation.
-    const result = this.store.clear(request.expectedRevision)
+    const result = await this.client.request({ kind: 'clear', expectedRevision: request.expectedRevision })
     if (result.status === 'cleared') this.lost = false
     if (result.status === 'cleared') {
       this.reconciliation = undefined
@@ -189,32 +266,77 @@ export class UsageService implements UsagePromptRecorder {
   }
 
   /** Flushes numeric retries only. It has no path back to provider execution. */
-  flush(): void {
+  flush(): void { void this.flushing() }
+
+  /**
+   * Hands everything buffered to the store as one flush, behind any still unanswered. Answers undefined once that is
+   * answered, as on main, and otherwise with when it will be; never rejects.
+   */
+  private flushing(): Promise<void> | undefined {
+    if (this.closed) return undefined
+    clearTimeout(this.timer); this.timer = undefined
+    if (!this.open()) { this.schedule(RETRY_MS); return undefined }
+    // A flush that failed is still being answered, with those behind it: the retry follows once they all are.
+    if (this.unsaved) return this.flights.at(-1)?.landed
+    if (!this.tokens.size && !this.prompts.size && !this.seedPending) {
+      const last = this.flights.at(-1)?.landed ?? this.opening
+      if (last) return last
+      // Nothing to write and nothing unanswered: as a flush that wrote nothing always did.
+      this.failed = false
+      if (this.started && this.reconciliationRequested) this.reconcilePending()
+      return undefined
+    }
+    const flight: Flight = { tokens: [...this.tokens], prompts: [...this.prompts], seed: this.seedPending }
+    this.tokens.clear(); this.prompts.clear(); this.seedPending = false
+    const retry = this.retry
+    this.retry = false
+    this.flights.push(flight)
+    const failed: UsageFlushOutcome = { tokens: 0, prompts: 0, seed: false, failed: true }
+    let answer: Maybe<UsageFlushOutcome>
+    try {
+      answer = this.client.request({ kind: 'flush', flush: { retry, seed: flight.seed, tokens: flight.tokens.map(([, record]) => record),
+        prompts: flight.prompts.map(([key, write]) => { const [threadId, messageId] = parsePromptKey(key); return { threadId, messageId, write } }) } })
+    } catch { answer = failed }
+    if (!(answer instanceof Promise)) { this.landed(flight, answer); return undefined }
+    flight.landed = answer.then(outcome => { this.landed(flight, outcome) }, () => { this.landed(flight, failed) })
+    return flight.landed
+  }
+
+  /**
+   * A flush answered. What did not commit, and everything in the flushes behind it, which the store refuses untried, is
+   * held until the last of them is answered, then buffered again ahead of what arrived since, for the retry.
+   */
+  private landed(flight: Flight, outcome: UsageFlushOutcome): void {
+    this.flights.splice(this.flights.indexOf(flight), 1)
+    if (outcome.seed) this.seedMarked = true
+    if (outcome.failed || outcome.skipped) {
+      this.failed = true
+      const unsaved = this.unsaved ??= { tokens: [], prompts: [], seed: false }
+      unsaved.tokens.push(...flight.tokens.slice(outcome.tokens))
+      unsaved.prompts.push(...flight.prompts.slice(outcome.prompts))
+      unsaved.seed ||= flight.seed && !outcome.seed
+    } else if (!this.unsaved) this.failed = false
+    if (this.flights.length) return
+    if (this.unsaved) this.rebuffer(this.unsaved)
+    if (this.started && this.reconciliationRequested) this.reconcilePending()
+  }
+
+  /** Puts what failed back in the buffer in the order it was first buffered, with what arrived since laid over it. */
+  private rebuffer(unsaved: Unsaved): void {
+    this.unsaved = undefined
+    const tokens = new Map(unsaved.tokens)
+    for (const [key, record] of this.tokens) tokens.set(key, record)
+    // One prompt can be in several failed flushes, its submission in one and its echo in the next: each is laid over
+    // the one before, in order, so neither the selection nor the acceptance is lost.
+    const prompts = new Map<string, UsagePromptWrite>()
+    for (const [key, write] of [...unsaved.prompts, ...this.prompts]) prompts.set(key, laterPromptWrite(prompts.get(key), write))
+    this.tokens.clear(); for (const [key, record] of tokens) this.tokens.set(key, record)
+    this.prompts.clear(); for (const [key, write] of prompts) this.prompts.set(key, write)
+    this.seedPending ||= unsaved.seed
+    this.retry = true
     if (this.closed) return
     clearTimeout(this.timer); this.timer = undefined
-    if (!this.open()) { this.schedule(RETRY_MS); return }
-    try {
-      // A few bounded transactions rather than one per record: a start-up backlog of thousands held main for seconds.
-      // A batch that fails rolls back whole and stays buffered, with everything after it, for the retry.
-      while (this.tokens.size) {
-        const keys: string[] = [], records: UsageTokenObservation[] = []
-        for (const [key, record] of this.tokens) {
-          if (keys.length === USAGE_HISTORY_BATCH_MAX) break
-          keys.push(key); records.push(record)
-        }
-        this.store.observeTokenBatch(records, { revision: 'per-record' })
-        for (const key of keys) this.tokens.delete(key)
-      }
-      for (const [key, write] of this.prompts) {
-        if (write.submission) this.store.submitPrompt(write.submission)
-        if (write.action === 'accept') this.store.acceptSubmittedPrompt(...parsePromptKey(key))
-        else if (write.action === 'discard') this.store.discardSubmittedPrompt(...parsePromptKey(key))
-        this.prompts.delete(key)
-      }
-      if (this.seedPending) { this.store.markLegacySeedCompleted(); this.seedPending = false; this.seedMarked = true }
-      this.failed = false
-    } catch { this.failed = true; this.schedule(RETRY_MS) }
-    if (this.started && this.reconciliationRequested) this.reconcilePending()
+    this.schedule(RETRY_MS)
   }
 
   close(): void {
@@ -225,15 +347,29 @@ export class UsageService implements UsagePromptRecorder {
     this.closed = true
     clearTimeout(this.timer); this.timer = undefined
     clearTimeout(this.reconcileTimer); this.reconcileTimer = undefined
-    try { this.store.close() } catch { /* Usage never holds provider shutdown open. */ }
+    // On the worker this waits, a bounded while, for every write asked for to commit.
+    try { this.client.close() } catch { /* Usage never holds provider shutdown open. */ }
     this.opened = false
   }
 
+  /** Whether the store is open, or opening on the worker, where every request asked meanwhile waits behind the opening. */
   private open(): boolean {
-    if (this.opened) return true
+    if (this.opened || this.opening) return true
     if (this.closed) return false
-    try { this.store.open(); this.opened = true; this.seedMarked = this.store.metadata().legacySeedCompleted; return true }
-    catch { this.failed = true; return false }
+    let answer: Maybe<UsageMetadata>
+    try { answer = this.client.request({ kind: 'open' }) } catch { this.failed = true; return false }
+    if (!(answer instanceof Promise)) { this.opened = true; this.seedMarked = answer.legacySeedCompleted; return true }
+    this.opening = answer.then(metadata => {
+      this.opening = undefined
+      if (this.closed) return
+      this.opened = true; this.seedMarked = metadata.legacySeedCompleted
+      if (this.started) this.reconcilePending()
+    }, () => {
+      this.opening = undefined
+      this.failed = true
+      this.schedule(RETRY_MS)
+    })
+    return true
   }
 
   private observeTokens(input: UsageTokenObservation): void {
@@ -297,32 +433,41 @@ export class UsageService implements UsagePromptRecorder {
   private reconcilePending(): void {
     if (!this.opened || (!this.options.acceptedPromptIdentities && !this.options.hasAcceptedPrompt) || this.closed || this.reconciling) return
     this.reconciling = true
-    try {
-      if (this.reconciliationRequested) {
-        const through = this.store.pendingPromptReconciliationEnd()
-        this.reconciliation = through === undefined ? undefined : { through }
-        this.reconciliationRequested = false
+    const finish = (): void => {
+      this.reconciling = false
+      if (this.closed) return
+      if ((this.reconciliation !== undefined || this.reconciliationRequested) && this.reconcileTimer === undefined) {
+        this.reconcileTimer = setTimeout(() => { this.reconcileTimer = undefined; this.reconcilePending() }, RECONCILE_MS)
+        this.reconcileTimer.unref?.()
       }
-      const pass = this.reconciliation
-      if (pass === undefined) return
-      const identities = this.store.pendingPromptIdentities(pass.after, pass.through)
-      const accepted = new Set((identities.length === 0 ? [] : this.options.acceptedPromptIdentities
-        ? this.options.acceptedPromptIdentities(identities)
-        : identities.filter(identity => this.options.hasAcceptedPrompt!(identity.threadId, identity.messageId)))
-        .map(identity => promptKey(identity.threadId, identity.messageId)))
-      for (const identity of identities) {
-        if (accepted.has(promptKey(identity.threadId, identity.messageId))) this.acceptPrompt(identity.threadId, identity.messageId)
-        pass.after = identity
-      }
-      const last = identities.at(-1)
-      if (identities.length < USAGE_PENDING_RECONCILIATION_BATCH_MAX
-        || (last?.threadId === pass.through.threadId && last.messageId === pass.through.messageId)) this.reconciliation = undefined
-    } catch { this.failed = true; this.schedule(RETRY_MS) }
-    finally { this.reconciling = false }
-    if ((this.reconciliation !== undefined || this.reconciliationRequested) && this.reconcileTimer === undefined) {
-      this.reconcileTimer = setTimeout(() => { this.reconcileTimer = undefined; this.reconcilePending() }, RECONCILE_MS)
-      this.reconcileTimer.unref?.()
     }
+    const fail = (): void => { this.failed = true; this.schedule(RETRY_MS); finish() }
+    const batch = (): void => {
+      const pass = this.reconciliation
+      if (pass === undefined) { finish(); return }
+      next(() => this.client.request({ kind: 'pending-identities', after: pass.after, through: pass.through }), identities => {
+        try {
+          const accepted = new Set((identities.length === 0 ? [] : this.options.acceptedPromptIdentities
+            ? this.options.acceptedPromptIdentities(identities)
+            : identities.filter(identity => this.options.hasAcceptedPrompt!(identity.threadId, identity.messageId)))
+            .map(identity => promptKey(identity.threadId, identity.messageId)))
+          for (const identity of identities) {
+            if (accepted.has(promptKey(identity.threadId, identity.messageId))) this.acceptPrompt(identity.threadId, identity.messageId)
+            pass.after = identity
+          }
+          const last = identities.at(-1)
+          if (this.reconciliation === pass && (identities.length < USAGE_PENDING_RECONCILIATION_BATCH_MAX
+            || (last?.threadId === pass.through.threadId && last.messageId === pass.through.messageId))) this.reconciliation = undefined
+        } catch { fail(); return }
+        finish()
+      }, fail)
+    }
+    if (!this.reconciliationRequested) { batch(); return }
+    next(() => this.client.request({ kind: 'pending-end' }), through => {
+      this.reconciliation = through === undefined ? undefined : { through }
+      this.reconciliationRequested = false
+      batch()
+    }, fail)
   }
 
   private async readQuotas(providerIds: readonly UsageProviderId[] | undefined, refresh: boolean, background = false): Promise<UsageQuotaRead[]> {
@@ -382,3 +527,23 @@ export class UsageService implements UsagePromptRecorder {
 
 function promptKey(threadId: string, messageId: string): string { return JSON.stringify([threadId, messageId]) }
 function parsePromptKey(key: string): [string, string] { return JSON.parse(key) as [string, string] }
+
+/**
+ * A prompt's writes that failed, with what arrived for it since laid over them, as if both had stayed buffered: the
+ * first selection stands, and an accepted echo is never undone by a later refusal.
+ */
+function laterPromptWrite(earlier: UsagePromptWrite | undefined, later: UsagePromptWrite): UsagePromptWrite {
+  if (earlier === undefined) return later
+  const submission = earlier.submission ?? later.submission
+  const action = earlier.action === 'accept' ? 'accept' : later.action ?? earlier.action
+  return { ...(submission ? { submission } : {}), ...(action ? { action } : {}) }
+}
+
+/** Runs `then` with the answer, at once where the store answered in the call; `failed` with what it threw or rejected. */
+function next<T>(ask: () => Maybe<T>, then: (value: T) => void, failed: () => void): void {
+  let answer: Maybe<T>
+  try { answer = ask() } catch { failed(); return }
+  if (answer instanceof Promise) answer.then(then, failed)
+  else then(answer)
+}
+

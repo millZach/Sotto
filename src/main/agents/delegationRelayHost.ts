@@ -23,6 +23,7 @@ export class RelayUnanswered extends Error {
 }
 
 const id = z.string().min(1).max(512)
+const uuidSchema = z.uuid()
 const recordSchema = z.object({
   /** The ID the delegating thread knows it by: the desktop's delegation ID, or the host's `relayId` when the start's answer was lost. */
   id: z.uuid(), relayId: z.uuid(), delegatingThreadId: id, work: delegationWorkSchema,
@@ -354,7 +355,7 @@ export class HostDelegationRelay {
     const outcome = watcherOutcomeSchema.safeParse(delegation.outcome)
     const placement = isObject(answer.placement) ? answer.placement : undefined
     this.update(record, saved => {
-      if (typeof delegation.id === 'string' && z.uuid().safeParse(delegation.id).success) {
+      if (typeof delegation.id === 'string' && uuidSchema.safeParse(delegation.id).success) {
         saved.delegation = delegation.id
         // The ID the thread was told first stands: a lost answer's relayId, or the desktop's own.
         if (saved.id === saved.relayId && !saved.unread && saved.told === undefined) saved.id = delegation.id

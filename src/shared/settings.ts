@@ -263,6 +263,8 @@ export interface AppSettings {
   /** Off by default. On, Changes opens on its own after a turn that changed at least 3 files or 50 lines. */
   proactivePanels: boolean
   reducedMotion: ReducedMotion
+  /** On by default. A press anywhere in the main window sends waves of 0s and 1s in the accent through the room behind it. Read only while its Owl feature is on, and never with motion reduced. */
+  clickEffect: boolean
   /** On by default. Moving between Dictate or Threads and Watcher's room plays the night falls transition; off, the window swaps in one frame. */
   roomTransition: boolean
   /** How fast that transition plays: 0.5 is half speed, 2 is twice as fast. */
@@ -441,6 +443,7 @@ const fieldSchemas = {
   watcherCompactAtTokens: z.number().int().min(WATCHER_COMPACT_AT.min).max(WATCHER_COMPACT_AT.max).multipleOf(WATCHER_COMPACT_AT.step),
   compactIdleThreads: z.boolean(),
   reducedMotion: z.enum(['system', 'on']),
+  clickEffect: z.boolean(),
   roomTransition: z.boolean(),
   roomTransitionSpeed: z.number().min(0.5).max(2),
   roomTransitionLook: z.enum(ROOM_TRANSITION_LOOKS),
@@ -551,6 +554,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   watcherCompactAtTokens: WATCHER_COMPACT_AT.default,
   compactIdleThreads: true,
   reducedMotion: 'system',
+  clickEffect: true,
   roomTransition: true,
   roomTransitionSpeed: 1,
   roomTransitionLook: 'band',
@@ -729,6 +733,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     watcherCompactAtTokens: parseField(persisted, 'watcherCompactAtTokens', defaults),
     compactIdleThreads: parseField(persisted, 'compactIdleThreads', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
+    clickEffect: parseField(persisted, 'clickEffect', defaults),
     roomTransition: parseField(persisted, 'roomTransition', defaults),
     roomTransitionSpeed: parseField(persisted, 'roomTransitionSpeed', defaults),
     roomTransitionLook: parseField(persisted, 'roomTransitionLook', defaults),

@@ -777,6 +777,10 @@ msgstr ""
 msgid "A phone cannot run the host"
 msgstr ""
 
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "A press anywhere but the composer or the sidebar sends waves of 0s and 1s in the accent through the room behind it. They never cover what you pressed. Reduced motion turns them off."
+msgstr ""
+
 #: src/renderer/src/features/settings/NotificationSettings.tsx
 msgid "A question or a permission is waiting for you."
 msgstr ""
@@ -1548,6 +1552,19 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Click a shortcut and press the new keys; let go to save. These keys work while Sotto is in front, and stand down in terminals and dialogs. Dictation’s keys always win a tie."
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Click effect"
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Click effect off."
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Click effect on."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostClientUpdates.tsx

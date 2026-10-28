@@ -5,6 +5,7 @@ import { z } from 'zod'
 
 const messagesSchema = z.array(z.object({ type: z.enum(['user', 'assistant', 'system']), uuid: z.string().uuid(), session_id: z.string().uuid(), message: z.unknown(), parent_tool_use_id: z.string().nullable() }))
 export type ClaudeHistoryMessage = z.infer<typeof messagesSchema>[number]
+const forkSchema = z.object({ sessionId: z.string().uuid() })
 const helper = `const sdk = await import(process.argv[1]); const [operation,sessionId,dir,boundary] = process.argv.slice(2);
 const result = operation === 'read' ? await sdk.getSessionMessages(sessionId,{dir}) : await sdk.forkSession(sessionId,{dir,upToMessageId:boundary});
 process.stdout.write(JSON.stringify(result));`
@@ -23,5 +24,5 @@ export class ClaudeHistory {
     return JSON.parse(stdout)
   }
   async read(sessionId: string): Promise<ClaudeHistoryMessage[]> { return messagesSchema.parse(await this.run('read', sessionId)) }
-  async fork(sessionId: string, boundary: string): Promise<string> { return z.object({ sessionId: z.string().uuid() }).parse(await this.run('fork', sessionId, boundary)).sessionId }
+  async fork(sessionId: string, boundary: string): Promise<string> { return forkSchema.parse(await this.run('fork', sessionId, boundary)).sessionId }
 }

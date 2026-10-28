@@ -8,18 +8,43 @@ msgstr ""
 "Language: de\n"
 
 #. Read after a browser tab's name.
+#. Read after a browser tab's name.
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid ", could not load"
 msgstr ""
 
 #. Read after a browser tab's name.
+#. Read after a browser tab's name.
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid ", loading"
 msgstr ""
 
 #. Read after a browser tab's name.
+#. Read after a browser tab's name.
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid ", waiting for your answer"
+msgstr ""
+
+#. {label} is a browser page’s title or host.
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Agent is browsing {label}"
+msgstr ""
+
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Show page"
+msgstr ""
+
+#. {label} is a browser page’s title or host.
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Show page: {label}"
+msgstr ""
+
+#. {label} is a browser page’s title or host.
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Waiting for your answer on {label}"
 msgstr ""
 
 #. {runs} counts how many times this subagent has been given work.
@@ -374,6 +399,10 @@ msgstr ""
 msgid "Add a comment…"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Add a picture of this page to the message"
+msgstr ""
+
 #: src/renderer/src/tools/BrowserFeedback.tsx
 msgid "Add to draft"
 msgstr ""
@@ -388,11 +417,17 @@ msgstr ""
 msgid "Added line {number}: {text}"
 msgstr ""
 
+#. {threadTitle} is a thread's title.
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Added to the draft for {threadTitle}"
+msgstr ""
+
 #. {title} is a thread's title.
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Added to the draft for {title}"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Added to the draft for this thread"
 msgstr ""
@@ -402,10 +437,12 @@ msgstr ""
 msgid "Added: "
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Address"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Address for a new page"
 msgstr ""
@@ -429,6 +466,11 @@ msgstr ""
 #. What the thread's agent can do with the test iPhone.
 #: src/renderer/src/tools/IPhoneSurface.tsx
 msgid "Agent"
+msgstr ""
+
+#. Said at the foot of the browser while a thread's agent works on the page.
+#: src/renderer/src/tools/browserSteps.ts
+msgid "Agent is browsing"
 msgstr ""
 
 #: src/renderer/src/tools/AgentsSurface.tsx
@@ -455,6 +497,7 @@ msgstr ""
 msgid "All agents"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserPlayer.tsx
 #: src/renderer/src/tools/BrowserTaskDetails.tsx
 #: src/renderer/src/tools/PhonePlayer.tsx
@@ -466,6 +509,7 @@ msgstr ""
 msgid "Allow this thread"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserTaskDetails.tsx
 msgid "Allow this thread to use the browser"
 msgstr ""
@@ -509,6 +553,10 @@ msgstr ""
 msgid "as of {time}"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Ask before this thread uses the browser"
+msgstr ""
+
 #: src/renderer/src/tools/PullRequestDialogs.tsx
 msgid "Attach a pull request to this thread. A full GitHub URL can point at any repository your gh sign-in can read."
 msgstr ""
@@ -538,6 +586,8 @@ msgstr ""
 
 #. Goes back a page in the browser.
 #. Goes back a page in the browser.
+#. Goes back a page in the browser.
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Back"
 msgstr ""
@@ -600,11 +650,14 @@ msgstr ""
 
 #. The Tools surface that shows a thread's browser pages.
 #. The Tools surface that shows a thread's browser pages.
+#. The Tools surface that shows a thread's browser pages.
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 #: src/renderer/src/tools/toolsPanelStore.ts
 msgid "Browser"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserPlayer.tsx
 #: src/renderer/src/tools/BrowserTaskDetails.tsx
 msgid "Browser action permission"
@@ -635,8 +688,8 @@ msgstr ""
 msgid "Browser for {title}"
 msgstr ""
 
+#: src/renderer/src/tools/browserPageView.tsx
 #: src/renderer/src/tools/browserStore.ts
-#: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Browser is not available in this window."
 msgstr ""
 
@@ -647,6 +700,10 @@ msgstr ""
 
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Browser viewport size"
+msgstr ""
+
+#: src/renderer/src/tools/browserSteps.ts
+msgid "Browsing paused"
 msgstr ""
 
 #. The app build a cloud iPhone runs.
@@ -690,6 +747,10 @@ msgstr ""
 
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "Changed files"
+msgstr ""
+
+#: src/renderer/src/tools/browserSteps.ts
+msgid "changed the page size"
 msgstr ""
 
 #. The Tools surface that shows a thread's changed files.
@@ -775,6 +836,10 @@ msgstr ""
 msgid "Click an element, or use arrow keys and Enter."
 msgstr ""
 
+#: src/renderer/src/tools/browserSteps.ts
+msgid "clicked in the page"
+msgstr ""
+
 #. Closes the list of links in a terminal's output.
 #. Closes the tools panel.
 #: src/renderer/src/tools/terminalLinks.ts
@@ -788,11 +853,14 @@ msgstr ""
 msgid "Close {name}"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Close page"
 msgstr ""
 
 #. {label} is a page's title or host.
+#. {label} is a page's title or host.
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Close page: {label}"
 msgstr ""
@@ -1026,6 +1094,7 @@ msgstr ""
 msgid "Could not open the page."
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Could not open the system browser"
 msgstr ""
@@ -1124,6 +1193,7 @@ msgstr ""
 msgid "Deleted"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserPlayer.tsx
 #: src/renderer/src/tools/BrowserTaskDetails.tsx
 #: src/renderer/src/tools/PhonePlayer.tsx
@@ -1246,8 +1316,13 @@ msgstr ""
 msgid "Enter a web address."
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Enter a website or local server address above. Pages keep their place while you work elsewhere."
+msgstr ""
+
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Enter an address, such as localhost:5173"
 msgstr ""
 
 #: src/renderer/src/tools/ChangesSurface.tsx
@@ -1375,6 +1450,11 @@ msgstr ""
 msgid "Fit pane"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Fit the pane"
+msgstr ""
+
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Float the browser over the thread"
 msgstr ""
@@ -1385,6 +1465,8 @@ msgstr ""
 
 #. Goes forward a page in the browser.
 #. Goes forward a page in the browser.
+#. Goes forward a page in the browser.
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Forward"
 msgstr ""
@@ -1593,6 +1675,7 @@ msgstr ""
 msgid "Let the agent in this thread read the test iPhone and take screenshots"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserTaskDetails.tsx
 msgid "Let this thread open, navigate, click and type in Sotto's browser without asking, and see every page in its browser, until you stop it or Sotto closes."
 msgstr ""
@@ -1663,6 +1746,7 @@ msgstr ""
 msgid "Loading assignments…"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Loading pages…"
 msgstr ""
@@ -1697,6 +1781,10 @@ msgstr ""
 
 #: src/renderer/src/tools/FilePreview.tsx
 msgid "Long Markdown is shown as source."
+msgstr ""
+
+#: src/renderer/src/tools/browserSteps.ts
+msgid "looked at the page"
 msgstr ""
 
 #: src/renderer/src/tools/PhonePlayer.tsx
@@ -1807,6 +1895,10 @@ msgstr ""
 msgid "Modified"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "More browser actions"
+msgstr ""
+
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "More pull request actions"
 msgstr ""
@@ -1851,6 +1943,7 @@ msgstr ""
 msgid "Needs your approval"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "New page"
 msgstr ""
@@ -2102,6 +2195,12 @@ msgstr ""
 msgid "Open {title} to answer its request"
 msgstr ""
 
+#. {where} is a page address, such as localhost:5173/notes.
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Open {where}"
+msgstr ""
+
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Open a page"
 msgstr ""
@@ -2146,6 +2245,8 @@ msgstr ""
 msgid "Open check"
 msgstr ""
 
+#: src/renderer/src/tools/browserPageView.tsx
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Open in system browser"
 msgstr ""
@@ -2194,6 +2295,12 @@ msgstr ""
 msgid "Opened in {threadTitle}’s browser. Open Tools > Browser in that thread to see it."
 msgstr ""
 
+#. Heads the addresses this thread's browser opened since Sotto started.
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Opened this session"
+msgstr ""
+
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Page address"
 msgstr ""
@@ -2203,6 +2310,8 @@ msgid "Page to annotate"
 msgstr ""
 
 #. The tabs of a thread's browser pages.
+#. The tabs of a thread's browser pages.
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Pages"
 msgstr ""
@@ -2219,6 +2328,8 @@ msgstr ""
 #. Pauses a browser task.
 #. Pauses a browser task.
 #. Pauses a browser task.
+#. Pauses a browser task.
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserPlayer.tsx
 #: src/renderer/src/tools/BrowserTaskDetails.tsx
 #: src/renderer/src/tools/PhonePlayer.tsx
@@ -2269,6 +2380,15 @@ msgstr ""
 
 #: src/renderer/src/tools/PullRequestDialogs.tsx
 msgid "Preparing worktree..."
+msgstr ""
+
+#. {key} is a key name, such as Enter.
+#: src/renderer/src/tools/browserSteps.ts
+msgid "pressed {key}"
+msgstr ""
+
+#: src/renderer/src/tools/browserSteps.ts
+msgid "pressed a key"
 msgstr ""
 
 #: src/renderer/src/tools/FilePreview.tsx
@@ -2407,6 +2527,7 @@ msgstr ""
 msgid "Region selected"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 #: src/renderer/src/tools/IPhoneSurface.tsx
 msgid "Reload"
@@ -2519,6 +2640,8 @@ msgstr ""
 #. Lets a paused browser task carry on.
 #. Lets a paused browser task carry on.
 #. Lets a paused browser task carry on.
+#. Lets a paused browser task carry on.
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserPlayer.tsx
 #: src/renderer/src/tools/BrowserTaskDetails.tsx
 #: src/renderer/src/tools/PhonePlayer.tsx
@@ -2572,6 +2695,14 @@ msgstr ""
 msgid "Same folder"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Screenshot to message"
+msgstr ""
+
+#: src/renderer/src/tools/browserSteps.ts
+msgid "scrolled the page"
+msgstr ""
+
 #: src/renderer/src/tools/ChangesBasePicker.tsx
 msgid "Search refs"
 msgstr ""
@@ -2616,6 +2747,7 @@ msgstr ""
 msgid "Send Ctrl+C (stop the running command)"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 #: src/renderer/src/tools/IPhoneSurface.tsx
 msgid "Share with agent"
@@ -2623,6 +2755,11 @@ msgstr ""
 
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "Show all"
+msgstr ""
+
+#. A browser page size in CSS pixels, such as Show at 1280 x 800.
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Show at {width} x {height}"
 msgstr ""
 
 #: src/renderer/src/tools/ChangesSurface.tsx
@@ -2759,6 +2896,7 @@ msgstr ""
 msgid "Sotto found no base branch to compare with. Choose one."
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Sotto keeps at most 32 pages"
 msgstr ""
@@ -2843,6 +2981,7 @@ msgstr ""
 msgid "Stop letting this thread use the browser without asking"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 #: src/renderer/src/tools/IPhoneSurface.tsx
 msgid "Stop sharing"
@@ -2863,6 +3002,14 @@ msgstr ""
 
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Stopping..."
+msgstr ""
+
+#: src/renderer/src/tools/browserSteps.ts
+msgid "swiped in the page"
+msgstr ""
+
+#: src/renderer/src/tools/browserSteps.ts
+msgid "tapped in the page"
 msgstr ""
 
 #. Heading over what a subagent was asked to do.
@@ -2931,10 +3078,11 @@ msgstr ""
 msgid "The agent in this thread can see and use this page. Stop sharing keeps it private."
 msgstr ""
 
-#: src/renderer/src/tools/BrowserSurface.tsx
+#: src/renderer/src/tools/browserPageView.tsx
 msgid "The browser could not list its pages."
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "The browser did not answer. Try again."
 msgstr ""
@@ -2992,8 +3140,8 @@ msgstr ""
 msgid "The page changed. Cancel and capture it again before selecting."
 msgstr ""
 
+#: src/renderer/src/tools/browserPageView.tsx
 #: src/renderer/src/tools/BrowserPlayer.tsx
-#: src/renderer/src/tools/BrowserSurface.tsx
 msgid "The page steps aside while a menu or dialog is open."
 msgstr ""
 
@@ -3065,8 +3213,8 @@ msgstr ""
 msgid "The working folder changed."
 msgstr ""
 
+#: src/renderer/src/tools/browserPageView.tsx
 #: src/renderer/src/tools/browserStore.ts
-#: src/renderer/src/tools/BrowserSurface.tsx
 #: src/renderer/src/tools/ChangesSurface.tsx
 #: src/renderer/src/tools/FilesSurface.tsx
 #: src/renderer/src/tools/TerminalSurface.tsx
@@ -3157,12 +3305,12 @@ msgstr ""
 msgid "This month"
 msgstr ""
 
-#: src/renderer/src/tools/BrowserSurface.tsx
+#: src/renderer/src/tools/browserPageView.tsx
 msgid "This page could not be shown."
 msgstr ""
 
+#: src/renderer/src/tools/browserPageView.tsx
 #: src/renderer/src/tools/BrowserPlayer.tsx
-#: src/renderer/src/tools/BrowserSurface.tsx
 #: src/renderer/src/tools/PhonePlayer.tsx
 msgid "This page could not load."
 msgstr ""
@@ -3175,10 +3323,12 @@ msgstr ""
 msgid "This page is private. Share it with the agent in this thread."
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "This page is private. The agent cannot see it"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 #: src/renderer/src/tools/IPhoneSurface.tsx
 msgid "This provider does not support Sotto browser tools."
@@ -3239,7 +3389,7 @@ msgstr ""
 msgid "This thread is not available to Terminal."
 msgstr ""
 
-#: src/renderer/src/tools/BrowserSurface.tsx
+#: src/renderer/src/tools/browserPageView.tsx
 msgid "This thread is not available to the browser."
 msgstr ""
 
@@ -3295,6 +3445,10 @@ msgstr ""
 msgid "Too large to show as a diff."
 msgstr ""
 
+#: src/renderer/src/tools/browserSteps.ts
+msgid "took a picture of the page"
+msgstr ""
+
 #. The panel beside a thread that holds its browser, terminal, files, changes and agents.
 #. The panel beside a thread that holds its browser, terminal, files, changes and agents.
 #. The panel beside a thread that holds its browser, terminal, files, changes and agents.
@@ -3307,7 +3461,63 @@ msgstr ""
 msgid "Tools are pinned to {pinnedTitle}"
 msgstr ""
 
+#: src/renderer/src/tools/browserSteps.ts
+msgid "tried to change the page size"
+msgstr ""
+
+#: src/renderer/src/tools/browserSteps.ts
+msgid "tried to click in the page"
+msgstr ""
+
+#. {where} is a page address, such as localhost:5173/notes.
+#: src/renderer/src/tools/browserSteps.ts
+msgid "tried to go to {where}"
+msgstr ""
+
+#: src/renderer/src/tools/browserSteps.ts
+msgid "tried to go to another page"
+msgstr ""
+
+#: src/renderer/src/tools/browserSteps.ts
+msgid "tried to look at the page"
+msgstr ""
+
+#. {key} is a key name, such as Enter.
+#: src/renderer/src/tools/browserSteps.ts
+msgid "tried to press {key}"
+msgstr ""
+
+#: src/renderer/src/tools/browserSteps.ts
+msgid "tried to press a key"
+msgstr ""
+
+#: src/renderer/src/tools/browserSteps.ts
+msgid "tried to scroll the page"
+msgstr ""
+
+#: src/renderer/src/tools/browserSteps.ts
+msgid "tried to swipe in the page"
+msgstr ""
+
+#: src/renderer/src/tools/browserSteps.ts
+msgid "tried to take a picture of the page"
+msgstr ""
+
+#: src/renderer/src/tools/browserSteps.ts
+msgid "tried to tap in the page"
+msgstr ""
+
+#: src/renderer/src/tools/browserSteps.ts
+msgid "tried to type into the page"
+msgstr ""
+
+#: src/renderer/src/tools/browserSteps.ts
+msgid "tried to work in the page"
+msgstr ""
+
 #: src/renderer/src/tools/AgentsSurface.tsx
+#: src/renderer/src/tools/browserPageView.tsx
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 #: src/renderer/src/tools/ChangesSurface.tsx
 #: src/renderer/src/tools/IPhoneSurface.tsx
@@ -3353,6 +3563,10 @@ msgstr ""
 #. A changed file's Git status.
 #: src/renderer/src/tools/changesStore.ts
 msgid "Type changed"
+msgstr ""
+
+#: src/renderer/src/tools/browserSteps.ts
+msgid "typed into the page"
 msgstr ""
 
 #. A merge checklist line's state, said before its words.
@@ -3437,6 +3651,15 @@ msgstr ""
 msgid "Web build"
 msgstr ""
 
+#. {where} is a page address, such as localhost:5173/notes.
+#: src/renderer/src/tools/browserSteps.ts
+msgid "went to {where}"
+msgstr ""
+
+#: src/renderer/src/tools/browserSteps.ts
+msgid "went to another page"
+msgstr ""
+
 #: src/renderer/src/tools/AgentsSurface.tsx
 msgid "What happened"
 msgstr ""
@@ -3451,6 +3674,10 @@ msgstr ""
 
 #: src/renderer/src/tools/DelegatedThreads.tsx
 msgid "When Sotto last read it"
+msgstr ""
+
+#: src/renderer/src/tools/browserSteps.ts
+msgid "worked in the page"
 msgstr ""
 
 #. A run of several subagents a provider started together.

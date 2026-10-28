@@ -3,6 +3,8 @@ import type { AgentQuestionAnswers, AgentRequest } from '../../shared/agents'
 import { permissionValue, questionValues } from './nativeRequests'
 import { browserRequestText } from './browserRequests'
 
+const questionAnswersSchema = z.record(z.string(), z.string())
+
 const questionSchema = z.object({ sessionId: z.string(), toolCallId: z.string(), questions: z.array(z.object({ question: z.string(), id: z.string().optional(), header: z.string().optional(), multiSelect: z.boolean().optional(), options: z.array(z.object({ label: z.string(), description: z.string().optional(), preview: z.string().optional() })).default([]) })).min(1).max(30) })
 const permissionSchema = z.object({ sessionId: z.string(), toolCall: z.object({ toolCallId: z.string(), title: z.string().optional(), rawInput: z.unknown().optional() }), options: z.array(z.object({ optionId: z.string(), name: z.string(), kind: z.enum(['allow_once', 'allow_always', 'reject_once', 'reject_always']) })) })
 export type GrokPending = { wireId: string | number; threadId: string; toolCallId: string; request: AgentRequest; permission?: z.infer<typeof permissionSchema>; question?: z.infer<typeof questionSchema>; answering?: boolean }
@@ -68,7 +70,7 @@ export function grokAnswer(pending: GrokPending, answer: string, approved?: bool
   if (!supplied) {
     let values: Record<string, string>
     if (questions.length === 1) values = { [questions[0]!.question]: answer }
-    else { try { values = z.record(z.string(), z.string()).parse(JSON.parse(answer)) } catch { throw new Error('Answer every Grok question with a JSON object keyed by question text.') } }
+    else { try { values = questionAnswersSchema.parse(JSON.parse(answer)) } catch { throw new Error('Answer every Grok question with a JSON object keyed by question text.') } }
     supplied = Object.fromEntries(questions.map((question, index) => { const value = values[question.question] ?? ''; return [String(index), question.options.some(option => option.label === value) ? { optionIds: [value] } : { optionIds: [], text: value }] }))
   }
   questionValues(pending.request, supplied)

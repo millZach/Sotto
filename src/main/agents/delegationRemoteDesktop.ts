@@ -42,6 +42,8 @@ export interface RemoteAsk {
 }
 
 const id = z.string().min(1).max(512)
+/** Built once: a delegation ID a host's answer names is checked on every answer (zodSchemaSites). */
+const uuidSchema = z.uuid()
 const recordSchema = z.object({
   /** The ID the delegating thread knows it by: this computer's own, given before the host was asked. */
   id: z.uuid(), hostId: z.uuid(), callerId: id, action: z.enum(['start', 'send']), work: delegationWorkSchema,
@@ -450,7 +452,7 @@ export class DesktopRemoteDelegations {
   private adopt(record: RemoteRecord, delegation: Record<string, unknown>, tells = true): void {
     const outcome = watcherOutcomeSchema.safeParse(delegation.outcome)
     this.update(record, saved => {
-      if (typeof delegation.id === 'string' && z.uuid().safeParse(delegation.id).success) { saved.delegation = delegation.id; this.release(saved) }
+      if (typeof delegation.id === 'string' && uuidSchema.safeParse(delegation.id).success) { saved.delegation = delegation.id; this.release(saved) }
       if (typeof delegation.thread === 'string' && id.safeParse(delegation.thread).success) saved.thread = delegation.thread
       saved.outcome = outcome.success ? outcome.data : 'unknown'
       // A call's own result tells the thread; a read after a reconnect does not, so what moved is sent as news.

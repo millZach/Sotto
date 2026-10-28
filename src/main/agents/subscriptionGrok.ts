@@ -19,6 +19,7 @@ interface GrokSubscriptionOptions {
   outputLimitBytes?: number
 }
 const IDENTIFIER = z.string().min(1).max(160).regex(/^[a-z0-9][a-z0-9._:/-]*$/iu)
+const INITIALIZE = z.object({ protocolVersion: z.literal(1), authMethods: z.array(z.object({ id: z.string() })) })
 const EFFORT = z.string().min(1).max(32).regex(/^[a-z][a-z0-9_-]*$/u)
 const SESSION = z.object({ sessionId: z.string().min(1).max(300), models: z.object({
   currentModelId: IDENTIFIER,
@@ -112,7 +113,7 @@ export class GrokSubscriptionClient implements SubscriptionClient {
 
   private async initialize(rpc: GrokRpc, directory: string, system = 'You are a text-only reasoning assistant. Return one JSON object and do not use tools.', purpose: 'reasoning' | 'writing' = 'reasoning') {
     const initial = await rpc.request('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: 'sotto', version: '1' } })
-    const parsed = z.object({ protocolVersion: z.literal(1), authMethods: z.array(z.object({ id: z.string() })) }).parse(initial)
+    const parsed = INITIALIZE.parse(initial)
     if (!parsed.authMethods.some(method => method.id === 'cached_token') || parsed.authMethods.some(method => /api.?key/iu.test(method.id))) throw new Error(CONNECTION_ERROR)
     await rpc.request('authenticate', { methodId: 'cached_token', _meta: { headless: true } })
     const format = purpose === 'reasoning' ? 'Return exactly one JSON object. Do not include Markdown or commentary outside it. ' : ''

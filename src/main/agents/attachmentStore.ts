@@ -25,6 +25,7 @@ const entrySchema = z.object({ digest: attachmentDigestSchema, mimeType: agentMi
   sizeBytes: z.number().int().min(1).max(AGENT_MAX_FILE_BYTES), stagedAt: z.number().finite() }).strict()
   .refine(entry => entry.sizeBytes <= attachmentLimitBytes(entry.mimeType))
 type Entry = z.infer<typeof entrySchema>
+const indexSchema = z.object({ version: z.literal(1), entries: z.array(z.unknown()) })
 type Index = { version: 1; entries: Entry[] }
 /**
  * Content this store keeps: on disk under its digest, or in memory alone while history is off. `lastStagedAt` is
@@ -95,7 +96,7 @@ export class AttachmentStore {
     this.historyEnabled = historyEnabled; this.now = now; this.missing = missing; this.acceptsFiles = acceptsFiles
     this.folder = join(directory, 'attachments')
     this.index = new AtomicJsonStore(join(this.folder, INDEX_FILE), value => {
-      const saved = z.object({ version: z.literal(1), entries: z.array(z.unknown()) }).parse(value)
+      const saved = indexSchema.parse(value)
       return { version: 1, entries: saved.entries.flatMap(item => { const parsed = entrySchema.safeParse(item); return parsed.success ? [parsed.data] : [] }) }
     }, () => ({ version: 1, entries: [] }))
   }

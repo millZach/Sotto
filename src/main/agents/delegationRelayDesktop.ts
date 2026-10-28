@@ -55,6 +55,7 @@ const RELAY_BACK_HOME = (from: string): string => `That is ${from}, where this t
 const NOT_HELD = 'This computer holds no delegation for that ask, so Sotto cannot prove whether it started. Nothing was sent again.'
 
 const id = z.string().min(1).max(512)
+const uuidSchema = z.uuid()
 const callerSchema = z.object({ id, projectId: id, runtimeMode: agentRuntimeModeSchema, levels: z.number().int().min(0).max(8), rootUserMessageId: id,
   callerMessageId: id.optional() }).strict()
 const fileSchema = z.object({ version: z.literal(1), callers: z.array(callerSchema).max(100_000),
@@ -189,7 +190,7 @@ export class DesktopDelegationRelay {
    */
   private async delegateFor(key: string, ask: Extract<DelegationRelayAsk, { type: 'start' | 'send' }>, placement?: WorkerPlacement): Promise<unknown> {
     const delegation = this.delegation!
-    const retryKey = typeof ask.input.retry_key === 'string' && z.uuid().safeParse(ask.input.retry_key).success ? ask.input.retry_key : ask.relayId
+    const retryKey = typeof ask.input.retry_key === 'string' && uuidSchema.safeParse(ask.input.retry_key).success ? ask.input.retry_key : ask.relayId
     this.asks.push({ key, relayId: ask.relayId, retryKey })
     // Saved before the start, so a read after a lost answer finds the ask by its retry key, and an ask never recorded reads as unproved.
     await this.save()

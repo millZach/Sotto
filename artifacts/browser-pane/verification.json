@@ -1,0 +1,67 @@
+{
+  "track": "owl",
+  "sizes": {
+    "agent-1280x800-dark": {
+      "contrast": [
+        15.993968911167878,
+        7.758337497481045
+      ],
+      "viewport": {
+        "x": 721,
+        "y": 44,
+        "width": 501,
+        "height": 684
+      }
+    },
+    "agent-1280x800-light": {
+      "contrast": [
+        14.670074247573446,
+        6.25820861194014
+      ],
+      "viewport": {
+        "x": 721,
+        "y": 44,
+        "width": 501,
+        "height": 684
+      }
+    },
+    "agent-820x560-dark": {
+      "contrast": [
+        15.993968911167878,
+        7.758337497481045
+      ],
+      "viewport": {
+        "x": 362,
+        "y": 44,
+        "width": 400,
+        "height": 444
+      }
+    },
+    "agent-820x560-light": {
+      "contrast": [
+        14.670074247573446,
+        6.25820861194014
+      ],
+      "viewport": {
+        "x": 362,
+        "y": 44,
+        "width": 400,
+        "height": 444
+      }
+    },
+    "agent-1600x1000-dark": {
+      "viewport": {
+        "x": 862,
+        "y": 44,
+        "width": 680,
+        "height": 884
+      }
+    },
+    "reduced-motion": {
+      "line": "none",
+      "lineShown": true,
+      "dot": "none"
+    }
+  },
+  "errors": []
+}

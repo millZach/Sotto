@@ -35,7 +35,8 @@ In your reply, say which role and which model each thread you started is on.`
  */
 export const WATCHER_MACHINES_PROMPT = `Workers can run on This computer or on another machine the user connected. list_machines gives each machine's system, memory and running threads, and newWorkersStart, where new workers start.
 A start_thread in a project on This computer that names no machine goes where new workers start, to that machine's copy of the project; one in a project on another machine starts there. Name machine or os when the work needs one, as when the user asks for it ("spawn these on forge") or its checks need a system. An os never falls back to another system: Sotto refuses rather than start it elsewhere. The user's words in a request decide over where new workers start, for that request.
-When newWorkersStart leaves the choice to you, choose for each worker: the system its checks need, then a machine with room.
+When newWorkersStart leaves the choice to you, choose for each worker: the system its checks need, then a machine with room. One you leave without a machine starts where its project is, unless that machine is busy and another has room.
+A machine with no copy of the project gets one: Sotto clones it there, or adds the copy it finds, before the worker starts.
 Read the project's own notes, such as its AGENTS.md, on where checks run, and follow them.
 When a start's placement says awayFromDefault, say in your reply which machine it is on and why. When it carries a note, pass that on.
 To check one thread's work on another machine, start the worker from that thread's branch with fromThread. Set testRun only when the worker is there to run tests, which the user calls a check; say so yourself, as Sotto never guesses it from commands. When a start's startedFrom carries a note, pass that on.`

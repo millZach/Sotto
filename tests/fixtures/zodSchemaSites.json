@@ -1,0 +1,230 @@
+{
+  "src/host/credentials.ts": {
+    "openHostCredentials": {
+      "count": 1,
+      "reason": "Reads the host's credential file once when the host starts."
+    }
+  },
+  "src/main/agents/claude.ts": {
+    "ClaudeStreamJsonHost.constructor": {
+      "count": 3,
+      "reason": "Built once when the adapter is constructed at start, for its stores' parsers."
+    }
+  },
+  "src/main/agents/codex.ts": {
+    "CodexAppServerHost.constructor": {
+      "count": 1,
+      "reason": "Built once when the adapter is constructed at start, for its stores' parsers."
+    }
+  },
+  "src/main/agents/codexRequests.ts": {
+    "answerRequest": {
+      "count": 3,
+      "reason": "Builds a string schema from the form field's own minLength and maxLength, once per field of an answer the user sends."
+    }
+  },
+  "src/main/agents/credentials.ts": {
+    "AgentCredentials.constructor": {
+      "count": 1,
+      "reason": "Built once when the credential store is constructed at start."
+    }
+  },
+  "src/main/agents/cursor.ts": {
+    "CursorAcpHost.constructor": {
+      "count": 2,
+      "reason": "Built once when the adapter is constructed at start, for its stores' parsers."
+    }
+  },
+  "src/main/agents/cursorSignInIpc.ts": {
+    "registerCursorSignInIpc": {
+      "count": 1,
+      "reason": "Built once when the channels are registered at start, not in a handler."
+    }
+  },
+  "src/main/agents/deepseek.ts": {
+    "DeepSeekAcpHost.constructor": {
+      "count": 2,
+      "reason": "Built once when the adapter is constructed at start, for its stores' parsers."
+    }
+  },
+  "src/main/agents/delegationTools.ts": {
+    "delegationToolDefinitions": {
+      "count": 2,
+      "reason": "Builds the delegate tool's input schema for the roles, machines and place it is given; runs once at module load and once when the delegation tool server is constructed at start."
+    }
+  },
+  "src/main/agents/devin.ts": {
+    "DevinAcpHost.constructor": {
+      "count": 2,
+      "reason": "Built once when the adapter is constructed at start, for its stores' parsers."
+    }
+  },
+  "src/main/agents/githubBabysitReads.ts": {
+    "loose": {
+      "count": 1,
+      "reason": "A schema factory called only at module scope; a call to it inside a function is counted at the caller."
+    }
+  },
+  "src/main/agents/gitPullRequests.ts": {
+    "loose": {
+      "count": 1,
+      "reason": "A schema factory called only at module scope; a call to it inside a function is counted at the caller."
+    }
+  },
+  "src/main/agents/grok.ts": {
+    "GrokAcpHost.confirmLoad": {
+      "count": 1,
+      "reason": "Checks the answer against this thread's own session ID with z.literal; runs once per session load, not per frame."
+    },
+    "GrokAcpHost.constructor": {
+      "count": 2,
+      "reason": "Built once when the adapter is constructed at start, for its stores' parsers."
+    },
+    "GrokAcpHost.executeNative.(anonymous)": {
+      "count": 4,
+      "reason": "Each checks Grok's answer against this command's own model or session ID with z.literal; runs once per model change or session load, not per frame."
+    }
+  },
+  "src/main/agents/hostIdentity.ts": {
+    "migrateWorkspaceHost": {
+      "count": 1,
+      "reason": "A one-off migration of workspace.json at start."
+    }
+  },
+  "src/main/agents/muse.ts": {
+    "MuseMspHost.constructor": {
+      "count": 2,
+      "reason": "Built once when the adapter is constructed at start, for its stores' parsers."
+    }
+  },
+  "src/main/agents/nativeUsage.ts": {
+    "NativeUsage.constructor": {
+      "count": 1,
+      "reason": "Built once per provider's usage ledger, constructed at start."
+    }
+  },
+  "src/main/agents/opencode.ts": {
+    "OpenCodeHost.constructor": {
+      "count": 2,
+      "reason": "Built once when the adapter is constructed at start, for its stores' parsers."
+    }
+  },
+  "src/main/agents/providerSwitch.ts": {
+    "ConfiguredProviderHost.constructor.(anonymous)": {
+      "count": 1,
+      "reason": "The registration store's parser, made in the constructor and run when the store is read at start."
+    },
+    "ConfiguredProviderHost.executeGuarded.(anonymous).(anonymous)": {
+      "count": 1,
+      "reason": "Inside registrationLoad ??=: built when project registrations are first read, cached once that succeeds, and built again only on the retry after a failed read."
+    },
+    "ConfiguredProviderHost.initialize.(anonymous)": {
+      "count": 1,
+      "reason": "Inside identityLoad ??= in initialize(): built at initialisation, cached once that succeeds, and built again only on the retry after a failed load."
+    }
+  },
+  "src/main/agents/requestDraftIpc.ts": {
+    "registerRequestDraftIpc": {
+      "count": 1,
+      "reason": "Built once per channel when the channels are registered at start, not in the handler."
+    }
+  },
+  "src/main/agents/subscriptionGrok.ts": {
+    "GrokSubscriptionClient.write.(anonymous)": {
+      "count": 1,
+      "reason": "Checks the answer against this call's own selected model with z.literal; once per side call, not per frame."
+    }
+  },
+  "src/main/hosts/desktopHosts.ts": {
+    "DesktopHosts.constructor": {
+      "count": 1,
+      "reason": "Built once when saved hosts are constructed at start."
+    }
+  },
+  "src/main/hosts/inactiveLocalHost.ts": {
+    "inactiveLocalHost": {
+      "count": 2,
+      "reason": "Reads agents.json and workspace.json once at start when the local host is inactive."
+    }
+  },
+  "src/main/ipc/registerIpc.ts": {
+    "registerIpc": {
+      "count": 3,
+      "reason": "Payload schemas passed to register() once when the channels are registered at start, not in a handler."
+    }
+  },
+  "src/main/phones/phoneAccess.ts": {
+    "PhoneAccess.constructor": {
+      "count": 1,
+      "reason": "Built once when phone access is constructed at start."
+    }
+  },
+  "src/main/tools/terminal.ts": {
+    "TerminalService.constructor.(anonymous)": {
+      "count": 1,
+      "reason": "The session store's parser, made in the constructor and run when the store is read at start."
+    }
+  },
+  "src/renderer/src/state/appearance.ts": {
+    "readCachedAppearance": {
+      "count": 1,
+      "reason": "Runs once, when the window reads its saved look before the first frame (main.tsx), and builds only on Linux."
+    }
+  },
+  "src/shared/agents.ts": {
+    "imageBytes": {
+      "count": 1,
+      "reason": "A schema factory called only at module scope; a call to it inside a function is counted at the caller."
+    }
+  },
+  "src/shared/files.ts": {
+    "filesResultSchema": {
+      "count": 1,
+      "reason": "A schema factory called only at module scope; a call to it inside a function is counted at the caller."
+    }
+  },
+  "src/shared/themeBranding.ts": {
+    "widgetThemeColorsSchema.(anonymous)": {
+      "count": 1,
+      "reason": "A .map callback that builds the module-scope colours schema's shape once at load."
+    }
+  },
+  "src/shared/themes/bridge.ts": {
+    "themesResultSchema": {
+      "count": 1,
+      "reason": "A schema factory called only at module scope; a call to it inside a function is counted at the caller."
+    }
+  },
+  "src/shared/themes/library.ts": {
+    "themeColorsSchema.(anonymous)": {
+      "count": 1,
+      "reason": "A .map callback that builds the module-scope colours schema's shape once at load."
+    }
+  },
+  "src/shared/themes/omarchy.ts": {
+    "colorsSchema": {
+      "count": 1,
+      "reason": "A schema factory called only at module scope; a call to it inside a function is counted at the caller."
+    }
+  },
+  "src/shared/tools.ts": {
+    "toolsResultSchema": {
+      "count": 1,
+      "reason": "A schema factory called only at module scope; a call to it inside a function is counted at the caller."
+    }
+  },
+  "src/shared/watcher.ts": {
+    "boundedRead": {
+      "count": 1,
+      "reason": "A schema factory called only at module scope; a call to it inside a function is counted at the caller."
+    },
+    "result": {
+      "count": 1,
+      "reason": "A schema factory called only at module scope; a call to it inside a function is counted at the caller."
+    },
+    "utf8": {
+      "count": 1,
+      "reason": "A schema factory called only at module scope; a call to it inside a function is counted at the caller."
+    }
+  }
+}
