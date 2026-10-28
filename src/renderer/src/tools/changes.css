@@ -67,6 +67,7 @@
   background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; text-align: left; cursor: pointer;
 }
 .changes-base__ref:hover { background: var(--tt-hover); color: var(--tt-text); }
+.changes-base__ref:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .changes-base__ref[aria-current] { color: var(--tt-text); }
 .changes-base__check { flex: none; visibility: hidden; color: var(--tt-accent-text); }
 .changes-base__check[data-shown] { visibility: visible; }

@@ -97,6 +97,7 @@
 .terminal-search output { flex: none; min-width: 50px; padding: 0 6px; color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: center; }
 .terminal-search button { display: grid; place-items: center; flex: none; width: 26px; height: 26px; min-height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
 .terminal-search button:hover { color: var(--tt-text); background: var(--tt-hover); }
+.terminal-search button:active:not(:disabled) { color: var(--tt-text); background: var(--tt-hover-strong); }
 .terminal-search button:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
 .terminal-search button:disabled { opacity: .45; cursor: default; }
 .terminal-links { position: fixed; inset: auto; margin: 0; z-index: 3; display: flex; flex-direction: column; padding: 8px; border: 1px solid var(--tt-hairline); border-radius: 9px; background: var(--tt-panel); color: var(--tt-text); box-shadow: var(--tt-shadow-overlay); }
@@ -105,6 +106,7 @@
 .terminal-links strong { font-size: 12.5px; }
 .terminal-links button { border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; cursor: pointer; text-align: left; padding: 6px 8px; }
 .terminal-links button:hover { background: var(--tt-hover); }
+.terminal-links button:active:not(:disabled) { background: var(--tt-hover-strong); }
 .terminal-links button:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
 .terminal-links__list { min-height: 0; overflow: auto; }
 .terminal-links__list button { display: block; width: 100%; overflow-wrap: anywhere; }

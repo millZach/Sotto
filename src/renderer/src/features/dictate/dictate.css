@@ -199,6 +199,7 @@
 }
 
 .journal-search__clear:hover { background: var(--tt-hover); color: var(--tt-text); }
+.journal-search__clear:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 
 .journal-more { flex: none; }
 .journal-more > .pane-action { width: 34px; height: 34px; border-radius: 9px; }
@@ -220,6 +221,7 @@
 }
 
 .journal-chip:hover { background: var(--tt-hover); color: var(--tt-text); }
+.journal-chip:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 
 .journal-chip[aria-pressed='true'] {
   border-color: var(--tt-selected-border);
