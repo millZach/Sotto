@@ -20,6 +20,7 @@
 .subagent-run { white-space: nowrap; }
 .subagent-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; padding-top: 2px; color: var(--tt-text-muted); font-size: 12px; }
 .subagent-time { display: flex; align-items: center; gap: 7px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.subagent-time svg { transition: transform 160ms ease; }
 .subagent-head[aria-expanded='true'] .subagent-time svg { transform: rotate(90deg); }
 .subagent-details { margin: 0 5px 10px 22px; padding: 4px 0 12px; }
 .subagent-details h3 { margin: 12px 0 5px; color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }

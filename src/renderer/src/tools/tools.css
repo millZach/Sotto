@@ -28,7 +28,7 @@
 .files-tree__item[data-selected] { border-color: var(--tt-selected-border); background: var(--tt-selected); color: var(--tt-text); }
 .files-tree__item[data-kind='unavailable'] { color: var(--tt-text-muted); cursor: default; }
 .files-tree__item[data-kind='unavailable']:hover { background: transparent; }
-.files-tree__chevron { display: grid; place-items: center; flex: none; width: 14px; color: var(--tt-text-muted); }
+.files-tree__chevron { display: grid; place-items: center; flex: none; width: 14px; color: var(--tt-text-muted); transition: transform 160ms ease; }
 .files-tree__item[aria-expanded='true'] .files-tree__chevron { transform: rotate(90deg); }
 .files-tree__name { white-space: nowrap; }
 .files-tree__status { gap: 10px; padding-left: calc(26px + var(--files-depth, 0) * 16px); color: var(--tt-text-muted); font-size: 13px; cursor: default; }
