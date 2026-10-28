@@ -785,6 +785,8 @@ export class SocketHostService implements HostService {
   get supportsWatcherOutcomes(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-outcomes') }
   /** A stable desktop never marks a start as a check, so it uses no host's queue (#1312, ADR-0072). */
   get supportsWatcherCheckQueue(): boolean { return this.options.crossMachineEnabled === true && this.supportsWatcherControl && this.features.includes('watcher-check-queue') }
+  /** Only a desktop that uses the host's queue stops a check waiting in it (#1637). */
+  get supportsWatcherCheckStop(): boolean { return this.supportsWatcherCheckQueue && this.features.includes('watcher-check-stop') }
   get supportsWatcherMuse(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-muse') }
   get supportsWatcherCursor(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-cursor') }
   private heldWatcherProvider(request: WatcherHostRead | WatcherHostControl): HeldProviderNames | undefined {
