@@ -738,6 +738,21 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.drafts[ref.id], "Keep this reply")
         XCTAssertTrue(model.online(ref.hostID))
     }
+    /// Add to prompt writes the words after the draft as the desktop's reply quote and asks that box for focus (ADR-0129).
+    @MainActor func testQuotingAReplyAddsToTheDraftAndFocusesItsBox() throws {
+        let (model, ref) = try fixture()
+        model.drafts[ref.id] = "Do this:"
+        XCTAssertTrue(model.quoteReply("Read the saved draft first.", into: ref.id))
+        XCTAssertEqual(model.drafts[ref.id], "Do this:\n\nFrom your earlier reply:\n> Read the saved draft first.\n\n")
+        let first = try XCTUnwrap(model.draftStore.focus)
+        XCTAssertEqual(first.key, ref.id)
+        XCTAssertTrue(model.quoteReply("Then skip the write-back.", into: ref.id))
+        XCTAssertNotEqual(model.draftStore.focus, first, "A second quote asks for focus again")
+        let watcher = model.watcherDraftKey(ref.hostID)
+        XCTAssertFalse(model.quoteReply(" \n ", into: watcher))
+        XCTAssertNil(model.drafts[watcher])
+        XCTAssertEqual(model.draftStore.focus?.key, ref.id)
+    }
     @MainActor func testMarkerStorageFailureDuringPushDoesNotDisconnectComputer() async throws {
         let (_, ref) = try fixture()
         let marker = PendingOperation(hostID: ref.hostID, clientID: "phone", threadID: ref.threadID, draftID: "draft", kind: "reply")
