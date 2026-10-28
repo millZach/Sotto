@@ -570,6 +570,14 @@ export async function startSocketServer(options: SocketServerOptions) {
    * Its time is the monotonic clock's, so the computer's clock being set back holds no shell longer. Every phone whose
    * window has closed is sent from one read of the service's shell, as a publish sends them.
    */
+  /**
+   * One read of the service's shell for every phone sent together: each read copies the whole coordinator state. It is
+   * read when the first phone sends, so phones that are all backed up read nothing.
+   */
+  const sharedRead = (): (() => AgentState) => {
+    let original: AgentState | undefined
+    return () => original ??= service.shell()
+  }
   const watcherWritingMs = options.watcherWritingMs ?? WATCHER_WRITING_WINDOW_MS
   const lastShell = new WeakMap<Peer, { withoutConversation: string; at: number }>()
   /** Each phone holding a shell, and when its window closes; one timer, for the first of them. */
@@ -585,9 +593,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   const sendWriting = (): void => {
     writingTimer = undefined
     if (closing) return
-    let original: AgentState | undefined
-    const read = () => original ??= service.shell()
-    const now = performance.now()
+    const read = sharedRead(), now = performance.now()
     for (const [peer, due] of [...writingHeld]) {
       if (due > now) continue
       writingHeld.delete(peer)
@@ -714,11 +720,9 @@ export async function startSocketServer(options: SocketServerOptions) {
     }
     if (detailsFollowShell) for (const threadId of peer.observed) detail(peer, threadId)
   }
-  // One read of the service's shell per publish, for every phone: each read copies the whole coordinator state. It is
-  // read when the first phone sends, so a publish to phones that are all backed up reads nothing.
+  // One read of the service's shell per publish, for every phone (`sharedRead`).
   const shellPublisher = coalesceAgentStatePublishes(() => {
-    let original: AgentState | undefined
-    const read = () => original ??= service.shell()
+    const read = sharedRead()
     for (const peer of peers) {
       if (!authenticated(peer)) { peer.frames.close(); continue }
       if (peer.ready) sendShell(peer, read)
