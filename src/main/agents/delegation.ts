@@ -1715,7 +1715,8 @@ export class DelegationService {
     // What these threads delegated to on other machines is stopped there too, through the asks each delegation already makes
     // there, and each is a stop it asked for, so it is not news to them either (#1316 part 3, Owl `cross-machine-work`). A
     // thread whose delegated threads are all on other machines has none here to stop.
-    const elsewhere = (threads: Iterable<string>): Promise<unknown>[] => [...threads].flatMap(threadId => [this.options.relay?.stopFor(threadId), this.options.remote?.stopFor(threadId)])
+    // Each side is asked once for the whole Stop, and saves once.
+    const elsewhere = (threads: ReadonlySet<string>): Promise<unknown>[] => [this.options.relay?.stopFor(threads), this.options.remote?.stopFor(threads)]
       .filter((stopping): stopping is Promise<string[]> => stopping !== undefined)
     if (!targets.length) { await Promise.allSettled(elsewhere(above)); return }
     const quiet = new Set([...above, ...targets])

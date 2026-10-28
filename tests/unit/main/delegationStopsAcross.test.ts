@@ -4,13 +4,14 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DelegationService, type DelegationControlHooks, type DelegationCoordinator, type DelegationServiceOptions } from '../../../src/main/agents/delegation'
 import { HostDelegationRelay, type RelayDesktop } from '../../../src/main/agents/delegationRelayHost'
 import { DesktopRemoteDelegations, type RemoteDelegationConnection } from '../../../src/main/agents/delegationRemoteDesktop'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread } from '../../../src/shared/agents'
 import type { DelegationNews } from '../../../src/shared/delegation'
 import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../../src/shared/delegationRelay'
+import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -44,13 +45,35 @@ describe('a host thread\'s Stop through the relay', () => {
     relay.desktopConnected(handle)
     for (let index = 0; index < 3; index++) await relay.start('thread-a', 'code-review', startAsk)
     // child-1 has two open delegations, a start and a second brief; child-2 answered already.
-    expect(await relay.stopFor('thread-a')).toEqual([])
+    expect(await relay.stopFor(['thread-a'])).toEqual([])
     expect(asked.filter(ask => ask.type === 'cancel')).toEqual([{ type: 'cancel', threadId: 'thread-a', delegation: SECOND }])
     // Its stop lands: no wake-up for it.
     await relay.news('thread-a', { source: 'delegation', items: [{ delegationId: FIRST, threadId: 'child-1', outcome: 'stopped' }, { delegationId: SECOND, threadId: 'child-1', outcome: 'stopped' }] })
     expect(told).toEqual([])
     // Another thread's delegations are not this one's.
-    expect(await relay.stopFor('thread-b')).toEqual([])
+    expect(await relay.stopFor(['thread-b'])).toEqual([])
+  })
+
+  it('reads only the open delegations of the threads it stops, and saves once for the whole Stop', async () => {
+    const relay = new HostDelegationRelay(await folder(), { here: () => 'forge' })
+    await relay.load()
+    let made = 0
+    const { handle, asked } = desktop(relay, ask => ask.type === 'cancel' ? { status: 'ok', delegation: { id: ask.delegation, outcome: 'stopped' } }
+      : { status: 'ok', delegation: { id: [FIRST, SECOND, THIRD][made], thread: `child-${made}`, outcome: made++ === 0 ? 'answered' : 'working' }, placement: { hostId: DESKTOP, name: 'This computer' } })
+    relay.desktopConnected(handle)
+    await relay.start('thread-a', 'code-review', startAsk)
+    await relay.start('thread-a', 'code-review', startAsk)
+    await relay.start('thread-b', 'code-review', startAsk)
+    const writes = vi.spyOn(AtomicJsonStore.prototype, 'writeLatest')
+    try {
+      // Two threads stopped at once: each open one is cancelled once, the answered one not at all, and the file is written once.
+      expect(await relay.stopFor(new Set(['thread-a', 'thread-b']))).toEqual([])
+      expect(asked.filter(ask => ask.type === 'cancel').map(ask => 'delegation' in ask ? ask.delegation : undefined).sort()).toEqual([SECOND, THIRD])
+      expect(writes).toHaveBeenCalledTimes(1)
+      // What the Stop settled is no longer open: stopping again asks nothing.
+      expect(await relay.stopFor(['thread-a', 'thread-b'])).toEqual([])
+      expect(asked.filter(ask => ask.type === 'cancel')).toHaveLength(2)
+    } finally { writes.mockRestore() }
   })
 
   it('names the machine it could not reach while no desktop relays, and stops nothing there', async () => {
@@ -60,7 +83,7 @@ describe('a host thread\'s Stop through the relay', () => {
     relay.desktopConnected(handle)
     await relay.start('thread-a', 'code-review', startAsk)
     relay.desktopGone(handle)
-    expect(await relay.stopFor('thread-a')).toEqual(['the Mac'])
+    expect(await relay.stopFor(['thread-a'])).toEqual(['the Mac'])
     expect(asked.some(ask => ask.type === 'cancel')).toBe(false)
   })
 })
@@ -93,7 +116,7 @@ describe('a desktop thread\'s Stop on its paired hosts', () => {
     await remote.start('parent', 'code-review', placement, ask)
     await remote.start('parent', 'research', placement, ask)
     await remote.start('other', 'research', placement, ask)
-    expect(await remote.stopFor('parent')).toEqual([])
+    expect(await remote.stopFor(['parent'])).toEqual([])
     expect(mac.asked.filter(item => item.type === 'cancel').map(item => 'delegation' in item ? item.delegation : undefined).sort()).toEqual([FIRST, SECOND])
     mac.push('parent', { source: 'delegation', items: [{ delegationId: FIRST, threadId: 'child-1', outcome: 'stopped' }] })
     await flush(); await flush()
@@ -101,8 +124,25 @@ describe('a desktop thread\'s Stop on its paired hosts', () => {
     // While the Mac is away, nothing is asked there, and Stop names it.
     connected.splice(0)
     const before = mac.asked.length
-    expect(await remote.stopFor('other')).toEqual(['the Mac'])
+    expect(await remote.stopFor(['other'])).toEqual(['the Mac'])
     expect(mac.asked.length).toBe(before)
+  })
+
+  it('cancels the open ones of every thread it stops once, and saves once for the whole Stop', async () => {
+    const mac = host(() => 'stopped')
+    const remote = new DesktopRemoteDelegations(await folder(), { machineName: () => 'the Mac' })
+    await remote.load()
+    remote.useDelivery(async () => undefined)
+    remote.useHosts({ subscribeConnected: () => () => undefined, remoteConnections: () => [mac.connection] })
+    await remote.start('parent', 'code-review', placement, ask)
+    await remote.start('child', 'research', placement, ask)
+    await remote.start('other', 'research', placement, ask)
+    const writes = vi.spyOn(AtomicJsonStore.prototype, 'writeLatest')
+    try {
+      expect(await remote.stopFor(new Set(['parent', 'child']))).toEqual([])
+      expect(mac.asked.filter(item => item.type === 'cancel').map(item => 'delegation' in item ? item.delegation : undefined).sort()).toEqual([FIRST, SECOND])
+      expect(writes).toHaveBeenCalledTimes(1)
+    } finally { writes.mockRestore() }
   })
 })
 
@@ -116,7 +156,7 @@ describe('Stop on a delegating thread', () => {
       useDelegation: given => { hooks = given; return () => undefined }, commandFromDelegation: async () => ({ host: snapshot }) as never,
       hasPendingThreadWork: () => false, hasUserDraft: () => false, refreshDelegationObservation: () => undefined, deliverWakeUp: async () => undefined }
     const stopped: string[] = []
-    const elsewhere = { stopFor: async (threadId: string) => { stopped.push(threadId); return [] }, useDelivery: () => undefined, holds: () => false, holdsThread: () => false, list: () => [], hasOpen: () => false, isOpen: () => false }
+    const elsewhere = { stopFor: async (threadIds: Iterable<string>) => { stopped.push(...threadIds); return [] }, useDelivery: () => undefined, holds: () => false, holdsThread: () => false, list: () => [], hasOpen: () => false, isOpen: () => false }
     const delegation = new DelegationService({ directory: root, control, host: { setDelegatedBy: async () => undefined, threadMessage: () => undefined }, historyEnabled: () => true,
       relay: elsewhere as unknown as NonNullable<DelegationServiceOptions['relay']>, remote: elsewhere as unknown as NonNullable<DelegationServiceOptions['remote']> })
     await delegation.recover()

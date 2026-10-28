@@ -79,6 +79,11 @@ const isObject = (value: unknown): value is Record<string, unknown> => value !==
 export class HostDelegationRelay {
   private readonly store: AtomicJsonStore<RelayFile>
   private records: RelayedRecord[] = []
+  /**
+   * Each thread's relayed delegations that are still open, or whose read was lost: what its Stop cancels, found without
+   * reading the history, however long it grows (#1316 part 3).
+   */
+  private readonly openByCaller = new Map<string, Set<RelayedRecord>>()
   private savedName: string | undefined
   private readonly desktops: RelayDesktop[] = []
   private readonly pending = new Map<string, { readonly desktop: RelayDesktop; readonly resolve: (answer: unknown) => void; readonly reject: (error: Error) => void; readonly timer: ReturnType<typeof setTimeout> }>()
@@ -112,6 +117,8 @@ export class HostDelegationRelay {
   async load(): Promise<void> {
     const file = await this.store.read().catch((): RelayFile => ({ version: 1, delegations: [] }))
     this.records = file.delegations
+    this.openByCaller.clear()
+    for (const record of this.records) this.filed(record)
     this.savedName = file.name
   }
   /** A relaying desktop's name for this machine: the away refusal says it from now on, after a restart too. */
@@ -216,6 +223,7 @@ export class HostDelegationRelay {
   private async asking(record: RelayedRecord, body: DelegationRelayAsk, waitMs: number): Promise<Record<string, unknown>> {
     const callerId = record.delegatingThreadId
     this.records.push(record)
+    this.filed(record)
     this.trim()
     await this.save()
     let answer: Record<string, unknown>
@@ -276,31 +284,40 @@ export class HostDelegationRelay {
     const record = this.find(callerId, delegationId)!
     if (!record.delegation) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: `${LOST_CANCEL} Nothing was stopped.` }
     if (!this.reachable()) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: `${this.awayStop()} Nothing was stopped.` }
+    const answer = await this.cancelling(record, record.delegation)
+    if (!answer) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: LOST_CANCEL }
+    await this.persist()
+    return this.asKnown(record, answer)
+  }
+  /** Asks the desktop to cancel one and keeps what it answered, saving nothing; undefined when its answer was lost. Never asked twice. */
+  private async cancelling(record: RelayedRecord, delegation: string): Promise<Record<string, unknown> | undefined> {
     try {
-      const answer = await this.ask({ type: 'cancel', threadId: callerId, delegation: record.delegation }, DELEGATION_RELAY_READ_MS)
+      const answer = await this.ask({ type: 'cancel', threadId: record.delegatingThreadId, delegation }, DELEGATION_RELAY_READ_MS)
       this.fromRead(record, answer)
-      await this.persist()
-      return this.asKnown(record, answer)
-    } catch { return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: LOST_CANCEL } }
+      return answer
+    } catch { return undefined }
   }
   /**
-   * Stops what `callerId` delegated through the relay that is still open, as the user's Stop on it stops what it delegated
-   * on this machine (#1316 part 3): each delegated thread once, by its newest open delegation, cancelled on the desktop as
-   * `cancel_delegation` is, which stops it and what it delegated in turn. A stop it asked for is not news to it. Answers the
+   * Stops what these threads delegated through the relay that is still open, as the user's Stop on them stops what they
+   * delegated on this machine (#1316 part 3): each delegated thread once per thread that delegated to it, by its newest open
+   * delegation, cancelled on the desktop as `cancel_delegation` is, which stops it and what it delegated in turn. A stop
+   * they asked for is not news to them. Reads only their open delegations, and saves once for the whole Stop. Answers the
    * machines it could not reach, all of them while no desktop that relays is connected; nothing is queued for them.
    */
-  async stopFor(callerId: string): Promise<string[]> {
-    const open = this.records.filter(record => record.delegatingThreadId === callerId && (record.unread === true || !SETTLED.has(record.outcome)))
+  async stopFor(callerIds: Iterable<string>): Promise<string[]> {
+    const open: RelayedRecord[] = []
+    for (const callerId of new Set(callerIds)) for (const record of this.openByCaller.get(callerId) ?? []) open.push(record)
     if (!open.length) return []
+    open.sort((first, second) => second.createdAt.localeCompare(first.createdAt))
     const left = new Set<string>(), seen = new Set<string>()
-    await Promise.all(open.reverse().map(async record => {
-      const thread = record.thread ?? record.id
+    await Promise.all(open.map(async record => {
+      const thread = `${record.delegatingThreadId}\n${record.thread ?? record.id}`
       if (seen.has(thread)) return
       seen.add(thread)
-      const answer = record.delegation && this.reachable() ? await this.cancel(callerId, record.id).catch(() => undefined) : undefined
+      const answer = record.delegation && this.reachable() ? await this.cancelling(record, record.delegation) : undefined
       if (answer?.status !== 'ok') left.add(record.machine ?? 'This computer')
     }))
-    for (const record of open) if (record.unread === true || !SETTLED.has(record.outcome)) record.told = 'stopped'
+    for (const record of open) if (this.open(record)) record.told = 'stopped'
     await this.persist()
     return [...left]
   }
@@ -416,8 +433,20 @@ export class HostDelegationRelay {
   private find(callerId: string, delegationId: string): RelayedRecord | undefined {
     return this.records.find(record => record.delegatingThreadId === callerId && (record.id === delegationId || record.delegation === delegationId))
   }
-  private update(record: RelayedRecord, change: (record: RelayedRecord) => void): void { change(record); record.updatedAt = now() }
-  private forget(record: RelayedRecord): void { this.records = this.records.filter(item => item !== record) }
+  private update(record: RelayedRecord, change: (record: RelayedRecord) => void): void { change(record); record.updatedAt = now(); this.filed(record) }
+  private forget(record: RelayedRecord): void {
+    this.records = this.records.filter(item => item !== record)
+    const open = this.openByCaller.get(record.delegatingThreadId)
+    if (open?.delete(record) && !open.size) this.openByCaller.delete(record.delegatingThreadId)
+  }
+  /** Whether a relayed delegation is still open, or its read was lost, so it is read again and a Stop cancels it. */
+  private open(record: RelayedRecord): boolean { return record.unread === true || !SETTLED.has(record.outcome) }
+  /** Files a record under its caller's open delegations while it is open, and takes it out once it is not. */
+  private filed(record: RelayedRecord): void {
+    const open = this.openByCaller.get(record.delegatingThreadId)
+    if (this.open(record)) { if (open) open.add(record); else this.openByCaller.set(record.delegatingThreadId, new Set([record])) }
+    else if (open?.delete(record) && !open.size) this.openByCaller.delete(record.delegatingThreadId)
+  }
   /** Keeps the newest, dropping only settled ones, oldest first: one still open, or whose read was lost, is never forgotten (#1316 review). */
   private trim(): void {
     let excess = this.records.length - DELEGATION_RELAY_RECORDS_MAX

@@ -378,33 +378,41 @@ export class DesktopRemoteDelegations {
     const connection = this.connection(record.hostId)
     if (!connection) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: REMOTE_CANCEL_AWAY(this.name(record)) }
     if (!record.delegation) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: `${REMOTE_LOST_CANCEL(this.name(record))} Nothing was stopped.` }
+    const answer = await this.cancelling(record, record.delegation, connection)
+    if (!answer) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: REMOTE_LOST_CANCEL(this.name(record)) }
+    await this.persist()
+    return this.asKnown(record, answer)
+  }
+  /** Asks its host to cancel one and keeps what it answered, saving nothing; undefined when its answer was lost. Never asked twice. */
+  private async cancelling(record: RemoteRecord, delegation: string, connection: RemoteDelegationConnection): Promise<Record<string, unknown> | undefined> {
     try {
-      const answer = await connection.service.delegationRemoteAsk!({ type: 'cancel', caller: callerId, delegation: record.delegation }, DELEGATION_RELAY_READ_MS)
-      if (!isObject(answer)) throw new RelayUnanswered('lost')
+      const answer = await connection.service.delegationRemoteAsk!({ type: 'cancel', caller: record.callerId, delegation }, DELEGATION_RELAY_READ_MS)
+      if (!isObject(answer)) return undefined
       this.fromRead(record, answer)
-      await this.persist()
-      return this.asKnown(record, answer)
-    } catch { return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: REMOTE_LOST_CANCEL(this.name(record)) } }
+      return answer
+    } catch { return undefined }
   }
 
   /**
-   * Stops what `callerId` delegated on paired hosts that is still open, as the user's Stop on it stops what it delegated on
-   * this computer (#1316 part 3): each delegated thread once, by its newest open delegation, cancelled on its host as
-   * `cancel_delegation` is, which stops it and what it delegated in turn. A stop it asked for is not news to it. Reads only
-   * the live records, so a Stop does no more work for a longer history. Answers the machines it could not reach, by the
-   * names this computer saved for them; nothing is queued for them.
+   * Stops what these threads delegated on paired hosts that is still open, as the user's Stop on them stops what they
+   * delegated on this computer (#1316 part 3): each delegated thread once per thread that delegated to it, by its newest open
+   * delegation, cancelled on its host as `cancel_delegation` is, which stops it and what it delegated in turn. A stop they
+   * asked for is not news to them. Reads only the live records, once for the whole Stop, so it does no more work for a
+   * longer history, and saves once. Answers the machines it could not reach, by the names this computer saved for them;
+   * nothing is queued for them.
    */
-  async stopFor(callerId: string): Promise<string[]> {
-    const open: RemoteRecord[] = []
-    for (const records of this.live.values()) for (const record of records) if (record.callerId === callerId && this.open(record)) open.push(record)
+  async stopFor(callerIds: Iterable<string>): Promise<string[]> {
+    const callers = new Set(callerIds), open: RemoteRecord[] = []
+    if (callers.size) for (const records of this.live.values()) for (const record of records) if (callers.has(record.callerId) && this.open(record)) open.push(record)
     if (!open.length) return []
     open.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     const left = new Set<string>(), seen = new Set<string>()
     await Promise.all(open.map(async record => {
-      const thread = `${record.hostId}\n${record.thread ?? record.id}`
+      const thread = `${record.callerId}\n${record.hostId}\n${record.thread ?? record.id}`
       if (seen.has(thread)) return
       seen.add(thread)
-      const answer = record.delegation && this.connection(record.hostId) ? await this.cancel(callerId, record.id).catch(() => undefined) : undefined
+      const connection = this.connection(record.hostId)
+      const answer = record.delegation && connection ? await this.cancelling(record, record.delegation, connection) : undefined
       if (answer?.status !== 'ok') left.add(this.name(record))
     }))
     for (const record of open) if (this.open(record)) this.update(record, saved => { saved.told = 'stopped' })
