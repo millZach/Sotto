@@ -262,6 +262,7 @@ struct AttachPhotosButton: View {
     @State private var choosing = false
     @State private var shooting = false
     @State private var choosingFiles = false
+    @State private var attached = 0
     @State private var picked: [PhotosPickerItem] = []
     var body: some View {
         let reason = self.reason, fileReason = self.fileReason
@@ -294,6 +295,7 @@ struct AttachPhotosButton: View {
         .onChange(of: picked) { _, items in
             guard !items.isEmpty else { return }
             let start = model.photos(box).count
+            attached += 1
             model.attachPhotos(box, from: items.enumerated().map { offset, item in
                 PhotoSource(name: "Photo \(start + offset + 1)") {
                     guard let data = try await item.loadTransferable(type: Data.self) else { throw PhotoPipelineError.unreadable }
@@ -308,12 +310,14 @@ struct AttachPhotosButton: View {
         }
         .fullScreenCover(isPresented: $shooting) {
             CameraPicker(shown: $shooting) { image in
+                attached += 1
                 model.attachPhotos(box, from: [PhotoSource(name: "Camera photo") {
                     guard let data = image.jpegData(compressionQuality: 0.95) else { throw PhotoPipelineError.unreadable }
                     return data
                 }])
             }.ignoresSafeArea()
         }
+        .sensoryFeedback(.selection, trigger: attached)
     }
     private var watcher: Bool { if case .watcher = box { return true }; return false }
     /// Photos and files count toward the same eight.
@@ -347,9 +351,10 @@ struct AttachPhotosButton: View {
             model.photoNotices[box.id] = refusal
             return
         }
-        if !files.isEmpty { model.attachFiles(ref, from: files) }
+        if !files.isEmpty { attached += 1; model.attachFiles(ref, from: files) }
         if let photoRefusal { model.photoNotices[box.id] = photoRefusal }
         else if !photos.isEmpty {
+            attached += 1
             model.attachPhotos(box, from: photos.map { url in
                 PhotoSource(name: url.deletingPathExtension().lastPathComponent) { try await Task.detached { try PickedFile.read(url) }.value }
             })
