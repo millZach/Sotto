@@ -54,5 +54,5 @@ Before the change, on the same Threads page, the bare points were `.thread-works
 
 ## Not checked here
 
-- macOS and Linux were not run; the canvas and the shell's stacking are the same code there.
+- macOS was not run, and Linux only for the October 28 backdrop change; the canvas and the shell's stacking are the same code there.
 - The Glass theme was not captured.
