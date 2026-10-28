@@ -169,7 +169,7 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
       // it holds are the ones it answers to, not only the ones it is set to.
       const other = row.id === 'changes' ? changesChord(resolved(row.id), settings.hotkey, platform)
         // A page shortcut standing down for a saved thread shortcut answers to nothing; that thread shortcut is named instead.
-        : isPageShortcut(row.id) && pageChordHolder(settings, row.id, platform) !== null ? null : resolved(row.id)
+        : isPageShortcut(row.id) && pageChordHolder(settings, row.id, platform, gates) !== null ? null : resolved(row.id)
       if (other !== null && sameThreadKeys(chord, other, platform)) {
         const name = i18n._(row.label)
         return msg`${name} already uses ${keys}. Pick other keys.`
@@ -261,9 +261,9 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
     return query.split(/\s+/u).every(word => haystack.includes(word))
   }
 
-  /** A page shortcut whose default keys a thread shortcut was set to before page shortcuts existed stands down (ADR-0158). */
+  /** A page shortcut whose keys another saved shortcut holds stands down, and says which (ADR-0158). */
   const heldNote = (row: ThreadShortcutId): { readonly text: LaterWords; readonly alert: boolean } | null => {
-    const holder = isPageShortcut(row) ? pageChordHolder(settings, row, platform) : null
+    const holder = isPageShortcut(row) ? pageChordHolder(settings, row, platform, gates) : null
     const chord = resolved(row)
     if (holder === null || chord === null) return null
     const name = i18n._(GROUPS.flatMap(group => group.rows).find(other => other.id === holder)!.label)

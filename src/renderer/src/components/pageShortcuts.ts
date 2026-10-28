@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react'
 
 import type { SottoPlatform } from '../../../shared/platform'
-import { PAGE_SHORTCUT_IDS, THREAD_SHORTCUT_IDS, type PageShortcutId, type ThreadShortcutId } from '../../../shared/threadShortcuts'
+import { isPageShortcut, PAGE_SHORTCUT_IDS, THREAD_SHORTCUT_IDS, type PageShortcutId, type ThreadShortcutId } from '../../../shared/threadShortcuts'
 import { chosenThreadChord, claimedThreadChord, sameThreadKeys, threadChordLabel, threadChordPressed, type ThreadChordLabel, type ThreadShortcutSettings } from '../agents/threadShortcuts'
 import { useOptionalApp, type AppNavigation } from '../state/AppContext'
 import { useDictationOn } from '../state/dictationFeature'
@@ -32,24 +32,26 @@ export function pageShortcutShown(id: PageShortcutId, gates: PageShortcutGates):
 }
 
 /**
- * The shortcut the user set to the same keys as this page shortcut's default, or null. A saved choice beats a default:
- * the page shortcut stands down until one of the two moves. Two ways lead here, since Settings refuses a new clash
- * only among the rows it shows: a thread shortcut saved on a digit before the page shortcuts took Ctrl+1 to Ctrl+5,
- * and any shortcut saved on a hidden page's keys (Dictate's while dictation was off) before the page came back.
+ * The shortcut whose saved keys this page shortcut meets, or null. Settings refuses a clash only among the rows it
+ * shows, so two ways lead here: a thread shortcut saved on a digit before the page shortcuts took Ctrl+1 to Ctrl+5 as
+ * defaults, and a page shortcut saved while another row's page was hidden (Dictate's, while dictation was off), met
+ * when it comes back. A saved choice beats a default, and two saved page shortcuts on the same keys both stand down, each
+ * row naming the other, rather than one quietly winning. A hidden page's saved keys hold nothing against a row on screen.
  */
-export function pageChordHolder(settings: Pick<ThreadShortcutSettings, 'threadShortcuts'> | null | undefined, id: PageShortcutId, platform: SottoPlatform): ThreadShortcutId | null {
+export function pageChordHolder(settings: Pick<ThreadShortcutSettings, 'threadShortcuts'> | null | undefined, id: PageShortcutId, platform: SottoPlatform, gates: PageShortcutGates): ThreadShortcutId | null {
   const saved = settings?.threadShortcuts ?? {}
   const chord = chosenThreadChord(settings, id)
-  if (chord === null || Object.hasOwn(saved, id)) return null
+  if (chord === null) return null
   return THREAD_SHORTCUT_IDS.find(other => {
+    if (other === id || isPageShortcut(other) && !pageShortcutShown(other, gates)) return false
     const held = saved[other]
-    return other !== id && typeof held === 'string' && sameThreadKeys(held, chord, platform)
+    return typeof held === 'string' && sameThreadKeys(held, chord, platform)
   }) ?? null
 }
 
 /** The chord a page shortcut answers to: none for a page left out, a removed row, dictation's keys or a thread shortcut's. */
 export function claimedPageChord(settings: ThreadShortcutSettings | null | undefined, id: PageShortcutId, platform: SottoPlatform, gates: PageShortcutGates): string | null {
-  if (!pageShortcutShown(id, gates) || pageChordHolder(settings, id, platform) !== null) return null
+  if (!pageShortcutShown(id, gates) || pageChordHolder(settings, id, platform, gates) !== null) return null
   return claimedThreadChord(settings, id, platform)
 }
 

@@ -127,6 +127,20 @@ describe('page shortcuts (ADR-0158)', () => {
     expect(navigate.mock.calls.map(([destination]) => destination)).toEqual(['threads'])
   })
 
+  it('lets a hidden page’s saved keys hold nothing against a page on screen', () => {
+    dictation.on = false
+    const { navigate } = setup({ choices: { 'page-dictate': 'mod+3' } })
+    ctrl('3')
+    expect(navigate.mock.calls.map(([destination]) => destination)).toEqual(['threads'])
+  })
+
+  it('stands both down where two page shortcuts were saved on the same keys, rather than one quietly winning', () => {
+    const { navigate } = setup({ choices: { 'page-dictate': 'mod+6', 'page-threads': 'mod+6' } })
+    ctrl('6')
+    ctrl('5')
+    expect(navigate.mock.calls.map(([destination]) => destination)).toEqual(['settings'])
+  })
+
   it('stands down where a thread shortcut was saved on the same keys before, and the other keys still answer', () => {
     const { navigate } = setup({ choices: { 'new-thread': 'mod+1' } })
     ctrl('1')

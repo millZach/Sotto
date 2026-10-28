@@ -175,4 +175,10 @@ describe('Settings › Keyboard (ADR-0133)', () => {
     setup({ choices: { 'page-threads': 'mod+1' } })
     expect(within(row('Dictate')).getByRole('status')).toHaveTextContent('Threads already uses Ctrl + 1, so these keys do nothing here until one of the two changes.')
   })
+
+  it('names each other on two page shortcuts saved on the same keys', () => {
+    setup({ choices: { 'page-dictate': 'mod+6', 'page-threads': 'mod+6' } })
+    expect(within(row('Dictate')).getByRole('status')).toHaveTextContent('Threads already uses Ctrl + 6')
+    expect(within(row('Threads')).getByRole('status')).toHaveTextContent('Dictate already uses Ctrl + 6')
+  })
 })
