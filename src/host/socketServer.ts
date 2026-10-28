@@ -32,7 +32,8 @@ import { DEFLATE_RESPONSE, deflateOffered, SocketFrames } from './socketFrames'
 import { CutBodies } from '../shared/activityBodies'
 import { hostPhonesCommandSchema, type HostPhonesCommand, type PhonesState } from '../shared/phones'
 import { CommandReceipts, type CommandReceipt } from './commandReceipts'
-import { QUESTION_PAGE_PATH, serveQuestionPage } from './questionPageRoute'
+import { HttpBudgets } from './httpBudgets'
+import { PAGE_REQUESTS_PER_MINUTE, QUESTION_PAGE_PATH, serveQuestionPage } from './questionPageRoute'
 import type { WatcherHostRead } from '../shared/watcherHost'
 import type { WatcherThreadTarget } from '../shared/watcher'
 import { visibleWatcherState } from '../shared/watcherVisibility'
@@ -246,8 +247,7 @@ const EVENT_PAGES_PER_SECOND = 100
  * client, are counted only after their token is checked, so a loop on a bad token spends nobody's budget. A question's
  * pages share one bucket: a page loads many files, and a token nobody holds opens nothing.
  */
-const HTTP_BUDGETS = { pair: 10, admin: 120, client: 120, page: 1200 } as const
-const HTTP_WINDOW_MS = 60_000
+const HTTP_BUDGETS = { pair: 10, admin: 120, client: 120, page: PAGE_REQUESTS_PER_MINUTE } as const
 /** Selecting and observing only move this client's own view; repeating one is harmless, so they keep no receipt. */
 const UNRECEIPTED = new Set<string>(['select-thread', 'select-project', 'observe-threads'])
 /** Only this listener owns sockets; clients never get a provider handle or a claimed identity. */
@@ -399,17 +399,12 @@ export async function startSocketServer(options: SocketServerOptions) {
   const receipts = options.receipts ?? new CommandReceipts()
   const observationKey = options.observationKey ?? 'socket-observations'
   let closing = false
-  const httpBudgets = new Map<string, { window: number; count: number }>()
+  const httpBudgets = new HttpBudgets()
   /** Counts one request against a bucket, dropping buckets whose minute has passed, and refuses past its limit. */
   const spend = (bucket: string, limit: number): (() => void) => {
-    const now = Date.now()
-    for (const [key, entry] of httpBudgets) if (now - entry.window >= HTTP_WINDOW_MS) httpBudgets.delete(key)
-    const entry = httpBudgets.get(bucket) ?? { window: now, count: 0 }
-    if (!httpBudgets.has(bucket) && httpBudgets.size >= 1024) httpBudgets.delete(httpBudgets.keys().next().value!)
-    httpBudgets.set(bucket, entry)
-    if (entry.count >= limit) throw new Refusal('busy')
-    entry.count++
-    return () => { entry.count-- }
+    const refund = httpBudgets.spend(bucket, limit)
+    if (!refund) throw new Refusal('busy')
+    return refund
   }
   const identity = (clientId: string): ClientIdentity => ({ clientId, user: pairing.list().find(client => client.clientId === clientId)?.name ?? 'Paired client', transport: 'socket' })
   const isPhonePeer = (peer: Peer): boolean => !peer.desktop || options.admin === false && options.watcherDesktops === undefined

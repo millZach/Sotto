@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
@@ -261,6 +261,19 @@ describe('the test iPhone page (ADR-0045)', () => {
         expect(await service.action({ ...target, pageId: phone.task.pageId, taskId: phone.task.id, action: { type: 'swipe', x: 100, y: 200, ...end } })).toMatchObject({ ok: false, error: { code: 'blocked' } })
       }
     })
+  })
+  it('opens an HTML file in the thread\'s folder, by a path relative to it, at the loopback address Sotto serves it on (ADR-0085)', async () => {
+    const { service } = await fixture(() => true)
+    const owner = unwrap(await service.list({ threadId: 'a' })).workspace
+    await mkdir(join(owner.workingDirectory, 'docs'), { recursive: true })
+    await writeFile(join(owner.workingDirectory, 'docs', 'phone-prototype.html'), '<!doctype html><title>Phone</title>')
+    const opened = unwrap(await service.phoneOpen({ threadId: 'a', workspaceId: owner.workspaceId, url: 'docs/phone-prototype.html#tabs', description: 'Show it on a phone' }))
+    const page = unwrap(await service.list({ threadId: 'a' })).pages.find(page => page.id === opened.task.pageId)!
+    expect(page.device).toBe('iphone')
+    expect(page.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/page\/[A-Za-z0-9_-]{32}\/phone-prototype\.html#tabs$/u)
+    // A file that cannot open leaves the phone it would have replaced where it is.
+    expect(await service.phoneOpen({ threadId: 'a', workspaceId: owner.workspaceId, url: '../elsewhere.html', description: 'Show it' })).toMatchObject({ ok: false, error: { code: 'blocked' } })
+    expect(unwrap(await service.list({ threadId: 'a' })).pages.map(page => page.id)).toContain(opened.task.pageId)
   })
 })
 
