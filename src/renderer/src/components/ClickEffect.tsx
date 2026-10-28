@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, type ReactNode } from 'react'
 import { rootStyleUnchanged } from '../state/appearance'
 import { toRgb } from '../watcher/canvasColor'
-import { columnCeiling, type Word } from '../watcher/nightScene'
+import { over, WORD_CONTRAST, wordContrast, type Rgb, type Word } from '../watcher/nightScene'
 import { measureRoom, surfaceOf, toWord } from '../watcher/WatcherNightScene'
 import { watchResolution } from '../watcher/watchResolution'
 import { ClickWater, GLYPH_ALPHA, GLYPH_H, GLYPH_W, STEP_HZ } from './clickWater'
@@ -13,13 +13,18 @@ const STEP_MS = 1000 / STEP_HZ
 /** Where a press sends no waves: every composer, the thread's, Watcher's and a new thread's draft (Zach, October 27). */
 const QUIET = '.thread-prompt'
 
+/** A menu or dialog a composer opens (its model picker); it lives inside the composer in the page but is not its card. */
+const COMPOSER_MENU = 'dialog, [role="dialog"], [role="menu"], [role="listbox"]'
+
 /**
- * Whether a press lands on a composer's own card. A menu the composer opens (its model picker) lives inside it in the page
- * but stands outside its card, and so does that menu's backdrop over the conversation: a press there still sends waves.
+ * Whether a press lands on a composer's own card. A menu the composer opens is not the card, wherever it stands, and
+ * neither is that menu's backdrop over the conversation: a press on either still sends waves.
  */
 function onComposer(event: PointerEvent): boolean {
   const composer = event.target instanceof Element ? event.target.closest(QUIET) : null
   if (composer === null) return false
+  const menu = (event.target as Element).closest(COMPOSER_MENU)
+  if (menu !== null && composer.contains(menu)) return false
   const card = composer.getBoundingClientRect()
   return event.clientX >= card.left && event.clientX <= card.right && event.clientY >= card.top && event.clientY <= card.bottom
 }
@@ -30,6 +35,25 @@ function onComposer(event: PointerEvent): boolean {
  */
 const WORD_TOKENS = ['--tt-text', '--tt-text-2', '--tt-text-muted', '--tt-link', '--tt-primary-hover', '--tt-accent-text', '--tt-activity',
   '--tt-error', '--tt-error-text', '--tt-warning-text', '--tt-success'] as const
+/** The translucent fills a control lays over the room when pointed at, pressed or selected, which sit over the waves too. */
+const TINT_TOKENS = ['--tt-hover', '--tt-hover-strong', '--tt-selected'] as const
+
+/**
+ * The strongest the glyphs may be, in hundredths up to GLYPH_ALPHA: the accent laid over `surface` at that strength, bare
+ * or under each of `tints`, leaves every one of `words` at WORD_CONTRAST. A word that reads under it even without waves,
+ * on some fill, is the theme's own matter and is left out for that fill; the waves never take a word below it.
+ */
+export function waveCeiling(surface: Rgb, accent: Rgb, words: readonly Word[], tints: readonly Word[]): number {
+  const under = (alpha: number): Rgb[] => [over(surface, accent, alpha), ...tints.map(tint => over(over(surface, accent, alpha), tint, tint.a ?? 1))]
+  const pairs = under(0).flatMap((pixel, fill) => words.filter(word => wordContrast(word, pixel) >= WORD_CONTRAST).map(word => ({ fill, word })))
+  let best = 0
+  for (let step = 1; step <= Math.round(GLYPH_ALPHA * 100); step++) {
+    const pixels = under(step / 100)
+    if (pairs.some(({ fill, word }) => wordContrast(word, pixels[fill]!) < WORD_CONTRAST)) break
+    best = step / 100
+  }
+  return best
+}
 
 /** What a run draws with: a 0 and a 1 in the accent, and the strongest any glyph may be. */
 interface Ink {
@@ -43,8 +67,8 @@ interface Ink {
 interface Rect { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number }
 
 /**
- * Where Watcher's night scene already spends what the words over it allow (ADR-0126): the conversation's column and the
- * header band above it, measured as the scene measures them (`measureRoom`). Waves drawn under the scene's glyphs there
+ * Where Watcher's night scene already spends what the words and marks over it allow (ADR-0126): the conversation's
+ * column, the header band above it and the message scrubber's lane (ADR-0109), measured as the scene measures them (`measureRoom`). Waves drawn under the scene's glyphs there
  * would add to them, so none are; the margins keep theirs. A room the scene cannot measure is kept clear whole.
  */
 function sceneColumn(): readonly Rect[] {
@@ -58,6 +82,7 @@ function sceneColumn(): readonly Rect[] {
   return [
     { left: base.left, top: base.top, right: base.right, bottom: down + room.header },
     { left: base.left + room.composer.x, top: base.top, right: base.left + room.composer.x + room.composer.w, bottom: base.bottom },
+    ...room.lane === undefined ? [] : [{ left: base.left + room.lane.x, top: base.top, right: base.left + room.lane.x + room.lane.w, bottom: base.bottom }],
   ]
 }
 
@@ -109,30 +134,31 @@ export function ClickEffect(): ReactNode {
       return water
     }
 
-    /** WORD_TOKENS as the theme in force computes them, each read off the canvas's own colour in turn. */
-    const wordColors = (): string[] => {
-      const colors = WORD_TOKENS.map(token => { canvas.style.color = `var(${token})`; return getComputedStyle(canvas).color })
+    /** Tokens as the theme in force computes them, each read off the canvas's own colour in turn. */
+    const tokenColors = (tokens: readonly string[]): string[] => {
+      const colors = tokens.map(token => { canvas.style.color = `var(${token})`; return getComputedStyle(canvas).color })
       canvas.style.removeProperty('color')
       return colors
     }
 
     /**
      * The ink for the theme in force, read when a run starts or the theme changes: the accent (the canvas's outline), the
-     * words' colours (WORD_TOKENS) and the room's surface under them, as the night scene reads its own (ADR-0126). The
-     * glyphs go no stronger than leaves every one of those words at 4.5:1 over a glyph.
+     * words' colours (WORD_TOKENS), the fills controls lay over the waves (TINT_TOKENS) and the room's surface under them,
+     * as the night scene reads its own (ADR-0126). The glyphs go no stronger than `waveCeiling` allows.
      */
     const inkNow = (): Ink => {
       const style = getComputedStyle(canvas)
       const scale = dpr()
       const shell = canvas.parentElement ?? document.body
-      const colors = wordColors()
-      const key = [style.outlineColor, ...colors, getComputedStyle(shell).backgroundColor, style.fontFamily, scale].join('|')
+      const colors = tokenColors(WORD_TOKENS), fills = tokenColors(TINT_TOKENS)
+      const key = [style.outlineColor, ...colors, ...fills, getComputedStyle(shell).backgroundColor, style.fontFamily, scale].join('|')
       if (ink?.key === key) return ink
       const accent = pixel === null ? null : toRgb(style.outlineColor, pixel)
-      const words = pixel === null ? [] : colors.map(value => toWord(value, pixel)).filter((word): word is Word => word !== null)
+      const read = (values: readonly string[]): Word[] => pixel === null ? [] : values.map(value => toWord(value, pixel)).filter((word): word is Word => word !== null)
+      const words = read(colors), tints = read(fills)
       const surface = pixel === null || words[0] === undefined ? null : surfaceOf(shell, pixel, words[0])
       // Colours that cannot be read draw nothing rather than risk a word.
-      const ceiling = accent === null || surface === null ? 0 : Math.min(GLYPH_ALPHA, columnCeiling(surface, accent, 1, words))
+      const ceiling = accent === null || surface === null ? 0 : waveCeiling(surface, accent, words, tints)
       const draw = (digit: string): HTMLCanvasElement => {
         const sprite = document.createElement('canvas')
         sprite.width = Math.ceil(GLYPH_W * 1.4 * scale)
@@ -181,6 +207,8 @@ export function ClickEffect(): ReactNode {
         canvas.style.opacity = String(ink.ceiling)
         stale = false
       }
+      // A theme that leaves no room for the glyphs draws nothing, and nothing keeps running for it.
+      if (ink.ceiling <= 0) { stop(); return }
       quiet = sceneColumn()
       const { digits } = ink
       const width = GLYPH_W * 1.4, height = GLYPH_H

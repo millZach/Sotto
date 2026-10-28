@@ -40,14 +40,14 @@ In one Owl run, turning `clickEffect` off through the settings bridge takes the 
 
 ## Contrast
 
-The glyphs go no stronger than leaves every word over them at 4.5:1 (ADR-0156, decision 2): the text, its secondary and muted tiers, links at rest and pointed at (`--tt-primary-hover`; the second review measured a hovered link at 4.38:1 before it was counted), the accent's text tone and the working words' (`--tt-activity`), and the error, warning and success colours (the fifth review measured dark error text at 3.73:1 before they were counted). In one Owl run each built-in theme was saved in turn and a press read the ceiling the canvas took:
+The glyphs go no stronger than leaves every word over them at 4.5:1 (ADR-0156, decision 2): the text, its secondary and muted tiers, links at rest and pointed at (`--tt-primary-hover`; the second review measured a hovered link at 4.38:1 before it was counted), the accent's text tone and the working words' (`--tt-activity`), and the error, warning and success colours (the fifth review measured dark error text at 3.73:1 before they were counted). It holds too where a control's translucent fill (`--tt-hover`, `--tt-hover-strong`, `--tt-selected`) lies over the waves under its words (the seventh review measured error text on a pressed Discard draft at 4.43:1 before the fills were counted), and it is found in hundredths. In one Owl run each built-in theme was saved in turn and a press read the ceiling the canvas took:
 
 | | T3 Code | Hush | Citrine | Graphite | Clay | Fern |
 |---|---|---|---|---|---|---|
-| Dark | 0.25 | 0.15 | 0.15 | 0.15 | 0.20 | 0.15 |
-| Light | 0.10 | 0.15 | 0.15 | 0.05 | 0.10 | 0.15 |
+| Dark | 0.20 | 0.05 | 0.14 | 0.17 | 0.22 | 0.19 |
+| Light | 0.05 | 0.13 | 0.11 | 0.03 | 0.14 | 0.16 |
 
-Zach chose this after seeing light Graphite at 0.05, the weakest, where the waves are faint but still show; leaving the status colours out would have kept them at 0.15 to 0.35. The faint tier is left out by his earlier choice: counted too, the ceiling fell further, so faint words may dip under 4.5:1 for the second or two a wave passes. The spec checks the ceiling is above nothing and no more than 0.65, and that it is the canvas's computed opacity. The frames in this note are at these ceilings.
+Zach chose the strict rule after seeing light Graphite at 0.05; counting the controls' fills afterwards brought it to 0.03, and light T3 Code (`spreading-light.png`) to 0.05, where the waves are faint but show. A theme whose ceiling comes to nothing draws nothing and stops at once. The faint tier is left out by his earlier choice: counted too, the ceiling fell further, so faint words may dip under 4.5:1 for the second or two a wave passes. The spec checks the ceiling is above nothing and no more than 0.65, and that it is the canvas's computed opacity. The frames in this note are at these ceilings.
 
 ## Cost
 

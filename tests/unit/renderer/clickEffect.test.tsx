@@ -2,7 +2,9 @@ import React from 'react'
 import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ClickEffect } from '../../../src/renderer/src/components/ClickEffect'
+import { ClickEffect, waveCeiling } from '../../../src/renderer/src/components/ClickEffect'
+import { GLYPH_ALPHA } from '../../../src/renderer/src/components/clickWater'
+import { over, wordContrast } from '../../../src/renderer/src/watcher/nightScene'
 import { AppShell } from '../../../src/renderer/src/components/AppShell'
 import type { AppSettings } from '../../../src/shared/settings'
 
@@ -122,6 +124,14 @@ describe('the click effect', () => {
     expect(drawn).toBeGreaterThan(0)
   })
 
+  it("sends waves for a press on a composer's menu even where the menu stands over the composer's card", async () => {
+    const { container } = render(<><ClickEffect /><form className="thread-prompt"><textarea aria-label="Message" /><dialog open><button type="button">GPT-5.4</button></dialog></form></>)
+    vi.spyOn(container.querySelector('form')!, 'getBoundingClientRect').mockReturnValue(new DOMRect(280, 580, 440, 100))
+    pressAt(container.querySelector('dialog button')!, 300, 600)
+    await frames(6)
+    expect(drawn).toBeGreaterThan(0)
+  })
+
   it('stops and clears when it goes, and a press afterwards draws nothing', async () => {
     const { unmount } = render(<ClickEffect />)
     pressAt(document.body, 300, 200)
@@ -133,5 +143,26 @@ describe('the click effect', () => {
     pressAt(document.body, 300, 200)
     await frames(6)
     expect(drawn).toBe(0)
+  })
+
+  describe("the waves' ceiling", () => {
+    const night = { r: 18, g: 19, b: 24 }, teal = { r: 52, g: 190, b: 170 }
+    const white = { r: 240, g: 240, b: 245 }, grey = { r: 150, g: 152, b: 160 }
+
+    it("is in hundredths, no more than the effect's own strength, and leaves every word at 4.5:1 over a glyph", () => {
+      const ceiling = waveCeiling(night, teal, [white, grey], [])
+      expect(Math.round(ceiling * 100)).toBe(ceiling * 100)
+      expect(ceiling).toBeGreaterThan(0)
+      expect(ceiling).toBeLessThanOrEqual(GLYPH_ALPHA)
+      for (const word of [white, grey]) expect(wordContrast(word, over(night, teal, ceiling))).toBeGreaterThanOrEqual(4.5)
+    })
+
+    it('counts a translucent fill laid over the waves, and leaves out a word the theme already writes under 4.5:1', () => {
+      const bare = waveCeiling(night, teal, [grey], [])
+      expect(waveCeiling(night, teal, [grey], [{ r: 255, g: 255, b: 255, a: 0.06 }])).toBeLessThanOrEqual(bare)
+      // An opaque fill hides the waves under it; a word that never read is no reason to hold them back.
+      expect(waveCeiling(night, teal, [grey], [{ r: 40, g: 42, b: 50 }])).toBe(bare)
+      expect(waveCeiling(night, teal, [grey, { r: 30, g: 31, b: 36 }], [])).toBe(bare)
+    })
   })
 })
