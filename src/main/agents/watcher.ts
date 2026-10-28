@@ -504,6 +504,8 @@ export class WatcherService implements WatcherControlHooks {
    */
   /** What the last replacement carried over for the new Watcher's note and handover (#1735), while that one is current. */
   private carried: (WatcherCarried & { readonly to: WatcherThreadTarget; readonly room: WatcherRoomState['carried'] }) | null = null
+  /** What a replacement found before its new Watcher was made, until it is, for a creation finished on a second try (#1735). */
+  private preparedFor: { readonly replaces: WatcherThreadTarget; readonly prepared: Pick<WatcherCarried, 'questions' | 'unconfirmed'> } | null = null
   private handoverOffer: { readonly source: WatcherIdentity; readonly to: WatcherThreadTarget; readonly counts: HandoverCounts
     acceptedDraftId?: string; sendingCommandId?: string } | null = null
   /** Drafts chosen to carry a handover that another send to the new Watcher overtook. */
@@ -793,7 +795,7 @@ export class WatcherService implements WatcherControlHooks {
     const allowed = (): void => {
       const record = this.view(), request = record.requests.find(item => item.id === input.requestId)
       // The user's own request, still active: a standing watch's continuation is never one, nor is a stopped request.
-      if (!request || request.standingWatchId || request.state !== 'active' || request.watcher.threadId !== callerThreadId || request.watcher.hostId !== this.hostId()) {
+      if (!request || request.standingWatchId || request.state !== 'active' || !this.owns(record, request)) {
         refuse('REQUEST_NOT_ACTIVE', 'This request is not active. Only a user Send to Watcher can start a request.')
       }
       if (record.userUnwatches?.some(item => key(item.target) === key(target))) refuse('REQUEST_NOT_ACTIVE', 'The user stopped Watcher watching this thread. Nothing was changed.')
@@ -1453,7 +1455,7 @@ export class WatcherService implements WatcherControlHooks {
       const own = record.operations.find(item => item.id === operationId)
       if (!own || own.deliveryState !== 'queued') return
       const request = record.requests.find(item => item.id === own.requestId)
-      if (!request || request.watcher.threadId !== threadId) refuse('REQUEST_NOT_ACTIVE', 'This request is not active. Only a user Send to Watcher can start a request.')
+      if (!request || !this.owns(record, request)) refuse('REQUEST_NOT_ACTIVE', 'This request is not active. Only a user Send to Watcher can start a request.')
       this.recordOutcome(record, own, 'failed', 'REQUEST_NOT_ACTIVE')
     })
     this.releaseChecks()
@@ -2576,7 +2578,9 @@ export class WatcherService implements WatcherControlHooks {
    * their questions go in the handover. Says what the handover and the new Watcher's note will need.
    */
   private async prepareReplacement(thread: AgentThread): Promise<Pick<WatcherCarried, 'questions' | 'unconfirmed'>> {
-    for (const until = Date.now() + TOOL_CALL_GRACE_MS; (this.invocations > 0 || this.active.size > 0) && Date.now() < until;) {
+    // A message of the user's being written to the last Watcher now gets the same moment, so it either arrives, and the
+    // handover carries it, or comes back to its queue, which moves.
+    for (const until = Date.now() + TOOL_CALL_GRACE_MS; (this.invocations > 0 || this.active.size > 0 || this.options.control.watcherFollowupSending(thread.id)) && Date.now() < until;) {
       // A call that only reads has no operation to wait on, so the timer is what this waits for then.
       const tick = new Promise(done => setTimeout(done, 100))
       await (this.active.size > 0 ? Promise.race([Promise.allSettled([...this.active.values()]), tick]) : tick)
@@ -2614,7 +2618,10 @@ export class WatcherService implements WatcherControlHooks {
     const creation = record.creation!, current = record.current
     await this.finishCreation(creation.identity, input)
     const replaced = record.history.at(-1)
-    if (replaced && current && key(current.target) === key(creation.identity.target)) { await this.carryOver(replaced, current.target); this.offerHandover(replaced, current.target) }
+    if (replaced && current && key(current.target) === key(creation.identity.target)) {
+      const prepared = this.preparedFor && key(this.preparedFor.replaces) === key(replaced.target) ? this.preparedFor.prepared : undefined
+      await this.carryOver(replaced, current.target, prepared); this.offerHandover(replaced, current.target)
+    }
     this.recoveryNotice = null; this.publish(); return this.get()
   }
   /**
@@ -2623,6 +2630,8 @@ export class WatcherService implements WatcherControlHooks {
    * the record and not to a conversation (ADR-0073). The first Watcher replaces nothing.
    */
   private async replace(previous: WatcherIdentity | null, input: WatcherOpenRequest, prepared?: Pick<WatcherCarried, 'questions' | 'unconfirmed'>): Promise<WatcherRoomResult> {
+    // Kept until the new Watcher is made, so a creation finished on a second try still hands the closed card over.
+    this.preparedFor = previous && prepared ? { replaces: previous.target, prepared } : null
     const folder = join(this.options.directory, 'watcher', 'workspace')
     await mkdir(folder, { recursive: true })
     let project = this.options.control.watcherSnapshot().projects.find(item => resolve(item.path) === resolve(folder) && item.providerId === input.provider)
@@ -2652,6 +2661,8 @@ export class WatcherService implements WatcherControlHooks {
    * last message to it went unconfirmed, and the threads it started on a computer whose Sotto cannot hand them over.
    */
   private async carryOver(previous: WatcherIdentity, to: WatcherThreadTarget, prepared?: Pick<WatcherCarried, 'questions' | 'unconfirmed'>): Promise<void> {
+    this.preparedFor = null
+    const draftMoved = await this.options.control.moveWatcherDraft(previous.target.threadId, to.threadId).catch(() => false)
     const movedDrafts = await this.options.control.moveWatcherQueue(previous.target.threadId, to.threadId).catch(() => [] as string[])
     const moved = movedDrafts.length
     // Each moved message was queued as a continuation of the last Watcher's request. Sent to the new one, it starts a
@@ -2670,10 +2681,11 @@ export class WatcherService implements WatcherControlHooks {
     const questions = prepared?.questions ?? [], unconfirmed = prepared?.unconfirmed ?? false
     const cannotStop = [...away.values()].map(target => ({ title: this.owningThread(target.hostId, target.threadId)?.title ?? 'Untitled thread',
       host: (this.machineName(target.hostId) ?? 'another computer').slice(0, 200) }))
-    const byHost = new Map<string, number>(); for (const row of cannotStop) byHost.set(row.host, (byHost.get(row.host) ?? 0) + 1)
-    const said = questions.length > 0 || moved > 0 || unconfirmed || cannotStop.length > 0
-    this.carried = { to, questions, moved, unconfirmed, cannotStop, room: said ? Object.freeze({ questionClosed: questions.length > 0, moved, unconfirmed,
-      cannotStop: [...byHost].slice(0, 100).map(([host, count]) => ({ host, count: Math.min(count, 1_000) })) }) : undefined }
+    const byHost = new Map<string, string[]>(); for (const row of cannotStop) byHost.set(row.host, [...byHost.get(row.host) ?? [], row.title])
+    const said = questions.length > 0 || moved > 0 || unconfirmed || draftMoved || cannotStop.length > 0
+    this.carried = { to, questions, moved, unconfirmed, draftMoved, cannotStop, room: said ? Object.freeze({ questionClosed: questions.length > 0, moved, unconfirmed, draftMoved,
+      cannotStop: [...byHost].slice(0, 100).map(([host, titles]) => ({ host, count: Math.min(titles.length, 1_000),
+        titles: titles.slice(0, 20).map(title => title.slice(0, 200) || 'Untitled thread') })) }) : undefined }
   }
   private creationPermission(model: AgentModel) {
     const runtimeMode = this.record().lastRuntimeMode ?? 'approval-required'
@@ -3644,7 +3656,8 @@ export class WatcherService implements WatcherControlHooks {
         if (standing.created) newStandingRequest = request
         input = { ...input, requestId: request.id }
       }
-      if (!request || request.watcher.threadId !== threadId || !imported && request.watcher.hostId !== this.hostId()) refuse('REQUEST_NOT_ACTIVE', 'This request is not active. Only a user Send to Watcher can start a request.')
+      // The current Watcher acts for every request this computer's Watchers made (#1735); a paired master, for its own.
+      if (!request || (imported ? request.watcher.threadId !== threadId : !this.owns(record, request))) refuse('REQUEST_NOT_ACTIVE', 'This request is not active. Only a user Send to Watcher can start a request.')
       const inputDigest = placed ? originalInputDigest : digest([name, input])
       const existing = record.operations.find(item => item.requestId === input.requestId && item.retryKey === input.retryKey)
       if (existing) {
@@ -5096,7 +5109,7 @@ ${operation.draftId}`)
     const waiting = [...this.heldChecks.values()].flatMap(check => check.waiting ? [check.waiting] : [])
     this.heldChecks.clear(); this.checkOf.clear(); clearTimeout(this.checkTimer)
     this.lettingGoChecks = Promise.all(waiting.map(check => this.releaseMove(check.landed))).then(() => undefined)
-    this.closed = true; clearTimeout(this.settleTimer); this.settleTimer = undefined; this.handoverOffer = null; this.carried = null; this.overtakenHandovers.clear(); this.remoteOff?.(); clearTimeout(this.remoteTimer); this.remotePending.clear(); this.remoteFailures.clear(); this.remoteGuards.clear(); this.remoteProgress.clear(); this.pendingPromptTurns.clear(); this.wakes.close(); this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear()
+    this.closed = true; clearTimeout(this.settleTimer); this.settleTimer = undefined; this.handoverOffer = null; this.carried = null; this.preparedFor = null; this.overtakenHandovers.clear(); this.remoteOff?.(); clearTimeout(this.remoteTimer); this.remotePending.clear(); this.remoteFailures.clear(); this.remoteGuards.clear(); this.remoteProgress.clear(); this.pendingPromptTurns.clear(); this.wakes.close(); this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear()
   }
   /** Settles once `close` has let go of the branches its waiting checks would have started from, those still taking their snapshot included. */
   drained(): Promise<void> { return Promise.all([this.lettingGoChecks, ...this.snapshotting]).then(() => undefined) }

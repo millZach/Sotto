@@ -1541,7 +1541,8 @@ it('starts a new Watcher beside a thread on an older host, says it cannot stop i
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   expect(await f.watcher.startNew()).toMatchObject({ status: 'ok' })
   // The new Watcher's note and its handover both say which thread it cannot direct there until that host is updated.
-  expect(f.watcher.state().carried).toEqual({ questionClosed: false, moved: 0, unconfirmed: false, cannotStop: [{ host: 'Synthetic remote', count: 1 }] })
+  expect(f.watcher.state().carried).toEqual({ questionClosed: false, moved: 0, unconfirmed: false, draftMoved: false,
+    cannotStop: [{ host: 'Synthetic remote', count: 1, titles: ['Synthetic remote worker'] }] })
   const handover = f.watcher.readHandover()
   if (handover.status !== 'ok') throw new Error('handover unreadable')
   expect(handover.text).toContain('That computer runs an older Sotto, so you cannot stop, settle or send to them there until it is updated:')

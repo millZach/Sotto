@@ -783,6 +783,22 @@ export class AgentControl {
     if (moved.length) { this.syncFollowups(); this.observe(); await this.persist(); this.publish() }
     return moved
   }
+  /**
+   * What the user left in a replaced Watcher's message box, a send the provider refused put back there included, goes to
+   * the new Watcher's box (#1735), unless the user has already begun one there. Says whether it moved.
+   */
+  async moveWatcherDraft(from: string, to: string): Promise<boolean> {
+    const draft = this.state.threadDrafts?.find(item => item.threadId === from)
+    if (!draft || !draft.text.trim() && !draft.attachments.length || this.state.threadDrafts?.some(item => item.threadId === to)) return false
+    this.putThreadDraft({ ...structuredClone(draft), threadId: to, draftId: randomUUID(), requestId: null, updatedAt: new Date().toISOString() })
+    this.discardThreadDraft(from)
+    await this.persist(); this.publish()
+    return true
+  }
+  /** Whether a message of the user's to this thread is being written to its provider now. */
+  watcherFollowupSending(threadId: string): boolean {
+    return this.followupStore.peek().items.some(item => item.threadId === threadId && !item.wakeUp && !item.watcherOperationId && item.status === 'dispatching')
+  }
   async cancelWatcherQueue(operationIds: ReadonlySet<string>): Promise<void> {
     const failed = await this.followupStore.cancelWatcher(operationIds)
     // Watcher reads a queued send's failure from its item, which is gone now, so it hears the failure here instead.

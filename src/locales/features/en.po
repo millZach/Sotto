@@ -2296,6 +2296,10 @@ msgstr "It carries {carried}."
 msgid "It gave no reason."
 msgstr "It gave no reason."
 
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "It is in the box below, not sent."
+msgstr "It is in the box below, not sent."
+
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "It runs on your own {providers} account, with that provider’s own tools. It hands changes to your threads rather than making them itself, and only you answer a thread’s questions and permissions."
 msgstr "It runs on your own {providers} account, with that provider’s own tools. It hands changes to your threads rather than making them itself, and only you answer a thread’s questions and permissions."
@@ -5456,6 +5460,10 @@ msgid "Unsent remote drafts could not be read. The original file was preserved. 
 msgstr "Unsent remote drafts could not be read. The original file was preserved. Repair local storage, then restart Sotto to try again."
 
 #: src/renderer/src/watcher/WatcherNew.tsx
+msgid "until {host} is updated: {named}."
+msgstr "until {host} is updated: {named}."
+
+#: src/renderer/src/watcher/WatcherNew.tsx
 msgid "until {host} is updated."
 msgstr "until {host} is updated."
 
@@ -5803,6 +5811,10 @@ msgstr "What Sotto remembers"
 #: src/renderer/src/watcher/WatcherReceipts.tsx
 msgid "What Watcher did"
 msgstr "What Watcher did"
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "What you were writing moved here."
+msgstr "What you were writing moved here."
 
 #: src/renderer/src/watcher/WatcherPermissionChip.tsx
 msgid "When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread."

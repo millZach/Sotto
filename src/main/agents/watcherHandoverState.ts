@@ -15,6 +15,8 @@ export interface WatcherCarried {
   readonly moved: number
   /** Whether the user's last message to the last Watcher, sent at once, was never confirmed. */
   readonly unconfirmed: boolean
+  /** Whether what the user left in the last Watcher's message box now waits in the new one's. */
+  readonly draftMoved?: boolean
   /** Threads the last Watcher started on another computer, still working, that the new one cannot direct there yet. */
   readonly cannotStop: readonly { readonly title: string; readonly host: string }[]
 }
@@ -58,6 +60,7 @@ export function watcherHandoverState(input: WatcherHandoverStateInput): string {
     ...carried && carried.moved > 0 ? [carried.moved === 1
       ? 'One message the user wrote to the last Watcher had not gone. It waits, paused, in your queue for the user to send or remove.'
       : `${carried.moved} messages the user wrote to the last Watcher had not gone. They wait, paused, in your queue for the user to send or remove.`, ''] : [],
+    ...carried?.draftMoved ? ['What the user had written in the last Watcher’s message box and not sent is now in yours, unsent.', ''] : [],
     ...carried?.unconfirmed ? ['The user’s last message to the last Watcher was never confirmed. If it arrived it is in the history above; if not, the user may send it again.', ''] : [],
     ...list('Threads the last Watcher started on another computer that are still working. That computer runs an older Sotto, so you cannot stop, settle or send to them there until it is updated:',
       (carried?.cannotStop ?? []).map(row => `${named(row.title)} on ${one(row.host)}`)),

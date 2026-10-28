@@ -79,11 +79,12 @@ export const watcherRoomStateSchema = z.object({
   /**
    * What the replacement that made the current Watcher carried over (#1735), for the new Watcher's note while it has said
    * nothing: whether the last one's card was closed, how many of the user's messages moved to its queue paused, whether the
-   * user's last message to the last one went unconfirmed, and the threads it cannot direct on a computer whose Sotto is
-   * older, counted by computer. Absent when there is nothing to say; made once per replacement, never per publish.
+   * user's last message to the last one went unconfirmed, whether what the user left in its message box moved to the new
+   * one's, and the threads it cannot direct on a computer whose Sotto is older, by computer, named. Absent when there is nothing to say; made once per replacement, never per publish.
    */
-  carried: z.object({ questionClosed: z.boolean(), moved: z.number().int().min(0).max(100), unconfirmed: z.boolean(),
-    cannotStop: z.array(z.object({ host: z.string().min(1).max(200), count: z.number().int().min(1).max(1_000) }).strict()).max(100) }).strict().optional(),
+  carried: z.object({ questionClosed: z.boolean(), moved: z.number().int().min(0).max(100), unconfirmed: z.boolean(), draftMoved: z.boolean().optional(),
+    cannotStop: z.array(z.object({ host: z.string().min(1).max(200), count: z.number().int().min(1).max(1_000),
+      titles: z.array(z.string().min(1).max(200)).max(20).optional() }).strict()).max(100) }).strict().optional(),
   /**
    * Where each of the current Watcher's receipts goes in its conversation (ADR-0073, receipt cards): the message it is
    * shown under, the last reply of the Watcher turn that took the action, or that turn's own message while no reply has

@@ -247,12 +247,12 @@ describe('the new Watcher’s empty conversation', () => {
 
   it('says on a line each what the press carried over, the fact first, and only what is so (#1735)', async () => {
     renderRoom(roomState('watcher-b', { history: [identity('watcher-a')],
-      carried: { questionClosed: true, moved: 2, unconfirmed: false, cannotStop: [{ host: 'forge', count: 2 }] } }), stateWith(watcherThread('watcher-b')), vi.fn())
+      carried: { questionClosed: true, moved: 2, unconfirmed: false, draftMoved: true, cannotStop: [{ host: 'forge', count: 2, titles: ['Release check', 'Nightly build'] }] } }), stateWith(watcherThread('watcher-b')), vi.fn())
     const pane = await watcherPane()
     await within(pane).findByRole('heading', { level: 3, name: /^New Watcher on /u })
     const lines = within(pane.querySelector('.watcher-new-note__carried') as HTMLElement).getAllByRole('listitem').map(item => item.textContent)
     expect(lines).toEqual(['Its question to you was closed. The handover carries it.', '2 messages you wrote had not sent. They are in the queue below, paused.',
-      'It can’t stop 2 threads on forge until forge is updated.'])
+      'What you were writing moved here. It is in the box below, not sent.', 'It can’t stop 2 threads on forge until forge is updated: Release check, Nightly build.'])
     expect(within(pane).getByText('Its question to you was closed.').tagName).toBe('STRONG')
   })
 

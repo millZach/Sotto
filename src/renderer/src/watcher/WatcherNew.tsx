@@ -120,9 +120,13 @@ export function NewWatcherNote({ model, carries, carried }: { readonly model: st
   if (carried?.questionClosed) lines.push({ key: 'question', fact: t`Its question to you was closed.`, rest: t`The handover carries it.` })
   if (carried && carried.moved > 0) lines.push({ key: 'moved', fact: plural(carried.moved, { one: 'One message you wrote had not sent.', other: '# messages you wrote had not sent.' }),
     rest: plural(carried.moved, { one: 'It is in the queue below, paused.', other: 'They are in the queue below, paused.' }) })
+  if (carried?.draftMoved) lines.push({ key: 'draft', fact: t`What you were writing moved here.`, rest: t`It is in the box below, not sent.` })
   if (carried?.unconfirmed) lines.push({ key: 'unconfirmed', fact: t`Your last message was not confirmed.`, rest: t`If it arrived, it is in the last conversation.` })
-  for (const { host, count } of carried?.cannotStop ?? []) lines.push({ key: `host:${host}`,
-    fact: plural(count, { one: `It can’t stop one thread on ${host}`, other: `It can’t stop # threads on ${host}` }), rest: t`until ${host} is updated.` })
+  for (const { host, count, titles } of carried?.cannotStop ?? []) {
+    const named = titles?.length ? titles.join(', ') : null
+    lines.push({ key: `host:${host}`, fact: plural(count, { one: `It can’t stop one thread on ${host}`, other: `It can’t stop # threads on ${host}` }),
+      rest: named === null ? t`until ${host} is updated.` : t`until ${host} is updated: ${named}.` })
+  }
   return <div className="thread-workspace__empty watcher-new-note">
     <WatcherOwl size={26} />
     <h3><Trans>New Watcher on {model}.</Trans></h3>
