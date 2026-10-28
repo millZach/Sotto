@@ -22,6 +22,10 @@ private struct GlowKey: EnvironmentKey {
     static var defaultValue: PhoneGlow { PhonePreferences().glow }
 }
 
+private struct ScreenKey: EnvironmentKey {
+    static let defaultValue = CGSize(width: 430, height: 932)
+}
+
 extension EnvironmentValues {
     /// The chosen palette's id. Set once at the root from the stored preference.
     var sottoThemeID: String {
@@ -38,6 +42,17 @@ extension EnvironmentValues {
         get { self[GlowKey.self] }
         set { self[GlowKey.self] = newValue }
     }
+    /// The whole screen's size, safe areas included, set at the root. Glass's backdrop is laid across it.
+    var sottoScreen: CGSize {
+        get { self[ScreenKey.self] }
+        set { self[ScreenKey.self] = newValue }
+    }
+    /// Glass's tints while Glass paints see-through (ADR-0150). Nil for every other theme, and for Glass under Reduce
+    /// Transparency, which paints Glass's solid roles as any theme paints its own.
+    var sottoGlass: GlassTints? {
+        guard sottoThemeID == ThemePalettes.glass.id, !accessibilityReduceTransparency else { return nil }
+        return ThemePalettes.glassTints(dark: colorScheme == .dark)
+    }
     /// The chosen palette in the appearance in effect here. Read it with `@Environment(\.sottoTheme)` where a
     /// view needs a `Color` (gradients, shadows); everywhere else, `Palette` roles resolve it themselves.
     var sottoTheme: ThemeSwatch { ThemePalettes.named(sottoThemeID).swatch(dark: colorScheme == .dark) }
@@ -50,6 +65,15 @@ extension ThemePalettes {
         let current = PhoneThemeID.current(id)
         return all.first { $0.id == current } ?? sotto
     }
+}
+
+extension ThemePalettes {
+    static func glassTints(dark: Bool) -> GlassTints { dark ? glassTintsDark : glassTintsLight }
+}
+
+extension ThemeTint {
+    /// The tint as SwiftUI lays it over what is under it.
+    var fill: Color { color.color.opacity(alpha) }
 }
 
 extension ThemePalette {
@@ -684,7 +708,7 @@ struct SheetPage<Content: View>: View {
             }
         }
         .coordinateSpace(.named("sheet-page"))
-        .background(Palette.canvas)
+        .pageGround()
         .overlay(alignment: .top) { StatusBarFade().opacity(fade) }
     }
     /// The fade comes in over the first 24 points of travel and is clear at rest.
@@ -694,15 +718,15 @@ struct SheetPage<Content: View>: View {
     }
 }
 
-/// The canvas fading in under the status bar.
+/// The page's ground fading in under the status bar.
 private struct StatusBarFade: View {
-    @Environment(\.sottoTheme) private var theme
     var body: some View {
         GeometryReader { proxy in
-            LinearGradient(stops: [
-                Gradient.Stop(color: theme.canvas.color, location: 0.62),
-                Gradient.Stop(color: theme.canvas.color.opacity(0), location: 1)
-            ], startPoint: .top, endPoint: .bottom)
+            PageGround()
+                .mask(LinearGradient(stops: [
+                    Gradient.Stop(color: .black, location: 0.62),
+                    Gradient.Stop(color: .clear, location: 1)
+                ], startPoint: .top, endPoint: .bottom))
                 .frame(height: proxy.safeAreaInsets.top + 10)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
@@ -748,15 +772,53 @@ extension PageHeading where Trailing == EmptyView {
 
 // MARK: - Glass
 
+/// What a page stands on: the canvas, or under Glass the room's tint over Glass's backdrop (ADR-0150). The backdrop is
+/// laid across the whole screen wherever a page is cut from it, so pages, the tabs' bar and the status bar's fade meet
+/// without a seam.
+struct PageGround: View {
+    @Environment(\.sottoGlass) private var glass
+    @Environment(\.sottoScreen) private var screen
+    var body: some View {
+        if let glass {
+            GeometryReader { proxy in
+                let frame = proxy.frame(in: .global)
+                let width = max(frame.width, 1), height = max(frame.height, 1)
+                LinearGradient(colors: glass.backdrop.map(\.color),
+                               startPoint: UnitPoint(x: -frame.minX / width, y: -frame.minY / height),
+                               endPoint: UnitPoint(x: (screen.width - frame.minX) / width, y: (screen.height - frame.minY) / height))
+                    .overlay(glass.room.fill)
+            }
+        } else {
+            Rectangle().fill(Palette.canvas)
+        }
+    }
+}
+
+extension View {
+    /// The page's ground behind this view, reaching under the safe areas.
+    func pageGround() -> some View {
+        background { PageGround().ignoresSafeArea().accessibilityHidden(true) }
+    }
+}
+
 /// Frosted glass: a material with a translucent tint of the surface and a hairline highlight. Under Reduce
-/// Transparency it is a solid surface.
+/// Transparency it is a solid surface. Under the Glass theme on iOS 26 and later it is the system's own Liquid Glass,
+/// tinted as much as the frosted glass is, so its words read the same.
 struct GlassSurface<S: InsettableShape>: ViewModifier {
     let shape: S
     var strong = false
     @Environment(\.sottoTheme) private var theme
+    @Environment(\.sottoGlass) private var glass
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    func body(content: Content) -> some View {
+    @ViewBuilder func body(content: Content) -> some View {
+        if glass != nil, #available(iOS 26, *) {
+            content.glassEffect(.regular.tint(theme.color(strong ? .overlay : .surface).opacity(tintAmount)), in: shape)
+        } else {
+            frosted(content)
+        }
+    }
+    private func frosted(_ content: Content) -> some View {
         content
             .background {
                 if reduceTransparency {
@@ -790,20 +852,30 @@ extension View {
 /// How a card is lit. Needs you carries a warm glow, working a breathing accent halo, answered an accent glow.
 enum CardTone { case plain, needsYou, answered, working, online }
 
-/// A card's surface: radius 20, a hairline, a highlight along the top edge, and the glow its tone carries.
+/// A card's surface: radius 20, a hairline, a highlight along the top edge, and the glow its tone carries. Under Glass
+/// the card is the raised tint over the room, its tone a tint over that, and its glow shines through it.
 struct CardSurface: ViewModifier {
     let tone: CardTone
     var radius: CGFloat = Radius.lg
     @Environment(\.sottoTheme) private var theme
+    @Environment(\.sottoGlass) private var glass
     @Environment(\.colorScheme) private var scheme
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         return content
             .background {
-                shape.fill(LinearGradient(stops: [
-                    Gradient.Stop(color: top, location: 0),
-                    Gradient.Stop(color: theme.color(.surface), location: 0.72)
-                ], startPoint: .top, endPoint: .bottom))
+                if let glass {
+                    shape.fill(glass.raised.fill)
+                        .overlay(shape.fill(LinearGradient(stops: [
+                            Gradient.Stop(color: toneTint, location: 0),
+                            Gradient.Stop(color: toneTint.opacity(0), location: 0.72)
+                        ], startPoint: .top, endPoint: .bottom)))
+                } else {
+                    shape.fill(LinearGradient(stops: [
+                        Gradient.Stop(color: top, location: 0),
+                        Gradient.Stop(color: theme.color(.surface), location: 0.72)
+                    ], startPoint: .top, endPoint: .bottom))
+                }
             }
             .clipShape(shape)
             .overlay(shape.strokeBorder(ring, lineWidth: 1))
@@ -812,10 +884,22 @@ struct CardSurface: ViewModifier {
     }
     @ViewBuilder private var glow: some View {
         switch tone {
-        case .needsYou: GlowLayer(radius: radius, color: theme.rgb(.warning), alpha: 0.5, base: theme.rgb(.surface), period: 6)
-        case .working: GlowLayer(radius: radius, color: theme.rgb(.accent), alpha: 0.5, base: theme.rgb(.surface), period: 4.4)
-        case .answered: GlowLayer(radius: radius, color: theme.rgb(.accent), alpha: 0.6, base: theme.rgb(.surface), period: nil)
+        case .needsYou: GlowLayer(radius: radius, color: theme.rgb(.warning), alpha: 0.5, base: base, period: 6)
+        case .working: GlowLayer(radius: radius, color: theme.rgb(.accent), alpha: 0.5, base: base, period: 4.4)
+        case .answered: GlowLayer(radius: radius, color: theme.rgb(.accent), alpha: 0.6, base: base, period: nil)
         case .plain, .online: EmptyView()
+        }
+    }
+    /// What the glow fills the card's shape with: the surface, or nothing under Glass, where the card is see-through.
+    private var base: ThemeRGB? { glass == nil ? theme.rgb(.surface) : nil }
+    /// The tone's tint at the card's top, laid over the glass.
+    private var toneTint: Color {
+        switch tone {
+        case .plain: return .clear
+        case .needsYou: return theme.color(.warning).opacity(Tint.needsYou)
+        case .answered: return theme.color(.accent).opacity(Tint.answered)
+        case .working: return theme.color(.accent).opacity(Tint.working)
+        case .online: return theme.color(.accent).opacity(Tint.online)
         }
     }
     private var top: Color {
@@ -912,7 +996,8 @@ private struct GlowLayer: View {
     let radius: CGFloat
     let color: ThemeRGB
     let alpha: CGFloat
-    let base: ThemeRGB
+    /// What the card's shape is filled with under the glow; nil leaves it clear.
+    let base: ThemeRGB?
     let period: Double?
     @Environment(\.sottoGlow) private var glow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -927,7 +1012,7 @@ private struct GlowLayer: View {
                               blur: blur, drop: drop, breath: (period ?? 4) / 2)
             } else {
                 GlowImage(shape: RoundedRectangle(cornerRadius: radius, style: .continuous),
-                          color: color.color.opacity(glow.alpha(Double(alpha))), base: base.color, blur: blur, drop: drop)
+                          color: color.color.opacity(glow.alpha(Double(alpha))), base: base?.color ?? .clear, blur: blur, drop: drop)
                     .opacity(level)
             }
         }
@@ -963,7 +1048,7 @@ private struct BreathingGlow: UIViewRepresentable {
     let radius: CGFloat
     let color: ThemeRGB
     let alpha: CGFloat
-    let base: ThemeRGB
+    let base: ThemeRGB?
     let blur: CGFloat
     let drop: CGFloat
     /// Seconds each way.
@@ -996,14 +1081,15 @@ final class GlowLoopView: LoopingView {
         stage.layer.addSublayer(card)
     }
     required init?(coder: NSCoder) { fatalError("GlowLoopView is made in code") }
-    private var painted: (CGFloat, ThemeRGB, CGFloat, ThemeRGB, CGFloat, CGFloat)?
-    func paint(radius: CGFloat, glow: ThemeRGB, alpha: CGFloat, base: ThemeRGB, blur: CGFloat, drop: CGFloat) {
+    private var painted: (CGFloat, ThemeRGB, CGFloat, ThemeRGB?, CGFloat, CGFloat)?
+    func paint(radius: CGFloat, glow: ThemeRGB, alpha: CGFloat, base: ThemeRGB?, blur: CGFloat, drop: CGFloat) {
         // A layer given its colours again, even the same ones, is drawn again; the view around it redraws far more often.
         if let painted, painted == (radius, glow, alpha, base, blur, drop) { return }
         painted = (radius, glow, alpha, base, blur, drop)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        card.backgroundColor = base.uiColor(1).cgColor
+        // Clear, the shadow still follows its path.
+        card.backgroundColor = base?.uiColor(1).cgColor ?? UIColor.clear.cgColor
         card.shadowColor = glow.uiColor(1).cgColor
         card.shadowOpacity = Float(alpha)
         card.shadowRadius = blur
@@ -1318,7 +1404,7 @@ private struct PillBody: View {
             .padding(.vertical, Space.s2)
             .frame(maxWidth: wide ? .infinity : nil, minHeight: compact ? 40 : 44)
             .foregroundStyle(foreground)
-            .background(fill, in: Capsule())
+            .modifier(PillGround(fill: fill, glass: kind == .soft))
             .glow(Capsule(), color: theme.color(.accent), alpha: 0.4, radius: 10, y: 6, showing: kind == .primary && enabled)
             .contentShape(Capsule())
             .opacity(enabled ? 1 : 0.42)
@@ -1415,7 +1501,8 @@ private struct ChipBody: View {
             .padding(.vertical, Space.s2)
             .frame(minHeight: 44)
             .foregroundStyle(Palette.ink)
-            .background(Capsule().fill(selected ? theme.tinted(.surface, with: .accent, Tint.chosen) : theme.color(.fillSoft)))
+            .modifier(PillGround(fill: selected ? ThemeRole.clear : Palette.fillSoft, glass: !selected))
+            .background { if selected { Capsule().fill(theme.tinted(.surface, with: .accent, Tint.chosen)) } }
             .overlay(Capsule().strokeBorder(selected ? theme.color(.accent) : theme.color(.hairline), lineWidth: selected ? 1.5 : 1))
             .glow(Capsule(), color: theme.color(.accent), alpha: 0.45, radius: 9, showing: selected)
             .contentShape(Capsule())
@@ -1445,14 +1532,41 @@ private struct GlassCircleBody: View {
             .font(.system(size: 20, weight: .semibold))
             .foregroundStyle(Palette.accentText)
             .frame(width: 44, height: 44)
-            .glass(in: Circle())
-            .overlay(Circle().strokeBorder(theme.color(.accent).opacity(0.28), lineWidth: 1))
+            .modifier(CircleGround(ring: theme.color(.accent).opacity(0.28), tint: theme.color(.accent)))
             .glow(Circle(), color: theme.color(.accent), alpha: 0.6, radius: 12, y: 6)
             .contentShape(Circle())
             .opacity(enabled ? 1 : 0.42)
             .scaleEffect(pressed && !reduceMotion ? 0.94 : 1)
             .opacity(pressed && reduceMotion ? 0.7 : 1)
             .animation(.easeOut(duration: 0.16), value: pressed)
+    }
+}
+
+/// A pill's fill. Under Glass on iOS 26 and later a soft pill or chip is Liquid Glass that answers the touch instead.
+private struct PillGround: ViewModifier {
+    let fill: ThemeRole
+    let glass: Bool
+    @Environment(\.sottoGlass) private var tints
+    @ViewBuilder func body(content: Content) -> some View {
+        if glass, tints != nil, #available(iOS 26, *) {
+            content.glassEffect(.regular.interactive(), in: Capsule())
+        } else {
+            content.background(fill, in: Capsule())
+        }
+    }
+}
+
+/// The round button's glass, ringed in the accent; under Glass on iOS 26 and later, Liquid Glass lightly tinted with it.
+private struct CircleGround: ViewModifier {
+    let ring: Color
+    let tint: Color
+    @Environment(\.sottoGlass) private var tints
+    @ViewBuilder func body(content: Content) -> some View {
+        if tints != nil, #available(iOS 26, *) {
+            content.glassEffect(.regular.tint(tint.opacity(0.18)).interactive(), in: Circle())
+        } else {
+            content.glass(in: Circle()).overlay(Circle().strokeBorder(ring, lineWidth: 1))
+        }
     }
 }
 
@@ -1546,7 +1660,7 @@ extension View {
 extension View {
     /// A tab's pushed page: the canvas behind it and a title.
     func page(_ title: String) -> some View {
-        background(Palette.canvas).navigationTitle(title)
+        pageGround().navigationTitle(title)
             .toolbarBackground(Palette.canvas, for: .navigationBar)
     }
     /// A text field's box.

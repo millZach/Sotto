@@ -10,7 +10,7 @@ struct PairFlow: View {
         Group {
             if let found = model.found { CodeStep(found: found) } else { NameStep() }
         }
-        .background(Palette.canvas)
+        .pageGround()
     }
 }
 

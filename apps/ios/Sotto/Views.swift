@@ -21,8 +21,14 @@ struct MainTabs: View {
     @State private var keyboard = false
     enum Tab: Hashable { case threads, watcher, computers, settings }
     @Environment(\.horizontalSizeClass) private var width
+    @Environment(\.sottoGlass) private var glass
     var body: some View {
-        GeometryReader { frame in tabs(strip: strip(frame.safeAreaInsets)) }
+        GeometryReader { frame in
+            let insets = frame.safeAreaInsets
+            tabs(strip: strip(insets))
+                .environment(\.sottoScreen, CGSize(width: frame.size.width + insets.leading + insets.trailing,
+                                                    height: frame.size.height + insets.top + insets.bottom))
+        }
     }
     /// The iPhone Duo's cover screen leaves a strip down its right edge, under the clock and battery, outside the safe
     /// area but inside the window (ADR-0151, amended). There the bar stands in the strip as a rail, as the system's did,
@@ -65,6 +71,8 @@ struct MainTabs: View {
                     .offset(x: strip)
             }
         }
+        // Under Glass the backdrop reaches the Duo cover screen's strip too, so the rail floats on the same ground.
+        .background { if glass != nil { PageGround().ignoresSafeArea() } }
         .environment(\.tabsCovered, $covered)
         // The bar goes under the keyboard, as the system's did; a hardware keyboard's slim bar leaves it.
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { note in
@@ -117,7 +125,8 @@ struct MainTabs: View {
     }
 }
 
-/// The tabs' bar: icons and names straight on the canvas, the chosen tab in the accent, with no shape behind them. Watcher's owl carries a dot while Watcher works, and its badge counts what
+/// The tabs' bar: icons and names straight on the canvas, the chosen tab in the accent, with no shape behind them. Under
+/// Glass they float on a capsule of Liquid Glass instead, down the Duo cover screen's strip as on the bottom edge. Watcher's owl carries a dot while Watcher works, and its badge counts what
 /// needs the user that only Watcher's page shows; VoiceOver reads both after its name ("Working, 1 needs you").
 struct TabsBar: View {
     @Binding var tab: MainTabs.Tab
@@ -137,7 +146,8 @@ struct TabsBar: View {
         }
         .padding(rail ? .vertical : .horizontal, Space.s2)
         .padding(.top, rail ? 0 : Space.s1)
-        .background(Palette.canvas)
+        .modifier(TabsGlass(rail: rail))
+        .pageGround()
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isTabBar)
         .accessibilityIdentifier("tabs")
@@ -169,6 +179,22 @@ struct TabsBar: View {
         .accessibilityValue(Text(verbatim: spoken))
         .accessibilityAddTraits(chosen ? [.isButton, .isSelected] : .isButton)
         .accessibilityIdentifier("tab-\(id)")
+    }
+}
+
+/// The capsule of Liquid Glass the tabs float on under Glass, on iOS 26 and later.
+private struct TabsGlass: ViewModifier {
+    let rail: Bool
+    @Environment(\.sottoGlass) private var glass
+    @ViewBuilder func body(content: Content) -> some View {
+        if glass != nil, #available(iOS 26, *) {
+            content
+                .padding(.bottom, rail ? 0 : Space.s1)
+                .glassEffect(.regular, in: Capsule())
+                .padding(.horizontal, rail ? 4 : Space.s3)
+        } else {
+            content
+        }
     }
 }
 

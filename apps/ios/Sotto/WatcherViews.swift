@@ -54,7 +54,7 @@ struct WatcherView: View {
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }
-        .background(Palette.canvas)
+        .pageGround()
         .navigationTitle("Watcher")
         .toolbar(.hidden, for: .navigationBar)
         .onAppear { model.watcherOnScreen = true; barAway = false }
@@ -367,7 +367,7 @@ private struct MachineSheet: View {
             .padding(Space.gutter)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Palette.canvas)
+        .pageGround()
         .task { await model.readWatcherMachines(hostID) }
     }
 

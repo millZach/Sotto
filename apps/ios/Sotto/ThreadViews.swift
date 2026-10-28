@@ -30,7 +30,7 @@ struct ThreadView: View {
             shown = request.id
             open = request
         }
-        .background(Palette.canvas)
+        .pageGround()
         .navigationTitle(thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

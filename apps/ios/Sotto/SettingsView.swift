@@ -84,7 +84,7 @@ private struct ThemeChoice: View {
     var body: some View {
         Button(action: pick) {
             VStack(alignment: .leading, spacing: 6) {
-                ThemeRoom(swatch: palette.swatch(dark: dark))
+                ThemeRoom(swatch: palette.swatch(dark: dark), glass: palette.id == ThemePalettes.glass.id ? ThemePalettes.glassTints(dark: dark) : nil)
                     .padding(3)
                     .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous)
                         .strokeBorder(selected ? theme.color(.accent) : Color.clear, lineWidth: 2))
@@ -110,12 +110,20 @@ private struct ThemeChoice: View {
     }
 }
 
-/// The room inside a theme choice, in that palette's own colours rather than the current theme's.
+/// The room inside a theme choice, in that palette's own colours rather than the current theme's. Glass's is its room
+/// over its backdrop.
 private struct ThemeRoom: View {
     let swatch: ThemeSwatch
+    let glass: GlassTints?
     var body: some View {
         let room = RoundedRectangle(cornerRadius: 14, style: .continuous)
         room.fill(swatch.canvas.color)
+            .overlay {
+                if let glass {
+                    LinearGradient(colors: glass.backdrop.map(\.color), startPoint: .topLeading, endPoint: .bottomTrailing)
+                        .overlay(glass.room.fill)
+                }
+            }
             .overlay {
                 RadialGradient(colors: [swatch.accent.color.opacity(0.45), swatch.accent.color.opacity(0)],
                                center: UnitPoint(x: 0.15, y: 0), startRadius: 0, endRadius: 80)

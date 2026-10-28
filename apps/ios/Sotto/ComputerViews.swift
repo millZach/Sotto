@@ -164,7 +164,7 @@ struct ComputerDetailView: View {
         Group {
             if let computer = model.computer(hostID) { ComputerDetails(computer: computer) } else { Color.clear }
         }
-        .background(Palette.canvas)
+        .pageGround()
         .navigationTitle(model.name(hostID)).navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Palette.canvas, for: .navigationBar)
         .onChange(of: model.computer(hostID) == nil) { _, gone in if gone { dismiss() } }
