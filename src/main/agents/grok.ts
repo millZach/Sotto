@@ -413,7 +413,7 @@ export class GrokAcpHost implements AgentHost {
       this.readProviderQuota = async (providerId, refresh, background = false) => {
         if (providerId !== 'grok') return unavailableProviderQuota(providerId, 'unsupported')
         if (!this.state.connected || !this.executable) return unavailableProviderQuota('grok', 'not-connected')
-        if (!refresh) return this.quota ?? unavailableProviderQuota('grok', 'not-read', true)
+        if (!refresh) return this.quotaLatest?.read ?? this.quota ?? unavailableProviderQuota('grok', 'not-read', true)
         const reading = this.quotaReading
         if (reading && (background || !reading.background)) return reading.read
         const read: Promise<UsageQuotaRead> = this.readQuota(background).finally(() => { if (this.quotaReading?.read === read) this.quotaReading = undefined })
@@ -928,7 +928,8 @@ export class GrokAcpHost implements AgentHost {
     const refusal = clientRefusal(client)
     if (refusal) throw new Error(`Grok Build was updated, but Sotto cannot run the new version. ${refusal.message} Threads that are working carry on and nothing was lost. Install a Grok Build version Sotto supports, then connect Grok Build again.`, { cause: refusal })
     // Set together with the version, so a process is started either from the old client and counted old, or from the new one.
-    this.executable = executable; this.clientRevision++
+    // The new client's first quota read, not the old one's, is the latest.
+    this.executable = executable; this.clientRevision++; this.quotaLatest = undefined
     this.applyClient(client)
     for (const [id, entry] of this.processes) if (entry.clientRevision < this.clientRevision) this.outdated.add(id)
     this.emit()

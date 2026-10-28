@@ -36,6 +36,7 @@
 /* The row's More menu. */
 .hosts-menu { position: relative; display: inline-flex; }
 .hosts-menu__list { position: absolute; z-index: 20; top: calc(100% + 4px); right: 0; display: grid; min-width: 184px; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-md); background: var(--tt-surface-overlay); box-shadow: var(--tt-shadow-overlay); padding: 4px; }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .hosts-menu__list { animation: tt-pop-down 120ms ease-out; } }
 .hosts-menu__list [role='menuitem'] { min-height: 32px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; padding: 6px 10px; color: var(--tt-text); font-size: 13px; text-align: left; cursor: pointer; }
 .hosts-menu__list [role='menuitem']:hover, .hosts-menu__list [role='menuitem']:focus-visible { background: var(--tt-hover); }
 .hosts-menu__list [data-danger] { color: var(--tt-error-text); }

@@ -31,7 +31,7 @@
 
 /* The inner edge resizes; it shows the accent only while it is used. */
 .tools-panel__resize { position: absolute; top: 0; bottom: 0; left: -4px; z-index: 1; width: 8px; cursor: col-resize; touch-action: none; outline-offset: -3px; }
-.tools-panel__resize::before { position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: transparent; content: ''; }
+.tools-panel__resize::before { position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: transparent; content: ''; transition: background-color 160ms ease; }
 .tools-panel__resize:is(:hover, :focus-visible)::before { background: var(--tt-activity); }
 .tools-panel[data-expanded] .tools-panel__resize { display: none; }
 
@@ -46,8 +46,10 @@
 .tools-rail__tab {
   position: relative; display: grid; place-items: center; align-content: center; gap: 4px; width: 50px; height: 50px; padding: 0;
   border: 0; border-radius: 9px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; font-weight: 500; line-height: 1; cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 .tools-rail__tab:hover { background: var(--tools-hover); color: var(--tt-text); }
+.tools-rail__tab:active:not([aria-selected='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .tools-rail__tab[aria-selected='true'] { background: var(--tt-selected); color: var(--tt-text); }
 /* The open surface's mark is on the tile's outer side, at the window's edge. It is drawn as a shadow so it adds
    no overflow to the tile. */
@@ -90,6 +92,7 @@
 .tools-chrome__button {
   position: relative; display: inline-flex; flex: none; align-items: center; justify-content: center; gap: 6px; min-width: 30px; height: 30px; padding: 0 8px;
   border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer;
+  transition: opacity 120ms ease;
 }
 .tools-chrome__button > svg { flex: none; color: var(--tt-text-muted); }
 .tools-chrome__button:hover { background: var(--tools-hover); color: var(--tt-text); }

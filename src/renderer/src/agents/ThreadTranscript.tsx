@@ -34,6 +34,7 @@ import { useRestartStopped } from './RestartStopped'
 import { isRestartNoteText } from './restartWords'
 import { useOwlFeature } from '../state/owlFeature'
 import { useInterfaceLanguageState } from '../state/interfaceLanguage'
+import { prefersReducedMotion } from '../state/reducedMotion'
 import { WatcherOwl } from '../watcher/WatcherOwl'
 import { WatcherOwnChangeFor } from '../watcher/WatcherOwnChange'
 import { useRepliesKeptInView, WatcherAfterMessage } from '../watcher/WatcherReceipts'
@@ -108,7 +109,7 @@ const SOUGHT_MS = 1_600
 /** Each marked reply's own clearing, so a second press while it is marked keeps the mark for the full time again. */
 const soughtTimers = new WeakMap<HTMLElement, number>()
 const seekWithoutTranscript = (message: HTMLElement): void => {
-  message.scrollIntoView?.({ block: 'center' })
+  message.scrollIntoView?.({ block: 'center', behavior: prefersReducedMotion() ? 'auto' : 'smooth' })
   message.focus({ preventScroll: true })
 }
 /** Marks a message the reader was taken to, for a moment, so the eye finds where it landed. */

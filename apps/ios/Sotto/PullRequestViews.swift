@@ -657,6 +657,7 @@ private struct BabysitDock: View {
     let detail: PullRequestDetail
     @Binding var toast: String?
     @State private var pressing = false
+    @State private var presses = 0
 
     var body: some View {
         if model.offersBabysitting(ref.hostID) {
@@ -698,6 +699,7 @@ private struct BabysitDock: View {
         }
         .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
         .glass(in: shape, strong: true)
+        .sensoryFeedback(.impact(weight: .medium), trigger: presses)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("pull-request-babysit")
     }
@@ -720,6 +722,7 @@ private struct BabysitDock: View {
 
     private func press(_ on: Bool) {
         guard !pressing else { return }
+        presses += 1
         pressing = true
         Task {
             await model.setBabysitting(on, url: detail.url, in: ref)

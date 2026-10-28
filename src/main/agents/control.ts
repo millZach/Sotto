@@ -5944,6 +5944,7 @@ export class AgentControl {
     const queue = new PositionQueue(position)
     for (const id of paged.keys()) queue.push(id)
     const marked = new Map<string, AgentThread>()
+    const examineNext = new Set<string>()
     this.evictions = []
     for (let id = queue.pop(); id !== undefined; id = queue.pop()) {
       const reached = position(id)
@@ -5952,8 +5953,11 @@ export class AgentControl {
       named.add(id)
       const thread = paged.get(id) ?? this.questionPages.view(this.shownBeforePages({ ...this.state.host, threads: [map.get(id)!] }, new Set())).threads[0]
       if (thread) marked.set(id, this.prototypeReady.mark(thread, settled))
-      for (const evicted of this.evictions.splice(0)) if (position(evicted) > reached && map.has(evicted)) queue.push(evicted)
+      for (const evicted of this.evictions.splice(0)) if (position(evicted) > reached && map.has(evicted)) { queue.push(evicted); examineNext.add(evicted) }
     }
+    // A thread whose kept reply a mark let go was marked here, but (a) read its pages with that reply still kept; the next
+    // change names it again, so its pages are examined without it, as the whole path examines every thread (#1535).
+    for (const id of examineNext) this.reshow.add(id)
     // (c) Once: prototype questions over the threads marked, in display order, letting go of the records of threads that
     // went, and the prototype-ready mark's questions of threads that went. Run whatever the change names, so a change that
     // only removes threads lets go of what was kept for them too.

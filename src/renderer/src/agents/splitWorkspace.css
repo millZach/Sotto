@@ -35,7 +35,7 @@
 /* Layout controls sit at the header's end, beside the title they act on. They float over the header, which is the
    window's drag handle, so they opt out of dragging themselves. */
 .threads-view .thread-pane__controls { position: absolute; top: 7px; right: calc(12px + var(--threads-pane-inset, 0px)); z-index: 1; display: flex; gap: 2px; -webkit-app-region: no-drag; }
-.threads-view .thread-pane__control { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.threads-view .thread-pane__control { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .threads-view .thread-pane__control:hover, .threads-view .thread-pane__control[aria-pressed='true'] { background: var(--threads-hover); color: var(--tt-text); }
 .threads-view .thread-pane__grip { cursor: grab; }
 .threads-view .thread-pane__grip:active { cursor: grabbing; }
@@ -59,7 +59,7 @@
    takes its own back. A docked tools panel takes the corner instead and reserves the room itself. */
 .threads-view:not([data-tools='docked']) .thread-panes[data-narrow] .thread-panes__tabs { padding-right: calc(12px + var(--threads-winctl-inset, 0px)); }
 .threads-view .thread-panes[data-narrow] .thread-pane[data-under-controls] { --threads-pane-inset: 0px; }
-.threads-view .thread-panes__tab { display: inline-flex; flex: none; align-items: center; gap: 7px; min-width: 0; max-width: min(260px, 50%); min-height: 40px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+.threads-view .thread-panes__tab { display: inline-flex; flex: none; align-items: center; gap: 7px; min-width: 0; max-width: min(260px, 50%); min-height: 40px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; transition: color 120ms ease; }
 .threads-view .thread-panes__tab > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .threads-view .thread-panes__tab:hover { color: var(--tt-text-2); }
 .threads-view .thread-panes__tab:focus-visible { outline-offset: -3px; }

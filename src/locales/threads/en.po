@@ -1720,6 +1720,10 @@ msgstr "Already the project {existingTitle}"
 msgid "An answer from an earlier thread is saved."
 msgstr "An answer from an earlier thread is saved."
 
+#: src/renderer/src/agents/ThreadComposer.tsx
+msgid "An earlier send is still on its way; Steer waits for it"
+msgstr "An earlier send is still on its way; Steer waits for it"
+
 #: src/renderer/src/agents/MessageScrubber.tsx
 msgid "An empty message"
 msgstr "An empty message"
@@ -8933,6 +8937,14 @@ msgstr "Visibility"
 #: src/renderer/src/agents/VisualCardShell.tsx
 msgid "Visual: {title}"
 msgstr "Visual: {title}"
+
+#: src/renderer/src/agents/ThreadComposer.tsx
+msgid "Wait for the answer to be sent"
+msgstr "Wait for the answer to be sent"
+
+#: src/renderer/src/agents/ThreadComposer.tsx
+msgid "Wait for the attachment to be read"
+msgstr "Wait for the attachment to be read"
 
 #: src/renderer/src/agents/ForkFromHere.tsx
 msgid "Wait for this turn to finish before forking"

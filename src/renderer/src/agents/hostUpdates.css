@@ -43,6 +43,7 @@
   white-space: nowrap;
   cursor: pointer;
   -webkit-app-region: no-drag;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .host-update__pill:hover, .host-update__pill[aria-expanded='true'] { border-color: var(--tt-text-faint); }
 .host-update__pill[data-phase='failed'] { border-color: color-mix(in srgb, var(--tt-error) 60%, transparent); }

@@ -114,6 +114,7 @@ struct FilePill: View {
     var reading = false
     var remove: (() -> Void)? = nil
     var locked = false
+    @State private var removed = 0
     var body: some View {
         HStack(spacing: 0) {
             HStack(spacing: 5) {
@@ -125,11 +126,14 @@ struct FilePill: View {
             .accessibilityLabel(sizeBytes.flatMap { $0 > 0 ? "\(name), \(Files.size($0))" : nil } ?? name)
             .accessibilityValue(state)
             if let remove {
-                Button(action: remove) {
+                Button {
+                    removed += 1
+                    remove()
+                } label: {
                     Image(systemName: "xmark").font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.muted)
                         .frame(width: 40, height: 36).contentShape(Rectangle())
                 }
-                .buttonStyle(.plain).disabled(locked)
+                .buttonStyle(.plain).sensoryFeedback(.impact(flexibility: .soft), trigger: removed).disabled(locked)
                 .accessibilityLabel("Remove \(name)")
             }
         }
