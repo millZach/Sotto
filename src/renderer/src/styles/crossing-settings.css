@@ -76,8 +76,9 @@
 /* A sunken track with the chosen segment raised out of it (ADR-0110). On a card the track sinks to the card's inset. */
 .segmented-control { grid-area: control; display: inline-flex; align-items: center; justify-self: end; padding: 3px; border: 0; border-radius: 6px; gap: 2px; background: var(--tt-surface-sunken); }
 .settings-rows .segmented-control { background: var(--tt-card-inset); }
-.segmented-control button { min-height: 30px; padding: 2px 12px; border: 0; border-radius: 4px; font: inherit; font-size: 14px; white-space: nowrap; color: var(--tt-text-muted); background: none; cursor: pointer; }
+.segmented-control button { min-height: 30px; padding: 2px 12px; border: 0; border-radius: 4px; font: inherit; font-size: 14px; white-space: nowrap; color: var(--tt-text-muted); background: none; cursor: pointer; transition: background-color 120ms ease, color 120ms ease; }
 .segmented-control button:hover:not(:disabled) { color: var(--tt-text); }
+.segmented-control button:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .segmented-control button:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
 .segmented-control button:disabled { opacity: .5; cursor: default; }
 /* Night falls' look: a line for each choice under the row's name, the choice's name leading its line. */
@@ -111,7 +112,7 @@
 /* Find a setting: the Threads sidebar's search field, with the matches in place of the pages while it holds text. */
 .settings-view .settings-find { height: 36px; margin: 0 0 14px; }
 .settings-find__results ul { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
-.settings-find__results button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 8px 12px; border: 0; border-radius: 6px; color: var(--tt-text); background: transparent; text-align: left; font: inherit; font-size: 14px; line-height: 1.35; cursor: pointer; }
+.settings-find__results button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 8px 12px; border: 0; border-radius: 6px; color: var(--tt-text); background: transparent; text-align: left; font: inherit; font-size: 14px; line-height: 1.35; cursor: pointer; transition: background-color 120ms ease, color 120ms ease; }
 .settings-find__results button:hover { background: var(--tt-sidebar-row-hover); }
 .settings-find__results button:active { background: var(--tt-hover-strong); }
 .settings-find__results small { color: var(--tt-text-muted); font-size: 12.5px; }
