@@ -63,10 +63,11 @@ describe('the click effect water', () => {
     water.press(400, 300)
     steps(water, 0.2)
     const before = water.peak, height = water.heightAt(400, 300)
+    // Height keeps the square root of what energy keeps: a fiftieth of the energy over LIFE_S.
     water.age(STEP_HZ * LIFE_S)
-    expect(water.peak).toBeCloseTo(before * 0.02, 6)
-    expect(water.heightAt(400, 300)).toBeCloseTo(height * 0.02, 6)
-    water.age(STEP_HZ * LIFE_S)
+    expect(water.peak).toBeCloseTo(before * Math.sqrt(0.02), 6)
+    expect(water.heightAt(400, 300)).toBeCloseTo(height * Math.sqrt(0.02), 6)
+    water.age(STEP_HZ * LIFE_S * 3)
     expect(water.calm).toBe(true)
   })
 

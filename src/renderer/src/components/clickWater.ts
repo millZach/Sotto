@@ -14,7 +14,7 @@ export const CELL = 8
 /** The glyph grid the 0s and 1s sit on, as dense as a line of monospace text. */
 export const GLYPH_W = 7
 export const GLYPH_H = 13
-/** Every LIFE_S seconds the water keeps a fiftieth of its height, so a press's waves fade over about that long. */
+/** Every LIFE_S seconds the water keeps a fiftieth of its energy, so a press's waves fade over about that long. */
 export const LIFE_S = 4
 /** Steps a second; the drawing loop runs as many as are due each frame, so the waves keep their speed at any refresh rate. */
 export const STEP_HZ = 60
@@ -27,7 +27,7 @@ const SHOW_OVER = 0.4
 const RAGGED = 0.85
 /** Below the height the faintest glyph needs, everywhere, the water is calm: nothing would show, so the loop stops. */
 export const CALM = SHOW_AT * (1 - RAGGED)
-/** What each step keeps of the water. */
+/** What each step keeps of the water's energy; its height keeps the square root of this. */
 const DAMPING = Math.pow(0.02, 1 / (LIFE_S * STEP_HZ))
 
 type Random = () => number
@@ -135,7 +135,8 @@ export class ClickWater {
    */
   age(steps: number): void {
     if (steps <= 0) return
-    const keep = DAMPING ** steps
+    // The step's recurrence keeps the square root of DAMPING of the height each step, so ageing does the same.
+    const keep = DAMPING ** (steps / 2)
     for (const field of [this.prev, this.cur]) for (let i = 0; i < field.length; i++) field[i]! *= keep
     for (let row = 0; row < this.rows; row++) this.rowPeak[row]! *= keep
     this.peak *= keep
