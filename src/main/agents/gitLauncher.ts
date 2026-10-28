@@ -4,17 +4,19 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import { Worker } from 'node:worker_threads'
+import type { Writable } from 'node:stream'
 import type { LaunchError, LauncherEvent, LauncherRequest } from './gitLauncherWorker'
 
 /**
- * Starts the Git and gh processes Sotto runs for itself (status reads, worktree Git, Git actions) on a worker thread
- * rather than on the thread that asks. On Windows a launch is CreateProcess, synchronous on the calling thread, and
+ * Starts the Git and gh processes Sotto runs for itself (status reads, worktree Git, Git actions), and the Grok process
+ * Usage starts to read Grok's limits, on a worker thread rather than on the thread that asks. On Windows a launch is CreateProcess, synchronous on the calling thread, and
  * in Electron main that thread is the browser UI thread: about 200 launches in 40 s of threads running held main for
  * 3.1 s, one of them for 2.2 s (`docs/perf/2026-10-19-git-launch-off-main.md`). macOS and Linux launch off main too,
  * and nothing else about a process changes on any of them.
  *
  * What a launch hands back is the part of a `ChildProcess` the callers use: its pid once it has one, its two output
- * streams, `error` and `close`, and `kill`. Where the worker cannot be had (no built worker file beside this one, as
+ * streams, `error` and `close`, and `kill`; an interactive launch adds its standard input, kept open, and `exit`. Where
+ * the worker cannot be had (no built worker file beside this one, as
  * under the test runner, or a worker that failed to start), a launch is the in-thread `spawn` it always was.
  */
 export interface LaunchOptions {
@@ -41,6 +43,21 @@ export interface LaunchedProcess {
   on(event: 'close', listener: (code: number | null, signal: NodeJS.Signals | null) => void): this
   kill(signal?: NodeJS.Signals): boolean
 }
+/** An interactive launch's standard input: written in the order asked, then ended, as a child's own `stdin` is. */
+export interface LaunchedInput {
+  readonly destroyed: boolean
+  /** `callback` is called once the text is flushed to the process, or with the error that stopped it. */
+  write(data: string, callback?: (error?: Error | null) => void): boolean
+  end(): void
+  on(event: 'error', listener: (error: Error) => void): this
+}
+/** A process whose standard input stays open (`launchInteractive`), which also reports when it exits. */
+export interface InteractiveProcess extends LaunchedProcess {
+  readonly stdin: LaunchedInput
+  once(event: 'spawn', listener: () => void): this
+  /** `exit` is the process ending; `close` follows once its output has closed too. */
+  once(event: 'exit' | 'close', listener: (code: number | null, signal: NodeJS.Signals | null) => void): this
+}
 
 /** The worker file the build puts beside this module's bundle (`electron.vite.config.ts`, `scripts/build-host.mjs`). */
 const BUILT_WORKER = join(__dirname, 'gitLauncherWorker.js')
@@ -55,14 +72,14 @@ function stopFromHere(pid: number, detached: boolean): Promise<void> {
   return Promise.resolve()
 }
 
-/** Both output streams are piped, so neither is null. */
-function inThread(command: string, args: readonly string[], options: LaunchOptions): ChildProcess & LaunchedProcess {
+/** Both output streams are piped, so neither is null; an interactive launch's input is piped and left open. */
+function inThread(command: string, args: readonly string[], options: LaunchOptions, interactive = false): ChildProcess & InteractiveProcess {
   const child = spawn(command, [...args], {
     cwd: options.cwd, env: options.env, windowsHide: true, shell: false, detached: options.detached ?? false,
-    stdio: [options.stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+    stdio: [options.stdin === undefined && !interactive ? 'ignore' : 'pipe', 'pipe', 'pipe'],
   })
-  if (options.stdin !== undefined && child.stdin) { child.stdin.on('error', () => undefined); child.stdin.end(options.stdin) }
-  return child as ChildProcess & LaunchedProcess
+  if (!interactive && options.stdin !== undefined && child.stdin) { child.stdin.on('error', () => undefined); child.stdin.end(options.stdin) }
+  return child as ChildProcess & InteractiveProcess
 }
 
 function errorFrom(error: LaunchError): Error {
@@ -93,11 +110,75 @@ class Output extends EventEmitter implements LaunchedOutput {
   }
 }
 
+/**
+ * An interactive launch's standard input, written through the worker. What is written before the worker says it started
+ * the process is kept, so a process started in this thread instead (`adopt`) is given all of it, in order. It applies no
+ * backpressure: `write` always answers true and never waits on `drain`, so it suits a few small requests (Grok's limits
+ * probe) and not a stream; a caller that writes much would want a bounded queue paced by the flush answers first.
+ */
+class Input extends EventEmitter implements LaunchedInput {
+  private gone = false
+  private ended = false
+  private serial = 0
+  private readonly answers = new Map<number, (error?: Error | null) => void>()
+  private unstarted: Array<{ readonly data: string; readonly callback?: ((error?: Error | null) => void) | undefined } | 'end'> | undefined = []
+  private adopted: Writable | undefined
+  constructor(private readonly id: number, private readonly send: (request: LauncherRequest) => void) { super() }
+  get destroyed(): boolean { return this.adopted ? this.adopted.destroyed : this.gone }
+  write(data: string, callback?: (error?: Error | null) => void): boolean {
+    if (this.adopted) return this.adopted.write(data, callback)
+    if (this.gone || this.ended) {
+      const error = new Error('The process is no longer taking input.')
+      queueMicrotask(() => { callback?.(error); this.fail(error) })
+      return false
+    }
+    this.unstarted?.push({ data, callback })
+    const serial = callback ? ++this.serial : undefined
+    if (callback && serial !== undefined) this.answers.set(serial, callback)
+    this.send({ type: 'write', id: this.id, data, ...(serial !== undefined ? { serial } : {}) })
+    return true
+  }
+  end(): void {
+    if (this.adopted) { this.adopted.end(); return }
+    if (this.gone || this.ended) return
+    this.ended = true
+    this.unstarted?.push('end')
+    this.send({ type: 'end', id: this.id })
+  }
+  /** The worker started the process, so what was written is the worker's to deliver. */
+  started(): void { this.unstarted = undefined }
+  written(serial: number, error: LaunchError | undefined): void {
+    const answer = this.answers.get(serial)
+    this.answers.delete(serial)
+    answer?.(error ? errorFrom(error) : null)
+  }
+  fail(error: Error): void {
+    this.gone = true
+    if (this.listenerCount('error')) this.emit('error', error)
+  }
+  /** The process closed: a write still unanswered never reached it. */
+  closed(): void {
+    this.gone = true
+    for (const answer of this.answers.values()) answer(new Error('The process closed before it took this input.'))
+    this.answers.clear()
+  }
+  /** The worker went before it started the process, which started here instead: it is given what was written. */
+  adopt(stdin: Writable): void {
+    this.adopted = stdin
+    stdin.on('error', error => this.fail(error))
+    for (const item of this.unstarted ?? []) if (item === 'end') stdin.end(); else stdin.write(item.data, item.callback)
+    this.unstarted = undefined
+    this.answers.clear()
+  }
+}
+
 /** A process launched on the worker thread, or, when the worker went before it started it, in this thread instead. */
 class OffThreadProcess extends EventEmitter implements LaunchedProcess {
   pid: number | undefined
   readonly stdout: Output
   readonly stderr: Output
+  /** Only an interactive launch has one. */
+  readonly stdin: Input | undefined
   /** Whether the worker said it started, after which it is the worker's to finish. */
   started = false
   /** Set once it has closed, or been handed to an in-thread child. */
@@ -105,10 +186,11 @@ class OffThreadProcess extends EventEmitter implements LaunchedProcess {
   private adopted: ChildProcess | undefined
   /** A kill asked for before it was handed to an in-thread child, which that child then gets. */
   private killedWith: NodeJS.Signals | 'default' | undefined
-  constructor(readonly id: number, private readonly send: (request: LauncherRequest) => void) {
+  constructor(readonly id: number, private readonly send: (request: LauncherRequest) => void, interactive = false) {
     super()
     this.stdout = new Output(() => this.adopted ? this.adopted.stdout?.destroy() : this.send({ type: 'destroy', id, stream: 'stdout' }))
     this.stderr = new Output(() => this.adopted ? this.adopted.stderr?.destroy() : this.send({ type: 'destroy', id, stream: 'stderr' }))
+    this.stdin = interactive ? new Input(id, send) : undefined
   }
   kill(signal?: NodeJS.Signals): boolean {
     if (this.adopted) return this.adopted.kill(signal)
@@ -120,17 +202,20 @@ class OffThreadProcess extends EventEmitter implements LaunchedProcess {
   receive(event: LauncherEvent): void {
     if (this.settled) return
     switch (event.type) {
-      case 'spawned': this.started = true; this.pid = event.pid; if (event.pid !== undefined) this.emit('spawn'); return
+      case 'spawned': this.started = true; this.stdin?.started(); this.pid = event.pid; if (event.pid !== undefined) this.emit('spawn'); return
       case 'stdout': this.stdout.push(event.chunk); return
       case 'stderr': this.stderr.push(event.chunk); return
       case 'error': this.emit('error', errorFrom(event.error)); return
+      case 'exit': this.emit('exit', event.code, event.signal); return
+      case 'written': this.stdin?.written(event.serial, event.error); return
+      case 'stdin-error': this.stdin?.fail(errorFrom(event.error)); return
       case 'close': this.close(event.code, event.signal)
     }
   }
   close(code: number | null, signal: NodeJS.Signals | null): void {
     if (this.settled) return
     this.settled = true
-    this.stdout.end(); this.stderr.end()
+    this.stdout.end(); this.stderr.end(); this.stdin?.closed()
     this.emit('close', code, signal)
   }
   /**
@@ -143,8 +228,10 @@ class OffThreadProcess extends EventEmitter implements LaunchedProcess {
     this.pid = child.pid
     child.stdout?.on('data', (chunk: Buffer) => this.stdout.push(chunk))
     child.stderr?.on('data', (chunk: Buffer) => this.stderr.push(chunk))
+    if (this.stdin && child.stdin) this.stdin.adopt(child.stdin)
     child.on('error', error => this.emit('error', error))
-    child.on('close', (code, signal) => { this.stdout.end(); this.stderr.end(); this.emit('close', code, signal) })
+    child.on('exit', (code, signal) => this.emit('exit', code, signal))
+    child.on('close', (code, signal) => { this.stdout.end(); this.stderr.end(); this.stdin?.closed(); this.emit('close', code, signal) })
     if (this.stdout.destroyed) child.stdout?.destroy()
     if (this.stderr.destroyed) child.stderr?.destroy()
     if (this.killedWith !== undefined) child.kill(this.killedWith === 'default' ? undefined : this.killedWith)
@@ -159,7 +246,7 @@ class OffThreadProcess extends EventEmitter implements LaunchedProcess {
  */
 export class GitLauncher {
   private worker: Worker | null | undefined
-  private readonly running = new Map<number, { readonly process: OffThreadProcess; readonly command: string; readonly args: readonly string[]; readonly options: LaunchOptions }>()
+  private readonly running = new Map<number, { readonly process: OffThreadProcess; readonly command: string; readonly args: readonly string[]; readonly options: LaunchOptions; readonly interactive: boolean }>()
   private next = 1
   /** The worker `close` is stopping, which settles its own launches, so its exit settles nothing more. */
   private closing: Worker | undefined
@@ -169,21 +256,33 @@ export class GitLauncher {
   constructor(private readonly workerPath: string | null) {}
 
   launch(command: string, args: readonly string[], options: LaunchOptions): LaunchedProcess {
+    return this.start(command, args, options, false)
+  }
+
+  /**
+   * Starts a process whose standard input stays open for the caller to write to and end, as a `spawn` with every stream
+   * piped does.
+   */
+  launchInteractive(command: string, args: readonly string[], options: Pick<LaunchOptions, 'cwd' | 'env'>): InteractiveProcess {
+    return this.start(command, args, { cwd: options.cwd, env: options.env }, true) as InteractiveProcess
+  }
+
+  private start(command: string, args: readonly string[], options: LaunchOptions, interactive: boolean): LaunchedProcess {
     // Node starts a process given an empty folder in Sotto's own folder, where Git would read or change a repository
     // nobody chose. Refused where it is asked, so the caller's promise rejects.
     if (!options.cwd) throw new Error(`Sotto did not start ${command} because it was not given a folder to run in. Nothing was changed. Try again from a thread that has a project folder.`)
     const worker = this.ensureWorker()
-    if (!worker) return inThread(command, args, options)
+    if (!worker) return inThread(command, args, options, interactive)
     const id = this.next++
-    const launched = new OffThreadProcess(id, request => { try { worker.postMessage(request) } catch { /* The worker has gone; its exit settles this launch. */ } })
+    const launched = new OffThreadProcess(id, request => { try { worker.postMessage(request) } catch { /* The worker has gone; its exit settles this launch. */ } }, interactive)
     if (!this.running.size) worker.ref()
-    this.running.set(id, { process: launched, command, args, options })
+    this.running.set(id, { process: launched, command, args, options, interactive })
     launched.on('close', () => {
       if (this.running.get(id)?.process !== launched) return
       this.running.delete(id)
       if (!this.running.size && this.worker === worker) worker.unref()
     })
-    worker.postMessage({ type: 'launch', id, command, args: [...args], cwd: options.cwd, env: { ...options.env }, stdin: options.stdin ?? null, detached: options.detached ?? false } satisfies LauncherRequest)
+    worker.postMessage({ type: 'launch', id, command, args: [...args], cwd: options.cwd, env: { ...options.env }, stdin: interactive ? null : options.stdin ?? null, detached: options.detached ?? false, ...(interactive ? { interactive } : {}) } satisfies LauncherRequest)
     return launched
   }
 
@@ -249,9 +348,9 @@ export class GitLauncher {
     const running = [...this.running.values()]
     this.running.clear()
     const stopping: Promise<void>[] = []
-    for (const { process, command, args, options } of running) {
+    for (const { process, command, args, options, interactive } of running) {
       if (relaunch && !process.started) {
-        try { process.adopt(inThread(command, args, options)); continue } catch (error) {
+        try { process.adopt(inThread(command, args, options, interactive)); continue } catch (error) {
           process.emit('error', error instanceof Error ? error : new Error(String(error)))
         }
       } else process.emit('error', new Error(`Sotto stopped ${command} because its process launcher closed. Nothing it changed was undone; check the folder, then try again.`))
@@ -275,6 +374,10 @@ export async function useGitLauncher(workerPath: string | null): Promise<GitLaun
 /** Starts a process through the shared launcher. */
 export function launchProcess(command: string, args: readonly string[], options: LaunchOptions): LaunchedProcess {
   return gitLauncher().launch(command, args, options)
+}
+/** Starts a process with its standard input left open through the shared launcher (`GitLauncher.launchInteractive`). */
+export function launchInteractiveProcess(command: string, args: readonly string[], options: Pick<LaunchOptions, 'cwd' | 'env'>): InteractiveProcess {
+  return gitLauncher().launchInteractive(command, args, options)
 }
 /**
  * Runs a process to its end in Sotto's own folder and environment, its output unread: resolves when it exits with 0,

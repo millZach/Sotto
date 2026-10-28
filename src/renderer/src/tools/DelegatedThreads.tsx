@@ -13,6 +13,9 @@ import { clockLabel } from '../agents/threadFacts'
 import { useOwlFeature } from '../state/owlFeature'
 import { elapsedLabel } from './rosterTime'
 import '../agents/delegation.css'
+import { CheckQueueList } from '../watcher/CheckQueueList'
+import { checkOfThread, useCheckQueues } from '../watcher/checkQueues'
+import { checkInstallSentence, checkWaitingSentence } from '../watcher/checkQueueWords'
 
 /** What Tools › Agents needs to list a thread's delegated threads (ADR-0081; Owl only). */
 export interface DelegatedRosterSource {
@@ -102,7 +105,9 @@ function latestOutcome(row: DelegatedRosterRow, now: number): string {
  * preview, what the delegation record knows of it, its outcome and time, and a control that opens it in the pane. The
  * row opens to the brief and the latest outcome, never the thread's reply (ADR-0081 decision 7).
  */
-export const DelegatedThreadRow = memo(function DelegatedThreadRow({ row, shown, live, onOpen }: { readonly row: DelegatedRosterRow; readonly shown: boolean; readonly live: boolean; readonly onOpen: (threadId: string) => void }): ReactNode {
+export const DelegatedThreadRow = memo(function DelegatedThreadRow({ row, shown, live, onOpen, threadOf }: { readonly row: DelegatedRosterRow; readonly shown: boolean; readonly live: boolean; readonly onOpen: (threadId: string) => void
+  /** Finds a thread the window holds, for the names in a check's machine's list (#1312). */
+  readonly threadOf?: ((threadId: string) => AgentThread | undefined) | undefined }): ReactNode {
   const { t } = useLingui()
   const [open, setOpen] = useState(false)
   const id = useId()
@@ -116,6 +121,12 @@ export const DelegatedThreadRow = memo(function DelegatedThreadRow({ row, shown,
   const held = row.held && !row.lastRead ? heldLine(row.held, row.machine.name) : undefined
   // The preview is the excerpt the window holds; open, the row reads the whole brief from main.
   const brief = useFullBrief(row.thread.id, row.newest?.id, open) ?? row.brief
+  // A check: where it stands on its machine and that machine's checks, one at a time (#1312, Zach's pick C), only here.
+  const queues = useCheckQueues()
+  const placed = open ? checkOfThread(queues, row.thread.id) : undefined
+  const ownMachine = !row.machine.remote
+  const checkWords = placed === undefined ? undefined : placed.at > 0 ? checkWaitingSentence(machine, ownMachine, placed.at)
+    : row.thread.worktree?.check?.install === 'running' ? checkInstallSentence(machine, ownMachine) : undefined
   const close = (event: React.KeyboardEvent): void => {
     if (!open || event.key !== 'Escape' || event.defaultPrevented) return
     event.preventDefault(); setOpen(false); head.current?.focus()
@@ -147,7 +158,8 @@ export const DelegatedThreadRow = memo(function DelegatedThreadRow({ row, shown,
     {open ? <div className="subagent-details" id={id}>
       {brief ? <><h3>{t({ message: 'Brief', comment: 'Heading over the instructions a delegated thread was sent.' })}</h3>{row.lastRead && brief === row.brief ? <p className="delegated-row__source tt-paragraph">{t`The start of the brief, as Sotto last read it from ${machine}.`}</p> : null}<p>{brief}</p></> : null}
       <h3>{t`Latest outcome`}</h3>
-      <p className="subagent-result tt-paragraph" data-needs={row.status === 'needs' || undefined}>{latestOutcome(row, Date.now())}</p>
+      <p className="subagent-result tt-paragraph" data-needs={row.status === 'needs' || undefined}>{[checkWords, latestOutcome(row, Date.now())].filter(Boolean).join(' ')}</p>
+      {placed && threadOf ? <CheckQueueList checks={placed.machine} machine={machine} thisComputer={ownMachine} threadOf={threadOf} current={placed.machine.checks[placed.at]?.id} /> : null}
     </div> : null}
   </li>
 })
