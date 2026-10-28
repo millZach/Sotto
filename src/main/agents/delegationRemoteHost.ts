@@ -79,7 +79,7 @@ export class HostRemoteCallers {
   async tell(threadId: string, news: DelegationNews, replies: readonly RelayedReply[] = []): Promise<void> {
     const key = parseKey(threadId)
     const desktop = key ? this.desktops.findLast(item => item.clientId === key.clientId) : undefined
-    let pushed = false
+    let pushed: boolean
     try { pushed = desktop !== undefined && key !== undefined && desktop.push(key.caller, news, replies) } catch { pushed = false }
     if (!pushed) { this.options.log?.('delegation-remote-news-failed'); throw new Error('The desktop that asked for this delegation is not connected.') }
   }
