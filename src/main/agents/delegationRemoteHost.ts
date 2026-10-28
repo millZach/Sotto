@@ -30,6 +30,7 @@ type RemoteFile = z.infer<typeof fileSchema>
 /** Callers kept past this many only while one of them has a delegation open. */
 const CALLERS_MAX = 1_000
 const FORGOTTEN = 'This machine no longer takes delegations from that desktop. Nothing was started or sent.'
+const ADMITTING = 'This machine is still admitting that delegation, so it cannot say yet whether it started. Nothing was sent again.'
 const NOT_HELD = 'This machine holds no delegation for that thread, so Sotto cannot prove whether it started. Nothing was sent again.'
 
 /**
@@ -51,6 +52,8 @@ export class HostRemoteCallers {
   private readonly desktops: RemoteDesktop[] = []
   /** Callers whose admission is running now, by how many: never trimmed, so a caller cannot drop itself before it is admitted. */
   private readonly admitting = new Map<string, number>()
+  /** The same, by caller and the retry key each was asked under, so a read by retry key can tell "still admitting" from "never had". */
+  private readonly admittingKeys = new Map<string, number>()
   private delegation: Pick<DelegationService, 'delegate' | 'read' | 'cancel' | 'retriedDelegation' | 'hasOpen'> | undefined
 
   constructor(directory: string, private readonly options: {
@@ -104,6 +107,24 @@ export class HostRemoteCallers {
     if (!pushed) { this.options.log?.('delegation-remote-news-failed'); throw new Error('The desktop that asked for this delegation is not connected.') }
   }
 
+  /**
+   * Marks a `delegate` ask as being admitted, under its retry key, from the moment it is taken until its admission ends,
+   * so a read by that key in between says it may still be made. The socket takes it before anything it awaits. Returns
+   * how to let it go.
+   */
+  hold(clientId: string, raw: DelegationRemoteAsk): () => void {
+    const retryKey = raw.type === 'delegate' && typeof raw.input.retry_key === 'string' ? raw.input.retry_key : undefined
+    if (retryKey === undefined) return () => undefined
+    const held = `${remoteCallerKey(clientId, raw.caller)}\n${retryKey}`
+    this.admittingKeys.set(held, (this.admittingKeys.get(held) ?? 0) + 1)
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      const count = (this.admittingKeys.get(held) ?? 1) - 1
+      if (count > 0) this.admittingKeys.set(held, count); else this.admittingKeys.delete(held)
+    }
+  }
   /** One ask from the desktop `clientId`, answered as this host's own delegation answers the asking thread. */
   async answer(clientId: string, raw: DelegationRemoteAsk): Promise<unknown> {
     const ask = delegationRemoteAskSchema.parse(raw)
@@ -113,6 +134,9 @@ export class HostRemoteCallers {
     const key = remoteCallerKey(clientId, ask.caller)
     if (ask.type === 'read') {
       const delegationId = ask.delegation ?? (ask.retryKey ? delegation.retriedDelegation(key, ask.retryKey) : undefined)
+      // By retry key, "none yet" and "never" are told apart: a start still being admitted may yet be made (#1316 review).
+      if (!delegationId && ask.retryKey && this.admittingKeys.has(`${key}\n${ask.retryKey}`)) return { status: 'refused', code: 'UNKNOWN_DELEGATION', message: ADMITTING, admitting: true }
+      if (!delegationId && ask.retryKey) return { status: 'refused', code: 'UNKNOWN_DELEGATION', message: NOT_HELD, absent: true }
       if (!delegationId || !this.callers.has(key)) return { status: 'refused', code: 'UNKNOWN_DELEGATION', message: NOT_HELD }
       return await delegation.read(key, { delegation: delegationId })
     }
@@ -125,12 +149,14 @@ export class HostRemoteCallers {
     this.callers.set(key, { id: key, projectId: ask.projectId, runtimeMode: ask.runtimeMode, levels: ask.levels, rootUserMessageId: ask.rootUserMessageId,
       ...(ask.callerMessageId ? { callerMessageId: ask.callerMessageId } : {}) })
     this.admitting.set(key, (this.admitting.get(key) ?? 0) + 1)
+    const release = this.hold(clientId, ask)
     try {
       await this.save()
       return await delegation.delegate(key, ask.input, { waitMs: ask.waitMs + 2_000 })
     } finally {
       const count = (this.admitting.get(key) ?? 1) - 1
       if (count > 0) this.admitting.set(key, count); else this.admitting.delete(key)
+      release()
     }
   }
   /**

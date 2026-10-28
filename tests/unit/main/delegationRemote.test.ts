@@ -1,7 +1,7 @@
 // @vitest-environment node
 // #1316 part 2 (Owl `cross-machine-work`): the desktop starts delegated threads on its paired hosts, each admitted there by
 // that host's own delegation, and a thread on a host may name a third machine, or send a second brief, through the relay.
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -74,6 +74,19 @@ describe('a desktop\'s delegation on a paired host, on the host', () => {
     const again = new HostRemoteCallers(dirname(join(roots[0]!, 'x')))
     await again.load()
     expect(again.caller(key)?.projectId).toBe('mac-project')
+  })
+
+  it('says a start it is still admitting apart from one it never had, when read by retry key (review)', async () => {
+    const callers = new HostRemoteCallers(await folder())
+    let finish: ((value: unknown) => void) | undefined
+    callers.useDelegation({ delegate: () => new Promise(resolve => { finish = resolve }), read: async () => ({}), cancel: async () => ({}),
+      retriedDelegation: () => undefined, hasOpen: () => true })
+    const starting = callers.answer('desktop-a', { type: 'delegate', caller: 'parent-1', projectId: 'mac-project', ...askOf, input: { ...askOf.input, retry_key: RETRY } })
+    await expect.poll(() => finish).toBeDefined()
+    expect(await callers.answer('desktop-a', { type: 'read', caller: 'parent-1', retryKey: RETRY })).toMatchObject({ status: 'refused', code: 'UNKNOWN_DELEGATION', admitting: true })
+    finish!({ status: 'refused', code: 'PERMISSION_TOO_WIDE', message: 'Too wide.' })
+    await starting
+    expect(await callers.answer('desktop-a', { type: 'read', caller: 'parent-1', retryKey: RETRY })).toMatchObject({ status: 'refused', code: 'UNKNOWN_DELEGATION', absent: true })
   })
 
   it('never drops a caller while its own admission runs, however many older callers stay open (review)', async () => {
@@ -200,6 +213,25 @@ describe('a delegation on a paired host, on the desktop', () => {
     expect(await remote.start('parent-1', 'code-review', macPlacement, { ...askOf, waitMs: 60_000 })).toMatchObject({ delegation: { outcome: 'failed' } })
   })
 
+  it('stops counting a lost start, and lets it settle, only once the host says it holds none and is admitting none (review)', async () => {
+    let lose = true
+    const mac = host(() => { if (lose) throw new Error('The socket closed.'); return { status: 'refused', code: 'UNKNOWN_DELEGATION', message: 'None.', absent: true } })
+    const root = await folder()
+    const remote = new DesktopRemoteDelegations(root, { machineName: () => 'the Mac' })
+    remote.useDelivery(async () => undefined)
+    const router = hosts([mac.connection])
+    remote.useHosts(router.source)
+    await remote.start('parent-1', 'code-review', macPlacement, askOf)
+    expect(remote.pendingStarts(MAC)).toHaveLength(1)
+    lose = false
+    router.connected.length = 0
+    router.connect(mac.connection)
+    await expect.poll(() => remote.pendingStarts(MAC)).toEqual([])
+    expect(remote.list('parent-1')).toEqual([expect.objectContaining({ outcome: 'unknown' })])
+    // Proved never made, it is history now, not a live record kept for good.
+    await expect.poll(async () => JSON.parse(await readFile(join(root, 'delegation-remote.json'), 'utf8')).delegations).toEqual([])
+  })
+
   it('counts a start whose answer was lost, sends nothing again, and reads it exactly when the host is back', async () => {
     let lose = true
     const mac = host(() => { if (lose) throw new Error('The socket closed.'); return { status: 'ok', delegation: { id: THERE, thread: 'child-mac', outcome: 'answered' } } })
@@ -232,7 +264,7 @@ describe('a delegation on a paired host, on the desktop', () => {
     let phase: 'lost' | 'admitting' | 'started' = 'lost'
     const mac = host(ask => {
       if (ask.type === 'delegate') throw new Error('The socket closed.')
-      return phase === 'admitting' ? { status: 'refused', code: 'UNKNOWN_DELEGATION', message: 'None.' }
+      return phase === 'admitting' ? { status: 'refused', code: 'UNKNOWN_DELEGATION', message: 'None yet.', admitting: true }
         : { status: 'ok', delegation: { id: THERE, thread: 'child-mac', outcome: 'answered' } }
     })
     const remote = new DesktopRemoteDelegations(await folder(), { machineName: () => 'the Mac' })
@@ -250,6 +282,8 @@ describe('a delegation on a paired host, on the desktop', () => {
     await expect.poll(() => mac.asked.filter(ask => ask.type === 'read').length).toBe(1)
     await flush()
     expect(told).toEqual([])
+    // That read proves nothing: the start may still be made, so it still counts on the Mac (Sol re-review).
+    expect(remote.pendingStarts(MAC)).toHaveLength(1)
     // The start lands after all, and its news names the Mac's own ID, which this computer never learned.
     phase = 'started'
     mac.push('parent-1', { source: 'delegation', items: [{ delegationId: THERE, threadId: 'child-mac', outcome: 'answered' }] })

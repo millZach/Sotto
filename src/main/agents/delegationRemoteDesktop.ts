@@ -58,6 +58,8 @@ const recordSchema = z.object({
   outcome: watcherOutcomeSchema, told: watcherOutcomeSchema.optional(),
   /** The answer was lost, or a read could not reach the host: read it exactly once the host is back. */
   unread: z.literal(true).optional(),
+  /** The host said it holds none for its retry key and is admitting none: it was never made, and is history (#1316 review). */
+  absent: z.literal(true).optional(),
   createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(),
 }).strict()
 type RemoteRecord = z.infer<typeof recordSchema>
@@ -73,6 +75,8 @@ const SETTLED_KEPT = DELEGATION_RELAY_RECORDS_MAX * 4
 const targetIndex = (hostId: string, delegation: string): string => `${hostId}\n${delegation}`
 const threadIndex = (callerId: string, hostId: string, thread: string): string => `${callerId}\n${hostId}\n${thread}`
 const retryIndex = (callerId: string, retryKey: string): string => `${callerId}\n${retryKey}`
+/** How soon a host still admitting a start whose answer was lost is read again. */
+const REREAD_MS = 5_000
 /** How many replies wait in memory for their wake-up to be worded. */
 const REPLIES_KEPT = 200
 
@@ -145,6 +149,8 @@ export class DesktopRemoteDelegations {
    */
   private readonly pending = new Map<string, Set<string>>()
   private closed = false
+  /** A host's pending read again, while it is still admitting a start whose answer was lost. */
+  private readonly rereads = new Map<string, ReturnType<typeof setTimeout>>()
 
   constructor(directory: string, private readonly options: {
     /** The name this computer saved for a host, which every sentence about it says. */
@@ -200,6 +206,8 @@ export class DesktopRemoteDelegations {
     this.unfollow?.(); this.unfollow = undefined
     for (const waiting of this.waiters.values()) for (const wake of waiting) wake()
     this.waiters.clear()
+    for (const timer of this.rereads.values()) clearTimeout(timer)
+    this.rereads.clear()
   }
 
   /** Whether `delegationId` is one of `callerId`'s delegations on a paired host. */
@@ -421,10 +429,23 @@ export class DesktopRemoteDelegations {
       const reply = isObject(delegation.reply) ? delegation.reply : undefined
       if (outcome.data === 'answered' && reply && typeof reply.messageId === 'string' && typeof reply.text === 'string')
         this.keepReply(record.id, { messageId: reply.messageId, text: reply.text, truncated: reply.truncated === true })
+    } else if (answer.status === 'refused' && record.delegation === undefined && answer.absent !== true) {
+      // Read by retry key, the host holds none yet: its admission may still be running, or it cannot say. Nothing is proved,
+      // so the start still counts, stays unread and is read again, never sent again (Sol re-review of #1316 part 2).
+      this.update(record, saved => { saved.outcome = 'unknown'; if (tells) saved.told = 'unknown'; saved.unread = true })
+      if (answer.admitting === true) this.readAgain(record.hostId, record.callerId)
     } else if (answer.status === 'refused' || answer.status === 'ok' && !outcome.success) {
-      this.update(record, saved => { saved.outcome = 'unknown'; if (tells) saved.told = 'unknown'; delete saved.unread })
+      // Proved: the host holds nothing under that ID, or none under the retry key and is admitting none.
+      this.update(record, saved => { saved.outcome = 'unknown'; if (tells) saved.told = 'unknown'; delete saved.unread; if (saved.delegation === undefined) saved.absent = true })
       this.release(record)
     }
+  }
+  /** Reads a host's unresolved delegations for `callerId` again shortly, while the host is still admitting one. */
+  private readAgain(hostId: string, callerId: string): void {
+    if (this.rereads.has(hostId) || this.closed) return
+    const timer = setTimeout(() => { this.rereads.delete(hostId); void this.reconcile(hostId, callerId) }, REREAD_MS)
+    timer.unref?.()
+    this.rereads.set(hostId, timer)
   }
   private adopt(record: RemoteRecord, delegation: Record<string, unknown>, tells = true): void {
     const outcome = watcherOutcomeSchema.safeParse(delegation.outcome)
@@ -470,7 +491,7 @@ export class DesktopRemoteDelegations {
     this.indexed(record); this.dirty.add(record)
   }
   /** Whether a record is kept in the live file: open, its outcome untold, or never matched to the host's own ID. */
-  private isLive(record: RemoteRecord): boolean { return this.open(record) || record.told !== record.outcome || record.delegation === undefined }
+  private isLive(record: RemoteRecord): boolean { return this.open(record) || record.told !== record.outcome || record.delegation === undefined && record.absent !== true }
   private add(record: RemoteRecord): void {
     this.byId.set(record.id, record)
     const own = this.byCaller.get(record.callerId) ?? []

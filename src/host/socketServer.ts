@@ -205,7 +205,7 @@ export interface SocketServerOptions {
    * only where the host runs delegation for its own threads and its Owl answer turns on Work across machines. Offered on
    * either listener, to a client the launch script recorded as a desktop, and to no other.
    */
-  delegationRemote?: Pick<HostRemoteCallers, 'desktopConnected' | 'desktopGone' | 'answer'>
+  delegationRemote?: Pick<HostRemoteCallers, 'desktopConnected' | 'desktopGone' | 'answer' | 'hold'>
 }
 /**
  * Which paired clients a tailnet listener admits, and as what. `desktops` is read again before a session and a hello,
@@ -1335,10 +1335,15 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'delegation-remote-ask': {
         // A desktop's delegation here for a thread on another machine (#1316 part 2), admitted by this host's own delegation.
         if (!options.delegationRemote || !peer.delegationRemote) throw new Refusal('invalid_request')
-        // Read again at every ask, not only at hello: a desktop the launch script no longer records is refused (#1316 review).
-        await options.watcherDesktops?.refresh().catch(() => undefined)
-        if (options.watcherDesktops?.has(peer.client.clientId) !== true) throw new Refusal('forbidden')
-        try { return { result: await options.delegationRemote.answer(peer.client.clientId, request.ask) } } catch { throw new Refusal('unavailable') }
+        // Held as being admitted from the moment it is taken, before anything here waits, so a read by its retry key on
+        // another socket meanwhile says it may still be made (#1316 review).
+        const release = options.delegationRemote.hold(peer.client.clientId, request.ask)
+        try {
+          // Read again at every ask, not only at hello: a desktop the launch script no longer records is refused (#1316 review).
+          await options.watcherDesktops?.refresh().catch(() => undefined)
+          if (options.watcherDesktops?.has(peer.client.clientId) !== true) throw new Refusal('forbidden')
+          try { return { result: await options.delegationRemote.answer(peer.client.clientId, request.ask) } } catch { throw new Refusal('unavailable') }
+        } finally { release() }
       }
       case 'host-update': {
         // A host update the host runs on itself (ADR-0088): a recorded desktop that may answer, after its hello, and only
