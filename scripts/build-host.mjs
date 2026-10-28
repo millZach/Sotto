@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import process from 'node:process'
 import { build } from 'vite'
-import { storeWorkerBuild } from './store-worker-build.mjs'
+import { STORE_WORKERS, storeWorkerBuild } from './store-worker-build.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 
@@ -59,9 +59,10 @@ export async function buildHost(outDir = resolve(root, process.env.SOTTO_HOST_OU
       },
     },
   })
-  // The thread store's writes and its log's checkpoints run on the store worker (`storeWorker.ts`): one file with what it
-  // imports inside it, beside index.js, built on its own as electron.vite.config.ts builds it.
-  await build(storeWorkerBuild({ root, outDir }))
+  // The thread store's writes and its log's checkpoints run on the store worker (`storeWorker.ts`), and Usage's store on its
+  // own worker (`usageStoreClient.ts`): each one file with what it imports inside it, beside index.js, built on its own as
+  // electron.vite.config.ts builds it.
+  for (const worker of STORE_WORKERS) await build(storeWorkerBuild({ root, outDir, worker }))
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await buildHost()

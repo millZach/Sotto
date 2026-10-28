@@ -5353,6 +5353,18 @@ export class AgentControl {
         await this.dependencies.bindRequestDraftDecision?.({ kind: 'thread', ownerId: command.threadId, providerId: provider, requestId: command.requestId, questions: answerQuestions }, command.commandId, draftAnswers)
         this.canAct(undefined, draftKept); this.guardAuthority(command, turn); validate?.()
       }
+      if (prompt && isUsageProviderId(provider)) {
+        // A send the guard already refuses writes nothing to Usage; the guard runs again just before the provider hears it.
+        writeGuard?.()
+        // Handed to Usage without waiting: the send never waits for Usage's store, and the selection is written right after
+        // it, always ahead of the echo that accepts it (ADR-0078 and ADR-0083, October 27 amendments).
+        try { this.dependencies.usage?.submitPrompt({ providerId: provider, threadId: prompt.threadId,
+          messageId: prompt.messageId, modelId: this.thread(prompt.threadId).modelId, at: new Date().toISOString(),
+          // With restarting stopped threads on, Watcher's news counts as Watcher's (ADR-0144): its sends before Sotto's notes.
+          kind: this.dependencies.restartStoppedThreads === true ? origin?.operationId ? 'watcher' : wakeUp ? 'wake-up' : 'user'
+            : wakeUp ? 'wake-up' : origin?.operationId ? 'watcher' : 'user', inputKind: command.type === 'steer' ? 'steer' : 'send' }) }
+        catch { /* A usage failure cannot refuse or resend the user's message. */ }
+      }
       const providerStartedAt = Date.now()
       // The images become the adapter's to read here, at the provider boundary, and not before (ADR-0031).
       const hostCommand = (prompt?.attachments?.length
@@ -5365,14 +5377,6 @@ export class AgentControl {
           endLoan = lendSendStages(command.commandId, stages)
         }
         writeGuard?.()
-        if (prompt && isUsageProviderId(provider)) {
-          try { this.dependencies.usage?.submitPrompt({ providerId: provider, threadId: prompt.threadId,
-            messageId: prompt.messageId, modelId: this.thread(prompt.threadId).modelId, at: new Date().toISOString(),
-            // With restarting stopped threads on, Watcher's news counts as Watcher's (ADR-0144): its sends before Sotto's notes.
-            kind: this.dependencies.restartStoppedThreads === true ? origin?.operationId ? 'watcher' : wakeUp ? 'wake-up' : 'user'
-              : wakeUp ? 'wake-up' : origin?.operationId ? 'watcher' : 'user', inputKind: command.type === 'steer' ? 'steer' : 'send' }) }
-          catch { /* A usage failure cannot refuse or resend the user's message. */ }
-        }
         if (wakeUp) this.wakeUpsOffered.add(command.commandId)
         result = await (writeGuard && this.dependencies.host.executeFromWatcher
           ? this.dependencies.host.executeFromWatcher(hostCommand, writeGuard) : this.dependencies.host.execute(hostCommand)).catch(error => {

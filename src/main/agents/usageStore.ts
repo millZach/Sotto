@@ -24,6 +24,11 @@ const SCHEMA_VERSION = 1
 const ZONE_OFFSETS_MAX = 65_536
 const MODEL_IDS_MAX = 4_096
 const STATEMENTS_MAX = 256
+/**
+ * How many different reads one revision keeps answers for. Opening Usage reads the page, then each provider and model a
+ * split chart or a details view draws; going back to one of them reads it again unchanged.
+ */
+const QUERY_ANSWERS_MAX = 16
 const MINUTE = 60_000
 /** Every zone offset and transition in use is a whole number of 15-minute steps, so one bucket has one offset. */
 const BUCKET = 15 * MINUTE
@@ -114,23 +119,37 @@ export class UsageStore {
   private readonly offsets = new Map<string, number>()
   private readonly models = new Map<string, string>()
   private readonly statements = new Map<string, StatementSync>()
-  private queryCache: { key: string; revision: number; result: UsageLocalRead } | undefined
+  /** Answers already worked out at one revision, by query; any write moves the revision and empties it. */
+  private queryCache: { revision: number; answers: Map<string, UsageLocalRead> } | undefined
+  /** The revision `usage_prompt_served` was worked out at: which model served each prompt changes only with a write. */
+  private servedRevision: number | undefined
 
   constructor(private readonly path: string, private readonly now: () => string = () => new Date().toISOString()) {}
 
-  open(): void {
+  /**
+   * `reader` opens a connection that only reads, beside the one that writes (the **usage store worker**'s reader): it
+   * neither creates nor migrates the file, which the writer has already opened, and SQLite refuses it any write but to
+   * its own temporary tables.
+   */
+  open(options: { reader?: boolean } = {}): void {
     if (this.db !== undefined) return
-    if (this.path !== ':memory:') mkdirSync(dirname(this.path), { recursive: true })
-    const db = new DatabaseSync(this.path, { timeout: 5_000 })
+    if (this.path !== ':memory:' && !options.reader) mkdirSync(dirname(this.path), { recursive: true })
+    const db = new DatabaseSync(this.path, { timeout: 5_000, ...(options.reader ? { readOnly: true } : {}) })
     try {
-      // A save does not wait for the disk (`SAVE_SYNCHRONOUS`); clearing does (`flushedCommits`).
-      db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=${SAVE_SYNCHRONOUS}; PRAGMA secure_delete=ON; PRAGMA foreign_keys=ON; PRAGMA temp_store=MEMORY;`)
-      db.exec('BEGIN IMMEDIATE')
-      try {
-        this.migrate(db)
-        db.exec('COMMIT')
-      } catch (error) { db.exec('ROLLBACK'); throw error }
+      if (options.reader) db.exec('PRAGMA temp_store=MEMORY;')
+      else {
+        // A save does not wait for the disk (`SAVE_SYNCHRONOUS`); clearing does (`flushedCommits`).
+        db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=${SAVE_SYNCHRONOUS}; PRAGMA secure_delete=ON; PRAGMA foreign_keys=ON; PRAGMA temp_store=MEMORY;`)
+        db.exec('BEGIN IMMEDIATE')
+        try {
+          this.migrate(db)
+          db.exec('COMMIT')
+        } catch (error) { db.exec('ROLLBACK'); throw error }
+      }
       db.exec(`
+        CREATE TEMP TABLE IF NOT EXISTS usage_prompt_served (
+          thread_id TEXT NOT NULL, message_id TEXT NOT NULL, model_id TEXT NOT NULL, PRIMARY KEY(thread_id, message_id)
+        ) WITHOUT ROWID;
         CREATE TEMP TABLE IF NOT EXISTS usage_prompt_items (
           provider TEXT, model TEXT, thread_id TEXT, source TEXT, client TEXT, day TEXT, weekday INTEGER, hour INTEGER, kind TEXT, input_kind TEXT
         );
@@ -154,6 +173,7 @@ export class UsageStore {
     this.offsets.clear()
     this.models.clear()
     this.queryCache = undefined
+    this.servedRevision = undefined
   }
 
   metadata(): UsageMetadata {
@@ -259,6 +279,12 @@ export class UsageStore {
     return usageHistoryCursorSchema.parse({ size: row.size, mtimeMs: row.mtime_ms, offset: row.offset, ...(row.state === null ? {} : { state: row.state }) })
   }
 
+  /** Every file's cursor, which the importer reads once as a pass begins rather than one file at a time. */
+  historyCursors(): { key: string; cursor: UsageHistoryCursor }[] {
+    return this.statement('SELECT * FROM history_cursors').all().map(row => ({ key: cursorKeySchema.parse(row.key),
+      cursor: usageHistoryCursorSchema.parse({ size: row.size, mtimeMs: row.mtime_ms, offset: row.offset, ...(row.state === null ? {} : { state: row.state }) }) }))
+  }
+
   setHistoryCursors(entries: readonly { key: string; cursor: UsageHistoryCursor }[]): void {
     bounded(entries, 'History cursors')
     const parsed = entries.map(entry => ({ key: cursorKeySchema.parse(entry.key), cursor: usageHistoryCursorSchema.parse(entry.cursor) }))
@@ -358,18 +384,43 @@ export class UsageStore {
     const query = usageLocalQuerySchema.parse(input)
     const timeZone = query.timeZone ?? 'UTC'
     const db = this.requireOpen()
-    const metadata = this.metadata()
-    const key = JSON.stringify(query)
-    // History status changes without a revision, so a reused read still reports the current one.
-    if (this.queryCache?.key === key && this.queryCache.revision === metadata.revision) return { ...structuredClone(this.queryCache.result), metadata }
+    // The revision is read inside the read, so an answer is kept under the revision it was worked out at even while
+    // another connection writes (the usage store worker's reader).
     db.exec('BEGIN')
     try {
+      const metadata = this.metadata()
+      const key = JSON.stringify(query)
+      if (this.queryCache?.revision !== metadata.revision) this.queryCache = { revision: metadata.revision, answers: new Map() }
+      const cached = this.queryCache.answers.get(key)
+      // History status changes without a revision, so a reused read still reports the current one.
+      if (cached !== undefined) { db.exec('COMMIT'); return { ...structuredClone(cached), metadata } }
       const result = this.read(db, query, timeZone, metadata)
       db.exec('COMMIT')
       // Readers may own and mutate their response. Never expose the retained numeric cache.
-      this.queryCache = { key, revision: metadata.revision, result: structuredClone(result) }
+      cacheBounded(this.queryCache.answers, key, structuredClone(result), QUERY_ANSWERS_MAX)
       return result
-    } catch (error) { db.exec('ROLLBACK'); throw error }
+    } catch (error) {
+      // The served models were worked out inside the read, so they roll back with it.
+      this.servedRevision = undefined
+      db.exec('ROLLBACK'); throw error
+    }
+  }
+
+  /**
+   * Which model served each prompt: the first main-chain token row in the same thread at or after the prompt and before
+   * that thread's next prompt, failing that the selection; undated rows never serve. It depends on every prompt and
+   * token row, not on a query's filters, so it is worked out once per revision rather than once per read: opening Usage
+   * reads the page and then each provider and model again, and this was most of each read.
+   */
+  private servedModels(db: DatabaseSync, revision: number): void {
+    if (this.servedRevision === revision) return
+    this.statement('DELETE FROM usage_prompt_served').run()
+    this.statement(`INSERT INTO usage_prompt_served (thread_id,message_id,model_id)
+      SELECT p.thread_id,p.message_id,COALESCE((SELECT t.model_id FROM token_rows t
+          WHERE t.provider=p.provider AND t.thread_id=p.thread_id AND t.sub_agent=0 AND t.at>=p.at AND (p.next_at IS NULL OR t.at<p.next_at)
+          ORDER BY t.at LIMIT 1),p.model_id)
+      FROM (SELECT provider,thread_id,message_id,model_id,at,LEAD(at) OVER (PARTITION BY provider,thread_id ORDER BY at,message_id) AS next_at FROM prompt_rows) p`).run()
+    this.servedRevision = revision
   }
 
   /**
@@ -388,19 +439,17 @@ export class UsageStore {
     const models = query.modelIds === undefined ? undefined : query.modelIds.length === 0 ? '0' : `model IN (${query.modelIds.map(() => '?').join(',')})`
     const modelParameters = query.modelIds ?? []
 
-    // Prompts: the served model is the first main-chain token row in the same thread at or after the prompt and
-    // before that thread's next prompt; failing that, the selection. Undated rows never serve.
+    // Prompts, each under the model that served it (`servedModels`).
+    this.servedModels(db, metadata.revision)
     const prompts = utcDayFilter(query, 'p.day')
     const promptWhere = [...shared.sql('p.'), ...prompts.sql, ...(since === undefined ? [] : ['p.at>=?'])]
     db.prepare(`INSERT INTO usage_prompt_items
       SELECT provider,model,thread_id,source,client,local_day,weekday,hour,kind,input_kind FROM (
-        SELECT p.provider,usage_model(p.provider,COALESCE((SELECT t.model_id FROM token_rows t
-            WHERE t.provider=p.provider AND t.thread_id=p.thread_id AND t.sub_agent=0 AND t.at>=p.at AND (p.next_at IS NULL OR t.at<p.next_at)
-            ORDER BY t.at LIMIT 1),p.model_id)) AS model,
+        SELECT p.provider,usage_model(p.provider,s.model_id) AS model,
           p.thread_id,p.source,p.client,${zone.day('p.at', 'instant')} AS local_day,
           (CAST(strftime('%w',p.at,${zone.modifier('p.at', 'instant')}) AS INTEGER)+6)%7 AS weekday,
           CAST(strftime('%H',p.at,${zone.modifier('p.at', 'instant')}) AS INTEGER) AS hour,p.kind,p.input_kind
-        FROM (SELECT *,LEAD(at) OVER (PARTITION BY provider,thread_id ORDER BY at,message_id) AS next_at FROM prompt_rows) p
+        FROM prompt_rows p JOIN usage_prompt_served s ON s.thread_id=p.thread_id AND s.message_id=p.message_id
         ${where(promptWhere)}
       ) ${where([...local.sql, ...(models === undefined ? [] : [models])])}`)
       .run(...shared.parameters, ...prompts.parameters, ...(since === undefined ? [] : [since]), ...local.parameters, ...modelParameters)
