@@ -284,17 +284,21 @@ export class DesktopRemoteDelegations {
     })
     await this.persist()
     await this.tell(caller, items).catch(() => undefined)
-    if (unmatched) void this.reconcile(hostId)
+    // A start whose answer was lost may have been admitted after an early read found nothing: its news names an ID this
+    // computer never learned, so that caller's unresolved delegations are read again by retry key. Nothing is resent.
+    if (unmatched) void this.reconcile(hostId, caller)
   }
   /**
    * Reads every open delegation on `hostId` exactly, and every one whose answer was lost (ADR-0058): what the host's record
-   * says then is what stands, `unknown` included, and each thread is told what moved. Nothing is sent again.
+   * says then is what stands, `unknown` included, and each thread is told what moved. Nothing is sent again. With
+   * `unresolvedOf`, that caller's delegations whose ID there was never learned are read again too, `unknown` or not.
    */
-  reconcile(hostId: string): Promise<void> {
+  reconcile(hostId: string, unresolvedOf?: string): Promise<void> {
     const running = this.reconciling.get(hostId)
-    if (running) return running
+    if (running) return unresolvedOf === undefined ? running : running.then(() => this.reconcile(hostId, unresolvedOf))
     const run = (async () => {
-      const open = this.records.filter(record => record.hostId === hostId && (record.unread === true || !SETTLED.has(record.outcome) || record.told !== record.outcome))
+      const open = this.records.filter(record => record.hostId === hostId && (record.unread === true || !SETTLED.has(record.outcome) || record.told !== record.outcome
+        || record.callerId === unresolvedOf && record.delegation === undefined))
       const moved = new Map<string, { record: RemoteRecord; item: DelegationNews['items'][number] }[]>()
       for (const record of open) {
         const connection = this.connection(hostId)

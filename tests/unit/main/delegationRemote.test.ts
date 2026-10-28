@@ -159,6 +159,36 @@ describe('a delegation on a paired host, on the desktop', () => {
     expect(mac.asked.filter(ask => ask.type === 'delegate')).toHaveLength(1)
   })
 
+  it('reads a lost start again when news names a delegation it never learned, without asking for it again (review)', async () => {
+    let phase: 'lost' | 'admitting' | 'started' = 'lost'
+    const mac = host(ask => {
+      if (ask.type === 'delegate') throw new Error('The socket closed.')
+      return phase === 'admitting' ? { status: 'refused', code: 'UNKNOWN_DELEGATION', message: 'None.' }
+        : { status: 'ok', delegation: { id: THERE, thread: 'child-mac', outcome: 'answered' } }
+    })
+    const remote = new DesktopRemoteDelegations(await folder(), { machineName: () => 'the Mac' })
+    const told: DelegationNews[] = []
+    remote.useDelivery(async (_, news) => { told.push(news) })
+    const router = hosts([])
+    remote.useHosts(router.source)
+    router.connected.push(mac.connection)
+    const lost = await remote.start('parent-1', 'code-review', macPlacement, askOf)
+    const id = (lost.delegation as { id: string }).id
+    // The Mac reconnects while it is still admitting the start: the read by retry key finds nothing yet.
+    phase = 'admitting'
+    router.connected.length = 0
+    router.connect(mac.connection)
+    await expect.poll(() => mac.asked.filter(ask => ask.type === 'read').length).toBe(1)
+    await flush()
+    expect(told).toEqual([])
+    // The start lands after all, and its news names the Mac's own ID, which this computer never learned.
+    phase = 'started'
+    mac.push('parent-1', { source: 'delegation', items: [{ delegationId: THERE, threadId: 'child-mac', outcome: 'answered' }] })
+    await expect.poll(() => told.length).toBe(1)
+    expect(told[0]!.items).toEqual([{ delegationId: id, threadId: `host:${MAC}:child-mac`, outcome: 'answered' }])
+    expect(mac.asked.filter(ask => ask.type === 'delegate')).toHaveLength(1)
+  })
+
   it('refuses while the host is away, starts nothing, and reads what it last read', async () => {
     const remote = new DesktopRemoteDelegations(await folder(), { machineName: () => 'the Mac' })
     remote.useHosts(hosts([]).source)
