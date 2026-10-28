@@ -187,7 +187,7 @@ h1[tabindex='-1']:focus {
   font-weight: 500;
   line-height: 1.2;
   white-space: nowrap;
-  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, filter 120ms ease;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, filter 120ms ease, opacity 120ms ease;
 }
 
 .tt-button:hover:not(:disabled) {

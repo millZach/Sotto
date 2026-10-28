@@ -2,7 +2,7 @@
    above itself, so the typed text and the send button stay where they were. Outside a composer (Settings, the continue
    strip) each is one filled chip with 5px corners (ADR-0110). In a composer they are text buttons (ADR-0113, below). */
 .thread-options--chips { gap: 6px; }
-.thread-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: 28px; min-height: 28px; padding: 0 9px; border: 1px solid transparent; border-radius: 5px; background: light-dark(var(--tt-surface-overlay), var(--tt-surface-sunken)); color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.thread-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: 28px; min-height: 28px; padding: 0 9px; border: 1px solid transparent; border-radius: 5px; background: light-dark(var(--tt-surface-overlay), var(--tt-surface-sunken)); color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
 .thread-chip > span { overflow: hidden; text-overflow: ellipsis; }
 .thread-chip > svg { flex: none; }
 /* The hover tint lies over the chip's own fill, whichever surface that is. */
