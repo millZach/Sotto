@@ -18,8 +18,8 @@ concurrency:
 jobs:
   testflight:
     name: Build and upload to TestFlight
-    # The iOS 27.1 SDK, the one the app is designed and captured against. Linked against an older SDK, iOS
-    # gives the app a window beside the Duo cover screen's strip, so its tab rail never shows (ADR-0151).
+    # The iOS 27.1 SDK, the one the app is designed and captured against. Builds linked against iOS 26 showed no
+    # tab rail in the Duo cover screen's strip; we infer iOS gave them a window beside it (ADR-0151, amended).
     runs-on: xcode-27
     timeout-minutes: 45
     environment: testflight

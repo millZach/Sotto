@@ -511,6 +511,9 @@ private struct AboutPanel: View {
             }
         }
         .card()
+        // Read again whenever the card's width settles, as it does after the Duo folds and the insets change.
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { _ in layout = Self.windowLayout() }
+        .onAppear { layout = Self.windowLayout() }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("setting-about")
     }
@@ -523,16 +526,16 @@ private struct AboutPanel: View {
         return "\(short) (\(build))"
     }
 
-    /// The window against the screen and its safe area, read again when the size class changes, as folding the Duo
-    /// does. It tells whether the cover screen's strip is inside the window (ADR-0151).
-    @Environment(\.horizontalSizeClass) private var width
-    private var layout: String {
-        _ = width
+    /// The window against the screen, then its safe-area insets top, left, bottom and right, as numbers only:
+    /// "466×678 (0,0) / 466×678 · 0 0 34 84". It tells whether the Duo cover screen's strip is inside the window
+    /// (ADR-0151), and goes once the phone has settled that.
+    @State private var layout = ""
+    private static func windowLayout() -> String {
         guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first,
               let window = scene.keyWindow ?? scene.windows.first else { return "" }
         let screen = scene.screen.bounds.size, frame = window.frame, inset = window.safeAreaInsets
         func n(_ value: CGFloat) -> String { String(Int(value.rounded())) }
-        return "Window \(n(frame.width))×\(n(frame.height)) at \(n(frame.minX)),\(n(frame.minY)) on a \(n(screen.width))×\(n(screen.height)) screen. Safe area: top \(n(inset.top)), left \(n(inset.left)), bottom \(n(inset.bottom)), right \(n(inset.right))."
+        return "\(n(frame.width))×\(n(frame.height)) (\(n(frame.minX)),\(n(frame.minY))) / \(n(screen.width))×\(n(screen.height)) · \(n(inset.top)) \(n(inset.left)) \(n(inset.bottom)) \(n(inset.right))"
     }
 
     private var connection: String {
