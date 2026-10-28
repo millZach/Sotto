@@ -166,6 +166,14 @@ describe('remote command allow-list', () => {
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
     expect(ops).not.toContain('check')
   })
+  it('takes a waiting check out of a host’s queue with watcher-control’s own stop_thread, no operation or field of its own, under watcher-check-stop (#1637)', () => {
+    // The stop names the waiting start's target, as a stop names any thread's; the host answers it exactly, as it answers
+    // any operation it admitted, so a lost answer is read back by its receipt.
+    expect(HOST_FEATURES).toContain('watcher-check-stop')
+    const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
+    expect(ops.filter(op => op.includes('stop')).sort()).toEqual(['watcher-phone-prepare-stop-all', 'watcher-phone-stop-all'])
+    expect(Object.keys(watcherToolSchemas.stop_thread.input.shape).sort()).toEqual(['requestId', 'retryKey', 'target'])
+  })
   it('sends a host\u2019s own check queue to a recorded desktop as a push under check-queue-views, no request of its own, and only ids and names (#1312)', () => {
     expect(HOST_FEATURES).toContain('check-queue-views')
     expect(HOST_DESKTOP_FEATURES).toContain('check-queue-views')
