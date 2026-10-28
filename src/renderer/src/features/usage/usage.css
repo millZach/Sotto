@@ -49,7 +49,7 @@
 .usage-subtitle { margin: 6px 0 0; color: var(--tt-text-muted); font-size: 13.5px; }
 .usage-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; margin-top: 18px; }
 .usage-seg { display: inline-flex; padding: 3px; border-radius: 6px; background: var(--usage-seg); }
-.usage-seg button { height: 30px; padding: 0 14px; border: 0; border-radius: 4px; background: transparent; color: var(--tt-text-muted); font-size: 13.5px; white-space: nowrap; cursor: pointer; transition: background-color .15s, color .15s; }
+.usage-seg button { height: 30px; padding: 0 14px; border: 0; border-radius: 4px; background: transparent; color: var(--tt-text-muted); font-size: 13.5px; white-space: nowrap; cursor: pointer; transition: background-color .15s, color .15s, opacity 120ms ease; }
 .usage-seg button:hover:not(:disabled) { color: var(--tt-text); }
 .usage-seg button:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
 .usage-seg button:disabled { opacity: .5; cursor: default; }

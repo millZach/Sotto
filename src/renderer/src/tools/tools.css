@@ -2,7 +2,7 @@
    around them, its rail, lines of chrome and footer, is toolsRail.css. Type: tree rows and controls 14px, file
    text 13px mono, paths and notices 12–13px. */
 
-.tools-panel .files-icon { display: grid; place-items: center; flex: none; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.tools-panel .files-icon { display: grid; place-items: center; flex: none; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
 .tools-panel .files-icon:hover { background: var(--tools-hover); color: var(--tt-text); }
 .tools-panel .files-icon:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .tools-panel .files-icon[aria-pressed='true'] { color: var(--tt-accent-text); }
@@ -70,7 +70,7 @@
 .terminal-tabs__item { display: inline-flex; flex: none; align-items: center; min-width: 0; border: 1px solid transparent; border-radius: 7px; }
 .terminal-tabs__item[data-selected] { border-color: var(--tt-selected-border); background: var(--tt-selected); }
 .terminal-tabs__item[data-selected] > .terminal-tabs__tab { padding-right: 4px; border-color: transparent; background: transparent; }
-.terminal-tabs__close { display: inline-grid; flex: none; place-items: center; width: 24px; height: 24px; min-height: 24px; margin-right: 4px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--tt-text-muted); cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.terminal-tabs__close { display: inline-grid; flex: none; place-items: center; width: 24px; height: 24px; min-height: 24px; margin-right: 4px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--tt-text-muted); cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
 .terminal-tabs__close:hover { background: var(--tools-hover); color: var(--tt-text); }
 .terminal-tabs__close:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .terminal-tabs__close:disabled { opacity: .5; cursor: default; }
@@ -98,7 +98,7 @@
 .terminal-search input:focus { outline: none; border-color: color-mix(in srgb, var(--tt-accent) 55%, var(--tt-field-border)); }
 .terminal-search input:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 1px; }
 .terminal-search output { flex: none; min-width: 50px; padding: 0 6px; color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: center; }
-.terminal-search button { display: grid; place-items: center; flex: none; width: 26px; height: 26px; min-height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.terminal-search button { display: grid; place-items: center; flex: none; width: 26px; height: 26px; min-height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); cursor: pointer; transition: opacity 120ms ease; }
 .terminal-search button:hover { color: var(--tt-text); background: var(--tt-hover); }
 .terminal-search button:active:not(:disabled) { color: var(--tt-text); background: var(--tt-hover-strong); }
 .terminal-search button:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
