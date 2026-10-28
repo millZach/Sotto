@@ -14,13 +14,14 @@ import { join } from 'node:path'
 import { BranchBundles } from '../../src/main/agents/branchBundles'
 import { DesktopBranchMoves, foldersOfSnapshot } from '../../src/main/agents/branchMoves'
 import { CheckQueue } from '../../src/main/agents/checkQueue'
+import type { PackageInstaller } from '../../src/main/agents/checkWorktree'
 
 export type DelegationResult = { status: 'ok'; delegation: { id: string; thread: string; outcome: string; note: string; reply?: { from: string; text: string }; replyUnavailable?: string; refusal?: string; userSentSince?: boolean }; limits: { prompts?: number }; warning?: string }
 export type DelegationRefused = { status: 'refused'; code: string; message: string }
 
 /** Delegation over a workspace of fake providers. Each cleanup it needs is pushed onto `cleanups`, to run in reverse. */
-/** `branchStarts` gives delegation the desktop's mover over this computer's own threads and projects (#1033); `checks`, This computer's check queue (#1312), new at each restart as it is in the app. */
-export async function delegationFixture(cleanups: (() => Promise<void>)[], options: { history?: boolean; titles?: boolean; delegation?: Pick<DelegationServiceOptions, 'now' | 'schedule' | 'machines' | 'clockTime'>; branchStarts?: boolean; checks?: boolean } = {}) {
+/** `branchStarts` gives delegation the desktop's mover over this computer's own threads and projects (#1033); `checks`, This computer's check queue (#1312), new at each restart as it is in the app; `checkWorktrees`, its check worktree. */
+export async function delegationFixture(cleanups: (() => Promise<void>)[], options: { history?: boolean; titles?: boolean; delegation?: Pick<DelegationServiceOptions, 'now' | 'schedule' | 'machines' | 'clockTime'>; branchStarts?: boolean; checks?: boolean; checkWorktrees?: PackageInstaller } = {}) {
   const history = options.history ?? true
   let workspace = await workspaceFixture(undefined, { history, watcherEnabled: false })
   cleanups.push(workspace.remove)
@@ -36,6 +37,8 @@ export async function delegationFixture(cleanups: (() => Promise<void>)[], optio
     folders: foldersOfSnapshot(() => control.watcherSnapshot()), host: () => undefined, hostName: () => 'That machine' }) : undefined
   const make = () => new DelegationService({ directory: root, control, host: workspace.host, historyEnabled: () => history, ...options.delegation, ...branchMoves ? { branchMoves } : {},
     ...options.checks ? { checks: new CheckQueue('This computer') } : {} })
+  // The check worktree, as main turns it on with Work across machines (#1312, third part), installing with the test's own installer.
+  if (options.checkWorktrees) workspace.host.allowCheckWorktrees(options.checkWorktrees)
   let service = make()
   let tools = new DelegationToolServer(service)
   workspace.host.useThreadTools([tools])
