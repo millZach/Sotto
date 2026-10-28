@@ -28,6 +28,8 @@ The spec also checks, in dark and light:
 - the water calms, the canvas is cleared, and no frame is drawn after that;
 - the canvas is hidden from assistive technology.
 
+In a separate test, text selected while waves run has no glyph under it: the canvas had 0 lit pixels across the selected paragraph and waves below it. Without that, the same run lit 12,264 pixels under the selection.
+
 In a separate test, a theme changed while waves run (dark to light) changes the ink the waves are drawn in within a few frames, while they keep running.
 
 At 1600 by 1000 and at the 820 by 560 minimum (`spreading-dark-1600x1000.png`, `spreading-dark-820x560.png`) the canvas matches the window exactly, nothing clips, and its computed opacity is the ceiling: the glyphs are drawn under it at their relative strength, so overlapping ones never add up past it.
@@ -47,7 +49,7 @@ The glyphs go no stronger than leaves every word over them at 4.5:1 (ADR-0156, d
 | Dark | 0.20 | 0.05 | 0.14 | 0.17 | 0.22 | 0.19 |
 | Light | 0.05 | 0.13 | 0.11 | 0.03 | 0.14 | 0.16 |
 
-Zach chose the strict rule after seeing light Graphite at 0.05; counting the controls' fills afterwards brought it to 0.03, and light T3 Code (`spreading-light.png`) to 0.05, where the waves are faint but show. A theme whose ceiling comes to nothing moves no water, draws nothing and stops at once, and later presses start nothing until the theme changes. The faint tier is left out by his earlier choice: counted too, the ceiling fell further, so faint words may dip under 4.5:1 for the second or two a wave passes. The spec checks the ceiling is above nothing and no more than 0.65, and that it is the canvas's computed opacity. The frames in this note are at these ceilings.
+Selected text lays its own fill (`--tt-primary` at 30%) over the room, and no glyph is drawn under it rather than counting it: counted, the ceiling fell to 0 in dark Graphite and light Citrine and to 0.01 or 0.02 in five more, with dark T3 Code at 0.12 (the eleventh review measured selected muted text in dark T3 Code at 4.1:1 before selections were kept clear). The table was read again with selections kept clear and came out the same. Zach chose the strict rule after seeing light Graphite at 0.05; counting the controls' fills afterwards brought it to 0.03, and light T3 Code (`spreading-light.png`) to 0.05, where the waves are faint but show. A theme whose ceiling comes to nothing moves no water, draws nothing and stops at once, and later presses start nothing until the theme changes. The faint tier is left out by his earlier choice: counted too, the ceiling fell further, so faint words may dip under 4.5:1 for the second or two a wave passes. The spec checks the ceiling is above nothing and no more than 0.65, and that it is the canvas's computed opacity. The frames in this note are at these ceilings.
 
 ## Cost
 

@@ -155,6 +155,35 @@ test.describe('the click effect', () => {
     }))
   })
 
+  test('no glyph is drawn under text selected while waves run, whose own fill lies over them', async () => {
+    await onReleaseTrack('owl', () => withSotto(launchOptions('dark'), async (launched) => {
+      const { page } = launched
+      await resizeContentWindow(launched, 1280, 800)
+      await openConversation(page)
+      await expect.poll(() => running(page), { timeout: 30_000 }).toBe(false)
+      const reply = page.locator('.thread-message:not([data-role="user"]) p').first()
+      const box = (await reply.boundingBox())!
+      for (const dx of [-160, 0, 160]) await page.mouse.click(box.x + box.width / 2 + dx, box.y + box.height + 24)
+      await expect.poll(() => glyphs(page)).toBeGreaterThan(50)
+      await reply.evaluate(paragraph => { getSelection()!.selectAllChildren(paragraph) })
+      await page.waitForTimeout(250)
+      const lit = await page.evaluate(() => {
+        const canvas = document.querySelector<HTMLCanvasElement>('canvas.click-effect')!, scale = canvas.width / innerWidth
+        const selected = getSelection()!.getRangeAt(0).getBoundingClientRect()
+        const count = (x0: number, x1: number, y0: number, y1: number): number => {
+          const data = canvas.getContext('2d')!.getImageData(Math.round(x0 * scale), Math.round(y0 * scale), Math.max(1, Math.round((x1 - x0) * scale)), Math.max(1, Math.round((y1 - y0) * scale))).data
+          let n = 0
+          for (let i = 3; i < data.length; i += 4) if (data[i]) n++
+          return n
+        }
+        return { selected: count(selected.left, selected.right, selected.top, selected.bottom), still: getSelection()!.toString().length, room: count(0, innerWidth, selected.bottom + 4, innerHeight) }
+      })
+      expect(lit.still).toBeGreaterThan(0)
+      expect(lit.selected).toBe(0)
+      expect(lit.room).toBeGreaterThan(0)
+    }))
+  })
+
   test('a theme changed while waves run takes the new accent in the next frames', async () => {
     await onReleaseTrack('owl', () => withSotto(launchOptions('dark'), async ({ page }) => {
       await openConversation(page)

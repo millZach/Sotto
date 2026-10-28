@@ -95,13 +95,23 @@ function sceneColumn(): readonly Rect[] {
 }
 
 /**
+ * Selected text, box by box: its translucent fill lies over the waves too, and its words over both would fall under 4.5:1
+ * where the fill and a glyph add up, so no glyph is drawn under it. A selection is one box per range, its whole extent.
+ */
+function selectedText(): readonly Rect[] {
+  const selection = document.getSelection()
+  if (selection === null || selection.isCollapsed) return []
+  return Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index).getBoundingClientRect())
+}
+
+/**
  * The click effect (ADR-0156): a press anywhere in the main window but a composer sends waves of 0s and 1s in the theme's
  * accent through the room behind it. The canvas lies under the window's content, over only the room's own background, so
  * a card, a bubble or the composer sits over the waves and nothing pressed is ever covered; it never takes the pointer
  * either. Its glyphs are never stronger than leaves every word written over them at 4.5:1 against the room, and none are
- * drawn where Watcher's night scene already spends that. A theme change takes effect in the next frame. It exists only
- * while the effect is on, draws only while the water moves, and clears itself and stops when the water is calm, the
- * window is hidden or the effect goes. The shell mounts it only while `useClickEffectOn` says the effect is on.
+ * drawn under selected text or where Watcher's night scene already spends that. A theme change takes effect in the next
+ * frame. It exists only while the effect is on, draws only while the water moves, and clears itself and stops when the
+ * water is calm, the window is hidden or the effect goes. The shell mounts it only while `useClickEffectOn` says the effect is on.
  */
 export function ClickEffect(): ReactNode {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -115,7 +125,10 @@ export function ClickEffect(): ReactNode {
     let ink: Ink | null = null
     /** The ink is read again before the next frame: a run starts, or the theme changed. */
     let stale = true
-    /** Watcher's column and header, measured every frame, so a room opened or resized mid-run is kept clear at once. */
+    /**
+     * Watcher's column and header and any selected text, measured every frame, so a room opened or resized, or text
+     * selected, mid-run is kept clear at once.
+     */
     let quiet: readonly Rect[] = []
     let request: number | null = null
     let last = 0
@@ -221,7 +234,7 @@ export function ClickEffect(): ReactNode {
       for (let step = 0; step < Math.min(due, MAX_STEPS); step++) water.step()
       water.age(due - MAX_STEPS)
       if (water.calm) { stop(); return }
-      quiet = sceneColumn()
+      quiet = [...sceneColumn(), ...selectedText()]
       const { digits } = ink
       const width = SPRITE_W, height = GLYPH_H
       ctx.clearRect(0, 0, water.width, water.height)
