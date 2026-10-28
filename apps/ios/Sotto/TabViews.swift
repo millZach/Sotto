@@ -46,6 +46,7 @@ struct ThreadsView: View {
     @State private var settledExpanded = false
     @State private var sent: [String: CardAnswer] = [:]
     @State private var searchBox = FrameBox()
+    @State private var retries = 0
     @FocusState private var searching: Bool
     @Environment(\.sottoTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -186,7 +187,7 @@ struct ThreadsView: View {
             }
             .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: Space.s2)
-            Button { Task { await model.connect(computer.hostID) } } label: {
+            Button { retries += 1; Task { await model.connect(computer.hostID) } } label: {
                 if trying {
                     HStack(spacing: 6) { ProgressView().controlSize(.mini); Text("Trying", comment: "On the button while Sotto tries to reach a computer again.") }
                 } else {
@@ -194,6 +195,7 @@ struct ThreadsView: View {
                 }
             }
             .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
+            .sensoryFeedback(.impact(flexibility: .soft), trigger: retries)
             .disabled(trying)
             .accessibilityLabel(trying ? String(localized: "Trying to reach \(computer.name)", comment: "%@ is the computer's name.")
                                 : String(localized: "Try reaching \(computer.name) again", comment: "%@ is the computer's name."))

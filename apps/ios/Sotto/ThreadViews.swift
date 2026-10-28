@@ -178,11 +178,12 @@ private struct ThreadMenu: View {
     /// Watched so whether there is history to compact follows the thread as it is read.
     @EnvironmentObject var detailStore: DetailStore
     let ref: ThreadRef
+    @State private var acted = 0
     var body: some View {
         Menu {
             if model.compactionOffered(ref) {
                 let held = model.compactionHeld(ref)
-                Button { Task { await model.compact(ref) } } label: {
+                Button { acted += 1; Task { await model.compact(ref) } } label: {
                     Text("Compact context")
                     Text(held ?? String(localized: "Summarize earlier messages to free room"))
                 }
@@ -190,7 +191,7 @@ private struct ThreadMenu: View {
             }
             if let action = model.shelfAction(ref) {
                 let held = model.actionHeld(ref)
-                Button { Task { await model.shelve(ref, action) } } label: {
+                Button { acted += 1; Task { await model.shelve(ref, action) } } label: {
                     Text(action == .settle ? String(localized: "Settle", comment: "Settle the thread: put it away on the Settled shelf.")
                          : String(localized: "Restore", comment: "Restore a settled thread to open work."))
                     if let held { Text(held) }
@@ -210,6 +211,7 @@ private struct ThreadMenu: View {
         }
         .accessibilityLabel("Show thread actions")
         .accessibilityIdentifier("thread-actions")
+        .sensoryFeedback(.impact(weight: .medium), trigger: acted)
     }
 }
 
