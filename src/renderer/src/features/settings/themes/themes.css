@@ -352,7 +352,7 @@
 
 /* Colour fields and picker ---------------------------------------------------- */
 
-.theme-color-field { display: grid; gap: 8px; margin: 0 -6px; padding: 3px 6px; border-radius: 8px; }
+.theme-color-field { display: grid; gap: 8px; margin: 0 -6px; padding: 3px 6px; border-radius: 8px; transition: background-color 120ms ease, box-shadow 120ms ease; }
 .theme-color-field[data-selected] { background: var(--tt-accent-wash); box-shadow: inset 0 0 0 1px var(--tt-focus-ring); }
 
 .theme-color-field__usage {
