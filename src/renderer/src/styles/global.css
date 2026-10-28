@@ -1424,6 +1424,7 @@ textarea.tt-input {
   border-radius: 3px;
   color: var(--tt-text-2);
   text-decoration: none;
+  transition: color 120ms ease;
 }
 
 .app-footer__link:hover,
