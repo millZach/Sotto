@@ -69,7 +69,7 @@
    height from the composer, so the typed text and its send action stay where they were. */
 .thread-prompt { position: relative; }
 .thread-prompt > .composer-picker { position: absolute; right: -1px; bottom: calc(100% + 6px); left: -1px; z-index: 4; padding: 6px 6px 2px; border: 1px solid var(--threads-field-border); border-radius: 14px; background: var(--threads-field); box-shadow: 0 16px 48px var(--tt-shadow-color); }
-.composer-picker__list { max-height: clamp(80px, calc(100vh - 460px), 216px); margin: 0; padding: 0; overflow-y: auto; list-style: none; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
+.composer-picker__list { max-height: clamp(80px, calc(100vh - 460px), 216px); margin: 0; padding: 0; overflow-y: auto; overscroll-behavior: contain; list-style: none; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 .composer-picker__option { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr) auto; align-items: baseline; gap: 12px; min-height: 36px; padding: 8px; border-radius: 8px; cursor: pointer; }
 .composer-picker__option[data-active] { background: var(--tt-accent-wash); }
 .composer-picker__option[aria-disabled='true'] { cursor: default; }

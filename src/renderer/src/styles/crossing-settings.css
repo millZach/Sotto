@@ -270,7 +270,7 @@
 .cleanup-model__refresh { flex: none; display: grid; place-items: center; width: 38px; border: 1px solid transparent; border-radius: 6px; background: var(--tt-card-inset); color: var(--tt-text-muted); cursor: pointer; }
 .cleanup-model__refresh:hover:not(:disabled) { border-color: var(--tt-border); color: var(--tt-text); }
 .cleanup-model__refresh:disabled { cursor: default; opacity: 0.5; }
-.cleanup-model__list { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0; max-height: min(280px, 45vh); margin: 0; padding: 4px; overflow-y: auto; list-style: none; border: 1px solid var(--tt-border); border-radius: 8px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-lg); }
+.cleanup-model__list { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0; max-height: min(280px, 45vh); margin: 0; padding: 4px; overflow-y: auto; overscroll-behavior: contain; list-style: none; border: 1px solid var(--tt-border); border-radius: 8px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-lg); }
 .cleanup-model__list[data-above] { top: auto; bottom: calc(100% + 4px); }
 .cleanup-model__list > [role='option'] { display: grid; gap: 1px; padding: 7px 9px; border-radius: 5px; cursor: pointer; }
 .cleanup-model__list > [data-active] { background: var(--tt-hover); }

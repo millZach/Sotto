@@ -64,7 +64,7 @@
 .changes-base__search::placeholder { color: var(--tt-text-muted); }
 .changes-base__columns { display: grid; flex: none; grid-template-columns: minmax(0, 1fr) 3rem; padding: 4px 8px 4px 27px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; }
 .changes-base__columns > span:last-child { text-align: right; }
-.changes-base__list { flex: 1; min-height: 0; margin: 0; padding: 0; overflow: auto; list-style: none; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.changes-base__list { flex: 1; min-height: 0; margin: 0; padding: 0; overflow: auto; overscroll-behavior: contain; list-style: none; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .changes-base__row { display: grid; grid-template-columns: minmax(0, 1fr) 3rem; align-items: center; }
 .changes-base__ref {
   display: flex; align-items: center; gap: 6px; min-width: 0; height: 30px; padding: 0 8px; border: 0; border-radius: 6px;

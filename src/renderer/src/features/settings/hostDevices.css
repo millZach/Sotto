@@ -31,7 +31,7 @@
 .hosts-devices__chevron { flex: 0 0 auto; color: var(--tt-text-muted); }
 
 /* The list opens in place under the button, so the dialog grows and scrolls rather than clipping it. */
-.hosts-devices__popup { max-height: min(330px, 46dvh); overflow: auto; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-md); background: var(--tt-surface-overlay); padding: 4px; }
+.hosts-devices__popup { max-height: min(330px, 46dvh); overflow: auto; overscroll-behavior: contain; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-md); background: var(--tt-surface-overlay); padding: 4px; }
 .hosts-devices__popup[hidden] { display: none; }
 .hosts-devices__list, .hosts-devices__list ul { margin: 0; padding: 0; list-style: none; }
 .hosts-devices__group { padding: 8px 10px 4px; color: var(--tt-text-muted); font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em; }
