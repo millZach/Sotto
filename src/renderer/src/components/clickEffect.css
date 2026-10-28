@@ -1,12 +1,8 @@
 /* The click effect (ADR-0156): one canvas under everything in the window and over only the room's own background.
    While it is there the shell wears its mark and is its own stacking context (a mark, not :has(), above the terminal), so the canvas's negative layer stays inside the shell, above
    the shell's background and below every page, card and control; where the effect is held or off there is no canvas and
-   the shell stacks as it always has. The canvas never takes the pointer. Its outline and borders are never drawn: the
-   outline carries the theme's accent, which the 0s and 1s are drawn in, in the theme's monospace face, and the borders the
-   colours words are written in over it (the text, its secondary and muted tiers, and links), its column rule a link's
-   colour pointed at and its text decoration the accent's text tone; together they set how strong the glyphs may go.
-   The faint tier is left out (Zach, October 27, ADR-0156): holding it too would leave the waves nearly invisible. */
+   the shell stacks as it always has. The canvas never takes the pointer. Its outline is never drawn: it carries the
+   theme's accent, which the 0s and 1s are drawn in, in the theme's monospace face. */
 .app-shell[data-click-effect] { isolation: isolate; }
 .click-effect { position: fixed; inset: 0; z-index: -1; width: 100vw; height: 100vh; pointer-events: none; outline-color: var(--tt-accent);
-  border-top-color: var(--tt-text); border-right-color: var(--tt-text-2); border-bottom-color: var(--tt-text-muted); border-left-color: var(--tt-link); column-rule-color: var(--tt-primary-hover);
-  text-decoration-color: var(--tt-accent-text); font-family: var(--tt-font-mono); }
+  font-family: var(--tt-font-mono); }

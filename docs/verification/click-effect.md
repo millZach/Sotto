@@ -40,14 +40,14 @@ In one Owl run, turning `clickEffect` off through the settings bridge takes the 
 
 ## Contrast
 
-The glyphs go no stronger than leaves every word over them at 4.5:1 (ADR-0156, decision 2): the text, its secondary and muted tiers, the accent's text tone, and links at rest and pointed at (`--tt-primary-hover`; the second review measured a hovered link at 4.38:1 before it was counted). In one Owl run each built-in theme was saved in turn and a press read the ceiling the canvas took:
+The glyphs go no stronger than leaves every word over them at 4.5:1 (ADR-0156, decision 2): the text, its secondary and muted tiers, links at rest and pointed at (`--tt-primary-hover`; the second review measured a hovered link at 4.38:1 before it was counted), the accent's text tone and the working words' (`--tt-activity`), and the error, warning and success colours (the fifth review measured dark error text at 3.73:1 before they were counted). In one Owl run each built-in theme was saved in turn and a press read the ceiling the canvas took:
 
 | | T3 Code | Hush | Citrine | Graphite | Clay | Fern |
 |---|---|---|---|---|---|---|
-| Dark | 0.35 | 0.20 | 0.15 | 0.20 | 0.30 | 0.30 |
-| Light | 0.15 | 0.20 | 0.20 | 0.20 | 0.25 | 0.25 |
+| Dark | 0.25 | 0.15 | 0.15 | 0.15 | 0.20 | 0.15 |
+| Light | 0.10 | 0.15 | 0.15 | 0.05 | 0.10 | 0.15 |
 
-`spreading-light.png` is light T3 Code at 0.15, the weakest, and the waves still read. Zach chose this over a fixed 0.35 after seeing that frame. The faint tier is left out by his earlier choice: counted too, the ceiling measured 0.05 to 0.25 (0.05 in light T3 Code and dark Citrine), so faint words may dip under 4.5:1 for the second or two a wave passes. The spec checks the ceiling is above nothing and no more than 0.65, and that it is the canvas's computed opacity.
+Zach chose this after seeing light Graphite at 0.05, the weakest, where the waves are faint but still show; leaving the status colours out would have kept them at 0.15 to 0.35. The faint tier is left out by his earlier choice: counted too, the ceiling fell further, so faint words may dip under 4.5:1 for the second or two a wave passes. The spec checks the ceiling is above nothing and no more than 0.65, and that it is the canvas's computed opacity. The frames in this note are at these ceilings.
 
 ## Cost
 

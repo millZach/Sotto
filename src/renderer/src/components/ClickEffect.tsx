@@ -13,6 +13,13 @@ const MAX_STEPS = 4
 const STEP_MS = 1000 / STEP_HZ
 /** Where a press sends no waves: every composer, the thread's, Watcher's and a new thread's draft (Zach, October 27). */
 const QUIET = '.thread-prompt'
+/**
+ * Every colour words over the room are written in, which the glyphs must leave at 4.5:1: the text and its secondary and
+ * muted tiers, links at rest and pointed at, the accent's text tone and the working words', and the status colours. The
+ * faint tier is left out (Zach, October 27, ADR-0156): holding it too would leave the waves nearly invisible.
+ */
+const WORD_TOKENS = ['--tt-text', '--tt-text-2', '--tt-text-muted', '--tt-link', '--tt-primary-hover', '--tt-accent-text', '--tt-activity',
+  '--tt-error', '--tt-error-text', '--tt-warning-text', '--tt-success'] as const
 
 /** What a run draws with: a 0 and a 1 in the accent, and the strongest any glyph may be. */
 interface Ink {
@@ -92,23 +99,27 @@ function ClickEffectLayer(): ReactNode {
       return water
     }
 
+    /** WORD_TOKENS as the theme in force computes them, each read off the canvas's own colour in turn. */
+    const wordColors = (): string[] => {
+      const colors = WORD_TOKENS.map(token => { canvas.style.color = `var(${token})`; return getComputedStyle(canvas).color })
+      canvas.style.removeProperty('color')
+      return colors
+    }
+
     /**
-     * The ink for the theme in force, read once as a run starts: the accent (the canvas's outline), the words' colours (its
-     * borders, column rule and text decoration: the text, its secondary and muted tiers, the accent's text tone, and links
-     * at rest and pointed at; the faint tier is left out, ADR-0156) and the room's
-     * surface under them, as the night scene
-     * reads its own (ADR-0126). The glyphs go no stronger than leaves every one of those words at 4.5:1 over a glyph.
+     * The ink for the theme in force, read when a run starts or the theme changes: the accent (the canvas's outline), the
+     * words' colours (WORD_TOKENS) and the room's surface under them, as the night scene reads its own (ADR-0126). The
+     * glyphs go no stronger than leaves every one of those words at 4.5:1 over a glyph.
      */
     const inkNow = (): Ink => {
       const style = getComputedStyle(canvas)
       const scale = dpr()
       const shell = canvas.parentElement ?? document.body
-      const key = [style.outlineColor, style.borderTopColor, style.borderRightColor, style.borderBottomColor, style.borderLeftColor, style.columnRuleColor, style.textDecorationColor,
-        getComputedStyle(shell).backgroundColor, style.fontFamily, scale].join('|')
+      const colors = wordColors()
+      const key = [style.outlineColor, ...colors, getComputedStyle(shell).backgroundColor, style.fontFamily, scale].join('|')
       if (ink?.key === key) return ink
       const accent = pixel === null ? null : toRgb(style.outlineColor, pixel)
-      const words = pixel === null ? [] : [style.borderTopColor, style.borderRightColor, style.borderBottomColor, style.borderLeftColor, style.columnRuleColor, style.textDecorationColor]
-        .map(value => toWord(value, pixel)).filter((word): word is Word => word !== null)
+      const words = pixel === null ? [] : colors.map(value => toWord(value, pixel)).filter((word): word is Word => word !== null)
       const surface = pixel === null || words[0] === undefined ? null : surfaceOf(shell, pixel, words[0])
       // Colours that cannot be read draw nothing rather than risk a word.
       const ceiling = accent === null || surface === null ? 0 : Math.min(GLYPH_ALPHA, columnCeiling(surface, accent, 1, words))
