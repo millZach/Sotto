@@ -139,6 +139,34 @@ button.thread-activity-live__line:hover { background: var(--tt-hover); }
 @media (prefers-reduced-motion: reduce) { .thread-activity__chevron { transition: none; } }
 :root[data-reduced-motion='on'] .thread-activity__chevron { transition: none; }
 
+/* The browser line (ADR-0154; Owl only): a run of the agent's calls to Sotto's browser as one quiet line, and under it on
+   a press the steps in plain words. The dot holds still; a step that did not work takes a muted warning ink. The lines sit
+   in a block, not a shrink-to-fit box, which would size each line to its margin box and cut its words by its negative margin. */
+.thread-browser-lines { min-width: 0; margin: 0 0 20px; }
+.thread-message + .thread-browser-lines { margin-top: -12px; }
+.thread-browser { min-width: 0; max-width: 100%; margin: 0; }
+.thread-browser__line {
+  display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-height: 32px; margin-left: -6px; padding: 0 8px 0 6px;
+  border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 14px; text-align: left; cursor: pointer;
+}
+.thread-browser__line:hover { background: var(--tt-hover); }
+.thread-browser__icon { flex: none; color: var(--tt-text-muted); }
+.thread-browser__dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tt-activity); }
+.thread-browser__dot:not([data-connected]) { background: var(--tt-text-muted); }
+.thread-browser__words { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-browser__detail { color: var(--tt-text-muted); }
+.thread-browser__detail[data-failed] { color: color-mix(in oklab, var(--tt-warning-text) 70%, var(--tt-text-muted)); }
+.thread-browser__steps { display: grid; gap: 0; margin: 2px 0 6px 1px; padding: 2px 0 2px 16px; border-left: 1px solid var(--tt-hairline); list-style: none; }
+.thread-browser__steps li { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 26px; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.4; }
+.thread-browser__step-icon { flex: none; color: var(--tt-text-muted); }
+.thread-browser__step { min-width: 0; overflow-wrap: anywhere; }
+.thread-browser__steps li[data-failed], .thread-browser__steps li[data-failed] .thread-browser__step-icon { color: color-mix(in oklab, var(--tt-warning-text) 70%, var(--tt-text-muted)); }
+/* Among a group's rows, the line sits where a row would, its icon in the rows' icon column. */
+.thread-activity__rows > .thread-browser > .thread-browser__line { display: flex; width: 100%; margin-left: 0; padding: 3px 6px; border-radius: 7px; }
+.thread-activity__rows > .thread-browser > .thread-browser__line > .thread-browser__icon { width: 16px; }
+.thread-activity__rows > .thread-browser > .thread-browser__line > .thread-activity__chevron { margin-left: auto; }
+.thread-activity__rows > .thread-browser > .thread-browser__steps { margin-left: 30px; }
+
 /* What a finished turn changed, beside its folded work. */
 .thread-changes { margin: -4px 0 8px; }
 .thread-changes__summary {
