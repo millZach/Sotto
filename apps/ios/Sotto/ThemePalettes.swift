@@ -49,9 +49,22 @@ struct ThemePalette: Identifiable, Equatable {
     let dark: ThemeSwatch
 }
 
+/// A translucent colour: the colour, and how much of it is laid over what is under it.
+struct ThemeTint: Equatable {
+    let color: ThemeRGB
+    let alpha: Double
+}
+
+/// Glass's see-through tints (ADR-0150): the room over the backdrop's three stops, and cards over the room.
+struct GlassTints: Equatable {
+    let room: ThemeTint
+    let raised: ThemeTint
+    let backdrop: [ThemeRGB]
+}
+
 enum ThemePalettes {
-    /// The six palettes in the order the desktop lists them. The first is the default.
-    static let all: [ThemePalette] = [sotto, hush, citrine, graphite, clay, fern]
+    /// Sotto's six palettes in the order the desktop lists them, then Glass. The first is the default.
+    static let all: [ThemePalette] = [sotto, hush, citrine, graphite, clay, fern, glass]
     /// The palettes the desktop retired, and the one each moved to (ADR-0024).
     static let retired: [String: String] = ["linen": "clay", "nocturne": "graphite", "tropic": "fern"]
 
@@ -61,6 +74,7 @@ enum ThemePalettes {
     static let graphite = ThemePalette(id: "graphite", name: "Graphite", light: graphiteLight, dark: graphiteDark)
     static let clay = ThemePalette(id: "clay", name: "Clay", light: clayLight, dark: clayDark)
     static let fern = ThemePalette(id: "fern", name: "Fern", light: fernLight, dark: fernDark)
+    static let glass = ThemePalette(id: "glass", name: "Glass", light: glassLight, dark: glassDark)
 
     static let sottoLight = ThemeSwatch(
         canvas: ThemeRGB(0.9765, 0.9725, 0.9608),
@@ -372,5 +386,69 @@ enum ThemePalettes {
         accentText: ThemeRGB(0.4824, 0.8784, 0.5765),
         warningText: ThemeRGB(0.9882, 0.7490, 0.4941),
         dangerText: ThemeRGB(1.0000, 0.4510, 0.4353)
+    )
+
+    static let glassLight = ThemeSwatch(
+        canvas: ThemeRGB(0.9412, 0.9490, 0.9647),
+        surface: ThemeRGB(0.9765, 0.9804, 0.9882),
+        surfaceRaised: ThemeRGB(0.9765, 0.9804, 0.9843),
+        surfaceOverlay: ThemeRGB(0.9647, 0.9765, 0.9843),
+        text: ThemeRGB(0.0627, 0.0784, 0.0980),
+        textMuted: ThemeRGB(0.2627, 0.2824, 0.3098),
+        border: ThemeRGB(0.8000, 0.8196, 0.8510),
+        accent: ThemeRGB(0.0000, 0.3922, 0.7098),
+        accentForeground: ThemeRGB(0.9882, 0.9882, 0.9882),
+        accentSurface: ThemeRGB(0.8314, 0.9059, 0.9882),
+        warning: ThemeRGB(0.9961, 0.6039, 0.0000),
+        warningSurface: ThemeRGB(0.9765, 0.9294, 0.8510),
+        error: ThemeRGB(0.8000, 0.1569, 0.1529),
+        errorSurface: ThemeRGB(0.9882, 0.8980, 0.8902),
+        messageSurface: ThemeRGB(0.8549, 0.9020, 0.9529),
+        messageForeground: ThemeRGB(0.0627, 0.0784, 0.0980),
+        codeBackground: ThemeRGB(0.9725, 0.9765, 0.9804),
+        codeForeground: ThemeRGB(0.0627, 0.0784, 0.0980),
+        placeholder: ThemeRGB(0.2824, 0.3059, 0.3333),
+        mutedText: ThemeRGB(0.2627, 0.2824, 0.3098),
+        accentText: ThemeRGB(0.0588, 0.3176, 0.5608),
+        warningText: ThemeRGB(0.4706, 0.3176, 0.1569),
+        dangerText: ThemeRGB(0.5608, 0.1647, 0.1529)
+    )
+
+    static let glassDark = ThemeSwatch(
+        canvas: ThemeRGB(0.0667, 0.0784, 0.0941),
+        surface: ThemeRGB(0.1059, 0.1176, 0.1373),
+        surfaceRaised: ThemeRGB(0.1294, 0.1451, 0.1647),
+        surfaceOverlay: ThemeRGB(0.1216, 0.1373, 0.1569),
+        text: ThemeRGB(0.9765, 0.9804, 0.9882),
+        textMuted: ThemeRGB(0.8000, 0.8196, 0.8510),
+        border: ThemeRGB(0.1843, 0.2000, 0.2235),
+        accent: ThemeRGB(0.4118, 0.7922, 1.0000),
+        accentForeground: ThemeRGB(0.0275, 0.0902, 0.1529),
+        accentSurface: ThemeRGB(0.1020, 0.2314, 0.3176),
+        warning: ThemeRGB(0.9961, 0.6039, 0.0000),
+        warningSurface: ThemeRGB(0.2353, 0.1922, 0.1176),
+        error: ThemeRGB(0.9804, 0.4078, 0.4078),
+        errorSurface: ThemeRGB(0.2588, 0.1412, 0.1373),
+        messageSurface: ThemeRGB(0.1255, 0.1804, 0.2431),
+        messageForeground: ThemeRGB(0.9765, 0.9804, 0.9882),
+        codeBackground: ThemeRGB(0.0392, 0.0471, 0.0627),
+        codeForeground: ThemeRGB(0.9765, 0.9804, 0.9882),
+        placeholder: ThemeRGB(0.7725, 0.7961, 0.8235),
+        mutedText: ThemeRGB(0.8000, 0.8196, 0.8510),
+        accentText: ThemeRGB(0.5176, 0.8235, 1.0000),
+        warningText: ThemeRGB(1.0000, 0.7569, 0.5137),
+        dangerText: ThemeRGB(0.9961, 0.5490, 0.5333)
+    )
+
+    static let glassTintsLight = GlassTints(
+        room: ThemeTint(color: ThemeRGB(0.9569, 0.9686, 0.9843), alpha: 0.80),
+        raised: ThemeTint(color: ThemeRGB(1.0000, 1.0000, 1.0000), alpha: 0.62),
+        backdrop: [ThemeRGB(0.7961, 0.8824, 0.9725), ThemeRGB(0.9216, 0.8941, 0.9804), ThemeRGB(0.8196, 0.9529, 0.9569)]
+    )
+
+    static let glassTintsDark = GlassTints(
+        room: ThemeTint(color: ThemeRGB(0.0471, 0.0627, 0.0824), alpha: 0.76),
+        raised: ThemeTint(color: ThemeRGB(0.1922, 0.2118, 0.2353), alpha: 0.50),
+        backdrop: [ThemeRGB(0.0745, 0.1176, 0.2157), ThemeRGB(0.1059, 0.0549, 0.1765), ThemeRGB(0.0000, 0.1216, 0.1412)]
     )
 }

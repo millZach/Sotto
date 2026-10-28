@@ -4,7 +4,7 @@ import Foundation
 /// changes its settings. SwiftUI views read these keys with `@AppStorage`; anything else, the app model included,
 /// reads them through `PhonePreferences`. This file imports Foundation only so the model's tests can compile it.
 enum PhonePreferenceKey {
-    /// A built-in palette's id: sotto, hush, citrine, graphite, clay or fern. One saved before October 26, 2026 may
+    /// A built-in palette's id: sotto, hush, citrine, graphite, clay, fern or glass. One saved before October 26, 2026 may
     /// name linen, nocturne or tropic; `PhoneThemeID.current` reads it as the palette that replaced it.
     static let theme = "phoneTheme"
     /// dark, light or system.
@@ -15,6 +15,8 @@ enum PhonePreferenceKey {
     static let legacyLargerText = "phoneLargerText"
     /// comfortable or compact.
     static let density = "phoneDensity"
+    /// How strongly the Glow look's lights shine, 0 to 100. Missing means `PhoneGlow.standard`.
+    static let glow = "phoneGlow"
     static let notifyNeedsYou = "phoneNotifyNeedsYou"
     static let notifyFinished = "phoneNotifyFinished"
     static let notifyFailed = "phoneNotifyFailed"
@@ -80,6 +82,27 @@ enum PhoneDensity: String, CaseIterable {
     var title: String { self == .comfortable ? String(localized: "Comfortable", comment: "Message density choice: more room between messages.") : String(localized: "Compact", comment: "Message density choice: tighter spacing.") }
 }
 
+/// How strongly the Glow look's lights shine (ADR-0051): the halo round a status light, the light behind a card, and
+/// the coloured glow under a chosen control or the accent action. 50 is the look as it was drawn; 0 draws no glow at all
+/// and 100 half as much again. Radius and strength scale by the same factor, so every step is the same look, brighter
+/// or dimmer; above 50 it rises more gently, since a reach that doubles turns small lights into blots. Drop shadows in
+/// black give depth, not light, and do not follow it.
+struct PhoneGlow: Equatable {
+    static let standard = 50
+    let level: Int
+    init(_ level: Int) { self.level = min(100, max(0, level)) }
+    /// How far a glow reaches and how strongly it shows, against the look as drawn.
+    var factor: Double {
+        let step = Double(level) / Double(Self.standard)
+        return step <= 1 ? step : 1 + (step - 1) * 0.5
+    }
+    /// Whether anything is drawn. Every glow asks this first, so 0 leaves no layer behind.
+    var shows: Bool { level > 0 }
+    func radius(_ base: Double) -> Double { base * factor }
+    /// A glow's strength, which can never pass solid.
+    func alpha(_ base: Double) -> Double { min(1, base * factor) }
+}
+
 /// Where a new thread works: the project's shared folder or a new worktree.
 enum PhoneWorkingCopy: String, CaseIterable {
     case shared, independent
@@ -101,6 +124,7 @@ struct PhonePreferences {
     var density: PhoneDensity {
         defaults.string(forKey: PhonePreferenceKey.density).flatMap(PhoneDensity.init(rawValue:)) ?? .comfortable
     }
+    var glow: PhoneGlow { PhoneGlow(defaults.object(forKey: PhonePreferenceKey.glow) as? Int ?? PhoneGlow.standard) }
     /// Each notification is off until the user turns it on.
     var notifyNeedsYou: Bool { defaults.bool(forKey: PhonePreferenceKey.notifyNeedsYou) }
     var notifyFinished: Bool { defaults.bool(forKey: PhonePreferenceKey.notifyFinished) }
