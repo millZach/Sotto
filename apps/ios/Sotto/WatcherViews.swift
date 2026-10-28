@@ -473,6 +473,9 @@ private struct WatcherStatePill: View {
 private struct SectionSwitch: View {
     @Binding var section: WatcherView.Pane
     let watched: Int
+    @Namespace private var knob
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var picks = 0
     var body: some View {
         HStack(spacing: 4) {
             option(.conversation, String(localized: "Conversation", comment: "One of Watcher's two panes"), count: nil, id: "watcher-section-conversation")
@@ -481,10 +484,14 @@ private struct SectionSwitch: View {
         .padding(4)
         .background(Palette.fillSoft, in: Capsule())
         .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
+        .sensoryFeedback(.selection, trigger: picks)
     }
     private func option(_ value: WatcherView.Pane, _ title: String, count: Int?, id: String) -> some View {
         let chosen = section == value
-        return Button { section = value } label: {
+        return Button {
+            picks += 1
+            withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85)) { section = value }
+        } label: {
             HStack(spacing: 6) {
                 Text(title).font(.sotto(.body, .semibold))
                 if let count { Text("\(count)").font(.sotto(.body)).foregroundStyle(Palette.muted) }
@@ -496,6 +503,7 @@ private struct SectionSwitch: View {
             .background {
                 if chosen {
                     Capsule().fill(Palette.surface).overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
+                        .matchedGeometryEffect(id: "watcher-section-knob", in: knob)
                 }
             }
             .contentShape(Capsule())
