@@ -182,22 +182,24 @@ export class ProjectCopies {
     const branch = await originDefaultBranch(git, top)
     if (!branch) return { current: false, reason: 'Sotto could not tell which branch is its default' }
     const local = `refs/heads/${branch}`, remote = `refs/remotes/origin/${branch}`
+    // Named only when the fetched branch is there to start from: a clone whose `origin/HEAD` still names a renamed branch is not.
+    const fetched = await this.git(top, ['rev-parse', '--verify', '--quiet', `${remote}^{commit}`]).then(() => ({ fetched: branch }), () => ({}))
     const counts = await this.git(top, ['rev-list', '--left-right', '--count', `${local}...${remote}`, '--']).then(text => text.trim().split(/\s+/u).map(Number), () => null)
     const ahead = counts?.[0] ?? 0, behind = counts?.[1] ?? Number.NaN
     const block = await checkoutBlock(git, top, branch, ahead).catch(() => ({ reason: 'changes' }) as const)
     // Fetched, so a new worktree can start from `origin`'s branch even where the checkout stays as it is.
-    if (block?.reason === 'branch') return { current: false, reason: blockWords(block), fetched: branch }
-    if (!Number.isFinite(behind)) return { current: false, reason: 'Sotto could not compare it with GitHub', fetched: branch }
+    if (block?.reason === 'branch') return { current: false, reason: blockWords(block), ...fetched }
+    if (!Number.isFinite(behind)) return { current: false, reason: 'Sotto could not compare it with GitHub', ...fetched }
     // Tracked changes stay out of a new worktree, which starts from the commit; at the newest one, the copy is current.
     if (behind === 0 && (block === null || block.reason === 'changes')) return { current: true }
-    if (block) return { current: false, reason: blockWords(block), fetched: branch }
+    if (block) return { current: false, reason: blockWords(block), ...fetched }
     // The fetch took a while: a project added on that folder meanwhile may have work in it, so it is left as it is.
-    if (this.options.projects().some(project => project.path.trim() && folderKey(project.path) === folderKey(top))) return { current: false, reason: 'another project there already uses that folder', fetched: branch }
+    if (this.options.projects().some(project => project.path.trim() && folderKey(project.path) === folderKey(top))) return { current: false, reason: 'another project there already uses that folder', ...fetched }
     try {
       await this.git(top, ['merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', '--quiet', '--end-of-options', remote], MERGE_TIMEOUT_MS)
     } catch (error) {
       const refused = inTheWay(error instanceof Error ? error.message : '')
-      return { current: false, reason: refused?.reason === 'untracked' ? 'files in it that Git does not track are in the way' : refused ? 'it has uncommitted changes' : 'Git could not move it forward', fetched: branch }
+      return { current: false, reason: refused?.reason === 'untracked' ? 'files in it that Git does not track are in the way' : refused ? 'it has uncommitted changes' : 'Git could not move it forward', ...fetched }
     }
     return { current: true }
   }

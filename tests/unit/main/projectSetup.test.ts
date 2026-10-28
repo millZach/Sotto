@@ -79,6 +79,16 @@ describe('setting up a copy of a project (#1690)', () => {
     expect(await git(path, 'symbolic-ref', '--short', 'HEAD')).toBe('feat/mine')
   }, 60_000)
 
+  it('names no fetched branch when origin/HEAD still points at one that is gone', async () => {
+    const path = await userClone('Sotto')
+    // As after GitHub renamed master to main: the clone's origin/HEAD still says master, which no longer exists.
+    await git(path, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master')
+    await writeFile(join(path, 'README.md'), '# Mine\n')
+    const result = await copies().setup.setUp({ repository, title: 'Sotto' })
+    expect(result).toMatchObject({ ok: true, how: 'added', current: false })
+    expect(result).not.toHaveProperty('fetched')
+  }, 60_000)
+
   it('clones the repository into the folder Settings name when there is no copy', async () => {
     const configured = join(root, 'configured')
     const { setup, addProject } = copies({ projectsDirectory: () => configured })
