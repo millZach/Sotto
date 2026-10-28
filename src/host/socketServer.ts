@@ -805,12 +805,14 @@ export async function startSocketServer(options: SocketServerOptions) {
   })
   /**
    * The host's check queue (#1312), pushed whole to a desktop whose hello accepted `check-queue-views`: after its hello and
-   * whenever the queue changes. A thread this peer is not sent is not named to it.
+   * whenever the queue changes. A thread this peer is not sent is not named to it, and nor is a check on a provider it does
+   * not know: a waiting check's thread is not made yet, so only the check says its provider (Sol's review of #1678).
    */
   const pushChecks = (peer: Peer): void => {
     const checks = service.checkQueue?.()
     if (checks === undefined || !peer.checkQueueViews || peer.frames.isClosed) return
-    const shown = checks.map(entry => (entry.thread !== undefined && hiddenThread(peer, entry.thread)) || (entry.by !== undefined && hiddenThread(peer, entry.by))
+    const shown = checks.map(entry => (entry.provider !== undefined && peer.unknownProviders.has(entry.provider))
+      || (entry.thread !== undefined && hiddenThread(peer, entry.thread)) || (entry.by !== undefined && hiddenThread(peer, entry.by))
       ? { id: entry.id, ...entry.whose ? { whose: entry.whose } : {} } : entry)
     push(peer, { v: 1, event: 'check-queue', checks: shown })
   }
