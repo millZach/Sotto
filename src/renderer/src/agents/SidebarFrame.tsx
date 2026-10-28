@@ -264,8 +264,8 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
     </label>
     {afterSearch}
     {addProject.dialog}
-    {addProject.error ? <p className="thread-nav__error tt-paragraph" role="alert">{addProject.error}<button type="button" className="thread-nav__action tt-focusable" aria-label={t`Dismiss`} onClick={addProject.clearError}><X size={14} aria-hidden="true" /></button></p> : null}
-    {extraError ? <p className="thread-nav__error tt-paragraph" role="alert">{extraError}{onDismissExtraError ? <button type="button" className="thread-nav__action tt-focusable" aria-label={t`Dismiss`} onClick={onDismissExtraError}><X size={14} aria-hidden="true" /></button> : null}</p> : null}
+    {addProject.error ? <p className="thread-nav__error tt-paragraph" role="alert">{addProject.error}<button type="button" className="thread-nav__action tt-focusable" aria-label={t`Dismiss`} title={t`Dismiss`} onClick={addProject.clearError}><X size={14} aria-hidden="true" /></button></p> : null}
+    {extraError ? <p className="thread-nav__error tt-paragraph" role="alert">{extraError}{onDismissExtraError ? <button type="button" className="thread-nav__action tt-focusable" aria-label={t`Dismiss`} title={t`Dismiss`} onClick={onDismissExtraError}><X size={14} aria-hidden="true" /></button> : null}</p> : null}
     {notice}
     <div className="thread-nav__scroll">{children}</div>
     {size.collapsed ? null : foot ?? <SidebarFoot />}

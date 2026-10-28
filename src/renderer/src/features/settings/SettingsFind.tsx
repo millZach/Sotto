@@ -26,7 +26,7 @@ export function SettingsFindField({ query, onQueryChange, onOpenFirst, onEnterRe
         else if (event.key === 'Enter' && query.trim()) { event.preventDefault(); onOpenFirst() }
         else if (event.key === 'Escape' && query) { event.preventDefault(); event.stopPropagation(); onQueryChange('') }
       }} />
-    {query ? <button type="button" className="threads-search__clear tt-focusable" aria-label={t`Clear Find a setting`} onClick={() => { onQueryChange(''); inputRef.current?.focus() }}><X size={14} aria-hidden="true" /></button> : null}
+    {query ? <button type="button" className="threads-search__clear tt-focusable" aria-label={t`Clear Find a setting`} title={t`Clear Find a setting`} onClick={() => { onQueryChange(''); inputRef.current?.focus() }}><X size={14} aria-hidden="true" /></button> : null}
   </div>
 }
 

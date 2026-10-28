@@ -218,7 +218,7 @@ function GitActionNotice({ notice, running, onDismiss, onRun }: { readonly notic
     <p className="tt-paragraph"><strong>{notice.title}</strong>{notice.detail ? <> {notice.detail}</> : null}</p>
     {cta?.kind === 'open_pr' ? <Button variant="secondary" onClick={() => void window.sotto?.openExternalLink?.(cta.url)}>{cta.label}</Button> : null}
     {cta?.kind === 'run_action' ? <Button variant="secondary" disabled={running} onClick={() => onRun(cta.action)}>{cta.label}</Button> : null}
-    {notice.tone !== 'progress' ? <button type="button" className="git-action-notice__dismiss tt-focusable" aria-label={t`Dismiss the Git notice`} onClick={onDismiss}><X size={14} aria-hidden="true" /></button> : null}
+    {notice.tone !== 'progress' ? <button type="button" className="git-action-notice__dismiss tt-focusable" aria-label={t`Dismiss the Git notice`} title={t`Dismiss the Git notice`} onClick={onDismiss}><X size={14} aria-hidden="true" /></button> : null}
   </div>
 }
 
