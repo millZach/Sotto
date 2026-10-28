@@ -9,7 +9,7 @@
   background: transparent; color: var(--tt-text); font: inherit; font-size: 13.5px; white-space: nowrap; cursor: pointer;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .continue-chip:hover:not([aria-disabled='true']), .continue-chip[aria-pressed='true'] { border-color: var(--tt-border-faint); background: var(--tt-hover); }
-.continue-chip:active:not([aria-disabled='true']) { background: var(--tt-hover-strong); }
+.continue-chip:active:not([aria-disabled='true']):not([aria-pressed='true']) { background: var(--tt-hover-strong); }
 .continue-chip[aria-pressed='true'] { border-color: var(--tt-accent-border); }
 /* A provider that cannot take the thread now keeps its place, dashed, with why beside its name. */
 .continue-chip[aria-disabled='true'] { border-style: dashed; color: var(--tt-text-muted); cursor: not-allowed; }
@@ -36,7 +36,7 @@
 .continue-strip__lead strong { font-weight: 600; }
 .continue-strip__dismiss { display: grid; flex: none; place-items: center; width: 26px; height: 26px; margin: -4px -5px -4px 0; padding: 0; border: 0; border-radius: var(--tt-radius-sm);
   background: transparent; color: var(--tt-text-2); cursor: pointer;
-  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
 .continue-strip__dismiss:hover:not(:disabled) { background: var(--tt-hover); color: var(--tt-text); }
 .continue-strip__dismiss:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .continue-strip__dismiss:disabled { opacity: .55; cursor: default; }
