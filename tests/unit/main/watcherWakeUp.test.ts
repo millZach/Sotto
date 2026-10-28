@@ -9,7 +9,7 @@ import { WatcherWakeUp, WAKE_UP_TRIES, WATCHER_OBSERVE_MS, watcherDelegationOwne
 import { WatcherEvidenceStore, observationDigest } from '../../../src/main/agents/watcherEvidence'
 import { foldWatcherNews, watcherNewsText, watcherPullRequestWords, watcherReplyStart, watcherWakeUpsAsShown, WATCHER_WAKE_UP_PROMPT } from '../../../src/main/agents/watcherNews'
 import { RESUME_NOTE } from '../../../src/shared/restartResume'
-import { watcherBriefTurnIsNewest, watcherLatestTurnMessageId, watcherNewestTurnReply } from '../../../src/main/agents/watcherOutcomes'
+import { watcherBriefTurnIsNewest, watcherLatestTurnMessageId, watcherNewestTurnReply, watcherNewestTurnSaidMore } from '../../../src/main/agents/watcherOutcomes'
 import { queuedWakeUpText, wakeUpText, watcherNewsAsks, watcherWakeUpNote } from '../../../src/main/agents/wakeUp'
 import type { BabysitNews } from '../../../src/main/agents/babysitNews'
 import { centerTarget, centerTime, watcherRecordFixture } from '../../fixtures/watcher'
@@ -1707,6 +1707,24 @@ it('carries the start of the newest turn’s own reply, in the worker’s words,
     { id: 'steer', role: 'user', text: 'Also this', createdAt: centerTime },
     { id: 'reply', role: 'assistant', text: 'Done with the thing.', createdAt: centerTime, turnMessageId: 'brief' }] }
   expect(watcherNewestTurnReply(steered)).toBeUndefined()
+})
+
+it('calls a reply its last message, not the whole turn, when the turn said more before it (#1434)', () => {
+  const thread: AgentThread = { id: 'worker', providerId: 'codex', projectId: 'project', modelId: 'model', title: 'Worker', status: 'idle',
+    lastTurn: { id: 'turn-1', status: 'completed', messageId: 'brief' }, requests: [], messages: [
+      { id: 'brief', role: 'user', text: 'Do the thing', createdAt: centerTime },
+      { id: 'reply-1', role: 'assistant', text: 'Findings: the cache is stale.', createdAt: centerTime },
+      { id: 'reply-2', role: 'assistant', text: 'Done, see above.', createdAt: centerTime }] }
+  const reply = watcherNewestTurnReply(thread)!
+  expect(reply.id).toBe('reply-2')
+  expect(watcherNewestTurnSaidMore(thread)).toBe(true)
+  expect(watcherReplyStart(thread, 'turn-1', reply, false, watcherNewestTurnSaidMore(thread)))
+    .toBe('Its last message, in the worker\'s words: "Done, see above." (the turn said more before it; read_thread has the rest).')
+  expect(watcherReplyStart(thread, 'turn-1', reply, true, watcherNewestTurnSaidMore(thread))).toContain('read_operation')
+  // One message is the whole turn, and the whole sentence stands.
+  thread.messages = [thread.messages[0]!, { id: 'reply-3', role: 'assistant', text: 'Done, see above.', createdAt: centerTime }]
+  expect(watcherNewestTurnSaidMore(thread)).toBe(false)
+  expect(watcherReplyStart(thread, 'turn-1', watcherNewestTurnReply(thread))).toBe('Its whole reply, in the worker\'s words: "Done, see above.".')
 })
 
 it('tells Watcher a reply its news gives whole is enough to act on, and to read the thread only for what it does not say (#1419)', () => {
