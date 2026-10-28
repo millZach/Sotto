@@ -976,12 +976,20 @@ describe('a phone while Watcher writes its reply', () => {
   }
 
   it('is pushed a shell at most once a window while only Watcher\'s conversation changes, and the newest words once it stops', async () => {
-    const { shells, reply, shown, write } = await writing(await fixture())
-    const before = shells().length
+    const f = await fixture(), { shells, reply, shown, write } = await writing(f)
+    // A second phone holds its own window, and both are sent from the timer that closes them.
+    const other = await f.pair()
+    const otherShells = () => other.messages.filter(message => message.event === 'shell') as unknown as Pushed[]
+    const before = shells().length, otherBefore = otherShells().length
     const wrote = await write(1_500)
+    // Watcher's words reach the phone while it writes, not only once it stops.
+    const during = shells().slice(before).map(push => push.state.watcher?.conversation.messages.find(message => message.id === reply.id)?.text)
+    expect(during.filter(text => text !== undefined && text !== 'Synthetic' && text !== reply.text).length).toBeGreaterThanOrEqual(2)
     await expect.poll(shown).toBe(reply.text)
+    await expect.poll(() => otherShells().at(-1)?.state.watcher?.conversation.messages.find(message => message.id === reply.id)?.text).toBe(reply.text)
     // Before, one shell went with every publish: about thirty in this time.
     expect(shells().length - before).toBeLessThanOrEqual(Math.ceil(wrote / 250) + 2)
+    expect(otherShells().length - otherBefore).toBeLessThanOrEqual(Math.ceil(wrote / 250) + 2)
   })
 
   it('is pushed anything else at once, with the newest words', async () => {
