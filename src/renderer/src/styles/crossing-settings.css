@@ -100,7 +100,7 @@
 /* Linux draws no window controls, so its notice keeps only the gutter the left side has, at every width. */
 [data-platform='linux'] .settings-view .settings-feedback { padding-right: 6vw; }
 .settings-view .settings-subnav { position: static; display: flex; flex-direction: column; align-self: auto; gap: 4px; padding: 0; border: 0; overflow: visible; }
-.settings-subnav button { position: relative; display: flex; align-items: center; gap: 11px; width: 100%; min-height: 42px; padding: 10px 12px; border: 0; border-radius: 8px; color: var(--tt-text-muted); background: transparent; text-align: left; font: inherit; font-size: 14px; line-height: 1.35; cursor: pointer; transition: background 160ms ease, color 160ms ease, background-color 120ms ease, color 120ms ease; }
+.settings-subnav button { position: relative; display: flex; align-items: center; gap: 11px; width: 100%; min-height: 42px; padding: 10px 12px; border: 0; border-radius: 8px; color: var(--tt-text-muted); background: transparent; text-align: left; font: inherit; font-size: 14px; line-height: 1.35; cursor: pointer; transition: background 160ms ease, color 160ms ease; }
 .settings-subnav button > span { flex: 1; }
 .settings-subnav button > svg { flex: none; }
 .settings-subnav button:hover { background: var(--theme-sidebar-row-hover); color: var(--tt-text); }
