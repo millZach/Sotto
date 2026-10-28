@@ -8,7 +8,7 @@ import { withoutUltracode } from '../../shared/ultracode'
 import { resolveNewThreadPermission, RUNTIME_MODE_ORDER } from '../../shared/newThreadDefaults'
 import { capRuntimeMode, roleInForce, roleStartNote, startFromRole, WORKER_KINDS, type HeldPermission, type RoleField, type RoleStart, type WorkerRoleChoices } from '../../shared/workerRoles'
 import { isThreadClosed, isThreadTurnRunning } from '../../shared/threadActivity'
-import { countWorkingThreads, workingThreadsWarning } from '../../shared/workingThreads'
+import { countWorkingThreads, machineWorkingThreadsWarning, workingThreadsWarning } from '../../shared/workingThreads'
 import { workerMachineHostId, type WorkerMachineSetting, type WorkerPlacementReceipt } from '../../shared/workerMachine'
 import type { WatcherRefusal } from '../../shared/watcher'
 import { HOST_CEILING_HOLD_WORDS, type HostCeilingHold } from '../../shared/desktopDefaults'
@@ -160,6 +160,12 @@ export interface DelegationServiceOptions {
    * and cancel of it goes there too. Absent, a start placed elsewhere is refused, as on a host.
    */
   readonly remote?: Pick<DesktopRemoteDelegations, 'start' | 'send' | 'holds' | 'holdsThread' | 'read' | 'cancel' | 'list' | 'useDelivery' | 'detail' | 'retried' | 'isOpen' | 'hasOpen'>
+  /**
+   * This machine's own name, as a host says it to a thread on another machine that delegates here (#1316 part 2, Zach,
+   * October 28): its refusals, notes and warning name it, "That model is not ready on the Mac", where a thread of its own
+   * reads "this computer". Absent, as on the desktop, every caller reads the words as before.
+   */
+  readonly hereName?: () => string
   /** The clock a held background outcome's release reads, and how it waits for it; tests give their own. */
   readonly now?: () => number
   readonly schedule?: (callback: () => void, delay: number) => () => void
@@ -625,7 +631,9 @@ export class DelegationService {
       const started = this.record(record.id)
       const pending = started !== undefined && !this.waitingChecks.has(started.id) && (started.deliveryState === 'queued' || started.deliveryState === 'dispatching'
         || started.deliveryState === 'uncertain' || started.deliveryState === 'accepted' && started.outcomeAt === undefined)
-      const warning = admitted.start ? (this.options.warning ?? workingThreadsWarning)(countWorkingThreads(this.snapshot().threads, pending ? record.delegatedThreadId : undefined)) : undefined
+      const working = admitted.start ? countWorkingThreads(this.snapshot().threads, pending ? record.delegatedThreadId : undefined) : 0
+      const named = admitted.start ? this.namedHere(threadId) : undefined
+      const warning = !admitted.start ? undefined : named !== undefined ? machineWorkingThreadsWarning(working, named) : (this.options.warning ?? workingThreadsWarning)(working)
       const waitMs = Math.max(0, Math.min((input.wait_seconds ?? DELEGATION_WAIT_MAX_SECONDS) * 1000,
         context.waitMs === undefined ? Infinity : context.waitMs - 2_000))
       if (this.open(this.record(record.id)!)) {
@@ -1197,9 +1205,13 @@ export class DelegationService {
       return count < MODELS_LISTED
     })
   }
-  private readyModels(snapshot: AgentHostSnapshot, provider?: string): string {
+  /** This machine's name for a caller on another machine, where a host gives one; undefined for a thread of its own. */
+  private namedHere(callerId: string): string | undefined {
+    return this.options.hereName && this.options.relayedCallers?.caller(callerId) ? this.options.hereName() : undefined
+  }
+  private readyModels(snapshot: AgentHostSnapshot, provider?: string, where = 'this computer'): string {
     const ready = this.ready(snapshot, provider)
-    return ready.length ? `Ready models${provider ? ` for ${provider}` : ''}: ${ready.map(model => `${model.providerId} ${model.id}`).join('; ')}.` : `No ${provider ? `${provider} ` : ''}model is ready on this computer.`
+    return ready.length ? `Ready models${provider ? ` for ${provider}` : ''}: ${ready.map(model => `${model.providerId} ${model.id}`).join('; ')}.` : `No ${provider ? `${provider} ` : ''}model is ready on ${where}.`
   }
 
   /** Admission, in one transaction: who calls, under which root, within which ceiling and limits. Records the brief. */
@@ -1242,6 +1254,8 @@ export class DelegationService {
       this.touched(record)
       return { record, retry: false }
     }
+    // A caller on another machine is told this machine's name where a thread here reads "this computer" (Zach, October 28).
+    const where = this.namedHere(caller.id) ?? 'this computer'
     // With worker roles on, a new thread names its kind of work and the user's Settings fill in the rest (#1041): read
     // here, once per call. A provider and model named together override the role's; one without the other is refused.
     const named = input.provider !== undefined && input.model !== undefined
@@ -1249,9 +1263,9 @@ export class DelegationService {
     if (this.options.roles && (named || input.provider === undefined && input.model === undefined)) {
       byRole = startFromRole(input.work, this.options.roles(), snapshot.models, { ...(named ? { modelId: input.model } : {}), reasoningEffort: input.effort, runtimeMode: input.permission })
       if (!byRole.modelId) refuse('PROVIDER_UNAVAILABLE', 'No ready model can do that kind of work. Connect a provider in Settings, under Providers. Nothing was started.')
-    } else if (!named) refuse('INVALID_INPUT', `Name the provider and model for a new thread. ${this.readyModels(snapshot, input.provider)} Nothing was started.`)
+    } else if (!named) refuse('INVALID_INPUT', `Name the provider and model for a new thread. ${this.readyModels(snapshot, input.provider, where)} Nothing was started.`)
     const model = resolveModel(snapshot.models, byRole?.modelId ?? input.model!)
-    if (!model?.ready || named && model.providerId !== input.provider) refuse('PROVIDER_UNAVAILABLE', `That model is not ready on this computer. ${this.readyModels(snapshot, input.provider)} Nothing was started.`)
+    if (!model?.ready || named && model.providerId !== input.provider) refuse('PROVIDER_UNAVAILABLE', `That model is not ready on ${where}. ${this.readyModels(snapshot, input.provider, where)} Nothing was started.`)
     // Ultracode is the user's own choice in a thread, never a delegating agent's (ADR-0148).
     const efforts = withoutUltracode(model.reasoningEfforts ?? [])
     const roleEffort = byRole && input.effort === undefined && byRole.reasoningEffort && efforts.includes(byRole.reasoningEffort) ? byRole.reasoningEffort : undefined

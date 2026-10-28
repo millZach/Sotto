@@ -463,7 +463,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       ...checks ? { checks } : {},
       ...hostDelegation.relay ? { relay: hostDelegation.relay } : {},
       // A thread on another machine that delegates here through the desktop (#1316 part 2) is admitted as one of this host's own.
-      ...hostDelegation.remote ? { relayedCallers: hostDelegation.remote } : {},
+      ...hostDelegation.remote ? { relayedCallers: hostDelegation.remote, hereName: () => relayed?.hereName() ?? (hostname().trim().slice(0, 64) || 'this machine') } : {},
       machines: hostDelegationMachines(() => agentControl.hostId(), facts, () => agentControl.watcherSnapshot().threads, hostDelegation.relay) })
   }
   if (delegation && hostDelegation?.remote) hostDelegation.remote.useDelegation(delegation)

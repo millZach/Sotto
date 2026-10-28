@@ -102,10 +102,10 @@ describe('a desktop\'s own authority on the host (review)', () => {
       hasPendingThreadWork: () => false, hasUserDraft: () => false, refreshDelegationObservation: () => undefined, deliverWakeUp: async () => undefined }
     // Desktop B, which may answer here, sent defaults that allow Full access.
     const delegation = new DelegationService({ directory: root, control, host: { setDelegatedBy: async () => undefined, threadMessage: () => undefined }, historyEnabled: () => true,
-      newThreadCeiling: () => ({ mode: 'full-access' }), relayedCallers: callers })
+      newThreadCeiling: () => ({ mode: 'full-access' }), relayedCallers: callers, hereName: () => 'the Mac' })
     await delegation.recover()
     callers.useDelegation(delegation)
-    return { callers, created, setBeforeGuard: (given: () => void) => { beforeGuard = given } }
+    return { callers, created, delegation, snapshot, setBeforeGuard: (given: () => void) => { beforeGuard = given } }
   }
   const wide = (caller: string) => ({ type: 'delegate' as const, caller, projectId: 'mac-project', levels: 0, rootUserMessageId: 'root-1', runtimeMode: 'full-access' as const,
     input: { work: 'code-review', brief: 'Review it.', provider: 'codex', model: 'model', permission: 'full-access', wait_seconds: 0 }, waitMs: 0 })
@@ -117,6 +117,16 @@ describe('a desktop\'s own authority on the host (review)', () => {
     expect(f.created).toEqual([])
     expect(await f.callers.answer('desktop-b', wide('parent-b'))).toMatchObject({ status: 'ok' })
     expect(f.created).toHaveLength(1)
+  })
+
+  it('names itself in its refusals for a caller on another machine, and says this computer to one of its own (Zach, October 28)', async () => {
+    const f = await hostWith(new Map([['desktop-a', true]]), new Set(['desktop-a']))
+    const ask = wide('parent-a')
+    expect(await f.callers.answer('desktop-a', { ...ask, input: { ...ask.input, model: 'missing' } }))
+      .toMatchObject({ status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: expect.stringMatching(/^That model is not ready on the Mac\. Ready models for codex: codex model\. Nothing was started\.$/u) })
+    f.snapshot.threads = [{ id: 'own', projectId: 'mac-project', providerId: 'codex', title: 'own', modelId: 'model', status: 'idle', runtimeMode: 'full-access',
+      messages: [{ id: 'own-ask', role: 'user', text: 'Do it.' }], requests: [] } as unknown as AgentThread]
+    expect(await f.delegation.delegate('own', { ...ask.input, model: 'missing' })).toMatchObject({ message: expect.stringContaining('That model is not ready on this computer.') })
   })
 
   it('refuses at creation a start whose desktop lost its grant during admission, and any ask from a desktop no longer recorded', async () => {
