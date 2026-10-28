@@ -504,6 +504,20 @@ textarea.tt-input {
   border-left-color: var(--tt-success);
 }
 
+/* A toast rises in as Watcher's does; reduced motion, by the system or the setting, shows it at once. */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .tt-toast {
+    animation: tt-toast-rise 160ms cubic-bezier(.2, .8, .2, 1);
+  }
+}
+
+@keyframes tt-toast-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
 /* ---- the voice wave ----
 
    The widget's seven bars, reproduced exactly: 3px wide, 3px apart, 5px at
@@ -1507,6 +1521,7 @@ textarea.tt-input {
   text-decoration: underline dotted;
   text-underline-offset: 4px;
   cursor: pointer;
+  transition: color 120ms ease;
 }
 
 .tt-toast__link:hover {
