@@ -365,8 +365,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         {renaming
           ? <h2><ThreadNameField title={thread.title} label={t`Rename ${title}`} className="thread-workspace__rename tt-focusable"
             onRename={next => void command({ type: 'rename-thread', threadId: thread.id, title: next })} onDone={restore => { restoreRenameFocus.current = restore; setRenaming(false) }} /></h2>
-          : <h2>{thread.title}</h2>}
-        <span className="thread-workspace__crumb" data-has-working-copy={Boolean(workingCopy) || undefined}><span>{row.project?.title ?? row.provider}</span>{workingCopy}
+          : <h2 title={thread.title}>{thread.title}</h2>}
+        <span className="thread-workspace__crumb" data-has-working-copy={Boolean(workingCopy) || undefined}><span title={row.project?.title ?? row.provider}>{row.project?.title ?? row.provider}</span>{workingCopy}
           {row.settledBy === 'thread' || row.settledBy === 'project' ? <span className="thread-workspace__tag"><Trans>Settled</Trans></span> : null}
           {!rowConnected ? <span className="thread-workspace__tag" data-tone="warning">{t({ message: `${provider} disconnected`, comment: '{provider} is the provider\'s name, such as Codex.' })}</span> : null}
         </span>
