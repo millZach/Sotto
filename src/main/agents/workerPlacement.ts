@@ -160,7 +160,8 @@ async function roomElsewhere(local: PlacementMachine, machines: readonly Placeme
   const load = sources.load
   if (!load) return undefined
   const here = await load(local.hostId).catch(() => null)
-  if (!here || here.cpu === 'unknown' || here.memory === 'unknown' || here.cpu === 'not-busy' && here.memory === 'enough') return undefined
+  // Either reading alone is enough to move: a Mac reports its memory as unknown and can still be busy.
+  if (!here || here.cpu !== 'busy' && here.memory !== 'short') return undefined
   const others = machines.filter(machine => !machine.thisComputer && machine.connected)
   const loads = await Promise.all(others.map(machine => load(machine.hostId).catch(() => null)))
   const chosen = others.flatMap((machine, index) => {

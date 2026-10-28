@@ -3,7 +3,7 @@ import { mkdir, readdir, rm } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type { AgentProject } from '../../shared/agents'
 import type { MainCheckoutBlock } from '../../shared/mainCheckout'
-import type { ProjectSetupRequest, ProjectSetupResult } from '../../shared/workerMachine'
+import { projectSetupRepositorySchema, type ProjectSetupRequest, type ProjectSetupResult } from '../../shared/workerMachine'
 import { inTheWay } from './gitActions'
 import { sameRepository, type GitHubRepository } from './github'
 import { GitUnavailableError, QUIET_GIT_ENV, runGitStatusCommand, type RunGitCommand } from './gitStatus'
@@ -78,10 +78,16 @@ function blockWords(block: MainCheckoutBlock): string {
 export class ProjectCopies {
   private readonly running = new Map<string, Promise<ProjectSetupResult>>()
   private readonly run: RunGitCommand
+  /** Aborted when Sotto closes: a clone or fetch under way is stopped with its whole process tree. */
+  private readonly closing = new AbortController()
 
   constructor(private readonly options: ProjectSetupOptions) { this.run = options.run ?? runGitStatusCommand }
 
+  /** Stops every setup under way; each answers that Sotto is closing. */
+  close(): void { this.closing.abort() }
+
   setUp(request: ProjectSetupRequest): Promise<ProjectSetupResult> {
+    if (this.closing.signal.aborted) return Promise.resolve({ ok: false, message: 'Sotto is closing there, so it set nothing up. Try again once it is open.' })
     const { host, owner, name } = request.repository
     const key = `${host}/${owner}/${name}`.toLowerCase()
     const running = this.running.get(key)
@@ -94,6 +100,8 @@ export class ProjectCopies {
   private async setUpNow(request: ProjectSetupRequest): Promise<ProjectSetupResult> {
     const repository = request.repository, named = `${repository.owner}/${repository.name}`
     try {
+      // The repository names a folder and an address here, so it is checked here too, whoever asked.
+      if (!projectSetupRepositorySchema.safeParse(repository).success) throw new ProjectSetupRefusal(`${named} is not a GitHub repository Sotto can clone. Nothing was set up.`)
       const folder = this.usualFolder()
       const found = await this.findClone(folder, repository)
       if (found) {
@@ -105,6 +113,7 @@ export class ProjectCopies {
         return { ok: true, projectId, title: request.title, path: found, how: 'added', ...update }
       }
       const target = join(folder, repository.name)
+      if (folderKey(dirname(target)) !== folderKey(folder)) throw new ProjectSetupRefusal(`${named} is not a GitHub repository Sotto can clone. Nothing was set up.`)
       await this.clone(repository, folder, target)
       const projectId = await this.add(request.title, target, `Sotto cloned ${named} into ${target}`)
       this.options.log?.('project-setup-cloned')
@@ -165,7 +174,7 @@ export class ProjectCopies {
    */
   private async bringUpToDate(top: string): Promise<{ current: boolean; reason?: string }> {
     const timeoutMs = this.options.fetchTimeoutMs ?? FETCH_TIMEOUT_MS
-    try { await this.git(top, ['fetch', '--quiet', 'origin'], timeoutMs) } catch { return { current: false, reason: 'Sotto could not fetch it from GitHub' } }
+    try { await this.stoppable(top, ['fetch', '--quiet', 'origin'], timeoutMs) } catch { return { current: false, reason: 'Sotto could not fetch it from GitHub' } }
     // A clone made without `origin/HEAD` learns it from the remote; one that cannot falls back to `main` or `master`.
     const head = await this.git(top, ['symbolic-ref', '-q', 'refs/remotes/origin/HEAD']).then(text => text.trim(), () => '')
     if (!head) await this.git(top, ['remote', 'set-head', 'origin', '--auto'], timeoutMs).catch(() => undefined)
@@ -181,6 +190,8 @@ export class ProjectCopies {
     // Tracked changes stay out of a new worktree, which starts from the commit; at the newest one, the copy is current.
     if (behind === 0 && (block === null || block.reason === 'changes')) return { current: true }
     if (block) return { current: false, reason: blockWords(block) }
+    // The fetch took a while: a project added on that folder meanwhile may have work in it, so it is left as it is.
+    if (this.options.projects().some(project => project.path.trim() && folderKey(project.path) === folderKey(top))) return { current: false, reason: 'another project there already uses that folder' }
     try {
       await this.git(top, ['merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', '--quiet', '--end-of-options', remote], MERGE_TIMEOUT_MS)
     } catch (error) {
@@ -206,15 +217,31 @@ export class ProjectCopies {
       throw new ProjectSetupRefusal(`Sotto could not make the folder ${target} there. Clone ${named} there yourself, or name another machine.`)
     }
     try {
-      await this.run(folder, 'git', ['clone', '--quiet', '--filter=blob:none', '--', (this.options.cloneUrl ?? gitHubCloneUrl)(repository), target],
-        { env: QUIET_GIT_ENV, timeoutMs: this.options.cloneTimeoutMs ?? CLONE_TIMEOUT_MS })
+      await this.stoppable(folder, ['clone', '--quiet', '--filter=blob:none', '--', (this.options.cloneUrl ?? gitHubCloneUrl)(repository), target], this.options.cloneTimeoutMs ?? CLONE_TIMEOUT_MS)
     } catch (error) {
-      await rm(target, { recursive: true, force: true, maxRetries: 3 }).catch(() => undefined)
+      const removed = await rm(target, { recursive: true, force: true, maxRetries: 3 }).then(() => true, () => false)
+      const leftover = removed ? 'Sotto removed the unfinished copy.' : `Sotto could not remove the unfinished copy at ${target}; remove it before trying again.`
       if (error instanceof GitUnavailableError) throw new ProjectSetupRefusal(`Git is not installed there, so Sotto could not clone ${named}. Install Git there, or name another machine.`)
+      if (this.closing.signal.aborted) throw new ProjectSetupRefusal(`Sotto closed there while cloning ${named}. ${leftover} Try again once it is open.`)
       if ((error as NodeJS.ErrnoException).code === 'ETIMEDOUT') {
-        throw new ProjectSetupRefusal(`Cloning ${named} into ${target} took more than ten minutes, so Sotto stopped it and removed the unfinished copy. Clone it there yourself, or name another machine.`)
+        throw new ProjectSetupRefusal(`Cloning ${named} into ${target} took more than ten minutes, so Sotto stopped it. ${leftover} Clone it there yourself, or name another machine.`)
       }
-      throw new ProjectSetupRefusal(`Git could not clone ${named} into ${target}; that machine may not reach GitHub or may not be signed in to it. Sotto removed the unfinished copy. Clone it there yourself, or name another machine.`)
+      throw new ProjectSetupRefusal(`Git could not clone ${named} into ${target}; that machine may not reach GitHub or may not be signed in to it. ${leftover} Clone it there yourself, or name another machine.`)
+    }
+  }
+
+  /**
+   * A clone or fetch, which may take minutes: stopped with its whole process tree at its deadline or when Sotto closes, since
+   * on Windows a stopped git's own children otherwise keep the folder open. A deadline rejects with `ETIMEDOUT`.
+   */
+  private async stoppable(cwd: string, args: readonly string[], timeoutMs: number): Promise<string> {
+    const deadline = AbortSignal.timeout(timeoutMs)
+    try {
+      // The runner's own timeout stays further off, so the stop that ends the whole tree is the one that comes first.
+      return await this.run(cwd, 'git', args, { env: QUIET_GIT_ENV, signal: AbortSignal.any([deadline, this.closing.signal]), timeoutMs: timeoutMs + 60_000 })
+    } catch (error) {
+      if (deadline.aborted && !this.closing.signal.aborted) throw Object.assign(new Error('git did not finish in time.'), { code: 'ETIMEDOUT' })
+      throw error
     }
   }
 

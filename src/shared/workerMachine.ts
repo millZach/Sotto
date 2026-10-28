@@ -62,7 +62,14 @@ export type ProjectOrigins = z.infer<typeof projectOriginsSchema>
  * Setting up a copy of a project on a machine that has none (#1690), as the optional host feature `project-setup` asks it:
  * the GitHub repository the start's project is a copy of, and the project's title, which the copy is added under.
  */
-export const projectSetupRequestSchema = z.object({ repository: projectRepositorySchema, title: z.string().min(1).max(512) }).strict()
+/**
+ * The repository a setup names becomes a folder name and an HTTPS address on the host, so it is held to what a GitHub
+ * remote can say (`parseGitHubRemote`): a host name that says GitHub, with no port or credentials, and an owner and a
+ * name that are single path segments, never `.` or `..`.
+ */
+const segment = z.string().min(1).max(100).regex(/^[A-Za-z0-9_.-]+$/u).refine(value => value !== '.' && value !== '..')
+export const projectSetupRepositorySchema = z.object({ host: z.string().min(1).max(253).regex(/^[a-z0-9.-]*github[a-z0-9.-]*$/u), owner: segment, name: segment }).strict()
+export const projectSetupRequestSchema = z.object({ repository: projectSetupRepositorySchema, title: z.string().min(1).max(512) }).strict()
 export type ProjectSetupRequest = z.infer<typeof projectSetupRequestSchema>
 /**
  * What setting up a copy did. `added`: a clone already in the machine's usual projects folder became a project, brought up

@@ -606,6 +606,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const prepareForShutdown = (): Promise<void> => {
     if (preparingForShutdown) return preparingForShutdown
     worktreeCleanup.dispose()
+    projectCopies?.close()
     void mainCheckout?.close()
     void babysitter?.close().catch(() => undefined)
     void watchedPullRequests?.close().catch(() => undefined)
@@ -618,6 +619,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       // A sweep in progress finishes its current worktree, and takes no other, before the host it asks is closed.
       // A babysitting pass finishes the pull request it is on, and records what it told, the same way.
       stopWatcher()
+      projectCopies?.close()
       await worktreeCleanup.close()
       if (mainCheckout) await mainCheckout.close()
       if (babysitter) await babysitter.close()

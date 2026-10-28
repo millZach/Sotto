@@ -176,8 +176,10 @@ describe('Watcher\'s own choice with This computer busy (#1690)', () => {
       receipt: { hostId: FORGE, name: 'forge', awayFromDefault: false, note: 'This computer is busy, so Sotto started this one on forge, which has room.' } })
     expect((await placeWorker({}, 'watcher', onLaptop, sources([laptop({ load: { cpu: 'not-busy', memory: 'short', cpuBusyPercent: 5 } }), forge({ load: roomy(10) })]))).receipt.note)
       .toBe('This computer is short on memory, so Sotto started this one on forge, which has room.')
+    // A Mac reports its memory as unknown; a busy processor alone still moves the start.
+    expect((await placeWorker({}, 'watcher', onLaptop, sources([laptop({ load: { cpu: 'busy', memory: 'unknown', cpuBusyPercent: 99 } }), forge({ load: roomy(10) })]))).hostId).toBe(FORGE)
   })
-  it('stays on This computer when it has room, when any load is unknown, or when no other machine has room', async () => {
+  it('stays on This computer when it has room, when its load says nothing is wrong, or when no other machine has room', async () => {
     const stays = async (machines: Machine[]) => (await placeWorker({}, 'watcher', onLaptop, sources(machines))).receipt
     expect(await stays([laptop({ load: roomy(20) }), forge({ load: roomy(1) })])).toEqual({ hostId: LAPTOP, name: 'This computer', awayFromDefault: false })
     expect(await stays([laptop({ load: null }), forge({ load: roomy(1) })])).toEqual({ hostId: LAPTOP, name: 'This computer', awayFromDefault: false })

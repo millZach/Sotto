@@ -8,6 +8,7 @@ import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { runGitStatusCommand } from '../../../src/main/agents/gitStatus'
 import { ProjectCopies, type ProjectSetupOptions } from '../../../src/main/agents/projectSetup'
+import { projectSetupRequestSchema } from '../../../src/shared/workerMachine'
 
 const exec = promisify(execFile)
 const git = async (cwd: string, ...args: string[]): Promise<string> =>
@@ -126,5 +127,34 @@ describe('setting up a copy of a project (#1690)', () => {
     expect(first).toMatchObject({ ok: true, how: 'cloned' })
     expect(addProject).toHaveBeenCalledTimes(1)
     expect(run.mock.calls.filter(([, , args]) => args[0] === 'clone')).toHaveLength(1)
+  }, 60_000)
+
+  it('refuses a repository that would leave the projects folder or name a host other than GitHub, and touches nothing', async () => {
+    const run = vi.fn(runGitStatusCommand)
+    const { setup, addProject } = copies({ run })
+    for (const named of [{ ...repository, name: '..' }, { ...repository, name: '../outside' }, { ...repository, owner: 'a/b' }, { ...repository, host: 'unlisted.example' }, { ...repository, host: 'github.com:22' }]) {
+      expect(projectSetupRequestSchema.safeParse({ repository: named, title: 'Sotto' }).success).toBe(false)
+      expect(await setup.setUp({ repository: named, title: 'Sotto' })).toMatchObject({ ok: false, message: expect.stringMatching(/is not a GitHub repository Sotto can clone\. Nothing was set up\.$/u) })
+    }
+    expect(projectSetupRequestSchema.safeParse({ repository, title: 'Sotto' }).success).toBe(true)
+    expect(run.mock.calls.filter(([, , args]) => args[0] === 'clone')).toHaveLength(0)
+    expect(addProject).not.toHaveBeenCalled()
+  })
+
+  it('stops a clone under way when Sotto closes, removes what it made, and sets nothing up after', async () => {
+    let started!: () => void
+    const cloning = new Promise<void>(resolve => { started = resolve })
+    const { setup, addProject } = copies({ run: (cwd, command, args, options) => {
+      if (args[0] !== 'clone') return runGitStatusCommand(cwd, command, args, options)
+      started()
+      return new Promise((_, reject) => options?.signal?.addEventListener('abort', () => reject(new Error('git was stopped.')), { once: true }))
+    } })
+    const result = setup.setUp({ repository, title: 'Sotto' })
+    await cloning
+    setup.close()
+    expect(await result).toEqual({ ok: false, message: 'Sotto closed there while cloning o/Sotto. Sotto removed the unfinished copy. Try again once it is open.' })
+    expect(await exists(join(projects, 'Sotto'))).toBe(false)
+    expect(await setup.setUp({ repository, title: 'Sotto' })).toEqual({ ok: false, message: 'Sotto is closing there, so it set nothing up. Try again once it is open.' })
+    expect(addProject).not.toHaveBeenCalled()
   }, 60_000)
 })
