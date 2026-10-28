@@ -157,68 +157,48 @@ function mergedActivity(old: AgentActivity, record: AgentActivity): AgentActivit
   }
 }
 
-/**
- * Where each record of a list `mergeAgentActivities` returned sits, so the next upsert of a few records into it reads
- * those few rather than the whole window. A list holds up to `MAX_AGENT_ACTIVITIES` records and a busy thread fills it,
- * so an upsert that rebuilt this, scanned the list or sorted it cost every update in proportion to the window: about a
- * millisecond a frame on Electron main once a thread had run a thousand subagents.
- *
- * `positions` holds each id's place counted from the first record the list ever held, and `base` is how many have been
- * dropped from its front since, so a record's index is its position less `base` and dropping the oldest moves no entry.
- * It is read on first use. An upsert hands the index on to the list it returns, and the list it was given has none after
- * that; a later read of that older list rebuilds one. `length` notices a list changed in place, which then gets a fresh
- * index too. `next` is the sequence a new record takes. `merged` is true only for a list this module returned: in
- * sequence order, one record per id, within the bound. Returned lists are not changed in place anywhere in Sotto.
- */
-interface ActivityIndex { positions?: Map<string, number> | undefined; base: number; length: number; next: number; merged: boolean }
-const indexes = new WeakMap<readonly AgentActivity[], ActivityIndex>()
-
-/** The positions of a list's records, read once per list rather than once per upsert. */
-function positionsOf(records: readonly AgentActivity[]): { index: ActivityIndex; positions: Map<string, number> } {
-  let index = indexes.get(records)
-  if (!index || index.length !== records.length) {
-    index = { base: 0, length: records.length, next: records.reduce((next, record) => Math.max(next, record.sequence + 1), 0), merged: false }
-    indexes.set(records, index)
-  }
-  if (!index.positions) {
-    const positions = new Map<string, number>()
-    // The first record with an id is the one `find` would return. A merged list has only one, in sequence order; a list
-    // that no longer does was changed in place, and is merged the long way.
-    for (const [position, record] of records.entries()) {
-      if (positions.has(record.id) || (position > 0 && record.sequence < records[position - 1]!.sequence)) index.merged = false
-      if (!positions.has(record.id)) positions.set(record.id, position)
-    }
-    index.positions = positions
-  }
-  return { index, positions: index.positions }
-}
-
-/** The record with this id, as `records.find` would return it, without reading the others. */
+/** The record with this id, as `records.find` would return it. The id is built once rather than once per record compared. */
 export function findAgentActivity(records: readonly AgentActivity[], id: string): AgentActivity | undefined {
-  const { index, positions } = positionsOf(records)
-  const position = positions.get(id)
-  if (position === undefined) return undefined
-  const record = records[position - index.base]
-  return record?.id === id ? record : records.find(candidate => candidate.id === id)
+  return records.find(record => record.id === id)
 }
 
 /**
  * Native snapshots are upserts, not new log entries. Keep first-observed order and anchors.
  *
- * With `same`, a merge that leaves every record as `same` judges it returns `previous` itself, so a frame that changed
- * nothing tells no cache that reuses a thread's records by identity that everything changed.
+ * With `same`, a merge whose bounded result leaves every record as `same` judges it returns `previous` itself, so a frame
+ * that changed nothing tells no cache that reuses a thread's records by identity that everything changed.
+ *
+ * Every Claude, Codex, Grok and Devin event runs this on Electron main against a window of up to `MAX_AGENT_ACTIVITIES`
+ * records, so it reads that window once and does no more than it must: it keeps no state between calls, and sorts only
+ * a list that is out of sequence order. A thread that had run a thousand subagents once spent about a millisecond per
+ * subagent here and in the scans beside it, when every merge built a map of the window, reduced it and sorted it.
  */
 export function mergeAgentActivities(previous: readonly AgentActivity[] = [], incoming: readonly AgentActivity[] = [], same?: (next: AgentActivity, old: AgentActivity) => boolean): AgentActivity[] {
-  const index = indexes.get(previous)
-  if (index?.merged && index.length === previous.length) {
-    const known = positionsOf(previous)
-    const merged = known.index.merged ? upsert(previous, incoming, known, same) : undefined
-    if (merged) return merged
-    indexes.delete(previous)
+  // One pass: where each id sits, the sequence a new record takes, and whether the list is already in sequence order.
+  const positions = new Map<string, number>()
+  let sequence = 0, ordered = true, last = Number.NEGATIVE_INFINITY
+  for (let position = 0; position < previous.length; position++) {
+    const record = previous[position]!
+    // A list with an id twice keeps that id once, where it first sat; the full merge below does exactly that.
+    const id = record.id
+    if (positions.has(id)) return mergeAll(previous, incoming, same)
+    positions.set(id, position)
+    const order = record.sequence
+    if (order < last) ordered = false
+    last = order; sequence = Math.max(sequence, order + 1)
   }
-  return mergeAll(previous, incoming, same)
+  const records = previous.slice()
+  for (const record of incoming) {
+    const position = positions.get(record.id)
+    if (position === undefined) { positions.set(record.id, records.length); records.push({ ...record, sequence: sequence++ }); continue }
+    const merged = mergedActivity(records[position]!, record)
+    if (merged) records[position] = merged
+  }
+  // New records take sequences past every held one, so a list in order stays in order. `sort` is stable, as the full merge relies on.
+  return bounded(ordered ? records : records.sort((a, b) => a.sequence - b.sequence), previous, same)
 }
 
+/** The merge for a list holding an id more than once: the last record with it, in the place of the first. */
 function mergeAll(previous: readonly AgentActivity[], incoming: readonly AgentActivity[], same: ((next: AgentActivity, old: AgentActivity) => boolean) | undefined): AgentActivity[] {
   const records = new Map(previous.map(record => [record.id, record]))
   let sequence = previous.reduce((next, record) => Math.max(next, record.sequence + 1), 0)
@@ -228,55 +208,18 @@ function mergeAll(previous: readonly AgentActivity[], incoming: readonly AgentAc
     const merged = mergedActivity(old, record)
     if (merged) records.set(record.id, merged)
   }
-  const sorted = [...records.values()].sort((a, b) => a.sequence - b.sequence)
-  const bounded = sorted.slice(-MAX_AGENT_ACTIVITIES)
-  if (sorted.length > bounded.length && bounded[0]) bounded[0] = { ...bounded[0], truncated: true }
-  if (same && unchanged(previous, bounded, same)) return previous as AgentActivity[]
-  // Its positions are read when the next upsert needs them, so a caller that never merges into this list again pays nothing.
-  indexes.set(bounded, { base: 0, length: bounded.length, next: sequence, merged: true })
-  return bounded
+  return bounded([...records.values()].sort((a, b) => a.sequence - b.sequence), previous, same)
+}
+
+/** The newest `MAX_AGENT_ACTIVITIES` of a merge in sequence order, the first marked cut when older ones went; or `previous` as `same` allows. */
+function bounded(sorted: AgentActivity[], previous: readonly AgentActivity[], same: ((next: AgentActivity, old: AgentActivity) => boolean) | undefined): AgentActivity[] {
+  const kept = sorted.length > MAX_AGENT_ACTIVITIES ? sorted.slice(-MAX_AGENT_ACTIVITIES) : sorted
+  if (sorted.length > kept.length && kept[0]) kept[0] = { ...kept[0], truncated: true }
+  return same && unchanged(previous, kept, same) ? previous as AgentActivity[] : kept
 }
 
 function unchanged(previous: readonly AgentActivity[], merged: readonly AgentActivity[], same: (next: AgentActivity, old: AgentActivity) => boolean): boolean {
   if (merged.length !== previous.length) return false
   for (const [position, record] of merged.entries()) if (record !== previous[position] && !same(record, previous[position]!)) return false
   return true
-}
-
-/**
- * `mergeAgentActivities` on a list it returned before, reading only the records the incoming ones name. The result is
- * the one the full merge gives: that list is already in sequence order with one record per id, so updated records keep
- * their places and new ones go on the end in the order they came.
- */
-function upsert(previous: readonly AgentActivity[], incoming: readonly AgentActivity[], { index, positions }: { index: ActivityIndex; positions: Map<string, number> },
-  same: ((next: AgentActivity, old: AgentActivity) => boolean) | undefined): AgentActivity[] | undefined {
-  const changed = new Map<string, AgentActivity>()
-  const added: string[] = []
-  let next = index.next
-  const at = (id: string): number | undefined => { const position = positions.get(id); return position === undefined ? undefined : position - index.base }
-  for (const record of incoming) {
-    const position = at(record.id)
-    // A list changed in place since it was returned is merged the long way.
-    if (position !== undefined && previous[position]?.id !== record.id) return undefined
-    const old = changed.get(record.id) ?? (position !== undefined ? previous[position] : undefined)
-    if (!old) { changed.set(record.id, { ...record, sequence: next++ }); added.push(record.id); continue }
-    const merged = mergedActivity(old, record)
-    if (merged) changed.set(record.id, merged)
-  }
-  if (same && !added.length && [...changed].every(([id, record]) => same(record, previous[at(id)!]!))) return previous as AgentActivity[]
-  const full = previous.slice()
-  for (const [id, record] of changed) { const position = at(id); if (position !== undefined) full[position] = record }
-  for (const id of added) full.push(changed.get(id)!)
-  const dropped = Math.max(0, full.length - MAX_AGENT_ACTIVITIES)
-  const bounded = dropped ? full.slice(dropped) : full
-  if (dropped && bounded[0]) bounded[0] = { ...bounded[0], truncated: true }
-  // The index moves to the list returned; the positions of what it dropped go, and every other entry stays put.
-  for (const [offset, id] of added.entries()) positions.set(id, index.base + previous.length + offset)
-  for (const record of full.slice(0, dropped)) positions.delete(record.id)
-  index.base += dropped
-  index.length = bounded.length
-  index.next = next
-  indexes.delete(previous)
-  indexes.set(bounded, index)
-  return bounded
 }
