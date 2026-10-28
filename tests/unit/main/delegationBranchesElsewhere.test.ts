@@ -187,6 +187,28 @@ describe('one check queue per machine, in the order asked (Sol review)', () => {
     delegation.close()
   })
 
+  it('holds no place for a reserve that arrives after its release, or after its connection closed (Sol re-check)', async () => {
+    const root = await folder()
+    const snapshot: AgentHostSnapshot = { ...EMPTY_AGENT_HOST, connected: true, models: [model], projects: [{ id: 'mac-project', title: 'Project', path: join(root, 'project') }] as never, threads: [] }
+    const control: DelegationCoordinator = { hostId: () => MAC, watcherSnapshot: () => snapshot, configuration: () => ({}), useDelegation: () => () => undefined,
+      commandFromDelegation: async () => ({ host: snapshot }) as never, hasPendingThreadWork: () => false, hasUserDraft: () => false, refreshDelegationObservation: () => undefined, deliverWakeUp: async () => undefined }
+    const callers = new HostRemoteCallers(root), checks = new CheckQueue('the Mac')
+    const delegation = new DelegationService({ directory: root, control, host: { setDelegatedBy: async () => undefined, threadMessage: () => undefined }, historyEnabled: () => true,
+      newThreadCeiling: () => ({ mode: 'full-access' }), relayedCallers: callers, hereName: () => 'the Mac', checks })
+    await delegation.recover()
+    callers.useDelegation(delegation)
+    // The desktop gave up on the place (its reserve timed out) before the reserve itself was taken here.
+    expect(await callers.answer('desktop-a', { type: 'release', caller: 'parent', reservation: RESERVED })).toEqual({ status: 'ok' })
+    expect(await callers.answer('desktop-a', { type: 'reserve', caller: 'parent', reservation: RESERVED, work: 'code-review' })).toMatchObject({ status: 'refused' })
+    // The connection that asked closed while the reserve waited to be taken.
+    expect(await callers.answer('desktop-a', { type: 'reserve', caller: 'parent', reservation: PIN, work: 'code-review' }, () => false)).toMatchObject({ status: 'refused' })
+    expect(checks.ids()).toEqual([])
+    // A reserve on an open connection, never released, still holds its place.
+    expect(await callers.answer('desktop-a', { type: 'reserve', caller: 'parent', reservation: MOVE, work: 'code-review' }, () => true)).toEqual({ status: 'ok' })
+    expect(checks.ids()).toHaveLength(1)
+    delegation.close()
+  })
+
   it('holds a check that names this machine in place from when it is asked, while it is placed', async () => {
     let placed: (() => void) | undefined
     const here = { hostId: DESKTOP, projectId: 'project', receipt: { hostId: DESKTOP, name: 'This computer', awayFromDefault: false } }

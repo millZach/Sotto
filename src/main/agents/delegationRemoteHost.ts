@@ -33,6 +33,9 @@ const FORGOTTEN = 'This machine no longer takes delegations from that desktop. N
 const ADMITTING = 'This machine is still admitting that delegation, so it cannot say yet whether it started. Nothing was sent again.'
 const NOT_HELD = 'This machine holds no delegation for that thread, so Sotto cannot prove whether it started. Nothing was sent again.'
 const NO_QUEUE = 'This machine has no check queue right now, so no check can start here. Nothing was started.'
+const PLACE_LET_GO = 'This machine had already let go of that check\'s place, so it holds none for it. Nothing was started.'
+/** Reservations a desktop let go of before this host took them, remembered so a late `reserve` holds nothing; newest kept. */
+const RELEASED_KEPT = 1_000
 /** This host's delegation as a desktop's asks reach it; a check's place is reserved only where it has a check queue. */
 type RemoteCallersDelegation = Pick<DelegationService, 'delegate' | 'read' | 'cancel' | 'retriedDelegation' | 'hasOpen'> & Partial<Pick<DelegationService, 'reserveCheck' | 'releaseReservation'>>
 
@@ -60,6 +63,8 @@ export class HostRemoteCallers {
   private delegation: RemoteCallersDelegation | undefined
   /** Places each desktop reserved in this host's check queue and has not had taken or let go, by its client (#1316 part 2). */
   private readonly reserved = new Map<string, Map<string, { readonly key: string; readonly reservation: string }>>()
+  /** Places a desktop released, by its client, caller and reservation, so a `reserve` that arrives after its release holds none. */
+  private readonly released = new Set<string>()
 
   constructor(directory: string, private readonly options: {
     /**
@@ -135,8 +140,12 @@ export class HostRemoteCallers {
       if (count > 0) this.admittingKeys.set(held, count); else this.admittingKeys.delete(held)
     }
   }
-  /** One ask from the desktop `clientId`, answered as this host's own delegation answers the asking thread. */
-  async answer(clientId: string, raw: DelegationRemoteAsk): Promise<unknown> {
+  /**
+   * One ask from the desktop `clientId`, answered as this host's own delegation answers the asking thread. `open` says
+   * whether the connection that asked is still open: a `reserve` that arrives once it closed holds no place, since that
+   * connection's cleanup has already run.
+   */
+  async answer(clientId: string, raw: DelegationRemoteAsk, open: () => boolean = () => true): Promise<unknown> {
     const ask = delegationRemoteAskSchema.parse(raw)
     const delegation = this.delegation
     if (!delegation) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: 'This machine cannot delegate right now. Nothing was started.' }
@@ -156,13 +165,20 @@ export class HostRemoteCallers {
     }
     // A check's place in this host's queue, held before its branch moves here and taken by the start that names it (#1316 part 2).
     if (ask.type === 'reserve') {
+      // Fenced: a place released before it was held, or asked for on a connection that has since closed, is never held.
+      const fence = `${clientId}\n${key}\n${ask.reservation}`
+      if (this.released.delete(fence) || !open()) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: PLACE_LET_GO }
       if (!delegation.reserveCheck?.(key, ask.reservation, ask.work)) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: NO_QUEUE }
       const places = this.reserved.get(clientId) ?? new Map<string, { readonly key: string; readonly reservation: string }>()
       places.set(`${key}\n${ask.reservation}`, { key, reservation: ask.reservation }); this.reserved.set(clientId, places)
       return { status: 'ok' }
     }
     if (ask.type === 'release') {
-      this.reserved.get(clientId)?.delete(`${key}\n${ask.reservation}`)
+      // Remembered, so a `reserve` for the same place that is still on its way holds nothing when it arrives.
+      if (!this.reserved.get(clientId)?.delete(`${key}\n${ask.reservation}`)) {
+        this.released.add(`${clientId}\n${key}\n${ask.reservation}`)
+        if (this.released.size > RELEASED_KEPT) this.released.delete(this.released.values().next().value!)
+      }
       delegation.releaseReservation?.(key, ask.reservation)
       return { status: 'ok' }
     }

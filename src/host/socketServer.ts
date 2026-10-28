@@ -1417,7 +1417,8 @@ export async function startSocketServer(options: SocketServerOptions) {
           // Read again at every ask, not only at hello: a desktop the launch script no longer records is refused (#1316 review).
           await options.watcherDesktops?.refresh().catch(() => undefined)
           if (options.watcherDesktops?.has(peer.client.clientId) !== true) throw new Refusal('forbidden')
-          try { return { result: await options.delegationRemote.answer(peer.client.clientId, request.ask) } } catch { throw new Refusal('unavailable') }
+          // A check's place reserved once this connection closed is never held: its cleanup has already run (#1316 part 2).
+          try { return { result: await options.delegationRemote.answer(peer.client.clientId, request.ask, () => !peer.gone.signal.aborted) } } catch { throw new Refusal('unavailable') }
         } finally { release() }
       }
       case 'host-update': {
