@@ -40,7 +40,7 @@ struct ThreadView: View {
                     if let agents = model.agentsCount(ref) { AgentsButton(count: agents) { agentsOpen = true } }
                     barPill
                     if model.watchHost(for: ref) != nil { WatchToggle(ref: ref, title: thread?.title) }
-                    if model.compactionOffered(ref) { ThreadMenu(ref: ref) }
+                    if model.compactionOffered(ref) || model.shelfAction(ref) != nil { ThreadMenu(ref: ref) }
                 }
             }
         }
@@ -167,21 +167,34 @@ private struct WatchToggle: View {
     }
 }
 
-/// The thread's actions behind ••• beside its state: Compact context, while the thread's provider offers it. A press asks
-/// the provider to compact; one that can't go now says why under its name. Its progress shows as Compacting in the bar.
+/// The thread's actions behind ••• beside its state: Compact context, while the thread's provider offers it, and Settle
+/// or Restore, as on the desktop. A press asks the thread's computer; one that can't go now says why under its name.
+/// Compacting shows its progress in the bar, and a confirmed Settle or Restore says so in the banner.
 private struct ThreadMenu: View {
     @EnvironmentObject var model: AppModel
     /// Watched so whether there is history to compact follows the thread as it is read.
     @EnvironmentObject var detailStore: DetailStore
     let ref: ThreadRef
     var body: some View {
-        let held = model.compactionHeld(ref)
         Menu {
-            Button { Task { await model.compact(ref) } } label: {
-                Text("Compact context")
-                Text(held ?? String(localized: "Summarize earlier messages to free room"))
+            if model.compactionOffered(ref) {
+                let held = model.compactionHeld(ref)
+                Button { Task { await model.compact(ref) } } label: {
+                    Text("Compact context")
+                    Text(held ?? String(localized: "Summarize earlier messages to free room"))
+                }
+                .disabled(held != nil)
             }
-            .disabled(held != nil)
+            if let action = model.shelfAction(ref) {
+                let held = model.actionHeld(ref)
+                Button { Task { await model.shelve(ref, action) } } label: {
+                    Text(action == .settle ? String(localized: "Settle", comment: "Settle the thread: put it away on the Settled shelf.")
+                         : String(localized: "Restore", comment: "Restore a settled thread to open work."))
+                    if let held { Text(held) }
+                }
+                .disabled(held != nil)
+                .accessibilityIdentifier(action == .settle ? "thread-settle" : "thread-restore")
+            }
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 15, weight: .semibold))
@@ -1646,6 +1659,8 @@ private struct UnconfirmedRow: View {
         case "steer": return (String(localized: "Steering…", comment: "A queued message being sent into the running turn"), String(localized: "Steer isn’t confirmed. Check the thread before you steer again."))
         case "remove": return (String(localized: "Removing…", comment: "A queued message being taken out of the queue"), String(localized: "Removing isn’t confirmed. Check the thread’s queue before you remove it again."))
         case "compact": return (String(localized: "Compacting…", comment: "A request to compact the thread's context on its way"), String(localized: "Compacting isn’t confirmed. Check the thread before you compact it again."))
+        case "settle": return (String(localized: "Settling…", comment: "A request to settle the thread on its way"), String(localized: "Settling isn’t confirmed. Check the thread before you settle it again."))
+        case "restore": return (String(localized: "Restoring…", comment: "A request to take the thread off the Settled shelf on its way"), String(localized: "Restoring isn’t confirmed. Check the thread before you restore it again."))
         case "babysit": return (String(localized: "Starting babysitting…", comment: "A request to babysit a pull request on its way"), String(localized: "Babysitting isn’t confirmed. Check the pull request before you press it again."))
         case "stop-babysitting": return (String(localized: "Stopping babysitting…", comment: "A request to stop babysitting a pull request on its way"), String(localized: "Stopping babysitting isn’t confirmed. Check the pull request before you press it again."))
         default: return (String(localized: "Sending…", comment: "A reply on its way to the thread's computer"), String(localized: "Not confirmed. Check the thread before you send it again."))

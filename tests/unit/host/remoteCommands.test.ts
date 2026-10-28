@@ -328,4 +328,11 @@ describe('remote command allow-list', () => {
     expect(refuse({ type: 'reclaim-thread-worktree', threadId: 'thread', withUncommittedChanges: false })).toBeNull()
     expect(refuse({ type: 'restore-thread-branch', threadId: 'thread' })).toBeNull()
   })
+  it('lets a paired iPhone settle and restore a thread without the answer policy, carrying only its ID', () => {
+    // The iPhone's ••• menu sends these (ADR-0033). Settling stops nothing and grants nothing, so pairing is enough.
+    for (const type of ['settle-thread', 'restore-thread'] as const) {
+      expect(refuse({ type, threadId: 'thread' }), type).toBeNull()
+      expect(refuse({ type, threadId: 'thread', projectId: 'project' } as unknown as AgentCommand), type).toBe('forbidden')
+    }
+  })
 })
