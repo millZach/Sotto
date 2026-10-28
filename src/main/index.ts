@@ -1277,6 +1277,9 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   localRuntime?.agentControl.onThreadsDeleted(threadIds => {
     const hostId = agentControl.hostId()
     void requestDrafts.forgetThreads(new Set(threadIds.flatMap(id => [id, hostEntityKey(hostId, id)]))).catch(() => undefined)
+    // And what their Settles did to delegated threads elsewhere, whether the window, Clear now, the hourly clear or a phone
+    // deleted them (#1316 part 3).
+    void cascadedSettles?.forgetAll(threadIds.map(id => hostEntityKey(hostId, id))).catch(() => undefined)
   })
   const unsubscribeRequestDrafts = requestDrafts.onChanged(owner => windows.sendToMain(REQUEST_DRAFT_CHANGED, owner))
   mainActivity?.subscribe(state => { windows.sendToMain(MAIN_ACTIVITY_CHANGED, state) })

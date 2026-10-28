@@ -148,8 +148,12 @@ export interface CascadedSettle {
   readonly left: ReadonlySet<string>
   readonly uncertain: ReadonlySet<string>
 }
-/** How many threads' cascaded settles are kept, newest last; an older one's Restore brings back none of them. */
-const SETTLES_KEPT = 500
+/**
+ * A guard against a runaway or corrupt file, far above what anyone settles and has not restored, deleted or cleared: past
+ * it the oldest record goes, and that thread's Restore brings back none of its delegated threads elsewhere. A record
+ * otherwise lasts until its thread's Restore through the window, its deletion or clearing, or its next Settle.
+ */
+const SETTLES_GUARD = 10_000
 /** The window's key for a thread: `host:<hostId>:<id>`, with a host's thread ID of up to 512 characters. */
 const KEY_MAX = 600
 const keySchema = z.string().min(1).max(KEY_MAX)
@@ -158,7 +162,7 @@ const keySchema = z.string().min(1).max(KEY_MAX)
  * thread's lists have no bound of their own, since each key is bounded and one Settle lists only the threads below it.
  */
 const settlesFileSchema = z.object({ version: z.literal(1), settles: z.array(z.object({ parent: keySchema, settled: z.array(keySchema), left: z.array(keySchema),
-  uncertain: z.array(keySchema).optional() }).strict()).max(SETTLES_KEPT) }).strict()
+  uncertain: z.array(keySchema).optional() }).strict()).max(SETTLES_GUARD) }).strict()
 /** Whether a key is one the file can hold. One that is not is left out of the record, and its thread is not restored. */
 const fits = (key: string): boolean => key.length >= 1 && key.length <= KEY_MAX
 type SettlesFile = z.infer<typeof settlesFileSchema>
@@ -167,7 +171,9 @@ type SettlesFile = z.infer<typeof settlesFileSchema>
  * The window's record of its cascaded settles (#1316 part 3), so a Restore brings back only the delegated threads elsewhere
  * that its parent's Settle settled, not one settled on its own a minute before. Kept in `cross-machine-settles.json` in
  * Sotto's data folder, since a Restore often comes after a restart: the window's keys of the threads only, never a title,
- * a brief or a reply. Without a folder, as in a test, it is kept in memory.
+ * a brief or a reply. Without a folder, as in a test, it is kept in memory. A thread restored some other way, by Watcher, new
+ * work or a phone, keeps its record until its next Settle replaces it; its Restore's skew check already leaves the threads
+ * it names alone once they are settled again by themselves (#1726).
  */
 export class CascadedSettles {
   private readonly settles = new Map<string, CascadedSettle>()
@@ -189,12 +195,18 @@ export class CascadedSettles {
     if (!fits(parent)) { await this.save(); return }
     const held = (keys: ReadonlySet<string>): ReadonlySet<string> => [...keys].every(fits) ? keys : new Set([...keys].filter(fits))
     this.settles.set(parent, { settled: held(settle.settled), left: held(settle.left), uncertain: held(settle.uncertain) })
-    if (this.settles.size > SETTLES_KEPT) this.settles.delete(this.settles.keys().next().value!)
+    if (this.settles.size > SETTLES_GUARD) this.settles.delete(this.settles.keys().next().value!)
     await this.save()
   }
   /** Lets go of `parent`'s record once its Restore has brought back what it settled. */
   async forget(parent: string): Promise<void> {
     if (this.settles.delete(parent)) await this.save()
+  }
+  /** Lets go of the records of threads that were deleted or cleared, saving once, and only when one was kept. */
+  async forgetAll(parents: Iterable<string>): Promise<void> {
+    let gone = false
+    for (const parent of parents) if (this.settles.delete(parent)) gone = true
+    if (gone) await this.save()
   }
   private async save(): Promise<void> {
     await this.store?.writeLatest(() => ({ version: 1, settles: [...this.settles].map(([parent, { settled, left, uncertain }]) => ({ parent, settled: [...settled], left: [...left],

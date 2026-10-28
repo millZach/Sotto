@@ -1457,6 +1457,9 @@ export class DesktopHostRouter {
     // A delete the host did not refuse deleted the thread: it answers an error for every thread it keeps.
     if (command.type === 'delete-thread' && connection.kind === 'remote' && !refused) {
       try { this.options.threadsDeleted?.([hostEntityKey(connection.hostId, command.threadId)]) } catch { /* Each listener keeps its own record. */ }
+      // So does what its Settle did to its delegated threads elsewhere (#1316 part 3). This computer's own threads' go as
+      // its coordinator deletes them, whoever asked (`onThreadsDeleted`).
+      await this.cascadedSettles.forget(hostEntityKey(connection.hostId, command.threadId))
     }
     if (!repeatedUnsupportedCompose) this.emit()
     const shell = agentShell(this.shell())

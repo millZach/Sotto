@@ -310,6 +310,28 @@ describe('Stop, Settle and Restore across machines', () => {
     } finally { await rm(directory, { recursive: true, force: true }) }
   })
 
+  it('keeps a settled thread\'s record however many others are settled, until the thread is restored or deleted', async () => {
+    const settles = new CascadedSettles()
+    const record = { settled: new Set([hostEntityKey(MAC, 'mac-check')]), left: new Set<string>(), uncertain: new Set<string>() }
+    for (let index = 0; index < 600; index++) await settles.keep(hostEntityKey(LOCAL, `parent-${index}`), record)
+    expect(settles.of(hostEntityKey(LOCAL, 'parent-0'))).toBeDefined()
+    await settles.forgetAll([hostEntityKey(LOCAL, 'parent-0'), hostEntityKey(LOCAL, 'never-settled')])
+    expect(settles.of(hostEntityKey(LOCAL, 'parent-0'))).toBeUndefined()
+    expect(settles.of(hostEntityKey(LOCAL, 'parent-1'))).toBeDefined()
+    // A thread on a host that the window deletes takes its record with it.
+    const { router, forge, mac } = machines(true, {}, { forge: { status: 'idle' } }, { cascadedSettles: settles }, { local: () => SETTLED_AT, forge: () => SETTLED_AT, mac: () => SETTLED_AT })
+    try {
+      Object.assign(forge.connection.service, { supportsThreadDelete: true })
+      const checkKey = hostEntityKey(FORGE, 'check')
+      await router.command({ type: 'settle-thread', threadId: checkKey }, desktopWindowClient())
+      expect(mac.command).toHaveBeenCalledWith({ type: 'settle-thread', threadId: 'mac-check' }, desktopWindowClient())
+      expect(settles.of(checkKey)).toBeDefined()
+      await router.command({ type: 'delete-thread', threadId: checkKey }, desktopWindowClient())
+      expect(forge.command).toHaveBeenLastCalledWith({ type: 'delete-thread', threadId: 'check' }, desktopWindowClient())
+      expect(settles.of(checkKey)).toBeUndefined()
+    } finally { router.dispose() }
+  })
+
   it('words one thread on one machine, and allows the two clocks a little skew', () => {
     expect(stopUnreachedWords([{ name: 'forge', count: 1 }])).toBe('Sotto couldn\'t stop 1 delegated thread on forge, because forge isn\'t connected. '
       + 'It may still be working there. Open it from Tools › Agents and stop it once its machine is back.')
