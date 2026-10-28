@@ -242,6 +242,7 @@ import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_RENDERER_ARGUMENT } from '../share
 import { DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT, NOTIFICATION_OPENED } from '../shared/desktopNotifications'
 import { INTERFACE_LANGUAGE_CHANGED, interfaceLanguageArgument } from '../shared/interfaceLanguageBridge'
 import { MainInterfaceLanguage, preferredSystemLanguages } from './interfaceLanguage'
+import { INTERFACE_LANGUAGE_SHOWN } from '../shared/interfaceLanguages'
 import { interfaceClockTime } from './interfaceClock'
 import { USAGE_RENDERER_ARGUMENT } from '../shared/usageDashboard'
 import { OPENCODE_HOSTS_RENDERER_ARGUMENT, OPENCODE_RENDERER_ARGUMENT } from '../shared/opencodeSignIn'
@@ -740,6 +741,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
 const cleanupModelEnabled = owlFeatures['cleanup-model']
   const delegationEnabled = owlFeatures['thread-delegation']
   const workerRolesEnabled = owlFeatures['worker-roles']
+  // The interface language (ADR-0123) also waits on its catalogs (#1684): until they are drafted Owl is English, as stable is.
+  const interfaceLanguageEnabled = owlFeatures['interface-language'] && INTERFACE_LANGUAGE_SHOWN
   const threadStartsEnabled = owlFeatures['continue-agent-thread']
   // The iPhone's Agents view (ADR-0103): offered to a paired iPhone only when the Owl list turns it on.
   const agentsViewEnabled = owlFeatures['iphone-agents-view']
@@ -782,7 +785,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     Date.now,
     platformDefaults,
     logOperational,
-    { workerRolesEnabled, dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], interfaceLanguageEnabled: owlFeatures['interface-language'], ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
+    { workerRolesEnabled, dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], interfaceLanguageEnabled, ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
   )
   await initializeOmarchySelection(platform, omarchyTheme.get(), plainSettings)
   await history.initialize()
@@ -803,7 +806,6 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   // The interface language (ADR-0123), read before the tray, the menu or a window shows a word. An end-to-end run reads
   // English as the computer's language, so every test and design capture reads English on any machine; the setting still
   // applies there, and SOTTO_E2E_SYSTEM_LANGUAGES stands in for the computer's list.
-  const interfaceLanguageEnabled = owlFeatures['interface-language']
   const interfaceLanguage = new MainInterfaceLanguage({
     enabled: interfaceLanguageEnabled,
     systemLanguages: e2eConfiguration === null ? preferredSystemLanguages(app) : (process.env.SOTTO_E2E_SYSTEM_LANGUAGES ?? 'en-US').split(','),
