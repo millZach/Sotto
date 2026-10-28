@@ -16,6 +16,7 @@ import { ToolsChrome } from './ToolsChrome'
 import './changes.css'
 import { useDiffPreferences } from '../state/gitSettings'
 import { inEnglish } from '../state/interfaceLanguage'
+import { prefersReducedMotion } from '../state/reducedMotion'
 import { shownWords } from '../features/settings/laterWords'
 import { shownCount } from '../state/interfaceNumbers'
 import { shownNotice } from './toolsWords'
@@ -195,7 +196,7 @@ function showFile(changes: ThreadChanges, store: ChangesStore, path: string): vo
   if (collapsedIn(changes).has(path)) store.toggleCollapsed(changes.threadId, path)
   requestAnimationFrame(() => {
     const block = document.querySelector<HTMLElement>(`.changes-file[data-file-path="${CSS.escape(path)}"]`)
-    block?.scrollIntoView({ block: 'start' })
+    block?.scrollIntoView({ block: 'start', behavior: prefersReducedMotion() ? 'auto' : 'smooth' })
     block?.querySelector<HTMLElement>('.changes-file__toggle')?.focus({ preventScroll: true })
   })
 }
@@ -490,7 +491,7 @@ function FileBody({ file, split, labels, onReveal, platform, review }: {
   const focusRow = (position: number): void => {
     const row = grid.current?.querySelector<HTMLElement>(`[data-position="${position}"]`)
     row?.focus({ preventScroll: true })
-    row?.scrollIntoView({ block: 'nearest' })
+    row?.scrollIntoView({ block: 'nearest', behavior: prefersReducedMotion() ? 'auto' : 'smooth' })
   }
   /** Open a draft on the picked lines when this line is one of them, or on this line alone. */
   const commentOn = (position: number): void => {
