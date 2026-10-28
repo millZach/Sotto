@@ -7,6 +7,9 @@ import { parseThemeFile } from '../../shared/themes/library'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 import { OpenVsxFailure, type OpenVsxClient } from './openVsx'
 
+/** Each call's arguments, checked against schemas built once rather than on every call. */
+const oneArgument = z.tuple([z.unknown()])
+
 export interface ThemesIpcServices {
   readonly openVsx: Pick<OpenVsxClient, 'search' | 'install'>
   /** Ask where to save an exported theme; null when the user cancels. */
@@ -30,7 +33,7 @@ export function registerThemesIpc(ipc: IpcMainAdapter, services: ThemesIpcServic
   const register = (channel: string, operation: (payload: unknown) => Promise<unknown>): void => {
     ipc.handle(channel, (event, ...args) => {
       if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('THEMES_MAIN_WINDOW_REQUIRED')
-      const [payload] = z.tuple([z.unknown()]).parse(args)
+      const [payload] = oneArgument.parse(args)
       return operation(payload)
     })
     channels.push(channel)

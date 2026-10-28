@@ -2,6 +2,8 @@ import { z } from 'zod'
 import type { AgentQuestionAnswers, AgentRequest } from '../../shared/agents'
 import { permissionValue, questionValues } from './nativeRequests'
 
+const objectSchema = z.record(z.string(), z.unknown())
+
 const idSchema = z.string().min(1).max(256)
 const permissionSchema = z.object({
   sessionId: idSchema, toolCall: z.object({ toolCallId: idSchema }),
@@ -81,7 +83,7 @@ export function devinPending(wireId: string | number, method: string, value: unk
     const permission = parse(permissionSchema, value)
     if (new Set(permission.options.map(option => option.optionId)).size !== permission.options.length) invalidRequest()
     if (!toolCall || toolCall.toolCallId !== permission.toolCall.toolCallId) invalidRequest()
-    const input = parse(z.record(z.string(), z.unknown()), toolCall.rawInput)
+    const input = parse(objectSchema, toolCall.rawInput)
     // Input Devin says it cut short is never the whole action, and an MCP tool that is not one of the session's own
     // Sotto tools is not shown at all, whatever its input looks like.
     if (truncatedInput(toolCall)) invalidRequest()
@@ -133,7 +135,7 @@ export function devinAnswer(pending: DevinPending, answer: string, approved?: bo
     const answers = questionValues(pending.request, questionAnswers)
     content = Object.fromEntries(Object.keys(answers).map(key => [key, questionAnswers[key]!.optionIds[0] ?? questionAnswers[key]!.text]))
   } else {
-    try { content = parse(z.record(z.string(), z.unknown()), JSON.parse(answer)) }
+    try { content = parse(objectSchema, JSON.parse(answer)) }
     catch {
       const keys = Object.keys(form.properties)
       if (keys.length !== 1 || answer.trim().startsWith('{')) throw new Error('Answer every field in this question.')

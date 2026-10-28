@@ -8,42 +8,50 @@ import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } fro
 import type { DesktopHosts } from './desktopHosts'
 import type { HostTailscale } from './tailscale'
 
+/** Each call's arguments, checked against schemas built once rather than on every call. */
+const noArguments = z.tuple([])
+const commandArguments = z.tuple([hostsCommandSchema])
+const providerActionArguments = z.tuple([hostProviderActionSchema])
+const clientUpdateArguments = z.tuple([hostClientUpdateRequestSchema])
+const signInArguments = z.tuple([hostSignInRequestSchema])
+const openCodeSignInArguments = z.tuple([hostOpenCodeSignInRequestSchema])
+
 export function registerHostsIpc(ipc: IpcMainAdapter, hosts: DesktopHosts, senders: () => readonly TrustedIpcSender[], publish: (state: HostsState) => void,
   tailscale: Pick<HostTailscale, 'devices' | 'status' | 'connect' | 'openDownload' | 'dispose'>, options: { readonly opencode?: boolean } = {}): () => void {
   const answer = <T>(channel: string, run: () => T): void => {
     ipc.handle(channel, (event, ...args) => {
       if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Hosts in the main Sotto window.`)
-      z.tuple([]).parse(args)
+      noArguments.parse(args)
       return run()
     })
   }
   answer(HOSTS_GET, () => hosts.get())
   ipc.handle(HOSTS_COMMAND, (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Hosts in the main Sotto window.`)
-    const [command] = z.tuple([hostsCommandSchema]).parse(args)
+    const [command] = commandArguments.parse(args)
     return hosts.command(command)
   })
   // A host's providers, from their tiles (ADR-0037): each request names the saved host it goes to.
   ipc.handle(HOSTS_PROVIDER_ACTION, (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Hosts in the main Sotto window.`)
-    const [action] = z.tuple([hostProviderActionSchema]).parse(args)
+    const [action] = providerActionArguments.parse(args)
     return hosts.providerAction(action)
   })
   ipc.handle(HOSTS_UPDATE_CLIENTS, (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Hosts in the main Sotto window.`)
-    const [request] = z.tuple([hostClientUpdateRequestSchema]).parse(args)
+    const [request] = clientUpdateArguments.parse(args)
     return hosts.updateClients(request)
   })
   ipc.handle(HOSTS_SIGN_IN, (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Hosts in the main Sotto window.`)
-    const [request] = z.tuple([hostSignInRequestSchema]).parse(args)
+    const [request] = signInArguments.parse(args)
     return hosts.signIn(request)
   })
   // A host's OpenCode signed in to model sources (#1107): only while OpenCode's Owl feature is on. A request that does not
   // read is refused before it reaches a host, and a key in it is never echoed or logged.
   if (options.opencode) ipc.handle(HOSTS_OPENCODE_SIGN_IN, (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Hosts in the main Sotto window.`)
-    const parsed = z.tuple([hostOpenCodeSignInRequestSchema]).safeParse(args)
+    const parsed = openCodeSignInArguments.safeParse(args)
     if (!parsed.success) return { status: 'refused', message: t`Sotto could not read that request, so nothing was sent to the host. Close this and try again.` }
     // The host answers in English; this window reads OpenCode's sentences in the interface language (ADR-0123).
     return hosts.opencodeSignIn(parsed.data[0]).then(shownSignInAnswer)
