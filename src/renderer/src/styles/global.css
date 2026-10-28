@@ -405,7 +405,7 @@ textarea.tt-input {
   height: 14px;
   border-radius: 3px;
   background: var(--tt-text-muted);
-  transition: transform 120ms ease, background-color 120ms ease;
+  transition: transform 120ms ease, width 120ms ease, background-color 120ms ease;
 }
 
 .tt-toggle[aria-checked='true'] .tt-toggle__track {
@@ -416,6 +416,16 @@ textarea.tt-input {
 .tt-toggle[aria-checked='true'] .tt-toggle__thumb {
   background: var(--tt-canvas);
   transform: translateX(16px);
+}
+
+/* Held, the knob stretches toward the side it will slide to, as a macOS
+   switch does. */
+.tt-toggle:active:not(:disabled) .tt-toggle__thumb {
+  width: 18px;
+}
+
+.tt-toggle[aria-checked='true']:active:not(:disabled) .tt-toggle__thumb {
+  transform: translateX(12px);
 }
 
 /* Only the switch itself dims. Some toggles here are permanently on and
