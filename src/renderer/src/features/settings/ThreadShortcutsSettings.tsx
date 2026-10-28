@@ -181,7 +181,9 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
 
   const commit = async (row: ThreadShortcutId, chord: string): Promise<boolean> => {
     const previous = resolved(row)
-    if (previous !== null && sameThreadKeys(previous, chord, platform)) {
+    // The same keys again are already saved, unless the row stands down on them; then the check below names who holds them.
+    const standsDown = isPageShortcut(row) && pageChordHolder(settings, row, platform, gates) !== null
+    if (previous !== null && sameThreadKeys(previous, chord, platform) && !standsDown) {
       show(row, msg`Shortcut saved.`, false)
       return true
     }
