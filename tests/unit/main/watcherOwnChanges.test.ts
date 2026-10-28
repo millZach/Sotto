@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { watcherOwnChanges, annotateWatcherOwnChanges, watcherReplyAsShown, watcherRepliesAsShown } from '../../../src/main/agents/watcherOwnChanges'
 import { WATCHER_PULL_REQUEST_NEWS_PROMPT, WATCHER_SYSTEM_PROMPT, watcherSystemPrompt } from '../../../src/main/agents/watcherPrompt'
+import { questionInstructions } from '../../../src/main/agents/questionInstructions'
 import { CodexActivityProjection, codexItemSchema } from '../../../src/main/agents/codexActivity'
 import { ClaudeActivity } from '../../../src/main/agents/claudeActivity'
 import { grokActivities } from '../../../src/main/agents/grokActivity'
@@ -261,6 +262,13 @@ describe('Watcher own changes', () => {
     expect(WATCHER_SYSTEM_PROMPT).toContain('watch each active thread')
     expect(WATCHER_SYSTEM_PROMPT).toContain('Ping the user only')
     expect(WATCHER_SYSTEM_PROMPT).toContain('Never try to answer')
+  })
+
+  it('keeps every ask in front of the user until it is answered, and has ship decisions raised as cards', () => {
+    expect(WATCHER_SYSTEM_PROMPT).toContain('names, under Needs you, each thing waitingOnUser lists, every time, until the user answers it')
+    expect(WATCHER_SYSTEM_PROMPT).toContain('Never write Needs you: nothing while it lists anything.')
+    expect(WATCHER_SYSTEM_PROMPT).toContain('send the thread back to ask it as a question card with its choices')
+    expect(questionInstructions('AskUserQuestion', false)).toContain('A decision that holds up shipping, such as whether to ship, which take to keep or whether to approve an ADR change, is such a question: ask it there with its choices')
   })
 
   it.each([
