@@ -1,9 +1,10 @@
 import { stderrRateExceeded } from './stderrRate'
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { findCli, withCliPath, type CliLookupOptions } from './cliLookup'
+import type { InteractiveProcess } from './gitLauncher'
 
 /**
  * Grok Build's floor: the oldest client Sotto connects (ADR-0042), and what a host's tile says an update needs
@@ -53,17 +54,25 @@ type Waiter = { resolve(): void; reject(error: Error): void; apply(value: unknow
 const MAX_FRAME_BYTES = 128 * 1024 * 1024
 const MAX_QUEUED_BYTES = MAX_FRAME_BYTES * 2
 
+/**
+ * How a Grok process is started. By default with `spawn` in the calling thread; Usage's limits probe passes the Git
+ * launcher's worker thread instead (`launchInteractiveProcess`), so its start never holds main (`grok.ts`).
+ */
+export type GrokLaunch = (executable: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => InteractiveProcess
+const spawnHere: GrokLaunch = (executable, args, { cwd, env }) =>
+  spawn(executable, args, { cwd, env, windowsHide: true, shell: false, stdio: 'pipe' }) as InteractiveProcess
+
 /** Bounded stdio transport. Late responses still apply; mutation timeouts never trigger retries. */
 export class GrokRpc {
-  private readonly child: ChildProcessWithoutNullStreams
+  private readonly child: InteractiveProcess
   private readonly pending = new Map<string, Waiter>()
   private serial = 0
   private stopped = false
   private frames = Promise.resolve()
   readonly closed: Promise<void>
   constructor(executable: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, private readonly timeoutMs: number,
-    private readonly receive: (frame: GrokFrame) => Promise<void> | void, private readonly lost: () => void) {
-    this.child = spawn(executable, args, { cwd, env: withCliPath(env, executable), windowsHide: true, shell: false, stdio: 'pipe' })
+    private readonly receive: (frame: GrokFrame) => Promise<void> | void, private readonly lost: () => void, launch: GrokLaunch = spawnHere) {
+    this.child = launch(executable, args, { cwd, env: withCliPath(env, executable) })
     this.closed = new Promise(resolve => this.child.once('close', () => { this.fail(); void this.frames.finally(resolve) }))
     // A Windows leader can inherit its short-lived proxy's output handles. Once the proxy
     // exits those inherited handles must not keep the adapter's shutdown barrier open.
@@ -71,7 +80,9 @@ export class GrokRpc {
     this.child.on('error', () => this.fail()); this.child.stdin.on('error', () => this.fail())
     let buffer = ''; let bufferedBytes = 0; let queued = 0
     this.child.stdout.setEncoding('utf8')
-    this.child.stdout.on('data', (chunk: string) => {
+    // `setEncoding` makes every chunk a string.
+    this.child.stdout.on('data', (data: Buffer | string) => {
+      const chunk = data as string
       buffer += chunk; bufferedBytes += Buffer.byteLength(chunk)
       // Measured as it arrives; re-measuring the whole buffer on every chunk is quadratic in a large frame.
       if (bufferedBytes > MAX_FRAME_BYTES) { this.fail(); return }
@@ -101,7 +112,7 @@ export class GrokRpc {
       }
     })
     const stderrExceeded = stderrRateExceeded()
-    this.child.stderr.on('data', (chunk: Buffer) => { if (stderrExceeded(chunk.length)) this.fail() })
+    this.child.stderr.on('data', (chunk: Buffer | string) => { if (stderrExceeded(chunk.length)) this.fail() })
   }
   /** The client process's ID, for telling one thread's process from another's. */
   get pid(): number | undefined { return this.child.pid }
