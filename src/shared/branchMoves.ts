@@ -65,7 +65,8 @@ export const outgoingRef = (moveId: string): string => `refs/sotto/outgoing/${mo
  * whatever the move staged, either way. Each step names its move; a retry of a finished move answers as done.
  * `copy` lands a thread's branch in a project on the same machine, for a worker started there from it, with nothing sent.
  * `snapshot`, on `send-begin` and `copy`, is a test run's (#1033, #1312): uncommitted work goes too, as a commit object
- * made from a temporary index, instead of being refused. `forget` removes the incoming ref a move landed in a project, for a
+ * made from a temporary index, instead of being refused. `pinned`, on `send-begin` with `snapshot`, names a check snapshot
+ * the host took and pinned itself when its own thread asked for the check (#1316 part 2): that one goes, not a new one. `forget` removes the incoming ref a move landed in a project, for a
  * start the desktop knows never made its thread there, so no ref holds the branch for nothing.
  */
 export const hostBranchMoveRequestSchema = z.discriminatedUnion('action', [
@@ -75,7 +76,8 @@ export const hostBranchMoveRequestSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('receive-chunk'), moveId: branchMoveIdSchema, offset: z.number().int().nonnegative().max(BRANCH_BUNDLE_MAX_BYTES), data: chunkData }).strict(),
   z.object({ action: z.literal('receive-finish'), moveId: branchMoveIdSchema }).strict(),
   z.object({ action: z.literal('receive-ref'), moveId: branchMoveIdSchema, projectId: id, branch: branchNameSchema, commit: commitIdSchema }).strict(),
-  z.object({ action: z.literal('send-begin'), moveId: branchMoveIdSchema, threadId: id, bases: z.array(commitIdSchema).max(BRANCH_TIPS_MAX), snapshot: z.boolean().optional() }).strict(),
+  z.object({ action: z.literal('send-begin'), moveId: branchMoveIdSchema, threadId: id, bases: z.array(commitIdSchema).max(BRANCH_TIPS_MAX), snapshot: z.boolean().optional(),
+    pinned: z.uuid().optional() }).strict(),
   z.object({ action: z.literal('send-chunk'), moveId: branchMoveIdSchema, offset: z.number().int().nonnegative().max(BRANCH_BUNDLE_MAX_BYTES) }).strict(),
   z.object({ action: z.literal('end'), moveId: branchMoveIdSchema }).strict(),
   z.object({ action: z.literal('copy'), moveId: branchMoveIdSchema, threadId: id, projectId: id, snapshot: z.boolean().optional() }).strict(),
@@ -127,6 +129,8 @@ export const branchMoveWords = {
   failed: 'Git could not move the branch. Nothing was changed. Try the move again.',
   outgoingRefChanged: 'Something other than Sotto changed this project\'s refs/sotto folder, so the branch can\'t move safely. Nothing was moved.',
   submoduleChanges: 'A submodule in this thread has uncommitted changes, and a check can\'t carry them. Commit them inside the submodule first, then start again. Nothing was started.',
+  /** A check's snapshot, pinned when it was asked for, is no longer held where it was taken (#1316 part 2). Not settled with Zach. */
+  snapshotGone: 'The snapshot taken when this check was asked for is no longer held, so it can\'t move. Start the check again. Nothing was moved.',
   olderHost: (name: string): string => `${name} needs a newer Sotto to move branches. Update it from the Threads page, then try again. Nothing was moved.`,
   notConnected: (name: string): string => `${name} isn't connected, so nothing can move there now. Connect it, then try again. Nothing was moved.`,
 } as const

@@ -81,6 +81,7 @@ describe('a thread on a host delegating elsewhere', () => {
     const asked: unknown[] = []
     return { asked, relay: { start: async (callerId: string, work: string, ask: unknown) => { asked.push({ callerId, work, ask }); return answer() },
       holds: () => false, holdsThread: () => false, read: async () => ({}), cancel: async () => ({}), list: () => [], useDelivery: () => undefined, awayWords: () => relayAwayWords('forge'),
+      reachable: () => true, carriesBranches: () => false,
       detail: (delegationId: string) => delegationId === RELAYED ? { reply: { messageId: 'reply-1', text: 'Synthetic finding from This computer', truncated: false } } : undefined } as never as NonNullable<DelegationServiceOptions['relay']> & { start: unknown } }
   }
 
@@ -92,7 +93,7 @@ describe('a thread on a host delegating elsewhere', () => {
       input: expect.not.objectContaining({ machine: DESKTOP }) }) }])
     // Nothing started here.
     expect(f.commands).toEqual([])
-    // A branch to start from is not carried yet, and is refused before anything is asked.
+    // A desktop from before it carries no branch to start from, so one is refused before anything is asked (#1316 part 2).
     expect(await f.delegation.delegate('parent', { ...start, machine: DESKTOP, from_my_branch: true })).toMatchObject({ status: 'refused', code: 'BRANCH_UNAVAILABLE' })
     expect(r.asked).toHaveLength(1)
   })

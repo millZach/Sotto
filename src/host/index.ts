@@ -256,7 +256,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         if (selfUpdate && !selfUpdate.ok) options.log?.(selfUpdate.reason === 'update-not-owned' ? 'host-update-not-owned' : 'host-update-layout-unknown')
         const hostUpdate = selfUpdate?.ok ? { hostUpdate: selfUpdate.update } : {}
         // One for both listeners, so a move begun on one is the same move on the other. Bundles wait in the data folder.
-        const branchMoves = crossMachineEnabled ? new HostBranchMoves(new BranchBundles({ stagingDirectory: join(directory, 'branch-moves'),
+        // The runtime's own bundles where it has them, so this host's delegations and its socket moves keep one record (#1316 part 2).
+        const branchMoves = crossMachineEnabled ? new HostBranchMoves(runtime.branchBundles ?? new BranchBundles({ stagingDirectory: join(directory, 'branch-moves'),
           recordsPath: join(directory, 'branch-moves.json') }), foldersOf(() => runtime.hostService.view())) : undefined
         await branchMoves?.start().catch(() => options.log?.('branch-moves-staging-clear-failed'))
         const moves = { ...branchMoves ? { branchMoves } : {}, ...delegationRelay && runtime.delegation ? { delegationRelay } : {}, ...delegationRemote && runtime.delegation ? { delegationRemote } : {} }

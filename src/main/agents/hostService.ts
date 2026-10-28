@@ -180,6 +180,8 @@ export interface HostService {
   readonly supportsDelegationRemote?: boolean
   /** Whether the host takes second briefs relayed from its threads (`delegation-relay-send`). */
   readonly supportsDelegationRelaySend?: boolean
+  /** Whether a delegated start there may begin from a landed branch or be a check, either way (`delegation-branch-starts`). */
+  readonly supportsDelegationBranchStarts?: boolean
   delegationRemoteAsk?(ask: DelegationRemoteAsk, timeoutMs: number): Promise<unknown>
   subscribeDelegationRemoteNews?(listener: (caller: string, news: DelegationNews, replies: readonly RelayedReply[]) => void): () => void
   /** The host continues agents as threads and forks at a reply (#1028): it takes `continue-agent` and reads `startHandover`. */

@@ -13,7 +13,7 @@ export type CheckInfo = Omit<CheckQueueEntry, 'id'>
  * place: it ended, was stopped, or never started. The first check in the queue is the one running.
  */
 export class CheckQueue {
-  private readonly entries: { readonly id: string; readonly start: () => void; info: CheckInfo | undefined }[] = []
+  private readonly entries: { readonly id: string; readonly start: () => void; info: CheckInfo | undefined; hidden?: boolean }[] = []
   /** The queue as the window shows it, taken when it is first asked for after a change and kept until the next one. */
   private shown: readonly CheckQueueEntry[] | undefined
   private readonly listeners = new Set<() => void>()
@@ -32,9 +32,11 @@ export class CheckQueue {
   /**
    * Adds a check at the end of the queue. Answers `running` when nothing is ahead of it, so its owner starts it now;
    * otherwise `waiting`, and `start` is called once every check ahead of it has left. Joining twice changes nothing.
+   * `hidden` holds the place of a check that may yet start on another machine (#1316 part 2): it keeps its order here and
+   * the window is not shown it until `show` says it is this machine's, or it leaves.
    */
-  join(id: string, start: () => void, info?: CheckInfo): 'running' | 'waiting' {
-    if (!this.entries.some(entry => entry.id === id)) { this.entries.push({ id, start, info }); this.changed() }
+  join(id: string, start: () => void, info?: CheckInfo, place: { readonly hidden?: boolean } = {}): 'running' | 'waiting' {
+    if (!this.entries.some(entry => entry.id === id)) { this.entries.push({ id, start, info, ...place.hidden ? { hidden: true } : {} }); if (!place.hidden) this.changed() }
     if (this.entries.length === 1) this.watchTurn()
     return this.entries[0]!.id === id ? 'running' : 'waiting'
   }
@@ -45,8 +47,8 @@ export class CheckQueue {
   leave(id: string): void {
     const at = this.entries.findIndex(entry => entry.id === id)
     if (at === -1) return
-    this.entries.splice(at, 1)
-    this.changed()
+    const [left] = this.entries.splice(at, 1)
+    if (!left!.hidden) this.changed()
     if (at !== 0) return
     this.watchTurn()
     const next = this.entries[0]
@@ -73,6 +75,13 @@ export class CheckQueue {
   /** The checks in the queue, the running one first. */
   ids(): readonly string[] { return this.entries.map(entry => entry.id) }
 
+  /** Shows the window a check whose place was held hidden, now that it is this machine's. */
+  show(id: string): void {
+    const entry = this.entries.find(item => item.id === id)
+    if (!entry?.hidden) return
+    delete entry.hidden
+    this.changed()
+  }
   /** Adds to what the window shows of a check, such as its thread once admission has named it. Changes nothing for a check not here. */
   describe(id: string, info: CheckInfo): void {
     const entry = this.entries.find(item => item.id === id)
@@ -88,7 +97,7 @@ export class CheckQueue {
    * until then. Taken only after the queue changed, never on the update path, and the same array until it changes again.
    */
   view(): readonly CheckQueueEntry[] {
-    this.shown ??= Object.freeze(this.entries.slice(0, CHECK_QUEUE_VIEW_MAX).map(entry => Object.freeze({ id: entry.id, ...shownInfo(entry.info) })))
+    this.shown ??= Object.freeze(this.entries.filter(entry => !entry.hidden).slice(0, CHECK_QUEUE_VIEW_MAX).map(entry => Object.freeze({ id: entry.id, ...shownInfo(entry.info) })))
     return this.shown
   }
   /** Hears the queue change, once for all the changes made in one turn of the event loop. Returns the way to stop. */

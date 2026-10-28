@@ -224,8 +224,10 @@ it('relays a host thread\'s start to This computer over the socket, and reads it
 it('starts a desktop\'s remote delegation over the real socket for an Owl desktop only, tells it the outcome, and follows its standing (#1316 part 2)', async () => {
   const f = await hostFixture()
   const a = await f.desktop(true, true, true)
-  expect(a.hello.features).toEqual(expect.arrayContaining(['delegation-remote', 'delegation-relay-send']))
+  expect(a.hello.features).toEqual(expect.arrayContaining(['delegation-remote', 'delegation-relay-send', 'delegation-branch-starts']))
   expect(a.socket.supportsDelegationRemote).toBe(true)
+  // Starts from a branch, and checks, either way (#1316 part 2).
+  expect(a.socket.supportsDelegationBranchStarts).toBe(true)
   await f.answers(a.pairing.clientId, true)
   await a.socket.desktopDefaults({ newThreadRuntimeMode: 'auto' })
   const news: { caller: string; outcome: string; reply?: string }[] = []
@@ -242,11 +244,13 @@ it('starts a desktop\'s remote delegation over the real socket for an Owl deskto
   const stable = await f.desktop(true, false, false)
   expect(stable.hello.features).toContain('delegation-remote')
   expect(stable.socket.supportsDelegationRemote).toBe(false)
+  expect(stable.socket.supportsDelegationBranchStarts).toBe(false)
   await expect(stable.socket.delegationRemoteAsk!(ask('auto'), 10_000)).rejects.toMatchObject({ code: 'version_mismatch' })
   expect(await f.rawCall(stable.pairing.clientId, { op: 'delegation-remote-ask', ask: ask('auto') })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
   // A client the launch script never recorded is offered nothing, and its ask is refused.
   const unrecorded = await f.desktop(false, true, true)
   expect(unrecorded.hello.features).not.toContain('delegation-remote')
+  expect(unrecorded.hello.features).not.toContain('delegation-branch-starts')
   expect(await f.rawCall(unrecorded.pairing.clientId, { op: 'delegation-remote-ask', ask: ask('auto') })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
   // Its answers grant taken away after hello, the same desktop is held to Ask for approval, whatever another desktop's
   // defaults allow: here desktop B, which may answer, sent Full access.
@@ -266,9 +270,15 @@ it('starts nothing for a desktop on a stable host: no feature, and the ask is re
   const { hello, pairing, socket } = await f.desktop(true, true, true)
   expect(hello.features).not.toContain('delegation-remote')
   expect(hello.features).not.toContain('delegation-relay-send')
+  expect(hello.features).not.toContain('delegation-branch-starts')
   expect(socket.supportsDelegationRemote).toBe(false)
+  expect(socket.supportsDelegationBranchStarts).toBe(false)
   expect(await f.rawCall(pairing.clientId, { op: 'delegation-remote-ask', ask: { type: 'read', caller: 'desktop-parent', delegation: randomUUID() } }))
     .toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+  // A start from a landed branch is refused as the rest are, and nothing is made (#1316 part 2).
+  expect(await f.rawCall(pairing.clientId, { op: 'delegation-remote-ask', ask: { type: 'delegate', caller: 'desktop-parent', levels: 0, rootUserMessageId: 'root-1',
+    runtimeMode: 'auto', projectId: 'project', input: { work: 'code-review', brief: 'Synthetic brief', test_run: true }, waitMs: 0,
+    branch: { moveId: randomUUID(), branch: 'feat/x', madeFrom: { thread: 'desktop-parent' } } } })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
 })
 
 it('holds every delegated start to Ask for approval on a host no desktop has told, and says why', async () => {

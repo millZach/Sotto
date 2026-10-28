@@ -32,6 +32,12 @@ const CALLERS_MAX = 1_000
 const FORGOTTEN = 'This machine no longer takes delegations from that desktop. Nothing was started or sent.'
 const ADMITTING = 'This machine is still admitting that delegation, so it cannot say yet whether it started. Nothing was sent again.'
 const NOT_HELD = 'This machine holds no delegation for that thread, so Sotto cannot prove whether it started. Nothing was sent again.'
+const NO_QUEUE = 'This machine has no check queue right now, so no check can start here. Nothing was started.'
+const PLACE_LET_GO = 'This machine had already let go of that check\'s place, so it holds none for it. Nothing was started.'
+/** Reservations a desktop let go of before this host took them, remembered so a late `reserve` holds nothing; newest kept. */
+const RELEASED_KEPT = 1_000
+/** This host's delegation as a desktop's asks reach it; a check's place is reserved only where it has a check queue. */
+type RemoteCallersDelegation = Pick<DelegationService, 'delegate' | 'read' | 'cancel' | 'retriedDelegation' | 'hasOpen'> & Partial<Pick<DelegationService, 'reserveCheck' | 'releaseReservation'>>
 
 /**
  * A headless host's side of a delegation the desktop asks it for (#1316 part 2, ADR-0105 decision 1, Owl
@@ -54,7 +60,11 @@ export class HostRemoteCallers {
   private readonly admitting = new Map<string, number>()
   /** The same, by caller and the retry key each was asked under, so a read by retry key can tell "still admitting" from "never had". */
   private readonly admittingKeys = new Map<string, number>()
-  private delegation: Pick<DelegationService, 'delegate' | 'read' | 'cancel' | 'retriedDelegation' | 'hasOpen'> | undefined
+  private delegation: RemoteCallersDelegation | undefined
+  /** Places each desktop reserved in this host's check queue and has not had taken or let go, by its client (#1316 part 2). */
+  private readonly reserved = new Map<string, Map<string, { readonly key: string; readonly reservation: string }>>()
+  /** Places a desktop released, by its client, caller and reservation, so a `reserve` that arrives after its release holds none. */
+  private readonly released = new Set<string>()
 
   constructor(directory: string, private readonly options: {
     /**
@@ -78,7 +88,7 @@ export class HostRemoteCallers {
     for (const caller of file.callers) this.callers.set(caller.id, caller)
   }
   /** The delegation that admits a desktop's asks: this host's own. */
-  useDelegation(delegation: Pick<DelegationService, 'delegate' | 'read' | 'cancel' | 'retriedDelegation' | 'hasOpen'>): void { this.delegation = delegation }
+  useDelegation(delegation: RemoteCallersDelegation): void { this.delegation = delegation }
 
   /** What this host's delegation asks of a caller on another machine: as the desktop last named it, or none. */
   caller(threadId: string): RelayedCaller | undefined {
@@ -97,6 +107,11 @@ export class HostRemoteCallers {
   desktopGone(desktop: RemoteDesktop): void {
     const at = this.desktops.indexOf(desktop)
     if (at !== -1) this.desktops.splice(at, 1)
+    // A desktop with no socket left here will not ask the starts it reserved places for, so their places are let go.
+    if (this.desktops.some(item => item.clientId === desktop.clientId)) return
+    const places = this.reserved.get(desktop.clientId)
+    this.reserved.delete(desktop.clientId)
+    for (const { key, reservation } of places?.values() ?? []) this.delegation?.releaseReservation?.(key, reservation)
   }
   /** A delegation's news goes to the desktop that asked for it, on its newest socket; rejects when it could not go. */
   async tell(threadId: string, news: DelegationNews, replies: readonly RelayedReply[] = []): Promise<void> {
@@ -125,8 +140,12 @@ export class HostRemoteCallers {
       if (count > 0) this.admittingKeys.set(held, count); else this.admittingKeys.delete(held)
     }
   }
-  /** One ask from the desktop `clientId`, answered as this host's own delegation answers the asking thread. */
-  async answer(clientId: string, raw: DelegationRemoteAsk): Promise<unknown> {
+  /**
+   * One ask from the desktop `clientId`, answered as this host's own delegation answers the asking thread. `open` says
+   * whether the connection that asked is still open: a `reserve` that arrives once it closed holds no place, since that
+   * connection's cleanup has already run.
+   */
+  async answer(clientId: string, raw: DelegationRemoteAsk, open: () => boolean = () => true): Promise<unknown> {
     const ask = delegationRemoteAskSchema.parse(raw)
     const delegation = this.delegation
     if (!delegation) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: 'This machine cannot delegate right now. Nothing was started.' }
@@ -144,6 +163,26 @@ export class HostRemoteCallers {
       if (!this.callers.has(key)) return { status: 'refused', code: 'UNKNOWN_DELEGATION', message: NOT_HELD }
       return await delegation.cancel(key, { delegation: ask.delegation })
     }
+    // A check's place in this host's queue, held before its branch moves here and taken by the start that names it (#1316 part 2).
+    if (ask.type === 'reserve') {
+      // Fenced: a place released before it was held, or asked for on a connection that has since closed, is never held.
+      const fence = `${clientId}\n${key}\n${ask.reservation}`
+      if (this.released.delete(fence) || !open()) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: PLACE_LET_GO }
+      // One that expires unclaimed is forgotten here too, so this record never outgrows the places held.
+      if (!delegation.reserveCheck?.(key, ask.reservation, ask.work, () => { this.unplace(clientId, key, ask.reservation) })) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: NO_QUEUE }
+      const places = this.reserved.get(clientId) ?? new Map<string, { readonly key: string; readonly reservation: string }>()
+      places.set(`${key}\n${ask.reservation}`, { key, reservation: ask.reservation }); this.reserved.set(clientId, places)
+      return { status: 'ok' }
+    }
+    if (ask.type === 'release') {
+      // Remembered, so a `reserve` for the same place that is still on its way holds nothing when it arrives.
+      if (!this.unplace(clientId, key, ask.reservation)) {
+        this.released.add(`${clientId}\n${key}\n${ask.reservation}`)
+        if (this.released.size > RELEASED_KEPT) this.released.delete(this.released.values().next().value!)
+      }
+      delegation.releaseReservation?.(key, ask.reservation)
+      return { status: 'ok' }
+    }
     // The newest word on the caller stands: its turn's root and permission move with its turns.
     this.callers.delete(key)
     this.callers.set(key, { id: key, projectId: ask.projectId, runtimeMode: ask.runtimeMode, levels: ask.levels, rootUserMessageId: ask.rootUserMessageId,
@@ -152,12 +191,21 @@ export class HostRemoteCallers {
     const release = this.hold(clientId, ask)
     try {
       await this.save()
-      return await delegation.delegate(key, ask.input, { waitMs: ask.waitMs + 2_000 })
+      // A start from the caller's branch finds it already landed here by the desktop, and a check the place reserved for it (#1316 part 2).
+      if (ask.reservation) this.unplace(clientId, key, ask.reservation)
+      return await delegation.delegate(key, ask.input, { waitMs: ask.waitMs + 2_000, ...ask.branch ? { landed: ask.branch } : {}, ...ask.reservation ? { reserved: ask.reservation } : {} })
     } finally {
       const count = (this.admitting.get(key) ?? 1) - 1
       if (count > 0) this.admitting.set(key, count); else this.admitting.delete(key)
       release()
     }
+  }
+  /** Forgets a place `clientId` reserved, once it was taken, released or expired; answers whether it was held. */
+  private unplace(clientId: string, key: string, reservation: string): boolean {
+    const places = this.reserved.get(clientId)
+    const held = places?.delete(`${key}\n${reservation}`) === true
+    if (places && !places.size) this.reserved.delete(clientId)
+    return held
   }
   /**
    * Keeps the newest callers, dropping only those with nothing open and no admission running, so an open delegation can

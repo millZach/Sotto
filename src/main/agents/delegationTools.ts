@@ -19,7 +19,7 @@ const NEW_THREAD_BY_NAME = `For a new thread name the provider, model, effort an
 const NEW_THREAD_BY_ROLE = `For a new thread name the kind of work and leave out provider, model, effort and permission: Sotto starts the thread on what the user's Settings give that worker role, within what this thread and the user's new-thread default allow. Name them only when the user asked for something else for this request; what you name overrides the role for this delegation, and the result says so. Call ${READ_DELEGATION_TOOL} with no delegation to see what each role starts on.`
 
 /** With Work across machines on (#1032), a new thread may name a machine or a system, and the thread may list the machines. */
-const WHERE = `A new thread starts on This computer. Name machine, from ${LIST_MACHINES_TOOL}, or os (windows, macos or linux) when the work needs one: Sotto starts it on that machine, which admits it under the user's own rules, and only while that machine is connected; otherwise it is refused and nothing is queued. A system never falls back to another. A thread on another machine cannot start from your branch yet. The result's placement says where it started.`
+const WHERE = `A new thread starts on This computer. Name machine, from ${LIST_MACHINES_TOOL}, or os (windows, macos or linux) when the work needs one: Sotto starts it on that machine, which admits it under the user's own rules, and only while that machine is connected; otherwise it is refused and nothing is queued. A system never falls back to another. from_my_branch and test_run work there too: your branch, or a check's snapshot, goes to that machine first, and a check waits in that machine's own queue. The result's placement says where it started.`
 /** With Work across machines on (#1033), a new thread may start from this thread's branch, and say it is a test run. */
 const FROM_MY_BRANCH = 'Set from_my_branch to start a new thread in its own worktree on your branch, with your commits; uncommitted work refuses it. Set test_run too when the thread is there to run tests: your uncommitted work then goes as a snapshot, and nothing in your own working copy changes. The result\'s startedFrom says where it started and what the snapshot carried.'
 /**
@@ -29,17 +29,17 @@ const FROM_MY_BRANCH = 'Set from_my_branch to start a new thread in its own work
 const CHECKS = `Set test_run for any thread that is there to run tests, which the user calls a check. One check runs at a time on a machine: a later one waits its turn, in the order asked, with its outcome working and the result's check saying how many are ahead, and its snapshot is taken when you ask, not when it starts. cancel_delegation takes a waiting check out of the queue. In a check's brief, ask its thread to reply first with the verdict, the counts and the failing lines, inside ${WATCHER_REPLY_BYTES_MAX / 1024} KiB, since a longer reply is cut there; the full log stays in its own history. Sotto passes that reply on as the thread's words and never reads pass or fail from it.`
 /**
  * A check on a headless host (#1312): it waits in that machine's own queue, shared with the desktop Watcher's checks there.
- * A thread there has no branch to start from, so no snapshot goes with it.
+ * With from_my_branch, a snapshot of the thread's uncommitted work goes with it (#1316 part 2).
  */
 const CHECKS_HOST = `Set test_run for any thread that is there to run tests, which the user calls a check. One check runs at a time on this machine, yours and Watcher's alike: a later one waits its turn, in the order asked, with its outcome working and the result's check saying how many are ahead. cancel_delegation takes a waiting check out of the queue. In a check's brief, ask its thread to reply first with the verdict, the counts and the failing lines, inside ${WATCHER_REPLY_BYTES_MAX / 1024} KiB, since a longer reply is cut there; the full log stays in its own history. Sotto passes that reply on as the thread's words and never reads pass or fail from it.`
-/** What starting from this thread's branch adds to a delegation (#1033), offered only on This computer while Work across machines is on. */
+/** What starting from this thread's branch adds to a delegation (#1033), offered while Work across machines is on, on a host too (#1316 part 2). */
 const FROM_BRANCH_FIELDS = { from_my_branch: true, test_run: true } as const
 /** What Work across machines adds to a delegation (#1032, #1033), none of it offered while that is off. */
 const ACROSS_MACHINES = { machine: true, os: true, ...FROM_BRANCH_FIELDS } as const
 /** A thread on a headless host (#1310) delegates only on its own machine until #1316. */
 const WHERE_HOST = `A new thread starts on this machine, the one this thread runs on. A thread here delegates only to threads on this machine for now, so a machine or os (windows, macos or linux) other than this machine's own is refused. The result's placement says where it started.`
 /** With the desktop relay (#1316), a thread on a headless host may start a thread on This computer too, while it is connected. */
-const WHERE_HOST_RELAY = `A new thread starts on this machine, the one this thread runs on. Name machine, from ${LIST_MACHINES_TOOL}, or os (windows, macos or linux) to start it elsewhere: Sotto asks This computer, which starts it on This computer or on another machine it is connected to, under the user's own rules, and only while This computer is connected to this machine; otherwise it is refused and nothing is queued. A thread started elsewhere cannot start from your branch yet. A system never falls back to another. The result's placement says where it started.`
+const WHERE_HOST_RELAY = `A new thread starts on this machine, the one this thread runs on. Name machine, from ${LIST_MACHINES_TOOL}, or os (windows, macos or linux) to start it elsewhere: Sotto asks This computer, which starts it on This computer or on another machine it is connected to, under the user's own rules, and only while This computer is connected to this machine; otherwise it is refused and nothing is queued. from_my_branch and test_run work there too: This computer moves your branch, or a check's snapshot, to that machine first, and a check waits in that machine's own queue. A system never falls back to another. The result's placement says where it started.`
 const LIST_MACHINES_INPUT = z.object({}).strict()
 /** Where the delegating thread runs: This computer, the desktop, or a headless host's machine (#1310). */
 export type DelegationPlace = 'this-computer' | 'this-machine'
@@ -53,13 +53,13 @@ export function delegationToolDefinitions(roles: boolean, machines = false, plac
   const delegate = roles ? delegateByRoleSchema : delegateInputSchema
   const here = place === 'this-machine' ? 'this machine' : 'this computer'
   return [
-    { name: DELEGATE_TOOL, inputSchema: schema(!machines ? delegate.omit(ACROSS_MACHINES) : place === 'this-machine' ? delegate.omit({ from_my_branch: true }) : delegate), description: [
+    { name: DELEGATE_TOOL, inputSchema: schema(!machines ? delegate.omit(ACROSS_MACHINES) : delegate), description: [
       `Hand work to another thread on ${here}: start a new Sotto thread on any provider with your brief, or send another brief to a thread you delegated to.`,
       'The thread is the user\'s to open, answer and stop. It asks the user, never you, for any permission or answer, and nothing you send approves anything.',
       roles ? NEW_THREAD_BY_ROLE : NEW_THREAD_BY_NAME,
       `It waits up to wait_seconds (at most ${DELEGATION_WAIT_MAX_SECONDS}) for the outcome and returns the reply once answered. When the wait ends first it returns working, and Sotto sends this thread a wake-up, with the reply once answered, when the outcome changes: end your turn or carry on, and do not poll.`,
       `Sotto starts any number of threads. When more than ${WORKING_THREADS_QUIET_MAX} threads are working on ${here} after a start, the result carries a warning: tell the user what it says. Each thread takes ${DELEGATION_PROMPTS_PER_THREAD} briefs per user message to this thread; retries and wake-ups renew nothing.`,
-      ...machines ? place === 'this-machine' ? [relay ? WHERE_HOST_RELAY : WHERE_HOST, CHECKS_HOST] : [WHERE, FROM_MY_BRANCH, CHECKS] : [],
+      ...machines ? place === 'this-machine' ? [relay ? WHERE_HOST_RELAY : WHERE_HOST, FROM_MY_BRANCH, CHECKS_HOST] : [WHERE, FROM_MY_BRANCH, CHECKS] : [],
     ].join(' ') },
     { name: READ_DELEGATION_TOOL, inputSchema: schema(readDelegationInputSchema), description:
       `Read one of this thread's delegations: its outcome (working, background, answered, failed, stopped, paused, unknown, or refused when Sotto turned it down as it was asked for) and, once answered, the delegated thread's reply, labelled as its own words. With no delegation, list this thread's delegations, the ready models it can delegate to, ${roles ? 'what each kind of work starts on now, ' : ''}and the limits. Reading charges nothing.`,
