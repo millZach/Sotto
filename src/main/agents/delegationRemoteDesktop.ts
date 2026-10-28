@@ -306,9 +306,13 @@ export class DesktopRemoteDelegations {
     }
     return shape(this.asKnown(record, answer))
   }
-  /** What a start's own answer carries besides the delegation, which a read after its wait would not: the role and the warning. */
+  /**
+   * What a start's own answer carries besides the delegation, which a read after its wait would not: the role, the warning,
+   * and where it started from, the branch and a check's snapshot (#1316 part 2).
+   */
   private carried(answer: Record<string, unknown>): Record<string, unknown> {
-    return { ...answer.role !== undefined ? { role: answer.role } : {}, ...answer.warning !== undefined ? { warning: answer.warning } : {} }
+    return { ...answer.role !== undefined ? { role: answer.role } : {}, ...answer.warning !== undefined ? { warning: answer.warning } : {},
+      ...answer.startedFrom !== undefined ? { startedFrom: answer.startedFrom } : {} }
   }
 
   /** Reads one exactly from its host, or, while the host is away, as Sotto last read it, said as such. */

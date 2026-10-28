@@ -10,6 +10,9 @@ import { DelegationService, RELAY_NO_BRANCH, type DelegationCoordinator, type De
 import { CheckQueue } from '../../../src/main/agents/checkQueue'
 import { HostRemoteCallers, remoteCallerKey } from '../../../src/main/agents/delegationRemoteHost'
 import { RelayUnanswered } from '../../../src/main/agents/delegationRelayHost'
+import { DesktopRemoteDelegations, type RemoteDelegationConnection } from '../../../src/main/agents/delegationRemoteDesktop'
+import type { DelegationNews } from '../../../src/shared/delegation'
+import type { DelegationRemoteAsk, RelayedReply } from '../../../src/shared/delegationRelay'
 import { relayAwayWords, delegationRelayAskSchema, delegationRemoteAskSchema } from '../../../src/shared/delegationRelay'
 import { bringBackTarget } from '../../../src/shared/bringChangesBack'
 import { HOST_DESKTOP_FEATURES, HOST_FEATURES } from '../../../src/shared/hostProtocol'
@@ -238,6 +241,40 @@ describe('the desktop starting a relayed thread\'s branch', () => {
     expect(m.asked).toEqual([expect.objectContaining({ from: { hostId: FORGE, threadId: 'forge-parent' }, to: { hostId: MAC, projectId: 'mac-project' }, snapshot: false })])
     expect(r.calls[0]!.ask).toMatchObject({ branch: { branch: 'feat/x', madeFrom: { thread: 'forge-parent', host: FORGE, by: DESKTOP } } })
     expect(f.created).toEqual([])
+  })
+})
+
+/** A paired host as the desktop's router holds it, answering each ask as `answer` says and pushing news when told. */
+function pairedHost(answer: (ask: DelegationRemoteAsk) => unknown | Promise<unknown>) {
+  const asked: DelegationRemoteAsk[] = []
+  let listener: ((caller: string, news: DelegationNews, replies: readonly RelayedReply[]) => void) | undefined
+  const connection: RemoteDelegationConnection = { hostId: MAC, kind: 'remote', service: { supportsDelegationRemote: true, supportsDelegationBranchStarts: true,
+    delegationRemoteAsk: async ask => { asked.push(ask); return await answer(ask) },
+    subscribeDelegationRemoteNews: given => { listener = given; return () => undefined } } }
+  const connected = [connection]
+  let connects: ((given: RemoteDelegationConnection) => void) | undefined
+  const source = { subscribeConnected: (given: (item: RemoteDelegationConnection) => void) => { connects = given; return () => undefined }, remoteConnections: () => connected }
+  return { connection, asked, source, push: (caller: string, news: DelegationNews) => listener!(caller, news, []),
+    reconnect: () => { connected.length = 0; connected.push(connection); connects!(connection) } }
+}
+const remoteAsk = { levels: 0, rootUserMessageId: 'root-1', runtimeMode: 'auto' as const, input: { work: 'code-review', brief: 'Review it.' }, waitMs: 0 }
+const landedOnMac = { moveId: MOVE, branch: 'feat/x', snapshot: snapshot3, takenAt: '14:02', madeFrom: { thread: 'parent', host: DESKTOP, by: DESKTOP } }
+
+describe('the desktop\'s record of a start from a branch on a paired host', () => {
+  it('keeps where the start began when its call waits and the child finishes in the wait (Sol review)', async () => {
+    const startedFrom = { hostId: MAC, name: 'the Mac', branch: 'feat/x', snapshot: snapshot3, note: 'Started on the Mac from feat/x with your uncommitted changes as they were at 14:02 (3 untracked files).' }
+    let outcome = 'working'
+    const mac = pairedHost(ask => ask.type === 'read' ? { status: 'ok', delegation: { id: THERE, thread: 'child-mac', outcome } }
+      : { status: 'ok', delegation: { id: THERE, thread: 'child-mac', outcome: 'working' }, startedFrom })
+    const remote = new DesktopRemoteDelegations(await folder(), { machineName: () => 'the Mac' })
+    remote.useDelivery(async () => undefined)
+    remote.useHosts(mac.source)
+    const waiting = remote.start('parent', 'code-review', macPlacement, { ...remoteAsk, waitMs: 60_000, branch: landedOnMac })
+    await expect.poll(() => mac.asked.length).toBe(1)
+    outcome = 'answered'
+    mac.push('parent', { source: 'delegation', items: [{ delegationId: THERE, threadId: 'child-mac', outcome: 'answered' }] })
+    expect(await waiting).toMatchObject({ status: 'ok', delegation: { outcome: 'answered' }, startedFrom })
+    expect(mac.asked.map(ask => ask.type)).toEqual(['delegate', 'read'])
   })
 })
 
