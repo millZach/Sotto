@@ -49,7 +49,12 @@ final class ShareViewController: UIViewController {
         }
         let share = ShareInbox.folder(in: container).appendingPathComponent(UUID().uuidString, isDirectory: true)
         do {
-            try FileManager.default.createDirectory(at: share, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: share, withIntermediateDirectories: true,
+                                                    attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+            // Shared files never ride into a backup of this iPhone.
+            var inbox = ShareInbox.folder(in: container)
+            var values = URLResourceValues(); values.isExcludedFromBackup = true
+            try? inbox.setResourceValues(values)
             var words: [String] = [], files: [String] = []
             for provider in providers {
                 guard let kind = SharedItemKind(types: provider.registeredTypeIdentifiers, suggestedName: provider.suggestedName) else { continue }
@@ -104,11 +109,14 @@ final class ShareViewController: UIViewController {
         return ((item as? String) ?? (item as? Data).flatMap { String(data: $0, encoding: .utf8) })?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Copies the item's file as it came, without holding it all in memory: an extension has little.
+    /// Copies the item's file as it came, without holding it all in memory: an extension has little. One larger than a reply
+    /// can carry is not copied: the app would only refuse it.
     private static func copy(_ provider: NSItemProvider, type: String, to destination: URL) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             _ = provider.loadFileRepresentation(forTypeIdentifier: type) { url, error in
                 guard let url else { return continuation.resume(throwing: error ?? CocoaError(.fileReadUnknown)) }
+                let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                guard size <= FileLimits.bytesEach else { return continuation.resume(throwing: CocoaError(.fileReadTooLarge)) }
                 continuation.resume(with: Result { try FileManager.default.copyItem(at: url, to: destination) })
             }
         }

@@ -128262,6 +128262,198 @@
         }
       }
     },
+    "Watcher can’t take messages on this iPhone now, so what you shared goes in a new thread." : {
+      "comment" : "Shown on the New thread sheet when something was shared to Sotto and no computer's Watcher can take it",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يستطيع Watcher استقبال الرسائل على هذا الـ iPhone الآن، لذا ستذهب مشاركتك إلى محادثة جديدة."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher এখন এই iPhone-এ বার্তা নিতে পারছে না, তাই আপনি যা শেয়ার করেছেন তা একটি নতুন থ্রেডে যাবে।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher teď na tomto iPhonu nemůže přijímat zprávy, takže to, co jste sdíleli, půjde do nového vlákna."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher kan ikke tage imod beskeder på denne iPhone lige nu, så det, du delte, kommer i en ny tråd."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher kann auf diesem iPhone gerade keine Nachrichten annehmen, daher kommt das Geteilte in einen neuen Thread."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Το Watcher δεν μπορεί να δεχτεί μηνύματα σε αυτό το iPhone τώρα, οπότε ό,τι μοιραστήκατε πηγαίνει σε νέο νήμα."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher can’t take messages on this iPhone now, so what you shared goes in a new thread."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher no puede recibir mensajes en este iPhone ahora, así que lo que has compartido irá a un hilo nuevo."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher no puede recibir mensajes en este iPhone ahora, así que lo que compartiste irá a un hilo nuevo."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher no puede recibir mensajes en este iPhone ahora, así que lo que compartiste irá a un hilo nuevo."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher ei voi nyt ottaa viestejä vastaan tässä iPhonessa, joten jakamasi menee uuteen ketjuun."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher ne peut pas recevoir de messages sur cet iPhone pour l’instant : ce que vous avez partagé ira dans un nouveau fil."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher अभी इस iPhone पर संदेश नहीं ले सकता, इसलिए आपने जो शेयर किया वह नए थ्रेड में जाएगा।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Watcher most nem fogad üzeneteket ezen az iPhone-on, ezért a megosztott tartalom új szálba kerül."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher ora non può ricevere messaggi su questo iPhone, quindi ciò che hai condiviso andrà in un nuovo thread."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher は今この iPhone でメッセージを受け取れないため、共有した内容は新しいスレッドに入ります。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher आत्ता या iPhone वर संदेश घेऊ शकत नाही, म्हणून तुम्ही शेअर केलेले नवीन थ्रेडमध्ये जाईल."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher kan ikke ta imot meldinger på denne iPhonen nå, så det du delte, havner i en ny tråd."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher kan nu geen berichten ontvangen op deze iPhone, dus wat je deelde komt in een nieuwe thread."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher nie może teraz przyjmować wiadomości na tym iPhonie, więc udostępnione treści trafią do nowego wątku."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Watcher não pode receber mensagens neste iPhone agora, então o que você compartilhou vai para uma nova conversa."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Watcher não pode receber mensagens neste iPhone agora, por isso o que partilhou vai para uma nova conversa."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher nu poate primi mesaje pe acest iPhone acum, așa că ce ai partajat merge într-un fir nou."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher kan inte ta emot meddelanden på den här iPhonen just nu, så det du delade hamnar i en ny tråd."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher இப்போது இந்த iPhone-இல் செய்திகளை ஏற்க முடியாது, எனவே நீங்கள் பகிர்ந்தது புதிய த்ரெட்டில் செல்லும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher ఇప్పుడు ఈ iPhoneలో సందేశాలను తీసుకోలేదు, కాబట్టి మీరు షేర్ చేసింది కొత్త థ్రెడ్‌లోకి వెళ్తుంది."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher şu anda bu iPhone’da mesaj alamıyor, bu yüzden paylaştığınız şey yeni bir sohbete gidecek."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher зараз не може приймати повідомлення на цьому iPhone, тож те, чим ви поділилися, піде в новий тред."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher اس وقت اس iPhone پر پیغامات نہیں لے سکتا، اس لیے آپ نے جو شیئر کیا وہ نئے تھریڈ میں جائے گا۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher 目前无法在此 iPhone 上接收消息，你分享的内容将放入新会话。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher 目前無法在此 iPhone 上接收訊息，你分享的內容將放入新對話。"
+          }
+        }
+      }
+    },
     "Watcher carries on there. Your words are kept." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -131206,198 +131398,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Watcher 正在工作"
-          }
-        }
-      }
-    },
-    "Watcher isn’t on this iPhone, so what you shared goes in a new thread." : {
-      "comment" : "Shown on the New thread sheet when something was shared to Sotto and no computer shows this iPhone Watcher",
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher غير متاح على هذا الـ iPhone، لذا ستذهب مشاركتك إلى محادثة جديدة."
-          }
-        },
-        "bn" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "এই iPhone-এ Watcher নেই, তাই আপনি যা শেয়ার করেছেন তা একটি নতুন থ্রেডে যাবে।"
-          }
-        },
-        "cs" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher na tomto iPhonu není, takže to, co jste sdíleli, půjde do nového vlákna."
-          }
-        },
-        "da" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher er ikke på denne iPhone, så det, du delte, kommer i en ny tråd."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher ist auf diesem iPhone nicht da, daher kommt das Geteilte in einen neuen Thread."
-          }
-        },
-        "el" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Το Watcher δεν υπάρχει σε αυτό το iPhone, οπότε ό,τι μοιραστήκατε πηγαίνει σε νέο νήμα."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher isn’t on this iPhone, so what you shared goes in a new thread."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher no está en este iPhone, así que lo que has compartido irá a un hilo nuevo."
-          }
-        },
-        "es-419" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher no está en este iPhone, así que lo que compartiste irá a un hilo nuevo."
-          }
-        },
-        "es-MX" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher no está en este iPhone, así que lo que compartiste irá a un hilo nuevo."
-          }
-        },
-        "fi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher ei ole tässä iPhonessa, joten jakamasi menee uuteen ketjuun."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher n’est pas sur cet iPhone : ce que vous avez partagé ira dans un nouveau fil."
-          }
-        },
-        "hi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "इस iPhone पर Watcher नहीं है, इसलिए आपने जो शेयर किया वह नए थ्रेड में जाएगा।"
-          }
-        },
-        "hu" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "A Watcher nincs ezen az iPhone-on, ezért a megosztott tartalom új szálba kerül."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher non è su questo iPhone, quindi ciò che hai condiviso andrà in un nuovo thread."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この iPhone には Watcher がないため、共有した内容は新しいスレッドに入ります。"
-          }
-        },
-        "mr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "या iPhone वर Watcher नाही, म्हणून तुम्ही शेअर केलेले नवीन थ्रेडमध्ये जाईल."
-          }
-        },
-        "nb" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher er ikke på denne iPhonen, så det du delte, havner i en ny tråd."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher staat niet op deze iPhone, dus wat je deelde komt in een nieuwe thread."
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher nie jest dostępny na tym iPhonie, więc udostępnione treści trafią do nowego wątku."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "O Watcher não está neste iPhone, então o que você compartilhou vai para uma nova conversa."
-          }
-        },
-        "pt-PT" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "O Watcher não está neste iPhone, por isso o que partilhou vai para uma nova conversa."
-          }
-        },
-        "ro" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher nu e pe acest iPhone, așa că ce ai partajat merge într-un fir nou."
-          }
-        },
-        "sv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher finns inte på den här iPhonen, så det du delade hamnar i en ny tråd."
-          }
-        },
-        "ta" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "இந்த iPhone-இல் Watcher இல்லை, எனவே நீங்கள் பகிர்ந்தது புதிய த்ரெட்டில் செல்லும்."
-          }
-        },
-        "te" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ఈ iPhoneలో Watcher లేదు, కాబట్టి మీరు షేర్ చేసింది కొత్త థ్రెడ్‌లోకి వెళ్తుంది."
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher bu iPhone’da yok, bu yüzden paylaştığınız şey yeni bir sohbete gidecek."
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher немає на цьому iPhone, тож те, чим ви поділилися, піде в новий тред."
-          }
-        },
-        "ur" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "اس iPhone پر Watcher نہیں ہے، اس لیے آپ نے جو شیئر کیا وہ نئے تھریڈ میں جائے گا۔"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此 iPhone 上没有 Watcher，你分享的内容将放入新会话。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此 iPhone 上沒有 Watcher，你分享的內容將放入新對話。"
           }
         }
       }

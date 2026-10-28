@@ -1207,6 +1207,7 @@ struct HeldDetail {
     @Published var shareOpened: ShareDestination?
     @Published private(set) var heldShare: SharedArrival?
     private var shareDelivery: Task<Void, Never>?
+    private var sharesSwept = false
     @Published private(set) var submittedFiles: [String: [DraftFile]] = [:]
     @Published private(set) var failedFiles: [String: [DraftFile]] = [:]
     /// Reply boxes, by `PhotoBox.id`, whose message is having its photos staged again before it is sent, and Watcher's
@@ -2686,8 +2687,10 @@ struct HeldDetail {
         guard shareDelivery == nil, heldShare == nil, let container = shareContainer else { return }
         let shares = ShareInbox.pending(in: container)
         guard !shares.isEmpty else { return }
-        // Moved into this app's own temporary folder, so the extension never writes over a share being read.
+        // Moved into this app's own temporary folder, so the extension never writes over a share being read. Anything there
+        // from before this launch is what a crash left mid-read, and goes.
         let taken = FileManager.default.temporaryDirectory.appendingPathComponent("Shared", isDirectory: true)
+        if !sharesSwept { sharesSwept = true; try? FileManager.default.removeItem(at: taken) }
         try? FileManager.default.createDirectory(at: taken, withIntermediateDirectories: true)
         var arrival = SharedArrival()
         for share in shares {
@@ -2701,6 +2704,8 @@ struct HeldDetail {
         shareDelivery = Task { [weak self] in
             await self?.deliver(arrival)
             self?.shareDelivery = nil
+            // One that came while this one was on its way.
+            self?.takeShares()
         }
     }
     private var shareContainer: URL? {
@@ -2713,12 +2718,16 @@ struct HeldDetail {
     /// Waits, a few seconds at most, for a computer still being reached to show Watcher before sending a share elsewhere.
     private func deliver(_ arrival: SharedArrival) async {
         for _ in 0..<60 {
-            if let hostID = watcherHostID, online(hostID), watcherPage(hostID)?.current != nil {
-                put(arrival, in: .watcher(hostID: hostID))
-                shareOpened = .watcher
-                return
-            }
-            if watcherHostID == nil, !computers.contains(where: { (live[$0.hostID]?.status ?? .connecting) == .connecting }) { break }
+            if let hostID = watcherHostID, online(hostID), let page = watcherPage(hostID) {
+                // A message on its way holds the box; the share waits for it.
+                if page.current != nil, !preparingSends.contains(PhotoBox.watcher(hostID: hostID).id) {
+                    put(arrival, in: .watcher(hostID: hostID))
+                    shareOpened = .watcher
+                    return
+                }
+                // Watcher's computer is here but runs no Watcher now: it can't take a message.
+                if page.current == nil { break }
+            } else if !computers.contains(where: { (live[$0.hostID]?.status ?? .connecting) == .connecting }) { break }
             try? await Task.sleep(for: .milliseconds(250))
         }
         heldShare = arrival
@@ -2729,16 +2738,19 @@ struct HeldDetail {
         guard let held = heldShare else { return }
         heldShare = nil
         put(held, in: .thread(ref))
+        // A share that came while this one waited for its thread is taken now.
+        takeShares()
     }
     /// The new thread's sheet closed without a thread: the share it held goes.
     func newThreadClosed() {
         guard let held = heldShare else { return }
         heldShare = nil
         held.folders.forEach { try? FileManager.default.removeItem(at: $0) }
+        takeShares()
     }
     /// The one line the new thread's sheet shows while it holds a share.
     var shareNotice: String? {
-        heldShare == nil ? nil : String(localized: "Watcher isn’t on this iPhone, so what you shared goes in a new thread.")
+        heldShare == nil ? nil : String(localized: "Watcher can’t take messages on this iPhone now, so what you shared goes in a new thread.")
     }
     private func put(_ arrival: SharedArrival, in box: PhotoBox) {
         let words = arrival.words.joined(separator: "\n"), draft = drafts[box.id] ?? ""
@@ -2935,7 +2947,12 @@ struct HeldDetail {
     /// them, nothing of it is attached.
     func attach(_ box: PhotoBox, photos: [PhotoSource], files: [FileSource]) {
         let photoRefusal = photos.isEmpty ? nil : photoSupport(box).reason(computer: name(box.hostID), watcher: box.isWatcher)
-        if !files.isEmpty, let reason = fileSupport(box).reason(computer: name(box.hostID)) { photoNotices[box.id] = reason; return }
+        // A box that takes no files still takes the photos chosen with them, and says why the files stayed out.
+        if !files.isEmpty, let reason = fileSupport(box).reason(computer: name(box.hostID)) {
+            if photoRefusal == nil { attachPhotos(box, from: photos) }
+            photoNotices[box.id] = reason
+            return
+        }
         let chosenPhotos = photoRefusal == nil ? photos.count : 0
         let others = self.photos(box).map { $0.prepared?.byteCount ?? 0 } + self.files(box).map(\.sizeBytes) + Array(repeating: 0, count: chosenPhotos)
         if !files.isEmpty, let refusal = Files.refusal(adding: files.map { $0.sizeBytes ?? 0 }, to: others) {

@@ -272,10 +272,17 @@ private struct PasteAttacher: UIViewRepresentable {
         }
         /// Attaches what was copied when it holds a photo or a file. False leaves the paste to the field: words.
         func paste() -> Bool {
-            let items = UIPasteboard.general.itemProviders.compactMap { provider in
+            let all = UIPasteboard.general.itemProviders.compactMap { provider in
                 SharedItemKind(types: provider.registeredTypeIdentifiers, suggestedName: provider.suggestedName).map { (provider, $0) }
-            }.filter { $0.1 != .words }
+            }
+            let items = all.filter { $0.1 != .words }
             guard !items.isEmpty, let model else { return false }
+            // Words copied with a photo, a caption say, go in the field after what is there.
+            if let words = UIPasteboard.general.string?.trimmingCharacters(in: .whitespacesAndNewlines), !words.isEmpty,
+               all.contains(where: { $0.1 == .words }) {
+                let draft = model.drafts[box.id] ?? ""
+                model.drafts[box.id] = draft.isEmpty ? words : draft + " " + words
+            }
             var photos: [PhotoSource] = [], files: [FileSource] = []
             for (provider, kind) in items {
                 let name = provider.suggestedName
