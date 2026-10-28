@@ -73,10 +73,6 @@
 .thread-chip-menu__list { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 30; min-width: 180px; padding: 6px; border: 1px solid var(--tt-field-border); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
 /* A chip near the top of the area that scrolls it opens its list below itself instead (`flip`). */
 .thread-chip-menu__list[data-below='true'] { top: calc(100% + 6px); bottom: auto; }
-@media (prefers-reduced-motion: no-preference) {
-  :root:not([data-reduced-motion='on']) .thread-chip-menu__list { animation: tt-pop-up 120ms ease-out; }
-  :root:not([data-reduced-motion='on']) .thread-chip-menu__list[data-below='true'] { animation-name: tt-pop-down; }
-}
 :is(.thread-chip-menu__list, .thread-chip-menu__options) > button { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 32px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; text-align: left; white-space: nowrap; cursor: pointer; }
 :is(.thread-chip-menu__list, .thread-chip-menu__options) > button:hover:not(:disabled), :is(.thread-chip-menu__list, .thread-chip-menu__options) > button:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
 :is(.thread-chip-menu__list, .thread-chip-menu__options) > button:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
@@ -93,8 +89,8 @@
 .thread-chip-menu__list--foot .thread-chip-menu__options > button > span > small { max-width: none; }
 .thread-chip-menu__foot { margin: 6px 4px 0; padding: 8px 6px 2px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 11.5px; line-height: 1.4; white-space: normal; }
 
-/* The model menu keeps its own rise on the easing the follow-up ledger uses. */
+/* One motion: a list rises 6px as it opens, on the easing the follow-up ledger uses. The model menu shares it. */
 @media (prefers-reduced-motion: no-preference) {
-  :root:not([data-reduced-motion='on']) .model-picker__dialog { animation: thread-chip-rise 140ms cubic-bezier(.2, .8, .2, 1); }
+  :root:not([data-reduced-motion='on']) :is(.thread-chip-menu__list, .model-picker__dialog) { animation: thread-chip-rise 140ms cubic-bezier(.2, .8, .2, 1); }
 }
 @keyframes thread-chip-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
