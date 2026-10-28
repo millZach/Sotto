@@ -43,8 +43,9 @@
 .browser-pane__opened { max-width: 380px; margin: 0 auto; }
 .browser-pane__opened h2 { margin: 0 0 6px; padding: 0 8px; color: var(--tt-text-muted); font-size: 13px; font-weight: 600; }
 .browser-pane__opened ul { margin: 0; padding: 0; list-style: none; }
-.browser-pane__recent { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 34px; padding: 0 8px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+.browser-pane__recent { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 34px; padding: 0 8px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text); font: inherit; font-size: 14px; text-align: left; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .browser-pane__recent:hover:not(:disabled) { background: var(--tt-hover); }
+.browser-pane__recent:active:not(:disabled) { background: var(--tt-hover-strong); }
 .browser-pane__recent:disabled { color: var(--tt-text-muted); cursor: default; }
 .browser-pane__recent > svg { flex: none; color: var(--tt-text-muted); }
 .browser-pane__recent > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
