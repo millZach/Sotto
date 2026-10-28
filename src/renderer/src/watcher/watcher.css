@@ -331,7 +331,7 @@
 .watcher-list { position: absolute; z-index: 21; display: flex; flex-direction: column; width: min(380px, calc(100% - 16px)); overflow: hidden; border: 1px solid var(--tt-border-faint); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-overlay); color: var(--tt-text); }
 .watcher-list__filter { position: relative; display: flex; flex: none; align-items: center; margin: 8px 8px 4px; color: var(--tt-text-muted); }
 .watcher-list__filter > svg { position: absolute; left: 9px; pointer-events: none; }
-.watcher-list__filter input { width: 100%; height: 32px; padding: 0 10px 0 30px; border: 1px solid var(--tt-hairline); border-radius: 8px; outline: 0; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 13px; }
+.watcher-list__filter input { width: 100%; height: 32px; padding: 0 10px 0 30px; border: 1px solid var(--tt-hairline); border-radius: 8px; outline: 0; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 13px; transition: border-color 120ms ease, box-shadow 120ms ease; }
 .watcher-list__filter input::placeholder { color: var(--tt-text-muted); }
 .watcher-list__filter input:focus-visible { border-color: var(--tt-field-border-focus); box-shadow: 0 0 0 2px color-mix(in srgb, var(--tt-focus-ring) 45%, transparent); }
 .watcher-list__scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 2px 4px 6px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }

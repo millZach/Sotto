@@ -93,7 +93,7 @@
 .terminal-view__screen[data-search-open] .terminal-view__output { top: 48px; }
 .terminal-search { position: absolute; top: 8px; right: 12px; z-index: 2; display: flex; align-items: center; gap: 2px; max-width: calc(100% - 20px); padding: 4px; border: 1px solid var(--tt-hairline); border-radius: 9px; background: var(--tt-glass); backdrop-filter: blur(16px) saturate(1.08); box-shadow: var(--tt-shadow-overlay); }
 .terminal-search[hidden] { display: none; }
-.terminal-search input { flex: 1 1 150px; width: 150px; min-width: 56px; height: 26px; min-height: 26px; padding: 0 8px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: var(--tt-field); color: var(--tt-text); font: 12.5px var(--tt-font-ui); }
+.terminal-search input { flex: 1 1 150px; width: 150px; min-width: 56px; height: 26px; min-height: 26px; padding: 0 8px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: var(--tt-field); color: var(--tt-text); font: 12.5px var(--tt-font-ui); transition: border-color 120ms ease, box-shadow 120ms ease; }
 .terminal-search input::placeholder { color: var(--tt-text-muted); }
 .terminal-search input:focus { outline: none; border-color: color-mix(in srgb, var(--tt-accent) 55%, var(--tt-field-border)); }
 .terminal-search input:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 1px; }
