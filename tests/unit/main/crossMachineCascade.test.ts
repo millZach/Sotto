@@ -1,9 +1,12 @@
 // @vitest-environment node
 // #1316 part 3 (Owl `cross-machine-work`): the window's Stop, Settle and Restore of a thread reach the threads it delegated
 // to on other machines, and Stop says which working ones it could not reach, naming each machine.
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { DesktopHostRouter, type DesktopHostConnection } from '../../../src/main/hosts/desktopHostRouter'
-import { SETTLE_CASCADE_SKEW_MS, settledWithParent, stopUnreachedWords } from '../../../src/main/hosts/crossMachineCascade'
+import { CascadedSettles, SETTLE_CASCADE_SKEW_MS, settledWithParent, stopUnreachedWords } from '../../../src/main/hosts/crossMachineCascade'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import { desktopWindowClient } from '../../../src/main/agents/hostService'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
@@ -30,15 +33,15 @@ function host(hostId: string, kind: 'local' | 'remote', name: string, threads: P
   let available = true
   const connection: DesktopHostConnection = { hostId, name, kind, available: () => available, ...kind === 'remote' ? { clientId: 'desktop-a' } : {},
     service: { shell: () => state, subscribe: () => () => undefined, command }, detail: async threadId => ({ threadId, revision: 1, messages: [] }), observe: async () => undefined, preview: () => null }
-  return { state, command, connection, away: () => { available = false } }
+  return { state, command, connection, away: () => { available = false }, back: () => { available = true } }
 }
 /** A thread on this computer that delegated a check to forge, which delegated in turn to the Mac through the relay. */
 function machines(crossMachineWork = true, parent: Partial<AgentThread> = {}, children: { forge?: Partial<AgentThread>; mac?: Partial<AgentThread> } = {},
-  options: ConstructorParameters<typeof DesktopHostRouter>[1] = {}) {
+  options: ConstructorParameters<typeof DesktopHostRouter>[1] = {}, stamps: { local?: () => string; forge?: () => string; mac?: () => string } = {}) {
   const router = new DesktopHostRouter(emptyDesktopState, { crossMachineWork, ...options })
-  const local = host(LOCAL, 'local', 'This computer', [{ id: 'parent', status: 'running', ...parent }])
-  const forge = host(FORGE, 'remote', 'forge', [{ id: 'check', status: 'running', delegatedBy: 'relay:desktop-a:parent', ...children.forge }])
-  const mac = host(MAC, 'remote', 'the Mac', [{ id: 'mac-check', status: 'running', delegatedBy: `relay:desktop-a:${hostEntityKey(FORGE, 'check')}`, ...children.mac }])
+  const local = host(LOCAL, 'local', 'This computer', [{ id: 'parent', status: 'running', ...parent }], stamps.local)
+  const forge = host(FORGE, 'remote', 'forge', [{ id: 'check', status: 'running', delegatedBy: 'relay:desktop-a:parent', ...children.forge }], stamps.forge)
+  const mac = host(MAC, 'remote', 'the Mac', [{ id: 'mac-check', status: 'running', delegatedBy: `relay:desktop-a:${hostEntityKey(FORGE, 'check')}`, ...children.mac }], stamps.mac)
   for (const item of [local, forge, mac]) router.add(item.connection)
   return { router, local, forge, mac }
 }
@@ -118,16 +121,89 @@ describe('Stop, Settle and Restore across machines', () => {
       expect(forge.command).toHaveBeenCalledWith({ type: 'settle-thread', threadId: 'check' }, desktopWindowClient())
       expect(mac.command).toHaveBeenCalledWith({ type: 'settle-thread', threadId: 'mac-check' }, desktopWindowClient())
     } finally { router.dispose() }
-    // Restoring it restores the one its settle settled, a few seconds apart on forge's clock, and not one settled by itself later.
-    const settled = machines(true, { workspaceSettledAt: SETTLED_AT, status: 'idle' }, { forge: { workspaceSettledAt: '2026-10-28T10:00:03.000Z' }, mac: { workspaceSettledAt: '2026-10-28T11:00:00.000Z' } })
+    // Restoring it restores the one its settle settled, a few seconds apart on forge's clock. The Mac's thread was settled on
+    // its own a minute before, within the clocks' skew, so the settle left it and the restore does too.
+    const clocks = { local: () => SETTLED_AT, forge: () => '2026-10-28T10:00:03.000Z', mac: () => '2026-10-28T10:00:05.000Z' }
+    const settled = machines(true, { status: 'idle' }, { mac: { workspaceSettledAt: '2026-10-28T09:59:00.000Z' } }, {}, clocks)
     try {
-      await settled.router.command({ type: 'restore-thread', threadId: parentKey }, desktopWindowClient())
-      expect(settled.forge.command).toHaveBeenCalledWith({ type: 'restore-thread', threadId: 'check' }, desktopWindowClient())
+      await settled.router.command({ type: 'settle-thread', threadId: parentKey }, desktopWindowClient())
+      expect(settled.forge.command).toHaveBeenCalledWith({ type: 'settle-thread', threadId: 'check' }, desktopWindowClient())
       expect(settled.mac.command).not.toHaveBeenCalled()
       // Settling one already settled moves none of them, as on one machine.
       await settled.router.command({ type: 'settle-thread', threadId: parentKey }, desktopWindowClient())
       expect(settled.forge.command).toHaveBeenCalledTimes(1)
+      await settled.router.command({ type: 'restore-thread', threadId: parentKey }, desktopWindowClient())
+      expect(settled.forge.command).toHaveBeenCalledWith({ type: 'restore-thread', threadId: 'check' }, desktopWindowClient())
+      expect(settled.mac.command).not.toHaveBeenCalled()
+      expect(settled.router.get().error).toBeNull()
     } finally { settled.router.dispose() }
+  })
+
+  it('restores one its settle settled only while it is still settled with it', async () => {
+    let forgeClock = '2026-10-28T10:00:03.000Z'
+    const { router, forge } = machines(true, { status: 'idle' }, {}, {}, { local: () => SETTLED_AT, forge: () => forgeClock, mac: () => SETTLED_AT })
+    try {
+      await router.command({ type: 'settle-thread', threadId: parentKey }, desktopWindowClient())
+      // The user restored forge's thread, then settled it on its own an hour later: it keeps its own settle.
+      forge.state.host.threads = forge.state.host.threads.map(thread => ({ ...thread, workspaceSettledAt: null }))
+      forgeClock = '2026-10-28T11:00:00.000Z'
+      await forge.connection.service.command({ type: 'settle-thread', threadId: 'check' }, desktopWindowClient())
+      forge.command.mockClear()
+      await router.command({ type: 'restore-thread', threadId: parentKey }, desktopWindowClient())
+      expect(forge.command).not.toHaveBeenCalled()
+    } finally { router.dispose() }
+  })
+
+  it('says which it could not settle, settles them with a later Settle, and restores them with the rest', async () => {
+    const clocks = { local: () => SETTLED_AT, forge: () => '2026-10-28T10:00:40.000Z', mac: () => '2026-10-28T10:00:02.000Z' }
+    const { router, forge, mac } = machines(true, { status: 'idle' }, {}, {}, clocks)
+    try {
+      forge.away()
+      expect((await router.command({ type: 'settle-thread', threadId: parentKey }, desktopWindowClient())).error)
+        .toBe('Sotto couldn\'t settle 1 delegated thread on forge. Open it from Tools › Agents to settle it yourself.')
+      expect(mac.command).toHaveBeenCalledWith({ type: 'settle-thread', threadId: 'mac-check' }, desktopWindowClient())
+      expect(forge.command).not.toHaveBeenCalled()
+      // Forge is back. Settle on the settled thread settles what the first one left open there, and nothing else again.
+      forge.back()
+      expect((await router.command({ type: 'settle-thread', threadId: parentKey }, desktopWindowClient())).error).toBeNull()
+      expect(forge.command).toHaveBeenCalledWith({ type: 'settle-thread', threadId: 'check' }, desktopWindowClient())
+      expect(mac.command).toHaveBeenCalledTimes(1)
+      await router.command({ type: 'restore-thread', threadId: parentKey }, desktopWindowClient())
+      expect(forge.command).toHaveBeenCalledWith({ type: 'restore-thread', threadId: 'check' }, desktopWindowClient())
+      expect(mac.command).toHaveBeenCalledWith({ type: 'restore-thread', threadId: 'mac-check' }, desktopWindowClient())
+    } finally { router.dispose() }
+  })
+
+  it('says which it could not restore', async () => {
+    const { router, mac } = machines(true, { status: 'idle' }, {}, {}, { local: () => SETTLED_AT, forge: () => SETTLED_AT, mac: () => SETTLED_AT })
+    try {
+      await router.command({ type: 'settle-thread', threadId: parentKey }, desktopWindowClient())
+      mac.away()
+      expect((await router.command({ type: 'restore-thread', threadId: parentKey }, desktopWindowClient())).error)
+        .toBe('Sotto couldn\'t restore 1 delegated thread on the Mac. Open it from Tools › Agents to restore it yourself.')
+    } finally { router.dispose() }
+  })
+
+  it('keeps which it settled for a Restore after Sotto restarts', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'sotto-cascade-unit-'))
+    try {
+      const clocks = { local: () => SETTLED_AT, forge: () => SETTLED_AT, mac: () => SETTLED_AT }
+      const before = new CascadedSettles(directory)
+      await before.load()
+      const first = machines(true, { status: 'idle' }, {}, { cascadedSettles: before }, clocks)
+      await first.router.command({ type: 'settle-thread', threadId: parentKey }, desktopWindowClient())
+      first.router.dispose()
+      const after = new CascadedSettles(directory)
+      await after.load()
+      expect([...after.of(parentKey)?.settled ?? []].sort()).toEqual([hostEntityKey(FORGE, 'check'), hostEntityKey(MAC, 'mac-check')])
+      // The restarted window's Restore finds them, here with the threads as the first window left them.
+      const second = machines(true, { status: 'idle', workspaceSettledAt: SETTLED_AT }, { forge: { workspaceSettledAt: SETTLED_AT }, mac: { workspaceSettledAt: SETTLED_AT } }, { cascadedSettles: after }, clocks)
+      try {
+        await second.router.command({ type: 'restore-thread', threadId: parentKey }, desktopWindowClient())
+        expect(second.forge.command).toHaveBeenCalledWith({ type: 'restore-thread', threadId: 'check' }, desktopWindowClient())
+        expect(after.of(parentKey)).toBeUndefined()
+      } finally { second.router.dispose() }
+    } finally { await rm(directory, { recursive: true, force: true }) }
   })
 
   it('settles and restores a thread back on this computer that a thread on forge delegated to for it', async () => {

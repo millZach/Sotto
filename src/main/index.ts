@@ -5,6 +5,7 @@ import { registerHostQuitDrain, type HostQuitHandles } from './app/hostQuitDrain
 import { HOSTS_CHANGED } from '../shared/hosts'
 import { hostEntityKey, parseHostEntityKey } from '../shared/clientIdentity'
 import { DesktopHostRouter } from './hosts/desktopHostRouter'
+import { CascadedSettles } from './hosts/crossMachineCascade'
 import { questionPageDestination } from './hosts/questionPageDestination'
 import { DesktopHosts } from './hosts/desktopHosts'
 import { HostSetup, hostSetupRequests } from './hosts/hostSetup'
@@ -1070,10 +1071,14 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   // The runtime builds the worktree cleanup (ADR-0041). Only the local host has worktrees on this
   // computer; with it off the inactive host's cleanup does nothing, and no terminal check is wired.
   const worktreeCleanup = startupSettings.localHostEnabled ? localRuntime.worktreeCleanup : null
+  // Which delegated threads elsewhere the window's Settles settled, for their Restores, after a restart too (#1316 part 3).
+  const cascadedSettles = crossMachineEnabled ? new CascadedSettles(userDataPath) : undefined
+  await cascadedSettles?.load()
   const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), { watcherEnabled, heldProviders, crossMachineWork: crossMachineEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'],
     ...babysittingRetired ? { babysittingRetired: true } : {},
     // What the user's Stop on a thread here left on other machines, which the window says once the cancels answer (#1316 part 3).
     ...crossMachineEnabled && 'delegation' in localRuntime && localRuntime.delegation ? { stopsLeft: (threadId: string) => localRuntime.delegation?.stopsLeft(threadId) } : {},
+    ...cascadedSettles ? { cascadedSettles } : {},
     attachAnyFile: owlFeatures['attach-any-file'],
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
     // A paired host's deleted thread takes the answer drafts this computer kept for it (ADR-0140).

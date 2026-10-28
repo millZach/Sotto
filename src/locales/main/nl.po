@@ -44,6 +44,14 @@ msgid "{count, plural, one {Sotto couldn't confirm that # delegated thread on {n
 msgstr ""
 
 #: src/main/hosts/crossMachineCascade.ts
+msgid "{count, plural, one {Sotto couldn't restore # delegated thread on {name}.} other {Sotto couldn't restore # delegated threads on {name}.}}"
+msgstr ""
+
+#: src/main/hosts/crossMachineCascade.ts
+msgid "{count, plural, one {Sotto couldn't settle # delegated thread on {name}.} other {Sotto couldn't settle # delegated threads on {name}.}}"
+msgstr ""
+
+#: src/main/hosts/crossMachineCascade.ts
 msgid "{count, plural, one {Sotto couldn't stop # delegated thread on {name}, because {name} isn't connected.} other {Sotto couldn't stop # delegated threads on {name}, because {name} isn't connected.}}"
 msgstr ""
 
@@ -244,6 +252,14 @@ msgstr ""
 
 #: src/main/hosts/crossMachineCascade.ts
 msgid "{total, plural, one {It may still be working there. Open it from Tools › Agents to see where it stands.} other {They may still be working there. Open them from Tools › Agents to see where they stand.}}"
+msgstr ""
+
+#: src/main/hosts/crossMachineCascade.ts
+msgid "{total, plural, one {Open it from Tools › Agents to restore it yourself.} other {Open them from Tools › Agents to restore them yourself.}}"
+msgstr ""
+
+#: src/main/hosts/crossMachineCascade.ts
+msgid "{total, plural, one {Open it from Tools › Agents to settle it yourself.} other {Open them from Tools › Agents to settle them yourself.}}"
 msgstr ""
 
 #: src/main/tools/browser.ts

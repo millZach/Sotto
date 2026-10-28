@@ -1,5 +1,5 @@
 import { t } from '@lingui/core/macro'
-import { delegatedElsewhere, settledWithParent, stopLeftWords, StopTally, type DelegatedElsewhere } from './crossMachineCascade'
+import { CascadedSettles, delegatedElsewhere, LeftTally, restoreLeftWords, settledWithParent, settleLeftWords, stopLeftWords, type DelegatedElsewhere } from './crossMachineCascade'
 import type { StopLeft } from '../agents/delegationRelayHost'
 import type { AgentThreadPrompts, AgentThreadPromptsRequest } from '../../shared/threadPrompts'
 import type { AgentActivity } from '../../shared/agentActivity'
@@ -362,6 +362,8 @@ export class DesktopHostRouter {
   private readonly dormantProviderIds = new Map<string, Map<string, DormantProviderThread>>()
   /** The providers held to Owl on this run, read once at start (ADR-0072). */
   private readonly held: HeldProviders
+  /** What the window's Settles did to delegated threads elsewhere (#1316 part 3, Owl `cross-machine-work`). */
+  private readonly cascadedSettles: CascadedSettles
   /** Counts the window's own selections, so a command that ends after one does not undo it. */
   private selections = 0
   /** Receipt reads share a connection and owner state; no answer is replayed or held draft released. */
@@ -396,8 +398,14 @@ export class DesktopHostRouter {
      * This computer's delegation's account of the user's Stop on one of its own threads (#1316 part 3): the delegated threads
      * on other machines its cancels did not see stop, once they have all answered. Asked once, right after the Stop went.
      */
-    stopsLeft?: (threadId: string) => Promise<readonly StopLeft[]> | undefined } = {}) {
+    stopsLeft?: (threadId: string) => Promise<readonly StopLeft[]> | undefined
+    /**
+     * Where the window's Settle of a thread keeps which of its delegated threads elsewhere it settled, and which it could
+     * not, for its Restore and a later Settle (#1316 part 3). Absent, they are kept in memory.
+     */
+    cascadedSettles?: CascadedSettles } = {}) {
     this.held = heldProvidersOption(options)
+    this.cascadedSettles = options.cascadedSettles ?? new CascadedSettles()
   }
 
   setUsageSavedHosts(hostIds: readonly string[]): void { this.usageSavedHostIds = [...new Set(hostIds)].slice(0, USAGE_HOSTS_MAX) }
@@ -1469,8 +1477,10 @@ export class DesktopHostRouter {
    * After the window's own Stop, Settle or Restore of a thread went through (#1316 part 3, Owl `cross-machine-work`). Stop: the
    * thread's delegation stops those on other machines through its own asks there, so here the window is told which working
    * ones it could not reach, by machine, and, for a thread on this computer, which its cancels did not see stop once they
-   * answer. Settle: those still open on another machine are settled there, once, as the thread goes from open to settled.
-   * Restore: those settled with it there are restored. A machine not connected keeps its own.
+   * answer. Settle: those still open elsewhere are settled there, once, as the thread goes from open to settled, and those it
+   * could not settle are tried again by a later Settle of the settled thread. Restore: those its Settle settled there, still
+   * settled with it, are restored. Which it settled is kept in `cascadedSettles`. Settle and Restore say, by machine, the
+   * ones they could not move; a machine not connected keeps its own.
    */
   private async cascadeAcross(type: 'interrupt' | 'settle-thread' | 'restore-thread', across: { readonly settledAt: string | null; readonly elsewhere: readonly DelegatedElsewhere[] },
     connection: DesktopHostConnection, threadId: string, client: ClientIdentity): Promise<void> {
@@ -1479,7 +1489,7 @@ export class DesktopHostRouter {
       return connection && connection.available?.() !== false ? connection : undefined
     }
     if (type === 'interrupt') {
-      const away = new StopTally(), unconfirmed = new StopTally()
+      const away = new LeftTally(), unconfirmed = new LeftTally()
       const name = (hostId: string, saved?: string): string => this.hosts.get(hostId)?.connection.name ?? saved ?? t`Remote host`
       for (const child of across.elsewhere) if (child.running && !reachable(child.hostId)) away.add(child.hostId, name(child.hostId), child.key)
       const said = stopLeftWords(away, unconfirmed)
@@ -1502,10 +1512,31 @@ export class DesktopHostRouter {
       }, () => undefined)
       return
     }
-    if (!across.elsewhere.length) return
-    const targets = type === 'settle-thread' ? across.settledAt === null ? across.elsewhere.filter(child => child.settledAt === null) : []
-      : across.settledAt === null ? [] : across.elsewhere.filter(child => settledWithParent(across.settledAt, child.settledAt))
-    await Promise.allSettled(targets.map(async child => { await reachable(child.hostId)?.service.command({ type, threadId: child.id }, client) }))
+    const parent = hostEntityKey(connection.hostId, threadId), record = this.cascadedSettles.of(parent)
+    const settle = type === 'settle-thread'
+    // Settle: as the thread goes from open to settled, each open one elsewhere; once settled, those an earlier Settle of it
+    // could not settle, so none is left open behind it. Restore: only those its Settle settled, still settled with it.
+    const targets = settle ? across.settledAt === null ? across.elsewhere.filter(child => child.settledAt === null)
+      : across.elsewhere.filter(child => record?.left.has(child.key) === true && child.settledAt === null)
+      : across.settledAt === null ? [] : across.elsewhere.filter(child => record?.settled.has(child.key) === true && settledWithParent(across.settledAt, child.settledAt))
+    if (!targets.length && (record === undefined || settle && across.settledAt !== null && !record.left.size)) return
+    const left = new LeftTally(), moved = new Set<string>()
+    await Promise.all(targets.map(async child => {
+      const there = reachable(child.hostId)
+      const answer = there ? await there.service.command({ type, threadId: child.id }, client).catch(() => undefined) : undefined
+      if (answer && !answer.error) moved.add(child.key)
+      else left.add(child.hostId, this.hosts.get(child.hostId)?.connection.name ?? t`Remote host`, child.key)
+    }))
+    const counts = left.counts()
+    if (counts.length) this.notice = { message: settle ? settleLeftWords(counts) : restoreLeftWords(counts) }
+    if (!settle) { await this.cascadedSettles.forget(parent); return }
+    // What this Settle settled joins what an earlier one did; one it tried and could not stays to be tried again. One an
+    // earlier Settle left that has been settled since, by hand or by an answer that was lost, is taken as settled with it.
+    const earlier = across.settledAt === null ? undefined : record
+    const settled = new Set([...earlier?.settled ?? [], ...moved]), still = new Set<string>()
+    for (const key of earlier?.left ?? []) if (!moved.has(key)) (across.elsewhere.some(child => child.key === key && child.settledAt !== null) ? settled : still).add(key)
+    for (const child of targets) if (!moved.has(child.key)) still.add(child.key)
+    await this.cascadedSettles.keep(parent, { settled, left: still })
   }
   /** A clearing or deleting command's answer (ADR-0140): the shell as it is now, built only when one answers, with its outcome. */
   private answer(outcome: Partial<AgentState>, withoutHistory = false): AgentState {

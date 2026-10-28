@@ -1,8 +1,11 @@
+import { join } from 'node:path'
 import { plural } from '@lingui/core/macro'
+import { z } from 'zod'
 import type { AgentThread } from '../../shared/agents'
 import { parseHostEntityKey } from '../../shared/clientIdentity'
 import { DELEGATION_LEVELS_MAX } from '../../shared/delegation'
 import { isThreadTurnRunning } from '../../shared/threadActivity'
+import { AtomicJsonStore } from '../storage/atomicJsonStore'
 
 /**
  * Stop and settle reaching every machine (#1316 part 3, Owl `cross-machine-work`). Stopping or settling a thread stops or
@@ -59,12 +62,17 @@ export function delegatedElsewhere(threads: readonly AgentThread[], parentKey: s
 
 /**
  * How far apart the two machines' clocks may stamp a settle that went with its parent's. Settling a thread settles its
- * delegated threads elsewhere with that machine's own time, so restoring it brings back those settled within this of it,
- * as on one machine it brings back those carrying its timestamp. Not settled with Zach; named here so it changes in one place.
+ * delegated threads elsewhere with that machine's own time, so restoring it brings back those its settle settled there
+ * that are still settled within this of it, as on one machine it brings back those carrying its timestamp. Settled with
+ * Zach on October 28, 2026 (#1316 part 3); named here so it changes in one place.
  */
 export const SETTLE_CASCADE_SKEW_MS = 2 * 60_000
 
-/** Whether a delegated thread on another machine was settled with its parent, so restoring the parent restores it. */
+/**
+ * Whether a delegated thread on another machine is still settled as its parent's settle left it, so restoring the parent
+ * restores it: its settle stamp within `SETTLE_CASCADE_SKEW_MS` of the parent's. Asked only of one the parent's settle
+ * settled (`CascadedSettles`), so one settled on its own just before is not taken for it.
+ */
 export function settledWithParent(parentSettledAt: string | null | undefined, childSettledAt: string | null): boolean {
   if (!parentSettledAt || !childSettledAt) return false
   const parent = Date.parse(parentSettledAt), child = Date.parse(childSettledAt)
@@ -109,10 +117,10 @@ export function stopUnconfirmedWords(left: readonly { readonly name: string; rea
 }
 
 /**
- * The delegated threads a Stop left on each machine (#1316 part 3), each counted once, by its machine's key and name in the
- * order first met.
+ * The delegated threads a Stop, Settle or Restore left on each machine (#1316 part 3), each counted once, by its machine's
+ * key and name in the order first met.
  */
-export class StopTally {
+export class LeftTally {
   private readonly machines = new Map<string, { readonly name: string; readonly threads: Set<string> }>()
   add(machine: string, name: string, thread: string): void {
     const entry = this.machines.get(machine)
@@ -122,8 +130,92 @@ export class StopTally {
   counts(): { readonly name: string; readonly count: number }[] { return [...this.machines.values()].map(({ name, threads }) => ({ name, count: threads.size })) }
 }
 /** What Stop says it left on other machines: those it could not reach, then those it did not see stop; nothing when it left none. */
-export function stopLeftWords(away: StopTally, unconfirmed: StopTally): string | undefined {
+export function stopLeftWords(away: LeftTally, unconfirmed: LeftTally): string | undefined {
   const unreached = away.counts(), unsure = unconfirmed.counts()
   const said = [...unreached.length ? [stopUnreachedWords(unreached)] : [], ...unsure.length ? [stopUnconfirmedWords(unsure)] : []]
   return said.length ? said.join(' ') : undefined
+}
+
+/**
+ * What the window's Settle of a thread did to its delegated threads elsewhere (#1316 part 3): the ones it settled there,
+ * by the window's key, which its Restore brings back, and the ones it could not settle, which a later Settle of the same
+ * thread tries again.
+ */
+export interface CascadedSettle {
+  readonly settled: ReadonlySet<string>
+  readonly left: ReadonlySet<string>
+}
+/** How many threads' cascaded settles are kept, newest last; an older one's Restore brings back none of them. */
+const SETTLES_KEPT = 500
+/** The window's key for a thread: `host:<hostId>:<id>`, with a host's thread ID of up to 512 characters. */
+const keySchema = z.string().min(1).max(600)
+const settlesFileSchema = z.object({ version: z.literal(1), settles: z.array(z.object({ parent: keySchema, settled: z.array(keySchema).max(1_000), left: z.array(keySchema).max(1_000) }).strict()).max(SETTLES_KEPT) }).strict()
+type SettlesFile = z.infer<typeof settlesFileSchema>
+
+/**
+ * The window's record of its cascaded settles (#1316 part 3), so a Restore brings back only the delegated threads elsewhere
+ * that its parent's Settle settled, not one settled on its own a minute before. Kept in `cross-machine-settles.json` in
+ * Sotto's data folder, since a Restore often comes after a restart: the window's keys of the threads only, never a title,
+ * a brief or a reply. Without a folder, as in a test, it is kept in memory.
+ */
+export class CascadedSettles {
+  private readonly settles = new Map<string, CascadedSettle>()
+  private readonly store: AtomicJsonStore<SettlesFile> | undefined
+
+  constructor(directory?: string) {
+    this.store = directory === undefined ? undefined
+      : new AtomicJsonStore(join(directory, 'cross-machine-settles.json'), input => settlesFileSchema.parse(input), (): SettlesFile => ({ version: 1, settles: [] }))
+  }
+  async load(): Promise<void> {
+    const file = await this.store?.read().catch((): SettlesFile => ({ version: 1, settles: [] }))
+    for (const settle of file?.settles ?? []) this.settles.set(settle.parent, { settled: new Set(settle.settled), left: new Set(settle.left) })
+  }
+  /** What the window's newest Settle of `parent` did elsewhere, until its Restore. */
+  of(parent: string): CascadedSettle | undefined { return this.settles.get(parent) }
+  /** Keeps what a Settle of `parent` did elsewhere, in place of what an earlier one did, and saves it. */
+  async keep(parent: string, settle: CascadedSettle): Promise<void> {
+    this.settles.delete(parent)
+    this.settles.set(parent, settle)
+    if (this.settles.size > SETTLES_KEPT) this.settles.delete(this.settles.keys().next().value!)
+    await this.save()
+  }
+  /** Lets go of `parent`'s record once its Restore has brought back what it settled. */
+  async forget(parent: string): Promise<void> {
+    if (this.settles.delete(parent)) await this.save()
+  }
+  private async save(): Promise<void> {
+    await this.store?.writeLatest(() => ({ version: 1, settles: [...this.settles].map(([parent, { settled, left }]) => ({ parent, settled: [...settled], left: [...left] })) }))
+      .catch(() => undefined)
+  }
+}
+
+/**
+ * What Settle says when it could not settle delegated threads on other machines (#1316 part 3): how many on each machine,
+ * and what to do. A machine not connected, one that refused, and one whose answer was lost read alike: the thread may be
+ * open there. Drafted; to be checked with Zach.
+ */
+export function settleLeftWords(left: readonly { readonly name: string; readonly count: number }[]): string {
+  const parts = left.map(({ name, count }) => plural(count, {
+    one: `Sotto couldn't settle # delegated thread on ${name}.`,
+    other: `Sotto couldn't settle # delegated threads on ${name}.`,
+  }))
+  const total = left.reduce((sum, item) => sum + item.count, 0)
+  const next = plural(total, {
+    one: 'Open it from Tools › Agents to settle it yourself.',
+    other: 'Open them from Tools › Agents to settle them yourself.',
+  })
+  return [...parts, next].join(' ')
+}
+/** What Restore says when it could not restore delegated threads on other machines that the thread's Settle settled (#1316 part 3). Drafted. */
+export function restoreLeftWords(left: readonly { readonly name: string; readonly count: number }[]): string {
+  const parts = left.map(({ name, count }) => plural(count, {
+    one: `Sotto couldn't restore # delegated thread on ${name}.`,
+    other: `Sotto couldn't restore # delegated threads on ${name}.`,
+  }))
+  const total = left.reduce((sum, item) => sum + item.count, 0)
+  const next = plural(total, {
+    one: 'Open it from Tools › Agents to restore it yourself.',
+    other: 'Open them from Tools › Agents to restore them yourself.',
+  })
+  return [...parts, next].join(' ')
 }
