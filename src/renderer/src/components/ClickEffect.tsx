@@ -35,21 +35,27 @@ function onComposer(event: PointerEvent): boolean {
  */
 const WORD_TOKENS = ['--tt-text', '--tt-text-2', '--tt-text-muted', '--tt-link', '--tt-primary-hover', '--tt-accent-text', '--tt-activity',
   '--tt-error', '--tt-error-text', '--tt-warning-text', '--tt-success'] as const
+/** What every word over the waves keeps, as AGENTS.md asks of all text. */
+const READABLE = 4.5
 /** The translucent fills a control lays over the room when pointed at, pressed or selected, which sit over the waves too. */
 const TINT_TOKENS = ['--tt-hover', '--tt-hover-strong', '--tt-selected'] as const
 
 /**
  * The strongest the glyphs may be, in hundredths up to GLYPH_ALPHA: the accent laid over `surface` at that strength, bare
- * or under each of `tints`, leaves every one of `words` at WORD_CONTRAST. A word that reads under it even without waves,
- * on some fill, is the theme's own matter and is left out for that fill; the waves never take a word below it.
+ * or under each of `tints`, leaves every one of `words` that reads at 4.5:1 without the waves still at 4.5:1, and at
+ * WORD_CONTRAST, the night scene's margin for rounding, where it had that much to begin with. A word that reads under
+ * 4.5:1 even without waves, on some fill, is the theme's own matter and is left out for that fill.
  */
 export function waveCeiling(surface: Rgb, accent: Rgb, words: readonly Word[], tints: readonly Word[]): number {
   const under = (alpha: number): Rgb[] => [over(surface, accent, alpha), ...tints.map(tint => over(over(surface, accent, alpha), tint, tint.a ?? 1))]
-  const pairs = under(0).flatMap((pixel, fill) => words.filter(word => wordContrast(word, pixel) >= WORD_CONTRAST).map(word => ({ fill, word })))
+  const pairs = under(0).flatMap((pixel, fill) => words.flatMap(word => {
+    const without = wordContrast(word, pixel)
+    return without >= READABLE ? [{ fill, word, keep: without >= WORD_CONTRAST ? WORD_CONTRAST : READABLE }] : []
+  }))
   let best = 0
   for (let step = 1; step <= Math.round(GLYPH_ALPHA * 100); step++) {
     const pixels = under(step / 100)
-    if (pairs.some(({ fill, word }) => wordContrast(word, pixels[fill]!) < WORD_CONTRAST)) break
+    if (pairs.some(({ fill, word, keep }) => wordContrast(word, pixels[fill]!) < keep)) break
     best = step / 100
   }
   return best

@@ -164,5 +164,13 @@ describe('the click effect', () => {
       expect(waveCeiling(night, teal, [grey], [{ r: 40, g: 42, b: 50 }])).toBe(bare)
       expect(waveCeiling(night, teal, [grey, { r: 30, g: 31, b: 36 }], [])).toBe(bare)
     })
+
+    it('holds a word that reads just over 4.5:1 without the waves at 4.5:1, rather than letting it go', () => {
+      const black = { r: 0, g: 0, b: 0 }, justOver = { r: 117, g: 117, b: 117 }
+      expect(wordContrast(justOver, black)).toBeGreaterThan(4.5)
+      expect(wordContrast(justOver, black)).toBeLessThan(4.6)
+      const ceiling = waveCeiling(black, teal, [justOver], [])
+      expect(wordContrast(justOver, over(black, teal, ceiling))).toBeGreaterThanOrEqual(4.5)
+    })
   })
 })
