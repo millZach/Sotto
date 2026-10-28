@@ -36,18 +36,15 @@ async function openConversation(page: Page): Promise<void> {
 
 interface Part { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number }
 
-/** How many of the click effect canvas's pixels are lit in each part of the window, each given in CSS pixels. */
-function litIn<Name extends string>(page: Page, parts: Record<Name, Part>): Promise<Record<Name, number>> {
-  return page.evaluate(given => {
+/** How many of the click effect canvas's pixels are lit in a part of the window, given in CSS pixels. */
+function litIn(page: Page, part: Part): Promise<number> {
+  return page.evaluate(({ left, top, right, bottom }) => {
     const canvas = document.querySelector<HTMLCanvasElement>('canvas.click-effect')!, scale = canvas.width / innerWidth
-    const pen = canvas.getContext('2d')!
-    return Object.fromEntries(Object.entries(given).map(([name, part]) => {
-      const { data } = pen.getImageData(Math.round(part.left * scale), Math.round(part.top * scale), Math.max(1, Math.round((part.right - part.left) * scale)), Math.max(1, Math.round((part.bottom - part.top) * scale)))
-      let n = 0
-      for (let i = 3; i < data.length; i += 4) if (data[i]) n++
-      return [name, n]
-    }))
-  }, parts as Record<string, Part>) as Promise<Record<Name, number>>
+    const { data } = canvas.getContext('2d')!.getImageData(Math.round(left * scale), Math.round(top * scale), Math.max(1, Math.round((right - left) * scale)), Math.max(1, Math.round((bottom - top) * scale)))
+    let n = 0
+    for (let i = 3; i < data.length; i += 4) if (data[i]) n++
+    return n
+  }, part)
 }
 
 /** A point in the conversation's open space, beside the column of messages. */
@@ -154,7 +151,7 @@ test.describe('the click effect', () => {
         const card = document.querySelector('#watcher-pane > .thread-workspace__compose > .thread-prompt')!.getBoundingClientRect()
         return { left: 0, right: card.left - 2, top: 120, bottom: innerHeight - 10 }
       })
-      expect((await litIn(page, { margin })).margin).toBeGreaterThan(0)
+      expect(await litIn(page, margin)).toBeGreaterThan(0)
     }))
   })
 
