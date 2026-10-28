@@ -137,7 +137,7 @@
   :root:not([data-reduced-motion='on']) .browser-toolbar[data-loading]::after { background-size: 50% 100%; background-repeat: no-repeat; animation: browser-loading 1.1s ease-in-out infinite; }
 }
 @keyframes browser-loading { from { background-position: -50% 0; } to { background-position: 150% 0; } }
-.browser-address { flex: 1; min-width: 0; height: 32px; margin: 0 4px; padding: 0 12px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: var(--tt-field); color: var(--tt-text); font-family: var(--tt-font-mono); font-size: 13px; }
+.browser-address { flex: 1; min-width: 0; height: 32px; margin: 0 4px; padding: 0 12px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: var(--tt-field); color: var(--tt-text); font-family: var(--tt-font-mono); font-size: 13px; transition: border-color 120ms ease, background-color 120ms ease; }
 .browser-address::placeholder { color: var(--tt-text-muted); }
 .browser-address:focus { border-color: var(--tt-field-border-focus); outline: none; }
 .browser-address:focus-visible { box-shadow: 0 0 0 2px var(--tt-focus-ring); }
