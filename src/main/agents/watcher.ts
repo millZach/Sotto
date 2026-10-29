@@ -4738,10 +4738,15 @@ ${operation.draftId}`)
         && watch.remoteOrigin.masterHostId === master.target.hostId && watch.remoteOrigin.masterCreatedAt !== undefined && watch.remoteOrigin.masterCreatedAt < master.createdAt)
       if (moves || retained?.creationOperationId !== master.creationOperationId) await this.options.control.updateWatcher(next => {
         guard?.()
+        // The Watchers whose requests move, by conversation, so their prompt budgets move with them: a start of theirs
+        // still on its way names its budget, which must be the new Watcher's when it arrives.
+        const replaced = new Set<string>()
         for (const request of next.requests) if (older(request)) {
+          replaced.add(key(request.watcher))
           request.watcher = master.target
           request.remoteOrigin = { ...request.remoteOrigin!, master, creationOperationId: master.creationOperationId }
         }
+        if (replaced.size) for (const turn of next.promptTurns ?? []) if (replaced.has(key(turn.watcher))) turn.watcher = master.target
         for (const watch of next.watches ?? []) {
           const origin = watch.remoteOrigin
           if (origin?.clientId === clientId && origin.masterHostId === master.target.hostId && (origin.masterCreatedAt === undefined || origin.masterCreatedAt < master.createdAt)) {

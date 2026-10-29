@@ -1527,6 +1527,15 @@ it('hands a replaced Watcher’s threads on a host that lists watcher-new-owner 
   // The host now keeps that request under the new Watcher: its projection for the new one lists it.
   const projection = await read({ master: current, adopt: true }) as WatcherHostProjection
   expect(projection.requests.find(request => request.id === packet!.request.id)?.watcher).toEqual(current.target)
+  // A start the last Watcher made under the same turn budget, still on its way at the replacement, reaches the host under
+  // the new Watcher with that budget, which moved with the request, so it is taken rather than refused as another's.
+  expect(packet!.operation.promptTurnId).toBeDefined()
+  const lateInput = { ...packet!.call.input, retryKey: randomUUID(), title: 'Synthetic late worker' }
+  const late = { ...packet!, master: current, request: { ...packet!.request, watcher: current.target },
+    operation: { ...packet!.operation, id: randomUUID(), retryKey: lateInput.retryKey, receiptId: randomUUID(), cardId: randomUUID(), creationReceiptId: randomUUID(), firstPromptReceiptId: randomUUID(),
+      draftId: randomUUID(), messageId: randomUUID(), digest: createHash('sha256').update(JSON.stringify([packet!.call.name, lateInput])).digest('hex') },
+    call: { ...packet!.call, input: lateInput } } as WatcherHostControl
+  expect(await original(late)).not.toMatchObject({ code: 'RETRY_KEY_CONFLICT' })
   // The last Watcher can no longer direct anything there: its own packet, sent again, is refused as replaced.
   expect(await original({ ...packet!, operation: { ...packet!.operation, id: randomUUID(), retryKey: randomUUID() } })).toMatchObject({ status: 'refused', code: 'NOT_CURRENT_WATCHER' })
   // Stop all reaches the thread the last Watcher started there, from the new one.
