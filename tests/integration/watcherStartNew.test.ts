@@ -196,20 +196,23 @@ describe('New Watcher', () => {
     // as a finished turn's does, and nothing it queued is fenced.
     expect(interrupts()).toBe(before + 1)
     expect(f.service.state().requests.find(item => item.id === request.id)!.state).not.toBe('stopped')
-    // The user's queued message moved to the new Watcher's queue, paused, and nothing went to the last one.
-    const queue = f.control.shell().followups ?? []
-    expect(queue.filter(item => item.threadId === f.first.threadId && !item.wakeUp)).toEqual([])
-    expect(queue.find(item => item.text === 'Also tag it.')).toMatchObject({ threadId: next.threadId, status: 'paused',
-      error: 'This was waiting for the last Watcher. Resume the queue to send it to this one, or remove it.' })
+    // The user's queued message moved to the new Watcher's queue, paused, and nothing went to the last one. Watcher's sends
+    // steer by default, so it may have been on its way into the stopped turn at the press; then it moves once it comes back.
+    await vi.waitFor(() => {
+      const queue = f.control.shell().followups ?? []
+      expect(queue.filter(item => item.threadId === f.first.threadId && !item.wakeUp)).toEqual([])
+      expect(queue.find(item => item.text === 'Also tag it.')).toMatchObject({ threadId: next.threadId, status: 'paused',
+        error: 'This was waiting for the last Watcher. Resume the queue to send it to this one, or remove it.' })
+      // It no longer continues the last Watcher's request: sent to the new one, it starts a request the new one's tools take.
+      expect(f.service.state().requests.some(item => item.userFollowups?.some(followup => followup.draftId === queuedDraft))).toBe(false)
+    })
     expect(native.messages.some(message => message.text.includes('Also tag it.'))).toBe(false)
-    // It no longer continues the last Watcher's request: sent to the new one, it starts a request the new one's tools take.
-    expect(f.service.state().requests.some(item => item.userFollowups?.some(followup => followup.draftId === queuedDraft))).toBe(false)
     // The new Watcher's note says both, and the handover carries the question in its own words.
     // What was written in the last Watcher's box waits, unsent, in the new one's.
     const drafts = f.control.get().threadDrafts ?? []
     expect(drafts.find(draft => draft.threadId === next.threadId)?.text).toBe('And check the changelog')
     expect(drafts.some(draft => draft.threadId === f.first.threadId)).toBe(false)
-    expect(f.service.state().carried).toEqual({ questionClosed: true, moved: 1, unconfirmed: false, draftMoved: true, cannotStop: [] })
+    await vi.waitFor(() => expect(f.service.state().carried).toEqual({ questionClosed: true, moved: 1, unconfirmed: false, draftMoved: true, cannotStop: [] }))
     const handover = f.service.readHandover()
     if (handover.status !== 'ok') throw new Error('handover unreadable')
     expect(handover.text).toContain('Its turn was stopped and the card closed unanswered, so ask again if it still matters:\n- Release from main or from release/1.4?')

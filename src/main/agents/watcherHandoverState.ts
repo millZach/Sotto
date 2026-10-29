@@ -50,8 +50,6 @@ function list(heading: string, rows: readonly string[], more: (rest: number) => 
   const shown = rows.slice(0, ROWS_MAX).map(row => `- ${row}`)
   return [heading, ...shown, ...rows.length > ROWS_MAX ? [`- ${more(rows.length - ROWS_MAX)}`] : [], '']
 }
-/** IDs past the first rows are listed bare, as many as stay within one long line, so each can still be read. */
-const IDS_MAX = 200
 const inReadState = (rest: number) => `And ${rest} more. read_state lists them all.`
 
 /** The section, or an empty string when there is nothing to say. Each part appears only when it has something in it. */
@@ -69,7 +67,8 @@ export function watcherHandoverState(input: WatcherHandoverStateInput): string {
       (carried?.cannotStop ?? []).map(row => `${named(row.title)} on ${one(row.host)}`)),
     ...list('Starts and sends made before you that have not gone yet. They are yours now and go as they were made; read_operation reads each:',
       input.pending.map(row => `${ACTION[row.action]} ${named(row.title)}, ${PENDING[row.state]} (operation ${row.operationId})`),
-      rest => `And ${rest} more, by operation: ${input.pending.slice(ROWS_MAX, ROWS_MAX + IDS_MAX).map(row => row.operationId).join(', ')}${rest > IDS_MAX ? `, and ${rest - IDS_MAX} after those` : ''}.`),
+      // read_state lists none of them and read_operation needs each ID, so every one is named, however many there are.
+      rest => `And ${rest} more, by operation: ${input.pending.slice(ROWS_MAX).map(row => row.operationId).join(', ')}.`),
     ...list('The threads you watch and what each waits on:', input.watching.map(row => [`${named(row.title)}${row.host ? ` on ${one(row.host)}` : ''}: ${one(row.waitsOn)}`,
       ...row.pullRequests.length ? [`Open pull requests: ${row.pullRequests.map(pullRequest).join('; ')}.`] : []].join(' ')), inReadState),
     ...list('The merge queue, oldest passing checks first:', input.mergeQueue.map(row => `${named(row.title)}: ${pullRequest(row.pullRequest)}`), inReadState),

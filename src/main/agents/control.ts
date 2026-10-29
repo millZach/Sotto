@@ -801,7 +801,8 @@ export class AgentControl {
         ...(draft.skills ? { skills: draft.skills } : {}), ...(draft.files ? { files: draft.files } : {}) })
       await this.followupStore.pauseUserPrompts(to, 'This was in the last Watcher’s message box. Resume the queue to send it to this one, or remove it.', item => item.draftId === draftId)
       this.syncFollowups()
-    } else this.putThreadDraft({ ...structuredClone(draft), threadId: to, draftId: randomUUID(), requestId: null, updatedAt: new Date().toISOString() })
+    // putThreadDraft keeps its own copy, so none is made here.
+    } else this.putThreadDraft({ ...draft, threadId: to, draftId: randomUUID(), requestId: null, updatedAt: new Date().toISOString() })
     this.discardThreadDraft(from)
     await this.persist(); this.publish()
     return begun ? 'queue' : 'box'
