@@ -4279,7 +4279,7 @@ ${operation.draftId}`)
     }
     // The move a start landed on the host, and whether the start was sent: until it is, a stop or refusal leaves its
     // incoming ref with no thread to own it, so it is let go.
-    let landed: LandedMove | undefined, sent = false
+    let landed: LandedMove | undefined, sent = false, adoptedFor: string | undefined
     try {
       if (operation.action === 'send' && operation.standingWatchId) await this.reconcileRemote(operation.target.hostId)
       // A replaced Watcher's request reaches a host that takes it over under the current Watcher, so a read moves it first.
@@ -4290,10 +4290,16 @@ ${operation.draftId}`)
       await this.options.control.updateWatcher(record => { record.operations.find(item => item.id === operation.id)!.deliveryState = 'dispatching' })
       guard()
       // Asked again just before it goes: a replacement during the branch move above makes the request a replaced
-      // Watcher's, which the host must take over before it is sent under the current one.
-      if (this.adopts(operation.target.hostId) && this.record().current && key(request.watcher) !== key(this.record().current!.target)) {
+      // Watcher's, which the host must take over before it is sent under the current one. A read the host answered for
+      // a Watcher replaced again meanwhile is asked once more, for the one current now, a few times at most.
+      for (let tries = 0; tries < 3 && this.adopts(operation.target.hostId) && this.record().current && key(request.watcher) !== key(this.record().current!.target); tries++) {
+        const asked = this.record().current!.creationOperationId
         await this.reconcileRemote(operation.target.hostId); guard()
+        if (this.record().current?.creationOperationId === asked) { adoptedFor = asked; break }
       }
+      // Sent only under the Watcher the host was last asked to take it over for: a newer one it has not heard of would be
+      // refused as another origin, for good, so this one is refused here, before anything is sent, and may be made again.
+      if (adoptedFor !== undefined && this.record().current?.creationOperationId !== adoptedFor) refuse('TARGET_CHANGED', 'Watcher changed again while this was being handed to its host, so nothing was sent. Make it again from the current Watcher.', true)
       const capable = this.remote!.hosts().find(host => host.hostId === operation.target.hostId)?.standingWatch
       const { promptTurnId: _turn, promptRefunded: _refunded, standingWatchId: _watch, ...legacyOperation } = operation
       void _turn; void _refunded; void _watch
