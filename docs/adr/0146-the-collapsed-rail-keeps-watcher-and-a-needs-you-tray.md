@@ -8,6 +8,8 @@ Amended October 27, 2026: the rail's group holds the threads Watcher watches, no
 
 Amended October 28, 2026: rounded trays in their own colours replace the rail's hairlines (below, "October 28, 2026 amendment: group trays").
 
+Amended October 29, 2026, by ADR-0135's amendment of the same day: while the Needs you queue is on, a waiting tile pops its thread's Needs you card beside the rail instead of opening the thread, and that card answers through the same store as the pane. "The rail opens threads and answers nothing" holds for the tiles themselves.
+
 Amends ADR-0135 in one place: "The collapsed rail is unchanged" holds while this feature is off. While it is on, the rail says need by putting waiting threads first, in the same Needs you queue order the card uses, with an amber edge (a tray until the October 27 amendment). Nothing in ADR-0004 changes: the rail opens threads and answers nothing.
 
 ## Context

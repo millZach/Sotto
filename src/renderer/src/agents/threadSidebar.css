@@ -67,19 +67,30 @@
 .needs-you__top { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .needs-you__title { flex: 1 1 auto; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-size: 13px; font-weight: 600; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .needs-you__wait { flex: none; color: var(--tt-text-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
-.needs-you__meta { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; margin: 2px 0 0 17px; color: var(--tt-text-muted); font-size: 11.5px; }
 .needs-you__status { color: var(--threads-warning-text); font-weight: 600; }
 .needs-you__tag { padding: 0 5px; border-radius: 4px; background: var(--tt-card-inset); color: var(--tt-text-2); font-weight: 600; }
-.needs-you__ask { margin: 3px 0 0 17px; color: var(--tt-text-2); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
-.needs-you__actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px 17px; }
-.needs-you__note, .needs-you__error, .needs-you__hold { margin: 4px 0 2px 17px; font-size: 12px; line-height: 1.4; }
-.needs-you__note { color: var(--tt-text-muted); }
-.needs-you__error { color: var(--threads-warning-text); }
-.needs-you__statusbox { border-radius: 6px; }
-.needs-you__statusbox:focus-visible { outline: 2px solid var(--tt-focus); outline-offset: 1px; }
-.needs-you__hold p { margin: 0 0 6px; color: var(--tt-text-2); }
+/* What the thread needs, then its one press: on one line while they fit, the press under the words when they do not. */
+.needs-you__need { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; margin: 3px 0 2px 17px; color: var(--tt-text-muted); font-size: 11.5px; }
+.needs-you__need > .needs-you__status { margin-right: auto; }
+.needs-you__actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
 .needs-you__foot { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 0 4px; border-top: 2px solid var(--tt-card-inset); }
 .needs-you__overflow { margin-right: auto; color: var(--tt-text-muted); font-size: 11.5px; }
+/* A waiting thread's card, popped open over the sidebar beside its entry or its rail tile (ADR-0135, October 29
+   amendment). It holds the thread's own request card, or why its last turn failed. */
+.needs-you-card { position: fixed; inset: auto; margin: 0; box-sizing: border-box; width: min(380px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow: auto;
+  padding: 10px 12px 8px; border: 1px solid var(--tt-field-border); border-radius: 10px; background: var(--tt-surface-elevated); color: var(--tt-text);
+  box-shadow: 0 16px 48px var(--tt-shadow-color); z-index: 60; font: inherit; }
+.needs-you-card:popover-open { display: block; }
+.needs-you-card:focus-visible { outline: 2px solid var(--tt-focus); outline-offset: 1px; }
+.needs-you-card__head { display: flex; align-items: flex-start; gap: 8px; }
+.needs-you-card__title { flex: 1; min-width: 0; margin: 0; font-size: 13.5px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.needs-you-card__close { display: grid; place-items: center; flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.needs-you-card__close:hover { background: var(--tt-hover); color: var(--tt-text); }
+.needs-you-card__kind { margin: 2px 0 0; color: var(--threads-warning-text); font-size: 12px; font-weight: 600; }
+.needs-you-card__reason { margin: 8px 0 0; color: var(--tt-text-2); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+/* The request card inside keeps its controls and drops its own frame: the popped card is the frame. */
+.needs-you-card .agent-request { margin-top: 8px; padding: 0; border: 0; background: transparent; }
+.needs-you-card__foot { display: flex; flex-wrap: wrap; gap: 6px; justify-content: space-between; align-items: center; margin-top: 8px; padding-top: 6px; border-top: 2px solid var(--tt-card-inset); }
 .thread-nav__scroll { overflow-y: auto; min-height: 0; padding-bottom: 12px; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 .thread-nav[data-mode] .thread-nav__scroll { flex: 1 1 auto; padding: 4px 4px 12px; }
 .thread-nav__label, .thread-nav__settled { display: flex; align-items: center; gap: 6px; margin: 0; padding: 10px 8px 6px; color: var(--tt-text-muted); font-size: 12px; font-weight: 500; letter-spacing: .02em; }

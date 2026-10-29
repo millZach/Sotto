@@ -3,7 +3,6 @@ import { useSyncExternalStore } from 'react'
 import { t } from '@lingui/core/macro'
 
 import { hostForThread, PROVIDER_LABELS, isThreadProviderConnected, providerIdOfLabel, threadSummaryOf, type AgentModel, type AgentProject, type AgentRequest, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
-import { hasNoSendableChoice, isUnavailable, permissionSummary, requestMode, textOnly } from './requests/requestAnswers'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { continuedWordsOf } from '../../../shared/continueThread'
 import { HANDOVER_LEAD } from '../../../shared/handover'
@@ -523,13 +522,6 @@ function withoutDelegated(rows: readonly ThreadRow[], tops: ReadonlyMap<string, 
 
 /** How many Needs you entries stand before the rest are counted in one line (ADR-0135). */
 export const NEEDS_YOU_SHOWN_MAX = 3
-/** The longest permission command, and folder, an entry shows whole; a longer ask is judged in its thread. */
-export const NEEDS_YOU_COMMAND_MAX = 160
-export const NEEDS_YOU_CWD_MAX = 80
-/** The most permission choices, and question options, an entry offers in place. */
-export const NEEDS_YOU_CHOICES_MAX = 3
-export const NEEDS_YOU_OPTIONS_MAX = 4
-
 export type NeedsYouKind = 'approval' | 'question' | 'failed'
 
 /** One thread in the sidebar's Needs you queue: what it waits for, since when, and what a press there may do. */
@@ -542,8 +534,8 @@ export interface NeedsYouEntry {
   readonly waitingSince: number
   /** "12 min", "2 h": how long it has waited, from its stamp alone; empty without one. */
   readonly wait: string
-  /** Answer it here, dismiss its failure, or open the thread — the shape of the ask alone decides; the queue's
-   * caller further withholds `answer` while an answer is busy, held, uncertain or half-drafted in the store. */
+  /** Answer its own request in the card the entry pops open, dismiss its own failure, or open the thread where a
+   * delegated thread below it waits (ADR-0135, October 29 amendment). */
   readonly action: 'answer' | 'dismiss' | 'open'
 }
 
@@ -557,25 +549,6 @@ export interface NeedsYouQueue {
 
 /** The queue with nobody in it, for a sidebar whose rows have not been described yet. */
 export const EMPTY_NEEDS_YOU: NeedsYouQueue = { entries: [], shown: [], overflow: { approval: 0, question: 0, failed: 0, total: 0 }, oldestBlockingWait: '' }
-
-/** Whether an ask can be judged whole from a sidebar entry (ADR-0135); everything else opens its thread. */
-function fitsEntry(request: AgentRequest): boolean {
-  if (request.delivery === 'uncertain' || request.answerRetryReady === true) return false
-  const mode = requestMode(request)
-  if (mode === 'permission') {
-    if (hasNoSendableChoice(request) || request.context?.plan) return false
-    const choices = request.permissionChoices
-    if (choices && (choices.length > NEEDS_YOU_CHOICES_MAX || choices.some(choice => choice.description))) return false
-    const summary = permissionSummary(request)
-    return summary.details === undefined && (summary.command?.length ?? 0) <= NEEDS_YOU_COMMAND_MAX && (summary.cwd?.length ?? 0) <= NEEDS_YOU_CWD_MAX
-  }
-  if (mode !== 'structured') return false
-  const questions = request.questions ?? []
-  if (questions.length !== 1 || request.pages?.length || request.linkMissing) return false
-  const question = questions[0]!
-  return !question.multiSelect && !question.allowFreeText && !isUnavailable(question) && !textOnly(question)
-    && question.options.length >= 1 && question.options.length <= NEEDS_YOU_OPTIONS_MAX
-}
 
 /**
  * The Needs you queue over the sidebar's rows (ADR-0135): one entry per row that needs the user, blocking first —
@@ -594,7 +567,7 @@ export function describeNeedsYou(rows: readonly ThreadRow[], now: number): Needs
     return {
       row, kind, request, waitingSince,
       wait: Number.isFinite(waitingSince) ? elapsedLabel(waitingSince, now) : '',
-      action: kind === 'failed' ? delegated ? 'open' : 'dismiss' : request !== undefined && fitsEntry(request) ? 'answer' : 'open',
+      action: delegated ? 'open' : kind === 'failed' ? 'dismiss' : request !== undefined ? 'answer' : 'open',
     }
   }).sort((first, second) => {
     const rank = needRank(second.row) - needRank(first.row)

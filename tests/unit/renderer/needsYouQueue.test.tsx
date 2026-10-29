@@ -10,7 +10,8 @@ import { threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 /**
  * The Needs you queue in the Threads sidebar (ADR-0135): while its Owl feature is on it stands where Dismiss all
- * stood, answers the simple asks through the one store, and dismisses failures by the name their row showed.
+ * stood, says only what each thread needs, pops a thread's own request open over the sidebar to answer through the
+ * one store, and dismisses failures by the name their row showed.
  * While it is off the sidebar is today's whole. The facts it lists are in threadFacts.test.tsx.
  */
 vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/state/AppContext')>(), useOptionalApp: vi.fn() }))
@@ -67,27 +68,99 @@ describe('the Needs you queue (ADR-0135)', () => {
     expect(queue().closest('[role="status"], [role="alert"], [aria-live]')).toBeNull()
   })
 
-  it('approves a short permission from the queue through the answer store', async () => {
+  it('says only what each thread needs, with one press, and draws no ask', () => {
+    owl(true)
+    mount(threadsStateFixture())
+    const entry = queue().querySelector<HTMLElement>('[data-entry-id="visual-gate"]')!
+    expect(entry).toHaveTextContent('Needs your approval')
+    // The command and the project and machine line are the card's, not the entry's (October 29, 2026).
+    expect(queue()).not.toHaveTextContent('npm test')
+    expect(entry.querySelector('.needs-you__meta, .needs-you__ask')).toBeNull()
+    expect(within(queue()).queryByRole('button', { name: 'Allow' })).toBeNull()
+    const press = within(entry).getByRole('button', { name: 'Open to answer the approval in Visual gate flake' })
+    expect(press).toHaveTextContent('Open to answer')
+    expect(press).toHaveAttribute('aria-haspopup', 'dialog')
+    expect(press).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('pops an approval open over the sidebar and answers it through the answer store', async () => {
     owl(true)
     let state = threadsStateFixture()
     state = edit(state, 'visual-gate', thread => ({ ...thread, requests: [{ ...thread.requests[0]!, id: 'vg-approve', since: ago(3) }] }))
-    const { command } = mount(state)
-    await act(async () => { fireEvent.click(within(queue()).getByRole('button', { name: 'Allow in Visual gate flake' })) })
+    const { command, onOpen } = mount(state)
+    const press = within(queue()).getByRole('button', { name: 'Open to answer the approval in Visual gate flake' })
+    await act(async () => { fireEvent.click(press) })
+    const card = screen.getByRole('dialog', { name: 'Visual gate flake' })
+    expect(press).toHaveAttribute('aria-expanded', 'true')
+    expect(press).toHaveAttribute('aria-controls', card.id)
+    expect(document.activeElement).toBe(card)
+    expect(card).toHaveTextContent('npm test -- --run tests/unit/agents')
+    await act(async () => { fireEvent.click(within(card).getByRole('button', { name: 'Allow' })) })
     const answers = command.mock.calls.map(([request]) => request).filter(request => request.type === 'answer')
     expect(answers).toEqual([{ type: 'answer', threadId: 'visual-gate', requestId: 'vg-approve', answer: 'Approved', approved: true }])
-    expect(within(queue()).getByText('Answer sent.')).toBeInTheDocument()
+    expect(within(card).getByText('Answer sent.')).toBeInTheDocument()
+    expect(onOpen).not.toHaveBeenCalled()
   })
 
-  it('answers a one-question choice in one press, as its own question answer', async () => {
+  it('answers a question in its popped card, as its own question answer', async () => {
     owl(true)
     let state = threadsStateFixture()
     const ask: AgentRequest = { id: 'ship-q', kind: 'question', text: 'Ship it?', options: [], since: ago(2),
       questions: [{ id: 'q1', question: 'Friday or Monday?', options: [{ id: 'fri', label: 'Friday' }, { id: 'mon', label: 'Monday' }], multiSelect: false, allowFreeText: false }] }
     state = edit(state, 'footer-links', thread => ({ ...thread, requests: [ask] }))
     const { command } = mount(state)
-    await act(async () => { fireEvent.click(within(queue()).getByRole('button', { name: 'Answer Friday in Footer links' })) })
+    expect(queue()).not.toHaveTextContent('Friday or Monday?')
+    await act(async () => { fireEvent.click(within(queue()).getByRole('button', { name: 'Open to answer the question in Footer links' })) })
+    const card = screen.getByRole('dialog', { name: 'Footer links' })
+    await act(async () => { fireEvent.click(within(card).getByRole('radio', { name: 'Friday' })) })
+    await act(async () => { fireEvent.click(within(card).getByRole('button', { name: 'Send answer' })) })
     const answers = command.mock.calls.map(([request]) => request).filter(request => request.type === 'answer')
     expect(answers).toEqual([{ type: 'answer', threadId: 'footer-links', requestId: 'ship-q', answer: '', questionAnswers: { q1: { optionIds: ['fri'] } } }])
+  })
+
+  it('closes on Escape with the focus back on its press, and Open thread opens the thread', async () => {
+    owl(true)
+    const { onOpen, command } = mount(threadsStateFixture())
+    const press = within(queue()).getByRole('button', { name: 'Open to answer the approval in Visual gate flake' })
+    await act(async () => { fireEvent.click(press) })
+    await act(async () => { fireEvent.keyDown(screen.getByRole('dialog', { name: 'Visual gate flake' }), { key: 'Escape' }) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(press)
+    expect(press).toHaveAttribute('aria-expanded', 'false')
+    // The press answers Escape while its card is open, wherever the focus went back to.
+    await act(async () => { fireEvent.click(press) })
+    press.focus()
+    await act(async () => { fireEvent.keyDown(press, { key: 'Escape' }) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    // The focus moving on past the press closes the card, so none stands open out of Escape's reach.
+    await act(async () => { fireEvent.click(press) })
+    press.focus()
+    expect(screen.getByRole('dialog', { name: 'Visual gate flake' })).toBeInTheDocument()
+    await act(async () => { queue().querySelector<HTMLElement>('[data-entry-id="visual-gate"] .needs-you__title')!.focus() })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await act(async () => { fireEvent.click(press) })
+    await act(async () => { fireEvent.pointerDown(document.body) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await act(async () => { fireEvent.click(press) })
+    await act(async () => { fireEvent.click(within(screen.getByRole('dialog', { name: 'Visual gate flake' })).getByRole('button', { name: 'Open Visual gate flake' })) })
+    expect(onOpen).toHaveBeenCalledWith('visual-gate')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(command.mock.calls.map(([request]) => request.type)).not.toContain('answer')
+  })
+
+  it('shows why a failure needs attention, and dismisses it from its card', async () => {
+    owl(true)
+    let state = threadsStateFixture()
+    state = edit(state, 'wav-stall', thread => ({ ...thread, failureId: 'f1', failureReason: 'The provider stopped the turn.' }))
+    const { command } = mount(state)
+    expect(queue()).not.toHaveTextContent('The provider stopped the turn.')
+    await act(async () => { fireEvent.click(within(queue()).getByRole('button', { name: 'Show why Streaming WAV stall needs attention' })) })
+    const card = screen.getByRole('dialog', { name: 'Streaming WAV stall' })
+    expect(card).toHaveTextContent('The provider stopped the turn.')
+    await act(async () => { fireEvent.click(within(card).getByRole('button', { name: 'Dismiss Needs attention on Streaming WAV stall' })) })
+    const dismissed = command.mock.calls.map(([request]) => request).filter(request => request.type === 'dismiss-failures')
+    expect(dismissed).toEqual([{ type: 'dismiss-failures', failures: [{ threadId: 'wav-stall', failure: 'f1' }] }])
   })
 
   it('dismisses one failure by the name its row showed, and all of them together', async () => {
@@ -133,37 +206,29 @@ describe('the Needs you queue (ADR-0135)', () => {
     expect(document.activeElement).toBe(within(queue()).getAllByRole('button', { name: 'Open Grok voice previews' })[0])
   })
 
-  it('keeps the focus in an answered entry, then hands it on when the entry leaves', async () => {
+  it('hands the focus on when an entry answered in its card leaves', async () => {
     owl(true)
     let state = threadsStateFixture()
     state = edit(state, 'visual-gate', thread => ({ ...thread, requests: [{ ...thread.requests[0]!, id: 'vg-focus' }] }))
     state = edit(state, 'wav-stall', thread => ({ ...thread, failureId: 'f1' }))
     const { again } = mount(state)
-    const allow = within(queue()).getByRole('button', { name: 'Allow in Visual gate flake' })
+    await act(async () => { fireEvent.click(within(queue()).getByRole('button', { name: 'Open to answer the approval in Visual gate flake' })) })
+    const allow = within(screen.getByRole('dialog', { name: 'Visual gate flake' })).getByRole('button', { name: 'Allow' })
     allow.focus()
     await act(async () => { fireEvent.click(allow) })
-    expect(document.activeElement?.textContent).toContain('Answer sent.')
     await act(async () => { again(edit(state, 'visual-gate', thread => ({ ...thread, requests: [] }))) })
+    expect(screen.queryByRole('dialog')).toBeNull()
     expect(document.activeElement).toBe(within(queue()).getAllByRole('button', { name: 'Open Streaming WAV stall' })[0])
   })
 
-  it('holds an unconfirmed answer instead of offering to send it again', () => {
+  it('holds an unconfirmed answer in its card instead of offering to send it again', async () => {
     owl(true)
     let state = threadsStateFixture()
     state = edit(state, 'visual-gate', thread => ({ ...thread, requests: [{ ...thread.requests[0]!, id: 'vg-uncertain', delivery: 'uncertain' }] }))
     mount(state)
-    expect(within(queue()).queryByRole('button', { name: 'Allow in Visual gate flake' })).toBeNull()
-    expect(within(queue()).getByRole('button', { name: 'Check again' })).toBeInTheDocument()
-  })
-
-  it('opens the thread for an ask too long to judge here, and answers nothing', async () => {
-    owl(true)
-    let state = threadsStateFixture()
-    state = edit(state, 'visual-gate', thread => ({ ...thread, requests: [{ ...thread.requests[0]!, id: 'vg-long', context: { command: 'x'.repeat(161) } }] }))
-    const { command, onOpen } = mount(state)
-    expect(within(queue()).queryByRole('button', { name: 'Allow in Visual gate flake' })).toBeNull()
-    await act(async () => { fireEvent.click(within(queue()).getByRole('button', { name: 'Open Visual gate flake to answer' })) })
-    expect(onOpen).toHaveBeenCalledWith('visual-gate')
-    expect(command.mock.calls.map(([request]) => request.type)).not.toContain('answer')
+    await act(async () => { fireEvent.click(within(queue()).getByRole('button', { name: 'Open to answer the approval in Visual gate flake' })) })
+    const card = screen.getByRole('dialog', { name: 'Visual gate flake' })
+    expect(within(card).getByRole('button', { name: 'Allow' })).toBeDisabled()
+    expect(within(card).getByRole('button', { name: 'Check again' })).toBeInTheDocument()
   })
 })

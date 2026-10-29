@@ -63,6 +63,11 @@ export interface WorktreeCleanupDependencies {
    * thread whose branch is among them, and every thread with a branch in a repository it could not ask (ADR-0140).
    */
   readonly openPullRequestBranches?: (repositoryRoot: string) => Promise<ReadonlySet<string>>
+  /**
+   * Whether a thread's worktree is kept whatever the rules say: the source of a thread moved to another machine (#1178),
+   * whose folder no automatic cleanup removes (Zach, October 21, 2026). Asked of each thread a sweep looks at.
+   */
+  readonly keeps?: (threadId: string) => boolean
   readonly now?: () => number
   readonly intervalMs?: number
   /** Stable event names only; never a path, a branch or a message. */
@@ -345,7 +350,7 @@ export class WorktreeCleanup {
       if (this.disposed) return
       const worktree = thread.worktree
       if (worktree?.mode !== 'independent' || worktree.status !== 'ready' || !worktree.path || !worktree.repositoryRoot || !worktree.branch || worktree.reused || worktree.reclaimedAt) continue
-      if (busy(thread)) continue
+      if (busy(thread) || this.dependencies.keeps?.(thread.id) === true) continue
       try {
         const eligibility = await this.eligible(thread, rules, defaults)
         if (!eligibility) continue

@@ -31,6 +31,7 @@ import { heldOnHost } from '../shared/hostProviders'
 import { startedBySotto, type HostStartedBy } from '../shared/hostConnection'
 import { createHostSelfUpdate } from './selfUpdate'
 import { HostBranchMoves } from './branchMoves'
+import { HostThreadMoves } from '../main/agents/threadMovesHost'
 import { HostDelegationRelay } from '../main/agents/delegationRelayHost'
 import { HostRemoteCallers } from '../main/agents/delegationRemoteHost'
 import { BranchBundles } from '../main/agents/branchBundles'
@@ -217,6 +218,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       } })
     let listener: Awaited<ReturnType<typeof startSocketServer>> | undefined
     let phones: HostPhoneAccess | undefined
+    let threadMoves: HostThreadMoves | undefined
     const descriptorPath = join(directory, 'host-listener.json')
     // The launch script reads the descriptor on every connect, while the host may be writing it again for a new tailnet
     // address, so it is written whole to a private temporary file and renamed into place: a reader never sees half of it.
@@ -263,7 +265,11 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         const branchMoves = crossMachineEnabled ? new HostBranchMoves(runtime.branchBundles ?? new BranchBundles({ stagingDirectory: join(directory, 'branch-moves'),
           recordsPath: join(directory, 'branch-moves.json') }), foldersOf(() => runtime.hostService.view())) : undefined
         await branchMoves?.start().catch(() => options.log?.('branch-moves-staging-clear-failed'))
-        const moves = { ...branchMoves ? { branchMoves } : {}, ...delegationRelay && runtime.delegation ? { delegationRelay } : {}, ...delegationRemote && runtime.delegation ? { delegationRemote } : {} }
+        // A thread moved here from another machine starts from the branch moved here for it (#1178), on the same Owl answer,
+        // held to what this host lets the asking desktop give a thread here.
+        threadMoves = branchMoves ? new HostThreadMoves(directory, { control: runtime.agentControl, workspace: runtime.agentHost,
+          mayAnswer: client => policy?.mayGrant(client).allowed ?? false }) : undefined
+        const moves = { ...branchMoves ? { branchMoves } : {}, ...threadMoves ? { threadMoves } : {}, ...delegationRelay && runtime.delegation ? { delegationRelay } : {}, ...delegationRemote && runtime.delegation ? { delegationRemote } : {} }
         // The host's own OpenCode signed in to model sources from a desktop (#1107), only where its OpenCode runs.
         const opencodeSignIn = runtime.opencodeSignIn ? { opencodeSignIn: runtime.opencodeSignIn } : {}
         phones = startHostPhoneAccess({ directory, service: runtime.hostService, pairing, policy, settings, startup,
@@ -302,6 +308,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
           try { await phones?.close() } catch { options.log?.('phone-access-close-failed') }
           describing = false
           await descriptorWrites.catch(() => undefined)
+          threadMoves?.close()
           try { await listener?.close() } finally {
             // No thread's tool call is taken once the host is closing; a call already running ends with its service.
             await Promise.allSettled(threadTools.map(tools => tools.close()))

@@ -403,6 +403,8 @@ export interface SottoBridge {
   readonly checks?: import('./checkQueue').CheckQueuesBridge
   /** Continuing a thread on another provider (ADR-0089), present only while the Owl list turns it on. */
   readonly continueThread?: import('./continueThread').ContinueBridge
+  /** Moving threads to another machine (#1178), present only while Watcher and Work across machines are both on, as the machines line is. */
+  readonly threadMoves?: import('./threadMoves').ThreadMovesBridge
   /** Next prompts after a finished turn (ADR-0132), present only while the `next-prompt` Owl feature is on and this computer runs threads. */
   readonly nextPrompt?: import('./nextPrompt').NextPromptBridge
   /** Signing Sotto's OpenCode in to model sources (#1104), present only while OpenCode's Owl feature is on. */

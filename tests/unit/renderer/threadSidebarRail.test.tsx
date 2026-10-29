@@ -1,5 +1,5 @@
 import React from 'react'
-import { act, cleanup, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentState } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW as NOW } from '../../../src/shared/e2e'
@@ -19,9 +19,9 @@ vi.mock('../../../src/renderer/src/watcher/watcherRoom', async importOriginal =>
 vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/state/AppContext')>(), useOptionalApp: vi.fn() }))
 
 const navigate = vi.fn()
-function owl(on: boolean): void {
+function owl(on: boolean, queue = false): void {
   vi.mocked(useOptionalApp).mockReturnValue({ navigation: 'threads', actions: { navigate },
-    update: { currentVersion: '0.1.40', phase: { phase: 'up-to-date' }, checkedAt: null, owlFeatures: { 'sidebar-rail': on, watcher: true } } } as unknown as AppContextValue)
+    update: { currentVersion: '0.1.40', phase: { phase: 'up-to-date' }, checkedAt: null, owlFeatures: { 'sidebar-rail': on, watcher: true, 'needs-you-queue': queue } } } as unknown as AppContextValue)
 }
 beforeEach(() => { vi.mocked(useOptionalApp).mockReset(); vi.mocked(useWatchedThreadIds).mockReturnValue(new Set()); navigate.mockReset(); localStorage.removeItem('sotto.threadWorkspace.sidebar') })
 afterEach(() => { cleanup(); localStorage.removeItem('sotto.threadWorkspace.sidebar') })
@@ -29,9 +29,9 @@ afterEach(() => { cleanup(); localStorage.removeItem('sotto.threadWorkspace.side
 /** Nothing waits: every thread's requests answered and failures seen. */
 const calm = (state: AgentState): AgentState => ({ ...state, host: { ...state.host, threads: state.host.threads.map(thread => ({ ...thread, requests: [], status: thread.status === 'error' ? 'idle' : thread.status })) } })
 
-function mountCollapsed(state: AgentState): HTMLElement {
+function mountCollapsed(state: AgentState, onOpen = vi.fn()): HTMLElement {
   render(<ThreadSidebar state={state} organization={organizeWorkspace(state, describeThreads(state, NOW), '', state.activeProjectId, false, NOW)}
-    command={vi.fn(async () => state)} query="" onQuery={vi.fn()} onOpen={vi.fn()} onNewThread={vi.fn()}
+    command={vi.fn(async () => state)} query="" onQuery={vi.fn()} onOpen={onOpen} onNewThread={vi.fn()}
     currentThreadId={null} openThreadIds={[]} onOpenBeside={vi.fn()} onDragThread={vi.fn()} />)
   act(() => { screen.getByRole('button', { name: 'Collapse sidebar' }).click() })
   return document.querySelector<HTMLElement>('.thread-nav__rail')!
@@ -113,6 +113,55 @@ describe('the collapsed rail (ADR-0146)', () => {
     expect(unwatched).toHaveAttribute('data-waiting')
     expect(unwatched.querySelector('.thread-nav__rail-watched-mark')).toBeNull()
     expect(group.nextElementSibling).toBe(unwatched.parentElement)
+  })
+
+  it('pops a waiting tile\'s card beside the rail, as the Needs you entry does, and opens the rest', () => {
+    owl(true, true)
+    const onOpen = vi.fn()
+    const rail = mountCollapsed(threadsStateFixture(), onOpen)
+    const approval = within(rail).getByRole('button', { name: 'Open to answer the approval in Visual gate flake' })
+    expect(approval).toHaveAttribute('aria-haspopup', 'dialog')
+    act(() => { approval.click() })
+    const card = screen.getByRole('dialog', { name: 'Visual gate flake' })
+    expect(card).toHaveTextContent('npm test -- --run tests/unit/agents')
+    expect(approval).toHaveAttribute('aria-expanded', 'true')
+    expect(onOpen).not.toHaveBeenCalled()
+    act(() => { fireEvent.keyDown(card, { key: 'Escape' }) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(approval)
+    act(() => { within(rail).getByRole('button', { name: 'Show why Streaming WAV stall needs attention' }).click() })
+    expect(screen.getByRole('dialog', { name: 'Streaming WAV stall' })).toBeInTheDocument()
+    // A press on another tile is a press outside the card: it closes, and that tile opens its thread.
+    act(() => { fireEvent.pointerDown(tile(rail, 'Footer links')); tile(rail, 'Footer links').click() })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(onOpen).toHaveBeenCalledWith('footer-links')
+  })
+
+  it('gives the focus back to a tile drawn anew when its card closes with the wait it held', async () => {
+    owl(true, true)
+    const state = threadsStateFixture()
+    const failed = { ...state, host: { ...state.host, threads: state.host.threads.map(thread => thread.id === 'wav-stall' ? { ...thread, failureId: 'f1' } : thread) } }
+    const command = vi.fn(async () => failed)
+    const element = (next: AgentState) => <ThreadSidebar state={next} organization={organizeWorkspace(next, describeThreads(next, NOW), '', next.activeProjectId, false, NOW)}
+      command={command} query="" onQuery={vi.fn()} onOpen={vi.fn()} onNewThread={vi.fn()}
+      currentThreadId={null} openThreadIds={[]} onOpenBeside={vi.fn()} onDragThread={vi.fn()} />
+    const view = render(element(failed))
+    act(() => { screen.getByRole('button', { name: 'Collapse sidebar' }).click() })
+    const rail = document.querySelector<HTMLElement>('.thread-nav__rail')!
+    const why = within(rail).getByRole('button', { name: 'Show why Streaming WAV stall needs attention' })
+    act(() => { why.click() })
+    // The press that opened the card answers Escape too.
+    act(() => { why.focus(); fireEvent.keyDown(why, { key: 'Escape' }) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    act(() => { why.click() })
+    const card = screen.getByRole('dialog', { name: 'Streaming WAV stall' })
+    await act(async () => { fireEvent.click(within(card).getByRole('button', { name: 'Dismiss Needs attention on Streaming WAV stall' })) })
+    expect(command).toHaveBeenCalledWith({ type: 'dismiss-failures', failures: [{ threadId: 'wav-stall', failure: 'f1' }] })
+    act(() => { (document.activeElement as HTMLElement | null)?.blur() })
+    // Seen, the thread stops waiting and its tile moves out of the waiting group.
+    act(() => { view.rerender(element({ ...failed, host: { ...failed.host, threads: failed.host.threads.map(thread => thread.id === 'wav-stall' ? { ...thread, failureSeen: true } : thread) } })) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(tile(rail, 'Streaming WAV stall'))
   })
 
   it('edges nothing in the attention colour while nothing waits', () => {

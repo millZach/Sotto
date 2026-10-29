@@ -59,6 +59,8 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   ...each('success', [['bubble'], ['bubble', hover], ['canvas', hover]], 'Copied, on a message and in the bubble'),
   ...each('warning', [['sidebar'], ['sidebar', hover], ['surface-elevated'], ['canvas'], ['code-bg'], ['field'], ['card'], ['card-selected'], [followups], [followups, hover]], 'warning text and code strings'),
   pair('warning-text', ['warning-surface'], 'warning card'),
+  // Needs you (ADR-0135): what a thread needs, on its entry's card and on the card its press pops open over the sidebar.
+  ...each('warning-text', [['card'], ['surface-elevated']], 'Needs you entry and popped card'),
   // The sidebar's Needs attention line and its Dismiss all, and the pane's failed turn notice (ADR-0092).
   ...each('text', [['warning-surface'], ['warning-surface', hover]], 'Dismiss all and the lead of the failed turn notice'),
   pair('text-2', ['warning-surface'], 'failed turn notice'),
