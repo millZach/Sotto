@@ -18,8 +18,8 @@ const thread = async (f: Fixture) => (await f.host.snapshot()).threads.find(cand
 const users = async (f: Fixture) => (await thread(f)).messages.filter(message => message.role === 'user').map(({ id, text }) => ({ id, text }))
 const live = (f: Fixture) => (f.adapter as unknown as { runtimes: Map<string, unknown> }).runtimes.has('thread')
 
-/** A thread with one finished turn. */
-async function answered(): Promise<Fixture> {
+/** A thread whose first prompt Claude Code took, with that prompt's turn left running. */
+async function working(): Promise<Fixture> {
   const f = await claudeFixture(); fixtures.push(f)
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: 'project', projectId: f.projectId, title: 'Slow reply', path: f.root })
@@ -29,7 +29,7 @@ async function answered(): Promise<Fixture> {
 }
 /** Sotto closed while one of the thread's tool calls ran, then started again: the thread's CLI resumes its session. */
 async function restartedMidToolCall(): Promise<Fixture> {
-  const f = await answered()
+  const f = await working()
   await f.action('thread', { type: 'raw', persist: true, frame: { type: 'assistant', uuid: randomUUID(), parent_tool_use_id: null,
     message: { id: randomUUID(), role: 'assistant', content: [{ type: 'tool_use', id: 'tool', name: 'Bash', input: { command: 'npm test' } }] } } })
   await f.action('thread', { type: 'exit' })
@@ -40,7 +40,7 @@ async function restartedMidToolCall(): Promise<Fixture> {
   return restarted
 }
 async function idle(): Promise<Fixture> {
-  const f = await answered()
+  const f = await working()
   await f.driver.completeTurn('thread', 'All green.')
   await expect.poll(async () => (await thread(f)).status).toBe('idle')
   return f
