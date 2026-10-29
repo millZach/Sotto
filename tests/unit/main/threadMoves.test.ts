@@ -242,9 +242,10 @@ describe('confirm, then the move record’s states', () => {
     const w = world(), moves = w.service(); moves.useTargets(w.targets)
     w.branches.receipt = branchMoveRefusal('uncommitted', branchMoveWords.uncommitted)
     const moveId = (await confirmed(w, moves, ['a'])).moves[0]!.moveId!
-    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('given-back'))
+    // Given back, and only then is the fence lifted: wait for both.
+    await vi.waitFor(() => { expect(stateOf(moves, moveId)).toBe('given-back'); expect(w.fences.has('a')).toBe(false) })
     expect(moves.list()[0]!.givenBack).toBe(`${branchMoveWords.uncommitted} This thread stays on This computer and takes sends again.`)
-    expect(w.fences.has('a')).toBe(false); expect(w.remote.requests).toEqual([]); expect(moves.keepsWorktree('a')).toBe(false)
+    expect(w.remote.requests).toEqual([]); expect(moves.keepsWorktree('a')).toBe(false)
     moves.close()
   })
   it('gives a move back when the machine refuses the start, and lets go of the branch it landed there', async () => {
@@ -389,8 +390,7 @@ describe('the watch goes before the source settles (Sol’s review)', () => {
     const moveId = (await confirmed(w, moves, ['a'])).moves[0]!.moveId!
     await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('thread-started'))
     w.endTurn(moveId)
-    await vi.waitFor(() => expect(moves.stalled().map(record => record.id)).toEqual([moveId]))
-    expect(w.watch.tries).toBe(5)
+    await vi.waitFor(() => { expect(moves.stalled().map(record => record.id)).toEqual([moveId]); expect(w.watch.tries).toBe(5) })
     expect(moves.list()[0]).toMatchObject({ state: 'first-turn-ended', watchMoved: false })
     expect(w.settled).toEqual([]); expect(w.fences.has('a')).toBe(true); expect(w.watch.watched.has('a')).toBe(true)
     // Nothing tries it again on its own; a restart does, and settles it once the watch goes.
