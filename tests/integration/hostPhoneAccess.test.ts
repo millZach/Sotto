@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { createServer, type AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -58,6 +59,20 @@ function client(port: number, token: string): SocketHostService {
   return service
 }
 const session = (port: number, token: string) => fetch(`http://127.0.0.1:${port}/v1/session`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
+/**
+ * A loopback port free now that no system hands out by itself: under Linux's ephemeral range, which starts at 32768, and
+ * Windows' and macOS's, which start at 49152. A listener on port 0 or an outgoing connection, here or in another worker,
+ * never lands on it, so it stays free until something asks for it by number.
+ */
+async function unassignedPort(): Promise<number> {
+  for (let tries = 0; tries < 50; tries++) {
+    const port = 20_000 + Math.floor(Math.random() * 12_000)
+    const probe = createServer()
+    const free = await new Promise<boolean>(resolve => { probe.once('error', () => resolve(false)); probe.listen(port, '127.0.0.1', () => resolve(true)) })
+    if (free) { await new Promise<void>(resolve => probe.close(() => resolve())); return port }
+  }
+  throw new Error('No loopback port under the ephemeral ranges was free.')
+}
 
 it('turns phone access on from the administrative routes, serves the host on a loopback port of its own, and pairs a phone there', async () => {
   const stand = standInTailscale()
@@ -91,19 +106,23 @@ it('turns phone access on from the administrative routes, serves the host on a l
   expect(await command({ type: 'set-can-answer', clientId: 'not-a-client', allowed: true })).toMatchObject({ error: 'That phone is no longer paired. Nothing was changed.' })
 })
 
-it('takes its Serve setting away when it stops, and puts it back on the same port when it starts again', async () => {
+it('takes its Serve setting away when it stops, and puts it back on the loopback port it remembers when it starts again', async () => {
+  // A host that ran before remembers its port (ADR-0033). It is one no system hands out by itself, so another test's
+  // listener or connection cannot take it while the host is stopped, and the host finds it free again (#1777).
+  const remembered = await unassignedPort()
+  await writeFile(join(root, 'phone-access.json'), JSON.stringify({ port: remembered, mapped: false }))
   const stand = standInTailscale()
   const first = await start(stand.tailscale)
   await first.command({ type: 'set-enabled', enabled: true })
   await vi.waitFor(async () => expect((await first.read()).phase).toBe('on'))
-  const port = stand.proxied()
+  expect(stand.proxied()).toBe(remembered)
   await first.host.close()
   expect(stand.calls.at(-1)).toBe('unserve')
   expect(stand.proxied()).toBeUndefined()
 
   const second = await start(stand.tailscale)
   await vi.waitFor(async () => expect((await second.read()).phase).toBe('on'))
-  expect(stand.proxied()).toBe(port)
+  expect(stand.proxied()).toBe(remembered)
 
   // Off is the host's own setting too, so the next start leaves Tailscale alone.
   await second.command({ type: 'set-enabled', enabled: false })
@@ -114,6 +133,27 @@ it('takes its Serve setting away when it stops, and puts it back on the same por
   const third = await start(stand.tailscale)
   expect(await third.read()).toMatchObject({ enabled: false, phase: 'off' })
   expect(stand.calls.length).toBe(calls)
+})
+
+it('puts Serve back on the same Serve port, from a loopback port of its own, when something else holds the one it remembers', async () => {
+  // The port the host remembers is the test's own now, as when another app took it while the host was stopped (ADR-0033).
+  const holder = createServer(socket => socket.destroy())
+  await new Promise<void>(resolve => holder.listen(0, '127.0.0.1', resolve))
+  try {
+    const held = (holder.address() as AddressInfo).port
+    await writeFile(join(root, 'phone-access.json'), JSON.stringify({ port: held, mapped: false }))
+    const stand = standInTailscale()
+    const { host, command, read } = await start(stand.tailscale)
+    await command({ type: 'set-enabled', enabled: true })
+    // Phones keep the host's address, which names the Serve port, never the loopback one.
+    await vi.waitFor(async () => expect(await read()).toMatchObject({ phase: 'on', address: `https://${DNS}:8443` }))
+    const moved = stand.proxied()!
+    expect(moved).not.toBe(held)
+    expect(stand.served()).toBe(8443)
+    expect(await (await fetch(`http://127.0.0.1:${moved}/v1/health`)).json()).toMatchObject({ hostId: host.descriptor!.hostId })
+    // The next start tries the port it listens on now.
+    expect(JSON.parse(await readFile(join(root, 'phone-access.json'), 'utf8'))).toEqual({ port: moved, mapped: true })
+  } finally { await new Promise<void>(resolve => holder.close(() => resolve())) }
 })
 
 it('hands back Tailscale’s page for turning Serve on, for the desktop to open, rather than opening anything itself', async () => {
