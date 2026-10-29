@@ -4,6 +4,7 @@ import type { AgentState, AgentThread } from '../../../shared/agents'
 import { parseHostEntityKey } from '../../../shared/clientIdentity'
 import type { WatcherThreadTarget } from '../../../shared/watcher'
 import { isWatchedRow, newerWatcherRoom, type WatcherBridge, type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherMachinesRead, type WatcherRoomResult, type WatcherRoomState } from '../../../shared/watcherRoom'
+import { watcherRoomChanges } from '../../../shared/watcherRoomChanges'
 import { useOptionalAgents } from '../agents/AgentContext'
 import type { LaterWords } from '../features/settings/laterWords'
 import { useWatcherEnabled } from '../state/watcherFeature'
@@ -138,17 +139,19 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
   const [error, setError] = useState<LaterWords | null>(null)
   const [answered, setAnswered] = useState(false)
   const live = enabled && bridge !== undefined
+  // Main sends only what changed, and the room is put back together here, so only the change crosses the bridge (#1759).
+  const roomChanges = useMemo(() => bridge === undefined ? undefined : watcherRoomChanges(bridge), [bridge])
   useEffect(() => {
-    if (!live) return
+    if (!live || roomChanges === undefined) return
     let active = true
-    const unsubscribe = bridge.onChanged(next => { if (active) { setState(current => newer(current, next)); setError(null); setAnswered(true) } })
+    const unsubscribe = roomChanges(next => { if (active) { setState(current => newer(current, next)); setError(null); setAnswered(true) } })
     void bridge.get().then(result => {
       if (!active) return
       setAnswered(true)
       if (result.status === 'ok') { setState(current => newer(current, result.state)); setError(null) } else setError(result.message)
     }, () => { if (active) { setAnswered(true); setError(UNREADABLE) } })
     return () => { active = false; unsubscribe() }
-  }, [live, bridge])
+  }, [live, bridge, roomChanges])
   const settle = useCallback((result: WatcherRoomResult): string | null => {
     if (result.status === 'ok') { setState(current => newer(current, result.state)); setError(null); return null }
     return result.message
