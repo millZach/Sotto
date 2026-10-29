@@ -1,0 +1,330 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: Drake's pick on October 29, 2026 from docs/prototypes/composer-dots-refine.html (tag
+  prototype/composer-dots-refine): "10.2 then mockup some ways the dots could be dynamic and interactive with the chat
+  and or prompt itself without being too distracting."
+
+  10.2 is one pill: the prompt, the provider's mark and the model's name, one to four effort dots in the provider's
+  colour, a shield and Send. Here, ten behaviours for the dots, each on its own live frame with the end of a thread above
+  it: some answer the prompt (typing, words, length, keys, the next prompt), some answer the chat (the turn's steps, the
+  reply arriving, the turn ending). Every behaviour that changes effort on its own only suggests; the user's press
+  decides (ADR-0004). Motion stays inside the dots except in G, which moves them once per turn.
+
+  Built from parts.html and the shared base of prototype/composer-quiet-20/template.html by build.py (inlines Figtree
+  and ProviderMark's paths).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Composer: dots that listen - prototype</title>
+<style>
+/*BASECSS*/
+.t-dark { --tt-provider-codex: #d7dbe1; --tt-provider-claude: #e3b58e; --tt-provider-grok: #c9baff; }
+.t-light { --tt-provider-codex: #c9ced6; --tt-provider-claude: #e2ad80; --tt-provider-grok: #bfaefc; }
+.fr.t-dark { --prov: var(--tt-provider-claude); }
+.fr.t-light { --prov: color-mix(in oklab, var(--tt-provider-claude) 80%, var(--tt-text)); }
+.fr { height: 236px; }
+.cmp { bottom: 16px; }
+.tx { position: absolute; left: 22px; right: 22px; top: 12px; bottom: 80px; display: flex; flex-direction: column; justify-content: flex-end; gap: 6px; overflow: hidden; font-size: 13.5px; line-height: 1.5; color: var(--tt-text-2); }
+.tx .you { align-self: flex-end; max-width: 460px; padding: 5px 11px; border-radius: 11px; background: var(--tt-card); color: var(--tt-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tx .rep { min-height: 21px; max-width: 640px; }
+.tx .rep .step { color: var(--tt-text-faint); font-size: 12.5px; }
+.tx .rep .think { display: inline-flex; gap: 5px; align-items: center; height: 21px; }
+.tx .rep .think i { width: 4.5px; height: 4.5px; border-radius: 50%; background: var(--prov); animation: bounce calc(900ms * var(--k)) ease-in-out infinite; }
+.tx .rep .think i:nth-child(2) { animation-delay: calc(120ms * var(--k)); } .tx .rep .think i:nth-child(3) { animation-delay: calc(240ms * var(--k)); } .tx .rep .think i:nth-child(4) { animation-delay: calc(360ms * var(--k)); }
+
+.pill { display: flex; align-items: center; gap: 2px; min-height: 46px; padding: 6px 8px 6px 18px; border-radius: 23px; background: var(--tt-card); }
+.pill .fld { margin-right: 6px; }
+.who { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 8px 0 7px; border: 0; border-radius: 15px; background: transparent; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; cursor: pointer; flex: none; }
+.who:hover { background: var(--tt-hover); color: var(--tt-text); }
+.pm { display: grid; width: 15px; height: 15px; flex: none; color: var(--prov); }
+.pm svg { grid-area: 1 / 1; width: 15px; height: 15px; fill: currentcolor; }
+.dots { position: relative; display: inline-flex; align-items: center; height: 30px; padding: 0 2px; border-radius: 15px; outline: none; flex: none; touch-action: none; }
+.dots:focus-visible { box-shadow: 0 0 0 2px var(--tt-accent); }
+.dots button { display: grid; place-items: center; width: 11px; height: 30px; padding: 0; border: 0; background: none; cursor: pointer; }
+.dots i { width: 4.5px; height: 4.5px; border-radius: 50%; background: var(--prov); opacity: .22; transition: opacity var(--t), transform calc(240ms * var(--k)) var(--spring), box-shadow var(--t); }
+.dots button:hover i { opacity: .55; transform: scale(1.3); }
+[data-effort='0'] .dots .d0 i, [data-effort='1'] .dots :is(.d0, .d1) i, [data-effort='2'] .dots :is(.d0, .d1, .d2) i, [data-effort='3'] .dots i { opacity: 1; }
+[data-run] .dots i { animation: bounce calc(900ms * var(--k)) ease-in-out infinite; }
+[data-run] .dots .d1 i { animation-delay: calc(120ms * var(--k)); } [data-run] .dots .d2 i { animation-delay: calc(240ms * var(--k)); } [data-run] .dots .d3 i { animation-delay: calc(360ms * var(--k)); }
+@keyframes bounce { 30% { transform: translateY(-4px); } 60% { transform: none; } }
+.pill .sh svg { width: 14px; height: 14px; }
+.note { position: absolute; right: 108px; bottom: 54px; padding: 3px 8px; border-radius: 6px; background: var(--tt-card); color: var(--tt-text-muted); font-size: 11.5px; white-space: nowrap; opacity: 0; transform: translateY(4px); pointer-events: none; transition: opacity var(--t), transform var(--t) var(--out); box-shadow: 0 6px 14px -8px var(--shadow); }
+.cmp[data-note] .note { opacity: 1; transform: none; }
+.note b { color: var(--prov); font-weight: 600; }
+
+/* A · listening: each keystroke sends one soft ripple along the lit dots. */
+.bA .dots i { transition: opacity var(--t), transform calc(160ms * var(--k)) var(--out); }
+.bA[data-tap] .dots i { transform: translateY(-2px); }
+.bA[data-tap] .dots .d1 i { transition-delay: calc(30ms * var(--k)); } .bA[data-tap] .dots .d2 i { transition-delay: calc(60ms * var(--k)); } .bA[data-tap] .dots .d3 i { transition-delay: calc(90ms * var(--k)); }
+
+/* B · your words set it: "think hard", "ultrathink" or "quickly" in the prompt move the dots, and a note says why. */
+/* C · a suggestion, not a change: a long or knotty prompt rings the dots it would use; a press takes it. */
+.bC .dots i.sg { box-shadow: 0 0 0 1.5px var(--prov); opacity: .6; animation: ring calc(1600ms * var(--k)) ease-in-out infinite; }
+@keyframes ring { 50% { box-shadow: 0 0 0 3px color-mix(in oklab, var(--prov) 30%, transparent); } }
+/* D · from the keyboard: ⌥↑ and ⌥↓ in the prompt step the dots without leaving it. */
+.bD .dots.step i { transition-duration: calc(120ms * var(--k)); }
+.bD .dots.step { animation: nudge calc(220ms * var(--k)) var(--spring); }
+@keyframes nudge { 40% { transform: scale(1.12); } }
+/* E · slide: drag across the dots; they stretch toward the finger and snap. */
+.bE .dots { cursor: ew-resize; }
+.bE .dots.drag i { transform: scaleX(1.5); }
+.bE .dots .fill { position: absolute; left: 2px; top: 13px; height: 4.5px; border-radius: 3px; background: color-mix(in oklab, var(--prov) 30%, transparent); width: 0; transition: width calc(120ms * var(--k)); pointer-events: none; }
+.bE .dots.drag .fill { width: calc(11px * (var(--lv) + 1) - 3px); }
+/* F · the turn's steps: while it runs, the dots are its progress: done, now, to come. */
+.bF[data-run] .dots i { animation: none; opacity: .22; transform: none; }
+.bF[data-run][data-phase='0'] .d0 i, .bF[data-run][data-phase='1'] .d1 i, .bF[data-run][data-phase='2'] .d2 i, .bF[data-run][data-phase='3'] .d3 i { opacity: 1; animation: pulse calc(1000ms * var(--k)) ease-in-out infinite; }
+.bF[data-run][data-phase='1'] .d0 i, .bF[data-run][data-phase='2'] :is(.d0, .d1) i, .bF[data-run][data-phase='3'] :is(.d0, .d1, .d2) i { opacity: 1; }
+@keyframes pulse { 50% { transform: scale(.6); opacity: .5; } }
+/* G · the dots carry the reply: they travel up to where the answer will appear, wait there, and come home when it ends. */
+.bG[data-run] .dots i { animation: none; opacity: .12 !important; }
+.flyer { position: absolute; width: 4.5px; height: 4.5px; border-radius: 50%; background: var(--prov); pointer-events: none; z-index: 5; }
+/* H · in time with the reply: each piece of the answer that arrives lights the next dot. */
+.bH[data-run] .dots i { animation: none; }
+.bH .dots i.hit { transform: scale(1.6); opacity: 1; transition-duration: 40ms; }
+/* I · done, once: when the turn ends the dots make one wave and keep a faint glow until you come back to the prompt. */
+.bI[data-done] .dots i { animation: wave1 calc(700ms * var(--k)) var(--out) 1; }
+.bI[data-done] .dots .d1 i { animation-delay: calc(70ms * var(--k)); } .bI[data-done] .dots .d2 i { animation-delay: calc(140ms * var(--k)); } .bI[data-done] .dots .d3 i { animation-delay: calc(210ms * var(--k)); }
+@keyframes wave1 { 40% { transform: translateY(-5px) scale(1.2); } }
+.bI[data-unread] .dots i { box-shadow: 0 0 6px 1px color-mix(in oklab, var(--prov) 70%, transparent); }
+/* J · the next prompt brings its effort: while a suggestion waits, its effort shows as rings; Tab takes both. */
+.bJ .dots i.sg { box-shadow: 0 0 0 1.5px var(--prov); opacity: .55; }
+/*CALMCSS*/
+</style>
+</head>
+<body class="m-both">
+<h1>Dots that listen</h1>
+<div class="intro">
+  <p>All ten are <b>10.2</b>: the provider's mark and the model's name, one to four effort dots in the provider's colour, the shield and Send, in one pill. Each frame shows the end of a thread above the pill, so you can see the dots answer the <b>prompt</b> (A to E, J) or the <b>chat</b> (F to I).</p>
+  <p><b>The rules they keep:</b> movement stays inside the dots, except G, which moves them once per turn. Nothing loops at rest. Effort changes only when you press something: B is your own words, C and J only suggest. Reduce motion turns every one of them into a plain change of state.</p>
+</div>
+<div class="bar">
+  <span class="seg" id="mode"><button data-v="both" aria-pressed="true">Both</button><button data-v="dark">Dark</button><button data-v="light">Light</button></span>
+  <button type="button" class="go" id="playall">Play all</button>
+  <label><input type="checkbox" id="calm"> Reduce motion</label><label><input type="checkbox" id="slow"> Slow ×4</label>
+  <nav id="nav"></nav>
+</div>
+<main id="main"></main>
+<script>
+//PI
+const MARKS = /*MARKS*/
+const PM = '<span class="pm" data-mark aria-hidden="true"></span>'
+const SH = '<button type="button" class="ib sh" data-act="perms" data-title="perms">' + I.shield + '</button>'
+const SD = `<button type="button" class="sd" data-act="primary" aria-label="Send prompt"><span class="g g-up">${I.up}</span><span class="g g-sq">${I.sq}</span><span class="g g-q">${I.queue}</span><span class="qb" data-bind="qcount"></span><span class="trace" aria-hidden="true"><i></i></span></button>`
+const DOTS = `<span class="dots" role="slider" tabindex="0" aria-valuemin="1" aria-valuemax="4" data-slider><span class="fill"></span>${[0, 1, 2, 3].map(i => `<button type="button" class="d${i}" tabindex="-1" data-act="effort-set" data-v="${i}" aria-label="Reasoning ${['Low', 'Medium', 'High', 'Max'][i]}"><i></i></button>`).join('')}</span>`
+const PILL = `<div class="pill"><div class="fld" data-field></div><button type="button" class="who" data-act="model" title="Model">${PM}<span data-bind="model"></span></button>${DOTS}${SH}${SD}</div><div class="note" data-bind-html="note"></div>`
+
+const D = [
+  { id: 'A', name: 'Listening', where: 'prompt', idea: 'Each keystroke sends one soft ripple along the lit dots, a 2 px lift and back, as if they are listening. It stops the moment you stop.',
+    play: async f => { await f.type('Fix the flaky composer spec on Windows') } },
+  { id: 'B', name: 'Your words set it', where: 'prompt', idea: 'Writing "think hard" or "ultrathink" fills the dots; "quickly" or "briefly" empties them to one. A small note says which words did it, and the dots move as you finish the word. They are your words, so this is your choice; a click on the dots overrules it.',
+    play: async f => { await f.type('Think hard about why the composer spec flakes on Windows') } },
+  { id: 'C', name: 'A suggestion, not a change', where: 'prompt', idea: 'As the prompt grows long or names a hard task (refactor, debug, why), the dots it would use show as rings. Nothing changes until you click a dot.',
+    play: async f => { f.ei = 1; f.paint(); await f.type('Refactor the composer so the send, queue and steer keys share one handler, and debug why the Windows spec flakes'); await sleep(900); f.act('effort-set', f.suggest) } },
+  { id: 'D', name: 'From the keyboard', where: 'prompt', idea: '⌥↑ and ⌥↓ in the prompt step the dots without leaving the text; each step gives one small nudge. The placeholder teaches it once.',
+    play: async f => { await f.type('Fix the flaky composer spec'); for (const d of [1, -1, -1, 1, 1]) { await sleep(380); f.step(d) } } },
+  { id: 'E', name: 'Slide', where: 'prompt', idea: 'Press and drag across the dots: a soft track follows your pointer, the dots stretch, and they snap when you let go. A click still sets one.',
+    play: async f => { for (const v of [0, 1, 2, 3, 2, 1]) { f.dragTo(v); await sleep(260) } f.dragEnd(); await sleep(300); await f.type('Fix the flaky composer spec on Windows') } },
+  { id: 'F', name: 'The turn\'s steps', where: 'chat', idea: 'While a turn runs, the dots become its progress: reading, editing, checking, finishing. Done steps are solid, the current one breathes, the rest wait. When it ends they return to effort.',
+    play: async f => { await f.type('Fix the flaky composer spec on Windows') } },
+  { id: 'G', name: 'The dots carry the reply', where: 'chat', idea: 'On send, the lit dots rise from the pill to where the answer will start and wait there, bouncing, until the first words arrive. When the turn ends they come home. Once per turn, never at rest.',
+    play: async f => { await f.type('Fix the flaky composer spec on Windows') } },
+  { id: 'H', name: 'In time with the reply', where: 'chat', idea: 'While the answer streams in, each piece that arrives lights the next dot for a moment, so the dots keep the reply\'s rhythm instead of a loop of their own.',
+    play: async f => { await f.type('Fix the flaky composer spec on Windows') } },
+  { id: 'I', name: 'Done, once', where: 'chat', idea: 'When the turn ends, the dots make one wave. If you were elsewhere, they keep a faint glow until you come back to the prompt, then settle. No loop, no badge.',
+    play: async f => { await f.type('Fix the flaky composer spec on Windows') } },
+  { id: 'J', name: 'The next prompt brings its effort', where: 'prompt', idea: 'A suggested next prompt carries the effort it needs: while it waits, those dots show as rings. Tab takes the words and the effort together. "Open the pull request" wants one dot; "Run the e2e spec and fix what fails" wants three.',
+    play: async f => { await sleep(600); f.act('next'); await sleep(900); f.act('next'); await sleep(900); f.take() } },
+]
+const MODEL = { name: 'Opus 5.5', p: 'claude' }
+const EFFORTS = ['Low', 'Medium', 'High', 'Max']
+const SUGG = [{ t: 'Run the composer e2e spec and fix what fails', e: 2 }, { t: 'Open the pull request', e: 0 }, { t: 'Write the verification note', e: 1 }]
+const STEPS = ['Reading composer.spec.ts', 'Editing ThreadComposer.tsx', 'Running the spec ten times', 'Writing it up']
+const REPLY = 'The spec waited on a fixed 300 ms sleep before the send key was ready. I replaced it with a wait on the button\'s enabled state, and it now passes ten runs in a row.'
+const TURN = 6000
+const k = () => document.body.classList.contains('slow') ? 4 : 1
+const sleep = ms => new Promise(r => setTimeout(r, ms * k()))
+const calm = () => document.body.classList.contains('calm') || matchMedia('(prefers-reduced-motion: reduce)').matches
+const markSvg = p => `<svg viewBox="${MARKS[p][0]}"><path d="${MARKS[p][1]}"/></svg>`
+
+class Frame {
+  constructor(el, d) {
+    this.el = el; this.d = d; this.b = 'b' + d.id
+    Object.assign(this, { text: '', focus: false, run: false, queue: 0, ghost: true, si: 0, ei: 1, full: true, suggest: null, phase: 0 })
+    el.innerHTML = `<div class="tx"><div class="you">The composer test is flaky on Windows</div><div class="rep">I'll look at the spec first.</div></div><div class="cmp ${this.b}" data-provider="claude">${PILL}</div>`
+    this.root = el.querySelector('.cmp'); this.rep = el.querySelector('.rep'); this.you = el.querySelector('.you')
+    this.root.querySelector('[data-mark]').innerHTML = markSvg('claude')
+    const f = this.root.querySelector('[data-field]')
+    f.innerHTML = '<textarea rows="1" aria-label="Prompt"></textarea><span class="gh"><span data-bind="ghost"></span><kbd>Tab</kbd></span>'
+    this.ta = f.querySelector('textarea')
+    this.ta.addEventListener('input', () => { this.text = this.ta.value; this.onType(); this.paint() })
+    this.ta.addEventListener('focus', () => { this.focus = true; this.root.removeAttribute('data-unread'); this.paint() })
+    this.ta.addEventListener('blur', () => { this.focus = false; this.paint() })
+    this.ta.addEventListener('keydown', e => this.key(e))
+    el.addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b && el.contains(b) && !this.dragged) { e.preventDefault(); this.act(b.dataset.act, b.dataset.v) } this.dragged = false })
+    const sl = this.root.querySelector('[data-slider]')
+    sl.addEventListener('keydown', e => { const dir = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[e.key]; if (dir) { e.preventDefault(); this.step(dir) } })
+    if (d.id === 'E') {
+      sl.addEventListener('pointerdown', e => { sl.setPointerCapture(e.pointerId); this.dragging = true; this.dragAt(e) })
+      sl.addEventListener('pointermove', e => { if (this.dragging) { this.dragged = true; this.dragAt(e) } })
+      sl.addEventListener('pointerup', () => { this.dragging = false; this.dragEnd() })
+    }
+    this.root.addEventListener('mousedown', e => { if (!e.target.closest('[data-act], textarea, [data-slider]')) { e.preventDefault(); this.ta.focus() } })
+    this.paint()
+  }
+  dragAt(e) { const r = this.root.querySelector('.dots').getBoundingClientRect(); this.dragTo(Math.max(0, Math.min(3, Math.floor((e.clientX - r.left) / 11)))) }
+  dragTo(v) { const s = this.root.querySelector('.dots'); s.classList.add('drag'); s.style.setProperty('--lv', v); this.ei = v; this.paint() }
+  dragEnd() { this.root.querySelector('.dots').classList.remove('drag') }
+  step(dir) {
+    const n = Math.max(0, Math.min(3, this.ei + dir)); if (n === this.ei) return
+    this.ei = n; const s = this.root.querySelector('.dots'); s.classList.remove('step'); void s.offsetWidth; s.classList.add('step'); this.paint()
+  }
+  note(html, ms = 2200) { this.noteHtml = html; this.root.setAttribute('data-note', ''); clearTimeout(this.nt); this.nt = setTimeout(() => this.root.removeAttribute('data-note'), ms * k()); this.paint() }
+  onType() {
+    const id = this.d.id, t = this.text
+    if (id === 'A' && !calm()) { this.root.setAttribute('data-tap', ''); clearTimeout(this.tt); this.tt = setTimeout(() => this.root.removeAttribute('data-tap'), 140 * k()) }
+    if (id === 'B') {
+      const hard = /\b(ultrathink|think (really )?hard|think deeply)\b/i.exec(t), quick = /\b(quickly|briefly)\b/i.exec(t)
+      const want = hard ? (/ultrathink/i.test(hard[0]) ? 3 : 2) : quick ? 0 : null
+      if (want !== null && want !== this.ei && want !== this.bset) { this.ei = want; this.bset = want; this.note(`<b>${EFFORTS[want]}</b> from "${(hard ?? quick)[0]}"`) }
+      if (want === null) this.bset = null
+    }
+    if (id === 'C') {
+      const hardWords = /\b(refactor|debug|why|redesign|investigate)\b/gi
+      const score = (t.length > 90 ? 1 : 0) + (t.match(hardWords)?.length ?? 0) + (t.includes('\n') ? 1 : 0)
+      this.suggest = t.length < 12 ? null : Math.min(3, score >= 3 ? 3 : score === 2 ? 2 : score === 1 ? 1 : 0)
+      if (this.suggest === this.ei) this.suggest = null
+      if (this.suggest !== null && this.suggest !== this.lastSug) this.note(`Suggests <b>${EFFORTS[this.suggest]}</b> · click a dot`, 2600)
+      this.lastSug = this.suggest
+    }
+  }
+  key(e) {
+    const empty = !this.text.trim()
+    if (e.key === 'Tab' && !e.shiftKey && empty && this.ghost && !this.run) { e.preventDefault(); return this.take() }
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && e.altKey && this.d.id === 'D') { e.preventDefault(); return this.step(e.key === 'ArrowUp' ? 1 : -1) }
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && empty && this.ghost && !this.run) { e.preventDefault(); return this.act(e.key === 'ArrowDown' ? 'next' : 'prev') }
+    if (e.key === 'Escape') { e.preventDefault(); return this.ta.blur() }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); return this.act('primary') }
+  }
+  take() {
+    const s = SUGG[this.si]; this.ta.value = this.text = s.t; this.ta.focus()
+    if (this.d.id === 'J' && s.e !== this.ei) { this.ei = s.e; this.note(`<b>${EFFORTS[s.e]}</b> with the suggestion`) }
+    this.paint()
+  }
+  act(a, v) {
+    const t = this.text.trim()
+    if (a === 'effort-set') { this.ei = Number(v); this.suggest = null; this.root.removeAttribute('data-note') }
+    else if (a === 'perms') this.full = !this.full
+    else if (a === 'next' || a === 'prev') this.si = (this.si + (a === 'next' ? 1 : SUGG.length - 1)) % SUGG.length
+    else if (a === 'primary') {
+      if (this.run) { if (t) { this.queue++; this.clear() } else this.end(true) }
+      else if (t) { this.root.setAttribute('data-sent', ''); setTimeout(() => this.root.removeAttribute('data-sent'), 380 * k()); this.you.textContent = t; this.clear(); this.begin() }
+    }
+    this.paint()
+  }
+  clear() { this.ta.value = this.text = ''; this.suggest = null }
+  begin() {
+    this.run = true; this.ghost = false; this.phase = 0; this.t0 = performance.now(); this.words = REPLY.split(' '); this.wi = 0; this.hi = 0
+    this.rep.innerHTML = this.d.id === 'F' ? `<span class="step">${STEPS[0]}…</span>` : ''
+    clearTimeout(this.timer); clearInterval(this.tick)
+    if (this.d.id === 'G') this.fly(true)
+    this.timer = setTimeout(() => this.end(false), TURN * k())
+    this.tick = setInterval(() => this.live(), 60)
+    this.paint()
+  }
+  live() {
+    const el = (performance.now() - this.t0) / k()
+    const ph = Math.min(3, Math.floor(el / (TURN / 4)))
+    if (ph !== this.phase) { this.phase = ph; if (this.d.id === 'F') this.rep.innerHTML = `<span class="step">${STEPS[ph]}…</span>`; this.paint() }
+    if (this.d.id !== 'F' && el > 1600 && this.wi < this.words.length && el > 1600 + this.wi * 95) {
+      if (this.wi === 0) { this.rep.textContent = ''; this.flyers?.forEach(x => x.remove()); this.flyers = null }
+      this.rep.textContent += (this.wi ? ' ' : '') + this.words[this.wi++]
+      if (this.d.id === 'H' && !calm()) { const lit = this.ei + 1, dots = this.root.querySelectorAll('.dots i'); const i = this.hi++ % lit; dots[i].classList.add('hit'); setTimeout(() => dots[i].classList.remove('hit'), 90) }
+    }
+  }
+  fly(out) {
+    if (calm()) { if (out) this.rep.innerHTML = `<span class="think">${'<i></i>'.repeat(this.ei + 1)}</span>`; return }
+    const fr = this.el.getBoundingClientRect(), dots = [...this.root.querySelectorAll('.dots i')].slice(0, this.ei + 1)
+    const tgt = this.rep.getBoundingClientRect()
+    this.flyers?.forEach(x => x.remove())
+    this.flyers = dots.map((d, i) => {
+      const r = d.getBoundingClientRect(), x0 = r.left - fr.left, y0 = r.top - fr.top
+      const x1 = tgt.left - fr.left + i * 9.5, y1 = tgt.top - fr.top + 8
+      const n = document.createElement('i'); n.className = 'flyer'; n.style.left = (out ? x0 : x1) + 'px'; n.style.top = (out ? y0 : y1) + 'px'; this.el.appendChild(n)
+      const dx = out ? x1 - x0 : x0 - x1, dy = out ? y1 - y0 : y0 - y1
+      const a = n.animate([{ transform: 'none' }, { transform: `translate(${dx * .5}px, ${dy * .5 - 24}px)` }, { transform: `translate(${dx}px, ${dy}px)` }], { duration: (520 + i * 60) * k(), easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' })
+      a.onfinish = () => { if (out) { n.style.transform = `translate(${dx}px, ${dy}px)`; n.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: `translate(${dx}px, ${dy - 4}px)` }, { transform: `translate(${dx}px, ${dy}px)` }], { duration: 900 * k(), delay: i * 120 * k(), iterations: Infinity }) } else n.remove() }
+      return n
+    })
+  }
+  end(stopped) {
+    clearTimeout(this.timer); clearInterval(this.tick); this.run = false
+    if (this.d.id !== 'F') this.rep.textContent = stopped ? 'Stopped.' : REPLY; else this.rep.textContent = stopped ? 'Stopped.' : REPLY
+    if (this.d.id === 'G') { this.flyers?.forEach(x => x.remove()); this.flyers = null; if (!stopped) this.fly(false) }
+    if (!stopped && this.queue) { this.queue--; this.you.textContent = 'Then update the release notes'; this.begin(); return }
+    if (!stopped) {
+      this.ghost = true; this.si = (this.si + 1) % SUGG.length
+      if (this.d.id === 'I') { this.root.setAttribute('data-done', ''); setTimeout(() => this.root.removeAttribute('data-done'), 1200 * k()); if (!this.focus) this.root.setAttribute('data-unread', '') }
+    }
+    this.paint()
+  }
+  paint() {
+    const r = this.root, has = Boolean(this.text.trim())
+    const at = (n, v) => v ? r.setAttribute(n, '') : r.removeAttribute(n)
+    at('data-focus', this.focus); at('data-text', has); at('data-run', this.run); at('data-queue', this.queue > 0); at('data-ghost', this.ghost); at('data-full', this.full)
+    r.dataset.effort = this.ei; r.dataset.phase = this.phase
+    const sg = this.d.id === 'C' ? this.suggest : this.d.id === 'J' && this.ghost && !has && !this.run ? SUGG[this.si].e : null
+    r.querySelectorAll('.dots i').forEach((x, i) => x.classList.toggle('sg', sg !== null && i <= sg && i > this.ei))
+    const b = { model: MODEL.name, ghost: SUGG[this.si].t, qcount: String(this.queue) }
+    for (const [n, val] of Object.entries(b)) this.el.querySelectorAll(`[data-bind="${n}"]`).forEach(x => { if (x.textContent !== val) x.textContent = val })
+    r.querySelector('[data-bind-html=note]').innerHTML = this.noteHtml ?? ''
+    this.ta.placeholder = this.run ? 'Write a follow-up to queue it' : this.ghost ? '' : this.d.id === 'D' ? 'Ask Opus 5.5 · ⌥↑↓ effort' : 'Ask Opus 5.5'
+    r.querySelectorAll('[data-slider]').forEach(x => { x.setAttribute('aria-valuenow', String(this.ei + 1)); x.setAttribute('aria-valuetext', EFFORTS[this.ei]); x.ariaLabel = x.title = `Reasoning: ${EFFORTS[this.ei]}` })
+    r.querySelectorAll('[data-title=perms]').forEach(x => { x.title = x.ariaLabel = `Thread permissions: ${this.full ? 'Full access' : 'Ask first'}` })
+    r.querySelectorAll('.sd').forEach(x => { x.ariaLabel = x.title = this.run ? (has ? 'Queue prompt ↵' : 'Stop agent ⇧⌘S') : 'Send prompt ↵' })
+  }
+  async type(s) { this.ta.focus(); for (const ch of s) { this.ta.value = this.text += ch; this.onType(); this.paint(); await sleep(28) } }
+  async play() {
+    if (this.playing) return; this.playing = true
+    try {
+      if (this.run) this.end(true)
+      this.ta.focus(); await sleep(300)
+      await this.d.play(this); await sleep(500)
+      this.act('primary')
+      for (let i = 0; i < 80 && this.run; i++) await sleep(150)
+      await sleep(400); this.ta.blur(); if (this.d.id === 'I') { await sleep(2500); this.ta.focus(); await sleep(500); this.ta.blur() }
+    } finally { this.playing = false }
+  }
+}
+
+const main = document.getElementById('main'), nav = document.getElementById('nav')
+const frames = []
+for (const d of D) {
+  const sec = document.createElement('section')
+  sec.className = 'dir'; sec.id = d.id; sec.dataset.id = d.id
+  sec.innerHTML = `<header><h2><b>${d.id}</b>${d.name}<span style="font-weight:500;font-size:12px;color:#8f8e88">answers the ${d.where}</span></h2><button type="button" class="play">Play</button></header><p class="idea">${d.idea}</p>
+    <div class="frames"><div class="fr t-dark"></div><div class="fr t-light"></div></div>`
+  main.appendChild(sec)
+  const fs = [...sec.querySelectorAll('.fr')].map(el => new Frame(el, d))
+  frames.push(...fs)
+  sec.querySelector('.play').addEventListener('click', () => fs.forEach(f => f.play()))
+}
+nav.innerHTML = D.map(d => `<a href="#${d.id}">${d.id}</a>`).join('')
+document.getElementById('playall').addEventListener('click', () => frames.forEach((f, i) => setTimeout(() => f.play(), (i >> 1) * 100)))
+document.getElementById('calm').addEventListener('change', e => document.body.classList.toggle('calm', e.target.checked))
+document.getElementById('slow').addEventListener('change', e => document.body.classList.toggle('slow', e.target.checked))
+const mode0 = new URLSearchParams(location.search).get('mode') ?? 'both'
+const setMode = v => { document.body.classList.remove('m-both', 'm-dark', 'm-light'); document.body.classList.add('m-' + v) }
+setMode(mode0)
+const seg = document.getElementById('mode')
+const sync = v => seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === v)))
+seg.addEventListener('click', e => { const v = e.target.dataset?.v; if (v) { setMode(v); sync(v) } })
+sync(mode0)
+if (location.hash) document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView()
+window.__frames = frames
+</script>
+</body>
+</html>
