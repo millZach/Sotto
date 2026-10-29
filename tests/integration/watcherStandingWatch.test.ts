@@ -10,6 +10,7 @@ import { watcherToolSchemas, type WatcherToolName, type WatcherToolOutput } from
 import type { WatcherHostControl, WatcherHostProjection, WatcherRemoteHosts } from '../../src/shared/watcherHost'
 import type { AgentControl } from '../../src/main/agents/control'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
+import { addWatcherHistory } from '../fixtures/ownerScale'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { WATCHER_WAKE_UP_PROMPT } from '../../src/main/agents/watcherNews'
 import { watcherRequestLine, watcherRequestNote } from '../../src/main/agents/watcherRequestNote'
@@ -912,6 +913,29 @@ it('builds a paired desktop\'s projection from the record without copying it, ag
   const changed = worker.service.remoteProjection(identity, clientId)
   expect(changed.operations).toHaveLength(2)
   expect(changed.revision).not.toBe(first.revision)
+  // A push while the record stands still reads none of it, with the owner's history on the host or ten times that (#1759).
+  const view = worker.control.watcherRecordView.bind(worker.control), counted = new WeakMap<object, object>()
+  let reads = 0
+  vi.spyOn(worker.control, 'watcherRecordView').mockImplementation(() => {
+    const record = view()
+    let read = counted.get(record)
+    if (!read) counted.set(record, read = new Proxy(record, { get: (from, name, receiver) => { if (name !== 'current') reads++; return Reflect.get(from, name, receiver) } }))
+    return read as typeof record
+  })
+  const pushed = async (history: { requests: number; operations: number }) => {
+    const threads = [randomUUID(), randomUUID()].map(threadId => ({ hostId: target.hostId, threadId }))
+    await worker.control.updateWatcher(record => addWatcherHistory(record, threads, history, { hostId: randomUUID(), threadId: randomUUID() }))
+    worker.service.remoteProjection(identity, clientId)
+    reads = 0
+    const copying = vi.spyOn(worker.control, 'watcherRecord')
+    const projection = worker.service.remoteProjection(identity, clientId)
+    expect(projection.operations).toHaveLength(2)
+    const work = { reads, copies: copying.mock.calls.length }
+    copying.mockRestore()
+    return work
+  }
+  expect(await pushed({ requests: 160, operations: 150 })).toEqual({ reads: 0, copies: 0 })
+  expect(await pushed({ requests: 1_600, operations: 1_500 })).toEqual({ reads: 0, copies: 0 })
 })
 
 it('syncs watches to the owning host, persists takeover there and refuses withdrawn or old-host identities', async () => {
