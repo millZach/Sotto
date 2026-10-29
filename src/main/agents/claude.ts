@@ -199,12 +199,12 @@ export function settingsSteps(from: ClaudeSettings, to: ClaudeSettings, ultracod
 /** Appended to Claude Code's own system prompt on every thread process, Watcher's included (ADR-0080). */
 const CLAUDE_QUESTIONS = questionInstructions('AskUserQuestion', false)
 /**
- * Claude Code asks the API by default for thinking shown as updates, under which the server may swap the prose a model
- * writes between tool calls for a short summary filed as a thinking block. A reply written just before AskUserQuestion
- * then reached Sotto only as a Thinking row and its card showed with no reply above it (October 28, 2026). Off, the
- * model's prose comes back as text and becomes its message.
+ * The server may return prose a model writes between tool calls as narration: a thinking block in place of the text
+ * (`claudeNarration`). Asked for no thinking text, the block comes back empty and the reply is lost; summarized, it holds
+ * the server's summary of that prose, which Sotto shows as the reply. Claude Code's own default asks for summaries of
+ * narration only when a feature gate allows, so Sotto asks for them on every launch (October 28, 2026).
  */
-const PROSE_STAYS_TEXT = { CLAUDE_CODE_THINKING_DISPLAY_UPDATES: '0' }
+const THINKING_DISPLAY = ['--thinking-display', 'summarized']
 function permissionArguments(mode: AgentRuntimeMode = 'approval-required'): string[] {
   // Two flags, and both are needed. `--permission-prompts host` only says prompts are not force-denied;
   // `--permission-prompt-tool stdio` is what makes this process the surface that answers them, the way
@@ -1492,7 +1492,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const roles = profile ? undefined : this.subagentRoles(alias.runtimeMode ?? 'approval-required', scoped.some(({ tools }) => tools.name === DELEGATE_MCP_SERVER))
     const effort = nativeEffort(alias.reasoningEffort, this.ultracodeAt(alias.modelId))
     const args = [...(this.options.args ?? []), ...toolArguments, '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
-      '--include-partial-messages', '--replay-user-messages', ...permissionArguments(alias.runtimeMode),
+      '--include-partial-messages', '--replay-user-messages', ...THINKING_DISPLAY, ...permissionArguments(alias.runtimeMode),
       '--append-system-prompt', profile ? `${CLAUDE_QUESTIONS}\n\n${profile.instructions ?? WATCHER_SYSTEM_PROMPT}` : roles?.instructions ? `${CLAUDE_QUESTIONS}\n\n${roles.instructions}` : CLAUDE_QUESTIONS,
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(effort.effortLevel ? ['--effort', effort.effortLevel] : []),
       ...flagSettingsArguments(fastModeRuns(this.state, alias.modelId, alias.fastMode), effort.ultracode)]
@@ -1500,7 +1500,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     try {
       this.configurationGuards.get(id)?.()
       runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, watcher: !!profile, subagentMode: roles?.subagents?.widest,
-        ...(effort.ultracode && effort.effortLevel ? { ultracodeEffort: effort.effortLevel as UltracodeEffort } : {}), protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...PROSE_STAYS_TEXT, ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
+        ...(effort.ultracode && effort.effortLevel ? { ultracodeEffort: effort.effortLevel as UltracodeEffort } : {}), protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
       frame => {
         if (this.runtimes.get(id) === runtime) this.frame(id, frame)
         // A spare keeps a bounded handful of frames for the send that adopts it; one that says more is let go.
@@ -2258,8 +2258,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (!projector) { projector = new ClaudeActivity(activityId => this.history?.activity?.(id, activityId, this.aliases[id]?.historyEpoch)); this.activity.set(id, projector) }
     const watcherTurn = live && this.runtimes.get(id)?.watcher && thread.lastTurn?.status === 'running' ? thread.lastTurn.messageId : undefined
     const turnId = watcherTurn ?? this.lastUserMessageId(id) ?? 'native-history'
-    const rows = projector.apply(thread.activities ?? [], frame, turnId, this.lastTextMessageId(id), this.aliases[id]!.cwd, live, turnEnd)
-    if (rows.length) {
+    const previous = thread.activities ?? []
+    const rows = projector.apply(previous, frame, turnId, this.lastTextMessageId(id), this.aliases[id]!.cwd, live, turnEnd)
+    // A narration row taken back out can leave no rows at all, which is still a change.
+    if (rows.length || rows !== previous) {
       // Transcript replay may place a tool after a folded steer. Its already-observed tool identity
       // still belongs to the native turn that wrote it; replay must not move it to the steer.
       if (!live && this.resolvedWatcherProfiles.has(id)) {
