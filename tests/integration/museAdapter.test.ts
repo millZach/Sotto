@@ -401,6 +401,23 @@ it.each(['approval-required', 'auto', 'full-access'] as const)('replays the exac
   } finally { await f.cleanup() }
 })
 
+it.each([['full-access', 1], ['approval-required', 0]] as const)('answers a subagent’s prompt under %s only where the mode allows it, and never the thread’s own', async (runtimeMode, admitted) => {
+  const f = await museFixture(), id = randomUUID()
+  try {
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Muse thread', runtimeMode })
+    await f.action(id, { type: 'permission', text: 'curl example.com', subagent: true })
+    await expect.poll(async () => (await thread(f, id)).requests.length + (await f.driver.requests()).filter(record => record.method === 'approval/decide').length).toBe(1)
+    await f.driver.raisePermission(id, 'rm -rf build')
+    await expect.poll(async () => (await thread(f, id)).requests.map(request => request.text)).toEqual(
+      admitted ? ['Run a command: rm -rf build'] : ['Run a command: curl example.com', 'Run a command: rm -rf build'])
+    const decided = (await f.driver.requests()).filter(record => record.method === 'approval/decide')
+    expect(decided).toHaveLength(admitted)
+    if (admitted) expect(decided[0]?.params).toMatchObject({ choiceId: 'yes' })
+  } finally { await f.cleanup() }
+})
+
 it('keeps its catalog and working process when an updated client has no signed-in models', async () => {
   const { f, id } = await open()
   try {

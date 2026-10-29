@@ -184,7 +184,8 @@ export function watcherResultFromHostV1(value: unknown): unknown {
  * and how many of its threads are running a turn. `factsState` says why there are none: `unknown` for a host that does not
  * report them or could not be read, `not-connected` for one that is not connected now. Never guessed. Its live load and work
  * placed but not started (#1311) are null where the host does not report them, and `memoryState` and `cpuState` are what
- * that load says against `MACHINE_LOAD_THRESHOLDS`, unknown when it is missing or over a minute old.
+ * that load says against `MACHINE_LOAD_THRESHOLDS`, unknown when it is missing or over a minute old. `headroom` (#1694) is
+ * about how many more workers it can take now, null wherever a number it needs is unknown.
  */
 export const WATCHER_MACHINES_MAX = 100
 /** Why a machine in list_machines has no facts: the words Watcher reads, which the room tells apart by them (#1032). */
@@ -274,8 +275,10 @@ const machineShape = { hostId: id, name: z.string().min(1).max(200), thisCompute
   factsState: z.enum(['reported', 'unknown', 'not-connected']), facts: machineFacts.nullable(), note: shortText.min(1).optional(),
   runningThreads: counter.nullable() }
 // Live load (#1311) is part of the Owl feature Work across machines: present on every machine while it is on, on none while off.
+// Headroom (#1694) goes with it: about how many more workers the machine can take now (`machineHeadroom`).
 const machine = z.object({ ...machineShape, load: hostLoadSchema.strict().nullable().optional(), placedNotStarted: counter.nullable().optional(),
-  memoryState: z.enum(['short', 'enough', 'unknown']).optional(), cpuState: z.enum(['busy', 'not-busy', 'unknown']).optional() }).strict()
+  memoryState: z.enum(['short', 'enough', 'unknown']).optional(), cpuState: z.enum(['busy', 'not-busy', 'unknown']).optional(),
+  headroom: counter.nullable().optional() }).strict()
 /** list_machines as Watcher is offered it with Work across machines off: no live load, as before #1311. */
 export const watcherMachinesWithoutLoadOutput = result({ machines: z.array(z.object(machineShape).strict()).max(WATCHER_MACHINES_MAX), observedAt: time })
 

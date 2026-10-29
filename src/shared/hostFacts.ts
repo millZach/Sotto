@@ -114,6 +114,49 @@ export function machineLoadStates(load: HostLoad | null, totalMemoryBytes: numbe
   return { memory, cpu }
 }
 
+/**
+ * What one more worker is taken to need, for **headroom** (#1694), in one place so it can be tuned on the laptop and
+ * forge: two logical CPUs, as a test run's two workers take (`docs/ci.md`), and 1.5 GiB, about a provider's client with
+ * a typecheck or a test run beside it.
+ */
+export const MACHINE_WORKER_NEEDS = {
+  cpus: 2,
+  memoryBytes: 1.5 * 1024 ** 3,
+} as const
+
+/**
+ * How long a worker's start keeps counting against its machine's headroom after its first prompt has gone (#1694), by
+ * this computer's clock alone, since a host's clock may differ: long enough for its client to start and a fresh reading,
+ * which a host keeps for a few seconds, to show what it uses. A reading may show it sooner, and it then counts twice
+ * for a while, which spreads work more, never less.
+ */
+export const MACHINE_START_SETTLES_MS = 60_000
+
+/**
+ * A machine's headroom (#1694): about how many more workers it can take now, so machines compare directly. The CPU it has
+ * to spare below the busy line, in workers, and the memory it has above the short line on the lower of the window's two
+ * readings, in workers, whichever is fewer, less its work placed but not started, which has not shown in the readings yet.
+ * What already runs there is in the readings. A busy machine, or one short on memory, has none, whatever else is unknown.
+ * Otherwise null, never guessed, wherever a number it needs is unknown: the CPU count, the CPU reading, either memory
+ * reading, or the placed work. So a Mac, whose available memory reads unknown, has none when busy and no figure otherwise.
+ */
+export function machineHeadroom(facts: Pick<HostFacts, 'logicalCpuCount' | 'totalMemoryBytes'>, load: HostLoad | null, placedNotStarted: number | null, now: number,
+  thresholds = MACHINE_LOAD_THRESHOLDS, needs = MACHINE_WORKER_NEEDS): number | null {
+  const states = machineLoadStates(load, facts.totalMemoryBytes, now, thresholds)
+  // What is known to be used up says none on its own: a busy Mac, whose memory reads unknown, has none.
+  if (states.cpu === 'busy' || states.memory === 'short') return 0
+  if (states.cpu === 'unknown' || states.memory === 'unknown' || placedNotStarted === null) return null
+  const cpus = facts.logicalCpuCount, total = facts.totalMemoryBytes, busy = load!.cpuBusyPercent!, end = load!.availableMemoryBytes!
+  const start = load!.windowStartAvailableMemoryBytes
+  if (cpus === null || start === null) return null
+  const available = Math.min(end, start)
+  // Without a total the short line is never above `shortMemoryBytes`, so counting from there never overstates.
+  const floor = total === null ? thresholds.shortMemoryBytes : Math.min(thresholds.shortMemoryBytes, total * thresholds.shortMemoryShare)
+  const byCpu = Math.floor(cpus * (thresholds.busyCpuPercent - busy) / 100 / needs.cpus)
+  const byMemory = Math.floor((available - floor) / needs.memoryBytes)
+  return Math.max(0, Math.min(byCpu, byMemory) - placedNotStarted)
+}
+
 const threadCount = z.number().int().nonnegative().max(HOST_RUNNING_THREADS_MAX).nullable()
 
 /**
