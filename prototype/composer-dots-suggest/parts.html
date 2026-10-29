@@ -1,0 +1,248 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: Drake's pick on October 29, 2026 from docs/prototypes/composer-dots-alive.html (tag
+  prototype/composer-dots-alive): "C - refine it and show a couple diff directions of mockups". C is "a suggestion, not
+  a change": as the prompt grows long or names a hard task, the dots it would use ring, and nothing changes until a press.
+
+  C as drawn and four directions on the 10.2 pill (provider mark, model name, effort dots in the provider's colour, shield,
+  Send). Each is live and its Play shows both ways: a hard prompt suggesting more, then a short one suggesting less. The
+  suggestion is computed in the window from the draft's own text (length, lines, a few words), so nothing leaves the
+  computer for it; it only ever suggests (ADR-0004).
+
+  Built from parts.html and the shared base of prototype/composer-quiet-20/template.html by build.py (inlines Figtree
+  and ProviderMark's paths).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Composer: suggested effort, refined - prototype</title>
+<style>
+/*BASECSS*/
+.fr.t-dark { --prov: var(--tt-provider-claude); }
+.fr.t-light { --prov: color-mix(in oklab, var(--tt-provider-claude) 80%, var(--tt-text)); }
+.t-dark { --tt-provider-claude: #e3b58e; } .t-light { --tt-provider-claude: #e2ad80; }
+.fr { height: 150px; }
+.cmp { bottom: 16px; }
+.pill { display: flex; align-items: center; gap: 2px; min-height: 46px; padding: 6px 8px 6px 18px; border-radius: 23px; background: var(--tt-card); }
+.pill .fld { margin-right: 6px; }
+.who { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 8px 0 7px; border: 0; border-radius: 15px; background: transparent; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; cursor: pointer; flex: none; }
+.pm { display: grid; width: 15px; height: 15px; flex: none; color: var(--prov); }
+.pm svg { width: 15px; height: 15px; fill: currentcolor; }
+.dots { position: relative; display: inline-flex; align-items: center; height: 30px; padding: 0 2px; border-radius: 15px; outline: none; flex: none; }
+.dots:focus-visible { box-shadow: 0 0 0 2px var(--tt-accent); }
+.dots button { display: grid; place-items: center; width: 11px; height: 30px; padding: 0; border: 0; background: none; cursor: pointer; }
+.dots i { width: 4.5px; height: 4.5px; border-radius: 50%; background: var(--prov); opacity: .22; transition: opacity var(--t), transform calc(240ms * var(--k)) var(--spring), box-shadow var(--t), background-color var(--t); }
+.dots button:hover i { opacity: .55; transform: scale(1.3); }
+[data-effort='0'] .dots .d0 i, [data-effort='1'] .dots :is(.d0, .d1) i, [data-effort='2'] .dots :is(.d0, .d1, .d2) i, [data-effort='3'] .dots i { opacity: 1; }
+[data-run] .dots i { animation: bounce calc(900ms * var(--k)) ease-in-out infinite; }
+[data-run] .dots .d1 i { animation-delay: calc(120ms * var(--k)); } [data-run] .dots .d2 i { animation-delay: calc(240ms * var(--k)); } [data-run] .dots .d3 i { animation-delay: calc(360ms * var(--k)); }
+@keyframes bounce { 30% { transform: translateY(-4px); } 60% { transform: none; } }
+.pill .sh svg { width: 14px; height: 14px; }
+.tip { position: absolute; right: 96px; bottom: 54px; padding: 4px 9px; border-radius: 7px; background: var(--tt-card); color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; opacity: 0; transform: translateY(4px); pointer-events: none; transition: opacity var(--t), transform var(--t) var(--out); box-shadow: 0 6px 16px -8px var(--shadow), 0 0 0 1px color-mix(in oklab, var(--tt-hairline) 60%, transparent); }
+.tip b { color: var(--prov); font-weight: 600; }
+.tip kbd { font: 600 11px Figtree; padding: 0 4px; border-radius: 4px; background: color-mix(in oklab, var(--tt-text) 10%, transparent); color: var(--tt-text-2); }
+.cmp[data-tip] .tip { opacity: 1; transform: none; }
+
+/* The suggestion's two marks: up (a dot it would add) and down (a lit dot it would drop). */
+/* C as drawn: rings that pulse, and a note that comes and goes. */
+.sC .dots i.up { box-shadow: 0 0 0 1.5px var(--prov); opacity: .6; animation: ring calc(1600ms * var(--k)) ease-in-out infinite; }
+@keyframes ring { 50% { box-shadow: 0 0 0 3px color-mix(in oklab, var(--prov) 30%, transparent); } }
+/* C.1: still rings, both ways, in once with one pop and no loop. */
+.s1 .dots i.up { opacity: .35; box-shadow: 0 0 0 1.5px var(--prov); animation: pop calc(320ms * var(--k)) var(--spring) 1; }
+.s1 .dots i.down { opacity: 1; background: transparent; box-shadow: inset 0 0 0 1.5px var(--prov); animation: pop calc(320ms * var(--k)) var(--spring) 1; }
+@keyframes pop { 0% { transform: scale(.4); } }
+/* C.2: a ghost of the suggested level, only once you pause typing. */
+.s2 .dots i.up { opacity: .5; transform: scale(.85); }
+.s2 .dots i.down { opacity: .3; transform: scale(.85); }
+.s2 .dots.ghosted::after { content: ''; position: absolute; inset: 6px -2px; border-radius: 9px; background: color-mix(in oklab, var(--prov) 10%, transparent); animation: fadein calc(400ms * var(--k)) ease-out; }
+@keyframes fadein { from { opacity: 0; } }
+/* C.3: still rings, and the reason under the pointer or the focus. */
+.s3 .dots i.up { opacity: .35; box-shadow: 0 0 0 1.5px var(--prov); }
+.s3 .dots i.down { opacity: 1; background: transparent; box-shadow: inset 0 0 0 1.5px var(--prov); }
+/* C.4: the suggestion waits on Send: small pips at its rim, and ⌥↵ sends with it. */
+.s4 .sd .sug { position: absolute; left: 50%; bottom: -7px; display: inline-flex; gap: 2px; padding: 2px 4px; border-radius: 6px; background: var(--tt-card); transform: translateX(-50%) scale(.6); opacity: 0; transition: opacity var(--t), transform calc(260ms * var(--k)) var(--spring); }
+.s4 .sd .sug i { width: 3.5px; height: 3.5px; border-radius: 50%; background: var(--prov); }
+.s4 .sd .sug i.off { display: none; }
+.s4[data-sug] .sd .sug { opacity: 1; transform: translateX(-50%); }
+.s4 .dots i.up { box-shadow: 0 0 0 1px color-mix(in oklab, var(--prov) 60%, transparent); }
+/*CALMCSS*/
+</style>
+</head>
+<body class="m-both">
+<h1>Suggested effort, refined</h1>
+<div class="intro">
+  <p><b>C</b> rings the dots a prompt would use once it grows long or names a hard task; nothing changes until you press. Below it as drawn, then four directions. Each Play shows both ways: a long "refactor and debug why" prompt that wants more, then a short "open the pull request" that wants less.</p>
+  <p><b>What every direction changes from C:</b> it suggests <b>down</b> as well as up (a lit dot it would drop goes hollow), so High is not the answer to every prompt. Clicking any ringed or hollow dot takes the suggestion; any other dot still sets that level. The suggestion is read from the draft's own words on this computer, and only from the draft: a long prompt, several lines, and words such as refactor, debug, why or investigate push it up; a short task pushes it down.</p>
+</div>
+<div class="bar">
+  <span class="seg" id="mode"><button data-v="both" aria-pressed="true">Both</button><button data-v="dark">Dark</button><button data-v="light">Light</button></span>
+  <button type="button" class="go" id="playall">Play all</button>
+  <label><input type="checkbox" id="calm"> Reduce motion</label><label><input type="checkbox" id="slow"> Slow ×4</label>
+  <nav id="nav"></nav>
+</div>
+<main id="main"></main>
+<script>
+//PI
+const MARKS = /*MARKS*/
+const SH = '<button type="button" class="ib sh" data-act="perms" data-title="perms">' + I.shield + '</button>'
+const SD = `<button type="button" class="sd" data-act="primary" aria-label="Send prompt"><span class="g g-up">${I.up}</span><span class="g g-sq">${I.sq}</span><span class="g g-q">${I.queue}</span><span class="qb" data-bind="qcount"></span><span class="sug" aria-hidden="true">${[0, 1, 2, 3].map(i => `<i class="s${i}"></i>`).join('')}</span><span class="trace" aria-hidden="true"><i></i></span></button>`
+const DOTS = `<span class="dots" role="slider" tabindex="0" aria-valuemin="1" aria-valuemax="4" data-slider>${[0, 1, 2, 3].map(i => `<button type="button" class="d${i}" tabindex="-1" data-act="effort-set" data-v="${i}"><i></i></button>`).join('')}</span>`
+const PILL = `<div class="pill"><div class="fld" data-field></div><button type="button" class="who" data-act="model" title="Model"><span class="pm">${''}</span><span>Opus 5.5</span></button>${DOTS}${SH}${SD}</div><div class="tip" data-tip-html></div>`
+
+const D = [
+  { id: 'C', cls: 'sC', name: 'C as drawn', idea: 'For reference: the dots it would add pulse as rings, and a note says "Suggests Max · click a dot". Up only.' },
+  { id: 'C.1', cls: 's1', name: 'Still rings', idea: 'A dot the prompt would add shows as a ring; a lit dot it would drop goes hollow. Each arrives with one small pop and then holds still: no loop and no note. Pointing at the dots names the suggestion.',
+    tip: s => `Suggested <b>${s}</b> · click a ring to use it` },
+  { id: 'C.2', cls: 's2', name: 'A ghost, after a pause', idea: 'Nothing moves while you type. When you stop for a moment, the suggested level appears as a ghost of the dots, the way the next prompt appears as ghost text, with a faint wash behind them. Typing again hides it until the next pause.',
+    tip: s => `Suggested <b>${s}</b> · click to use`, pause: 700 },
+  { id: 'C.3', cls: 's3', name: 'With its reason', idea: 'Still rings, as in C.1, and pointing at the dots or reaching them with Tab says why: "High: long, and asks why" or "Low: a short task". The reason is also the slider\'s description for assistive technology.',
+    tip: (s, why) => `<b>${s}</b> suggested · ${why}`, tipOnSuggest: true },
+  { id: 'C.4', cls: 's4', name: 'On Send', idea: 'The dots stay as you set them; the suggestion waits on Send as small pips under its arrow. Enter sends as set. ⌥↵ sends with the suggestion. You decide at the moment you send, and the box is quiet until then.',
+    tip: s => `<kbd>↵</kbd> send as set · <kbd>⌥↵</kbd> send with <b>${s}</b>`, onSend: true },
+]
+const EFFORTS = ['Low', 'Medium', 'High', 'Max']
+const TURN = 3000
+const k = () => document.body.classList.contains('slow') ? 4 : 1
+const sleep = ms => new Promise(r => setTimeout(r, ms * k()))
+
+/* The suggestion: read from the draft alone. Returns [level, reason] or null. */
+function suggestFor(t) {
+  t = t.trim(); if (t.length < 14) return null
+  const why = [], hard = t.match(/\b(refactor|debug|why|investigate|redesign|architecture)\b/gi) ?? []
+  let s = 0
+  if (t.length > 90) { s++; why.push('long') }
+  if (t.includes('\n')) { s++; why.push('several lines') }
+  if (hard.length) { s += Math.min(2, hard.length); why.push(hard.slice(0, 2).map(w => w.toLowerCase() === 'why' ? 'asks why' : `a ${w.toLowerCase()}`).join(' and ')) }
+  if (!s && t.length < 50) return [0, 'a short task']
+  return [Math.min(3, s), why.join(', ')]
+}
+
+class Frame {
+  constructor(el, d) {
+    this.el = el; this.d = d
+    Object.assign(this, { text: '', run: false, queue: 0, ei: 2, full: true, sug: null })
+    el.innerHTML = `<div class="lastline">…and it passes ten runs in a row.</div><div class="cmp ${d.cls}">${PILL}</div>`
+    this.root = el.querySelector('.cmp')
+    this.root.querySelector('.pm').innerHTML = `<svg viewBox="${MARKS.claude[0]}"><path d="${MARKS.claude[1]}"/></svg>`
+    const f = this.root.querySelector('[data-field]')
+    f.innerHTML = '<textarea rows="1" aria-label="Prompt"></textarea>'
+    this.ta = f.querySelector('textarea')
+    this.ta.addEventListener('input', () => { this.text = this.ta.value; this.onType(); this.paint() })
+    this.ta.addEventListener('keydown', e => this.key(e))
+    const dots = this.root.querySelector('.dots')
+    dots.addEventListener('pointerenter', () => this.tip(true)); dots.addEventListener('pointerleave', () => this.tip(false))
+    dots.addEventListener('focus', () => this.tip(true)); dots.addEventListener('blur', () => this.tip(false))
+    dots.addEventListener('keydown', e => { const dir = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[e.key]; if (dir) { e.preventDefault(); this.ei = Math.max(0, Math.min(3, this.ei + dir)); this.recalc(); this.paint() } })
+    el.addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b && el.contains(b)) { e.preventDefault(); this.act(b.dataset.act, b.dataset.v) } })
+    this.root.addEventListener('mousedown', e => { if (!e.target.closest('[data-act], textarea, [data-slider]')) { e.preventDefault(); this.ta.focus() } })
+    this.paint()
+  }
+  recalc() {
+    const s = suggestFor(this.text)
+    this.sug = s && s[0] !== this.ei ? s : null
+  }
+  onType() {
+    if (this.d.pause) {
+      this.sug = null; this.ghosted = false; clearTimeout(this.pt)
+      this.pt = setTimeout(() => { this.recalc(); this.ghosted = Boolean(this.sug); this.paint() }, this.d.pause * k())
+    } else this.recalc()
+    if (this.d.id === 'C' && this.sug && this.sug[0] > this.ei && this.sug[0] !== this.lastNote) { this.tipFor(`Suggests <b>${EFFORTS[this.sug[0]]}</b> · click a dot`, 2400) }
+    this.lastNote = this.sug?.[0]
+  }
+  tipFor(html, ms) { this.tipHtml = html; this.root.querySelector('[data-tip-html]').innerHTML = html; this.root.setAttribute('data-tip', ''); clearTimeout(this.tt); if (ms) this.tt = setTimeout(() => this.root.removeAttribute('data-tip'), ms * k()) }
+  tip(on) {
+    if (!this.d.tip) return
+    if (on && this.sug) this.tipFor(this.d.tip(EFFORTS[this.sug[0]], this.sug[1]))
+    else if (!on && !this.d.onSend) this.root.removeAttribute('data-tip')
+  }
+  key(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); return this.act('primary', null, e.altKey) }
+  }
+  act(a, v, alt) {
+    const t = this.text.trim()
+    if (a === 'effort-set') {
+      const i = Number(v), x = this.root.querySelectorAll('.dots i')[i]
+      this.ei = x.classList.contains('up') || x.classList.contains('down') ? this.sug[0] : i
+      this.sug = null; this.root.removeAttribute('data-tip')
+    } else if (a === 'perms') this.full = !this.full
+    else if (a === 'primary') {
+      if (this.run) { if (t) { this.queue++; this.clear() } else this.end() }
+      else if (t) { if (alt && this.sug) this.ei = this.sug[0]; this.clear(); this.begin() }
+    }
+    this.paint()
+  }
+  clear() { this.ta.value = this.text = ''; this.sug = null; this.ghosted = false; this.root.removeAttribute('data-tip') }
+  begin() { this.run = true; clearTimeout(this.timer); this.timer = setTimeout(() => this.end(), TURN * k()); this.paint() }
+  end() { clearTimeout(this.timer); this.run = false; if (this.queue) { this.queue--; this.begin() } this.paint() }
+  paint() {
+    const r = this.root, has = Boolean(this.text.trim())
+    const at = (n, v) => v ? r.setAttribute(n, '') : r.removeAttribute(n)
+    at('data-text', has); at('data-run', this.run); at('data-queue', this.queue > 0); at('data-full', this.full)
+    r.dataset.effort = this.ei
+    const s = this.sug && !this.run ? this.sug[0] : null
+    const showOnDots = s !== null && (!this.d.pause || this.ghosted)
+    r.querySelectorAll('.dots i').forEach((x, i) => {
+      x.classList.toggle('up', showOnDots && (this.d.id === 'C' ? s > this.ei : true) && i <= s && i > this.ei)
+      x.classList.toggle('down', showOnDots && this.d.id !== 'C' && this.d.id !== 'C.4' && i > s && i <= this.ei)
+    })
+    r.querySelector('.dots').classList.toggle('ghosted', this.d.pause && this.ghosted && s !== null)
+    at('data-sug', this.d.onSend && s !== null && has)
+    r.querySelectorAll('.sd .sug i').forEach((x, i) => x.classList.toggle('off', s === null || i > s))
+    if (this.d.onSend) { if (s !== null && has) this.tipFor(this.d.tip(EFFORTS[s])); else r.removeAttribute('data-tip') }
+    if (this.d.tipOnSuggest && document.activeElement === r.querySelector('.dots') && s !== null) this.tipFor(this.d.tip(EFFORTS[s], this.sug[1]))
+    r.querySelector('[data-tip-html]').innerHTML = this.tipHtml ?? ''
+    this.ta.placeholder = this.run ? 'Write a follow-up to queue it' : 'Ask Opus 5.5'
+    const sl = r.querySelector('[data-slider]')
+    sl.setAttribute('aria-valuenow', String(this.ei + 1)); sl.setAttribute('aria-valuetext', EFFORTS[this.ei]); sl.ariaLabel = sl.title = `Reasoning: ${EFFORTS[this.ei]}`
+    sl.setAttribute('aria-description', s !== null ? `Suggested ${EFFORTS[s]}: ${this.sug[1]}` : '')
+    r.querySelectorAll('[data-title=perms]').forEach(x => { x.title = x.ariaLabel = `Thread permissions: ${this.full ? 'Full access' : 'Ask first'}` })
+    r.querySelectorAll('.sd').forEach(x => { x.ariaLabel = x.title = this.run ? (has ? 'Queue prompt ↵' : 'Stop agent ⇧⌘S') : s !== null && this.d.onSend ? `Send prompt ↵, or with ${EFFORTS[s]} ⌥↵` : 'Send prompt ↵' })
+  }
+  async type(s) { this.ta.focus(); for (const ch of s) { this.ta.value = this.text += ch; this.onType(); this.paint(); await sleep(24) } }
+  async play() {
+    if (this.playing) return; this.playing = true
+    try {
+      if (this.run) this.end(); this.clear(); this.ei = 1; this.paint()
+      await this.type('Refactor the composer so send, queue and steer share one handler, and debug why the Windows spec flakes')
+      await sleep(1100); this.tip(true); await sleep(1500); this.tip(false)
+      if (this.d.onSend) { this.act('primary', null, true) } else { const up = this.root.querySelector('.dots i.up'); if (up) up.parentElement.click(); await sleep(500); this.act('primary') }
+      await sleep(3600)
+      this.ei = 3; this.paint()
+      await this.type('Open the pull request for it'); await sleep(1100); this.tip(true); await sleep(1500); this.tip(false)
+      if (this.d.onSend) { this.act('primary', null, true) } else { const dn = this.root.querySelector('.dots i.down, .dots i.up'); if (dn) dn.parentElement.click(); await sleep(500); this.act('primary') }
+      await sleep(3400)
+    } finally { this.playing = false }
+  }
+}
+
+const main = document.getElementById('main'), nav = document.getElementById('nav')
+const frames = []
+for (const d of D) {
+  const sec = document.createElement('section')
+  sec.className = 'dir'; sec.id = d.id; sec.dataset.id = d.id === 'C' ? '0' : d.id
+  sec.innerHTML = `<header><h2><b>${d.id}</b>${d.name}</h2><button type="button" class="play">Play</button></header><p class="idea">${d.idea}</p>
+    <div class="frames"><div class="fr t-dark"></div><div class="fr t-light"></div></div>`
+  main.appendChild(sec)
+  const fs = [...sec.querySelectorAll('.fr')].map(el => new Frame(el, d))
+  frames.push(...fs)
+  sec.querySelector('.play').addEventListener('click', () => fs.forEach(f => f.play()))
+}
+nav.innerHTML = D.map(d => `<a href="#${d.id}">${d.id}</a>`).join('')
+document.getElementById('playall').addEventListener('click', () => frames.forEach((f, i) => setTimeout(() => f.play(), (i >> 1) * 100)))
+document.getElementById('calm').addEventListener('change', e => document.body.classList.toggle('calm', e.target.checked))
+document.getElementById('slow').addEventListener('change', e => document.body.classList.toggle('slow', e.target.checked))
+const mode0 = new URLSearchParams(location.search).get('mode') ?? 'both'
+const setMode = v => { document.body.classList.remove('m-both', 'm-dark', 'm-light'); document.body.classList.add('m-' + v) }
+setMode(mode0)
+const seg = document.getElementById('mode')
+const sync = v => seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === v)))
+seg.addEventListener('click', e => { const v = e.target.dataset?.v; if (v) { setMode(v); sync(v) } })
+sync(mode0)
+if (location.hash) document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView()
+window.__frames = frames
+</script>
+</body>
+</html>
