@@ -1,0 +1,119 @@
+{
+  "platform": "linux-x64",
+  "model": "parakeet-ultra-int8",
+  "steps": [
+    {
+      "step": "started",
+      "main": {
+        "workingSetMB": 877.3,
+        "peakWorkingSetMB": 877.3,
+        "privateMB": null,
+        "rssMB": 876,
+        "heapUsedMB": 59.2,
+        "proc": {
+          "rssMB": 885.7734375,
+          "rssAnonMB": 731.46875,
+          "hwmMB": 885.7734375
+        },
+        "onnxruntimeLoaded": true
+      },
+      "helper": null
+    },
+    {
+      "step": "model loaded",
+      "main": {
+        "workingSetMB": 1082.6,
+        "peakWorkingSetMB": 1104,
+        "privateMB": null,
+        "rssMB": 1081.8,
+        "heapUsedMB": 61.3,
+        "proc": {
+          "rssMB": 1080.95703125,
+          "rssAnonMB": 924.5859375,
+          "hwmMB": 1104.01171875
+        },
+        "onnxruntimeLoaded": true
+      },
+      "helper": null,
+      "transcription": {
+        "ok": true,
+        "words": 38,
+        "ms": 2522
+      }
+    },
+    {
+      "step": "loaded, after one transcription",
+      "main": {
+        "workingSetMB": 1260.5,
+        "peakWorkingSetMB": 1260.5,
+        "privateMB": null,
+        "rssMB": 1259.7,
+        "heapUsedMB": 72.9,
+        "proc": {
+          "rssMB": 1259.55859375,
+          "rssAnonMB": 1103.7265625,
+          "hwmMB": 1260.203125
+        },
+        "onnxruntimeLoaded": true
+      },
+      "helper": null
+    },
+    {
+      "step": "dictation off, 5 s later",
+      "main": {
+        "workingSetMB": 1034.1,
+        "peakWorkingSetMB": 1260.2,
+        "privateMB": null,
+        "rssMB": 1034.7,
+        "heapUsedMB": 73.9,
+        "proc": {
+          "rssMB": 1033.9375,
+          "rssAnonMB": 878.296875,
+          "hwmMB": 1260.203125
+        },
+        "onnxruntimeLoaded": true
+      },
+      "helper": null
+    },
+    {
+      "step": "dictation back on, model loaded",
+      "main": {
+        "workingSetMB": 1336.4,
+        "peakWorkingSetMB": 1699.6,
+        "privateMB": null,
+        "rssMB": 1336.8,
+        "heapUsedMB": 74.7,
+        "proc": {
+          "rssMB": 1334.43359375,
+          "rssAnonMB": 1178.87109375,
+          "hwmMB": 1699.64453125
+        },
+        "onnxruntimeLoaded": true
+      },
+      "helper": null,
+      "transcription": {
+        "ok": true,
+        "words": 38,
+        "ms": 2446
+      }
+    },
+    {
+      "step": "reloaded, after one transcription",
+      "main": {
+        "workingSetMB": 1490.5,
+        "peakWorkingSetMB": 1699.6,
+        "privateMB": null,
+        "rssMB": 1490.3,
+        "heapUsedMB": 75,
+        "proc": {
+          "rssMB": 1488.72265625,
+          "rssAnonMB": 1333.98828125,
+          "hwmMB": 1699.64453125
+        },
+        "onnxruntimeLoaded": true
+      },
+      "helper": null
+    }
+  ],
+  "helperEndedAfterOff": true
+}

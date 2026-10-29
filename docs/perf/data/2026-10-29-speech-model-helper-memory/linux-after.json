@@ -1,0 +1,164 @@
+{
+  "platform": "linux-x64",
+  "model": "parakeet-ultra-int8",
+  "steps": [
+    {
+      "step": "started",
+      "main": {
+        "workingSetMB": 396.3,
+        "peakWorkingSetMB": 405.2,
+        "privateMB": null,
+        "rssMB": 395.7,
+        "heapUsedMB": 60.6,
+        "proc": {
+          "rssMB": 396.359375,
+          "rssAnonMB": 252.125,
+          "hwmMB": 405.234375
+        },
+        "onnxruntimeLoaded": false
+      },
+      "helper": {
+        "pid": 3820753,
+        "workingSetMB": 658.5,
+        "privateMB": null,
+        "proc": {
+          "rssMB": 664.34765625,
+          "rssAnonMB": 572.7578125,
+          "hwmMB": 664.34765625
+        }
+      }
+    },
+    {
+      "step": "model loaded",
+      "main": {
+        "workingSetMB": 398.2,
+        "peakWorkingSetMB": 405.2,
+        "privateMB": null,
+        "rssMB": 397.9,
+        "heapUsedMB": 63.1,
+        "proc": {
+          "rssMB": 398.09765625,
+          "rssAnonMB": 253.05078125,
+          "hwmMB": 405.234375
+        },
+        "onnxruntimeLoaded": false
+      },
+      "helper": {
+        "pid": 3820753,
+        "workingSetMB": 794.4,
+        "privateMB": null,
+        "proc": {
+          "rssMB": 794.40625,
+          "rssAnonMB": 695.9140625,
+          "hwmMB": 811.06640625
+        }
+      },
+      "transcription": {
+        "ok": true,
+        "words": 38,
+        "ms": 2235
+      }
+    },
+    {
+      "step": "loaded, after one transcription",
+      "main": {
+        "workingSetMB": 401.3,
+        "peakWorkingSetMB": 408.2,
+        "privateMB": null,
+        "rssMB": 401,
+        "heapUsedMB": 64.9,
+        "proc": {
+          "rssMB": 401.14453125,
+          "rssAnonMB": 256.03515625,
+          "hwmMB": 408.2421875
+        },
+        "onnxruntimeLoaded": false
+      },
+      "helper": {
+        "pid": 3820753,
+        "workingSetMB": 969.8,
+        "privateMB": null,
+        "proc": {
+          "rssMB": 969.75390625,
+          "rssAnonMB": 869.76171875,
+          "hwmMB": 969.75390625
+        }
+      }
+    },
+    {
+      "step": "dictation off, 5 s later",
+      "main": {
+        "workingSetMB": 427.2,
+        "peakWorkingSetMB": 427.2,
+        "privateMB": null,
+        "rssMB": 426.6,
+        "heapUsedMB": 85.4,
+        "proc": {
+          "rssMB": 426.98828125,
+          "rssAnonMB": 281.87890625,
+          "hwmMB": 426.98828125
+        },
+        "onnxruntimeLoaded": false
+      },
+      "helper": null
+    },
+    {
+      "step": "dictation back on, model loaded",
+      "main": {
+        "workingSetMB": 427.4,
+        "peakWorkingSetMB": 427.4,
+        "privateMB": null,
+        "rssMB": 426.9,
+        "heapUsedMB": 86,
+        "proc": {
+          "rssMB": 427.23828125,
+          "rssAnonMB": 282.06640625,
+          "hwmMB": 427.23828125
+        },
+        "onnxruntimeLoaded": false
+      },
+      "helper": {
+        "pid": 3821605,
+        "workingSetMB": 790.8,
+        "privateMB": null,
+        "proc": {
+          "rssMB": 790.75,
+          "rssAnonMB": 691.9296875,
+          "hwmMB": 807.58984375
+        }
+      },
+      "transcription": {
+        "ok": true,
+        "words": 38,
+        "ms": 2363
+      }
+    },
+    {
+      "step": "reloaded, after one transcription",
+      "main": {
+        "workingSetMB": 433.5,
+        "peakWorkingSetMB": 437.1,
+        "privateMB": null,
+        "rssMB": 433.1,
+        "heapUsedMB": 86.1,
+        "proc": {
+          "rssMB": 430.09375,
+          "rssAnonMB": 284.921875,
+          "hwmMB": 437.1015625
+        },
+        "onnxruntimeLoaded": false
+      },
+      "helper": {
+        "pid": 3821605,
+        "workingSetMB": 966.1,
+        "privateMB": null,
+        "proc": {
+          "rssMB": 966.09765625,
+          "rssAnonMB": 865.77734375,
+          "hwmMB": 966.09765625
+        }
+      }
+    }
+  ],
+  "helperEndedAfterOff": true
+}
