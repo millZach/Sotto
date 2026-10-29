@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE — a tip while a thread or Watcher works</title>
+<!--
+  THROWAWAY PROTOTYPE. Not product code. Issue #1767.
+  Question: how should a tip show while a thread works (under its working line) and while Watcher works (on Watcher's
+  page), how visible should it be, and how is it hidden or acted on? Three variants, subtle to visible:
+    A  Same line: the tip follows the working words and the clock on one row, muted, with a hide button.
+    B  Under the line: a second row under the working words, hooked to them like Claude Code's tip under its spinner,
+       with Try it and Hide.
+    C  Tip card: a soft plate under the working line with a lamp, the tip in the secondary ink, Try it, Next tip and
+       Hide.
+  Scenes: a working Claude thread, a working Codex thread, a working OpenCode thread (Sotto tips only), Watcher's page
+  while Watcher works (its night scene drawn still, as it always is), and the Settings toggle.
+  Tip wording is sample copy; the real catalog is written and checked in the build.
+  Picked (Zach, October 28, 2026): B, with a lightbulb in place of the word "Tip"; one tip per turn; Settings keeps
+  Show hidden tips again beside the toggle. B below is drawn as picked.
+  Starts from the real look: src/renderer/src/agents/ThreadActivity.tsx, activity.css, and the Threads settings group
+  in src/renderer/src/features/settings/SettingsView.tsx. The composer has no border (Zach's standing rule).
+-->
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'), url('fonts/figtree-latin.woff2') format('woff2'); }
+/* Theme roles, read from src/shared/themes/palettes.ts. text-2 and hover are mixes the app also derives. */
+[data-theme='sotto'][data-mode='dark'] { --canvas: oklch(0.115 0.008 265); --surface: oklch(0.145 0.008 265); --raised: oklch(0.185 0.008 265); --text: oklch(0.985 0.005 280); --muted: oklch(0.72 0.014 265); --border: oklch(0.305 0.02 265); --accent: oklch(0.714 0.104 183); --accent-fg: oklch(0.16 0.012 190); --accent-surface: oklch(0.32 0.05 185); --sidebar: oklch(0.235 0.003 265); --code-bg: oklch(0.155 0.008 265); --message: oklch(0.205 0.014 265); }
+[data-theme='sotto'][data-mode='light'] { --canvas: oklch(0.978 0.004 85); --surface: oklch(0.99 0.003 85); --raised: oklch(0.955 0.006 85); --text: oklch(0.235 0.014 75); --muted: oklch(0.5 0.014 75); --border: oklch(0.86 0.012 80); --accent: oklch(0.53 0.095 186); --accent-fg: oklch(0.99 0.003 85); --accent-surface: oklch(0.92 0.03 186); --sidebar: oklch(0.955 0.008 85); --code-bg: oklch(0.96 0.005 85); --message: oklch(0.93 0.012 85); }
+[data-theme='citrine'][data-mode='dark'] { --canvas: oklch(0.182 0.002 107); --surface: oklch(0.197 0 0); --raised: oklch(0.232 0 0); --text: oklch(0.95 0.035 96); --muted: oklch(0.65 0.021 97); --border: oklch(0.342 0 0); --accent: oklch(0.861 0.17 96.5); --accent-fg: oklch(0.222 0.035 329); --accent-surface: oklch(0.312 0.019 96.5); --sidebar: oklch(0.227 0 0); --code-bg: oklch(0.217 0 0); --message: oklch(0.322 0.021 96.5); }
+[data-theme='citrine'][data-mode='light'] { --canvas: oklch(0.972 0.008 99); --surface: oklch(0.957 0.006 92); --raised: oklch(0.922 0.006 92); --text: oklch(0.202 0.03 93); --muted: oklch(0.505 0.019 94); --border: oklch(0.852 0.01 92); --accent: oklch(0.552 0.113 92); --accent-fg: oklch(0.99 0.008 326); --accent-surface: oklch(0.892 0.037 92); --sidebar: oklch(0.927 0.009 92); --code-bg: oklch(0.937 0.005 92); --message: oklch(0.872 0.041 92); }
+[data-theme='clay'][data-mode='dark'] { --canvas: oklch(0.18 0.018 40); --surface: oklch(0.205 0.02 40); --raised: oklch(0.255 0.025 40); --text: oklch(0.955 0.015 60); --muted: oklch(0.73 0.03 50); --border: oklch(0.335 0.03 40); --accent: oklch(0.73 0.14 42); --accent-fg: oklch(0.2 0.03 40); --accent-surface: oklch(0.32 0.05 40); --sidebar: oklch(0.225 0.022 40); --code-bg: oklch(0.205 0.018 40); --message: oklch(0.305 0.04 40); }
+[data-theme='clay'][data-mode='light'] { --canvas: oklch(0.973 0.01 60); --surface: oklch(0.985 0.006 60); --raised: oklch(0.938 0.02 52); --text: oklch(0.25 0.03 40); --muted: oklch(0.49 0.03 45); --border: oklch(0.865 0.025 50); --accent: oklch(0.53 0.15 38); --accent-fg: oklch(0.99 0.005 60); --accent-surface: oklch(0.91 0.035 42); --sidebar: oklch(0.947 0.018 52); --code-bg: oklch(0.958 0.012 55); --message: oklch(0.905 0.036 45); }
+:root { --text-2: color-mix(in oklch, var(--text) 78%, var(--muted)); --hover: color-mix(in srgb, var(--text) 7%, transparent); --sunken: color-mix(in oklch, var(--raised) 72%, var(--canvas)); --hairline: color-mix(in srgb, var(--border) 75%, transparent); }
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { display: flex; flex-direction: column; background: var(--canvas); color: var(--text); font: 14px/1.45 Figtree, ui-sans-serif, system-ui, 'Segoe UI', sans-serif; }
+button { font: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Prototype controls: deliberately not Sotto's look. */
+.proto { display: flex; flex-wrap: wrap; flex: none; align-items: center; gap: 8px 14px; padding: 10px 14px; background: #1b1b1f; color: #eee; border-bottom: 1px solid #3a3a40; font: 12.5px/1.3 system-ui, sans-serif; }
+.proto b { font-size: 13px; }
+.proto .tag { padding: 2px 7px; border-radius: 5px; background: #ffd34d; color: #222; font-weight: 800; font-size: 11px; }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; border-radius: 8px; background: #2a2a30; }
+.seg button { min-height: 28px; padding: 0 9px; border: 0; border-radius: 6px; background: transparent; color: #cfcfd6; cursor: pointer; }
+.seg button[aria-pressed='true'] { background: #f1f1f3; color: #1b1b1f; font-weight: 650; }
+.proto .act { min-height: 28px; padding: 0 10px; border: 0; border-radius: 6px; background: #3d3f47; color: #eee; cursor: pointer; }
+.readout { flex-basis: 100%; margin: 0; color: #b9b9c2; font-variant-numeric: tabular-nums; }
+.readout code { padding: 0 4px; border: 0; border-radius: 4px; background: #33333a; color: #fff; font-size: 12px; }
+
+/* The window. */
+.win { position: relative; display: grid; grid-template-columns: 236px minmax(0, 1fr); grid-template-rows: 34px minmax(0, 1fr); flex: 1; min-height: 0; }
+.strip { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 0 14px; background: var(--canvas); color: var(--muted); font-size: 12.5px; border-bottom: 1px solid var(--hairline); }
+.strip .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
+.side { background: var(--sidebar); padding: 12px 8px; overflow: auto; }
+.side h3 { margin: 10px 8px 6px; color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .02em; }
+.side .row { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 8px; border-radius: 8px; color: var(--text-2); font-size: 13.5px; white-space: nowrap; overflow: hidden; }
+.side .row[aria-current] { background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text); }
+.side .row .mark { flex: none; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 5px; background: var(--raised); color: var(--muted); font-size: 10px; font-weight: 700; }
+.side .row .going { margin-left: auto; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.main { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.transcript { flex: 1; overflow: auto; padding: 28px 0 150px; }
+.col { max-width: 760px; margin: 0 auto; padding: 0 28px; }
+.msg-user { margin: 0 0 22px auto; width: fit-content; max-width: 78%; padding: 10px 14px; border-radius: 14px; background: var(--message); font-size: 15.5px; line-height: 1.55; }
+.msg-agent { margin: 0 0 22px; font-size: 15.5px; line-height: 1.7; color: var(--text); }
+.msg-agent p { margin: 0 0 12px; }
+code { padding: 1px 5px; border-radius: 5px; background: var(--code-bg); border: 1px solid var(--hairline); font: 13px ui-monospace, 'Cascadia Code', Menlo, monospace; }
+.fold { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; margin: -10px 0 8px -6px; padding: 0 10px 0 6px; color: var(--muted); font-size: 14px; }
+.fold b { color: var(--text-2); font-weight: 500; }
+
+/* The working line, as activity.css draws it. */
+.live { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 32px; margin: 0 0 24px; color: var(--text-2); font-size: 14px; }
+.live__line { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; margin-left: -6px; padding: 0 10px 0 6px; border-radius: 8px; }
+.word { position: relative; display: inline-block; color: var(--muted); }
+.word::after { content: attr(data-word); position: absolute; inset: 0; color: var(--accent); white-space: nowrap; pointer-events: none;
+  -webkit-mask: linear-gradient(100deg, transparent 38%, black 45%, black 55%, transparent 62%) 100% 0 / 300% 100% no-repeat;
+  mask: linear-gradient(100deg, transparent 38%, black 45%, black 55%, transparent 62%) 100% 0 / 300% 100% no-repeat;
+  animation: glow 4.2s cubic-bezier(.45, 0, .55, 1) infinite; }
+@keyframes glow { 0% { -webkit-mask-position: 100% 0; mask-position: 100% 0; } 72%, 100% { -webkit-mask-position: 0% 0; mask-position: 0% 0; } }
+.clock { color: var(--muted); font-variant-numeric: tabular-nums; }
+.stop { display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
+.stop:hover { background: var(--hover); color: var(--text); }
+[data-reduced='on'] .word { color: var(--text-2); }
+[data-reduced='on'] .word::after { display: none; }
+.pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); display: none; }
+[data-reduced='on'] .pulse { display: inline-block; }
+
+/* Shared tip pieces. */
+.tip code { font-size: 12.5px; }
+.tip__hide { display: inline-grid; place-items: center; flex: none; width: 24px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
+.tip__hide:hover { background: var(--hover); color: var(--text); }
+.tip__try { min-height: 24px; padding: 0 4px; border: 0; border-radius: 4px; background: transparent; color: var(--text-2); font-size: 13px; font-weight: 600; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; cursor: pointer; }
+.tip__try:hover { color: var(--text); }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-reduced='on']) .tip { animation: tip-in .3s ease-out; } }
+@keyframes tip-in { from { opacity: 0; } }
+
+/* A: same line. The tip follows the clock, muted and a size down, and wraps under the words only when the pane is narrow. */
+.tipA { display: inline-flex; align-items: center; gap: 4px; min-width: 160px; flex: 1 1 0; color: var(--muted); font-size: 13px; }
+.tipA::before { content: '·'; margin: 0 4px 0 -2px; color: var(--muted); }
+.tipA__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tipA__label { color: var(--muted); font-weight: 600; margin-right: 2px; }
+.tipA .tip__hide { opacity: .0; }
+.tipA:hover .tip__hide, .tipA:focus-within .tip__hide, .touch .tipA .tip__hide { opacity: 1; }
+
+/* B: under the line, hooked to the words. */
+.tipB { flex-basis: 100%; display: flex; align-items: flex-start; gap: 6px; margin: -6px 0 0 6px; color: var(--muted); font-size: 13.5px; }
+.tipB__hook { flex: none; width: 10px; height: 13px; margin-top: 1px; border-left: 1px solid var(--border); border-bottom: 1px solid var(--border); border-bottom-left-radius: 4px; }
+.tipB__body { min-width: 0; flex: 1; padding-top: 2px; }
+.tipB__bulb { flex: none; display: inline-grid; place-items: center; margin-top: 2px; color: var(--text-2); }
+.tipB__acts { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; vertical-align: middle; }
+
+/* C: a soft plate under the working line. No border; colour from the theme's sunken surface and accent. */
+.tipC { flex-basis: 100%; display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: start; gap: 4px 10px; margin-top: 2px; padding: 11px 10px 11px 14px; border-radius: 12px; background: var(--sunken); color: var(--text-2); font-size: 14px; }
+.tipC__lamp { margin-top: 1px; color: var(--accent); }
+.tipC__label { display: block; color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .02em; }
+.tipC__acts { grid-column: 2 / 4; display: flex; flex-wrap: wrap; gap: 6px; }
+.tipC__btn { min-height: 28px; padding: 0 10px; border: 0; border-radius: 7px; background: var(--raised); color: var(--text); font-size: 13px; cursor: pointer; }
+.tipC__btn:hover { background: color-mix(in srgb, var(--text) 12%, var(--raised)); }
+.tipC__btn--quiet { background: transparent; color: var(--muted); }
+.tipC__btn--quiet:hover { background: var(--hover); color: var(--text); }
+
+/* Composer: floats over the foot, no border. */
+.compose { position: absolute; left: 0; right: 0; bottom: 18px; padding: 0 28px; pointer-events: none; }
+.composer { max-width: 712px; margin: 0 auto; min-height: 92px; padding: 14px 16px 10px; border-radius: 16px; background: var(--raised); pointer-events: auto; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 8px 24px rgb(0 0 0 / .18); }
+[data-mode='light'] .composer { box-shadow: 0 8px 22px rgb(40 30 10 / .08); }
+.composer textarea { flex: 1; min-height: 26px; border: 0; outline: 0; resize: none; background: transparent; color: var(--text); font: 15px/1.5 inherit; font-family: inherit; }
+.composer textarea::placeholder { color: var(--muted); }
+.composer__foot { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; }
+.chip { padding: 3px 8px; border-radius: 6px; background: color-mix(in srgb, var(--text) 6%, transparent); }
+
+/* Watcher's room: the night scene is drawn once and never moves. */
+.room { position: relative; flex: 1; min-height: 0; overflow: hidden; isolation: isolate; }
+.room svg.scene { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; }
+.room .transcript { position: absolute; inset: 0; }
+.room .col :is(p, .who, .live, .tip) { text-shadow: 0 0 3px var(--canvas), 0 0 7px var(--canvas), 0 0 12px var(--canvas); }
+.room .who { margin: 22px 0 6px; color: var(--text-2); font-size: 13px; }
+.room .tipC { text-shadow: none; background: color-mix(in srgb, var(--raised) 78%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.room .composer { background: color-mix(in srgb, var(--raised) 74%, transparent); -webkit-backdrop-filter: blur(14px) saturate(1.1); backdrop-filter: blur(14px) saturate(1.1); }
+
+/* Settings. */
+.settings { flex: 1; overflow: auto; padding: 28px; }
+.card { max-width: 760px; margin: 0 auto; padding: 20px 22px; border-radius: 14px; background: var(--surface); }
+.card h2 { margin: 0; font-size: 18px; }
+.card .sub { margin: 2px 0 18px; color: var(--muted); }
+.group h4 { margin: 18px 0 8px; color: var(--text-2); font-size: 13px; font-weight: 600; }
+.toggle { display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 10px 6px; border: 0; border-radius: 10px; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.toggle:hover { background: var(--hover); }
+.track { flex: none; position: relative; width: 36px; height: 20px; margin-top: 1px; border-radius: 10px; background: var(--border); transition: background .15s; }
+.thumb { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--surface); transition: transform .15s; }
+.toggle[aria-checked='true'] .track { background: var(--accent); }
+.toggle[aria-checked='true'] .thumb { transform: translateX(16px); background: var(--accent-fg); }
+[data-reduced='on'] :is(.track, .thumb) { transition: none; }
+.toggle strong { display: block; font-weight: 600; font-size: 14px; }
+.toggle .desc { display: block; margin-top: 2px; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.reset { margin: 4px 0 0 54px; display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
+.reset button { min-height: 28px; padding: 0 10px; border: 0; border-radius: 7px; background: var(--raised); color: var(--text); cursor: pointer; }
+.reset button:disabled { color: var(--muted); cursor: default; }
+.dimrow { opacity: .55; pointer-events: none; }
+.hl { box-shadow: 0 0 0 2px var(--accent); border-radius: 10px; }
+
+/* The variant switcher (prototype only). */
+.switcher { position: fixed; left: 50%; bottom: 14px; z-index: 50; display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 999px; background: #ffd34d; color: #1b1b1f; box-shadow: 0 6px 20px rgb(0 0 0 / .35); transform: translateX(-50%); font: 600 13px system-ui, sans-serif; }
+.switcher button { width: 34px; height: 34px; border: 0; border-radius: 50%; background: #1b1b1f; color: #ffd34d; font-size: 16px; cursor: pointer; }
+.switcher span { min-width: 170px; text-align: center; white-space: nowrap; }
+
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+@media (max-width: 760px) {
+  .win { grid-template-columns: minmax(0, 1fr); }
+  .side { display: none; }
+  .col { padding: 0 16px; }
+  .compose { padding: 0 12px; bottom: 64px; }
+  .transcript { padding-bottom: 220px; }
+  .switcher span { min-width: 120px; }
+}
+</style>
+</head>
+<body data-theme="sotto" data-mode="dark" data-reduced="off">
+<div class="proto" role="toolbar" aria-label="Prototype controls">
+  <span class="tag">PROTOTYPE</span><b>Tips while working · #1767</b>
+  <div class="seg" id="scene" aria-label="Scene"></div>
+  <div class="seg" id="theme" aria-label="Theme"></div>
+  <div class="seg" id="mode" aria-label="Appearance"></div>
+  <div class="seg" id="reduced" aria-label="Reduced motion"></div>
+  <button class="act" id="nextTurn" type="button">Start the next turn</button>
+  <button class="act" id="resetAll" type="button">Forget hidden tips</button>
+  <p class="readout" id="readout" aria-live="polite"></p>
+</div>
+<div class="win">
+  <div class="strip"><span class="dot"></span><span id="stripTitle">Threads</span></div>
+  <nav class="side" aria-label="Threads" id="side"></nav>
+  <div class="main" id="main"></div>
+</div>
+<div class="switcher" role="group" aria-label="Variant">
+  <button type="button" id="prev" aria-label="Previous variant">‹</button>
+  <span id="vlabel"></span>
+  <button type="button" id="next" aria-label="Next variant">›</button>
+</div>
+<p class="vh" role="status" id="sr"></p>
+
+<script>
+const VARIANTS = { A: 'Same line', B: 'Under the line', C: 'Tip card' }
+const SCENES = { claude: 'Claude thread', codex: 'Codex thread', opencode: 'OpenCode thread', watcher: "Watcher's page", settings: 'Settings' }
+const THEMES = { sotto: 'Sotto', citrine: 'Citrine', clay: 'Clay' }
+const WORDS = ['Combing the desert', 'Winding up the Schwartz', 'Going to plaid', 'Ludicrous speed', 'Consulting Yogurt', 'Checking Mr. Radar', 'Waking Barf', 'Prepping for light speed']
+
+// Sample tips. `from` is where the tip's truth comes from, which is what keeps it current (#1767):
+//   catalog  - built from this thread's own skill catalog, shown only when the command is in it
+//   sotto    - Sotto's own, names a real setting / shortcut / feature id that a test checks exists
+//   docs     - a provider doc tip with its source URL and checked date, watched by a scheduled job
+const TIPS = [
+  { id: 'claude.skills', who: ['claude'], from: 'catalog: 23 commands in this thread', html: 'Type <code>/</code> in the prompt for this thread’s 23 skills and commands, such as <code>/code-review</code>.', try: { label: 'Type /', insert: '/' } },
+  { id: 'claude.compact', who: ['claude'], from: 'catalog: /compact', html: '<code>/compact</code> folds the conversation so far into a summary when the context runs low.', try: { label: 'Put /compact in the prompt', insert: '/compact ' } },
+  { id: 'claude.simplify', who: ['claude'], from: 'catalog: /simplify', html: '<code>/simplify</code> looks over what changed for reuse and cleanups, then applies them.', try: { label: 'Put /simplify in the prompt', insert: '/simplify ' } },
+  { id: 'codex.skills', who: ['codex'], from: 'catalog: 17 skills in this thread', html: 'Type <code>$</code> to mention one of this thread’s Codex skills, such as <code>$code-review</code>.', try: { label: 'Type $', insert: '$' } },
+  { id: 'codex.agents', who: ['codex'], from: 'docs: developers.openai.com/codex · checked 2026-10-28', html: 'Codex reads <code>AGENTS.md</code> on every turn. Ask it to add a rule there once instead of repeating it.' },
+  { id: 'sotto.escape', who: ['claude', 'codex', 'opencode'], from: 'sotto: shortcut thread.fold-steps', html: 'Press <code>Esc</code> on the working line to fold this turn’s steps under it.' },
+  { id: 'sotto.dictate', who: ['claude', 'codex', 'opencode', 'watcher'], from: 'sotto: setting hotkey', html: 'Hold <code>Ctrl+Shift+Space</code> to say your next prompt instead of typing it.' },
+  { id: 'sotto.links', who: ['claude', 'codex', 'opencode'], from: 'sotto: setting web-links', html: 'Right-click a link in a reply, or press <code>Shift+F10</code> on it, to choose where it opens.' },
+  { id: 'sotto.continue', who: ['claude', 'codex', 'opencode'], from: 'sotto: feature continue-on-provider', html: 'Continue this thread on another provider from the thread menu. Its history comes along.' },
+  { id: 'watcher.needs', who: ['watcher'], from: 'sotto: feature watcher', html: 'Ask Watcher “what needs me?” to hear which threads are waiting on you.', try: { label: 'Put it in the prompt', insert: 'What needs me?' } },
+  { id: 'watcher.delegate', who: ['watcher'], from: 'sotto: feature thread-delegation', html: 'Ask Watcher to start a review on another provider. It reports back here when the review is done.' },
+]
+
+const params = new URLSearchParams(location.search)
+const state = {
+  variant: VARIANTS[params.get('variant')] ? params.get('variant') : 'B',
+  scene: SCENES[params.get('scene')] ? params.get('scene') : 'claude',
+  theme: THEMES[params.get('theme')] ? params.get('theme') : 'sotto',
+  mode: params.get('mode') === 'light' ? 'light' : 'dark',
+  reduced: params.get('reduced') === 'on' ? 'on' : 'off',
+  tipsOn: true,
+  turn: 0,
+  hidden: new Set(),
+  acted: new Set(),
+  shown: null,
+  draft: '',
+  highlight: false,
+}
+if (matchMedia('(hover: none)').matches) document.documentElement.classList.add('touch')
+
+const provider = () => state.scene === 'settings' ? 'claude' : state.scene
+const eligible = () => TIPS.filter(t => t.who.includes(provider()) && !state.hidden.has(t.id) && !state.acted.has(t.id))
+// One tip per turn; a new turn moves on to the next tip it has not shown, so long turns keep the same tip.
+function pickTip() {
+  const list = eligible()
+  if (!list.length) return null
+  return list[state.turn % list.length]
+}
+
+const x = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>'
+const bulb = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6M10 22h4"/></svg>'
+const lamp = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6M10 22h4"/></svg>'
+const stop = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>'
+
+function tipHtml(tip) {
+  if (!tip || !state.tipsOn) return ''
+  const plain = tip.html.replace(/<[^>]+>/g, '')
+  const tryBtn = cls => tip.try ? `<button type="button" class="${cls}" data-try="${tip.id}" aria-label="${tip.try.label}">${state.variant === 'C' ? tip.try.label : 'Try it'}</button>` : ''
+  const hide = `<button type="button" class="tip__hide" data-hide="${tip.id}" aria-label="Hide this tip" title="Hide this tip">${x}</button>`
+  if (state.variant === 'A') return `<span class="tip tipA" role="note" aria-label="Tip: ${plain}"><span class="tipA__text" title="${plain}"><span class="tipA__label">Tip</span> ${tip.html}</span>${hide}</span>`
+  if (state.variant === 'B') return `<div class="tip tipB" role="note" aria-label="Tip"><span class="tipB__hook" aria-hidden="true"></span><span class="tipB__bulb">${bulb}</span><span class="tipB__body">${tip.html}<span class="tipB__acts">${tryBtn('tip__try')}${hide}</span></span></div>`
+  const more = eligible().length > 1 ? `<button type="button" class="tipC__btn tipC__btn--quiet" data-nexttip>Next tip</button>` : ''
+  return `<div class="tip tipC" role="note" aria-label="Tip"><span class="tipC__lamp">${lamp}</span><span><span class="tipC__label">Tip</span>${tip.html}</span>${hide}${tip.try || more ? `<span class="tipC__acts">${tryBtn('tipC__btn')}${more}</span>` : ''}</div>`
+}
+
+const word = WORDS[0]
+function workingLine(tip) {
+  return `<div class="live" data-live>
+    <span class="live__line"><span class="pulse"></span><span class="word" id="word" data-word="${word}" aria-hidden="true">${word}</span><span class="vh">Working</span> <span class="clock" id="clock">0s</span></span>
+    <button class="stop" type="button" aria-label="Stop the turn" title="Stop the turn">${stop}</button>
+    ${tipHtml(tip)}
+  </div>`
+}
+
+function composer(placeholder, model) {
+  return `<div class="compose"><div class="composer"><textarea id="draft" aria-label="Prompt" placeholder="${placeholder}">${state.draft}</textarea>
+    <div class="composer__foot"><span class="chip">${model}</span><span class="chip">High effort</span><span style="margin-left:auto">Enter to send</span></div></div></div>`
+}
+
+const THREADS = {
+  claude: { name: 'Menu bar owl stops blinking', mark: 'C', model: 'Opus 5.5', ask: 'The menu bar owl stops blinking after the laptop sleeps. Find out why and fix it.', work: '<b>Read 6 files</b>, ran 3 commands' },
+  codex: { name: 'Faster thread list on 300 threads', mark: 'X', model: 'Sol', ask: 'The thread list takes a second to draw with 300 threads. Profile it and make it fast.', work: '<b>Ran 4 commands</b>, edited 2 files' },
+  opencode: { name: 'Tidy the settings copy', mark: 'O', model: 'OpenCode · Kimi K3', ask: 'Read the Settings copy and make each description one short sentence.', work: '<b>Read 3 files</b>' },
+}
+
+function sidebar() {
+  const rows = [['claude', 'C'], ['codex', 'X'], ['opencode', 'O']].map(([id, m]) => `<div class="row" ${state.scene === id ? 'aria-current="page"' : ''}><span class="mark">${m}</span>${THREADS[id].name}<span class="going"></span></div>`).join('')
+  return `<h3>Watcher</h3><div class="row" ${state.scene === 'watcher' ? 'aria-current="page"' : ''}><span class="mark">W</span>Watcher<span class="going"></span></div><h3>Sotto</h3>${rows}<div class="row"><span class="mark">C</span>Notes for the release</div>`
+}
+
+function threadScene() {
+  const t = THREADS[state.scene]
+  const tip = state.shown
+  return `<div class="transcript"><div class="col">
+    <div class="msg-user">${t.ask}</div>
+    <div class="fold">› ${t.work}</div>
+    ${workingLine(tip)}
+  </div></div>${composer(`Reply to ${state.scene === 'claude' ? 'Claude' : state.scene === 'codex' ? 'Codex' : 'OpenCode'}`, t.model)}`
+}
+
+// A still night: fixed stars, a moon, two hills and an owl on a branch. Nothing here animates.
+function nightScene() {
+  let stars = ''
+  let seed = 7
+  const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280
+  for (let i = 0; i < 70; i++) stars += `<circle cx="${(rnd() * 100).toFixed(2)}%" cy="${(rnd() * 62).toFixed(2)}%" r="${(0.5 + rnd() * 1.2).toFixed(2)}" fill="var(--text)" opacity="${(0.25 + rnd() * 0.5).toFixed(2)}"/>`
+  return `<svg class="scene" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--canvas)"/><stop offset="1" stop-color="color-mix(in oklch, var(--canvas) 70%, var(--accent-surface))"/></linearGradient></defs>
+    <rect width="1000" height="700" fill="url(#sky)"/>
+    <svg width="1000" height="700">${stars}</svg>
+    <circle cx="830" cy="120" r="34" fill="color-mix(in oklch, var(--text) 85%, var(--accent))" opacity=".75"/>
+    <path d="M0 560 Q 220 470 430 540 T 1000 520 V700 H0Z" fill="color-mix(in oklch, var(--canvas) 72%, var(--raised))"/>
+    <path d="M0 610 Q 300 560 600 620 T 1000 600 V700 H0Z" fill="color-mix(in oklch, var(--canvas) 50%, var(--raised))"/>
+    <path d="M70 700 L90 420 L108 700Z" fill="color-mix(in oklch, var(--canvas) 40%, var(--raised))"/>
+    <path d="M90 470 Q 150 455 205 470" stroke="color-mix(in oklch, var(--canvas) 40%, var(--raised))" stroke-width="7" fill="none" stroke-linecap="round"/>
+    <g transform="translate(160 428)"><ellipse cx="0" cy="18" rx="15" ry="20" fill="color-mix(in oklch, var(--muted) 55%, var(--canvas))"/><circle cx="-6" cy="8" r="5" fill="var(--canvas)"/><circle cx="6" cy="8" r="5" fill="var(--canvas)"/><circle cx="-6" cy="8" r="2" fill="var(--accent)"/><circle cx="6" cy="8" r="2" fill="var(--accent)"/><path d="M-12 -2 L-8 4 M12 -2 L8 4" stroke="color-mix(in oklch, var(--muted) 55%, var(--canvas))" stroke-width="3"/></g>
+  </svg>`
+}
+
+function watcherScene() {
+  return `<div class="room">${nightScene()}<div class="transcript"><div class="col">
+    <p class="who">You · 10:42</p>
+    <p>Which threads are close to done, and does anything need me before lunch?</p>
+    <p class="who">Watcher · 10:42</p>
+    ${workingLine(state.shown)}
+  </div></div>${composer('Ask Watcher', 'Opus 5.5')}</div>`
+}
+
+function settingsScene() {
+  const n = state.hidden.size + state.acted.size
+  return `<div class="settings"><section class="card" aria-labelledby="sh"><h2 id="sh">Threads</h2><p class="sub">New threads, replies, the browser &amp; visuals</p>
+    <div class="group"><h4>In a thread</h4>
+      <div class="dimrow"><button class="toggle" type="button" role="switch" aria-checked="true" tabindex="-1"><span class="track"><span class="thumb"></span></span><span><strong>Generated thread titles</strong><span class="desc">The thread's own model names new threads from their first exchange.</span></span></button></div>
+      <div class="${state.highlight ? 'hl' : ''}"><button class="toggle" type="button" role="switch" id="tipsToggle" aria-checked="${state.tipsOn}" aria-describedby="tipsDesc"><span class="track"><span class="thumb"></span></span><span><strong>Show tips while threads work</strong><span class="desc" id="tipsDesc">${state.tipsOn ? 'One short tip under the working line, about Sotto and the thread’s provider. A tip you hide or use does not come back.' : 'No tips under the working line or on Watcher’s page.'}</span></span></button>
+      <div class="reset"><button type="button" id="resetHidden" ${n ? '' : 'disabled'}>Show hidden tips again</button><span>${n ? `${n} hidden or used` : 'No hidden tips'}</span></div></div>
+      <div class="dimrow"><button class="toggle" type="button" role="switch" aria-checked="true" tabindex="-1"><span class="track"><span class="thumb"></span></span><span><strong>Suggest a next prompt after each turn</strong><span class="desc">When a turn ends, the thread's own model suggests what to ask next.</span></span></button></div>
+    </div></section></div>`
+}
+
+function seg(id, options, key) {
+  document.getElementById(id).innerHTML = Object.entries(options).map(([k, v]) => `<button type="button" data-k="${k}" aria-pressed="${state[key] === k}">${v}</button>`).join('')
+  document.getElementById(id).onclick = e => { const b = e.target.closest('button'); if (!b) return; state[key] = b.dataset.k; if (key === 'scene') { state.draft = ''; state.shown = pickTip() } render() }
+}
+
+function syncUrl() {
+  const p = new URLSearchParams({ variant: state.variant, scene: state.scene, theme: state.theme, mode: state.mode })
+  if (state.reduced === 'on') p.set('reduced', 'on')
+  history.replaceState(null, '', '?' + p)
+}
+
+let started = Date.now()
+function render() {
+  const b = document.body
+  b.dataset.theme = state.theme; b.dataset.mode = state.mode; b.dataset.reduced = state.reduced
+  seg('scene', SCENES, 'scene'); seg('theme', THEMES, 'theme'); seg('mode', { dark: 'Dark', light: 'Light' }, 'mode'); seg('reduced', { off: 'Motion', on: 'Reduced motion' }, 'reduced')
+  document.getElementById('side').innerHTML = sidebar()
+  document.getElementById('stripTitle').textContent = state.scene === 'settings' ? 'Settings' : state.scene === 'watcher' ? 'Watcher' : 'Threads'
+  const main = document.getElementById('main')
+  main.innerHTML = state.scene === 'watcher' ? watcherScene() : state.scene === 'settings' ? settingsScene() : threadScene()
+  document.getElementById('vlabel').textContent = `${state.variant} — ${VARIANTS[state.variant]}`
+  const tip = state.shown
+  document.getElementById('readout').innerHTML = `Turn <code>${state.turn + 1}</code> · tip <code>${state.scene === 'settings' ? '–' : tip && state.tipsOn ? tip.id : 'none'}</code>${tip && state.scene !== 'settings' && state.tipsOn ? ` (from ${tip.from})` : ''} · hidden <code>${[...state.hidden].join(', ') || 'none'}</code> · used <code>${[...state.acted].join(', ') || 'none'}</code> · tips <code>${state.tipsOn ? 'on' : 'off'}</code>`
+  syncUrl()
+  const d = document.getElementById('draft')
+  if (d) d.oninput = () => { state.draft = d.value }
+}
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('button')
+  if (!t) return
+  if (t.dataset.hide) { state.hidden.add(t.dataset.hide); state.shown = null; say('Tip hidden. It will not come back.'); render(); focusAfter() }
+  else if (t.dataset.try) {
+    const tip = TIPS.find(x => x.id === t.dataset.try)
+    state.acted.add(tip.id); state.draft = tip.try.insert; state.shown = null; render()
+    const d = document.getElementById('draft'); d.focus(); d.setSelectionRange(d.value.length, d.value.length)
+  }
+  else if (t.hasAttribute('data-nexttip')) { state.turn++; state.shown = pickTip(); render(); document.querySelector('[data-nexttip], .tip__hide')?.focus() }
+  else if (t.id === 'tipsToggle') { state.tipsOn = !state.tipsOn; render(); document.getElementById('tipsToggle').focus() }
+  else if (t.id === 'resetHidden') { state.hidden.clear(); state.acted.clear(); render(); document.getElementById('tipsToggle').focus() }
+})
+function focusAfter() { (document.querySelector('.stop') || document.body).focus() }
+function say(text) { const s = document.getElementById('sr'); s.textContent = ''; setTimeout(() => { s.textContent = text }, 30) }
+
+// Esc on the working line counts as using the Esc tip, the way the real one would hear the fold.
+document.addEventListener('keydown', e => {
+  const typing = e.target.closest('input, textarea, [contenteditable]')
+  if (e.key === 'Escape' && state.shown?.id === 'sotto.escape' && e.target.closest('.live')) { state.acted.add('sotto.escape'); state.shown = null; render(); focusAfter() }
+  if (typing) return
+  if (e.key === 'ArrowLeft') cycle(-1)
+  if (e.key === 'ArrowRight') cycle(1)
+})
+function cycle(d) { const keys = Object.keys(VARIANTS); state.variant = keys[(keys.indexOf(state.variant) + d + keys.length) % keys.length]; render() }
+document.getElementById('prev').onclick = () => cycle(-1)
+document.getElementById('next').onclick = () => cycle(1)
+document.getElementById('nextTurn').onclick = () => { state.turn++; started = Date.now(); state.shown = pickTip(); render() }
+document.getElementById('resetAll').onclick = () => { state.hidden.clear(); state.acted.clear(); state.shown = pickTip(); render() }
+
+// The words and the clock change in place, as the real working line does.
+let wi = 0
+setInterval(() => { const w = document.getElementById('word'); if (!w) return; wi = (wi + 1 + Math.floor(Math.random() * (WORDS.length - 1))) % WORDS.length; w.textContent = WORDS[wi]; w.dataset.word = WORDS[wi] }, 3800)
+setInterval(() => { const c = document.getElementById('clock'); if (c) { const s = Math.floor((Date.now() - started) / 1000); c.textContent = s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s` } }, 1000)
+
+state.shown = pickTip()
+render()
+</script>
+</body>
+</html>

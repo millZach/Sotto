@@ -358,6 +358,8 @@ export interface AppSettings {
    * call per turn. Read only while the `next-prompt` Owl feature is on; off, nothing is asked.
    */
   nextPromptSuggestions: boolean
+  /** One tip under a working thread's working line and Watcher's (ADR-0159; Owl only). */
+  threadTips: boolean
   /** Off stops every pull request draft; the form opens with the fields it would have had anyway. */
   pullRequestText: boolean
   /** Off stops every generated commit message; a commit whose dialog message was left empty takes the stand-in subject. */
@@ -489,6 +491,7 @@ const fieldSchemas = {
   llmOwnModel: ownCleanupChoiceSchema.nullable(),
   threadTitles: z.boolean(),
   nextPromptSuggestions: z.boolean(),
+  threadTips: z.boolean(),
   threadWorkingCopyDefault: z.enum(['shared', 'independent']),
   projectThreadWorkingCopyDefaults: z.record(z.string().min(1).max(256), z.enum(['shared', 'independent'])),
   worktreeCleanup: worktreeCleanupRulesSchema,
@@ -597,6 +600,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // already uses, and a provider that writes nothing (Devin) keeps the stand-in.
   threadTitles: true,
   nextPromptSuggestions: true,
+  threadTips: true,
   threadWorkingCopyDefault: 'shared',
   projectThreadWorkingCopyDefaults: {},
   // Off, every rule: a folder is removed only when the user asks or has said in advance that Sotto may.
@@ -778,6 +782,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     llmOwnModel: parseField(persisted, 'llmOwnModel', defaults),
     threadTitles: parseField(persisted, 'threadTitles', defaults),
     nextPromptSuggestions: parseField(persisted, 'nextPromptSuggestions', defaults),
+    threadTips: parseField(persisted, 'threadTips', defaults),
     threadWorkingCopyDefault: parseField(persisted, 'threadWorkingCopyDefault', defaults),
     projectThreadWorkingCopyDefaults: parseField(persisted, 'projectThreadWorkingCopyDefaults', defaults),
     worktreeCleanup: parseField(persisted, 'worktreeCleanup', defaults),

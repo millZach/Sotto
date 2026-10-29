@@ -4,6 +4,7 @@ import { expect, it, vi } from 'vitest'
 import { preloadElectron } from '../../fixtures/preloadElectron'
 vi.mock('electron', async () => (await import('../../fixtures/preloadElectron')).preloadElectron())
 import { createSottoBridge, createSottoWidgetBridge } from '../../../src/preload'
+import { watcherRoomChanges } from '../../../src/shared/watcherRoomChanges'
 import { WATCHER_CHANGED, WATCHER_GET, WATCHER_OPEN, newerWatcherRoom, WATCHER_SET_PERMISSION, WATCHER_START_NEW, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD, watcherRoomStateSchema,
   type WatcherRoomState } from '../../../src/shared/watcherRoom'
 
@@ -35,9 +36,12 @@ it('offers the private Watcher bridge only behind the main renderer gate and val
   await expect(bridge.get()).rejects.toThrow()
 })
 
+/** The room as the page puts it together from what the preload hands it (#1759). */
+const pageRooms = (ipc: ReturnType<typeof preloadElectron>['ipcRenderer']) => watcherRoomChanges(createSottoBridge(ipc, 'win32', true).watcher!)
+
 const without = (room: WatcherRoomState, key: keyof WatcherRoomState) => Object.fromEntries(Object.entries(room).filter(([name]) => name !== key))
 
-it('hands every Watcher room update to the page as main sent it and drops a message that is not a room', () => {
+it('hands every Watcher room change to the page as main sent it and drops a message that is neither a room nor an update', () => {
   const ipc = preloadElectron().ipcRenderer
   const bridge = createSottoBridge(ipc, 'win32', true).watcher!
   const listener = vi.fn(), unsubscribe = bridge.onChanged(listener)
@@ -59,13 +63,20 @@ it('hands every Watcher room update to the page as main sent it and drops a mess
     without(room, 'observedAt'), without(room, 'watchedThreads'), { ...room, observedAt: 1 }]) receive({}, malformed)
   receive({}); receive({}, room, room)
   expect(listener).toHaveBeenCalledOnce()
+  // An update crosses as main sent it, never as the room it makes (#1759); one without its outline does not cross.
+  const update = { revision: 2, base: 1, room: { recoveryNotice: 'Reconnect.', observedAt: at } }
+  receive({}, update)
+  expect(listener).toHaveBeenCalledTimes(2)
+  expect(listener.mock.calls[1]![0]).toBe(update)
+  for (const malformed of [{ ...update, revision: '2' }, { ...update, base: undefined }, { ...update, room: [] }, { ...update, lists: 'all' }, { ...update, removed: 'notice' }]) receive({}, malformed)
+  expect(listener).toHaveBeenCalledTimes(2)
   unsubscribe(); expect(ipc.removeListener).toHaveBeenCalledWith(WATCHER_CHANGED, expect.any(Function))
 })
 
 it('puts main\'s room updates back into the whole room once for every listener, and reads the room when it cannot (#1450)', async () => {
   const ipc = preloadElectron().ipcRenderer
-  const bridge = createSottoBridge(ipc, 'win32', true).watcher!
-  const first = vi.fn(), second = vi.fn(), offFirst = bridge.onChanged(first), offSecond = bridge.onChanged(second)
+  const onRoom = pageRooms(ipc)
+  const first = vi.fn(), second = vi.fn(), offFirst = onRoom(first), offSecond = onRoom(second)
   expect(ipc.on.mock.calls.filter(call => call[0] === WATCHER_CHANGED)).toHaveLength(1)
   const receive = ipc.on.mock.calls.find(call => call[0] === WATCHER_CHANGED)![1] as (event: unknown, ...payload: unknown[]) => void
   const hostId = randomUUID(), at = '2026-10-23T00:00:00.000Z', later = '2026-10-23T00:00:01.000Z'
@@ -103,7 +114,7 @@ const pageRoom = (listener: ReturnType<typeof vi.fn>) => listener.mock.calls.red
 
 it('applies updates measured from a whole room that arrives while it reads, and reads again when one after it cannot apply', async () => {
   const ipc = preloadElectron().ipcRenderer
-  const listener = vi.fn(), off = createSottoBridge(ipc, 'win32', true).watcher!.onChanged(listener)
+  const listener = vi.fn(), off = pageRooms(ipc)(listener)
   const receive = ipc.on.mock.calls.find(call => call[0] === WATCHER_CHANGED)![1] as (event: unknown, ...payload: unknown[]) => void
   const at = (second: number) => `2026-10-23T00:00:${String(second).padStart(2, '0')}.000Z`
   // Main numbers every room it builds; here the number is the second it was built in.
@@ -144,7 +155,7 @@ it('applies updates measured from a whole room that arrives while it reads, and 
 
 it('leaves the page on the newer room when a recovery read\'s answer and a whole room were read in the same millisecond', async () => {
   const ipc = preloadElectron().ipcRenderer
-  const listener = vi.fn(), off = createSottoBridge(ipc, 'win32', true).watcher!.onChanged(listener)
+  const listener = vi.fn(), off = pageRooms(ipc)(listener)
   const receive = ipc.on.mock.calls.find(call => call[0] === WATCHER_CHANGED)![1] as (event: unknown, ...payload: unknown[]) => void
   const at = '2026-10-23T00:00:00.000Z'
   const room = (notice: string, sequence: number): WatcherRoomState => ({ current: null, currentOptions: null, history: [], requests: [], watchedThreads: [],

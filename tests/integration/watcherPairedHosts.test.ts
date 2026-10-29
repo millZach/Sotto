@@ -2067,7 +2067,7 @@ for (const answer of ['accepted', 'uncertain'] as const) {
       reads.mockClear()
       await watcher.reconcileRemote(f.pairing.hostId)
       expect(reads).toHaveBeenCalled()
-      expect((f.watcher as unknown as { record(): { operations: { id: string; deliveryState: string }[] } }).record().operations
+      expect((f.watcher as unknown as { view(): { operations: { id: string; deliveryState: string }[] } }).view().operations
         .find(operation => operation.id === operationId)?.deliveryState).toBe(answer)
       // An accepted start's thread owns the branch, and its entry is done with. An uncertain one may yet have made the
       // thread, so its entry waits for a later reconcile. Either way the branch stays.
@@ -2701,7 +2701,7 @@ it('refuses Watcher’s stop of a check waiting on a paired host when its Watche
   const f = await waitingOnHost()
   // The host's own Watcher holds the stop between admitting it and acting on it; meanwhile the host hears of a newer
   // Watcher conversation on this desktop, so the old one's authority is gone.
-  type HostWatcher = { record(): { remoteMasters?: { clientId: string; masterHostId: string; createdAt: string }[]; operations: { id: string; deliveryState: string }[] }
+  type HostWatcher = { view(): { remoteMasters?: { clientId: string; masterHostId: string; createdAt: string }[]; operations: { id: string; deliveryState: string }[] }
     options: { control: { updateWatcher(update: (record: { remoteMasters?: { clientId: string; masterHostId: string; creationOperationId: string; createdAt: string }[] }) => void): Promise<void> } } }
   const prototype = WatcherService.prototype as unknown as { stopQueuedCheck(this: HostWatcher, stop: unknown): Promise<boolean> }
   const original = prototype.stopQueuedCheck, reached = deferred<HostWatcher>(), held = deferred<void>()
@@ -2718,7 +2718,7 @@ it('refuses Watcher’s stop of a check waiting on a paired host when its Watche
   held.resolve()
   expect(await stopping).toMatchObject({ status: 'refused', code: 'NOT_CURRENT_WATCHER' })
   // The check still waits there, and its branch stays.
-  expect(host.record().operations.find(item => item.id === f.waiting.receipt!.operationId)?.deliveryState).toBe('queued')
+  expect(host.view().operations.find(item => item.id === f.waiting.receipt!.operationId)?.deliveryState).toBe('queued')
   expect(await f.refs()).toContain(f.landed)
 })
 

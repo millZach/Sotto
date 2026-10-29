@@ -1241,6 +1241,11 @@ msgstr ""
 msgid "{title}, interactive page"
 msgstr ""
 
+#. A tip naming one of the thread's skills. {token} is how it is written in the prompt; {about} is the provider's own description of it.
+#: src/renderer/src/agents/tips.tsx
+msgid "{token} in the prompt: {about}"
+msgstr ""
+
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "{tools, plural, one {used {toolCount} tool} other {used {toolCount} tools}}"
 msgstr ""
@@ -1518,6 +1523,11 @@ msgstr ""
 
 #: src/renderer/src/agents/mainCheckoutLine.logic.ts
 msgid "a revert is in progress"
+msgstr ""
+
+#. A tip under a working Codex thread.
+#: src/renderer/src/agents/tips.tsx
+msgid "A skill in the project’s <0>.agents/skills</0> folder is one <1>$</1> away in every Codex thread there."
 msgstr ""
 
 #: src/renderer/src/agents/threadClearWords.ts
@@ -1857,6 +1867,16 @@ msgstr ""
 #. A permission mode: the agent asks before it acts.
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Ask for approval"
+msgstr ""
+
+#. A tip under Watcher's working line.
+#: src/renderer/src/agents/tips.tsx
+msgid "Ask Watcher to start a thread for a job. It follows the thread and tells you when it needs you."
+msgstr ""
+
+#. A tip under Watcher's working line.
+#: src/renderer/src/agents/tips.tsx
+msgid "Ask Watcher which threads are waiting on you."
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
@@ -2339,6 +2359,11 @@ msgstr ""
 msgid "Choose workspace"
 msgstr ""
 
+#. A tip under a working Claude thread.
+#: src/renderer/src/agents/tips.tsx
+msgid "Claude reads <0>CLAUDE.md</0> at the start of every session. Ask it to add a rule there instead of repeating yourself."
+msgstr ""
+
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Clear choice"
 msgstr ""
@@ -2465,6 +2490,11 @@ msgstr ""
 #. {sourceName} is a model source, such as Anthropic.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Code from the {sourceName} page"
+msgstr ""
+
+#. A tip under a working Codex thread.
+#: src/renderer/src/agents/tips.tsx
+msgid "Codex reads <0>AGENTS.md</0> before it does any work. Ask it to add a rule there instead of repeating yourself."
 msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
@@ -4044,6 +4074,11 @@ msgstr ""
 msgid "Folder removed. Sending to this thread puts it back on its branch."
 msgstr ""
 
+#. A tip under a working Claude thread.
+#: src/renderer/src/agents/tips.tsx
+msgid "For a wide search, ask Claude to use subagents. Each runs in its own context, so this thread’s stays small."
+msgstr ""
+
 #. Starts the forked thread.
 #: src/renderer/src/agents/ForkFromHere.tsx
 msgid "Fork"
@@ -4235,6 +4270,11 @@ msgstr ""
 
 #: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "Hide the list in {title}"
+msgstr ""
+
+#. The button on a tip that hides it for good.
+#: src/renderer/src/agents/tips.tsx
+msgid "Hide this tip"
 msgstr ""
 
 #: src/renderer/src/agents/BringChangesBack.tsx
@@ -5962,6 +6002,31 @@ msgstr ""
 msgid "Preparing the working copy."
 msgstr ""
 
+#. A tip under a working thread. {keys} is the dictation shortcut.
+#: src/renderer/src/agents/tips.tsx
+msgid "Press {keys} to dictate your next prompt instead of typing it."
+msgstr ""
+
+#. A tip under a working thread. {keys} is a keyboard shortcut.
+#: src/renderer/src/agents/tips.tsx
+msgid "Press {keys} to jump to the next thread waiting on you."
+msgstr ""
+
+#. A tip under a working thread. {keys} is a keyboard shortcut.
+#: src/renderer/src/agents/tips.tsx
+msgid "Press {keys} to put the cursor in the prompt."
+msgstr ""
+
+#. A tip under a working thread. {keys} is a keyboard shortcut.
+#: src/renderer/src/agents/tips.tsx
+msgid "Press {keys} to show this thread’s terminal drawer."
+msgstr ""
+
+#. A tip under a working thread. {keys} is a keyboard shortcut.
+#: src/renderer/src/agents/tips.tsx
+msgid "Press {keys} to stop this turn."
+msgstr ""
+
 #. A step in the browser line; starts lowercase. {key} is a key's name, such as Enter.
 #: src/renderer/src/agents/browserLine.ts
 msgid "pressed {key}"
@@ -6114,6 +6179,17 @@ msgstr ""
 
 #: src/renderer/src/agents/gitActionButton.logic.ts
 msgid "Push to default ref?"
+msgstr ""
+
+#. A tip's Try it button, named for what it does.
+#: src/renderer/src/agents/tips.tsx
+msgid "Put “{insert}” in the prompt"
+msgstr ""
+
+#. A tip's Try it button, named for what it does. {0} is a skill as written in the prompt.
+#. placeholder {0}: skillToken(tip.skill)
+#: src/renderer/src/agents/tips.tsx
+msgid "Put {0} in the prompt"
 msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
@@ -6631,6 +6707,11 @@ msgstr ""
 msgid "Review comments"
 msgstr ""
 
+#. A tip under a working thread.
+#: src/renderer/src/agents/tips.tsx
+msgid "Right-click a link in a reply, or press <0>Shift+F10</0> on it, to choose where it opens."
+msgstr ""
+
 #. Runs a code block's shell command in a new terminal.
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Run"
@@ -6833,6 +6914,11 @@ msgstr ""
 
 #: src/renderer/src/agents/branchToolbar.logic.ts
 msgid "Select ref"
+msgstr ""
+
+#. A tip under a working thread. {keys} is a keyboard shortcut.
+#: src/renderer/src/agents/tips.tsx
+msgid "Select words in a reply and press {keys} to quote them in your prompt."
 msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
@@ -8575,6 +8661,11 @@ msgstr ""
 msgid "Timed by Sotto"
 msgstr ""
 
+#. What a screen reader calls the tip line under the working words.
+#: src/renderer/src/agents/tips.tsx
+msgid "Tip"
+msgstr ""
+
 #. A plan step's state.
 #: src/renderer/src/agents/ThreadActivity.tsx
 msgid "To do"
@@ -8653,6 +8744,11 @@ msgstr ""
 msgid "Try again, sending your last message to {name} again"
 msgstr ""
 
+#. A tip's button that puts what it names in the prompt.
+#: src/renderer/src/agents/tips.tsx
+msgid "Try it"
+msgstr ""
+
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Try updating Muse again"
 msgstr ""
@@ -8663,6 +8759,11 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadCompaction.tsx
 msgid "Turn off idle compaction in Settings"
+msgstr ""
+
+#. A tip under a working thread. {sigil} is the character that opens the skills list.
+#: src/renderer/src/agents/tips.tsx
+msgid "Type {sigil} in the prompt to pick one of this thread’s skills."
 msgstr ""
 
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
@@ -9231,6 +9332,11 @@ msgstr ""
 msgid "What’s the plan?"
 msgstr ""
 
+#. A tip under a working thread.
+#: src/renderer/src/agents/tips.tsx
+msgid "When this turn ends, press <0>Tab</0> in an empty prompt to use the suggested next prompt."
+msgstr ""
+
 #: src/renderer/src/agents/AgentAccountSettings.tsx
 msgid "Where a new project goes. Each computer has its own folder."
 msgstr ""
@@ -9249,6 +9355,11 @@ msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Where the server listens, on this computer, your network or your tailnet."
+msgstr ""
+
+#. Put in Watcher's prompt by a tip's Try it.
+#: src/renderer/src/agents/tips.tsx
+msgid "Which threads are waiting on me?"
 msgstr ""
 
 #. A turn that finished, when its time was not recorded.

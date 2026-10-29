@@ -126,6 +126,8 @@ export interface OwnerScalePipeline {
     typeInComposer(): Promise<void>
     openThread(): Promise<void>
     send(): Promise<void>
+    /** One of Watcher's tool calls, as its provider makes it: reading the receipt of a start it made on this computer. Nothing on stable. */
+    watcherToolCall(): Promise<void>
   }
   stop(): Promise<void>
 }
@@ -455,7 +457,9 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
     requestAnswerRecovery: () => ({ uncertainRequestIds: [], completed: [] }),
     supportsWatcherReads: false, supportsWatcherControl: false, supportsWatcherWorkSettled: true, supportsWatcherOutcomes: true,
   } as unknown as DesktopHostConnection['service']
-  router.add({ hostId: REMOTE_HOST_ID, name: 'forge', kind: 'remote', service: remoteService, detail: () => null, preview: () => ({ ok: false }) as never })
+  // It hears the threads the window shows as a socket connection does, by its own call answered with no shell (#1760).
+  router.add({ hostId: REMOTE_HOST_ID, name: 'forge', kind: 'remote', service: remoteService, detail: () => null, preview: () => ({ ok: false }) as never,
+    observe: async () => undefined })
 
   // The answer-draft store as main starts it, from a file holding the owner's retirements and Watcher owners.
   const localSessions = state.threads.filter(item => item.id.startsWith('idle-')).map(item => item.id)
@@ -573,6 +577,13 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
       session.status = 'idle'
       adapter.mark(session.id)
       adapter.publish(false)
+    },
+    watcherToolCall: async (): Promise<void> => {
+      if (!tools) return
+      const record = control.watcherRecordView(), current = record.current!
+      const operation = record.operations.find(item => item.target.hostId === localHostId)!
+      const result = await tools.call(current.target.threadId, 'read_operation', { operationId: operation.id })
+      if (result.isError) throw new Error(`Watcher's read of its receipt was refused: ${JSON.stringify(result.structuredContent)}`)
     },
   }
   return {

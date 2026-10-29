@@ -122,6 +122,32 @@ button.thread-activity-live__line:active:not(:disabled) { background: var(--tt-h
 .thread-activity-live__steps { flex-basis: 100%; min-width: 0; }
 .thread-activity-live__steps > .thread-activity { margin: 0; }
 
+/* A tip under the working words (ADR-0159; Zach's pick, variant B of docs/prototypes/thread-tips-prototype.html with a
+   lightbulb for the word "Tip"): hooked to the words, muted and a size down, with Try it and Hide after its words. */
+.thread-tip { display: flex; flex-basis: 100%; align-items: flex-start; gap: 6px; min-width: 0; margin: -6px 0 0; color: var(--tt-text-muted); font-size: 13.5px; line-height: 1.5; }
+.thread-tip__hook { flex: none; width: 10px; height: 13px; margin-top: 1px; border-bottom: 1px solid var(--tt-hairline); border-left: 1px solid var(--tt-hairline); border-bottom-left-radius: 4px; }
+/* Centred on the first line's words: 1px of padding over the text, then half of what the 20.25px line leaves round 14px. */
+.thread-tip__bulb { flex: none; margin-top: 4px; color: var(--tt-text-2); }
+.thread-tip__text { min-width: 0; padding-top: 1px; overflow-wrap: anywhere; }
+.thread-tip code { padding: 0 4px; border: 1px solid var(--tt-code-border, var(--tt-border-faint)); border-radius: 4px; background: var(--tt-code-bg, var(--tt-surface)); color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: 12.5px; }
+.thread-tip kbd { padding: 0 4px; border: 1px solid var(--tt-hairline); border-radius: 4px; color: var(--tt-text-2); font: inherit; font-size: 12.5px; }
+.thread-tip .tt-shortcut { display: inline-flex; gap: 2px; align-items: baseline; }
+/* The shared shortcut chip is 24px tall; in a tip it keeps inside the line, so the words stay level with the lightbulb. */
+.thread-tip .tt-shortcut kbd { padding: 0 4px; line-height: 1.35; }
+.thread-tip__actions { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; vertical-align: middle; }
+.thread-tip__try {
+  min-height: 24px; padding: 0 4px; border: 0; border-radius: 4px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; font-weight: 600;
+  text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; cursor: pointer;
+}
+.thread-tip__try:hover { color: var(--tt-text); }
+/* `min-height: 0` lets go of every button's 30px floor, which made the first line taller than the words. */
+.thread-tip__hide { display: inline-grid; place-items: center; width: 24px; height: 24px; min-height: 0; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.thread-tip__hide:hover { background: var(--tt-hover); color: var(--tt-text); }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .thread-tip { animation: thread-tip-in .3s ease-out; }
+}
+@keyframes thread-tip-in { from { opacity: 0; } }
+
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .thread-activity__pulse[data-connected] { animation: thread-activity-pulse 1.6s ease-in-out infinite; }
   :root:not([data-reduced-motion='on']) .thread-message[tabindex='-1'] { transition: background-color .5s ease, box-shadow .5s ease; }

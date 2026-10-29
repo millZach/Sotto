@@ -176,9 +176,9 @@ export interface WatcherRoomPatch {
  * only what changed since the room the window was last sent. Without that answer main sends the room itself, as before.
  * `base` names the update the changes are measured from, or is null when `room` is the whole room. Otherwise `room`
  * holds each field that changed other than a list, `lists` each list that changed, and `removed` the fields the room
- * no longer has. Like the room itself, nothing parses this shape: the preload puts the whole room back
- * (`applyWatcherRoomUpdate`) before the page sees it, and a window that holds another base reads `WATCHER_GET`, which
- * also tells main to send the next update whole.
+ * no longer has. Like the room itself, nothing parses this shape: the preload checks its outline and hands it to the
+ * page as it came, the page puts the whole room back (`watcherRoomChanges`, #1759), and a window that holds another
+ * base reads `WATCHER_GET`, which also tells main to send the next update whole.
  */
 export interface WatcherRoomUpdate {
   /** Names this update, for the next one to be measured from. Main's counter only advances. */
@@ -197,6 +197,8 @@ export function newerWatcherRoom(current: WatcherRoomState | null, next: Watcher
   if (current.sequence !== undefined && next.sequence !== undefined) return current.sequence > next.sequence ? current : next
   return Date.parse(current.observedAt) > Date.parse(next.observedAt) ? current : next
 }
+/** What `WATCHER_CHANGED` carries: the room itself, or an update to the room the window was last sent. */
+export type WatcherRoomChange = WatcherRoomState | WatcherRoomUpdate
 /** The room a window holds, with the update it came from. */
 export interface WatcherRoomHeld { readonly revision: number; readonly room: WatcherRoomState }
 
@@ -342,5 +344,9 @@ export interface WatcherBridge {
   startNew?(): Promise<WatcherRoomResult>
   /** Each machine's facts, load and work placed but not started (#1032). Only while Work across machines is on. */
   readMachines?(): Promise<WatcherMachinesRead>
-  onChanged(listener: (state: WatcherRoomState) => void): () => void
+  /**
+   * Each change main sends, as it sent it: a whole room, or only what changed (#1759). Crossing the context bridge copies
+   * all it carries, so the page puts the room together on its own side (`watcherRoomChanges`) and only the change crosses.
+   */
+  onChanged(listener: (change: WatcherRoomChange) => void): () => void
 }
