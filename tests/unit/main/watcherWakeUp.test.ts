@@ -2237,3 +2237,14 @@ it('tells Watcher of every thread a usage limit’s reset restarted, watched or 
   f.snapshot.threads = f.snapshot.threads.filter(item => item.id !== 'unwatched')
   expect(f.wakes.due(told.find(event => event.target.threadId === 'unwatched')!)).toBe(false)
 })
+
+it('keeps telling the new Watcher of a thread the last one worked on for a request it inherited (#1735)', async () => {
+  const f = fixture()
+  // Watcher was replaced: the request that thread belongs to was made by the last conversation, which is history now.
+  const last = f.record.current!
+  f.record.history = [last]
+  f.record.current = { ...last, target: { hostId: last.target.hostId, threadId: 'new-watcher' }, creationOperationId: randomUUID() }
+  expect(f.record.requests[0]!.watcher).toEqual(last.target)
+  f.checks('failed'); f.wakes.observe(); await f.advance(5_000)
+  expect(f.delivered.flatMap(news => news.events).some(event => event.kind === 'evidence-changed' && event.target.threadId === centerTarget.threadId)).toBe(true)
+})

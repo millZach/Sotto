@@ -913,3 +913,12 @@ it('keeps saying a moved message may have arrived, however many times it moves (
   expect((await queue.moveUserPrompts('watcher-b', 'watcher-c', 'Moved.', 'Maybe arrived.'))[0]).toMatchObject({ unconfirmed: true })
   expect(queue.peek().items[0]).toMatchObject({ threadId: 'watcher-c', status: 'paused', error: 'Maybe arrived.' })
 })
+
+it('moves every unsent message of a replaced Watcher, even into a queue already full (#1735)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-followups-')); roots.push(root)
+  const queue = new FollowupStore(root); await queue.load()
+  for (let index = 0; index < 100; index++) await queue.enqueue({ threadId: 'watcher-new', draftId: randomUUID(), text: `New ${index}`, attachments: [] })
+  for (let index = 0; index < 3; index++) await queue.enqueue({ threadId: 'watcher-old', draftId: randomUUID(), text: `Old ${index}`, attachments: [] })
+  expect(await queue.moveUserPrompts('watcher-old', 'watcher-new', 'Moved.', 'Maybe arrived.')).toHaveLength(3)
+  expect(queue.peek().items.filter(item => item.threadId === 'watcher-old')).toEqual([])
+})

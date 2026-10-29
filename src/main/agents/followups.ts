@@ -410,14 +410,14 @@ export class FollowupStore {
    * Moves the user's own follow-ups that have not gone from one thread's queue to the end of another's, paused, with
    * `error` saying why: what a new Watcher takes from the one it replaced (#1735). One whose send was not confirmed says
    * so with `unconfirmed`, since it may have arrived. Sotto's wake-ups, Watcher's sends and one already sending stay where
-   * they are. Says which drafts moved, when each was queued and whether it may have arrived; none past the other queue's
-   * hundred move.
+   * they are. Says which drafts moved, when each was queued and whether it may have arrived. All move, even past the
+   * hundred a thread's queue takes from the user.
    */
   async moveUserPrompts(from: string, to: string, error: string, unconfirmed: string): Promise<MovedPrompt[]> {
     let moved: MovedPrompt[] = []
     await this.change(state => {
-      const room = 100 - state.items.filter(item => item.threadId === to).length
-      const items = state.items.filter(item => item.threadId === from && !item.wakeUp && !item.watcherOperationId && item.status !== 'dispatching').slice(0, Math.max(0, room))
+      // All of them move, past the hundred a user may queue: none may stay with a Watcher that is gone.
+      const items = state.items.filter(item => item.threadId === from && !item.wakeUp && !item.watcherOperationId && item.status !== 'dispatching')
       if (!items.length) return false
       const now = new Date().toISOString()
       const doubts = new Set<string>()
