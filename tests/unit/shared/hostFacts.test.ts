@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { HOST_RUNNING_THREADS_MAX, hostFactsSchema, hostMachineReportSchema, machineLoadStates, MACHINE_LOAD_THRESHOLDS, placedNotStartedWith } from '../../../src/shared/hostFacts'
+import { HOST_RUNNING_THREADS_MAX, hostFactsSchema, hostMachineReportSchema, machineHeadroom, machineLoadStates, MACHINE_LOAD_THRESHOLDS, placedNotStartedWith } from '../../../src/shared/hostFacts'
 
 const facts = {
   observedAt: '2026-10-14T12:00:00.000Z',
@@ -124,6 +124,39 @@ describe('machineLoadStates', () => {
     // The line is never above 2 GiB on any total, so 2 GiB or more at the window's end is enough without one.
     expect(memory(3 * GIB, 0.5 * GIB, null)).toBe('enough')
     expect(memory(2 * GIB, null, null)).toBe('enough')
+  })
+})
+
+describe('machineHeadroom (#1694)', () => {
+  const at = Date.parse(load.observedAt), GIB = 1024 ** 3
+  const forge = { logicalCpuCount: 16, totalMemoryBytes: 32 * GIB }
+  it('counts the fewer of spare CPU and spare memory in workers, less the work on its way', () => {
+    // CPU: 16 × (85 − 40)% = 7.2 spare, 3 workers at two each. Memory: 8 GiB less the 2 GiB line, 4 workers at 1.5 GiB.
+    expect(machineHeadroom(forge, load, 0, at)).toBe(3)
+    expect(machineHeadroom(forge, load, 1, at)).toBe(2)
+    expect(machineHeadroom(forge, load, 7, at)).toBe(0)
+    expect(machineHeadroom(forge, { ...load, cpuBusyPercent: 1 }, 0, at)).toBe(4)
+    expect(machineHeadroom({ logicalCpuCount: 64, totalMemoryBytes: 32 * GIB }, { ...load, availableMemoryBytes: 20 * GIB, windowStartAvailableMemoryBytes: 20 * GIB }, 0, at)).toBe(12)
+  })
+  it('reads memory on the lower of the window\'s two readings', () => {
+    expect(machineHeadroom(forge, { ...load, cpuBusyPercent: 1, windowStartAvailableMemoryBytes: 5 * GIB }, 0, at)).toBe(2)
+    expect(machineHeadroom(forge, { ...load, cpuBusyPercent: 1, windowStartAvailableMemoryBytes: null }, 0, at)).toBe(4)
+  })
+  it('has none on a busy machine or one short on memory', () => {
+    expect(machineHeadroom(forge, { ...load, cpuBusyPercent: 90 }, 0, at)).toBe(0)
+    expect(machineHeadroom(forge, { ...load, availableMemoryBytes: GIB, windowStartAvailableMemoryBytes: GIB }, 0, at)).toBe(0)
+  })
+  it('is unknown, never guessed, wherever a number it needs is', () => {
+    expect(machineHeadroom(forge, null, 0, at)).toBeNull()
+    expect(machineHeadroom(forge, load, null, at)).toBeNull()
+    expect(machineHeadroom(forge, load, 0, at + MACHINE_LOAD_THRESHOLDS.staleAfterMs + 1)).toBeNull()
+    expect(machineHeadroom({ ...forge, logicalCpuCount: null }, load, 0, at)).toBeNull()
+    expect(machineHeadroom(forge, { ...load, cpuBusyPercent: null }, 0, at)).toBeNull()
+    // A Mac: available memory unknown.
+    expect(machineHeadroom(forge, { ...load, availableMemoryBytes: null, windowStartAvailableMemoryBytes: null }, 0, at)).toBeNull()
+  })
+  it('counts from the 2 GiB line when the total is unknown, which never overstates', () => {
+    expect(machineHeadroom({ ...forge, totalMemoryBytes: null }, { ...load, cpuBusyPercent: 1 }, 0, at)).toBe(4)
   })
 })
 

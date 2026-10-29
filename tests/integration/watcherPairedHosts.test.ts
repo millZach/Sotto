@@ -1731,6 +1731,37 @@ it('starts a worker on the paired machine new workers start on, in its copy of t
     target: { hostId: f.pairing.hostId }, placement: { hostId: f.pairing.hostId, awayFromDefault: true } })
 })
 
+it('places starts made together one at a time under Watcher\'s choice, so each counts the ones before it in each machine\'s headroom (#1694)', async () => {
+  const f = await acrossMachines('watcher')
+  const GIB = 1024 ** 3, fresh = () => new Date().toISOString()
+  const load = (cpuBusyPercent: number, availableMemoryBytes: number) => ({ observedAt: fresh(), windowMs: 2_000, cpuBusyPercent, loadAverage: null,
+    availableMemoryBytes, windowStartAvailableMemoryBytes: availableMemoryBytes, memoryPressurePercent: null })
+  // This computer is busy: no headroom. The paired machine has room for two workers by memory, less what is on its way there.
+  vi.spyOn(HostFactsSource.prototype, 'load').mockImplementation(async () => load(99, 16 * GIB))
+  const report = f.socket.hostFacts.bind(f.socket)
+  vi.spyOn(f.socket, 'hostFacts').mockImplementation(async () => {
+    const real = await report()
+    return { ...real, facts: { ...real.facts, logicalCpuCount: 64, totalMemoryBytes: 64 * GIB }, load: load(1, 2 * GIB + 2 * 1.5 * GIB + GIB / 2) }
+  })
+  const listed = await f.call('list_machines', {})
+  if (listed.status !== 'ok') throw new Error('list-refused')
+  expect(listed.machines.map(machine => machine.headroom)).toEqual([0, 2])
+  // Hold every start on its way to the paired machine, so its readings cannot see them and only the counting can.
+  const gate = deferred(), control = f.socket.watcherControl!.bind(f.socket)
+  let held = 0
+  vi.spyOn(f.socket, 'watcherControl').mockImplementation(async (...args) => { held += 1; await gate.promise; return control(...args) })
+  const starts = [1, 2, 3].map(index => f.watcher.invoke(f.id, 'start_thread', { ...f.onThisComputer(), title: `Synthetic batch worker ${index}` }))
+  await vi.waitFor(() => expect(held).toBe(2))
+  gate.resolve()
+  const placed = (await Promise.all(starts)).map(result => watcherToolSchemas.start_thread.output.parse(result))
+  const there = placed.filter(result => result.status === 'ok' && 'placement' in result && result.placement?.hostId === f.pairing.hostId)
+  expect(there).toHaveLength(2)
+  for (const result of there) expect(result).toMatchObject({ placement: { note: expect.stringMatching(/^This computer is busy, so Sotto started this one on Synthetic remote, which has room for about [12] more workers?\.$/u) } })
+  // The third found both machines with none, and stayed where its project is.
+  expect(placed.filter(result => !there.includes(result))).toEqual([expect.not.objectContaining({ placement: expect.objectContaining({ hostId: f.pairing.hostId }) })])
+  expect(held).toBe(2)
+})
+
 it('starts on This computer and says why when the paired machine new workers start on is not connected (#1032)', async () => {
   const f = await acrossMachines()
   f.choice.setting = f.pairing.hostId

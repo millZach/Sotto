@@ -114,6 +114,39 @@ export function machineLoadStates(load: HostLoad | null, totalMemoryBytes: numbe
   return { memory, cpu }
 }
 
+/**
+ * What one more worker is taken to need, for **headroom** (#1694), in one place so it can be tuned on the laptop and
+ * forge: two logical CPUs, as a test run's two workers take (`docs/ci.md`), and 1.5 GiB, about a provider's client with
+ * a typecheck or a test run beside it.
+ */
+export const MACHINE_WORKER_NEEDS = {
+  cpus: 2,
+  memoryBytes: 1.5 * 1024 ** 3,
+} as const
+
+/**
+ * A machine's headroom (#1694): about how many more workers it can take now, so machines compare directly. The CPU it has
+ * to spare below the busy line, in workers, and the memory it has above the short line on the lower of the window's two
+ * readings, in workers, whichever is fewer, less its work placed but not started, which has not shown in the readings yet.
+ * What already runs there is in the readings. A busy machine, or one short on memory, has none. Null, never guessed,
+ * wherever a number it needs is unknown: the CPU count, the CPU or memory reading, or the placed work.
+ * So a Mac, whose available memory reads unknown, has no headroom figure.
+ */
+export function machineHeadroom(facts: Pick<HostFacts, 'logicalCpuCount' | 'totalMemoryBytes'>, load: HostLoad | null, placedNotStarted: number | null, now: number,
+  thresholds = MACHINE_LOAD_THRESHOLDS, needs = MACHINE_WORKER_NEEDS): number | null {
+  const states = machineLoadStates(load, facts.totalMemoryBytes, now, thresholds)
+  if (states.cpu === 'unknown' || states.memory === 'unknown' || placedNotStarted === null) return null
+  if (states.cpu === 'busy' || states.memory === 'short') return 0
+  const cpus = facts.logicalCpuCount, total = facts.totalMemoryBytes, busy = load!.cpuBusyPercent!, end = load!.availableMemoryBytes!
+  if (cpus === null) return null
+  const available = Math.min(end, load!.windowStartAvailableMemoryBytes ?? end)
+  // Without a total the short line is never above `shortMemoryBytes`, so counting from there never overstates.
+  const floor = total === null ? thresholds.shortMemoryBytes : Math.min(thresholds.shortMemoryBytes, total * thresholds.shortMemoryShare)
+  const byCpu = Math.floor(cpus * (thresholds.busyCpuPercent - busy) / 100 / needs.cpus)
+  const byMemory = Math.floor((available - floor) / needs.memoryBytes)
+  return Math.max(0, Math.min(byCpu, byMemory) - placedNotStarted)
+}
+
 const threadCount = z.number().int().nonnegative().max(HOST_RUNNING_THREADS_MAX).nullable()
 
 /**
